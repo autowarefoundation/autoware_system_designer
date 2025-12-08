@@ -1,0 +1,43 @@
+# reference: object lanelet filter
+
+# node information
+name: FilterA.node
+
+launch:
+  package: autoware_perception_dummy_nodes
+  plugin: autoware::perception_dummy_nodes::FilterA
+  node_output: screen
+
+# interfaces
+inputs:
+  - name: ros_transform
+    message_type: tf2_msgs/msg/TFMessage
+    global: /tf
+  - name: vector_map
+    message_type: autoware_map_msgs/msg/LaneletMapBin
+  - name: objects
+    message_type: autoware_perception_msgs/msg/DetectedObjects
+
+outputs:
+  - name: objects
+    message_type: autoware_perception_msgs/msg/DetectedObjects
+    qos:
+      reliability: reliable
+      durability: transient_local
+
+# parameters
+parameter_files:
+  - name: filtering_range_param
+    default: path/to/filtering_range_param.yaml
+
+parameters: []
+
+# processes
+processes:
+  - name: filter
+    trigger_conditions:
+      - and:
+          - on_input: objects
+          - once: vector_map
+    outcomes:
+      - to_output: objects

@@ -1,0 +1,322 @@
+// Sequence Diagram Module
+// This module provides functionality to render sequence diagrams in a given container
+
+class SequenceDiagramModule {
+    constructor(container, options = {}) {
+        this.container = container;
+        this.options = {
+            mode: options.mode || 'default',
+            deployment: options.deployment || '',
+            ...options
+        };
+
+        this.panZoomInstance = null;
+        this.init();
+    }
+
+    async init() {
+        // Load required libraries if not already loaded
+        if (typeof mermaid === 'undefined') {
+            await this.loadScript('https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js');
+        }
+        if (typeof svgPanZoom === 'undefined') {
+            await this.loadScript('https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js');
+        }
+
+        // Add interaction styles early
+        this.addInteractionStyles();
+
+        // Initialize Mermaid
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'default',
+            securityLevel: 'loose',
+            sequence: {
+                showSequenceNumbers: false,
+                useMaxWidth: false,
+                mirrorActors: true,
+                bottomMarginAdj: 10,
+                messageAlign: 'center'
+            }
+        });
+
+        // Load and render the diagram
+        await this.loadAndRender();
+    }
+
+    addInteractionStyles() {
+        // Add CSS for interactions
+        const styleId = 'sequence-diagram-interaction-styles';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+                .mermaid g [class^="messageLine"],
+                .mermaid g [class^="messageText"] {
+                    cursor: pointer !important;
+                    pointer-events: all;
+                }
+                .mermaid g [class^="messageLine"] {
+                    stroke: #888888;
+                    stroke-width: 7px !important;
+                }
+                .mermaid .line-hover {
+                    stroke: #555555;
+                    stroke-width: 8px !important;
+                }
+                .mermaid .line-highlight {
+                    stroke: #dc3545 !important;
+                    stroke-width: 8px !important;
+                    filter: drop-shadow(0 0 2px rgba(0,0,0,0.3)) !important;
+                    stroke-dasharray: none !important;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+
+    async loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = () => resolve();
+            script.onerror = (error) => reject(error);
+            document.head.appendChild(script);
+        });
+    }
+
+    async loadDataScript(mode) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = `data/${mode}_sequence_diagram.js`;
+            script.onload = () => resolve();
+            script.onerror = (error) => reject(error);
+            document.head.appendChild(script);
+        });
+    }
+
+        async loadAndRender() {
+            try {
+                // Load data if not already loaded
+                if (!window.sequenceDiagramData || !window.sequenceDiagramData[this.options.mode]) {
+                    await this.loadDataScript(this.options.mode);
+                }
+
+                if (window.sequenceDiagramData && window.sequenceDiagramData[this.options.mode]) {
+                    // Render sequence diagram
+                    await this.renderSequenceDiagram(window.sequenceDiagramData[this.options.mode]);
+                } else {
+                    this.showError(`Failed to load data for mode: ${this.options.mode}`);
+                }
+
+            } catch (error) {
+                console.error('Error loading sequence diagram:', error);
+                this.showError(`Error loading sequence diagram: ${error.message}`);
+            }
+        }
+
+    async renderSequenceDiagram(mermaidSyntax) {
+        // Clear container
+        this.container.innerHTML = '';
+
+        // Create mermaid container that takes full height
+        const mermaidContainer = document.createElement('div');
+        mermaidContainer.className = 'mermaid';
+        mermaidContainer.style.width = '1200px'; // Set explicit width for Mermaid to generate larger SVG
+        mermaidContainer.style.height = '100%'; // Take full height of parent
+        mermaidContainer.style.minHeight = '800px'; // Minimum height fallback
+        mermaidContainer.style.overflow = 'visible';
+        mermaidContainer.style.display = 'flex';
+        mermaidContainer.style.alignItems = 'stretch';
+        this.container.appendChild(mermaidContainer);
+
+        try {
+            // Render with Mermaid
+            const { svg } = await mermaid.render('sequence-diagram-svg-' + Date.now(), mermaidSyntax);
+            mermaidContainer.innerHTML = svg;
+
+            const svgElement = mermaidContainer.querySelector('svg');
+            if (svgElement) {
+                // Configure SVG to take full height of container
+                svgElement.style.maxWidth = '100%';
+                svgElement.style.width = '100%';
+                svgElement.style.height = '100%'; // Take full height
+                svgElement.style.minHeight = '800px'; // Minimum height fallback
+
+                // Keep the original dimensions for proper aspect ratio
+                // but allow it to scale down if needed
+                if (!svgElement.getAttribute('viewBox') && svgElement.getAttribute('width') && svgElement.getAttribute('height')) {
+                    const width = parseFloat(svgElement.getAttribute('width'));
+                    const height = parseFloat(svgElement.getAttribute('height'));
+                    if (width > 0 && height > 0) {
+                        svgElement.setAttribute('viewBox', `0 0 ${width} ${height}`);
+                    }
+                }
+
+                // Remove fixed dimensions to allow CSS control
+                svgElement.removeAttribute('width');
+                svgElement.removeAttribute('height');
+
+                // Keep container at full height
+                mermaidContainer.style.width = '100%';
+                mermaidContainer.style.height = '100%';
+
+                // Add interaction listeners
+                this.addInteractionListeners(svgElement);
+
+                // Initialize pan-zoom
+                this.panZoomInstance = svgPanZoom(svgElement, {
+                    zoomEnabled: true,
+                    controlIconsEnabled: false,
+                    fit: true,
+                    center: true,
+                    minZoom: 0.5,
+                    maxZoom: 50,
+                    zoomScaleSensitivity: 0.4,
+                    dblClickZoomEnabled: false
+                });
+
+                // Initial fit
+                setTimeout(() => {
+                    if (this.panZoomInstance) {
+                        this.panZoomInstance.resize();
+                        this.panZoomInstance.fit();
+                        this.panZoomInstance.center();
+                    }
+                }, 200);
+            }
+        } catch (e) {
+            console.error("Mermaid rendering failed:", e);
+            throw new Error("Error rendering sequence diagram: " + e.message);
+        }
+    }
+
+    addInteractionListeners(svgElement) {
+        let selectedLine = null; // Track currently selected line
+
+        // Helper to check if element is a visible message line
+        const isLine = (el) => {
+            if (!el || !el.getAttribute) return false;
+            const cls = el.getAttribute('class') || '';
+            return cls && cls.split(' ').some(c => c.startsWith('messageLine'));
+        };
+
+        // Helper to check if element is message text
+        const isText = (el) => {
+            if (!el || !el.getAttribute) return false;
+            const cls = el.getAttribute('class') || '';
+            return cls && cls.split(' ').some(c => c.startsWith('messageText'));
+        };
+
+        // Apply highlight styles to a line
+        const applyHighlight = (lineElement) => {
+            lineElement.classList.remove('line-hover'); // Remove hover effect first
+            lineElement.classList.add('line-highlight');
+        };
+
+        // Remove highlight styles from a line
+        const removeHighlight = (lineElement) => {
+            lineElement.classList.remove('line-highlight');
+        };
+
+        // Clear all highlights
+        const clearAllHighlights = () => {
+            svgElement.querySelectorAll('[class*="messageLine"]').forEach(line => {
+                removeHighlight(line);
+                line.classList.remove('line-hover'); // Also remove any hover effects
+            });
+            selectedLine = null;
+        };
+
+        // Add hover effects
+        svgElement.addEventListener('mouseover', (e) => {
+            const target = e.target;
+            if ((target.tagName === 'path' || target.tagName === 'line') && isLine(target)) {
+                if (target !== selectedLine) {
+                    target.classList.add('line-hover');
+                }
+            }
+        });
+
+        svgElement.addEventListener('mouseout', (e) => {
+            const target = e.target;
+            if ((target.tagName === 'path' || target.tagName === 'line') && isLine(target)) {
+                // If this line is not selected, remove hover highlight
+                if (target !== selectedLine) {
+                    target.classList.remove('line-hover');
+                }
+            }
+        });
+
+        // Add click interactions
+        svgElement.addEventListener('click', (e) => {
+            let target = e.target;
+            let lineElement = null;
+
+            // 1. Check if clicked element is the line itself
+            if (target.tagName === 'path' || target.tagName === 'line') {
+                if (isLine(target)) {
+                    lineElement = target;
+                }
+            }
+            // 2. Check if clicked element is text
+            else if (target.tagName === 'text' || target.tagName === 'tspan') {
+                // If text is clicked, find the associated message line.
+                const textEl = target.closest('text');
+                if (textEl && isText(textEl)) {
+                    let next = textEl.nextElementSibling;
+                    while (next) {
+                        // If we find a line, that's our target
+                        if (isLine(next)) {
+                            lineElement = next;
+                            break;
+                        }
+                        // If we hit another text, we've likely gone too far
+                        if (next.tagName === 'text' && isText(next)) {
+                            break;
+                        }
+                        next = nextElementSibling;
+                    }
+                }
+            }
+
+            if (lineElement) {
+                // If clicking the same line that's already selected, deselect it
+                if (selectedLine === lineElement) {
+                    clearAllHighlights();
+                } else {
+                    // Clear previous selection and select new line
+                    clearAllHighlights();
+                    selectedLine = lineElement;
+                    applyHighlight(selectedLine);
+                }
+                e.stopPropagation(); // Prevent other handlers
+            } else {
+                // Clicked background, clear all highlights
+                clearAllHighlights();
+            }
+        });
+    }
+
+    resetZoom() {
+        if (this.panZoomInstance) {
+            this.panZoomInstance.reset();
+            this.panZoomInstance.center();
+        }
+    }
+
+    showError(message) {
+        this.container.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: #dc3545;">${message}</div>`;
+    }
+
+    destroy() {
+        if (this.panZoomInstance) {
+            this.panZoomInstance.destroy();
+            this.panZoomInstance = null;
+        }
+        this.container.innerHTML = '';
+    }
+}
+
+// Export for use in the overview page
+window.SequenceDiagramModule = SequenceDiagramModule;

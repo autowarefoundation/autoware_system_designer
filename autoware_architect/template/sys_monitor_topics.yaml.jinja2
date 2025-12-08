@@ -1,0 +1,33 @@
+{% macro list_output_topics(instance) -%}
+{# Print template per topic -#}
+{% if instance.entity_type == "node" -%}
+{% for out_port in instance.out_ports -%}
+{# check if out_port.topic strings array is empty -#}
+{% if out_port.topic -%}
+- node: {{ instance.namespace[0]}}
+  mode: [online, logging_simulation, planning_simulation]
+  type: launch
+  args:
+    node_name_suffix: {{ instance.name }}
+    topic: {{ "/" + "/".join(out_port.topic) }}
+    topic_type: {{ out_port.msg_type }}
+    best_effort: false
+    transient_local: true
+    warn_rate: {{ out_port.event.warn_rate }}
+    error_rate: {{ out_port.event.error_rate }}
+    timeout: {{ out_port.event.timeout }}
+
+{% endif -%}
+{% endfor -%}
+{# Recursive call of the macro -#}
+{% elif instance.entity_type == "module" -%}
+{% for child in instance.children -%}
+{{ list_output_topics(child) -}}
+{% endfor -%}
+{% endif -%}
+{% endmacro -%}
+
+{# instances -#}
+{% for child in children -%}
+{{ list_output_topics(child, ) -}}
+{% endfor -%}

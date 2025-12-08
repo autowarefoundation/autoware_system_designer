@@ -1,0 +1,8 @@
+(function() {
+  // Initialize sequence diagram data namespace
+  if (!window.sequenceDiagramData) window.sequenceDiagramData = {};
+  
+  // Store sequence diagram Mermaid syntax for the specific mode
+  window.sequenceDiagramData["{{ mode if mode else 'default' }}"] = {{ mermaid_syntax | tojson }};
+})();
+

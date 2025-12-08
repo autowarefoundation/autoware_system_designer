@@ -1,0 +1,49 @@
+# node information
+name: LocalizationDummy.node
+
+launch:
+  package: autoware_perception_dummy_nodes
+  plugin: autoware::perception_dummy_nodes::Localization
+
+# interfaces
+inputs:
+  - name: lanelet_map
+    message_type: autoware_map_msgs/msg/LaneletMapBin
+  - name: pointcloud
+    message_type: sensor_msgs/msg/PointCloud2
+
+outputs:
+  - name: ros_transform
+    message_type: tf2_msgs/msg/TFMessage
+    global: /tf
+  - name: pose_with_covariance
+    message_type: geometry_msgs/msg/PoseWithCovarianceStamped
+    qos:
+      reliability: reliable
+      durability: transient_local
+  - name: kinematic_state
+    message_type: nav_msgs/msg/Odometry
+    qos:
+      reliability: reliable
+      durability: transient_local
+
+# parameters
+parameter_files: []
+
+parameters: []
+
+# processes
+processes:
+  - name: update
+    trigger_conditions:
+      - or:
+          - once: lanelet_map
+          - on_input: pointcloud
+    outcomes:
+      - to_trigger: slam
+  - name: slam
+    trigger_conditions:
+      - periodic: 100 # Hz
+    outcomes:
+      - to_output: ros_transform
+      - to_output: pose_with_covariance

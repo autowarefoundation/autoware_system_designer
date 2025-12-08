@@ -1,0 +1,56 @@
+name: TypeAlpha.system
+
+modes:
+  - name: default
+    description: Default mode
+  - name: simulation
+    description: Simulation mode
+
+components:
+  - component: sensor_module_a
+    entity: LidarDummy.module
+    namespace: sensing
+    compute_unit: perception_ecu_1
+  - component: map_loader
+    entity: MapDummy.node
+    namespace: map
+    compute_unit: dummy_ecu_1
+  - component: localizer
+    entity: LocalizationDummy.node
+    namespace: localization
+    compute_unit: dummy_ecu_1
+  - component: object_recognition
+    entity: PerceptionA.module
+    namespace: perception
+    compute_unit: main_ecu
+    parameter_set: [
+      PerceptionModuleA.parameter_set
+    ]
+    mode: [default]
+  - component: object_recognition
+    entity: PerceptionB.module
+    namespace: perception
+    compute_unit: main_ecu
+    parameter_set: [
+      PerceptionModuleA.parameter_set,  
+      PerceptionModuleABuild.parameter_set,
+    ]
+    mode: simulation
+  - component: planner
+    entity: PlanningDummy.node
+    namespace: planning
+    compute_unit: dummy_ecu_2
+
+connections:
+  - from: sensor_module_a.output.concatenated/pointcloud
+    to: object_recognition.input.pointcloud
+  - from: sensor_module_a.output.concatenated/pointcloud
+    to: localizer.input.pointcloud
+  - from: map_loader.output.vector_map
+    to: localizer.input.lanelet_map
+  - from: map_loader.output.vector_map
+    to: object_recognition.input.vector_map
+  - from: map_loader.output.vector_map
+    to: planner.input.lanelet_map
+  - from: object_recognition.output.objects
+    to: planner.input.predicted_objects

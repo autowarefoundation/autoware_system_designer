@@ -1,0 +1,61 @@
+sequenceDiagram
+
+%% Macros adapted from Jinja2 to Mermaid syntax
+
+{% macro build_logic_graph(instance) -%}
+    {% if instance.entity_type == "node" -%}
+        {# EVENTS -#}
+        {% for event in instance.events -%}
+            {% set ns_label = instance.namespace | join('<br/>') %}
+            {% set full_label = ns_label + '<br/><br/>' + '[' + event.name + ']' %}
+            
+            {% if event.type == "periodic" -%}
+                participant {{ event.unique_id }} as {{ full_label }}
+            {% else -%}
+                participant {{ event.unique_id }} as {{ full_label }}
+            {% endif -%}
+        {% endfor -%}
+    {% elif instance.entity_type == "module" -%}
+        {% for child in instance.children -%}
+            {{ build_logic_graph(child) -}}
+        {% endfor -%}
+    {% endif -%}
+{% endmacro -%}
+
+{% macro event_connection(root_name, event_origin, connection_name, event_target) -%}
+    {% if (event_target.type == "on_input" or event_target.type == "to_output") and event_target.process_event == False -%}
+        {% set connection_name = event_target.name -%}
+        {% for trigger in event_target.triggers -%}
+            {{ event_connection(root_name, event_origin, connection_name, trigger) -}}
+        {% endfor -%}
+    {% else -%}
+        {{ event_target.unique_id }}->>{{ event_origin.unique_id }}: {{event_target.namespace[-1]}} to {{root_name}}_{{connection_name}}
+    {% endif -%}
+{% endmacro -%}
+
+{% macro build_connection_graph(instance) -%}
+    {% if instance.entity_type == "node" -%}
+        {% for event in instance.events -%}
+            {% if event.process_event == True -%}
+                {% for event_trigger in event.triggers -%}
+                    {{ event_connection(instance.name, event, event_trigger.name, event_trigger) -}}
+                {% endfor -%}
+            {% endif -%}
+        {% endfor -%}
+    {% elif instance.entity_type == "module" -%}
+        {% for child in instance.children -%}
+            {{ build_connection_graph(child) -}}
+        {% endfor -%}
+    {% endif -%}
+{% endmacro -%}
+
+%% Definitions
+{% for child in children -%}
+{{ build_logic_graph(child) }}
+{% endfor -%}
+
+%% Connections
+{% for child in children -%}
+{{ build_connection_graph(child) }}
+{% endfor -%}
+

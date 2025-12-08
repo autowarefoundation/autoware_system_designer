@@ -1,0 +1,34 @@
+name: PerceptionModuleA.parameter_set
+parameters:
+  - node: /perception/object_recognition/detector_a1/node_detector
+    parameter_files:
+      - model_param_path: perception/object_recognition/detector_a1/node_detector/model_param_path.param.yaml
+      - ml_package_param_path: perception/object_recognition/detector_a1/node_detector/ml_package_param_path.param.yaml
+      - class_remapper_param_path: perception/object_recognition/detector_a1/node_detector/class_remapper_param_path.param.yaml
+    parameters:
+      - name: build_only
+        type: bool
+        value: false
+  - node: /perception/object_recognition/detector_a1/node_filter
+    parameter_files:
+      - filtering_range_param: perception/object_recognition/detector_a1/node_filter/filtering_range_param.param.yaml
+    parameters: []
+  - node: /perception/object_recognition/detector_a2/node_detector
+    parameter_files:
+      - model_param_path: perception/object_recognition/detector_a2/node_detector/model_param_path.param.yaml
+      - ml_package_param_path: perception/object_recognition/detector_a2/node_detector/ml_package_param_path.param.yaml
+      - class_remapper_param_path: perception/object_recognition/detector_a2/node_detector/class_remapper_param_path.param.yaml
+    parameters:
+      - name: build_only
+        type: bool
+        value: false
+  - node: /perception/object_recognition/detector_a2/node_filter
+    parameter_files:
+      - filtering_range_param: perception/object_recognition/detector_a2/node_filter/filtering_range_param.param.yaml
+    parameters: []
+  - node: /perception/object_recognition/node_tracker
+    parameter_files:
+      - tracker_setting_path: perception/object_recognition/node_tracker/tracker_setting_path.param.yaml
+      - data_association_matrix_path: perception/object_recognition/node_tracker/data_association_matrix_path.param.yaml
+      - input_channels_path: perception/object_recognition/node_tracker/input_channels_path.param.yaml
+    parameters: []

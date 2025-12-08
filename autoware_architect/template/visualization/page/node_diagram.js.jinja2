@@ -1,0 +1,485 @@
+// Node Diagram Module
+// This module provides functionality to render node diagrams in a given container
+
+class NodeDiagramModule {
+    constructor(container, options = {}) {
+        this.container = container;
+        this.options = {
+            mode: options.mode || 'default',
+            deployment: options.deployment || '',
+            ...options
+        };
+
+        this.currentGraph = null;
+        this.transform = { x: 0, y: 0, k: 1 };
+        this.isDragging = false;
+        this.startPoint = { x: 0, y: 0 };
+        this.elementData = new Map();
+
+        this.init();
+    }
+
+    async init() {
+        // Load required libraries if not already loaded
+        if (typeof ELK === 'undefined') {
+            console.log('Loading ELK.js library...');
+            await this.loadScript('https://unpkg.com/elkjs@0.8.2/lib/elk.bundled.js');
+
+            // Wait a bit for the script to be fully parsed
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Verify ELK is now available
+            if (typeof ELK === 'undefined') {
+                throw new Error('ELK library failed to load - ELK is still undefined after script load');
+            }
+        }
+
+        // Initialize ELK - handle different export patterns
+        let elkConstructor = null;
+        if (typeof ELK === 'function') {
+            elkConstructor = ELK;
+        } else if (typeof ELK !== 'undefined' && ELK.default) {
+            elkConstructor = ELK.default;
+        } else if (typeof ELK !== 'undefined') {
+            // Try to find constructor in ELK object
+            elkConstructor = ELK.ELK || ELK.Elk || ELK;
+        }
+
+        if (!elkConstructor) {
+            console.error('ELK object:', ELK);
+            console.error('typeof ELK:', typeof ELK);
+            throw new Error('ELK library loaded but constructor not found');
+        }
+
+        try {
+            this.elk = new elkConstructor();
+            console.log('ELK initialized successfully');
+        } catch (e) {
+            console.error('Failed to create ELK instance:', e);
+            throw new Error('Failed to create ELK instance: ' + e.message);
+        }
+
+        // Load and render the diagram
+        await this.loadAndRender();
+    }
+
+    async loadScript(src) {
+        return new Promise((resolve, reject) => {
+            // Check if script is already loaded
+            const existingScript = document.querySelector(`script[src="${src}"]`);
+            if (existingScript) {
+                console.log('ELK script already loaded');
+                resolve();
+                return;
+            }
+
+            console.log('Loading script:', src);
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = () => {
+                console.log('Script loaded successfully:', src);
+                resolve();
+            };
+            script.onerror = (error) => {
+                console.error('Failed to load script:', src, error);
+                reject(error);
+            };
+            document.head.appendChild(script);
+        });
+    }
+
+    async loadDataScript(mode) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = `data/${mode}_node_diagram.js`;
+            script.onload = () => resolve();
+            script.onerror = (error) => reject(error);
+            document.head.appendChild(script);
+        });
+    }
+
+    async loadAndRender() {
+        try {
+            // Load data if not already loaded
+            if (!window.architectureData || !window.architectureData[this.options.mode]) {
+                await this.loadDataScript(this.options.mode);
+            }
+
+            if (!window.architectureData || !window.architectureData[this.options.mode]) {
+                throw new Error(`No data available for mode: ${this.options.mode}`);
+            }
+
+            // Transform and render
+            const elkGraph = this.transformDataToElk(window.architectureData[this.options.mode]);
+            await this.layoutAndRenderNodeDiagram(elkGraph);
+
+        } catch (error) {
+            console.error('Error loading node diagram:', error);
+            this.showError(`Error loading node diagram: ${error.message}`);
+        }
+    }
+
+    transformDataToElk(root) {
+        this.elementData.clear();
+
+        function convertNode(instance) {
+            if (!instance || !instance.unique_id) return null;
+
+            const nodeId = String(instance.unique_id);
+            this.elementData.set(nodeId, instance);
+
+            const inPortsCount = (instance.in_ports || []).length;
+            const outPortsCount = (instance.out_ports || []).length;
+            const maxPorts = Math.max(inPortsCount, outPortsCount);
+            const nodeHeight = Math.max(100, 80 + maxPorts * 25);
+
+            const node = {
+                id: nodeId,
+                labels: [
+                    { text: (instance.namespace && instance.namespace.join('/')) || "" },
+                    { text: instance.name || nodeId || "Unnamed" }
+                ],
+                width: 300,
+                height: nodeHeight,
+                children: [],
+                ports: [],
+                properties: {
+                    'org.eclipse.elk.portConstraints': 'FIXED_SIDE',
+                    'org.eclipse.elk.nodeLabels.placement': 'H_CENTER V_TOP',
+                    'org.eclipse.elk.portLabels.placement': 'INSIDE',
+                    'org.eclipse.elk.portAlignment.default': 'CENTER',
+                    'org.eclipse.elk.spacing.portPort': '15'
+                }
+            };
+
+            // Add ports
+            (instance.in_ports || []).forEach(port => {
+                if (!port.unique_id) return;
+                const portId = String(port.unique_id);
+                this.elementData.set(portId, port);
+                node.ports.push({
+                    id: portId,
+                    width: 10,
+                    height: 10,
+                    properties: { 'org.eclipse.elk.port.side': 'WEST' },
+                    labels: [{ text: port.name || "Port", width: ((port.name && port.name.length) || 4) * 6, height: 10 }]
+                });
+            });
+
+            (instance.out_ports || []).forEach(port => {
+                if (!port.unique_id) return;
+                const portId = String(port.unique_id);
+                this.elementData.set(portId, port);
+                node.ports.push({
+                    id: portId,
+                    width: 10,
+                    height: 10,
+                    properties: { 'org.eclipse.elk.port.side': 'EAST' },
+                    labels: [{ text: port.name || "Port", width: ((port.name && port.name.length) || 4) * 6, height: 10 }]
+                });
+            });
+
+            // Add children
+            if (instance.children && instance.children.length > 0) {
+                node.children = instance.children.map(convertNode.bind(this)).filter(n => n);
+                if (node.children.length > 0) {
+                    delete node.width;
+                    delete node.height;
+                }
+            }
+
+            // Add links
+            if (instance.links) {
+                node.edges = instance.links.map((link, index) => {
+                    if (!link.from_port || !link.to_port) return null;
+                    const edgeId = `edge_${link.from_port.unique_id}_${link.to_port.unique_id}_${index}`;
+                    this.elementData.set(edgeId, link);
+                    return {
+                        id: edgeId,
+                        sources: [String(link.from_port.unique_id)],
+                        targets: [String(link.to_port.unique_id)],
+                        properties: {}
+                    };
+                }).filter(e => e);
+            }
+
+            return node;
+        }
+
+        const rootNode = convertNode.call(this, root);
+        if (rootNode) {
+            delete rootNode.width;
+            delete rootNode.height;
+            if (!rootNode.id) rootNode.id = 'root';
+        }
+
+        return rootNode;
+    }
+
+    async layoutAndRenderNodeDiagram(graphData) {
+        if (!this.elk) {
+            throw new Error('ELK instance not initialized');
+        }
+
+        const graph = await this.elk.layout(graphData, {
+            layoutOptions: {
+                'algorithm': 'layered',
+                'org.eclipse.elk.direction': 'RIGHT',
+                'org.eclipse.elk.spacing.nodeNode': '60',
+                'org.eclipse.elk.spacing.edgeNode': '30',
+                'org.eclipse.elk.edgeRouting': 'ORTHOGONAL',
+                'org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers': '30',
+                'org.eclipse.elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+                'org.eclipse.elk.layered.layering.strategy': 'INTERACTIVE',
+                'org.eclipse.elk.padding': '[top=50,left=50,bottom=50,right=50]'
+            }
+        });
+
+        this.renderNodeDiagram(graph);
+        this.fitToScreen();
+    }
+
+    renderNodeDiagram(graph) {
+        this.container.innerHTML = '';
+
+        // Create SVG root
+        const svgRoot = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svgRoot.setAttribute("width", "100%");
+        svgRoot.setAttribute("height", "100%");
+        svgRoot.style.width = "100%";
+        svgRoot.style.height = "100%";
+        svgRoot.style.cursor = "grab";
+
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        svg.id = 'zoom-layer';
+        svgRoot.appendChild(svg);
+        this.container.appendChild(svgRoot);
+
+        // Add zoom/pan functionality
+        this.setupZoomPan(svgRoot, svg);
+
+        // Add arrow marker
+        const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+        defs.innerHTML = `
+            <marker id="arrowhead" markerWidth="10" markerHeight="7"
+            refX="10" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#adb5bd" />
+            </marker>
+        `;
+        svgRoot.insertBefore(defs, svg);
+
+        this.renderNode(graph, svg);
+        this.currentGraph = graph;
+    }
+
+    setupZoomPan(svgRoot, svg) {
+        svgRoot.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomIntensity = 0.1;
+            const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
+            const newScale = this.transform.k * (1 + delta);
+            const rect = svgRoot.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            this.transform.x -= (mouseX - this.transform.x) * delta;
+            this.transform.y -= (mouseY - this.transform.y) * delta;
+            this.transform.k = Math.min(Math.max(newScale, 0.1), 5);
+            this.updateTransform(svg);
+        });
+
+        svgRoot.addEventListener('mousedown', (e) => {
+            this.isDragging = true;
+            svgRoot.style.cursor = "grabbing";
+            this.startPoint = { x: e.clientX - this.transform.x, y: e.clientY - this.transform.y };
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!this.isDragging) return;
+            e.preventDefault();
+            this.transform.x = e.clientX - this.startPoint.x;
+            this.transform.y = e.clientY - this.startPoint.y;
+            this.updateTransform(svg);
+        });
+
+        window.addEventListener('mouseup', () => {
+            this.isDragging = false;
+            svgRoot.style.cursor = "grab";
+        });
+    }
+
+    updateTransform(svg) {
+        svg.setAttribute("transform", `translate(${this.transform.x},${this.transform.y}) scale(${this.transform.k})`);
+    }
+
+    renderNode(node, parentGroup, depth = 0) {
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.setAttribute("transform", `translate(${node.x},${node.y})`);
+        g.classList.add("node-group");
+
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("width", node.width);
+        rect.setAttribute("height", node.height);
+        rect.setAttribute("rx", 4);
+        rect.classList.add("node-rect");
+
+        const userData = this.elementData.get(node.id) || {};
+        const visGuide = userData.vis_guide || {};
+        let fillColor = visGuide.background_color || "#ffffff";
+        if (userData.entity_type === "node") {
+            fillColor = visGuide.medium_color || fillColor;
+        }
+        rect.setAttribute("fill", fillColor);
+        rect.setAttribute("stroke", visGuide.color || "#333");
+
+        rect.onclick = (e) => {
+            e.stopPropagation();
+            this.updateInfoPanel(userData, 'Node');
+            document.querySelectorAll('.highlighted').forEach(el => el.classList.remove('highlighted'));
+            g.classList.add('highlighted');
+        };
+
+        g.appendChild(rect);
+
+        if (node.labels && node.labels.length > 0) {
+            const fontSize = Math.max(12, 36 - (depth * 5));
+            let yOffset = 10;
+
+            if (node.labels.length > 1 && node.labels[0].text) {
+                const nsText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                nsText.setAttribute("x", node.width / 2);
+                nsText.setAttribute("y", yOffset);
+                nsText.textContent = "/" + node.labels[0].text + "/";
+                nsText.classList.add("node-label");
+                nsText.style.fontSize = "5px";
+                nsText.style.fill = "#6c757d";
+                g.appendChild(nsText);
+                yOffset += 8;
+            }
+
+            const nameText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            nameText.setAttribute("x", node.width / 2);
+            nameText.setAttribute("y", yOffset + fontSize / 2);
+            nameText.textContent = node.labels[node.labels.length - 1].text;
+            nameText.classList.add("node-label");
+            nameText.style.fontSize = `${fontSize}px`;
+            if (depth <= 1) nameText.style.fontWeight = "bold";
+            g.appendChild(nameText);
+        }
+
+        if (node.ports) {
+            node.ports.forEach(port => {
+                const pg = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                pg.setAttribute("transform", `translate(${port.x},${port.y})`);
+
+                const prect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                prect.setAttribute("width", port.width);
+                prect.setAttribute("height", port.height);
+                prect.classList.add("port-rect");
+
+                const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+                const portData = this.elementData.get(port.id) || {};
+                title.textContent = portData.name || "Port";
+                prect.appendChild(title);
+
+                pg.onclick = (e) => {
+                    e.stopPropagation();
+                    this.updateInfoPanel(portData, 'Port');
+                    prect.classList.add('port-highlighted');
+                };
+                pg.style.cursor = 'pointer';
+
+                pg.appendChild(prect);
+
+                if (port.labels) {
+                    port.labels.forEach(label => {
+                        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                        text.setAttribute("x", (label.x || 0) + (label.width || 0) / 2);
+                        text.setAttribute("y", (label.y || 0) + (label.height || 0) / 2);
+                        text.textContent = label.text;
+                        text.classList.add("port-label");
+                        pg.appendChild(text);
+                    });
+                }
+
+                g.appendChild(pg);
+            });
+        }
+
+        if (node.children) {
+            node.children.forEach(child => this.renderNode(child, g, depth + 1));
+        }
+
+        if (node.edges) {
+            node.edges.forEach(edge => {
+                if (!edge.sections) return;
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                let d = "";
+                edge.sections.forEach(section => {
+                    d += `M ${section.startPoint.x} ${section.startPoint.y} `;
+                    if (section.bendPoints) {
+                        section.bendPoints.forEach(bp => d += `L ${bp.x} ${bp.y} `);
+                    }
+                    d += `L ${section.endPoint.x} ${section.endPoint.y} `;
+                });
+                path.setAttribute("d", d);
+                path.classList.add("edge-path");
+                path.setAttribute("marker-end", "url(#arrowhead)");
+
+                const userData = this.elementData.get(edge.id) || {};
+                path.onclick = (e) => {
+                    e.stopPropagation();
+                    document.querySelectorAll('.highlighted').forEach(el => el.classList.remove('highlighted'));
+                    document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
+                    path.classList.add('highlighted');
+                    path.setAttribute("marker-end", "url(#arrowhead)");
+                    this.updateInfoPanel(userData, 'Link');
+                };
+
+                g.appendChild(path);
+            });
+        }
+
+        parentGroup.appendChild(g);
+    }
+
+    fitToScreen() {
+        const svg = this.container.querySelector('#zoom-layer');
+        if (!svg) return;
+
+        const bbox = svg.getBBox();
+
+        if (bbox.width === 0 || bbox.height === 0) return;
+
+        const containerRect = this.container.getBoundingClientRect();
+
+        const scale = Math.min(
+            (containerRect.width - 40) / bbox.width,
+            (containerRect.height - 40) / bbox.height
+        );
+
+        this.transform.k = Math.min(scale, 1);
+        this.transform.x = (containerRect.width - bbox.width * this.transform.k) / 2 - bbox.x * this.transform.k;
+        this.transform.y = (containerRect.height - bbox.height * this.transform.k) / 2 - bbox.y * this.transform.k;
+
+        this.updateTransform(svg);
+    }
+
+    updateInfoPanel(data, type) {
+        // This will be handled by the parent overview page
+        if (this.options.onInfoUpdate) {
+            this.options.onInfoUpdate(data, type);
+        }
+    }
+
+    showError(message) {
+        this.container.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: #dc3545;">${message}</div>`;
+    }
+
+    destroy() {
+        // Clean up event listeners and resources
+        this.container.innerHTML = '';
+    }
+}
+
+// Export for use in the overview page
+window.NodeDiagramModule = NodeDiagramModule;

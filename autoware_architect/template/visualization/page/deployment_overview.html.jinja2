@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Autoware Architecture - {{ deployment_name }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #f8f9fa;
+            display: flex;
+        }
+
+        /* Sidebar */
+        #sidebar {
+            width: 250px;
+            background: #ffffff;
+            border-right: 1px solid #e9ecef;
+            display: flex;
+            flex-direction: column;
+            z-index: 2;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+        }
+
+        #sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid #e9ecef;
+            background: #f8f9fa;
+        }
+
+        #sidebar-header h1 {
+            margin: 0 0 10px 0;
+            font-size: 18px;
+            color: #212529;
+        }
+
+        #sidebar-header .package-info {
+            font-size: 14px;
+            color: #6c757d;
+        }
+
+        #diagram-list {
+            padding: 15px 20px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        #diagram-list .section-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #495057;
+            font-size: 14px;
+        }
+
+        .diagram-type-item {
+            display: block;
+            padding: 8px 12px;
+            margin-bottom: 4px;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #495057;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .diagram-type-item:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+        }
+
+        .diagram-type-item.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+
+
+        .diagram-item {
+            margin-bottom: 8px;
+        }
+
+        .diagram-link {
+            display: block;
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #495057;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .diagram-link:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+        }
+
+        .diagram-link.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+
+        /* Canvas container */
+        #canvas-container {
+            flex-grow: 1;
+            background: #ffffff;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #diagram-display {
+            flex-grow: 1;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        #mode-selector-section {
+            padding: 15px 20px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        #mode-selector-section label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #495057;
+        }
+
+        #mode-selector {
+            padding: 6px 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 13px;
+            min-width: 120px;
+        }
+
+        /* Node diagram styles */
+        .node-diagram-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            cursor: grab;
+        }
+
+        .node-diagram-container:active {
+            cursor: grabbing;
+        }
+
+        .node-diagram-container svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .node-rect {
+            stroke-width: 1.5px;
+            transition: all 0.2s;
+        }
+
+        .node-label {
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 12px;
+            pointer-events: none;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+
+        .port-rect {
+            stroke: #6c757d;
+            stroke-width: 1px;
+            fill: #e9ecef;
+            transition: all 0.1s;
+        }
+
+        .port-label {
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 9px;
+            pointer-events: none;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+
+        .edge-path {
+            fill: none;
+            stroke: #adb5bd;
+            stroke-width: 1.5px;
+            transition: all 0.2s;
+        }
+
+        .edge-arrow {
+            fill: #adb5bd;
+        }
+
+        .highlighted .node-rect {
+            stroke: #0d6efd !important;
+            stroke-width: 2.5px;
+        }
+
+        .highlighted .edge-path {
+            stroke: #0d6efd !important;
+            stroke-width: 2.5px;
+        }
+
+        .highlighted .edge-arrow {
+            fill: #0d6efd !important;
+            stroke-width: 2.5px;
+        }
+
+        .port-highlighted {
+            stroke: #0d6efd !important;
+            stroke-width: 2px;
+            fill: #cfe2ff;
+        }
+
+
+        /* Loading overlay */
+        #loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            font-size: 18px;
+            color: #495057;
+            z-index: 100;
+            display: none;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #0d6efd;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Info panel in sidebar */
+        #info-panel {
+            padding: 15px 20px;
+            border-bottom: 1px solid #e9ecef;
+            flex-grow: 1;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .info-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+            margin-bottom: 10px;
+        }
+
+        .info-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #212529;
+            border-bottom: 2px solid #dee2e6;
+            padding-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .info-row {
+            margin-bottom: 4px;
+            font-size: 13px;
+            display: flex;
+        }
+
+        .info-label {
+            color: #6c757d;
+            font-weight: 500;
+            width: 80px;
+            flex-shrink: 0;
+        }
+
+        .info-value {
+            color: #212529;
+            font-family: 'Consolas', monospace;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <div id="loading-text">Loading...</div>
+    </div>
+
+    <!-- Sidebar -->
+    <div id="sidebar">
+        <div id="sidebar-header">
+            <h1>{{ deployment_name }}</h1>
+            <div class="package-info">Package: {{ package_name }}</div>
+        </div>
+
+        <div id="mode-selector-section">
+            <label for="mode-selector">View Mode:</label>
+            <select id="mode-selector">
+                {% for mode in available_modes %}
+                <option value="{{ mode }}" {% if mode == default_mode %}selected{% endif %}>{{ mode }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div id="diagram-list">
+            <div class="section-title">Diagram Types</div>
+            {% for diagram_type in available_diagram_types %}
+            <a class="diagram-type-item {% if diagram_type == default_diagram_type %}active{% endif %}" href="#" data-type="{{ diagram_type }}">
+                {{ diagram_type.replace('_', ' ').title() }}
+            </a>
+            {% endfor %}
+        </div>
+
+        <div id="info-panel">
+            <!-- Node details will be populated here -->
+        </div>
+    </div>
+
+    <!-- Canvas Container -->
+    <div id="canvas-container">
+        <div id="diagram-container" style="width: 100%; height: 100%; position: relative;"></div>
+    </div>
+
+    <script>
+        // Configuration
+        const deploymentName = "{{ deployment_name }}";
+        const availableDiagramTypes = {{ available_diagram_types | tojson }};
+        const availableModes = {{ available_modes | tojson }};
+        const defaultDiagramType = "{{ default_diagram_type }}";
+        const defaultMode = "{{ default_mode }}";
+
+        // Parse URL parameters
+        function getUrlParameter(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+
+        // State
+        let currentDiagramType = getUrlParameter('diagram') || defaultDiagramType;
+        let currentMode = defaultMode;
+        let currentDiagramData = null;
+        let nodeDiagramInstance = null;
+        let sequenceDiagramInstance = null;
+
+        // Data store for interactions (decoupled from ELK graph)
+        let elementData = new Map();
+
+        // DOM elements
+        const modeSelect = document.getElementById('mode-selector');
+        const diagramContainer = document.getElementById('diagram-container');
+        const loading = document.getElementById('loading');
+        const infoPanel = document.getElementById('info-panel');
+        const diagramTypeItems = document.querySelectorAll('.diagram-type-item');
+
+        // Current diagram module instance
+        let currentDiagramModule = null;
+
+        // DOM element for diagram content
+        const diagramContent = document.getElementById('diagram-content');
+
+        function showLoading(show, text = "Loading...") {
+            loading.style.display = show ? 'flex' : 'none';
+            document.getElementById('loading-text').textContent = text;
+        }
+
+        function updateInfoPanel(data, type) {
+            let html = `<div class="info-card"><div class="info-title">${type} Details</div>`;
+
+            function displayProps(obj) {
+                let str = '';
+                for (const [key, value] of Object.entries(obj)) {
+                    if (['id', 'children', 'edges', 'ports', 'layoutOptions', 'width', 'height', 'x', 'y', 'source', 'target', 'sections'].includes(key)) continue;
+
+                    let displayValue = value;
+                    if (typeof value === 'object' && value !== null) {
+                        if (Array.isArray(value)) displayValue = '[' + value.length + ']';
+                        else displayValue = '{...}';
+                    }
+
+                    str += `<div class="info-row">
+                        <span class="info-label">${key}:</span>
+                        <span class="info-value">${displayValue}</span>
+                    </div>`;
+                }
+                return str;
+            }
+
+            html += displayProps(data);
+            html += '</div>';
+            infoPanel.innerHTML = html;
+        }
+
+        function updateDiagramTypeSelection() {
+            // Update active state of diagram type items
+            diagramTypeItems.forEach(item => {
+                if (item.getAttribute('data-type') === currentDiagramType) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+        }
+
+        async function loadDiagramModule(diagramType, mode) {
+            // Destroy current diagram module if it exists
+            if (currentDiagramModule) {
+                currentDiagramModule.destroy();
+                currentDiagramModule = null;
+            }
+
+            // Clear container and remove any diagram-specific styles/classes
+            diagramContainer.innerHTML = '';
+            diagramContainer.className = ''; // Clear any classes applied to the container
+
+            // Remove any diagram-specific styles from document head
+            const styleIdsToRemove = [
+                'logic-diagram-interaction-styles',
+                'sequence-diagram-interaction-styles',
+                'node-diagram-interaction-styles'
+            ];
+            styleIdsToRemove.forEach(styleId => {
+                const styleElement = document.getElementById(styleId);
+                if (styleElement) {
+                    styleElement.remove();
+                }
+            });
+
+            // Clear any global highlight classes that might persist
+            document.querySelectorAll('.highlighted').forEach(el => {
+                el.classList.remove('highlighted');
+            });
+            document.querySelectorAll('.port-highlighted').forEach(el => {
+                el.classList.remove('port-highlighted');
+            });
+            document.querySelectorAll('.line-highlight').forEach(el => {
+                el.classList.remove('line-highlight');
+            });
+            document.querySelectorAll('.line-hover').forEach(el => {
+                el.classList.remove('line-hover');
+            });
+
+            try {
+                // Load the appropriate module script if not already loaded
+                const moduleUrl = `${diagramType}.js`;
+                await loadScript(moduleUrl);
+
+                // Create module instance
+                const ModuleClass = diagramType === 'node_diagram' ? window.NodeDiagramModule :
+                                  diagramType === 'sequence_diagram' ? window.SequenceDiagramModule :
+                                  diagramType === 'logic_diagram' ? window.LogicDiagramModule : null;
+
+                if (!ModuleClass) {
+                    throw new Error(`Module class not found for diagram type: ${diagramType}. Make sure ${moduleUrl} is properly generated.`);
+                }
+
+                currentDiagramModule = new ModuleClass(diagramContainer, {
+                    mode: mode,
+                    deployment: deploymentName,
+                    onInfoUpdate: (data, type) => {
+                        updateInfoPanel(data, type);
+                    }
+                });
+
+                // Show info panel for node diagrams, hide for sequence diagrams
+                infoPanel.style.display = diagramType === 'node_diagram' ? 'block' : 'none';
+
+            } catch (error) {
+                console.error('Error loading diagram module:', error);
+                const errorMessage = error.message || 'Unknown error occurred';
+                diagramContainer.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: #dc3545; font-family: Arial, sans-serif;">Error loading diagram: ${errorMessage}</div>`;
+            }
+        }
+
+        async function loadDiagram(diagramType, mode) {
+            showLoading(true, `Loading ${diagramType.replace('_', ' ')}...`);
+
+            try {
+                await loadDiagramModule(diagramType, mode);
+            } catch (error) {
+                console.error('Error loading diagram:', error);
+                alert(`Error loading diagram: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                // Check if script is already loaded
+                const existingScript = document.querySelector(`script[src="${src}"]`);
+                if (existingScript) {
+                    resolve();
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = () => {
+                    console.log('Script loaded successfully:', src);
+                    resolve();
+                };
+                script.onerror = (error) => {
+                    console.error('Failed to load script:', src, error);
+                    reject(error);
+                };
+                document.head.appendChild(script);
+            });
+        }
+
+
+
+
+        // Event listeners
+        diagramTypeItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                currentDiagramType = item.getAttribute('data-type');
+                updateDiagramTypeSelection();
+                loadDiagram(currentDiagramType, currentMode);
+            });
+        });
+
+        modeSelect.addEventListener('change', (e) => {
+            currentMode = e.target.value;
+            loadDiagram(currentDiagramType, currentMode);
+        });
+
+        // Initialize
+        window.addEventListener('load', () => {
+            // Wait a bit more to ensure all scripts are fully loaded
+            setTimeout(() => {
+                updateDiagramTypeSelection();
+                loadDiagram(currentDiagramType, currentMode);
+            }, 100);
+        });
+    </script>
+</body>
+</html>

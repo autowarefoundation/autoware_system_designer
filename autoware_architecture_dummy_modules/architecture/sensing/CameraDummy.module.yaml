@@ -1,0 +1,73 @@
+name: CameraDummy.module
+
+instances:
+  - instance: camera_0
+    entity: CameraDummyDriver.node
+  - instance: camera_1
+    entity: CameraDummyDriver.node
+  - instance: camera_2
+    entity: CameraDummyDriver.node
+  - instance: camera_3
+    entity: CameraDummyDriver.node
+  - instance: camera_4
+    entity: CameraDummyDriver.node
+  - instance: camera_5
+    entity: CameraDummyDriver.node
+  - instance: camera_6
+    entity: CameraDummyDriver.node
+  - instance: camera_7
+    entity: CameraDummyDriver.node
+
+external_interfaces:
+  input: []
+  output:
+    - name: camera0/image
+    - name: camera0/camera_info
+    - name: camera1/image
+    - name: camera1/camera_info
+    - name: camera2/image
+    - name: camera2/camera_info
+    - name: camera3/image
+    - name: camera3/camera_info
+    - name: camera4/image
+    - name: camera4/camera_info
+    - name: camera5/image
+    - name: camera5/camera_info
+    - name: camera6/image
+    - name: camera6/camera_info
+    - name: camera7/image
+    - name: camera7/camera_info
+
+connections:
+  - from: camera_0.output.image
+    to: output.camera0/image
+  - from: camera_0.output.camera_info
+    to: output.camera0/camera_info
+  - from: camera_1.output.image
+    to: output.camera1/image
+  - from: camera_1.output.camera_info
+    to: output.camera1/camera_info
+  - from: camera_2.output.image
+    to: output.camera2/image
+  - from: camera_2.output.camera_info
+    to: output.camera2/camera_info
+  - from: camera_3.output.image
+    to: output.camera3/image
+  - from: camera_3.output.camera_info
+    to: output.camera3/camera_info
+  - from: camera_4.output.image
+    to: output.camera4/image
+  - from: camera_4.output.camera_info
+    to: output.camera4/camera_info
+  - from: camera_5.output.image
+    to: output.camera5/image
+  - from: camera_5.output.camera_info
+    to: output.camera5/camera_info
+  - from: camera_6.output.image
+    to: output.camera6/image
+  - from: camera_6.output.camera_info
+    to: output.camera6/camera_info
+  - from: camera_7.output.image
+    to: output.camera7/image
+  - from: camera_7.output.camera_info
+    to: output.camera7/camera_info

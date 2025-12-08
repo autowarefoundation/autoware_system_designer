@@ -1,0 +1,70 @@
+
+	digraph logic_diagram {
+	label="System Diagram {{ name }}";
+	labelloc=top;
+	fontsize=20;
+	fontname="Arial";
+	rankdir=LR;
+	node [shape=box, style=filled, fillcolor="#dddddd", fontname="Arial", fontsize=10];
+	edge [fontname="Arial", fontsize=8, color="#000066"];
+
+	// Macro: build_instance_graph (includes logic)
+	{% macro build_instance_graph(instance) %}
+	{% if instance.entity_type == "node" %}
+		subgraph cluster_{{ instance.unique_id }} {
+			label="{{ instance.name }}";
+			style="rounded,filled"; color="{{ instance.vis_guide.color }}"; fillcolor="{{ instance.vis_guide.background_color }}"; fontcolor="{{ instance.vis_guide.text_color }}";
+			node [style=filled, fillcolor=white];
+			// Ports
+			{% for in_port in instance.in_ports %}
+				{{ in_port.unique_id }} [label="input/{{ in_port.name }}\n#{{in_port.event.type}}\n@{{in_port.event.frequency}}", shape=ellipse, fillcolor="#e0f7ff"];
+			{% endfor %}
+			{% for out_port in instance.out_ports %}
+				{{ out_port.unique_id }} [label="output/{{ out_port.name }}", shape=ellipse, fillcolor="#fff4e0"];
+			{% endfor %}
+			// Events (logic elements inside node cluster)
+			{% for event in instance.events %}
+				{% if event.type == "periodic" %}
+					{{ event.unique_id }} [label="{{event.name}}\n#{{event.type}}\n@{{event.frequency}}", shape=diamond, fillcolor="{{ instance.vis_guide.medium_color }}"];
+				{% else %}
+					{{ event.unique_id }} [label="{{event.name}}\n#{{event.type}}\n@{{event.frequency}}", shape=box, fillcolor="{{ instance.vis_guide.medium_color }}"];
+				{% endif %}
+			{% endfor %}
+		}
+		// Global topic clouds (outside but linking into ports)
+		{% for in_port in instance.in_ports %}
+			{% if in_port.is_global %}
+				{{ in_port.unique_id }}_cloud [label="/{{ "/".join(in_port.topic) }}", shape=hexagon, style=solid, color=gray];
+				{{ in_port.unique_id }}_cloud -> {{ in_port.unique_id }} [color="#555577"];
+			{% endif %}
+		{% endfor %}
+		// Event triggers
+		{% for event in instance.events %}
+			{% for event_trigger in event.triggers %}
+				{{ event_trigger.unique_id }} -> {{ event.unique_id }} [color="#555577"];
+			{% endfor %}
+		{% endfor %}
+		// Output port triggers
+		{% for out_port in instance.out_ports %}
+			{% for output_trigger in out_port.event.triggers %}
+				{{ output_trigger.unique_id }} -> {{ out_port.event.unique_id }} [color="#555577"];
+			{% endfor %}
+		{% endfor %}
+		// Input port triggers
+		{% for in_port in instance.in_ports %}
+			{% for input_trigger in in_port.event.triggers %}
+				{{ input_trigger.unique_id }} -> {{ in_port.event.unique_id }} [color="#555577"];
+			{% endfor %}
+		{% endfor %}
+	{% elif instance.entity_type == "module" %}
+		{% for child in instance.children %}
+			{{ build_instance_graph(child) }}
+		{% endfor %}
+	{% endif %}
+	{% endmacro %}
+
+	// Render full node (ports + logic) graphs
+	{% for child in children %}
+		{{ build_instance_graph(child) }}
+	{% endfor %}
+}

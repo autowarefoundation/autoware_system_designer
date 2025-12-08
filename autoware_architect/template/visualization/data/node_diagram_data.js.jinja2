@@ -1,0 +1,24 @@
+(function() {
+  // Initialize architecture data namespace
+  if (!window.architectureData) window.architectureData = {};
+  
+  // Store data for the specific mode
+  // This data structure is consumed by ELK.js visualization (node_diagram.html)
+  window.architectureData["{{ mode if mode else 'default' }}"] = {
+    "name": {{ name | tojson }},
+    "unique_id": {{ unique_id | tojson }},
+    "entity_type": {{ entity_type | tojson }},
+    "namespace": {{ namespace | tojson }},
+    "compute_unit": {{ compute_unit | tojson }},
+    "vis_guide": {{ vis_guide | tojson }},
+    "in_ports": {{ in_ports | tojson }},
+    "out_ports": {{ out_ports | tojson }},
+    "children": {{ children | tojson }},
+    "links": {{ links | tojson }},
+    "events": {{ events | tojson }},
+    "parameters": {{ parameters | tojson }}
+    {% if mode is defined %}
+    , "mode": {{ mode | tojson }}
+    {% endif %}
+  };
+})();
