@@ -51,7 +51,8 @@ class EventManager:
         process_event_list = [process.event for process in self.processes]
         if len(process_event_list) == 0:
             # process configuration is not found
-            raise ValueError(f"No process found in {self.instance.name}")
+            logger.warning(f"No process found in {self.instance.name}, at {self.instance.configuration.file_path}")
+            return
         for process in self.processes:
             process.set_condition(process_event_list, on_input_events)
             process.set_outcomes(process_event_list, to_output_events)

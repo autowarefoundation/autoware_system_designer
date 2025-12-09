@@ -351,7 +351,8 @@ class Instance:
 
         # set connections
         if len(self.configuration.connections) == 0:
-            raise ValidationError(f"No connections found in the module configuration, at {self.configuration.file_path}")
+            logger.warning(f"Module '{self.name}' has no connections configured, at {self.configuration.file_path}")
+            return
 
         # set links first to know topic type for external ports
         self.link_manager.set_links()

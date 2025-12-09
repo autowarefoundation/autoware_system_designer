@@ -328,6 +328,9 @@ class LinkManager:
     def set_links(self):
         """Set up links based on entity connections."""
         connection_list: List[Connection] = [Connection(cfg) for cfg in self.instance.configuration.connections]
+        if len(connection_list) == 0:
+            logger.warning(f"Module '{self.instance.name}' has no connections configured, at {self.instance.configuration.file_path}")
+            return
         
         # Check for and deduplicate duplicate connections
         connection_list = self._check_and_deduplicate_connections(connection_list)
