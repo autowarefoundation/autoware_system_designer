@@ -10,9 +10,8 @@ BASE_COLOR_MAP = {
     "planning": "#6b9b6b",     # green
     "control": "#6677bb",      # blue
     "system": "#9966bb",       # purple
+    "gray": "#888888",         # gray
 }
-
-DEFAULT_BASE_COLOR = "#888888"  # gray
 
 def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     """Convert hex color to RGB tuple.
@@ -42,7 +41,7 @@ def calculate_color_variant(base_color: str, variant: str) -> str:
 
     Args:
         base_color: Base hex color string
-        variant: Variant type - "matte", "medium", "bright", or "text"
+        variant: Variant type - "matte", "medium", "bright", "text", "dark", or "dark_text"
 
     Returns:
         Calculated hex color string
@@ -73,6 +72,21 @@ def calculate_color_variant(base_color: str, variant: str) -> str:
             int(g * 0.3),
             int(b * 0.3)
         )
+    elif variant == "dark":
+        # Dark: darken for dark mode backgrounds (darker than text variant)
+        return rgb_to_hex(
+            int(r * 0.25),
+            int(g * 0.25),
+            int(b * 0.25)
+        )
+    elif variant == "dark_text":
+        # Dark_Text: integrated variant combining dark and text characteristics for nodes
+        # Slightly lighter than pure dark but darker than text for better distinction
+        return rgb_to_hex(
+            int(r * 0.35),
+            int(g * 0.35),
+            int(b * 0.35)
+        )
     else:
         return base_color
 
@@ -83,18 +97,18 @@ def get_component_color(namespace: List[str], variant: str = "matte") -> str:
 
     Args:
         namespace: List of namespace components
-        variant: Color variant - "matte" (default), "medium", "bright", or "text"
+        variant: Color variant - "matte" (default), "medium", "bright", "text", "dark", or "dark_text"
 
     Returns:
         Calculated hex color string
     """
     # Get base color
     if not namespace or len(namespace) == 0:
-        base_color = DEFAULT_BASE_COLOR
+        base_color = BASE_COLOR_MAP["gray"]
     else:
         # Get the top-level component (first in namespace)
         top_level = namespace[0].lower()
-        base_color = BASE_COLOR_MAP.get(top_level, DEFAULT_BASE_COLOR)
+        base_color = BASE_COLOR_MAP.get(top_level, BASE_COLOR_MAP["gray"])
 
     # Calculate and return the requested variant
     return calculate_color_variant(base_color, variant)

@@ -7,53 +7,101 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
     <style>
+        :root {
+            /* Light theme colors */
+            --bg-primary: #f8f9fa;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f8f9fa;
+            --bg-sidebar: #ffffff;
+            --bg-sidebar-header: #f8f9fa;
+            --bg-info-card: #f8f9fa;
+            --bg-loading: rgba(255,255,255,0.9);
+            --text-primary: #212529;
+            --text-secondary: #495057;
+            --text-muted: #6c757d;
+            --border-color: #e9ecef;
+            --border-hover: #adb5bd;
+            --border-active: #007bff;
+            --shadow: rgba(0,0,0,0.05);
+            --highlight: #0d6efd;
+            --highlight-bg: #cfe2ff;
+            --spinner-border: #f3f3f3;
+            --spinner-active: #0d6efd;
+            --error-color: #dc3545;
+        }
+
+        [data-theme="dark"] {
+            /* Dark theme colors */
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --bg-tertiary: #3a3a3a;
+            --bg-sidebar: #2d2d2d;
+            --bg-sidebar-header: #3a3a3a;
+            --bg-info-card: #3a3a3a;
+            --bg-loading: rgba(45,45,45,0.9);
+            --text-primary: #e9ecef;
+            --text-secondary: #adb5bd;
+            --text-muted: #6c757d;
+            --border-color: #495057;
+            --border-hover: #6c757d;
+            --border-active: #0d6efd;
+            --shadow: rgba(0,0,0,0.3);
+            --highlight: #0d6efd;
+            --highlight-bg: #1a3a5c;
+            --spinner-border: #495057;
+            --spinner-active: #0d6efd;
+            --error-color: #dc3545;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             margin: 0;
             padding: 0;
             height: 100vh;
             overflow: hidden;
-            background-color: #f8f9fa;
+            background-color: var(--bg-primary);
             display: flex;
+            color: var(--text-primary);
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
 
         /* Sidebar */
         #sidebar {
             width: 250px;
-            background: #ffffff;
-            border-right: 1px solid #e9ecef;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
             z-index: 2;
-            box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+            box-shadow: 2px 0 10px var(--shadow);
         }
 
         #sidebar-header {
             padding: 20px;
-            border-bottom: 1px solid #e9ecef;
-            background: #f8f9fa;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-sidebar-header);
         }
 
         #sidebar-header h1 {
             margin: 0 0 10px 0;
             font-size: 18px;
-            color: #212529;
+            color: var(--text-primary);
         }
 
         #sidebar-header .package-info {
             font-size: 14px;
-            color: #6c757d;
+            color: var(--text-muted);
         }
 
         #diagram-list {
             padding: 15px 20px;
-            border-bottom: 1px solid #e9ecef;
+            border-bottom: 1px solid var(--border-color);
         }
 
         #diagram-list .section-title {
             font-weight: 600;
             margin-bottom: 10px;
-            color: #495057;
+            color: var(--text-secondary);
             font-size: 14px;
         }
 
@@ -61,24 +109,24 @@
             display: block;
             padding: 8px 12px;
             margin-bottom: 4px;
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
             border-radius: 4px;
             text-decoration: none;
-            color: #495057;
+            color: var(--text-secondary);
             font-size: 13px;
             transition: all 0.2s;
         }
 
         .diagram-type-item:hover {
-            background: #e9ecef;
-            border-color: #adb5bd;
+            background: var(--border-color);
+            border-color: var(--border-hover);
         }
 
         .diagram-type-item.active {
-            background: #007bff;
+            background: var(--border-active);
             color: white;
-            border-color: #007bff;
+            border-color: var(--border-active);
         }
 
 
@@ -89,30 +137,30 @@
         .diagram-link {
             display: block;
             padding: 8px 12px;
-            background: #f8f9fa;
-            border: 1px solid #e9ecef;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
             border-radius: 4px;
             text-decoration: none;
-            color: #495057;
+            color: var(--text-secondary);
             font-size: 13px;
             transition: all 0.2s;
         }
 
         .diagram-link:hover {
-            background: #e9ecef;
-            border-color: #adb5bd;
+            background: var(--border-color);
+            border-color: var(--border-hover);
         }
 
         .diagram-link.active {
-            background: #007bff;
+            background: var(--border-active);
             color: white;
-            border-color: #007bff;
+            border-color: var(--border-active);
         }
 
         /* Canvas container */
         #canvas-container {
             flex-grow: 1;
-            background: #ffffff;
+            background: var(--bg-secondary);
             position: relative;
             overflow: hidden;
             display: flex;
@@ -128,22 +176,24 @@
 
         #mode-selector-section {
             padding: 15px 20px;
-            border-bottom: 1px solid #e9ecef;
+            border-bottom: 1px solid var(--border-color);
         }
 
         #mode-selector-section label {
             display: block;
             font-weight: 500;
             margin-bottom: 8px;
-            color: #495057;
+            color: var(--text-secondary);
         }
 
         #mode-selector {
             padding: 6px 10px;
-            border: 1px solid #ced4da;
+            border: 1px solid var(--border-color);
             border-radius: 4px;
             font-size: 13px;
             min-width: 120px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
         }
 
         /* Node diagram styles */
@@ -177,9 +227,9 @@
         }
 
         .port-rect {
-            stroke: #6c757d;
+            stroke: var(--text-muted);
             stroke-width: 1px;
-            fill: #e9ecef;
+            fill: var(--bg-tertiary);
             transition: all 0.1s;
         }
 
@@ -193,13 +243,13 @@
 
         .edge-path {
             fill: none;
-            stroke: #adb5bd;
+            stroke: var(--text-secondary);
             stroke-width: 1.5px;
             transition: all 0.2s;
         }
 
         .edge-arrow {
-            fill: #adb5bd;
+            fill: var(--text-secondary);
         }
 
         .highlighted .node-rect {
@@ -218,9 +268,9 @@
         }
 
         .port-highlighted {
-            stroke: #0d6efd !important;
+            stroke: var(--highlight) !important;
             stroke-width: 2px;
-            fill: #cfe2ff;
+            fill: var(--highlight-bg);
         }
 
 
@@ -231,20 +281,20 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(255,255,255,0.9);
+            background: var(--bg-loading);
             display: flex;
             justify-content: center;
             align-items: center;
             flex-direction: column;
             font-size: 18px;
-            color: #495057;
+            color: var(--text-secondary);
             z-index: 100;
             display: none;
         }
 
         .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #0d6efd;
+            border: 4px solid var(--spinner-border);
+            border-top: 4px solid var(--spinner-active);
             border-radius: 50%;
             width: 30px;
             height: 30px;
@@ -260,25 +310,25 @@
         /* Info panel in sidebar */
         #info-panel {
             padding: 15px 20px;
-            border-bottom: 1px solid #e9ecef;
+            border-bottom: 1px solid var(--border-color);
             flex-grow: 1;
             overflow-y: auto;
             display: none;
         }
 
         .info-card {
-            background: #f8f9fa;
+            background: var(--bg-info-card);
             padding: 15px;
             border-radius: 6px;
-            border: 1px solid #e9ecef;
+            border: 1px solid var(--border-color);
             margin-bottom: 10px;
         }
 
         .info-title {
             font-weight: 600;
             margin-bottom: 8px;
-            color: #212529;
-            border-bottom: 2px solid #dee2e6;
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--border-color);
             padding-bottom: 5px;
             font-size: 14px;
         }
@@ -290,16 +340,62 @@
         }
 
         .info-label {
-            color: #6c757d;
+            color: var(--text-muted);
             font-weight: 500;
             width: 80px;
             flex-shrink: 0;
         }
 
         .info-value {
-            color: #212529;
+            color: var(--text-primary);
             font-family: 'Consolas', monospace;
             word-break: break-all;
+        }
+
+        /* Dark mode toggle */
+        .dark-mode-toggle {
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .dark-mode-toggle label {
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            margin: 0;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 24px;
+            background: var(--border-color);
+            border-radius: 24px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .toggle-switch.active {
+            background: var(--highlight);
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(26px);
         }
     </style>
 </head>
@@ -314,6 +410,10 @@
         <div id="sidebar-header">
             <h1>{{ deployment_name }}</h1>
             <div class="package-info">Package: {{ package_name }}</div>
+            <div class="dark-mode-toggle">
+                <label for="dark-mode-switch">Dark Mode</label>
+                <div class="toggle-switch" id="dark-mode-switch"></div>
+            </div>
         </div>
 
         <div id="mode-selector-section">
@@ -352,6 +452,47 @@
         const defaultDiagramType = "{{ default_diagram_type }}";
         const defaultMode = "{{ default_mode }}";
 
+        // Dark mode functionality
+        function getSystemThemePreference() {
+            return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+
+        function getSavedThemePreference() {
+            return localStorage.getItem('theme');
+        }
+
+        function saveThemePreference(theme) {
+            localStorage.setItem('theme', theme);
+        }
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            const toggle = document.getElementById('dark-mode-switch');
+            if (toggle) {
+                toggle.classList.toggle('active', theme === 'dark');
+            }
+        }
+
+        function toggleDarkMode() {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            applyTheme(newTheme);
+            saveThemePreference(newTheme);
+
+            // Update current diagram module if it has dark mode support
+            if (currentDiagramModule && typeof currentDiagramModule.updateTheme === 'function') {
+                currentDiagramModule.updateTheme();
+            }
+        }
+
+        // Initialize theme
+        function initializeTheme() {
+            const savedTheme = getSavedThemePreference();
+            const systemTheme = getSystemThemePreference();
+            const theme = savedTheme || systemTheme;
+            applyTheme(theme);
+        }
+
         // Parse URL parameters
         function getUrlParameter(name) {
             const urlParams = new URLSearchParams(window.location.search);
@@ -374,6 +515,7 @@
         const loading = document.getElementById('loading');
         const infoPanel = document.getElementById('info-panel');
         const diagramTypeItems = document.querySelectorAll('.diagram-type-item');
+        const darkModeToggle = document.getElementById('dark-mode-switch');
 
         // Current diagram module instance
         let currentDiagramModule = null;
@@ -490,7 +632,7 @@
             } catch (error) {
                 console.error('Error loading diagram module:', error);
                 const errorMessage = error.message || 'Unknown error occurred';
-                diagramContainer.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: #dc3545; font-family: Arial, sans-serif;">Error loading diagram: ${errorMessage}</div>`;
+                diagramContainer.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: var(--error-color); font-family: Arial, sans-serif;">Error loading diagram: ${errorMessage}</div>`;
             }
         }
 
@@ -549,8 +691,13 @@
             loadDiagram(currentDiagramType, currentMode);
         });
 
+        darkModeToggle.addEventListener('click', toggleDarkMode);
+
         // Initialize
         window.addEventListener('load', () => {
+            // Initialize theme
+            initializeTheme();
+
             // Wait a bit more to ensure all scripts are fully loaded
             setTimeout(() => {
                 updateDiagramTypeSelection();
