@@ -1,6 +1,11 @@
 <?xml version="1.0"?>
 <!-- This file is auto-generated ROS2 launcher by the autoware architect -->
 <launch>
+{% if is_command_execution %}
+  <!-- Command execution mode -->
+  <executable cmd="{{ executable_cmd }}" output="{{ node_output }}" name="{{ node_name }}">
+  </executable>
+{% else %}
   <arg name="node_name" default="{{ node_name }}"/>
 
   <!-- Interface -->
@@ -21,11 +26,7 @@
   <arg name="{{ param.name }}" default="{{ param.default_value }}"/>
 {% endfor %}
 
-{% if is_command_execution %}
-  <!-- Command execution mode -->
-  <executable cmd="{{ executable_cmd }}" output="{{ node_output }}">
-  </executable>
-{% elif use_container %}
+{% if use_container %}
   <load_composable_node target="{{ container_name }}">
     <composable_node pkg="{{ package_name }}" plugin="{{ plugin_name }}" name="$(var node_name)">
       <!-- Remap input and output topics -->
@@ -67,5 +68,6 @@
     <param name="{{ param.name }}" value="$(var {{ param.name }})"/>
 {% endfor %}
   </node>
+{% endif %}
 {% endif %}
 </launch>

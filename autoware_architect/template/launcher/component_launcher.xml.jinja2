@@ -9,7 +9,7 @@
   <!-- Node: {{ node.full_namespace }}/{{ node.name }} -->
 {% if node.is_command_execution %}
   <group ns="{{ node.full_namespace }}">
-    <executable cmd="{{ node.executable_cmd }}" output="{{ node.node_output }}" name="$(var {{ node.name }})">
+    <executable cmd="{{ node.executable_cmd }}" output="{{ node.node_output }}" name="{{ node.name }}">
     </executable>
   </group>
 {% elif node.use_container %}
