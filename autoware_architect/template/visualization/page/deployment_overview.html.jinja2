@@ -267,6 +267,28 @@
             stroke-width: 2.5px;
         }
 
+        /* Module highlighting - only direct children, not descendants */
+        .module-highlighted > .node-rect {
+            stroke: #0d6efd !important;
+            stroke-width: 2.5px;
+        }
+
+        .module-highlighted > .edge-path {
+            stroke: #0d6efd !important;
+            stroke-width: 2.5px;
+        }
+
+        .module-highlighted > g > .edge-arrow {
+            fill: #0d6efd !important;
+            stroke-width: 2.5px;
+        }
+
+        /* Child highlighting - only the boundary, not edges */
+        .child-highlighted {
+            stroke: #0d6efd !important;
+            stroke-width: 2.5px;
+        }
+
         .port-highlighted {
             stroke: var(--highlight) !important;
             stroke-width: 2px;

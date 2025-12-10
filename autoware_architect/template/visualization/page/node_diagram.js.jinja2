@@ -339,6 +339,7 @@ class NodeDiagramModule {
     renderNode(node, parentGroup, depth = 0) {
         const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
         g.setAttribute("transform", `translate(${node.x},${node.y})`);
+        g.setAttribute("id", node.id);
         g.classList.add("node-group");
 
         const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -383,8 +384,20 @@ class NodeDiagramModule {
         rect.onclick = (e) => {
             e.stopPropagation();
             this.updateInfoPanel(userData, 'Node');
+
+            // Clear all highlights
             document.querySelectorAll('.highlighted').forEach(el => el.classList.remove('highlighted'));
-            g.classList.add('highlighted');
+            document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
+            document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
+            document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
+
+            // Check if this is a module (has children)
+            if (node.children && node.children.length > 0) {
+                this.highlightModule(node, g);
+            } else {
+                // Regular node highlighting
+                g.classList.add('highlighted');
+            }
         };
 
         g.appendChild(rect);
@@ -491,6 +504,39 @@ class NodeDiagramModule {
         }
 
         parentGroup.appendChild(g);
+    }
+
+    highlightModule(node, moduleGroup) {
+        // 1. Highlight the module's own box
+        moduleGroup.classList.add('module-highlighted');
+
+        // 2. Highlight the module's lines (direct edges only)
+        const edgePaths = Array.from(moduleGroup.children).filter(child =>
+            child.tagName === 'path' && child.classList.contains('edge-path')
+        );
+        edgePaths.forEach(path => {
+            path.classList.add('highlighted');
+        });
+
+        // 3. Highlight direct child module boxes only (not grandchildren)
+        if (node.children && node.children.length > 0) {
+            node.children.forEach(childNode => {
+                // Find the SVG group for this direct child node by ID
+                const childGroup = Array.from(moduleGroup.children).find(child => {
+                    return child.tagName === 'g' &&
+                           child.classList.contains('node-group') &&
+                           child.id === childNode.id;
+                });
+
+                if (childGroup) {
+                    // Add highlight to the direct child module boundary only
+                    const childRect = childGroup.querySelector('rect');
+                    if (childRect) {
+                        childRect.classList.add('child-highlighted');
+                    }
+                }
+            });
+        }
     }
 
     fitToScreen() {
