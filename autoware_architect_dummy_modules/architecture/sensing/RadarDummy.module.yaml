@@ -15,9 +15,9 @@ instances:
     entity: RadarDummyDriver.node
 
   - instance: simple_object_merger
-    entity: SimpleObjectMerger.node
+    entity: DetectedObjectMergerDummy6.node
   - instance: simple_tracked_object_merger
-    entity: SimpleTrackedObjectMerger.node
+    entity: TrackedObjectMergerDummy6.node
 
 external_interfaces:
   input: []

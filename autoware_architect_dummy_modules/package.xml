@@ -13,7 +13,6 @@
 
   <depend>autoware_architect</depend>
   <depend>autoware_pointcloud_preprocessor</depend>
-  <depend>autoware_simple_object_merger</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

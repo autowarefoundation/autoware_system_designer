@@ -21,8 +21,8 @@ class ParameterType(Enum):
     Used only for individual parameters, not parameter files.
     """
     GLOBAL = 0           # Global parameter (lowest priority)
-    DEFAULT = 1          # Default parameter 
-    DEFAULT_FILE = 2     # Parameter loaded from default parameter file
+    DEFAULT_FILE = 1     # Parameter loaded from default parameter file
+    DEFAULT = 2          # Default parameter 
     OVERRIDE_FILE = 3    # Parameter loaded from override parameter file
     OVERRIDE = 4         # Directly set override parameter (highest priority)
 
