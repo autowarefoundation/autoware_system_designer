@@ -13,6 +13,16 @@ inputs:
     message_type: sensor_msgs/msg/PointCloud2
   - name: pointcloud
     message_type: sensor_msgs/msg/PointCloud2
+  - name: imu
+    message_type: sensor_msgs/msg/Imu
+  - name: twist
+    message_type: geometry_msgs/msg/TwistWithCovarianceStamped
+  - name: gnss_velocity
+    message_type: geometry_msgs/msg/TwistWithCovarianceStamped
+  - name: gnss_nav_sat_fix
+    message_type: sensor_msgs/msg/NavSatFix
+  - name: sub_gnss_nav_sat_fix
+    message_type: sensor_msgs/msg/NavSatFix
 
 outputs:
   - name: ros_transform
