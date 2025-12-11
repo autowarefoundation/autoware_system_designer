@@ -9,6 +9,8 @@ launch:
 inputs:
   - name: lanelet_map
     message_type: autoware_map_msgs/msg/LaneletMapBin
+  - name: pointcloud_map
+    message_type: sensor_msgs/msg/PointCloud2
   - name: pointcloud
     message_type: sensor_msgs/msg/PointCloud2
 
@@ -21,16 +23,17 @@ outputs:
     qos:
       reliability: reliable
       durability: transient_local
-  - name: kinematic_state
-    message_type: nav_msgs/msg/Odometry
-    qos:
-      reliability: reliable
-      durability: transient_local
   - name: acceleration
     message_type: geometry_msgs/msg/AccelWithCovarianceStamped
     qos:
       reliability: reliable
       durability: transient_local
+  - name: initialization_state
+    message_type: autoware_adapi_v1_msgs/msg/LocalizationInitializationState
+  - name: kinematic_state
+    message_type: nav_msgs/msg/Odometry
+  - name: pose_estimator/pose_with_covariance
+    message_type: geometry_msgs/msg/PoseWithCovarianceStamped
 
 # parameters
 parameter_files: []
