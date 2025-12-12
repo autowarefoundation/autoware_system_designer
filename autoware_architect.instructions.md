@@ -4,7 +4,7 @@
 You are an AI coding assistant tasked with creating and managing Autoware Architect (AWArch) system configurations. Your goal is to generate valid, modular, and consistent YAML configuration files that define the software architecture of an Autoware system.
 
 ## 2. File System Organization
-Follow this directory structure for consistency.
+Follow this directory structure for consistency (not mandatory).
 - **Root**: `src/<package_name>/architecture/`
 - **Nodes**: `src/<package_name>/architecture/node/` (suffix: `.node.yaml`)
 - **Modules**: `src/<package_name>/architecture/module/` (suffix: `.module.yaml`)
@@ -20,6 +20,8 @@ Represents a single ROS 2 node.
 - `launch`: Dictionary defining execution details.
   - `package`: ROS 2 package name.
   - `plugin`: C++ class name (component) or script entry point.
+  - `executable`: Name of the executable.
+  - `ros2_launch_file`: (Required if `executable` is not set) Alternative setting used for normal ros2 launcher wrapper.
   - `node_output`: (Optional) `screen`, `log`, etc.
   - `use_container`: (Optional) `true`/`false`.
   - `container_name`: (Required if `use_container: true`) Name of the component container.
@@ -74,7 +76,7 @@ Top-level entry point defining the complete system.
   - `namespace`: ROS namespace prefix.
   - `compute_unit`: Hardware resource identifier (e.g., `ecu_1`).
   - `parameter_set`: List of parameter set files to apply.
-  - `mode`: (Optional) List of modes where this component is active.
+  - `mode`: (Optional) List of modes where this component is active. When it is empty, applied for all existing modes.
 - `connections`: Top-level wiring between components.
 
 ### 3.4. Parameter Set Configuration (`.parameter_set.yaml`)
@@ -103,6 +105,7 @@ name: Detector.node
 launch:
   package: my_perception
   plugin: my_perception::Detector
+  executable: detector_node
   node_output: screen
 inputs:
   - name: image
