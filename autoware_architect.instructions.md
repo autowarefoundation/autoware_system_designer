@@ -42,8 +42,16 @@ Represents a single ROS 2 node.
   - `schema`: (Optional) Path to JSON schema.
 - `processes`: Execution logic / Event chains.
   - `name`: Name of the process/callback.
-  - `trigger_conditions`: Logic to start process (`on_input: port_name`, `periodic: 10.0`, `once: null`). Can be nested with `or`/`and`.
-  - `outcomes`: Result of process (`to_output: port_name`, `terminal`).
+  - `trigger_conditions`: Logic to start process. Can be nested with `or`/`and`.
+    - `on_input`: Triggered by input port (`on_input: port_name`).
+    - `on_trigger`: Triggered by another process (`on_trigger: process_name`).
+    - `periodic`: Triggered periodically (`periodic: 10.0` [Hz]).
+    - `once`: Triggered once (`once: null`).
+    - **Monitoring**: Optional fields `warn_rate`, `error_rate`, `timeout` can be added to trigger definitions.
+  - `outcomes`: Result of process.
+    - `to_output`: Sends result to output port (`to_output: port_name`).
+    - `to_trigger`: Triggers another process (`to_trigger: process_name`).
+    - `terminal`: Ends the chain (`terminal: null`).
 
 ### 3.2. Module Configuration (`.module.yaml`)
 Represents a composite component containing nodes or other modules.
