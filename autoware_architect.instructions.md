@@ -1,256 +1,168 @@
-# Rules of the Autoware Architect
-This is rule description of the AutoWare Architect (AWArch).
+# Autoware Architect Instruction Manifest
 
+## 1. Role & Objective
+You are an AI coding assistant tasked with creating and managing Autoware Architect (AWArch) system configurations. Your goal is to generate valid, modular, and consistent YAML configuration files that define the software architecture of an Autoware system.
 
-## Role of the Autoware Architect
-The Autoware Architect builds a system by given tree structure of element configurations. By describing software architecture elements, Autoware systems could be defined and built in modular manner. User can get system products such as launchers, diagrams, and analysis results.
+## 2. File System Organization
+Follow this directory structure for consistency.
+- **Root**: `src/<package_name>/architecture/`
+- **Nodes**: `src/<package_name>/architecture/node/` (suffix: `.node.yaml`)
+- **Modules**: `src/<package_name>/architecture/module/` (suffix: `.module.yaml`)
+- **Systems**: `src/<package_name>/architecture/system/` (suffix: `.system.yaml`)
+- **Parameter Sets**: `src/<package_name>/architecture/parameter_set/` (suffix: `.parameter_set.yaml`)
 
+## 3. Configuration Entities & Schemas
 
-## Configuration entities
-### Node
-'Node' is actual software element. leaf of the system structure.
+### 3.1. Node Configuration (`.node.yaml`)
+Represents a single ROS 2 node.
+**Required Fields:**
+- `name`: Must match filename (e.g., `MyNode.node`).
+- `launch`: Dictionary defining execution details.
+  - `package`: ROS 2 package name.
+  - `plugin`: C++ class name (component) or script entry point.
+  - `node_output`: (Optional) `screen`, `log`, etc.
+  - `use_container`: (Optional) `true`/`false`.
+  - `container_name`: (Required if `use_container: true`) Name of the component container.
+- `inputs`: List of input ports (subscribers).
+  - `name`: Port name.
+  - `message_type`: Full ROS message type (e.g., `sensor_msgs/msg/PointCloud2`).
+- `outputs`: List of output ports (publishers).
+  - `name`: Port name.
+  - `message_type`: Full ROS message type.
+  - `qos`: (Optional) QoS settings (`reliability`, `durability`, etc.).
+- `parameters`: Individual default parameters.
+  - `name`: Parameter name.
+  - `type`: `bool`, `int`, `double`, `string`.
+  - `default`: Default value.
+- `parameter_files`: Reference to parameter files.
+  - `name`: Identifier for the file reference.
+  - `default`: Path to file (use `$(find-pkg-share pkg)/path` or relative path).
+  - `schema`: (Optional) Path to JSON schema.
+- `processes`: Execution logic / Event chains.
+  - `name`: Name of the process/callback.
+  - `trigger_conditions`: Logic to start process (`on_input: port_name`, `periodic: 10.0`, `once: null`). Can be nested with `or`/`and`.
+  - `outcomes`: Result of process (`to_output: port_name`, `terminal`).
+
+### 3.2. Module Configuration (`.module.yaml`)
+Represents a composite component containing nodes or other modules.
+**Required Fields:**
+- `name`: Must match filename (e.g., `MyModule.module`).
+- `instances`: List of internal entities.
+  - `instance`: Local name for the instance (e.g., `lidar_driver`).
+  - `entity`: Reference to the entity definition (e.g., `LidarDriver.node`).
+- `external_interfaces`: Defines the module's boundary.
+  - `input`: List of externally accessible input ports.
+  - `output`: List of externally accessible output ports.
+  - `parameter`: List of exposed parameter namespaces.
+- `connections`: Internal wiring.
+  - `from`: Source port path.
+  - `to`: Destination port path.
+
+**Connection Syntax:**
+- **External Input to Internal Input**: `from: input.<ext_port>` -> `to: <instance>.input.<int_port>`
+- **Internal Output to Internal Input**: `from: <instance_a>.output.<port>` -> `to: <instance_b>.input.<port>`
+- **Internal Output to External Output**: `from: <instance>.output.<int_port>` -> `to: output.<ext_port>`
+
+### 3.3. System Configuration (`.system.yaml`)
+Top-level entry point defining the complete system.
+**Required Fields:**
+- `name`: Must match filename (e.g., `MyCar.system`).
+- `modes`: List of operation modes (e.g., `default`, `simulation`).
+- `components`: Top-level instances.
+  - `component`: Name of the component instance.
+  - `entity`: Reference to module/node (e.g., `SensingModule.module`).
+  - `namespace`: ROS namespace prefix.
+  - `compute_unit`: Hardware resource identifier (e.g., `ecu_1`).
+  - `parameter_set`: List of parameter set files to apply.
+  - `mode`: (Optional) List of modes where this component is active.
+- `connections`: Top-level wiring between components.
+
+### 3.4. Parameter Set Configuration (`.parameter_set.yaml`)
+Overrides parameters for specific nodes within the system hierarchy.
+**Fields:**
+- `parameters`: List of overrides.
+  - `node`: Full hierarchical path to the node instance (e.g., `/sensing/lidar/driver`).
+  - `parameter_files`: Dict mapping file keys to new paths.
+  - `parameters`: List of individual value overrides.
+
+## 4. Constraints & Validation Rules
+1.  **Type Safety**: Connected ports MUST have identical `message_type`.
+2.  **Single Publisher**: An `input` port can have multiple sources, but an `output` port (publisher) generally drives the topic. In AWArch, one topic is published by one node/port.
+3.  **Naming Convention**:
+    -   Files: `PascalCase.type.yaml` (e.g., `LidarDriver.node.yaml`).
+    -   Instance/Port Names: `snake_case` (e.g., `pointcloud_input`).
+4.  **Path Resolution**:
+    -   Use `$(find-pkg-share <package_name>)` for absolute ROS paths.
+    -   Relative paths are resolved relative to the package defining them.
+
+## 5. Examples
+
+### Node Example
 ```yaml
-name: DetectorA.node
-
+name: Detector.node
 launch:
-  package: autoware_perception_dummy_nodes
-  plugin: autoware::perception_dummy_nodes::DetectorA
+  package: my_perception
+  plugin: my_perception::Detector
   node_output: screen
-  use_container: true
-  container_name: pointcloud_container
-
-# interfaces
 inputs:
-  - name: pointcloud
-    message_type: sensor_msgs/msg/PointCloud2
-
+  - name: image
+    message_type: sensor_msgs/msg/Image
 outputs:
   - name: objects
     message_type: autoware_perception_msgs/msg/DetectedObjects
-    qos:
-      reliability: reliable
-      durability: transient_local
-
-# parameters
-parameter_files:
-  - name: model_param_path
-    default: path/to/model_param.yaml
-    schema: path/to/model_param.schema.json
-    allow_substs: true
-  - name: ml_package_param_path
-    default: path/to/ml_package_param.yaml
-    schema: path/to/ml_package_param.schema.json
-    allow_substs: true
-  - name: class_remapper_param_path
-    default: path/to/class_remapper_param.yaml
-
-parameters:
-  - name: build_only
-    type: bool
-    default: false
-    description: If true, the node will only build the model and exit.
-
-# processes
 processes:
-  - name: detector
+  - name: detect
     trigger_conditions:
-      - or:
-          - on_input: pointcloud
+      - on_input: image
     outcomes:
       - to_output: objects
-
 ```
-### Module
-'module' is set of nodes and (sub-)modules. branch of the system structure. leafs and sub branches are called 'instance'
+
+### Module Example
 ```yaml
-name: DetectorA.module
-
+name: Perception.module
 instances:
-  - instance: node_detector
-    entity: DetectorA.node
-  - instance: node_filter
-    entity: FilterA.node
-
+  - instance: detector
+    entity: Detector.node
 external_interfaces:
   input:
-    - name: pointcloud
-    - name: vector_map
+    - name: image
   output:
     - name: objects
-  parameter:
-    - name: detector
-    - name: filter
-
 connections:
-  - from: input.pointcloud
-    to: node_detector.input.pointcloud
-  - from: node_detector.output.objects
-    to: node_filter.input.objects
-  - from: input.vector_map
-    to: node_filter.input.vector_map
-  - from: node_filter.output.*
-    to: output.*
-
+  - from: input.image
+    to: detector.input.image
+  - from: detector.output.objects
+    to: output.objects
 ```
 
-### System
-'System' is set of nodes and modules. root of the system structure. the branches are called 'component'.
-```yaml
-name: TypeAlpha.system
+## 6. Build System Functions
+The `autoware_architect` package provides CMake macros to automate the build and deployment process.
 
-modes:
-  - name: default
-    description: Default mode
-  - name: simulation
-    description: Simulation mode
-
-components:
-  - component: sensor_module_a
-    entity: LidarDummy.module
-    namespace: sensing
-    compute_unit: perception_ecu_1
-  - component: map_loader
-    entity: MapDummy.node
-    namespace: map
-    compute_unit: dummy_ecu_1
-  - component: localizer
-    entity: LocalizationDummy.node
-    namespace: localization
-    compute_unit: dummy_ecu_1
-  - component: object_recognition
-    entity: PerceptionA.module
-    namespace: perception
-    compute_unit: main_ecu
-    parameter_set: [
-      PerceptionModuleA.parameter_set
-    ]
-    mode: [default]
-  - component: object_recognition
-    entity: PerceptionB.module
-    namespace: perception
-    compute_unit: main_ecu
-    parameter_set: [
-      PerceptionModuleA.parameter_set,  
-      PerceptionModuleABuild.parameter_set,
-    ]
-    mode: simulation
-  - component: planner
-    entity: PlanningDummy.node
-    namespace: planning
-    compute_unit: dummy_ecu_2
-
-connections:
-  - from: sensor_module_a.output.concatenated/pointcloud
-    to: object_recognition.input.pointcloud
-  - from: sensor_module_a.output.concatenated/pointcloud
-    to: localizer.input.pointcloud
-  - from: map_loader.output.vector_map
-    to: localizer.input.lanelet_map
-  - from: map_loader.output.vector_map
-    to: object_recognition.input.vector_map
-  - from: map_loader.output.vector_map
-    to: planner.input.lanelet_map
-  - from: object_recognition.output.objects
-    to: planner.input.predicted_objects
-
+### `autoware_architect_build_deploy`
+Builds the entire system deployment.
+```cmake
+autoware_architect_build_deploy(
+  <project_name>
+  <deployment_file>
+  [domain1;domain2;...]
+)
 ```
 
-### Parameter set
-'parameter set' is set of parameters per nodes. the parameter set is configured in the system's components.
-```yaml
-name: PerceptionModuleA.parameter_set
-parameters:
-  - node: /perception/object_recognition/detector_a1/node_detector
-    parameter_files:
-      - model_param_path: perception/object_recognition/detector_a1/node_detector/model_param_path.param.yaml
-      - ml_package_param_path: perception/object_recognition/detector_a1/node_detector/ml_package_param_path.param.yaml
-      - class_remapper_param_path: perception/object_recognition/detector_a1/node_detector/class_remapper_param_path.param.yaml
-    parameters:
-      - name: build_only
-        type: bool
-        value: false
-  - node: /perception/object_recognition/detector_a1/node_filter
-    parameter_files:
-      - filtering_range_param: perception/object_recognition/detector_a1/node_filter/filtering_range_param.param.yaml
-    parameters: []
-  - node: /perception/object_recognition/detector_a2/node_detector
-    parameter_files:
-      - model_param_path: perception/object_recognition/detector_a2/node_detector/model_param_path.param.yaml
-      - ml_package_param_path: perception/object_recognition/detector_a2/node_detector/ml_package_param_path.param.yaml
-      - class_remapper_param_path: perception/object_recognition/detector_a2/node_detector/class_remapper_param_path.param.yaml
-    parameters:
-      - name: build_only
-        type: bool
-        value: false
-  - node: /perception/object_recognition/detector_a2/node_filter
-    parameter_files:
-      - filtering_range_param: perception/object_recognition/detector_a2/node_filter/filtering_range_param.param.yaml
-    parameters: []
-  - node: /perception/object_recognition/node_tracker
-    parameter_files:
-      - tracker_setting_path: perception/object_recognition/node_tracker/tracker_setting_path.param.yaml
-      - data_association_matrix_path: perception/object_recognition/node_tracker/data_association_matrix_path.param.yaml
-      - input_channels_path: perception/object_recognition/node_tracker/input_channels_path.param.yaml
-    parameters: []
+### `autoware_architect_generate_launcher`
+Generates individual node launchers from node configurations.
+```cmake
+autoware_architect_generate_launcher()
 ```
 
-## Parameters
-### Parameter
-variable for node.
+### `autoware_architect_parameter`
+Generates parameter files from JSON schemas.
+```cmake
+autoware_architect_parameter()
+```
 
-### Parameter_file
-set of variables for node.
-
-
-## Structure of entities
-Entities are defined by following types.
-* system contains modules and nodes
-* module contains modules and nodes
-* node is independent
-
-### Namespace
-Namespace is address of nodes and topics. It is defined by its hierarchy.
-
-
-## Instance
-### deployment
-instance of system. it contains deploying vehicle parameters such as vehicle id to specify calibration parameter, environment such as map.
-
-### instance
-instance is elements consisting 'module. 
-
-### component
-component is elements consisting 'system'. special version of 'instance'
-
-### connection
-connection connect ports for messaging system
-
-### topic
-address of message. resolved and defined by the system build process
-
-### process
-callback in a node. indicating chain of events.
-
-
-## Abstractions
-### Port
-gate of interfaces. node and module can have. 
-
-### Link
-connection between ports. configured by 'connection'
-
-### Event
-instance of process.
-
-
-## Constrains
-### Topic type
-When out-port and in-port are connected, both should have same message type.
-
-### Connection
-External port is interface of module only accessible from outside.
-
-### Configuration name
-Configuration name and its file name should have same name.
-The type of configuration is indicated at the end of the name, `'name'.'type'`
-
+### `autoware_architect_configure`
+Configures the project for Autoware Architect by collecting architecture files.
+```cmake
+autoware_architect_configure([domain])
+```
