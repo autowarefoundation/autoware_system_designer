@@ -170,9 +170,3 @@ Generates parameter files from JSON schemas.
 ```cmake
 autoware_architect_parameter()
 ```
-
-### `autoware_architect_configure`
-Configures the project for Autoware Architect by collecting architecture files.
-```cmake
-autoware_architect_configure()
-```

@@ -28,6 +28,7 @@ from .parsers.data_validator import entity_name_decode
 from .parsers.yaml_parser import yaml_parser
 from .exceptions import ValidationError
 from .utils.template_utils import TemplateRenderer
+from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 
 logger = logging.getLogger(__name__)
@@ -36,8 +37,8 @@ debug_mode = True
 class Deployment:
     def __init__(self, system_config: SystemConfig ):
         # entity collection
-        system_yaml_list, package_paths = self._get_system_list(system_config)
-        self.config_registry = ConfigRegistry(system_yaml_list, package_paths)
+        system_yaml_list, package_paths, file_package_map = self._get_system_list(system_config)
+        self.config_registry = ConfigRegistry(system_yaml_list, package_paths, file_package_map)
 
         # detect mode of input file (deployment vs system only)
         # if deployment_file ends with .system, it's a system-only file
@@ -89,9 +90,10 @@ class Deployment:
         # resolve parameter variables
 
 
-    def _get_system_list(self, system_config: SystemConfig) -> Tuple[List[str], Dict[str, str]]:
+    def _get_system_list(self, system_config: SystemConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
         system_list: list[str] = []
         package_paths: Dict[str, str] = {}
+        file_package_map: Dict[str, str] = {}
         manifest_dir = system_config.manifest_dir
         if not os.path.isdir(manifest_dir):
             raise ValidationError(f"Architecture manifest directory not found or not a directory: {manifest_dir}")
@@ -104,8 +106,8 @@ class Deployment:
                 manifest_yaml = yaml_parser.load_config(manifest_file)
                 
                 # Get package path if available
-                package_name = os.path.splitext(entry)[0]
                 if 'package_path' in manifest_yaml:
+                    package_name = manifest_yaml.get('package_name', os.path.splitext(entry)[0])
                     package_paths[package_name] = manifest_yaml['package_path']
 
                 files = manifest_yaml.get('system_config_files')
@@ -124,11 +126,15 @@ class Deployment:
                     file_path = f.get('path') if isinstance(f, dict) else None
                     if file_path and file_path not in system_list:
                         system_list.append(file_path)
+                    
+                    if file_path and 'package_name' in manifest_yaml:
+                        file_package_map[file_path] = manifest_yaml['package_name']
+
             except Exception as e:
                 logger.warning(f"Failed to load manifest {manifest_file}: {e}")
         if not system_list:
             raise ValidationError(f"No architecture configuration files collected.")
-        return system_list, package_paths
+        return system_list, package_paths, file_package_map
 
     def _check_config(self) -> bool:
         """Validate & normalize deployment configuration.
@@ -233,6 +239,17 @@ class Deployment:
             self.generate_by_template(data, topics_template_path, mode_monitor_dir, "topics.yaml")
             
             logger.info(f"Generated system monitor for mode: {mode_key}")
+
+
+    def generate_build_scripts(self):
+        """Generate shell scripts to build necessary packages for each ECU."""
+        generate_build_scripts(
+            self.deploy_instances,
+            self.output_root_dir,
+            self.name,
+            self.config_yaml_dir,
+            self.config_registry.file_package_map
+        )
 
 
     def generate_launcher(self):

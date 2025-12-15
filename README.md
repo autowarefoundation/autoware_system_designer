@@ -66,19 +66,15 @@ In your `CMakeLists.txt`:
 ```cmake
 find_package(autoware_architect REQUIRED)
 
-# 1. Configure the package (Required)
-# Collects architecture files to make them available to other packages.
-autoware_architect_configure()
-
-# 2. Generate standalone node launchers (Optional)
+# 1. Generate standalone node launchers (Optional)
 # Use this if your package defines nodes and you want individual launch files.
 autoware_architect_generate_launcher()
 
-# 3. Generate parameter files from schemas (Optional)
+# 2. Generate parameter files from schemas (Optional)
 # Use this if your package contains JSON schemas in the schema/ directory.
 autoware_architect_parameter()
 
-# 4. Build a full system deployment (Deployment Packages Only)
+# 3. Build a full system deployment (Deployment Packages Only)
 # Use this only in the package responsible for building the full system configuration.
 autoware_architect_build_deploy(
   ${PROJECT_NAME}

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class ConfigRegistry:
     """Collection for managing multiple entity data structures with efficient lookup methods."""
     
-    def __init__(self, config_yaml_file_paths: List[str], package_paths: Dict[str, str] = None):
+    def __init__(self, config_yaml_file_paths: List[str], package_paths: Dict[str, str] = None, file_package_map: Dict[str, str] = None):
         # Replace list with dict as primary storage
         self.entities: Dict[str, Config] = {}  # full_name → Config
         self._type_map: Dict[str, Dict[str, Config]] = {
@@ -34,6 +34,7 @@ class ConfigRegistry:
             ConfigType.SYSTEM: {}
         }
         self.package_paths = package_paths or {}
+        self.file_package_map = file_package_map or {}
         
         self.parser = ConfigParser()
         self._load_entities(config_yaml_file_paths)
@@ -45,6 +46,10 @@ class ConfigRegistry:
             
             try:
                 entity_data = self.parser.parse_entity_file(file_path)
+
+                # Set package name if available
+                if entity_data.file_path and str(entity_data.file_path) in self.file_package_map:
+                    entity_data.package = self.file_package_map[str(entity_data.file_path)]
                 
                 # Check for duplicates
                 if entity_data.full_name in self.entities:

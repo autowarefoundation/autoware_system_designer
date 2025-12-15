@@ -56,6 +56,10 @@ def build(deployment_file: str, manifest_dir: str, output_root_dir: str):
     logger.info("autoware architect: Generating system monitor configuration...")
     deployment.generate_system_monitor()
 
+    # generate build scripts
+    logger.info("autoware architect: Generating build scripts...")
+    deployment.generate_build_scripts()
+
     # update the visualization index
     logger.info("autoware architect: Updating visualization index...")
     update_index(output_root_dir)

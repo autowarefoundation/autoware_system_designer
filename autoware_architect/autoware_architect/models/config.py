@@ -36,6 +36,7 @@ class Config:
     entity_type: str
     config: Dict[str, Any]
     file_path: Path
+    package: Optional[str] = None
     
     def __post_init__(self):
         """Ensure file_path is a Path object."""

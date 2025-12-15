@@ -144,6 +144,7 @@ def main():
         pkg_install_path = os.path.join(args.install_prefix, 'share', pkg)
         
         data = {
+            'package_name': pkg,
             'package_path': pkg_install_path,
             'system_config_files': []
         }
