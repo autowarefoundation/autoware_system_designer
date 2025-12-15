@@ -26,8 +26,8 @@ install(
 # Collect system descriptions
 # Scans the workspace source directory
 # and generates resource manifests in the build directory.
-add_custom_target(collect_system_descriptions ALL
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/script/collect_system_descriptions.py
+add_custom_target(collect_autoware_descriptions ALL
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/script/collect_autoware_descriptions.py
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_BINARY_DIR}/resource
     ${CMAKE_INSTALL_PREFIX}
