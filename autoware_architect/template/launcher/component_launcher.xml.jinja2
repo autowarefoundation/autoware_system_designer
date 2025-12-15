@@ -9,6 +9,9 @@
   <!-- Node: {{ node.full_namespace }}/{{ node.name }} -->
 {% if node.is_ros2_file_launch %}
   <include file="$(find-pkg-share {{node.package}})/launch/{{node.ros2_launch_file}}">
+{% for param_file in node.parameter_files %}
+    <arg name="{{ param_file.name }}" value="{{ param_file.path }}"/>
+{% endfor %}
 {% for param in node.parameters %}
 {% if param.parameter_type.name == 'DEFAULT' or param.parameter_type.name == 'DEFAULT_FILE' %}
     <arg name="{{ param.name }}" value="{{ param.value }}"/>

@@ -94,6 +94,7 @@ class ParameterManager:
             resolved_path = self._resolve_parameter_file_path(param_file.path, self._get_package_name(), param_file.is_override)
             result.append({
                 "type": "param_file",
+                "name": param_file.name,
                 "path": resolved_path
             })
         return result
