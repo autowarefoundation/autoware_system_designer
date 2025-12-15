@@ -96,20 +96,12 @@ class Deployment:
         if not os.path.isdir(manifest_dir):
             raise ValidationError(f"Architecture manifest directory not found or not a directory: {manifest_dir}")
 
-        # domains to include (always includes 'shared')
-        domains_filter = set(system_config.effective_domains())
-        logger.info(f"Domain filter active: {sorted(domains_filter)}")
-
         for entry in sorted(os.listdir(manifest_dir)):
             if not entry.endswith('.yaml'):
                 continue
             manifest_file = os.path.join(manifest_dir, entry)
             try:
                 manifest_yaml = yaml_parser.load_config(manifest_file)
-                manifest_domain = manifest_yaml.get('domain', 'shared') # default to 'shared' if missing
-                if manifest_domain not in domains_filter:
-                    logger.debug(f"Skipping manifest '{entry}' (domain='{manifest_domain}' not in filter)")
-                    continue
                 
                 # Get package path if available
                 package_name = os.path.splitext(entry)[0]
@@ -135,7 +127,7 @@ class Deployment:
             except Exception as e:
                 logger.warning(f"Failed to load manifest {manifest_file}: {e}")
         if not system_list:
-            raise ValidationError(f"No architecture configuration files collected (domains={sorted(domains_filter)}).")
+            raise ValidationError(f"No architecture configuration files collected.")
         return system_list, package_paths
 
     def _check_config(self) -> bool:

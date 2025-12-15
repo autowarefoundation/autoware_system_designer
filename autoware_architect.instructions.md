@@ -156,7 +156,6 @@ Builds the entire system deployment.
 autoware_architect_build_deploy(
   <project_name>
   <deployment_file>
-  [domain1;domain2;...]
 )
 ```
 
@@ -175,5 +174,5 @@ autoware_architect_parameter()
 ### `autoware_architect_configure`
 Configures the project for Autoware Architect by collecting architecture files.
 ```cmake
-autoware_architect_configure([domain])
+autoware_architect_configure()
 ```

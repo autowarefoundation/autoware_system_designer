@@ -14,20 +14,14 @@
 
 macro(autoware_architect_build_deploy project_name)
   # Supported invocation patterns:
-  #   autoware_architect_build_deploy(<project> <deployment_file> [domains...])
-  #   autoware_architect_build_deploy(<project> <architecture_file> [domains...])
-  # Domains may be provided either as separate args or a single semicolon list.
+  #   autoware_architect_build_deploy(<project> <deployment_file>)
+  #   autoware_architect_build_deploy(<project> <architecture_file>)
   set(_EXTRA_ARGS ${ARGN})
   list(LENGTH _EXTRA_ARGS _EXTRA_LEN)
   if(_EXTRA_LEN LESS 1)
-    message(FATAL_ERROR "autoware_architect_build_deploy: expected at least 1 extra arg (<deployment|architecture> [domains...]), got ${_EXTRA_LEN}: ${_EXTRA_ARGS}")
+    message(FATAL_ERROR "autoware_architect_build_deploy: expected at least 1 extra arg (<deployment|architecture>), got ${_EXTRA_LEN}: ${_EXTRA_ARGS}")
   endif()
   list(GET _EXTRA_ARGS 0 _INPUT_NAME)
-  set(_DOMAIN_ARGS "")
-  if(_EXTRA_LEN GREATER 1)
-    list(REMOVE_AT _EXTRA_ARGS 0)
-    set(_DOMAIN_ARGS ${_EXTRA_ARGS})
-  endif()
 
   set(BUILD_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_architect/script/deployment_process.py")
   set(ARCHITECT_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../architecture/autoware_architect")
@@ -50,8 +44,8 @@ macro(autoware_architect_build_deploy project_name)
   endif()
 
   add_custom_target(run_build_py_${_INPUT_NAME} ALL
-    COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${ARCHITECT_SOURCE_DIR}:$ENV{PYTHONPATH} python3 -d ${BUILD_PY_SCRIPT} ${_DEPLOYMENT_FILE} ${ARCHITECTURE_RESOURCE_DIR} ${OUTPUT_ROOT_DIR} ${_DOMAIN_ARGS} > ${LOG_FILE} 2>&1
-    COMMENT "Running build.py script ${_LOG_DESC}, domains='${_DOMAIN_ARGS}'. Log: ${LOG_FILE}"
+    COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${ARCHITECT_SOURCE_DIR}:$ENV{PYTHONPATH} python3 -d ${BUILD_PY_SCRIPT} ${_DEPLOYMENT_FILE} ${ARCHITECTURE_RESOURCE_DIR} ${OUTPUT_ROOT_DIR} > ${LOG_FILE} 2>&1
+    COMMENT "Running build.py script ${_LOG_DESC}. Log: ${LOG_FILE}"
   )
   add_dependencies(${project_name} run_build_py_${_INPUT_NAME})
 endmacro()

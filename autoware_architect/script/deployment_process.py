@@ -19,7 +19,7 @@ from autoware_architect.visualization.visualization_index import update_index
 
 # build the deployment
 # search and connect the connections between the nodes
-def build(deployment_file: str, manifest_dir: str, output_root_dir: str, domains: list[str]):
+def build(deployment_file: str, manifest_dir: str, output_root_dir: str):
     # Inputs:
     #   deployment_file: YAML deployment configuration
     #   manifest_dir: directory containing per-package manifest YAML files (each lists system_config_files)
@@ -33,7 +33,6 @@ def build(deployment_file: str, manifest_dir: str, output_root_dir: str, domains
     system_config.deployment_file = deployment_file
     system_config.manifest_dir = manifest_dir
     system_config.output_root_dir = output_root_dir
-    system_config.domains = domains
 
     logger = system_config.set_logging()
 
@@ -65,18 +64,11 @@ def build(deployment_file: str, manifest_dir: str, output_root_dir: str, domains
 
 
 if __name__ == "__main__":
-    # Usage: deployment_process.py <deployment_file> <manifest_dir> <output_root_dir> [domain1 [domain2 ...]]
-    # If no domains provided, pass empty list; 'shared' will be added later by effective_domains().
+    # Usage: deployment_process.py <deployment_file> <manifest_dir> <output_root_dir>
     if len(sys.argv) < 4:
-        raise SystemExit("Usage: deployment_process.py <deployment_file> <manifest_dir> <output_root_dir> [domain1 [domain2 ...]]")
+        raise SystemExit("Usage: deployment_process.py <deployment_file> <manifest_dir> <output_root_dir>")
     deployment_file = sys.argv[1]
     manifest_dir = sys.argv[2]
     output_root_dir = sys.argv[3]
-    domain_args = sys.argv[4:]
 
-    if len(domain_args) == 1 and (';' in domain_args[0]):
-        domains = [d.strip() for d in domain_args[0].split(';') if d.strip()]
-    else:
-        domains = [d.strip() for d in domain_args if d.strip()]
-
-    build(deployment_file, manifest_dir, output_root_dir, domains)
+    build(deployment_file, manifest_dir, output_root_dir)

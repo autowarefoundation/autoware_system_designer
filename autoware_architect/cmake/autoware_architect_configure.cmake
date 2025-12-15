@@ -16,21 +16,6 @@
 # collect all yaml files in the architecture directory
 # store the list in a shared file
 macro(autoware_architect_configure)
-  # Behavior:
-  # - No argument: domain='shared'
-  # - One or more arguments: domain=first argument verbatim after trim; empty string maps to 'shared'
-  if(ARGC LESS 1)
-    set(_ARCH_DOMAIN_FINAL "shared")
-  else()
-    string(STRIP "${ARGV0}" _ARCH_DOMAIN_CANDIDATE)
-    if("${_ARCH_DOMAIN_CANDIDATE}" STREQUAL "")
-      set(_ARCH_DOMAIN_FINAL "shared")
-    else()
-      set(_ARCH_DOMAIN_FINAL "${_ARCH_DOMAIN_CANDIDATE}")
-    endif()
-  endif()
-  message(STATUS "autoware_architect_configure: domain='${_ARCH_DOMAIN_FINAL}' for package='${PROJECT_NAME}' (ARGC='${ARGC}' ARGV='${ARGV}')")
-
   # Collect all yaml files in the package's architecture directory
   file(GLOB_RECURSE YAML_FILES "${CMAKE_CURRENT_SOURCE_DIR}/architecture/*.yaml")
 
@@ -42,8 +27,7 @@ macro(autoware_architect_configure)
   set(manifest_file "${resource_dir}/${PROJECT_NAME}.yaml")
 
   # Start (overwrite) manifest
-  file(WRITE ${manifest_file} "domain: ${_ARCH_DOMAIN_FINAL}\n")
-  file(APPEND ${manifest_file} "package_path: ${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}\n")
+  file(WRITE ${manifest_file} "package_path: ${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}\n")
   file(APPEND ${manifest_file} "system_config_files:\n")
 
   foreach(YAML_FILE ${YAML_FILES})
@@ -60,10 +44,9 @@ macro(autoware_architect_configure)
     endif()
 
     # Append entry to manifest
-  file(APPEND ${manifest_file} "  - path: ${YAML_FILE}\n")
-  file(APPEND ${manifest_file} "    type: ${file_type}\n")
-  # Item inherits the manifest domain (could be extended per-file later)
+    file(APPEND ${manifest_file} "  - path: ${YAML_FILE}\n")
+    file(APPEND ${manifest_file} "    type: ${file_type}\n")
   endforeach()
 
-  message(STATUS "autoware_architect: generated per-package manifest ${manifest_file} (domain='${_ARCH_DOMAIN_FINAL}', files: ${YAML_FILES})")
+  message(STATUS "autoware_architect: generated per-package manifest ${manifest_file} (files: ${YAML_FILES})")
 endmacro()

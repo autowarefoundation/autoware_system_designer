@@ -21,11 +21,7 @@ from dataclasses import dataclass
 
 @dataclass
 class SystemConfig:
-    """Configuration class for the autoware system deployment.
-    domains:
-      - `domains` is the list of active domains provided externally.
-      - 'shared' is automatically appended if missing.
-    """
+    """Configuration class for the autoware system deployment."""
     debug_mode: bool = False
     layer_limit: int = 50
     log_level: str = "INFO"
@@ -36,7 +32,6 @@ class SystemConfig:
     deployment_file: str = ""
     manifest_dir: str = ""
     output_root_dir: str = "build"
-    domains: list[str] | None = None
 
     @classmethod
     def from_env(cls) -> 'SystemConfig':
@@ -65,19 +60,6 @@ class SystemConfig:
             level = logging.DEBUG
         logger.setLevel(level)
         return logger
-
-    def effective_domains(self) -> list[str]:
-        """Return active domains (deduped, ordered) including 'shared'."""
-        raw = [d.strip() for d in (self.domains or []) if d and d.strip()]
-        if 'shared' not in raw:
-            raw.append('shared')
-        ordered: list[str] = []
-        seen = set()
-        for d in raw:
-            if d not in seen:
-                ordered.append(d)
-                seen.add(d)
-        return ordered
 
 
 # Global configuration instance
