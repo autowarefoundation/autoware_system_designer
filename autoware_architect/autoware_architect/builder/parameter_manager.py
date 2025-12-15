@@ -69,6 +69,10 @@ class ParameterManager:
 
         # Add regular parameters
         for param in self.parameters.list:
+            # Skip parameters that are loaded from files, as they will be passed via parameter files
+            if param.parameter_type in [ParameterType.DEFAULT_FILE, ParameterType.OVERRIDE_FILE]:
+                continue
+
             if param.value is not None:
                 result.append({
                     "type": "param",
@@ -315,6 +319,14 @@ class ParameterManager:
                 # Resolve parameter file path if resolver is available
                 if self.parameter_resolver:
                     param_value = self.parameter_resolver.resolve_parameter_file_path(param_value)
+
+                # Add to parameter_files list
+                self.parameter_files.add_parameter_file(
+                    param_name,
+                    param_value,
+                    allow_substs=True,
+                    is_override=False
+                )
 
                 # Load individual parameters from this file
                 self._load_parameters_from_file(
