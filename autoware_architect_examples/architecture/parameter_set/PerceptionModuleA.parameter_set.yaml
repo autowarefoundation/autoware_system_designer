@@ -1,3 +1,6 @@
+autoware_system_description:
+  version: 0.1.0
+
 name: PerceptionModuleA.parameter_set
 parameters:
   - node: /perception/object_recognition/detector_a1/node_detector

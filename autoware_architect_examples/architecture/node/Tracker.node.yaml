@@ -1,6 +1,6 @@
-# reference: multi object tracker
+autoware_system_description:
+  version: 0.1.0
 
-# node information
 name: Tracker.node
 
 launch:

@@ -1,6 +1,6 @@
-# reference: map based prediction
+autoware_system_description:
+  version: 0.1.0
 
-# node information
 name: Predictor.node
 
 launch:

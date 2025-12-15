@@ -1,6 +1,6 @@
-# reference: object lanelet filter
+autoware_system_description:
+  version: 0.1.0
 
-# node information
 name: FilterA.node
 
 launch:

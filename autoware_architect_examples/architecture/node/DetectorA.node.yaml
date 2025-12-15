@@ -1,6 +1,6 @@
-# reference: centerpoint
+autoware_system_description:
+  version: 0.1.0
 
-# node information
 name: DetectorA.node
 
 launch:
