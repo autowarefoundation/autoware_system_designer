@@ -50,8 +50,8 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "autoware-architect-build=autoware_system_designer.cli.build:main",
-            "autoware-architect-generate=autoware_system_designer.cli.generate:main",
+            "autoware-system-designer-build=autoware_system_designer.cli.build:main",
+            "autoware-system-designer-generate=autoware_system_designer.cli.generate:main",
         ],
     },
     classifiers=[

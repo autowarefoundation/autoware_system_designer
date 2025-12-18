@@ -15,31 +15,31 @@
 """Custom exceptions for the Autoware System Designer system."""
 
 
-class ArchitectureError(Exception):
+class SystemDesignerError(Exception):
     """Base exception for architecture-related errors."""
     pass
 
 
-class NodeConfigurationError(ArchitectureError):
+class NodeConfigurationError(SystemDesignerError):
     """Exception raised for node configuration errors."""
     pass
 
 
-class ModuleConfigurationError(ArchitectureError):
+class ModuleConfigurationError(SystemDesignerError):
     """Exception raised for module configuration errors."""
     pass
 
 
-class ParameterConfigurationError(ArchitectureError):
+class ParameterConfigurationError(SystemDesignerError):
     """Exception raised for parameter configuration errors."""
     pass
 
 
-class DeploymentError(ArchitectureError):
+class DeploymentError(SystemDesignerError):
     """Exception raised for deployment errors."""
     pass
 
 
-class ValidationError(ArchitectureError):
+class ValidationError(SystemDesignerError):
     """Exception raised for validation errors."""
     pass

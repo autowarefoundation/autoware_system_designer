@@ -24,8 +24,8 @@ macro(autoware_system_designer_build_deploy project_name)
   list(GET _EXTRA_ARGS 0 _INPUT_NAME)
 
   set(BUILD_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/deployment_process.py")
-  set(ARCHITECT_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../architecture/autoware_system_designer")
-  set(ARCHITECTURE_RESOURCE_DIR "${CMAKE_BINARY_DIR}/../autoware_system_designer/resource")
+  set(SYSTEM_DESIGNER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../architecture/autoware_system_designer")
+  set(SYSTEM_DESIGNER_RESOURCE_DIR "${CMAKE_BINARY_DIR}/../autoware_system_designer/resource")
   set(OUTPUT_ROOT_DIR "${CMAKE_INSTALL_PREFIX}/share/${CMAKE_PROJECT_NAME}/")
   get_filename_component(WORKSPACE_ROOT "${CMAKE_BINARY_DIR}/../.." ABSOLUTE)
   set(LOG_FILE "${WORKSPACE_ROOT}/log/latest_build/${CMAKE_PROJECT_NAME}/build_${_INPUT_NAME}.log")
@@ -44,7 +44,7 @@ macro(autoware_system_designer_build_deploy project_name)
   endif()
 
   add_custom_target(run_build_py_${_INPUT_NAME} ALL
-    COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${ARCHITECT_SOURCE_DIR}:$ENV{PYTHONPATH} python3 -d ${BUILD_PY_SCRIPT} ${_DEPLOYMENT_FILE} ${ARCHITECTURE_RESOURCE_DIR} ${OUTPUT_ROOT_DIR} > ${LOG_FILE} 2>&1
+    COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${SYSTEM_DESIGNER_SOURCE_DIR}:$ENV{PYTHONPATH} python3 -d ${BUILD_PY_SCRIPT} ${_DEPLOYMENT_FILE} ${SYSTEM_DESIGNER_RESOURCE_DIR} ${OUTPUT_ROOT_DIR} > ${LOG_FILE} 2>&1
     COMMENT "Running build.py script ${_LOG_DESC}. Log: ${LOG_FILE}"
   )
   add_dependencies(${project_name} run_build_py_${_INPUT_NAME})

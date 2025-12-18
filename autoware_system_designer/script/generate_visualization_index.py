@@ -6,9 +6,9 @@ from pathlib import Path
 
 # Add path to find autoware_system_designer if not installed
 current_dir = Path(__file__).resolve().parent
-architect_root = current_dir.parent
-if str(architect_root) not in sys.path:
-    sys.path.insert(0, str(architect_root))
+system_designer_root = current_dir.parent
+if str(system_designer_root) not in sys.path:
+    sys.path.insert(0, str(system_designer_root))
 
 try:
     from autoware_system_designer.visualization.visualization_index import update_index
