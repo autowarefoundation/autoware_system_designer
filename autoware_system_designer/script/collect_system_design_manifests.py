@@ -100,8 +100,6 @@ def main():
 
     # Identify the current package name to detect install layout (isolated vs merged)
     current_pkg_name = get_package_name(args.start_path)
-    if not current_pkg_name:
-        current_pkg_name = 'autoware_system_designer' # Fallback
         
     is_isolated = False
     install_base = args.install_prefix
