@@ -4,7 +4,7 @@ name: MapDummy.node
 
 launch:
   package: autoware_system_dummy_modules
-  plugin: autoware::architect_dummy_modules::Mapping
+  plugin: autoware::system_dummy_modules::Mapping
 
 # interfaces
 inputs: []

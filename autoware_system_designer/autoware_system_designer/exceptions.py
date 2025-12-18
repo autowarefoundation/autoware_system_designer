@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Custom exceptions for the Auotware System Designerure system."""
+"""Custom exceptions for the Autoware System Designer system."""
 
 
 class ArchitectureError(Exception):

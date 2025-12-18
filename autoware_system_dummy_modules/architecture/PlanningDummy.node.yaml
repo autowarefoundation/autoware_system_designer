@@ -4,7 +4,7 @@ name: PlanningDummy.node
 
 launch:
   package: autoware_system_dummy_modules
-  plugin: autoware::architect_dummy_modules::Planning
+  plugin: autoware::system_dummy_modules::Planning
 
 # interfaces
 inputs:

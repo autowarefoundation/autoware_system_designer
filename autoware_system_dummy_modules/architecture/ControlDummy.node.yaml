@@ -4,7 +4,7 @@ name: ControlDummy.node
 
 launch:
   package: autoware_system_dummy_modules
-  plugin: autoware::architect_dummy_modules::Control
+  plugin: autoware::system_dummy_modules::Control
 
 inputs:
   - name: mission_planning/route

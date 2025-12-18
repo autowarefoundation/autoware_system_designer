@@ -28,7 +28,7 @@ if readme_path.exists():
 setup(
     name="autoware_system_designer",
     version="1.0.0",
-    description="Auotware System Designerure Package for building and deploying Autoware systems.",
+    description="Autoware System Designer Package for building and deploying Autoware systems.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Taekjin Lee",

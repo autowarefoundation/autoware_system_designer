@@ -37,34 +37,34 @@ def build(deployment_file: str, manifest_dir: str, output_root_dir: str):
     logger = system_config.set_logging()
 
     # load and build the deployment
-    logger.info("Auotware System Designer: Building deployment...")
+    logger.info("Autoware System Designer: Building deployment...")
     deployment = Deployment(system_config)
 
     # parameter set template export
-    logger.info("Auotware System Designer: Exporting parameter set template...")
+    logger.info("Autoware System Designer: Exporting parameter set template...")
     deployment.generate_parameter_set_template()
 
     # generate the system visualization
-    logger.info("Auotware System Designer: Generating visualization...")
+    logger.info("Autoware System Designer: Generating visualization...")
     deployment.visualize()
 
     # generate the launch files
-    logger.info("Auotware System Designer: Generating launch files...")
+    logger.info("Autoware System Designer: Generating launch files...")
     deployment.generate_launcher()
 
     # generate the system monitor configuration
-    logger.info("Auotware System Designer: Generating system monitor configuration...")
+    logger.info("Autoware System Designer: Generating system monitor configuration...")
     deployment.generate_system_monitor()
 
     # generate build scripts
-    logger.info("Auotware System Designer: Generating build scripts...")
+    logger.info("Autoware System Designer: Generating build scripts...")
     deployment.generate_build_scripts()
 
     # update the visualization index
-    logger.info("Auotware System Designer: Updating visualization index...")
+    logger.info("Autoware System Designer: Updating visualization index...")
     update_index(output_root_dir)
 
-    logger.info("Auotware System Designer: Done!")
+    logger.info("Autoware System Designer: Done!")
 
 
 if __name__ == "__main__":

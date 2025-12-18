@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Naming utilities for the Auotware System Designerure system."""
+"""Naming utilities for the Autoware System Designer system."""
 
 import re
 
