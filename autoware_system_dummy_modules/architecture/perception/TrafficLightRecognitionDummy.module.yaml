@@ -1,0 +1,23 @@
+autoware_system_design_format: v0.1.0
+
+name: TrafficLightRecognitionDummy.module
+
+instances:
+  - instance: classification
+    entity: TrafficLightRecognitionDummy.node
+
+external_interfaces:
+  input: []
+  output:
+    - name: classification/car/traffic_signals
+    - name: classification/pedestrian/traffic_signals
+    - name: detection/rois
+
+connections:
+  - from: classification.output.traffic_signal_car
+    to: output.classification/car/traffic_signals
+  - from: classification.output.traffic_signal_pedestrian
+    to: output.classification/pedestrian/traffic_signals
+  - from: classification.output.traffic_signal_rois
+    to: output.detection/rois
+

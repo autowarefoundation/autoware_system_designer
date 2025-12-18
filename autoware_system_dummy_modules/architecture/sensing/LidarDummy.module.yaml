@@ -1,0 +1,46 @@
+autoware_system_design_format: v0.1.0
+
+name: LidarDummy.module
+
+instances:
+  - instance: lidar_top
+    entity: LidarDummyDriver.node
+  - instance: lidar_left
+    entity: LidarDummyDriver.node
+  - instance: lidar_right
+    entity: LidarDummyDriver.node
+  - instance: lidar_rear
+    entity: LidarDummyDriver.node
+  - instance: lidar_concatenate
+    entity: ConcatenatePointcloudDummy.node
+
+external_interfaces:
+  input: []
+  output:
+    - name: top/pointcloud
+    - name: left/pointcloud
+    - name: right/pointcloud
+    - name: rear/pointcloud
+    - name: concatenated/pointcloud
+
+connections:
+  # individual lidar outputs
+  - from: lidar_top.output.pointcloud
+    to: output.top/pointcloud
+  - from: lidar_left.output.pointcloud
+    to: output.left/pointcloud
+  - from: lidar_right.output.pointcloud
+    to: output.right/pointcloud
+  - from: lidar_rear.output.pointcloud
+    to: output.rear/pointcloud
+  # concatenated lidar output
+  - from: lidar_top.output.pointcloud
+    to: lidar_concatenate.input.input1
+  - from: lidar_left.output.pointcloud
+    to: lidar_concatenate.input.input2
+  - from: lidar_right.output.pointcloud
+    to: lidar_concatenate.input.input3
+  - from: lidar_rear.output.pointcloud
+    to: lidar_concatenate.input.input4
+  - from: lidar_concatenate.output.output
+    to: output.concatenated/pointcloud

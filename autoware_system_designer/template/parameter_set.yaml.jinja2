@@ -1,0 +1,28 @@
+autoware_system_design_format: v0.1.0
+
+name: {{ name }}
+{% if parameters %}
+parameters:
+{% for node in parameters %}
+  - node: {{ node.node }}
+{% if node.parameter_files %}
+    parameter_files:
+{% for param_name, param_path in node.parameter_files.items() %}
+      - {{ param_name }}: {{ param_path }}
+{% endfor %}
+{% else %}
+    parameter_files: []
+{% endif %}
+{% if node.parameters %}
+    parameters:
+{% for config in node.parameters %}
+      - name: {{ config.name }}
+        value: {{ config.value }}
+{% endfor %}
+{% else %}
+    parameters: []
+{% endif %}
+{% endfor %}
+{% else %}
+parameters: []
+{% endif %}

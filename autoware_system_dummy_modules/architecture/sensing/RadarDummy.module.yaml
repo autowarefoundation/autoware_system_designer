@@ -1,0 +1,59 @@
+autoware_system_design_format: v0.1.0
+
+name: RadarDummy.module
+
+instances:
+  - instance: radar_front_center
+    entity: RadarDummyDriver.node
+  - instance: radar_front_left
+    entity: RadarDummyDriver.node
+  - instance: radar_front_right
+    entity: RadarDummyDriver.node
+  - instance: radar_rear_center
+    entity: RadarDummyDriver.node
+  - instance: radar_rear_left
+    entity: RadarDummyDriver.node
+  - instance: radar_rear_right
+    entity: RadarDummyDriver.node
+
+  - instance: simple_object_merger
+    entity: DetectedObjectMergerDummy6.node
+  - instance: simple_tracked_object_merger
+    entity: TrackedObjectMergerDummy6.node
+
+external_interfaces:
+  input: []
+  output:
+    - name: detected_objects
+    - name: tracked_objects
+
+connections:
+  - from: radar_front_center.output.detected_objects
+    to: simple_object_merger.input.object1
+  - from: radar_front_left.output.detected_objects
+    to: simple_object_merger.input.object2
+  - from: radar_front_right.output.detected_objects
+    to: simple_object_merger.input.object3
+  - from: radar_rear_center.output.detected_objects
+    to: simple_object_merger.input.object4
+  - from: radar_rear_left.output.detected_objects
+    to: simple_object_merger.input.object5
+  - from: radar_rear_right.output.detected_objects
+    to: simple_object_merger.input.object6
+  - from: simple_object_merger.output.merged_object
+    to: output.detected_objects
+
+  - from: radar_front_center.output.tracked_objects
+    to: simple_tracked_object_merger.input.object1
+  - from: radar_front_left.output.tracked_objects
+    to: simple_tracked_object_merger.input.object2
+  - from: radar_front_right.output.tracked_objects
+    to: simple_tracked_object_merger.input.object3
+  - from: radar_rear_center.output.tracked_objects
+    to: simple_tracked_object_merger.input.object4
+  - from: radar_rear_left.output.tracked_objects
+    to: simple_tracked_object_merger.input.object5
+  - from: radar_rear_right.output.tracked_objects
+    to: simple_tracked_object_merger.input.object6
+  - from: simple_tracked_object_merger.output.merged_object
+    to: output.tracked_objects

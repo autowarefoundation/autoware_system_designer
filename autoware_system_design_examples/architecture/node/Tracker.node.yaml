@@ -1,0 +1,52 @@
+autoware_system_design_format: v0.1.0
+
+name: Tracker.node
+
+launch:
+  package: autoware_perception_dummy_nodes
+  plugin: autoware::perception_dummy_nodes::Tracker
+
+# interfaces
+inputs:
+  - name: objects1
+    message_type: autoware_perception_msgs/msg/DetectedObjects
+  - name: objects2
+    message_type: autoware_perception_msgs/msg/DetectedObjects
+  - name: objects3
+    message_type: autoware_perception_msgs/msg/DetectedObjects
+    required: false
+outputs:
+  - name: objects
+    message_type: autoware_perception_msgs/msg/TrackedObjects
+    qos:
+      reliability: reliable
+      durability: transient_local
+
+# parameters
+parameter_files:
+  - name: tracker_setting_path
+    default: path/to/tracker_setting_path.yaml
+  - name: data_association_matrix_path
+    default: path/to/data_association_matrix_path.yaml
+  - name: input_channels_path
+    default: path/to/input_channels_path.yaml
+
+parameters: []
+
+# processes
+processes:
+  - name: update
+    trigger_conditions:
+      - and:
+          - on_input: objects1
+          - or:
+              - on_input: objects2
+              - on_input: objects3
+    outcomes:
+      - to_trigger: predict
+  - name: predict
+    trigger_conditions:
+      - on_trigger: update
+      - periodic: 10.0 # Hz
+    outcomes:
+      - to_output: objects

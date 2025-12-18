@@ -1,10 +1,10 @@
-# Autoware Architect (AWArch)
+# Auotware System Designer (AWArch)
 
-**Autoware Architect** is a comprehensive toolset designed to define, build, and deploy Autoware systems in a modular and structured way. It allows developers to describe the software architecture using configuration files (YAML) and automatically generates system artifacts such as ROS 2 launch files, visualization diagrams, and parameter templates.
+**Auotware System Designer** is a comprehensive toolset designed to define, build, and deploy Autoware systems in a modular and structured way. It allows developers to describe the software architecture using configuration files (YAML) and automatically generates system artifacts such as ROS 2 launch files, visualization diagrams, and parameter templates.
 
 ## Overview
 
-Traditional ROS 2 launch files can become complex and hard to manage as a system grows. Autoware Architect solves this by introducing a higher-level abstraction layer that separates **architecture definition** from **deployment details**.
+Traditional ROS 2 launch files can become complex and hard to manage as a system grows. Auotware System Designer solves this by introducing a higher-level abstraction layer that separates **architecture definition** from **deployment details**.
 
 ### Key Features
 
@@ -42,7 +42,7 @@ A collection of parameter overrides that can be applied to specific nodes in a s
 
 ## Project Structure
 
-To use Autoware Architect in your ROS 2 package, organize your files as follows:
+To use Auotware System Designer in your ROS 2 package, organize your files as follows:
 
 ```text
 src/<package_name>/
@@ -59,24 +59,24 @@ src/<package_name>/
 
 ## Build Integration
 
-Autoware Architect integrates directly into the CMake build process. Select the appropriate macros based on your package type.
+Auotware System Designer integrates directly into the CMake build process. Select the appropriate macros based on your package type.
 
 In your `CMakeLists.txt`:
 
 ```cmake
-find_package(autoware_architect REQUIRED)
+find_package(autoware_system_designer REQUIRED)
 
 # 1. Generate standalone node launchers (Optional)
 # Use this if your package defines nodes and you want individual launch files.
-autoware_architect_generate_launcher()
+autoware_system_designer_generate_launcher()
 
 # 2. Generate parameter files from schemas (Optional)
 # Use this if your package contains JSON schemas in the schema/ directory.
-autoware_architect_parameter()
+autoware_system_designer_parameter()
 
 # 3. Build a full system deployment (Deployment Packages Only)
 # Use this only in the package responsible for building the full system configuration.
-autoware_architect_build_deploy(
+autoware_system_designer_build_deploy(
   ${PROJECT_NAME}
   vehicle_x.deployment
 )
