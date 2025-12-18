@@ -17,7 +17,7 @@ import logging
 
 from ..parsers.data_parser import ConfigParser
 from ..models.config import Config, ConfigType, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
-from ..exceptions import ValidationError
+from ..exceptions import ValidationError, NodeConfigurationError, ModuleConfigurationError, ParameterConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class ConfigRegistry:
         entity = self._type_map[ConfigType.NODE].get(name)
         if entity is None:
             available = list(self._type_map[ConfigType.NODE].keys())
-            raise ValidationError(f"Node '{name}' not found. Available nodes: {available}")
+            raise NodeConfigurationError(f"Node '{name}' not found. Available nodes: {available}")
         return entity
     
     def get_module(self, name: str) -> ModuleConfig:
@@ -86,7 +86,7 @@ class ConfigRegistry:
         entity = self._type_map[ConfigType.MODULE].get(name)
         if entity is None:
             available = list(self._type_map[ConfigType.MODULE].keys())
-            raise ValidationError(f"Module '{name}' not found. Available modules: {available}")
+            raise ModuleConfigurationError(f"Module '{name}' not found. Available modules: {available}")
         return entity
     
     def get_parameter_set(self, name: str) -> ParameterSetConfig:
@@ -94,7 +94,7 @@ class ConfigRegistry:
         entity = self._type_map[ConfigType.PARAMETER_SET].get(name)
         if entity is None:
             available = list(self._type_map[ConfigType.PARAMETER_SET].keys())
-            raise ValidationError(f"Parameter set '{name}' not found. Available parameter sets: {available}")
+            raise ParameterConfigurationError(f"Parameter set '{name}' not found. Available parameter sets: {available}")
         return entity
     
     def get_system(self, name: str) -> SystemConfig:

@@ -26,7 +26,7 @@ from .builder.parameter_template_generator import ParameterTemplateGenerator
 from .builder.parameter_resolver import ParameterResolver
 from .parsers.data_validator import entity_name_decode
 from .parsers.yaml_parser import yaml_parser
-from .exceptions import ValidationError
+from .exceptions import ValidationError, DeploymentError
 from .utils.template_utils import TemplateRenderer
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
@@ -202,7 +202,7 @@ class Deployment:
             except Exception as e:
                 # try to visualize the system to show error status
                 self.visualize()
-                raise ValidationError(f"Error in setting deploy for mode '{mode_name}': {e}")
+                raise DeploymentError(f"Error in setting deploy for mode '{mode_name}': {e}")
 
     def visualize(self):
         # Collect data from all deployment instances
@@ -266,7 +266,7 @@ class Deployment:
     def generate_parameter_set_template(self):
         """Generate parameter set template using ParameterTemplateGenerator."""
         if not self.deploy_instances:
-            raise ValidationError("Deployment instances are not initialized")
+            raise DeploymentError("Deployment instances are not initialized")
         
         # Generate parameter set template for each mode
         output_paths = {}
