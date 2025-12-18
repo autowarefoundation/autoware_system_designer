@@ -1,0 +1,83 @@
+<?xml version="1.0"?>
+<!-- This file is auto-generated ROS2 launcher by the Auotware System Designer -->
+<launch>
+
+  <arg name="node_name" default="{{ node_name }}"/>
+
+  <!-- Interface -->
+{% for input in inputs %}
+  <arg name="input/{{ input.name }}" default="{{ input.name }}"/>
+{% endfor %}
+{% for output in outputs %}
+  <arg name="output/{{ output.name }}" default="{{ output.name }}"/>
+{% endfor %}
+
+  <!-- Parameter file paths -->
+{% for param_file in parameter_files %}
+  <arg name="{{ param_file.name }}" default="{{ param_file.default }}"/>
+{% endfor %}
+
+  <!-- Parameters -->
+{% for param in parameters %}
+  <arg name="{{ param.name }}" default="{{ param.default_value }}"/>
+{% endfor %}
+
+{% if is_ros2_file_launch %}
+  <include file="$(find-pkg-share {{package_name}})/launch/{{ros2_launch_file}}">
+{% for input in inputs %}
+    <arg name="input/{{ input.name }}" value="$(var input/{{ input.name }})"/>
+{% endfor %}
+{% for output in outputs %}
+    <arg name="output/{{ output.name }}" value="$(var output/{{ output.name }})"/>
+{% endfor %}
+{% for param in parameters %}
+    <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% endfor %}
+{% for param_file in parameter_files %}
+    <arg name="{{param_file.name}}" value="$(var {{ param_file.name }})"/>
+{% endfor %}
+  </include>
+{% elif use_container %}
+  <load_composable_node target="{{ container_name }}">
+    <composable_node pkg="{{ package_name }}" plugin="{{ plugin_name }}" name="$(var node_name)">
+      <!-- Remap input and output topics -->
+{% for input in inputs %}
+      <remap from="~/input/{{ input.name }}" to="$(var input/{{ input.name }})"/>
+{% endfor %}
+{% for output in outputs %}
+      <remap from="~/output/{{ output.name }}" to="$(var output/{{ output.name }})"/>
+{% endfor %}
+
+      <!-- Parameter files -->
+{% for param_file in parameter_files %}
+      <param from="$(var {{ param_file.name }})" allow_substs="{{ param_file.allow_substs }}"/>
+{% endfor %}
+
+      <!-- Parameters -->
+{% for param in parameters %}
+      <param name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% endfor %}
+    </composable_node>
+  </load_composable_node>
+{% else %}
+  <node pkg="{{ package_name }}" exec="{{ executable_name }}" name="$(var node_name)" output="{{ node_output }}">
+    <!-- Remap input and output topics -->
+{% for input in inputs %}
+    <remap from="~/input/{{ input.name }}" to="$(var input/{{ input.name }})"/>
+{% endfor %}
+{% for output in outputs %}
+    <remap from="~/output/{{ output.name }}" to="$(var output/{{ output.name }})"/>
+{% endfor %}
+
+    <!-- Parameter files -->
+{% for param_file in parameter_files %}
+    <param from="$(var {{ param_file.name }})" allow_substs="{{ param_file.allow_substs }}"/>
+{% endfor %}
+
+    <!-- Parameters -->
+{% for param in parameters %}
+    <param name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% endfor %}
+  </node>
+{% endif %}
+</launch>

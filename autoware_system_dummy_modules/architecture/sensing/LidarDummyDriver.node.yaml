@@ -1,0 +1,36 @@
+autoware_system_design_format: v0.1.0
+
+name: LidarDummyDriver.node
+
+launch:
+  package: autoware_system_dummy_modules
+  plugin: autoware::architect_dummy_modules::LidarDummyDriver
+
+# interfaces
+inputs: []
+
+outputs:
+  - name: pointcloud
+    message_type: sensor_msgs/msg/PointCloud2
+    qos:
+      reliability: best_effort
+      durability: volatile
+
+# parameters
+parameter_files: []
+
+parameters:
+  - name: composable_node
+    type: bool
+    default: false
+
+# processes
+processes:
+  - name: lidar
+    trigger_conditions:
+      - periodic: 10.0 # Hz
+        warn_rate: 5.0 # Hz
+        error_rate: 1.0 # Hz
+        timeout: 1.0 # s
+    outcomes:
+      - to_output: pointcloud
