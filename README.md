@@ -1,10 +1,10 @@
-# Auotware System Designer (AWArch)
+# Autoware System Designer
 
-**Auotware System Designer** is a comprehensive toolset designed to define, build, and deploy Autoware systems in a modular and structured way. It allows developers to describe the software architecture using configuration files (YAML) and automatically generates system artifacts such as ROS 2 launch files, visualization diagrams, and parameter templates.
+**Autoware System Designer** is a comprehensive toolset designed to define, build, and deploy Autoware systems in a modular and structured way. It allows developers to describe the software architecture using configuration files (YAML) and automatically generates system artifacts such as ROS 2 launch files, visualization diagrams, and parameter templates.
 
 ## Overview
 
-Traditional ROS 2 launch files can become complex and hard to manage as a system grows. Auotware System Designer solves this by introducing a higher-level abstraction layer that separates **architecture definition** from **deployment details**.
+Traditional ROS 2 launch files can become complex and hard to manage as a system grows. Autoware System Designer solves this by introducing a higher-level abstraction layer that separates **system design** from **deployment details**.
 
 ### Key Features
 
@@ -42,7 +42,7 @@ A collection of parameter overrides that can be applied to specific nodes in a s
 
 ## Project Structure
 
-To use Auotware System Designer in your ROS 2 package, organize your files as follows:
+To use Autoware System Designer in your ROS 2 package, organize your files as follows:
 
 ```text
 src/<package_name>/
@@ -59,7 +59,7 @@ src/<package_name>/
 
 ## Build Integration
 
-Auotware System Designer integrates directly into the CMake build process. Select the appropriate macros based on your package type.
+Autoware System Designer integrates directly into the CMake build process. Select the appropriate macros based on your package type.
 
 In your `CMakeLists.txt`:
 

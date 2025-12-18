@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Auotware System Designerure Package."""
+"""Autoware System Designer Package."""
 
 __version__ = "1.0.0"
 

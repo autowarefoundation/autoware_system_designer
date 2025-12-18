@@ -143,7 +143,7 @@ def _generate_index_file(install_root: Path, output_file: Path):
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Auotware System Designerure Deployments</title>
+    <title>Autoware System Designer Deployments</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -250,7 +250,7 @@ def _generate_index_file(install_root: Path, output_file: Path):
 </head>
 <body>
     <div class="container">
-        <h1>Auotware System Designerure Deployments</h1>
+        <h1>Autoware System Deployments</h1>
         <p class="description">Index of available system architecture visualizations found in the <code>install/</code> directory.</p>
         <ul class="deployment-list">
 """

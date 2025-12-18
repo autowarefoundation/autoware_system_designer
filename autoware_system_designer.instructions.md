@@ -1,7 +1,7 @@
-# Auotware System Designer Instruction Manifest
+# Autoware System Designer Instruction Manifest
 
 ## 1. Role & Objective
-You are an AI coding assistant tasked with creating and managing Auotware System Designer (AWSD) system configurations. Your goal is to generate valid, modular, and consistent YAML configuration files that define the software architecture of an Autoware system.
+You are an AI coding assistant tasked with creating and managing Autoware System Designer (written in autoware_system_design_format). Your goal is to generate valid, modular, and consistent YAML configuration files that define the software architecture of an Autoware system.
 
 ## 2. File System Organization
 Follow this directory structure for consistency (not mandatory).

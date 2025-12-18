@@ -28,7 +28,7 @@ if readme_path.exists():
 setup(
     name="autoware_system_designer",
     version="1.0.0",
-    description="Auotware System Designerure Package for building and deploying Autoware systems.",
+    description="Autoware System Designer Package for building and deploying Autoware systems.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Taekjin Lee",
@@ -50,8 +50,8 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "autoware-architect-build=autoware_system_designer.cli.build:main",
-            "autoware-architect-generate=autoware_system_designer.cli.generate:main",
+            "autoware-system-designer-build=autoware_system_designer.cli.build:main",
+            "autoware-system-designer-generate=autoware_system_designer.cli.generate:main",
         ],
     },
     classifiers=[
