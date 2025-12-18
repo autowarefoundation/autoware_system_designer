@@ -96,7 +96,7 @@ class Deployment:
         file_package_map: Dict[str, str] = {}
         manifest_dir = system_config.manifest_dir
         if not os.path.isdir(manifest_dir):
-            raise ValidationError(f"Architecture manifest directory not found or not a directory: {manifest_dir}")
+            raise ValidationError(f"System design manifest directory not found or not a directory: {manifest_dir}")
 
         for entry in sorted(os.listdir(manifest_dir)):
             if not entry.endswith('.yaml'):
@@ -133,7 +133,7 @@ class Deployment:
             except Exception as e:
                 logger.warning(f"Failed to load manifest {manifest_file}: {e}")
         if not system_list:
-            raise ValidationError(f"No architecture configuration files collected.")
+            raise ValidationError(f"No system design configuration files collected.")
         return system_list, package_paths, file_package_map
 
     def _check_config(self) -> bool:

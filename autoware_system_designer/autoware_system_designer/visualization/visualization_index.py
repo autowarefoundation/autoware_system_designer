@@ -41,7 +41,7 @@ def get_install_root(path: Path) -> Path:
 
 def update_index(output_root_dir: str):
     """
-    Update the architecture_visualization.html index file in the install root.
+    Update the systems.html index file in the install root.
     Uses file locking to safely handle concurrent builds.
     """
     output_path = Path(output_root_dir).resolve()
@@ -51,8 +51,8 @@ def update_index(output_root_dir: str):
         logger.warning(f"Could not determine install root from {output_root_dir}. Skipping index update.")
         return
 
-    index_file = install_root / "architecture_visualization.html"
-    lock_file = install_root / ".architecture_visualization_index.lock"
+    index_file = install_root / "systems.html"
+    lock_file = install_root / ".systems_index.lock"
 
     # Ensure we can write to lock file
     try:
@@ -250,8 +250,8 @@ def _generate_index_file(install_root: Path, output_file: Path):
 </head>
 <body>
     <div class="container">
-        <h1>Autoware System Deployments</h1>
-        <p class="description">Index of available system architecture visualizations found in the <code>install/</code> directory.</p>
+        <h1>Autoware Systems and their Deployments</h1>
+        <p class="description">Index of available systems and their deployments found in the <code>install/</code> directory.</p>
         <ul class="deployment-list">
 """
 

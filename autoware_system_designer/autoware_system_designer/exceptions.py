@@ -16,7 +16,7 @@
 
 
 class SystemDesignerError(Exception):
-    """Base exception for architecture-related errors."""
+    """Base exception for system-designer related errors."""
     pass
 
 
