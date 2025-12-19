@@ -29,15 +29,15 @@ def find_packages(root_dir):
             # But let's be safe and traverse.
     return packages
 
-def check_file_for_description(filepath):
+def parse_design_file(filepath):
     try:
         with open(filepath, 'r') as f:
             content = yaml.safe_load(f)
             if content and isinstance(content, dict) and 'autoware_system_design_format' in content:
-                return True
+                return content
     except:
         pass
-    return False
+    return None
 
 def infer_type(filename):
     if filename.endswith('.node.yaml'):
@@ -122,7 +122,8 @@ def main():
         yf_abs = os.path.abspath(yf)
         
         # Check content first (it's a hard requirement)
-        if not check_file_for_description(yf_abs):
+        content = parse_design_file(yf_abs)
+        if not content:
             continue
             
         # Find which package it belongs to
@@ -139,12 +140,19 @@ def main():
                 break
             curr = os.path.dirname(curr)
         
-        if not found_pkg:
+        # Determine target package
+        target_pkg = found_pkg
+        
+        # If it's a node design file, check if it specifies a package
+        if 'launch' in content and 'package' in content['launch']:
+            target_pkg = content['launch']['package']
+
+        if not target_pkg:
             continue
             
-        if found_pkg not in pkg_files:
-            pkg_files[found_pkg] = []
-        pkg_files[found_pkg].append(yf_abs)
+        if target_pkg not in pkg_files:
+            pkg_files[target_pkg] = []
+        pkg_files[target_pkg].append(yf_abs)
 
     print(f"Found system descriptions in {len(pkg_files)} packages")
 
