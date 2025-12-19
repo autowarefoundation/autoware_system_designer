@@ -5,11 +5,11 @@ You are an AI coding assistant tasked with creating and managing Autoware System
 
 ## 2. File System Organization
 Follow this directory structure for consistency (not mandatory).
-- **Root**: `src/<package_name>/architecture/`
-- **Nodes**: `src/<package_name>/architecture/node/` (suffix: `.node.yaml`)
-- **Modules**: `src/<package_name>/architecture/module/` (suffix: `.module.yaml`)
-- **Systems**: `src/<package_name>/architecture/system/` (suffix: `.system.yaml`)
-- **Parameter Sets**: `src/<package_name>/architecture/parameter_set/` (suffix: `.parameter_set.yaml`)
+- **Root**: `src/<package_name>/design/`
+- **Nodes**: `src/<package_name>/design/node/` (suffix: `.node.yaml`)
+- **Modules**: `src/<package_name>/design/module/` (suffix: `.module.yaml`)
+- **Systems**: `src/<package_name>/design/system/` (suffix: `.system.yaml`)
+- **Parameter Sets**: `src/<package_name>/design/parameter_set/` (suffix: `.parameter_set.yaml`)
 
 ## 3. Configuration Entities & Schemas
 

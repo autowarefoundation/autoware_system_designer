@@ -123,16 +123,16 @@ class NodeDiagramModule {
     async loadAndRender() {
         try {
             // Load data if not already loaded
-            if (!window.architectureData || !window.architectureData[this.options.mode]) {
+            if (!window.systemDesignData || !window.systemDesignData[this.options.mode]) {
                 await this.loadDataScript(this.options.mode);
             }
 
-            if (!window.architectureData || !window.architectureData[this.options.mode]) {
+            if (!window.systemDesignData || !window.systemDesignData[this.options.mode]) {
                 throw new Error(`No data available for mode: ${this.options.mode}`);
             }
 
             // Transform and render
-            const elkGraph = this.transformDataToElk(window.architectureData[this.options.mode]);
+            const elkGraph = this.transformDataToElk(window.systemDesignData[this.options.mode]);
             await this.layoutAndRenderNodeDiagram(elkGraph);
 
         } catch (error) {

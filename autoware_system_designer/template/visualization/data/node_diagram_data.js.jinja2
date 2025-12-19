@@ -1,10 +1,10 @@
 (function() {
-  // Initialize architecture data namespace
-  if (!window.architectureData) window.architectureData = {};
+  // Initialize design data namespace
+  if (!window.systemDesignData) window.systemDesignData = {};
   
   // Store data for the specific mode
   // This data structure is consumed by ELK.js visualization (node_diagram.html)
-  window.architectureData["{{ mode if mode else 'default' }}"] = {
+  window.systemDesignData["{{ mode if mode else 'default' }}"] = {
     "name": {{ name | tojson }},
     "unique_id": {{ unique_id | tojson }},
     "entity_type": {{ entity_type | tojson }},

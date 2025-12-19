@@ -15,25 +15,25 @@
 macro(autoware_system_designer_build_deploy project_name)
   # Supported invocation patterns:
   #   autoware_system_designer_build_deploy(<project> <deployment_file>)
-  #   autoware_system_designer_build_deploy(<project> <architecture_file>)
+  #   autoware_system_designer_build_deploy(<project> <design_file>)
   set(_EXTRA_ARGS ${ARGN})
   list(LENGTH _EXTRA_ARGS _EXTRA_LEN)
   if(_EXTRA_LEN LESS 1)
-    message(FATAL_ERROR "autoware_system_designer_build_deploy: expected at least 1 extra arg (<deployment|architecture>), got ${_EXTRA_LEN}: ${_EXTRA_ARGS}")
+    message(FATAL_ERROR "autoware_system_designer_build_deploy: expected at least 1 extra arg (<deployment|design>), got ${_EXTRA_LEN}: ${_EXTRA_ARGS}")
   endif()
   list(GET _EXTRA_ARGS 0 _INPUT_NAME)
 
   set(BUILD_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/deployment_process.py")
-  set(SYSTEM_DESIGNER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../architecture/autoware_system_designer")
+  set(SYSTEM_DESIGNER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../design/autoware_system_designer")
   set(SYSTEM_DESIGNER_RESOURCE_DIR "${CMAKE_BINARY_DIR}/../autoware_system_designer/resource")
   set(OUTPUT_ROOT_DIR "${CMAKE_INSTALL_PREFIX}/share/${CMAKE_PROJECT_NAME}/")
   get_filename_component(WORKSPACE_ROOT "${CMAKE_BINARY_DIR}/../.." ABSOLUTE)
   set(LOG_FILE "${WORKSPACE_ROOT}/log/latest_build/${CMAKE_PROJECT_NAME}/build_${_INPUT_NAME}.log")
 
   if(_INPUT_NAME MATCHES ".*\\.system$")
-    # If the input is an architecture file, use it directly.
+    # If the input is an design file, use it directly.
     set(_DEPLOYMENT_FILE "${_INPUT_NAME}")
-    set(_LOG_DESC "(architecture=${_INPUT_NAME})")
+    set(_LOG_DESC "(design=${_INPUT_NAME})")
   else()
     # If it's a deployment name, resolve to the deployment file path.
     set(_DEPLOYMENT_FILE "${CMAKE_SOURCE_DIR}/deployment/${_INPUT_NAME}.yaml")
