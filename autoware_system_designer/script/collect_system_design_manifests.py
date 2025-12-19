@@ -98,6 +98,20 @@ def main():
     pkg_paths = find_packages(workspace_root)
     print(f"Found {len(pkg_paths)} packages")
 
+    # Identify the current package name to detect install layout (isolated vs merged)
+    current_pkg_name = get_package_name(args.start_path)
+        
+    is_isolated = False
+    install_base = args.install_prefix
+    clean_prefix = args.install_prefix.rstrip(os.path.sep)
+    
+    if os.path.basename(clean_prefix) == current_pkg_name:
+        is_isolated = True
+        install_base = os.path.dirname(clean_prefix)
+        print(f"Detected isolated install layout. Base: {install_base}")
+    else:
+        print(f"Detected merged install layout (or non-standard). Prefix: {install_base}")
+
     pkg_files = {}
 
     # Glob all yaml files
@@ -140,8 +154,12 @@ def main():
 
     for pkg, files in pkg_files.items():
         manifest_path = os.path.join(output_dir, f"{pkg}.yaml")
-        # Assuming shared install: install_prefix/share/pkg_name
-        pkg_install_path = os.path.join(args.install_prefix, 'share', pkg)
+        
+        if is_isolated:
+            pkg_install_path = os.path.join(install_base, pkg, 'share', pkg)
+        else:
+            # Assuming shared install: install_prefix/share/pkg_name
+            pkg_install_path = os.path.join(args.install_prefix, 'share', pkg)
         
         data = {
             'package_name': pkg,

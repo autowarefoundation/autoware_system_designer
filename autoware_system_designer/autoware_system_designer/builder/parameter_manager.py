@@ -20,6 +20,7 @@ import re
 
 from ..models.parameters import ParameterList, ParameterFileList, Parameter, ParameterFile, ParameterType
 from ..parsers.yaml_parser import yaml_parser
+from ..exceptions import ParameterConfigurationError
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -144,7 +145,7 @@ class ParameterManager:
         """
 
         if path is None:
-            raise ValueError(f"path is None. package_name: {package_name}, node_namespace: {self.instance.namespace_str}, path: {path}")
+            raise ParameterConfigurationError(f"path is None. package_name: {package_name}, node_namespace: {self.instance.namespace_str}, path: {path}")
 
         # Resolve any substitutions in the path first
         if self.parameter_resolver:
@@ -348,7 +349,7 @@ class ParameterManager:
                 # param_schema = cfg_param.get("schema")
 
                 if param_name is None or param_value is None:
-                    raise ValueError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, parameter_files: {self.instance.configuration.parameter_files}")
+                    raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, parameter_files: {self.instance.configuration.parameter_files}")
 
                 # Resolve parameter file path if resolver is available
                 if self.parameter_resolver:
@@ -378,7 +379,7 @@ class ParameterManager:
                 param_type = cfg_param.get("type", "string")
 
                 if param_name is None or param_value is None:
-                    raise ValueError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, parameter_files: {self.instance.configuration.parameter_files}")
+                    raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, parameter_files: {self.instance.configuration.parameter_files}")
 
                 # Resolve parameter value if resolver is available
                 if self.parameter_resolver:

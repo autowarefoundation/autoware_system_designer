@@ -25,7 +25,7 @@ def build(deployment_file: str, manifest_dir: str, output_root_dir: str):
     #   manifest_dir: directory containing per-package manifest YAML files (each lists system_config_files)
     #   output_root_dir: root directory for generated exports
 
-    # configure the architecture
+    # configure the autoware system design format files
     system_config = SystemConfig()
     system_config.debug_mode = True
     system_config.log_level = "INFO"

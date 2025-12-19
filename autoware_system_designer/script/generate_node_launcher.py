@@ -102,7 +102,7 @@ def generate_launcher(node_yaml_dir, launch_file_dir) -> None:
     logger = logging.getLogger(__name__)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    # parse the architecture yaml configuration
+    # parse the autoware system design format files
     with open(node_yaml_dir, "r") as stream:
         try:
             node_yaml = yaml.safe_load(stream)

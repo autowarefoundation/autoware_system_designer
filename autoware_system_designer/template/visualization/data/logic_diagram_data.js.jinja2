@@ -3,7 +3,7 @@
   if (!window.logicDiagramData) window.logicDiagramData = {};
 
   // Store data for the specific mode
-  // This data structure contains the full architecture data for logic diagram generation
+  // This data structure contains the full design data for logic diagram generation
   window.logicDiagramData["{{ mode if mode else 'default' }}"] = {
     "name": {{ name | tojson }},
     "unique_id": {{ unique_id | tojson }},

@@ -16,7 +16,7 @@ Traditional ROS 2 launch files can become complex and hard to manage as a system
 
 ## Core Concepts
 
-The architecture is built upon four main entity types:
+The system is built upon four main entity types:
 
 ### 1. Node (`*.node.yaml`)
 Represents a single ROS 2 node. It defines:
@@ -46,7 +46,7 @@ To use Autoware System Designer in your ROS 2 package, organize your files as fo
 
 ```text
 src/<package_name>/
-├── architecture/
+├── design/
 │   ├── node/           # *.node.yaml
 │   ├── module/         # *.module.yaml
 │   ├── system/         # *.system.yaml

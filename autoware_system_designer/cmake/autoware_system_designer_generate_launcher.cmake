@@ -13,10 +13,10 @@
 # limitations under the License.
 
 macro(autoware_system_designer_generate_launcher)
-  # Check if architecture directory exists
-  set(ARCHITECTURE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/architecture")
+  # Check if design directory exists
+  set(DESIGN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/design")
   
-  if(EXISTS ${ARCHITECTURE_DIR})
+  if(EXISTS ${DESIGN_DIR})
     # Set up paths - use absolute path to the script
     set(GENERATE_LAUNCHER_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/generate_node_launcher.py")
     set(LAUNCHER_FILE_DIR "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/launcher/")
@@ -27,7 +27,7 @@ macro(autoware_system_designer_generate_launcher)
     set(LOG_FILE "${LOG_DIR}/launcher_generation.log")
     
     # Find all node YAML files recursively
-    file(GLOB_RECURSE NODE_YAML_FILES "${ARCHITECTURE_DIR}/*.node.yaml")
+    file(GLOB_RECURSE NODE_YAML_FILES "${DESIGN_DIR}/*.node.yaml")
     
     if(NODE_YAML_FILES)
       message(STATUS "Found node YAML files in ${PROJECT_NAME}: ${NODE_YAML_FILES}")
@@ -70,11 +70,11 @@ macro(autoware_system_designer_generate_launcher)
       )
       
     else()
-      message(STATUS "No node YAML files found for ${PROJECT_NAME} in ${ARCHITECTURE_DIR}")
+      message(STATUS "No node YAML files found for ${PROJECT_NAME} in ${DESIGN_DIR}")
     endif()
     
   else()
-    message(STATUS "No architecture directory found at ${ARCHITECTURE_DIR}")
+    message(STATUS "No design directory found at ${DESIGN_DIR}")
   endif()
   
 endmacro()
