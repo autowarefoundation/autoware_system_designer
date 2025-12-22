@@ -155,6 +155,10 @@ class ParameterManager:
         if path.startswith('/'):
             return path
 
+        # if path starts with $(find-pkg-share, it's not resolved package path, so return it as is
+        if path.startswith('$(find-pkg-share'):
+            return path
+
         # Check if this is a default parameter file (not override)
         is_default_file = not is_override
 
