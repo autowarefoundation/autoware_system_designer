@@ -224,6 +224,19 @@ class Instance:
             self.children[instance_name] = instance
             logger.debug(f"System instance '{self.namespace_str}' added component '{instance_name}' (uid={instance.unique_id})")
         
+        # Apply mode parameter set (between component creation and component parameter sets)
+        if hasattr(self, 'mode') and self.mode:
+            modes_config = self.configuration.modes or []
+            mode_config = next((m for m in modes_config if m.get('name') == self.mode), None)
+            if mode_config and 'parameter_set' in mode_config:
+                logger.info(f"Applying mode '{self.mode}' parameter set to system")
+                # Create a dummy component config to reuse _apply_parameter_set
+                dummy_component_config = {'parameter_set': mode_config['parameter_set']}
+                # Apply to self (root), disabling namespace check to allow global parameters
+                self._apply_parameter_set(self, dummy_component_config, config_registry, check_namespace=False,
+                                          file_parameter_type=ParameterType.MODE_FILE,
+                                          direct_parameter_type=ParameterType.MODE)
+
         # Second pass: apply parameter sets after all instances are created
         # This ensures that parameter_sets can target nodes across different components
         for cfg_component in components_to_instantiate:
@@ -266,7 +279,9 @@ class Instance:
         # recursive call is finished
         self.is_initialized = True
 
-    def _apply_parameter_set(self, instance: "Instance", cfg_component: dict, config_registry: ConfigRegistry):
+    def _apply_parameter_set(self, instance: "Instance", cfg_component: dict, config_registry: ConfigRegistry, check_namespace: bool = True,
+                             file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
+                             direct_parameter_type: ParameterType = ParameterType.OVERRIDE):
         """Apply parameter set(s) to an instance using direct node targeting.
         
         Supports both single parameter_set (str) and multiple parameter_sets (list of str).
@@ -298,7 +313,7 @@ class Instance:
                         node_namespace = param_config.get("node")
                         
                         # Only apply if the target node is under this component's namespace
-                        if node_namespace != instance.namespace_str and not node_namespace.startswith(instance.namespace_str + "/"):
+                        if check_namespace and node_namespace != instance.namespace_str and not node_namespace.startswith(instance.namespace_str + "/"):
                             logger.debug(f"Parameter set '{param_set_name}' skip node '{node_namespace}' (component namespace '{instance.namespace_str}')")
                             continue
                         
@@ -321,7 +336,9 @@ class Instance:
 
                         # Apply parameters directly to the target node
                         instance.parameter_manager.apply_node_parameters(
-                            node_namespace, parameter_files, parameters, config_registry
+                            node_namespace, parameter_files, parameters, config_registry,
+                            file_parameter_type=file_parameter_type,
+                            direct_parameter_type=direct_parameter_type
                         )
                         logger.debug(f"Applied parameters to node '{node_namespace}' from set '{param_set_name}' files={len(parameter_files)} configs={len(parameters)}")
             except Exception as e:

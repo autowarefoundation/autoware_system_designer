@@ -18,6 +18,11 @@
 {% endif %}
 {% endfor %}
 {% for param in node.parameters %}
+{% if param.parameter_type.name == 'MODE' %}
+    <arg name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
+{% endfor %}
+{% for param in node.parameters %}
 {% if param.parameter_type.name == 'OVERRIDE' %}
     <arg name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
@@ -45,9 +50,32 @@
 {% endif %}
 {% endfor %}
 
-      <!-- Parameters - Parameter files -->
+      <!-- Parameters - Default Parameter files -->
 {% for param_file in node.parameter_files %}
+{% if param_file.parameter_type.name == 'DEFAULT_FILE' %}
       <param from="{{ param_file.path }}"/>
+{% endif %}
+{% endfor %}
+
+      <!-- Parameters - Mode -->
+{% for param in node.parameters %}
+{% if param.parameter_type.name == 'MODE' %}
+      <param name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
+{% endfor %}
+
+      <!-- Parameters - Mode Parameter files -->
+{% for param_file in node.parameter_files %}
+{% if param_file.parameter_type.name == 'MODE_FILE' %}
+      <param from="{{ param_file.path }}"/>
+{% endif %}
+{% endfor %}
+
+      <!-- Parameters - Override Parameter files -->
+{% for param_file in node.parameter_files %}
+{% if param_file.parameter_type.name == 'OVERRIDE_FILE' %}
+      <param from="{{ param_file.path }}"/>
+{% endif %}
 {% endfor %}
 
       <!-- Parameters - Overrides -->
@@ -79,9 +107,32 @@
 {% endif %}
 {% endfor %}
 
-    <!-- Parameters - Parameter files -->
+    <!-- Parameters - Default Parameter files -->
 {% for param_file in node.parameter_files %}
+{% if param_file.parameter_type.name == 'DEFAULT_FILE' %}
     <param from="{{ param_file.path }}"/>
+{% endif %}
+{% endfor %}
+
+    <!-- Parameters - Mode -->
+{% for param in node.parameters %}
+{% if param.parameter_type.name == 'MODE' %}
+    <param name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
+{% endfor %}
+
+    <!-- Parameters - Mode Parameter files -->
+{% for param_file in node.parameter_files %}
+{% if param_file.parameter_type.name == 'MODE_FILE' %}
+    <param from="{{ param_file.path }}"/>
+{% endif %}
+{% endfor %}
+
+    <!-- Parameters - Override Parameter files -->
+{% for param_file in node.parameter_files %}
+{% if param_file.parameter_type.name == 'OVERRIDE_FILE' %}
+    <param from="{{ param_file.path }}"/>
+{% endif %}
 {% endfor %}
 
     <!-- Parameters - Overrides -->
