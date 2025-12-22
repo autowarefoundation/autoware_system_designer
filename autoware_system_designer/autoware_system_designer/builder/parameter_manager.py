@@ -97,6 +97,7 @@ class ParameterManager:
                 "type": "param_file",
                 "name": param_file.name,
                 "path": resolved_path,
+                "allow_substs": param_file.allow_substs,
                 "parameter_type": param_file.parameter_type
             })
         return result
