@@ -298,7 +298,7 @@ class Instance:
                         node_namespace = param_config.get("node")
                         
                         # Only apply if the target node is under this component's namespace
-                        if not node_namespace.startswith(instance.namespace_str + "/"):
+                        if node_namespace != instance.namespace_str and not node_namespace.startswith(instance.namespace_str + "/"):
                             logger.debug(f"Parameter set '{param_set_name}' skip node '{node_namespace}' (component namespace '{instance.namespace_str}')")
                             continue
                         
