@@ -23,10 +23,10 @@ class ParameterType(Enum):
     GLOBAL = 0           # Global parameter (lowest priority)
     DEFAULT_FILE = 1     # Parameter loaded from default parameter file
     DEFAULT = 2          # Default parameter 
-    MODE_FILE = 3        # Parameter loaded from mode parameter file
-    MODE = 4             # Mode specific parameter
-    OVERRIDE_FILE = 5    # Parameter loaded from override parameter file
-    OVERRIDE = 6         # Directly set override parameter (highest priority)
+    OVERRIDE_FILE = 3    # Parameter loaded from override parameter file
+    OVERRIDE = 4         # Directly set override parameter
+    MODE_FILE = 5        # Parameter loaded from mode parameter file
+    MODE = 6             # Mode specific parameter (highest priority)
 
 class Parameter:
     """Represents a single parameter with its value and metadata."""
