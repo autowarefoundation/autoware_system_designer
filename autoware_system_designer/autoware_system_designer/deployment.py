@@ -105,10 +105,9 @@ class Deployment:
             try:
                 manifest_yaml = yaml_parser.load_config(manifest_file)
                 
-                # Get package path if available
-                if 'package_path' in manifest_yaml:
-                    package_name = manifest_yaml.get('package_name', os.path.splitext(entry)[0])
-                    package_paths[package_name] = manifest_yaml['package_path']
+                # Load package map if available
+                if 'package_map' in manifest_yaml:
+                    package_paths.update(manifest_yaml['package_map'])
 
                 files = manifest_yaml.get('system_config_files')
                 # Allow the field to be empty or null without raising an error
