@@ -4,37 +4,15 @@
   <!-- Component Launcher: {{ namespace }} -->
   <!-- Compute Unit: {{ compute_unit }} -->
   <!-- This launcher starts all nodes in component: {{ namespace }} -->
-
-{%- macro node_configuration(node) -%}
+{% macro node_configuration(node) %}
 <!-- Remap input and output topics -->
 {% for port in node.ports %}
 <remap from="~/{{ port.direction }}/{{ port.name }}" to="{{ port.topic }}"/>
 {% endfor %}
 
-<!-- Parameters - Global (lowest priority, applied first) -->
+<!-- Parameters - Non-Override Parameters -->
 {% for param in node.parameters %}
-{% if param.parameter_type.name == 'GLOBAL' %}
-<param name="{{ param.name }}" value="{{ param.value }}"/>
-{% endif %}
-{% endfor %}
-
-<!-- Parameters - Default -->
-{% for param in node.parameters %}
-{% if param.parameter_type.name == 'DEFAULT' or param.parameter_type.name == 'DEFAULT_FILE' %}
-<param name="{{ param.name }}" value="{{ param.value }}"/>
-{% endif %}
-{% endfor %}
-
-<!-- Parameters - Default Parameter files -->
-{% for param_file in node.parameter_files %}
-{% if param_file.parameter_type.name == 'DEFAULT_FILE' %}
-<param from="{{ param_file.path }}" allow_substs="{{ param_file.allow_substs }}"/>
-{% endif %}
-{% endfor %}
-
-<!-- Parameters - Mode -->
-{% for param in node.parameters %}
-{% if param.parameter_type.name == 'MODE' %}
+{% if param.parameter_type.name != 'OVERRIDE' %}
 <param name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
 {% endfor %}
@@ -59,7 +37,7 @@
 <param name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
 {% endfor %}
-{%- endmacro -%}
+{% endmacro %}
 
 {% for node in nodes %}
   <!-- Node: {{ node.full_namespace }}/{{ node.name }} -->

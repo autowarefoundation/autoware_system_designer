@@ -68,12 +68,11 @@ class ParameterManager:
         """
         result = []
 
+        # sort by its priority. larger enum value is lower priority, comes earlier in the launcher
+        self.parameters.list.sort(key=lambda x: x.parameter_type.value)
+
         # Add regular parameters
         for param in self.parameters.list:
-            # Skip parameters that are loaded from files, as they will be passed via parameter files
-            if param.parameter_type in [ParameterType.DEFAULT_FILE, ParameterType.MODE_FILE, ParameterType.OVERRIDE_FILE]:
-                continue
-
             if param.value is not None:
                 result.append({
                     "type": "param",
@@ -92,6 +91,10 @@ class ParameterManager:
         """
         result = []
         for param_file in self.parameter_files.list:
+            # Skip DEFAULT_FILE parameter files as their parameters are expanded individually
+            if param_file.parameter_type == ParameterType.DEFAULT_FILE:
+                continue
+
             resolved_path = self._resolve_parameter_file_path(param_file.path, self._get_package_name(), param_file.is_override)
             result.append({
                 "type": "param_file",
