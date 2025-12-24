@@ -7,7 +7,7 @@
 {% macro node_configuration(node) %}
 <!-- Remap input and output topics -->
 {% for port in node.ports %}
-<remap from="~/{{ port.name }}" to="{{ port.topic }}"/>
+<remap from="{{ port.remap_target }}" to="{{ port.topic }}"/>
 {% endfor %}
 
 <!-- Parameters - Non-Override Parameters -->

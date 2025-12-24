@@ -431,7 +431,7 @@ class LinkManager:
         for cfg_in_port in self.instance.configuration.inputs:
             in_port_name = cfg_in_port.get("name")
             in_port_msg_type = cfg_in_port.get("message_type")
-            in_port_instance = InPort(in_port_name, in_port_msg_type, self.instance.namespace)
+            in_port_instance = InPort(in_port_name, in_port_msg_type, self.instance.namespace, remap_target=cfg_in_port.get("remap_target"))
             if "global" in cfg_in_port:
                 in_port_instance.is_global = True
                 topic = cfg_in_port.get("global")
@@ -444,7 +444,7 @@ class LinkManager:
         for cfg_out_port in self.instance.configuration.outputs:
             out_port_name = cfg_out_port.get("name")
             out_port_msg_type = cfg_out_port.get("message_type")
-            out_port_instance = OutPort(out_port_name, out_port_msg_type, self.instance.namespace)
+            out_port_instance = OutPort(out_port_name, out_port_msg_type, self.instance.namespace, remap_target=cfg_out_port.get("remap_target"))
             if "global" in cfg_out_port:
                 out_port_instance.is_global = True
                 topic = cfg_out_port.get("global")
