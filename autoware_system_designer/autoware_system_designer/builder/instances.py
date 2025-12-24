@@ -455,27 +455,26 @@ class Instance:
 
         return data
 
-    def apply_global_parameters(self, global_params_config):
+    def resolve_parameters(self, global_params_config):
         """Apply global parameters from deployment configuration to all nodes in the instance.
+        And then resolve all parameters in the instance tree that may contain substitutions.
 
         Args:
             global_params_config: List of global parameter configurations from deployment
         """
-        if not global_params_config:
+        if global_params_config:
+            logger.info(f"Applying {len(global_params_config)} global parameters to all nodes")
+            # Traverse all instances and apply global parameters to nodes
+            self._resolve_parameters_recursive(global_params_config)
+        else:
             logger.debug("No global parameters defined in deployment configuration")
-            return
-
-        logger.info(f"Applying {len(global_params_config)} global parameters to all nodes")
-
-        # Traverse all instances and apply global parameters to nodes
-        self._apply_global_parameters_recursive(global_params_config)
 
         # Now that global parameters are applied, resolve any remaining substitutions in all parameters
-        if hasattr(self, 'parameter_resolver') and self.parameter_resolver:
-            self._resolve_all_parameters_recursive()
+        # This includes global parameters resolution and other substitutions like ${input ...}
+        self._finalize_parameters_recursive()
 
-    def _apply_global_parameters_recursive(self, global_params_config):
-        """Recursively apply global parameters to all nodes in the instance tree.
+    def _resolve_parameters_recursive(self, global_params_config):
+        """Recursively apply global parameters to all nodes in the instance tree and resolve any remaining substitutions.
 
         Args:
             global_params_config: List of global parameter configurations
@@ -503,17 +502,19 @@ class Instance:
 
         # Recursively process children
         for child in self.children.values():
-            child._apply_global_parameters_recursive(global_params_config)
+            child._resolve_parameters_recursive(global_params_config)
 
-    def _resolve_all_parameters_recursive(self):
-        """Recursively resolve all parameters in the instance tree that may contain substitutions."""
+    def _finalize_parameters_recursive(self):
+        """Recursively finalize all parameters in the instance tree.
+        Resolve any remaining substitutions in all parameters and parameter files.
+        """
         # If this is a node, resolve all its parameters
         if self.entity_type == "node" and hasattr(self, 'parameter_manager'):
             self.parameter_manager.resolve_all_parameters()
 
         # Recursively process children
         for child in self.children.values():
-            child._resolve_all_parameters_recursive()
+            child._finalize_parameters_recursive()
 
 class DeploymentInstance(Instance):
     def __init__(self, name: str, mode: str = None):

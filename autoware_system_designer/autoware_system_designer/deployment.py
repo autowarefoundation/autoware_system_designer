@@ -189,9 +189,9 @@ class Deployment:
                     system, self.config_registry, mode=mode_name, parameter_resolver=self.parameter_resolver
                 )
                 
-                # Apply global parameters to all nodes in the deployment instance
+                # Resolve parameters (apply global parameters and resolve substitutions)
                 global_params = self.config_yaml.get('global_parameters', [])
-                deploy_instance.apply_global_parameters(global_params)
+                deploy_instance.resolve_parameters(global_params)
 
                 # Store instance
                 mode_key = mode_name if mode_name else "default"

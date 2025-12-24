@@ -20,7 +20,7 @@ import re
 
 from ..models.parameters import ParameterList, ParameterFileList, Parameter, ParameterFile, ParameterType
 from ..parsers.yaml_parser import yaml_parser
-from ..exceptions import ParameterConfigurationError
+from ..exceptions import ParameterConfigurationError, ValidationError
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -44,6 +44,7 @@ class ParameterManager:
         self.parameter_resolver = parameter_resolver
         self.parameters: ParameterList = ParameterList()
         self.parameter_files: ParameterFileList = ParameterFileList()
+        self.input_topic_pattern = re.compile(r'\$\{input\s+([^}]+)\}')
 
     # =========================================================================
     # Public API Methods
@@ -107,22 +108,53 @@ class ParameterManager:
 
     def resolve_all_parameters(self):
         """Resolve any remaining substitutions in all parameters and parameter files."""
-        if not self.parameter_resolver:
-            return
-
         # Resolve all parameter values
         for param in self.parameters.list:
             if param.value is not None and isinstance(param.value, str):
-                resolved_value = self.parameter_resolver.resolve_string(param.value)
+                # 1. Resolve ${input ...}
+                resolved_value = self._resolve_input_topic_string(param.value)
+
+                # 2. Resolve global/env vars if resolver exists
+                if self.parameter_resolver:
+                    resolved_value = self.parameter_resolver.resolve_string(resolved_value)
+
                 if resolved_value != param.value:
                     param.value = resolved_value
 
         # Resolve all parameter file paths
         for param_file in self.parameter_files.list:
             if param_file.path and isinstance(param_file.path, str):
-                resolved_path = self.parameter_resolver.resolve_string(param_file.path)
+                resolved_path = param_file.path
+                
+                # 1. Resolve ${input ...} in file path (unlikely but consistent)
+                resolved_path = self._resolve_input_topic_string(resolved_path)
+
+                # 2. Resolve global/env vars
+                if self.parameter_resolver:
+                    resolved_path = self.parameter_resolver.resolve_string(resolved_path)
+                
                 if resolved_path != param_file.path:
                     param_file.path = resolved_path
+
+    def _resolve_input_topic_string(self, input_string: str) -> str:
+        """Resolve ${input port_name} substitutions."""
+        if not input_string or not isinstance(input_string, str):
+            return input_string
+        return self.input_topic_pattern.sub(self._resolve_input_topic_match, input_string)
+
+    def _resolve_input_topic_match(self, match) -> str:
+        """Resolve a single ${input port_name} match."""
+        port_name = match.group(1).strip()
+        try:
+            in_port = self.instance.link_manager.get_in_port(port_name)
+            topic = in_port.get_topic()
+            if topic:
+                return topic
+            else:
+                return "none"
+        except ValidationError:
+            logger.warning(f"Input port not found for substitution: {port_name} in {self.instance.name}")
+            return match.group(0)  # Return original if not found
 
     def _get_package_name(self) -> Optional[str]:
         """Get package name from instance configuration."""
