@@ -24,7 +24,9 @@ class ParameterType(Enum):
     DEFAULT_FILE = 1     # Parameter loaded from default parameter file
     DEFAULT = 2          # Default parameter 
     OVERRIDE_FILE = 3    # Parameter loaded from override parameter file
-    OVERRIDE = 4         # Directly set override parameter (highest priority)
+    OVERRIDE = 4         # Directly set override parameter
+    MODE_FILE = 5        # Parameter loaded from mode parameter file
+    MODE = 6             # Mode specific parameter (highest priority)
 
 class Parameter:
     """Represents a single parameter with its value and metadata."""
@@ -94,12 +96,15 @@ class ParameterList:
 class ParameterFile:
     """Represents a parameter file reference."""
     def __init__(self, name: str, path: str, schema_path: Optional[str] = None,
-                 allow_substs: bool = True, is_override: bool = False):
+                 allow_substs: bool = True, is_override: bool = False,
+                 parameter_type: ParameterType = ParameterType.DEFAULT_FILE):
         self.name = name
         self.path = path
         self.schema_path = schema_path  # path to the schema file if available
         self.allow_substs = allow_substs  # whether to allow substitutions in ROS launch
         self.is_override = is_override  # True for override parameter files, False for default
+        self.parameter_type = parameter_type
+
 class ParameterFileList:
     """Manages a list of parameter files.
     Parameter files are accumulated in the order they are added.
@@ -118,7 +123,8 @@ class ParameterFileList:
         return None
 
     def add_parameter_file(self, parameter_name, parameter_path, schema_path: Optional[str] = None,
-                          allow_substs: bool = True, is_override: bool = False):
+                          allow_substs: bool = True, is_override: bool = False,
+                          parameter_type: ParameterType = ParameterType.DEFAULT_FILE):
         """Add a parameter file.
 
         Parameter files are accumulated in the order they are added.
@@ -130,8 +136,9 @@ class ParameterFileList:
             schema_path: Optional schema path
             allow_substs: Whether to allow substitutions
             is_override: True for override parameter files, False for default
+            parameter_type: Type of parameter file
         """
         new_param_file = ParameterFile(parameter_name, parameter_path, schema_path,
-                                     allow_substs, is_override)
+                                     allow_substs, is_override, parameter_type)
         self.list.append(new_param_file)
 

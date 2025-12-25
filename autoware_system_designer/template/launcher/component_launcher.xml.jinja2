@@ -4,6 +4,40 @@
   <!-- Component Launcher: {{ namespace }} -->
   <!-- Compute Unit: {{ compute_unit }} -->
   <!-- This launcher starts all nodes in component: {{ namespace }} -->
+{% macro node_configuration(node) %}
+<!-- Remap input and output topics -->
+{% for port in node.ports %}
+<remap from="{{ port.remap_target }}" to="{{ port.topic }}"/>
+{% endfor %}
+
+<!-- Parameters - Non-Override Parameters -->
+{% for param in node.parameters %}
+{% if param.parameter_type.name != 'OVERRIDE' %}
+<param name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
+{% endfor %}
+
+<!-- Parameters - Override Parameter files -->
+{% for param_file in node.parameter_files %}
+{% if param_file.parameter_type.name == 'OVERRIDE_FILE' %}
+<param from="{{ param_file.path }}" allow_substs="{{ param_file.allow_substs }}"/>
+{% endif %}
+{% endfor %}
+
+<!-- Parameters - Mode Parameter files -->
+{% for param_file in node.parameter_files %}
+{% if param_file.parameter_type.name == 'MODE_FILE' %}
+<param from="{{ param_file.path }}" allow_substs="{{ param_file.allow_substs }}"/>
+{% endif %}
+{% endfor %}
+
+<!-- Parameters - Overrides -->
+{% for param in node.parameters %}
+{% if param.parameter_type.name == 'OVERRIDE' %}
+<param name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
+{% endfor %}
+{% endmacro %}
 
 {% for node in nodes %}
   <!-- Node: {{ node.full_namespace }}/{{ node.name }} -->
@@ -18,6 +52,11 @@
 {% endif %}
 {% endfor %}
 {% for param in node.parameters %}
+{% if param.parameter_type.name == 'MODE' %}
+    <arg name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
+{% endfor %}
+{% for param in node.parameters %}
 {% if param.parameter_type.name == 'OVERRIDE' %}
     <arg name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
@@ -26,70 +65,12 @@
 {% elif node.use_container %}
   <load_composable_node target="{{ node.container }}">
     <composable_node pkg="{{ node.package }}" plugin="{{ node.plugin }}" name="{{ node.name }}" namespace="{{ node.full_namespace }}">
-      <!-- Remap input and output topics -->
-{% for port in node.ports %}
-      <remap from="~/{{ port.direction }}/{{ port.name }}" to="{{ port.topic }}"/>
-{% endfor %}
-
-      <!-- Parameters - Global (lowest priority, applied first) -->
-{% for param in node.parameters %}
-{% if param.parameter_type.name == 'GLOBAL' %}
-      <param name="{{ param.name }}" value="{{ param.value }}"/>
-{% endif %}
-{% endfor %}
-
-      <!-- Parameters - Default -->
-{% for param in node.parameters %}
-{% if param.parameter_type.name == 'DEFAULT' or param.parameter_type.name == 'DEFAULT_FILE' %}
-      <param name="{{ param.name }}" value="{{ param.value }}"/>
-{% endif %}
-{% endfor %}
-
-      <!-- Parameters - Parameter files -->
-{% for param_file in node.parameter_files %}
-      <param from="{{ param_file.path }}"/>
-{% endfor %}
-
-      <!-- Parameters - Overrides -->
-{% for param in node.parameters %}
-{% if param.parameter_type.name == 'OVERRIDE' %}
-      <param name="{{ param.name }}" value="{{ param.value }}"/>
-{% endif %}
-{% endfor %}
+      {{ node_configuration(node)|indent(6) }}
     </composable_node>
   </load_composable_node>
 {% else %}
   <node pkg="{{ node.package }}" exec="{{ node.executable }}" name="{{ node.name }}" namespace="{{ node.full_namespace }}" output="{{ node.node_output }}">
-    <!-- Remap input and output topics -->
-{% for port in node.ports %}
-    <remap from="~/{{ port.direction }}/{{ port.name }}" to="{{ port.topic }}"/>
-{% endfor %}
-
-    <!-- Parameters - Global (lowest priority, applied first) -->
-{% for param in node.parameters %}
-{% if param.parameter_type.name == 'GLOBAL' %}
-    <param name="{{ param.name }}" value="{{ param.value }}"/>
-{% endif %}
-{% endfor %}
-
-    <!-- Parameters - Default -->
-{% for param in node.parameters %}
-{% if param.parameter_type.name == 'DEFAULT' or param.parameter_type.name == 'DEFAULT_FILE' %}
-    <param name="{{ param.name }}" value="{{ param.value }}"/>
-{% endif %}
-{% endfor %}
-
-    <!-- Parameters - Parameter files -->
-{% for param_file in node.parameter_files %}
-    <param from="{{ param_file.path }}"/>
-{% endfor %}
-
-    <!-- Parameters - Overrides -->
-{% for param in node.parameters %}
-{% if param.parameter_type.name == 'OVERRIDE' %}
-    <param name="{{ param.name }}" value="{{ param.value }}"/>
-{% endif %}
-{% endfor %}
+    {{ node_configuration(node)|indent(4) }}
   </node>
 {% endif %}
 

@@ -26,7 +26,7 @@ def generate_port_path(namespace: List[str], name: str) -> str:
     return "/" + name
 
 class Port:
-    def __init__(self, name: str, msg_type: str, namespace: List[str] = []):
+    def __init__(self, name: str, msg_type: str, namespace: List[str] = [], remap_target: str = None):
         self.name = name
         self.msg_type = msg_type
         self.namespace = namespace
@@ -37,6 +37,7 @@ class Port:
         self.topic: List[str] = []
         self.event = None
         self.is_global = False
+        self.remap_target = remap_target
 
     @property
     def unique_id(self):
@@ -70,14 +71,17 @@ class Port:
         return "/" + "/".join(self.topic)
 
 class InPort(Port):
-    def __init__(self, name, msg_type, namespace: List[str] = []):
-        super().__init__(name, msg_type, namespace)
+    def __init__(self, name, msg_type, namespace: List[str] = [], remap_target: str = None):
+        super().__init__(name, msg_type, namespace, remap_target)
         self.is_required = True
         # Servers list: ports that this port is subscribed to (for hierarchical port connections).
         # InPort (subscriber) can have multiple servers (one topic subscribed by multiple nodes).
         self.servers: List[Port] = []
         self.event = Event("input_" + name, namespace)
         self.event.set_type("on_input")
+
+        if self.remap_target is None:
+            self.remap_target = "~/input/" + name
 
     @property
     def unique_id(self):
@@ -100,8 +104,8 @@ class InPort(Port):
 
 
 class OutPort(Port):
-    def __init__(self, name, msg_type, namespace: List[str] = []):
-        super().__init__(name, msg_type, namespace)
+    def __init__(self, name, msg_type, namespace: List[str] = [], remap_target: str = None):
+        super().__init__(name, msg_type, namespace, remap_target)
         self.frequency = 0.0
         self.is_monitored = False
         self.users: List[Port] = []
@@ -112,6 +116,9 @@ class OutPort(Port):
 
         # set default topic
         self.set_topic(self.namespace, self.name)
+        
+        if self.remap_target is None:
+            self.remap_target = "~/output/" + name
 
     @property
     def unique_id(self):

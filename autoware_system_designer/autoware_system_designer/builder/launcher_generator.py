@@ -101,23 +101,29 @@ def _extract_node_data(node_instance: Instance, module_path: List[str]) -> Dict[
     ports = []
     # Add input ports
     for port in node_instance.link_manager.get_all_in_ports():
+        if port.is_global:
+            continue
         topic = port.get_topic()
         if topic == "":
             continue
         ports.append({
             "direction": "input",
             "name": port.name,
-            "topic": topic
+            "topic": topic,
+            "remap_target": port.remap_target
         })
     # Add output ports
     for port in node_instance.link_manager.get_all_out_ports():
+        if port.is_global:
+            continue
         topic = port.get_topic()
         if topic == "":
             continue
         ports.append({
             "direction": "output",
             "name": port.name,
-            "topic": topic
+            "topic": topic,
+            "remap_target": port.remap_target
         })
     node_data["ports"] = ports
         

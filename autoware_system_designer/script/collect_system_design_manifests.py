@@ -160,6 +160,23 @@ def main():
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
+    # 1. Generate package_map for ALL workspace packages
+    package_map = {}
+    for pkg_src_path, pkg_name in pkg_paths.items():
+        if is_isolated:
+            # isolated: install_base/pkg_name/share/pkg_name
+            p = os.path.join(install_base, pkg_name, 'share', pkg_name)
+        else:
+            # merged: install_prefix/share/pkg_name
+            p = os.path.join(args.install_prefix, 'share', pkg_name)
+        package_map[pkg_name] = p
+    
+    package_map_path = os.path.join(output_dir, "_package_map.yaml")
+    with open(package_map_path, 'w') as f:
+        yaml.dump({'package_map': package_map}, f)
+        print(f"Generated {package_map_path} with {len(package_map)} packages")
+
+    # 2. Generate individual manifests for packages with design files
     for pkg, files in pkg_files.items():
         manifest_path = os.path.join(output_dir, f"{pkg}.yaml")
         
@@ -171,7 +188,6 @@ def main():
         
         data = {
             'package_name': pkg,
-            'package_path': pkg_install_path,
             'system_config_files': []
         }
         

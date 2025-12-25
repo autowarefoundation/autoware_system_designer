@@ -20,7 +20,7 @@ import re
 
 from ..models.parameters import ParameterList, ParameterFileList, Parameter, ParameterFile, ParameterType
 from ..parsers.yaml_parser import yaml_parser
-from ..exceptions import ParameterConfigurationError
+from ..exceptions import ParameterConfigurationError, ValidationError
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -44,6 +44,7 @@ class ParameterManager:
         self.parameter_resolver = parameter_resolver
         self.parameters: ParameterList = ParameterList()
         self.parameter_files: ParameterFileList = ParameterFileList()
+        self.input_topic_pattern = re.compile(r'\$\{input\s+([^}]+)\}')
 
     # =========================================================================
     # Public API Methods
@@ -68,12 +69,11 @@ class ParameterManager:
         """
         result = []
 
+        # sort by its priority. larger enum value is lower priority, comes earlier in the launcher
+        self.parameters.list.sort(key=lambda x: x.parameter_type.value)
+
         # Add regular parameters
         for param in self.parameters.list:
-            # Skip parameters that are loaded from files, as they will be passed via parameter files
-            if param.parameter_type in [ParameterType.DEFAULT_FILE, ParameterType.OVERRIDE_FILE]:
-                continue
-
             if param.value is not None:
                 result.append({
                     "type": "param",
@@ -92,32 +92,69 @@ class ParameterManager:
         """
         result = []
         for param_file in self.parameter_files.list:
+            # Skip DEFAULT_FILE parameter files as their parameters are expanded individually
+            if param_file.parameter_type == ParameterType.DEFAULT_FILE:
+                continue
+
             resolved_path = self._resolve_parameter_file_path(param_file.path, self._get_package_name(), param_file.is_override)
             result.append({
                 "type": "param_file",
                 "name": param_file.name,
-                "path": resolved_path
+                "path": resolved_path,
+                "allow_substs": param_file.allow_substs,
+                "parameter_type": param_file.parameter_type
             })
         return result
 
     def resolve_all_parameters(self):
         """Resolve any remaining substitutions in all parameters and parameter files."""
-        if not self.parameter_resolver:
-            return
-
         # Resolve all parameter values
         for param in self.parameters.list:
             if param.value is not None and isinstance(param.value, str):
-                resolved_value = self.parameter_resolver.resolve_string(param.value)
+                # 1. Resolve ${input ...}
+                resolved_value = self._resolve_input_topic_string(param.value)
+
+                # 2. Resolve global/env vars if resolver exists
+                if self.parameter_resolver:
+                    resolved_value = self.parameter_resolver.resolve_string(resolved_value)
+
                 if resolved_value != param.value:
                     param.value = resolved_value
 
         # Resolve all parameter file paths
         for param_file in self.parameter_files.list:
             if param_file.path and isinstance(param_file.path, str):
-                resolved_path = self.parameter_resolver.resolve_string(param_file.path)
+                resolved_path = param_file.path
+                
+                # 1. Resolve ${input ...} in file path (unlikely but consistent)
+                resolved_path = self._resolve_input_topic_string(resolved_path)
+
+                # 2. Resolve global/env vars
+                if self.parameter_resolver:
+                    resolved_path = self.parameter_resolver.resolve_string(resolved_path)
+                
                 if resolved_path != param_file.path:
                     param_file.path = resolved_path
+
+    def _resolve_input_topic_string(self, input_string: str) -> str:
+        """Resolve ${input port_name} substitutions."""
+        if not input_string or not isinstance(input_string, str):
+            return input_string
+        return self.input_topic_pattern.sub(self._resolve_input_topic_match, input_string)
+
+    def _resolve_input_topic_match(self, match) -> str:
+        """Resolve a single ${input port_name} match."""
+        port_name = match.group(1).strip()
+        try:
+            in_port = self.instance.link_manager.get_in_port(port_name)
+            topic = in_port.get_topic()
+            if topic:
+                return topic
+            else:
+                return "none"
+        except ValidationError:
+            logger.warning(f"Input port not found for substitution: {port_name} in {self.instance.name}")
+            return match.group(0)  # Return original if not found
 
     def _get_package_name(self) -> Optional[str]:
         """Get package name from instance configuration."""
@@ -205,7 +242,9 @@ class ParameterManager:
     # Parameter Application (from parameter sets)
     # =========================================================================
     
-    def apply_node_parameters(self, node_namespace: str, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None):
+    def apply_node_parameters(self, node_namespace: str, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
+                              file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
+                              direct_parameter_type: ParameterType = ParameterType.OVERRIDE):
         """Apply parameters directly to a target node using new parameter set format.
         
         This method finds a node by its absolute namespace and applies both parameter_files 
@@ -219,7 +258,14 @@ class ParameterManager:
             parameters: List of direct parameters
                            (e.g., [{"name": "build_only", "type": "bool", "value": false}])
             config_registry: Registry for resolving paths
+            file_parameter_type: ParameterType for parameters loaded from files
+            direct_parameter_type: ParameterType for directly specified parameters
         """
+        # Handle global parameters (root node)
+        if node_namespace == '/':
+            self.apply_parameters_to_all_nodes(parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+            return
+
         target_instance = self._find_node_by_namespace(node_namespace)
         if target_instance is None:
             logger.warning(f"Target node not found: {node_namespace}")
@@ -230,6 +276,41 @@ class ParameterManager:
             return
         
         logger.info(f"Applying parameters to node: {node_namespace}")
+        self._apply_parameters_to_instance(target_instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+
+    def apply_parameters_to_all_nodes(self, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
+                                      file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
+                                      direct_parameter_type: ParameterType = ParameterType.OVERRIDE):
+        """Apply parameters to all nodes in the instance tree.
+        
+        Args:
+            parameter_files: List of parameter file mappings
+            parameters: List of direct parameters
+            config_registry: Registry for resolving paths
+            file_parameter_type: ParameterType for parameters loaded from files
+            direct_parameter_type: ParameterType for directly specified parameters
+        """
+        logger.info(f"Applying parameters to all nodes (global scope)")
+        
+        # Start from the root deployment instance
+        root_instance = self.instance
+        while root_instance.parent is not None:
+            root_instance = root_instance.parent
+            
+        self._apply_parameters_recursive(root_instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+
+    def _apply_parameters_recursive(self, instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type):
+        """Recursively apply parameters to instance tree."""
+        if instance.entity_type == "node":
+             self._apply_parameters_to_instance(instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+        
+        for child in instance.children.values():
+            self._apply_parameters_recursive(child, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+
+    def _apply_parameters_to_instance(self, target_instance, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
+                                      file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
+                                      direct_parameter_type: ParameterType = ParameterType.OVERRIDE):
+        """Apply parameters directly to a target instance object."""
             
         # Apply parameter files first (as overrides, not defaults)
         if parameter_files:
@@ -243,14 +324,16 @@ class ParameterManager:
                         param_name,
                         param_path,
                         allow_substs=True,
-                        is_override=True  # Parameter set parameter files are overrides
+                        is_override=True,  # Parameter set parameter files are overrides
+                        parameter_type=file_parameter_type
                     )
 
                     # Load parameters from this file for visualization
                     target_instance.parameter_manager._load_parameters_from_file(
                         param_path,
                         is_override=True,
-                        config_registry=config_registry
+                        config_registry=config_registry,
+                        parameter_type=file_parameter_type
                     )
         
         # Apply parameters (these override parameter files)
@@ -269,7 +352,7 @@ class ParameterManager:
                     param_value,
                     data_type=param_type,
                     allow_substs=True,
-                    parameter_type=ParameterType.OVERRIDE  # Parameter set overrides
+                    parameter_type=direct_parameter_type  # Parameter set overrides
                 )
 
     # =========================================================================
@@ -364,7 +447,8 @@ class ParameterManager:
                     param_name,
                     param_value,
                     allow_substs=True,
-                    is_override=False
+                    is_override=False,
+                    parameter_type=ParameterType.DEFAULT_FILE
                 )
 
                 # Load individual parameters from this file
@@ -421,7 +505,8 @@ class ParameterManager:
         return items
 
     def _load_parameters_from_file(self, file_path: str, package_name: Optional[str] = None,
-                                  is_override: bool = True, config_registry: Optional['ConfigRegistry'] = None):
+                                  is_override: bool = True, config_registry: Optional['ConfigRegistry'] = None,
+                                  parameter_type: Optional[ParameterType] = None):
         """Load parameters from a YAML file and add them to the parameter list."""
         if not config_registry:
             logger.debug(f"Skipping parameter file load for {file_path}: No config_registry provided")
@@ -486,7 +571,11 @@ class ParameterManager:
                                     elif isinstance(p_value[0], bool): p_type = "bool_array"
 
                             # Use appropriate parameter type based on whether this is from an override file
-                            param_type = ParameterType.OVERRIDE_FILE if is_override else ParameterType.DEFAULT_FILE
+                            if parameter_type:
+                                param_type = parameter_type
+                            else:
+                                param_type = ParameterType.OVERRIDE_FILE if is_override else ParameterType.DEFAULT_FILE
+                                
                             self.parameters.set_parameter(
                                 p_name,
                                 p_value,
