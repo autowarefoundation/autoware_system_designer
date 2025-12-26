@@ -14,6 +14,10 @@ class LogicDiagramModule {
         this.init();
     }
 
+    isDarkMode() {
+        return document.documentElement.getAttribute('data-theme') === 'dark';
+    }
+
     async init() {
         try {
             // Load required libraries if not already loaded
@@ -66,45 +70,61 @@ class LogicDiagramModule {
     addInteractionStyles() {
         // Add CSS for interactions
         const styleId = 'logic-diagram-interaction-styles';
-        if (!document.getElementById(styleId)) {
-            const style = document.createElement('style');
+        let style = document.getElementById(styleId);
+        if (!style) {
+            style = document.createElement('style');
             style.id = styleId;
-            style.textContent = `
-                .logic-diagram-container {
-                    width: 100%;
-                    height: 100%;
-                    min-height: 400px;
-                    position: relative;
-                    overflow: hidden;
-                }
-                .logic-diagram-container svg {
-                    cursor: grab;
-                    min-width: 100px;
-                    min-height: 100px;
-                }
-                .logic-diagram-container svg:active {
-                    cursor: grabbing;
-                }
-                .logic-diagram-node:hover {
-                    stroke: #007bff !important;
-                    stroke-width: 2px !important;
-                }
-                .logic-diagram-edge:hover {
-                    stroke: #007bff !important;
-                    stroke-width: 2px !important;
-                }
-                .logic-diagram-cluster:hover {
-                    stroke: #007bff !important;
-                    stroke-width: 2px !important;
-                }
-                .highlighted {
-                    stroke: #dc3545 !important;
-                    stroke-width: 3px !important;
-                    fill: #fff3cd !important;
-                }
-            `;
             document.head.appendChild(style);
         }
+
+        const isDark = this.isDarkMode();
+        const hoverColor = isDark ? '#ffffff' : '#007bff';
+        const containerBg = isDark ? '#1a1a1a' : '#ffffff';
+        const highlightStroke = '#dc3545';
+
+        style.textContent = `
+            .logic-diagram-container {
+                width: 100%;
+                height: 100%;
+                min-height: 400px;
+                position: relative;
+                overflow: hidden;
+                background-color: ${containerBg};
+            }
+            .logic-diagram-container svg {
+                cursor: grab;
+                min-width: 100px;
+                min-height: 100px;
+            }
+            .logic-diagram-container svg:active {
+                cursor: grabbing;
+            }
+            .logic-diagram-node:hover {
+                stroke: ${hoverColor} !important;
+                stroke-width: 2px !important;
+            }
+            .logic-diagram-edge:hover {
+                stroke: ${hoverColor} !important;
+                stroke-width: 2px !important;
+            }
+            .logic-diagram-cluster:hover {
+                stroke: ${hoverColor} !important;
+                stroke-width: 2px !important;
+            }
+            .highlighted {
+                stroke: ${highlightStroke} !important;
+                stroke-width: 3px !important;
+            }
+            /* In logic diagram (viz.js), we manipulate SVG structure slightly different than custom D3/SVG */
+            g.node.highlighted polygon, g.node.highlighted ellipse {
+                stroke: ${highlightStroke} !important;
+                stroke-width: 3px !important;
+            }
+            g.edge.highlighted path {
+                stroke: ${highlightStroke} !important;
+                stroke-width: 3px !important;
+            }
+        `;
     }
 
     async loadScript(src) {
@@ -161,6 +181,18 @@ class LogicDiagramModule {
     }
 
     generateDotSyntax(root) {
+        const isDark = this.isDarkMode();
+        const colors = {
+            bg: isDark ? "#2d2d2d" : "#dddddd",
+            nodeBg: isDark ? "#1e1e1e" : "white",
+            edge: isDark ? "#6c757d" : "#000066",
+            text: isDark ? "#e9ecef" : "#333333",
+            input: isDark ? "#004085" : "#e0f7ff",
+            output: isDark ? "#856404" : "#fff4e0",
+            cloud: isDark ? "#adb5bd" : "gray",
+            cloudEdge: isDark ? "#6c757d" : "#555577"
+        };
+
         let dotLines = [];
 
         // Graph header
@@ -169,27 +201,34 @@ class LogicDiagramModule {
         dotLines.push(`\tlabelloc=top;`);
         dotLines.push(`\tfontsize=20;`);
         dotLines.push(`\tfontname="Arial";`);
+        dotLines.push(`\tfontcolor="${colors.text}";`);
+        dotLines.push(`\tbgcolor="${isDark ? '#1a1a1a' : 'white'}";`);
         dotLines.push(`\trankdir=LR;`);
-        dotLines.push(`\tnode [shape=box, style=filled, fillcolor="#dddddd", fontname="Arial", fontsize=10];`);
-        dotLines.push(`\tedge [fontname="Arial", fontsize=8, color="#000066"];`);
+        dotLines.push(`\tnode [shape=box, style=filled, fillcolor="${colors.bg}", fontname="Arial", fontsize=10, fontcolor="${colors.text}"];`);
+        dotLines.push(`\tedge [fontname="Arial", fontsize=8, color="${colors.edge}"];`);
         dotLines.push(``);
 
         // Build instance graphs recursively
-        this.buildInstanceGraph(root, dotLines);
+        this.buildInstanceGraph(root, dotLines, colors);
 
         dotLines.push(`}`);
         return dotLines.join('\n');
     }
 
-    buildInstanceGraph(instance, dotLines) {
+    buildInstanceGraph(instance, dotLines, colors) {
         if (instance.entity_type === "node") {
             // Node cluster
             dotLines.push(`\tsubgraph cluster_${instance.unique_id} {`);
             dotLines.push(`\t\tlabel="${instance.name}";`);
+            dotLines.push(`\t\tfontcolor="${colors.text}";`);
             if (instance.vis_guide) {
-                dotLines.push(`\t\tstyle="rounded,filled"; color="${instance.vis_guide.color}"; fillcolor="${instance.vis_guide.background_color}"; fontcolor="${instance.vis_guide.text_color}";`);
+                const guide = instance.vis_guide;
+                const color = this.isDarkMode() ? (guide.dark_color || guide.color) : guide.color;
+                const bgColor = this.isDarkMode() ? (guide.dark_background_color || guide.background_color) : guide.background_color;
+                const textColor = this.isDarkMode() ? (guide.dark_text_color || guide.text_color) : guide.text_color;
+                dotLines.push(`\t\tstyle="rounded,filled"; color="${color}"; fillcolor="${bgColor}"; fontcolor="${textColor}";`);
             }
-            dotLines.push(`\t\tnode [style=filled, fillcolor=white];`);
+            dotLines.push(`\t\tnode [style=filled, fillcolor="${colors.nodeBg}", fontcolor="${colors.text}"];`);
 
             // Input ports
             if (instance.in_ports && Array.isArray(instance.in_ports)) {
@@ -197,7 +236,7 @@ class LogicDiagramModule {
                     if (port && port.unique_id && port.name) {
                         const eventType = port.event ? port.event.type : 'unknown';
                         const eventFreq = port.event && port.event.frequency !== null ? port.event.frequency : 'unknown';
-                        dotLines.push(`\t\t${port.unique_id} [label="input/${port.name}\\n#${eventType}\\n@${eventFreq}", shape=ellipse, fillcolor="#e0f7ff"];`);
+                        dotLines.push(`\t\t${port.unique_id} [label="input/${port.name}\\n#${eventType}\\n@${eventFreq}", shape=ellipse, fillcolor="${colors.input}", fontcolor="${colors.text}"];`);
                     }
                 });
             }
@@ -206,7 +245,7 @@ class LogicDiagramModule {
             if (instance.out_ports && Array.isArray(instance.out_ports)) {
                 instance.out_ports.forEach(port => {
                     if (port && port.unique_id && port.name) {
-                        dotLines.push(`\t\t${port.unique_id} [label="output/${port.name}", shape=ellipse, fillcolor="#fff4e0"];`);
+                        dotLines.push(`\t\t${port.unique_id} [label="output/${port.name}", shape=ellipse, fillcolor="${colors.output}", fontcolor="${colors.text}"];`);
                     }
                 });
             }
@@ -217,8 +256,8 @@ class LogicDiagramModule {
                     if (event && event.unique_id && event.name && event.type && event.frequency !== undefined) {
                         const freq = event.frequency !== null ? event.frequency : 'unknown';
                         const shape = event.type === "periodic" ? "diamond" : "box";
-                        const mediumColor = instance.vis_guide ? instance.vis_guide.medium_color : "#cccccc";
-                        dotLines.push(`\t\t${event.unique_id} [label="${event.name}\\n#${event.type}\\n@${freq}", shape=${shape}, fillcolor="${mediumColor}"];`);
+                        const mediumColor = instance.vis_guide ? (this.isDarkMode() ? (instance.vis_guide.dark_medium_color || instance.vis_guide.medium_color) : instance.vis_guide.medium_color) : (this.isDarkMode() ? "#444444" : "#cccccc");
+                        dotLines.push(`\t\t${event.unique_id} [label="${event.name}\\n#${event.type}\\n@${freq}", shape=${shape}, fillcolor="${mediumColor}", fontcolor="${colors.text}"];`);
                     }
                 });
             }
@@ -230,8 +269,8 @@ class LogicDiagramModule {
                 instance.in_ports.forEach(port => {
                     if (port && port.unique_id && port.is_global) {
                         const topicPath = Array.isArray(port.topic) ? port.topic.join('/') : port.topic || '';
-                        dotLines.push(`\t${port.unique_id}_cloud [label="/${topicPath}", shape=hexagon, style=solid, color=gray];`);
-                        dotLines.push(`\t${port.unique_id}_cloud -> ${port.unique_id} [color="#555577"];`);
+                        dotLines.push(`\t${port.unique_id}_cloud [label="/${topicPath}", shape=hexagon, style=solid, color="${colors.cloud}", fontcolor="${colors.text}"];`);
+                        dotLines.push(`\t${port.unique_id}_cloud -> ${port.unique_id} [color="${colors.cloudEdge}"];`);
                     }
                 });
             }
@@ -242,7 +281,7 @@ class LogicDiagramModule {
                     if (event && event.unique_id && event.trigger_ids && Array.isArray(event.trigger_ids)) {
                         event.trigger_ids.forEach(triggerId => {
                             if (triggerId) {
-                                dotLines.push(`\t${triggerId} -> ${event.unique_id} [color="#555577"];`);
+                                dotLines.push(`\t${triggerId} -> ${event.unique_id} [color="${colors.cloudEdge}"];`);
                             }
                         });
                     }
@@ -255,7 +294,7 @@ class LogicDiagramModule {
                     if (port && port.event && port.event.unique_id && port.event.trigger_ids && Array.isArray(port.event.trigger_ids)) {
                         port.event.trigger_ids.forEach(triggerId => {
                             if (triggerId) {
-                                dotLines.push(`\t${triggerId} -> ${port.event.unique_id} [color="#555577"];`);
+                                dotLines.push(`\t${triggerId} -> ${port.event.unique_id} [color="${colors.cloudEdge}"];`);
                             }
                         });
                     }
@@ -268,7 +307,7 @@ class LogicDiagramModule {
                     if (port && port.event && port.event.unique_id && port.event.trigger_ids && Array.isArray(port.event.trigger_ids)) {
                         port.event.trigger_ids.forEach(triggerId => {
                             if (triggerId) {
-                                dotLines.push(`\t${triggerId} -> ${port.event.unique_id} [color="#555577"];`);
+                                dotLines.push(`\t${triggerId} -> ${port.event.unique_id} [color="${colors.cloudEdge}"];`);
                             }
                         });
                     }
@@ -280,7 +319,7 @@ class LogicDiagramModule {
             if (instance.children && Array.isArray(instance.children)) {
                 instance.children.forEach(child => {
                     if (child) {
-                        this.buildInstanceGraph(child, dotLines);
+                        this.buildInstanceGraph(child, dotLines, colors);
                     }
                 });
             }
@@ -520,6 +559,15 @@ class LogicDiagramModule {
         // This will be handled by the parent overview page
         if (this.options.onInfoUpdate) {
             this.options.onInfoUpdate(data, type);
+        }
+    }
+
+    updateTheme() {
+        this.addInteractionStyles();
+        if (window.logicDiagramData && window.logicDiagramData[this.options.mode]) {
+            const data = window.logicDiagramData[this.options.mode];
+            const dotSyntax = this.generateDotSyntax(data);
+            this.renderLogicDiagram(dotSyntax);
         }
     }
 
