@@ -3,12 +3,9 @@ autoware_system_design_format: v0.1.0
 name: TrackedObjectMergerDummy6.node
 
 launch:
-  package: autoware_simple_object_merger
-  plugin: autoware::simple_object_merger::SimpleTrackedObjectMergerNode
+  package: autoware_system_dummy_modules
   executable: simple_tracked_object_merger_node
   node_output: screen
-  use_container: false
-  container_name: pointcloud_container
 
 # interfaces
 inputs:
@@ -38,7 +35,10 @@ outputs:
 # parameters
 parameter_files: []
 
-parameters: []
+parameters:
+  - name: input_topics
+    type: array
+    default: "[${input object1}, ${input object2}, ${input object3}, ${input object4}, ${input object5}, ${input object6}]"
 
 # processes
 processes:
