@@ -354,16 +354,17 @@ class LogicDiagramModule {
 
             // Create a container for the SVG
             const svgContainer = document.createElement('div');
+            svgContainer.style.width = '100%';
+            svgContainer.style.height = '100%';
             svgContainer.innerHTML = svgString;
 
             // Get the SVG element
             const svg = svgContainer.querySelector('svg');
             if (svg) {
                 // Ensure SVG has proper dimensions
-                if (!svg.getAttribute('width') || !svg.getAttribute('height')) {
-                    svg.setAttribute('width', '100%');
-                    svg.setAttribute('height', '100%');
-                }
+                // Always set to 100% to prevent the SVG's fixed size from affecting the parent layout (e.g. shrinking sidebar)
+                svg.setAttribute('width', '100%');
+                svg.setAttribute('height', '100%');
 
                 // Add the container to DOM first
                 this.container.appendChild(svgContainer);
@@ -511,43 +512,31 @@ class LogicDiagramModule {
                 if (!this.panZoomInstance) return;
 
                 try {
-                    // Get container dimensions
-                    const containerRect = this.container.getBoundingClientRect();
-
-                    // Try to get SVG viewBox for accurate dimensions
-                    const viewBox = svg.getAttribute('viewBox');
-                    let svgWidth, svgHeight;
-
-                    if (viewBox) {
-                        const parts = viewBox.split(' ');
-                        svgWidth = parseFloat(parts[2]);
-                        svgHeight = parseFloat(parts[3]);
-                    } else {
-                        // Fallback to bounding rect if no viewBox
-                        const svgRect = svg.getBoundingClientRect();
-                        svgWidth = svgRect.width;
-                        svgHeight = svgRect.height;
+                    // Update cached dimensions
+                    this.panZoomInstance.resize();
+                    
+                    const sizes = this.panZoomInstance.getSizes();
+                    if (sizes.width === 0 || sizes.height === 0) {
+                        return;
                     }
 
-                    if (svgWidth && svgHeight && svgWidth > 0 && svgHeight > 0) {
-                        // Calculate scale to fit entire diagram with some padding
-                        const scaleX = (containerRect.width * 0.9) / svgWidth;
-                        const scaleY = (containerRect.height * 0.9) / svgHeight;
-                        const scale = Math.min(scaleX, scaleY, 1); // Don't zoom in beyond 100%
+                    // Fit and center
+                    this.panZoomInstance.fit();
+                    this.panZoomInstance.center();
 
-                        // Center the diagram
-                        const centerX = svgWidth / 2;
-                        const centerY = svgHeight / 2;
-
-                        // Apply the transform
-                        this.panZoomInstance.zoom(scale);
-                        this.panZoomInstance.pan({
-                            x: containerRect.width / 2 - centerX * scale,
-                            y: containerRect.height / 2 - centerY * scale
-                        });
-
-                        console.log(`Diagram fitted to view (attempt ${index + 1}): scale=${scale.toFixed(3)}, svgSize=${svgWidth}x${svgHeight}`);
+                    // Optional: Add some padding (90%) and cap at 100%
+                    let currentZoom = this.panZoomInstance.getZoom();
+                    let desiredZoom = currentZoom * 0.9;
+                    
+                    if (desiredZoom > 1) {
+                        desiredZoom = 1;
                     }
+                    
+                    // Apply zoom and re-center
+                    this.panZoomInstance.zoom(desiredZoom);
+                    this.panZoomInstance.center();
+
+                    console.log(`Diagram fitted to view (attempt ${index + 1}): zoom=${desiredZoom.toFixed(3)}`);
                 } catch (fitError) {
                     console.warn(`Failed to fit diagram (attempt ${index + 1}):`, fitError);
                 }
