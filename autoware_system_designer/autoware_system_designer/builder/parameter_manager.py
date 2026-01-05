@@ -323,17 +323,14 @@ class ParameterManager:
             self.apply_parameters_to_all_nodes(parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
             return
 
-        target_instance = self._find_node_by_namespace(node_namespace)
-        if target_instance is None:
+        target_instances = self.find_matching_nodes(node_namespace)
+        if not target_instances:
             logger.warning(f"Target node not found: {node_namespace}")
             return
             
-        if target_instance.entity_type != "node":
-            logger.warning(f"Target node is not a node: {node_namespace} (type: {target_instance.entity_type})")
-            return
-        
-        logger.info(f"Applying parameters to node: {node_namespace}")
-        self._apply_parameters_to_instance(target_instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+        for target_instance in target_instances:
+            logger.info(f"Applying parameters to node: {node_namespace} (instance: {target_instance.name})")
+            self._apply_parameters_to_instance(target_instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
 
     def apply_parameters_to_all_nodes(self, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
                                       file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
@@ -416,58 +413,34 @@ class ParameterManager:
     # Node Finding (helper methods for parameter application)
     # =========================================================================
     
-    def _find_node_by_namespace(self, target_namespace: str):
-        """Find a node instance by its absolute namespace path.
+    def find_matching_nodes(self, target_namespace: str) -> List['Instance']:
+        """Find all nodes matching the absolute namespace path in the current instance's subtree.
         
         Args:
             target_namespace: Absolute namespace path (e.g., "/perception/object_recognition/node_tracker")
             
         Returns:
-            Instance object if found, None otherwise
+            List of matching Instance objects (nodes)
         """
-        # Start from the root deployment instance
-        current_instance = self.instance
+        matches = []
         
-        # Navigate to the root deployment instance
-        while current_instance.parent is not None:
-            current_instance = current_instance.parent
+        # Helper for recursive search
+        def _search(inst):
+            # Check if current instance matches
+            if inst.entity_type == "node" and inst.namespace_str == target_namespace:
+                matches.append(inst)
             
-        # If we're at the deployment root (entity_type == "system"),
-        # search in its children directly since parameter_set paths don't include the deployment name
-        if current_instance.entity_type == "system":
-            for child in current_instance.children.values():
-                result = self._traverse_to_namespace(child, target_namespace)
-                if result is not None:
-                    return result
-            return None
-        
-        # Otherwise, traverse down from current instance
-        return self._traverse_to_namespace(current_instance, target_namespace)
-    
-    def _traverse_to_namespace(self, instance, target_namespace: str):
-        """Recursively traverse instance tree to find target namespace.
-        
-        Args:
-            instance: Current instance to check
-            target_namespace: Target namespace to find
+            # Optimization: only traverse if target could be deeper
+            # i.e., target_namespace starts with current namespace
+            # OR current namespace is root "/"
+            # OR current namespace is a prefix of target
             
-        Returns:
-            Instance object if found, None otherwise
-        """
-        # Check if current instance matches the target namespace
-        if instance.namespace_str == target_namespace:
-            return instance
-            
-        # Check if target namespace starts with current instance namespace
-        # This means we need to look deeper in this branch
-        if target_namespace.startswith(instance.namespace_str + "/") or target_namespace == instance.namespace_str:
-            # Search in children
-            for child in instance.children.values():
-                result = self._traverse_to_namespace(child, target_namespace)
-                if result is not None:
-                    return result
-        
-        return None
+            if inst.namespace_str == "/" or target_namespace.startswith(inst.namespace_str + "/") or inst.namespace_str == target_namespace:
+                for child in inst.children.values():
+                    _search(child)
+                    
+        _search(self.instance)
+        return matches
 
     # =========================================================================
     # Node Parameter Initialization

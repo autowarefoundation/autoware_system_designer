@@ -105,7 +105,6 @@ class Instance:
         self.name: str = name
         self.namespace: List[str] = namespace.copy()
         # add the instance name to the namespace
-        self.namespace.append(name)
         self.namespace_str: str = "/" + "/".join(self.namespace)
 
         self.compute_unit: str = compute_unit
@@ -352,8 +351,9 @@ class Instance:
             if "instance" not in cfg_node or "entity" not in cfg_node:
                 raise ValidationError(f"Module instance configuration must have 'node' and 'entity' fields, at {self.configuration.file_path}")
 
+            child_name = cfg_node.get("instance")
             instance = Instance(
-                cfg_node.get("instance"), self.compute_unit, self.namespace, self.layer + 1
+                child_name, self.compute_unit, self.namespace + [child_name], self.layer + 1
             )
             instance.parent = self
             instance.parent_module_list = self.parent_module_list.copy()
@@ -560,3 +560,24 @@ class DeploymentInstance(Instance):
         logger.info(f"Instance '{self.name}': building logical topology")
         # self.build_logical_topology()
         self.set_event_tree()
+
+        # 4. validate node namespaces
+        self.check_duplicate_node_namespaces()
+
+    def check_duplicate_node_namespaces(self):
+        """Check for duplicate node namespaces in the entire system."""
+        namespace_map = {}
+        
+        def _collect_namespaces(inst):
+            if inst.entity_type == "node":
+                if inst.namespace_str in namespace_map:
+                    raise ValidationError(
+                        f"Duplicate node namespace found: '{inst.namespace_str}'. "
+                        f"Conflict between instance '{inst.name}' and '{namespace_map[inst.namespace_str]}'"
+                    )
+                namespace_map[inst.namespace_str] = inst.name
+            
+            for child in inst.children.values():
+                _collect_namespaces(child)
+                
+        _collect_namespaces(self)
