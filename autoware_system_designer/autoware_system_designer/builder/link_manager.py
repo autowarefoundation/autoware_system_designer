@@ -267,7 +267,8 @@ class LinkManager:
         
         # Validate matched ports
         if not port_pairs:
-            raise ValidationError(self._err_wildcard_no_matches(connection))
+            logger.warning(self._err_wildcard_no_matches(connection))
+            return
 
         # Create links for each matched pair
         for from_key, to_key in port_pairs:
@@ -385,14 +386,15 @@ class LinkManager:
                         available = sorted([
                             k.split(".")[1] for k in port_list_from.keys() if k.startswith(".")
                         ])
-                        raise ValidationError(self._err_missing_external_io("input", missing_name, available))
+                        logger.warning(self._err_missing_external_io("input", missing_name, available))
                     else:
                         # internal output missing
                         instance_name = connection.from_instance or "<root>"
                         available = sorted([
                             k.split(".")[1] for k in port_list_from.keys() if k.startswith(f"{instance_name}.")
                         ])
-                        raise ValidationError(self._err_missing_internal("output", instance_name, connection.from_port_name, available))
+                        logger.warning(self._err_missing_internal("output", instance_name, connection.from_port_name, available))
+                    continue
 
                 if to_info is None:
                     if connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
@@ -400,13 +402,14 @@ class LinkManager:
                         available = sorted([
                             k.split(".")[1] for k in port_list_to.keys() if k.startswith(".")
                         ])
-                        raise ValidationError(self._err_missing_external_io("output", missing_name, available))
+                        logger.warning(self._err_missing_external_io("output", missing_name, available))
                     else:
                         instance_name = connection.to_instance or "<root>"
                         available = sorted([
                             k.split(".")[1] for k in port_list_to.keys() if k.startswith(f"{instance_name}.")
                         ])
-                        raise ValidationError(self._err_missing_internal("input", instance_name, connection.to_port_name, available))
+                        logger.warning(self._err_missing_internal("input", instance_name, connection.to_port_name, available))
+                    continue
 
                 from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
                 self._create_link_from_ports(from_port, to_port, connection.type)
