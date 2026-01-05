@@ -45,10 +45,41 @@ class ParameterManager:
         self.parameters: ParameterList = ParameterList()
         self.parameter_files: ParameterFileList = ParameterFileList()
         self.input_topic_pattern = re.compile(r'\$\{input\s+([^}]+)\}')
+        self.output_topic_pattern = re.compile(r'\$\{output\s+([^}]+)\}')
+        self.parameter_pattern = re.compile(r'\$\{parameter\s+([^}]+)\}')
 
     # =========================================================================
     # Public API Methods
     # =========================================================================
+
+    def resolve_substitutions(self, input_string: str) -> str:
+        """Resolve all substitutions in a string.
+        
+        Handles:
+        1. ${input topic_name}
+        2. ${output topic_name}
+        3. ${parameter param_name}
+        4. $(var ...), $(env ...), $(find-pkg-share ...) if resolver is available
+        """
+        if not input_string or not isinstance(input_string, str):
+            return input_string
+
+        resolved_value = input_string
+        
+        # 1. Resolve ${input ...}
+        resolved_value = self._resolve_input_topic_string(resolved_value)
+        
+        # 2. Resolve ${output ...}
+        resolved_value = self._resolve_output_topic_string(resolved_value)
+        
+        # 3. Resolve ${parameter ...}
+        resolved_value = self._resolve_parameter_string(resolved_value)
+
+        # 4. Resolve global/env vars if resolver exists
+        if self.parameter_resolver:
+            resolved_value = self.parameter_resolver.resolve_string(resolved_value)
+
+        return resolved_value
 
     def get_all_parameters(self):
         """Get all parameters."""
@@ -111,27 +142,14 @@ class ParameterManager:
         # Resolve all parameter values
         for param in self.parameters.list:
             if param.value is not None and isinstance(param.value, str):
-                # 1. Resolve ${input ...}
-                resolved_value = self._resolve_input_topic_string(param.value)
-
-                # 2. Resolve global/env vars if resolver exists
-                if self.parameter_resolver:
-                    resolved_value = self.parameter_resolver.resolve_string(resolved_value)
-
+                resolved_value = self.resolve_substitutions(param.value)
                 if resolved_value != param.value:
                     param.value = resolved_value
 
         # Resolve all parameter file paths
         for param_file in self.parameter_files.list:
             if param_file.path and isinstance(param_file.path, str):
-                resolved_path = param_file.path
-                
-                # 1. Resolve ${input ...} in file path (unlikely but consistent)
-                resolved_path = self._resolve_input_topic_string(resolved_path)
-
-                # 2. Resolve global/env vars
-                if self.parameter_resolver:
-                    resolved_path = self.parameter_resolver.resolve_string(resolved_path)
+                resolved_path = self.resolve_substitutions(param_file.path)
                 
                 if resolved_path != param_file.path:
                     param_file.path = resolved_path
@@ -154,6 +172,45 @@ class ParameterManager:
                 return "none"
         except ValidationError:
             logger.warning(f"Input port not found for substitution: {port_name} in {self.instance.name}")
+            return match.group(0)  # Return original if not found
+
+    def _resolve_output_topic_string(self, input_string: str) -> str:
+        """Resolve ${output port_name} substitutions."""
+        if not input_string or not isinstance(input_string, str):
+            return input_string
+        return self.output_topic_pattern.sub(self._resolve_output_topic_match, input_string)
+
+    def _resolve_output_topic_match(self, match) -> str:
+        """Resolve a single ${output port_name} match."""
+        port_name = match.group(1).strip()
+        try:
+            out_port = self.instance.link_manager.get_out_port(port_name)
+            topic = out_port.get_topic()
+            if topic:
+                return topic
+            else:
+                return "none"
+        except ValidationError:
+            logger.warning(f"Output port not found for substitution: {port_name} in {self.instance.name}")
+            return match.group(0)  # Return original if not found
+
+    def _resolve_parameter_string(self, input_string: str) -> str:
+        """Resolve ${parameter param_name} substitutions."""
+        if not input_string or not isinstance(input_string, str):
+            return input_string
+        return self.parameter_pattern.sub(self._resolve_parameter_match, input_string)
+
+    def _resolve_parameter_match(self, match) -> str:
+        """Resolve a single ${parameter param_name} match."""
+        param_name = match.group(1).strip()
+        # Look up parameter in self.parameters
+        # We need to get the effective value of the parameter
+        param_value = self.parameters.get_parameter(param_name)
+        
+        if param_value is not None:
+            return str(param_value)
+        else:
+            logger.warning(f"Parameter not found for substitution: {param_name} in {self.instance.name}")
             return match.group(0)  # Return original if not found
 
     def _get_package_name(self) -> Optional[str]:

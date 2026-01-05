@@ -69,7 +69,7 @@
     </composable_node>
   </load_composable_node>
 {% else %}
-  <node pkg="{{ node.package }}" exec="{{ node.executable }}" name="{{ node.name }}" namespace="{{ node.full_namespace }}" output="{{ node.node_output }}">
+  <node pkg="{{ node.package }}" exec="{{ node.executable }}" name="{{ node.name }}" namespace="{{ node.full_namespace }}" output="{{ node.node_output }}"{% if node.args %} args="{{ node.args }}"{% endif %}>
     {{ node_configuration(node)|indent(4) }}
   </node>
 {% endif %}
