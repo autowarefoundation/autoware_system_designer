@@ -487,14 +487,18 @@ class LinkManager:
                         available = sorted([
                             k.split(".")[1] for k in port_list_from.keys() if k.startswith(".")
                         ])
-                        logger.warning(self._err_missing_external_io("input", missing_name, available))
+                        msg = self._err_missing_external_io("input", missing_name, available)
                     else:
                         # internal output missing
                         instance_name = connection.from_instance or "<root>"
                         available = sorted([
                             k.split(".")[1] for k in port_list_from.keys() if k.startswith(f"{instance_name}.")
                         ])
-                        logger.warning(self._err_missing_internal("output", instance_name, connection.from_port_name, available))
+                        msg = self._err_missing_internal("output", instance_name, connection.from_port_name, available)
+
+                    if self.instance.entity_type == "module":
+                        raise ValidationError(msg)
+                    logger.warning(msg)
                     continue
 
                 if to_info is None:
@@ -503,13 +507,17 @@ class LinkManager:
                         available = sorted([
                             k.split(".")[1] for k in port_list_to.keys() if k.startswith(".")
                         ])
-                        logger.warning(self._err_missing_external_io("output", missing_name, available))
+                        msg = self._err_missing_external_io("output", missing_name, available)
                     else:
                         instance_name = connection.to_instance or "<root>"
                         available = sorted([
                             k.split(".")[1] for k in port_list_to.keys() if k.startswith(f"{instance_name}.")
                         ])
-                        logger.warning(self._err_missing_internal("input", instance_name, connection.to_port_name, available))
+                        msg = self._err_missing_internal("input", instance_name, connection.to_port_name, available)
+
+                    if self.instance.entity_type == "module":
+                        raise ValidationError(msg)
+                    logger.warning(msg)
                     continue
 
                 from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
