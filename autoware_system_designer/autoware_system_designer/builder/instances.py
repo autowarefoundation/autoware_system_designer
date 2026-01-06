@@ -105,7 +105,6 @@ class Instance:
         self.name: str = name
         self.namespace: List[str] = namespace.copy()
         # add the instance name to the namespace
-        self.namespace.append(name)
         self.namespace_str: str = "/" + "/".join(self.namespace)
 
         self.compute_unit: str = compute_unit
@@ -308,6 +307,16 @@ class Instance:
                 node_params = cfg_param_set.parameters
                 logger.info(f"Applying parameter set '{param_set_name}' to component '{instance.name}'")
 
+                # Determine which resolver to use
+                resolver_to_use = self.parameter_resolver
+
+                # If local_variables exist and we have a resolver, create a scoped resolver
+                if cfg_param_set.local_variables and resolver_to_use:
+                    resolver_to_use = resolver_to_use.copy()
+                    # Resolve local variables (updating the scoped resolver's map)
+                    resolver_to_use.resolve_parameters(cfg_param_set.local_variables)
+                    logger.debug(f"Created scoped resolver for '{param_set_name}' with {len(cfg_param_set.local_variables)} local variables")
+
                 for param_config in node_params:
                     if isinstance(param_config, dict) and "node" in param_config:
                         node_namespace = param_config.get("node")
@@ -321,9 +330,9 @@ class Instance:
                         parameters = param_config.get("parameters", [])
 
                         # Resolve ROS substitutions if resolver is available
-                        if self.parameter_resolver:
-                            parameter_files_raw = self.parameter_resolver.resolve_parameter_files(parameter_files_raw)
-                            parameters = self.parameter_resolver.resolve_parameters(parameters)
+                        if resolver_to_use:
+                            parameter_files_raw = resolver_to_use.resolve_parameter_files(parameter_files_raw)
+                            parameters = resolver_to_use.resolve_parameters(parameters)
 
                         # Validate parameter_files format (should be list of dicts)
                         parameter_files = []
@@ -352,8 +361,9 @@ class Instance:
             if "instance" not in cfg_node or "entity" not in cfg_node:
                 raise ValidationError(f"Module instance configuration must have 'node' and 'entity' fields, at {self.configuration.file_path}")
 
+            child_name = cfg_node.get("instance")
             instance = Instance(
-                cfg_node.get("instance"), self.compute_unit, self.namespace, self.layer + 1
+                child_name, self.compute_unit, self.namespace + [child_name], self.layer + 1
             )
             instance.parent = self
             instance.parent_module_list = self.parent_module_list.copy()
@@ -560,3 +570,24 @@ class DeploymentInstance(Instance):
         logger.info(f"Instance '{self.name}': building logical topology")
         # self.build_logical_topology()
         self.set_event_tree()
+
+        # 4. validate node namespaces
+        self.check_duplicate_node_namespaces()
+
+    def check_duplicate_node_namespaces(self):
+        """Check for duplicate node namespaces in the entire system."""
+        namespace_map = {}
+        
+        def _collect_namespaces(inst):
+            if inst.entity_type == "node":
+                if inst.namespace_str in namespace_map:
+                    raise ValidationError(
+                        f"Duplicate node namespace found: '{inst.namespace_str}'. "
+                        f"Conflict between instance '{inst.name}' and '{namespace_map[inst.namespace_str]}'"
+                    )
+                namespace_map[inst.namespace_str] = inst.name
+            
+            for child in inst.children.values():
+                _collect_namespaces(child)
+                
+        _collect_namespaces(self)

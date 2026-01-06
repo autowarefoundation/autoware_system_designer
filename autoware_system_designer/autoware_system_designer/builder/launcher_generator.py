@@ -90,6 +90,10 @@ def _extract_node_data(node_instance: Instance, module_path: List[str]) -> Dict[
     is_ros2_file_launch = True if node_data["ros2_launch_file"] is not None else False
     node_data["is_ros2_file_launch"] = is_ros2_file_launch
     node_data["node_output"] = launch_config.get("node_output", "screen")
+    
+    # Resolve args substitutions (e.g., ${input ...}, ${parameter ...})
+    raw_args = launch_config.get("args", "")
+    node_data["args"] = node_instance.parameter_manager.resolve_substitutions(raw_args)
 
     if is_ros2_file_launch is False:
         node_data["plugin"] = launch_config.get("plugin", "")

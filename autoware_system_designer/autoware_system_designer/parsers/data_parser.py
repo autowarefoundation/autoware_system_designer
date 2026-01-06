@@ -101,7 +101,8 @@ class ConfigParser:
         elif entity_type == ConfigType.PARAMETER_SET:
             return ParameterSetConfig(
                 **base_data,
-                parameters=config.get('parameters')
+                parameters=config.get('parameters'),
+                local_variables=config.get('local_variables')
             )
         elif entity_type == ConfigType.SYSTEM:
             return SystemConfig(

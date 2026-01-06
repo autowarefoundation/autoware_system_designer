@@ -42,19 +42,38 @@ def match_and_pair_wildcard_ports(
     - Both sides have '*' (not both '*') => substitute source captures into target pattern.
     """
     def _match(pattern: str, keys: List[str]) -> List[str]:
-        return keys if pattern == "*" else [k for k in keys if fnmatch.fnmatch(k, pattern)]
+        """Match keys against a pattern that may contain wildcards (*, ^, +).
+        
+        This treats * ^ + as distinct wildcards, but functionally they all match
+        sequences of characters. Using different wildcards allows for specific
+        multi-capture matching in the substitution phase.
+        """
+        # Create regex where each wildcard type captures a group
+        regex_pattern = re.escape(pattern)
+        regex_pattern = regex_pattern.replace(r"\*", "(.*?)")
+        regex_pattern = regex_pattern.replace(r"\^", "(.*?)") 
+        regex_pattern = regex_pattern.replace(r"\+", "(.*?)")
+        
+        matches = []
+        for key in keys:
+            if re.match(f"^{regex_pattern}$", key):
+                matches.append(key)
+        return matches
 
     src_matches = _match(source_pattern, list(source_ports.keys()))
     tgt_matches = _match(target_pattern, list(target_ports.keys()))
     if not src_matches or not tgt_matches:
         return []
 
-    if source_pattern == "*" and target_pattern == "*":
+    # Check for wildcard presence
+    src_wc = any(c in source_pattern for c in "*^+")
+    tgt_wc = any(c in target_pattern for c in "*^+")
+    
+    # Simple case: both patterns are purely just one wildcard character (e.g. both "*")
+    if source_pattern in ["*", "^", "+"] and target_pattern in ["*", "^", "+"]:
         common = sorted(set(src_matches) & set(tgt_matches))
         return [(k, k) for k in common]
 
-    src_wc = "*" in source_pattern
-    tgt_wc = "*" in target_pattern
     pairs: List[tuple[str, str]] = []
 
     if src_wc and not tgt_wc:  # replicate target across each source expansion
@@ -73,23 +92,105 @@ def match_and_pair_wildcard_ports(
     # Both sides have wildcards (non-trivial); use substitution logic.
     for s in src_matches:
         t = _apply_wildcard_substitution(source_pattern, target_pattern, s)
-        if t in tgt_matches and s != t:
+        if t in tgt_matches:
             pairs.append((s, t))
     return pairs
 
 
 def _apply_wildcard_substitution(source_pattern: str, target_pattern: str, matched_name: str) -> str:
-    """Substitute wildcard captures from a matched source key into target pattern."""
-    if source_pattern == "*" or target_pattern == "*":
-        return matched_name
-    source_regex = re.escape(source_pattern).replace(r"\*", "(.*)")
-    match = re.match(f"^{source_regex}$", matched_name)
+    """Substitute wildcard captures from a matched source key into target pattern.
+    
+    Wildcards (*, ^, +) are treated as distinct placeholders. Captures from 
+    wildcards in the source pattern are mapped to the corresponding wildcard 
+    type in the target pattern.
+    
+    Example 1: 
+      source: "input.*_^" matched against "input.foo_bar"
+      target: "^.input.*"
+      result: "bar.input.foo"
+
+    Example 2:
+      source: "input.*_^" matched against "input.pcl_upper_right"
+      target: "^.input.*"
+      result: "upper_right.input.pcl"
+    """
+    # 1. Extract captures from source pattern
+    # Convert wildcards to named groups to track which type matched what
+    # We use a simple sequential extraction since regex groups are ordered
+    
+    # Build source regex
+    source_regex_parts = []
+    wildcard_order = [] # stores type of wildcard encountered: '*', '^', or '+'
+    
+    last_idx = 0
+    # Iterate through pattern to find wildcards
+    # Using a simple parser loop because we need to preserve order and type
+    i = 0
+    while i < len(source_pattern):
+        if source_pattern[i] in "*^+":
+            # Add preceding literal text
+            if i > last_idx:
+                source_regex_parts.append(re.escape(source_pattern[last_idx:i]))
+            # Add capture group
+            source_regex_parts.append("(.*?)")
+            wildcard_order.append(source_pattern[i])
+            last_idx = i + 1
+        i += 1
+    if last_idx < len(source_pattern):
+        source_regex_parts.append(re.escape(source_pattern[last_idx:]))
+        
+    source_regex = "^" + "".join(source_regex_parts) + "$"
+    match = re.match(source_regex, matched_name)
+    
     if not match:
         return matched_name
-    result = target_pattern
-    for part in match.groups():
-        result = result.replace("*", part, 1)
-    return result
+        
+    captures = match.groups()
+    if len(captures) != len(wildcard_order):
+        return matched_name # Should match if regex worked
+
+    # Map wildcard type to its captured value(s)
+    # Since a type can appear multiple times, we use a list/iterator approach
+    wildcard_captures = {
+        '*': [],
+        '^': [],
+        '+': []
+    }
+    for wc_type, captured_val in zip(wildcard_order, captures):
+        wildcard_captures[wc_type].append(captured_val)
+
+    # 2. Substitute into target pattern
+    result_parts = []
+    last_idx = 0
+    i = 0
+    
+    # We need to track index for each wildcard type in target to consume correct capture
+    wc_indices = {'*': 0, '^': 0, '+': 0}
+    
+    while i < len(target_pattern):
+        char = target_pattern[i]
+        if char in "*^+":
+            # Add preceding literal text
+            if i > last_idx:
+                result_parts.append(target_pattern[last_idx:i])
+            
+            # Find substitution value
+            if wc_indices[char] < len(wildcard_captures[char]):
+                result_parts.append(wildcard_captures[char][wc_indices[char]])
+                wc_indices[char] += 1
+            else:
+                # If target has more wildcards of a type than source, leave it as is?
+                # Or simplistic behavior: reuse last or empty? 
+                # Standard behavior: leave the wildcard char if no capture available (unlikely if patterns align)
+                result_parts.append(char)
+            
+            last_idx = i + 1
+        i += 1
+        
+    if last_idx < len(target_pattern):
+        result_parts.append(target_pattern[last_idx:])
+        
+    return "".join(result_parts)
 
 
 class LinkManager:
@@ -267,7 +368,8 @@ class LinkManager:
         
         # Validate matched ports
         if not port_pairs:
-            raise ValidationError(self._err_wildcard_no_matches(connection))
+            logger.warning(self._err_wildcard_no_matches(connection))
+            return
 
         # Create links for each matched pair
         for from_key, to_key in port_pairs:
@@ -367,7 +469,7 @@ class LinkManager:
                 connection.from_instance or "",
                 connection.to_instance or "",
             ]
-            has_wildcard = any("*" in field for field in wildcard_fields)
+            has_wildcard = any(c in field for field in wildcard_fields for c in "*^+")
             if has_wildcard:
                 self._create_wildcard_links(connection, port_list_from, port_list_to)
             else:
@@ -385,14 +487,19 @@ class LinkManager:
                         available = sorted([
                             k.split(".")[1] for k in port_list_from.keys() if k.startswith(".")
                         ])
-                        raise ValidationError(self._err_missing_external_io("input", missing_name, available))
+                        msg = self._err_missing_external_io("input", missing_name, available)
                     else:
                         # internal output missing
                         instance_name = connection.from_instance or "<root>"
                         available = sorted([
                             k.split(".")[1] for k in port_list_from.keys() if k.startswith(f"{instance_name}.")
                         ])
-                        raise ValidationError(self._err_missing_internal("output", instance_name, connection.from_port_name, available))
+                        msg = self._err_missing_internal("output", instance_name, connection.from_port_name, available)
+
+                    if self.instance.entity_type == "module":
+                        raise ValidationError(msg)
+                    logger.warning(msg)
+                    continue
 
                 if to_info is None:
                     if connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
@@ -400,13 +507,18 @@ class LinkManager:
                         available = sorted([
                             k.split(".")[1] for k in port_list_to.keys() if k.startswith(".")
                         ])
-                        raise ValidationError(self._err_missing_external_io("output", missing_name, available))
+                        msg = self._err_missing_external_io("output", missing_name, available)
                     else:
                         instance_name = connection.to_instance or "<root>"
                         available = sorted([
                             k.split(".")[1] for k in port_list_to.keys() if k.startswith(f"{instance_name}.")
                         ])
-                        raise ValidationError(self._err_missing_internal("input", instance_name, connection.to_port_name, available))
+                        msg = self._err_missing_internal("input", instance_name, connection.to_port_name, available)
+
+                    if self.instance.entity_type == "module":
+                        raise ValidationError(msg)
+                    logger.warning(msg)
+                    continue
 
                 from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
                 self._create_link_from_ports(from_port, to_port, connection.type)

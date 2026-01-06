@@ -16,7 +16,9 @@
 import os
 import logging
 from typing import Dict
+from pathlib import Path
 from ..utils.template_utils import TemplateRenderer
+from .visualization_index import get_install_root
 
 logger = logging.getLogger(__name__)
 
@@ -105,13 +107,25 @@ def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_
         logger.info("Generated logic diagram module: logic_diagram.js")
 
         # Generate overview HTML file
+        # Calculate relative path to systems index
+        install_root = get_install_root(Path(web_dir))
+        systems_index_rel_path = "../../../../../../../systems.html" # fallback default
+        if install_root:
+            try:
+                # Calculate path from web directory (where html file is) to install root
+                rel_to_root = os.path.relpath(install_root, web_dir)
+                systems_index_rel_path = os.path.join(rel_to_root, "systems.html")
+            except ValueError:
+                logger.warning(f"Could not calculate relative path from {web_dir} to {install_root}")
+
         overview_data = {
             "deployment_name": name,
             "package_name": name,  # Using name as package name for now
             "available_modes": modes,
             "available_diagram_types": ["node_diagram", "sequence_diagram", "logic_diagram"],
             "default_mode": default_mode,
-            "default_diagram_type": "node_diagram"
+            "default_diagram_type": "node_diagram",
+            "systems_index_path": systems_index_rel_path
         }
         output_path = os.path.join(web_dir, f"{name}_overview.html")
         renderer.render_template_to_file("visualization/page/deployment_overview.html.jinja2", output_path, **overview_data)

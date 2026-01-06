@@ -64,6 +64,7 @@ class ModuleConfig(Config):
 class ParameterSetConfig(Config):
     """Data structure for parameter set entities."""
     parameters: Any = None  # Can be dict or list
+    local_variables: List[Dict[str, Any]] = None
 
 @dataclass
 class SystemConfig(Config):

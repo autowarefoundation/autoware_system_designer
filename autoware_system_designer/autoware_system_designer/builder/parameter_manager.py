@@ -45,10 +45,41 @@ class ParameterManager:
         self.parameters: ParameterList = ParameterList()
         self.parameter_files: ParameterFileList = ParameterFileList()
         self.input_topic_pattern = re.compile(r'\$\{input\s+([^}]+)\}')
+        self.output_topic_pattern = re.compile(r'\$\{output\s+([^}]+)\}')
+        self.parameter_pattern = re.compile(r'\$\{parameter\s+([^}]+)\}')
 
     # =========================================================================
     # Public API Methods
     # =========================================================================
+
+    def resolve_substitutions(self, input_string: str) -> str:
+        """Resolve all substitutions in a string.
+        
+        Handles:
+        1. ${input topic_name}
+        2. ${output topic_name}
+        3. ${parameter param_name}
+        4. $(var ...), $(env ...), $(find-pkg-share ...) if resolver is available
+        """
+        if not input_string or not isinstance(input_string, str):
+            return input_string
+
+        resolved_value = input_string
+        
+        # 1. Resolve ${input ...}
+        resolved_value = self._resolve_input_topic_string(resolved_value)
+        
+        # 2. Resolve ${output ...}
+        resolved_value = self._resolve_output_topic_string(resolved_value)
+        
+        # 3. Resolve ${parameter ...}
+        resolved_value = self._resolve_parameter_string(resolved_value)
+
+        # 4. Resolve global/env vars if resolver exists
+        if self.parameter_resolver:
+            resolved_value = self.parameter_resolver.resolve_string(resolved_value)
+
+        return resolved_value
 
     def get_all_parameters(self):
         """Get all parameters."""
@@ -111,27 +142,14 @@ class ParameterManager:
         # Resolve all parameter values
         for param in self.parameters.list:
             if param.value is not None and isinstance(param.value, str):
-                # 1. Resolve ${input ...}
-                resolved_value = self._resolve_input_topic_string(param.value)
-
-                # 2. Resolve global/env vars if resolver exists
-                if self.parameter_resolver:
-                    resolved_value = self.parameter_resolver.resolve_string(resolved_value)
-
+                resolved_value = self.resolve_substitutions(param.value)
                 if resolved_value != param.value:
                     param.value = resolved_value
 
         # Resolve all parameter file paths
         for param_file in self.parameter_files.list:
             if param_file.path and isinstance(param_file.path, str):
-                resolved_path = param_file.path
-                
-                # 1. Resolve ${input ...} in file path (unlikely but consistent)
-                resolved_path = self._resolve_input_topic_string(resolved_path)
-
-                # 2. Resolve global/env vars
-                if self.parameter_resolver:
-                    resolved_path = self.parameter_resolver.resolve_string(resolved_path)
+                resolved_path = self.resolve_substitutions(param_file.path)
                 
                 if resolved_path != param_file.path:
                     param_file.path = resolved_path
@@ -154,6 +172,45 @@ class ParameterManager:
                 return "none"
         except ValidationError:
             logger.warning(f"Input port not found for substitution: {port_name} in {self.instance.name}")
+            return match.group(0)  # Return original if not found
+
+    def _resolve_output_topic_string(self, input_string: str) -> str:
+        """Resolve ${output port_name} substitutions."""
+        if not input_string or not isinstance(input_string, str):
+            return input_string
+        return self.output_topic_pattern.sub(self._resolve_output_topic_match, input_string)
+
+    def _resolve_output_topic_match(self, match) -> str:
+        """Resolve a single ${output port_name} match."""
+        port_name = match.group(1).strip()
+        try:
+            out_port = self.instance.link_manager.get_out_port(port_name)
+            topic = out_port.get_topic()
+            if topic:
+                return topic
+            else:
+                return "none"
+        except ValidationError:
+            logger.warning(f"Output port not found for substitution: {port_name} in {self.instance.name}")
+            return match.group(0)  # Return original if not found
+
+    def _resolve_parameter_string(self, input_string: str) -> str:
+        """Resolve ${parameter param_name} substitutions."""
+        if not input_string or not isinstance(input_string, str):
+            return input_string
+        return self.parameter_pattern.sub(self._resolve_parameter_match, input_string)
+
+    def _resolve_parameter_match(self, match) -> str:
+        """Resolve a single ${parameter param_name} match."""
+        param_name = match.group(1).strip()
+        # Look up parameter in self.parameters
+        # We need to get the effective value of the parameter
+        param_value = self.parameters.get_parameter(param_name)
+        
+        if param_value is not None:
+            return str(param_value)
+        else:
+            logger.warning(f"Parameter not found for substitution: {param_name} in {self.instance.name}")
             return match.group(0)  # Return original if not found
 
     def _get_package_name(self) -> Optional[str]:
@@ -266,17 +323,14 @@ class ParameterManager:
             self.apply_parameters_to_all_nodes(parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
             return
 
-        target_instance = self._find_node_by_namespace(node_namespace)
-        if target_instance is None:
+        target_instances = self.find_matching_nodes(node_namespace)
+        if not target_instances:
             logger.warning(f"Target node not found: {node_namespace}")
             return
             
-        if target_instance.entity_type != "node":
-            logger.warning(f"Target node is not a node: {node_namespace} (type: {target_instance.entity_type})")
-            return
-        
-        logger.info(f"Applying parameters to node: {node_namespace}")
-        self._apply_parameters_to_instance(target_instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+        for target_instance in target_instances:
+            logger.info(f"Applying parameters to node: {node_namespace} (instance: {target_instance.name})")
+            self._apply_parameters_to_instance(target_instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
 
     def apply_parameters_to_all_nodes(self, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
                                       file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
@@ -359,58 +413,34 @@ class ParameterManager:
     # Node Finding (helper methods for parameter application)
     # =========================================================================
     
-    def _find_node_by_namespace(self, target_namespace: str):
-        """Find a node instance by its absolute namespace path.
+    def find_matching_nodes(self, target_namespace: str) -> List['Instance']:
+        """Find all nodes matching the absolute namespace path in the current instance's subtree.
         
         Args:
             target_namespace: Absolute namespace path (e.g., "/perception/object_recognition/node_tracker")
             
         Returns:
-            Instance object if found, None otherwise
+            List of matching Instance objects (nodes)
         """
-        # Start from the root deployment instance
-        current_instance = self.instance
+        matches = []
         
-        # Navigate to the root deployment instance
-        while current_instance.parent is not None:
-            current_instance = current_instance.parent
+        # Helper for recursive search
+        def _search(inst):
+            # Check if current instance matches
+            if inst.entity_type == "node" and inst.namespace_str == target_namespace:
+                matches.append(inst)
             
-        # If we're at the deployment root (entity_type == "system"),
-        # search in its children directly since parameter_set paths don't include the deployment name
-        if current_instance.entity_type == "system":
-            for child in current_instance.children.values():
-                result = self._traverse_to_namespace(child, target_namespace)
-                if result is not None:
-                    return result
-            return None
-        
-        # Otherwise, traverse down from current instance
-        return self._traverse_to_namespace(current_instance, target_namespace)
-    
-    def _traverse_to_namespace(self, instance, target_namespace: str):
-        """Recursively traverse instance tree to find target namespace.
-        
-        Args:
-            instance: Current instance to check
-            target_namespace: Target namespace to find
+            # Optimization: only traverse if target could be deeper
+            # i.e., target_namespace starts with current namespace
+            # OR current namespace is root "/"
+            # OR current namespace is a prefix of target
             
-        Returns:
-            Instance object if found, None otherwise
-        """
-        # Check if current instance matches the target namespace
-        if instance.namespace_str == target_namespace:
-            return instance
-            
-        # Check if target namespace starts with current instance namespace
-        # This means we need to look deeper in this branch
-        if target_namespace.startswith(instance.namespace_str + "/") or target_namespace == instance.namespace_str:
-            # Search in children
-            for child in instance.children.values():
-                result = self._traverse_to_namespace(child, target_namespace)
-                if result is not None:
-                    return result
-        
-        return None
+            if inst.namespace_str == "/" or target_namespace.startswith(inst.namespace_str + "/") or inst.namespace_str == target_namespace:
+                for child in inst.children.values():
+                    _search(child)
+                    
+        _search(self.instance)
+        return matches
 
     # =========================================================================
     # Node Parameter Initialization

@@ -68,6 +68,7 @@
         /* Sidebar */
         #sidebar {
             width: 300px;
+            flex-shrink: 0;
             background: var(--bg-sidebar);
             border-right: 1px solid var(--border-color);
             display: flex;
@@ -80,6 +81,19 @@
             padding: 20px;
             border-bottom: 1px solid var(--border-color);
             background: var(--bg-sidebar-header);
+        }
+
+        .home-link {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 13px;
+            color: var(--highlight);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .home-link:hover {
+            text-decoration: underline;
         }
 
         #sidebar-header h1 {
@@ -451,6 +465,7 @@
     <!-- Sidebar -->
     <div id="sidebar">
         <div id="sidebar-header">
+            <a href="{{ systems_index_path }}" class="home-link">&larr; Back to Systems</a>
             <h1>{{ deployment_name }}</h1>
             <div class="package-info">Package: {{ package_name }}</div>
             <div class="dark-mode-toggle">
