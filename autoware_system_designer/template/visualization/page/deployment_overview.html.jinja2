@@ -594,10 +594,25 @@
             
             let html = '';
 
+            // --- Topic Block ---
+            if (data.topic) {
+                let displayValue = data.topic;
+                if (Array.isArray(data.topic)) {
+                    displayValue = '/' + data.topic.join('/');
+                }
+                
+                html += `<div class="info-card">
+                    <div class="info-title">Topic</div>
+                    <div class="info-row">
+                        <span class="info-value" style="width: 100%; word-break: break-all;">${displayValue}</span>
+                    </div>
+                </div>`;
+            }
+
             // --- 1. Info Block ---
             let infoHtml = '';
             // Fields explicitly excluded from Info block or handled in other blocks
-            const ignoredKeys = ['id', 'children', 'edges', 'ports', 'layoutOptions', 'width', 'height', 'x', 'y', 'source', 'target', 'sections', 'vis_guide', 'in_ports', 'out_ports', 'parameters'];
+            const ignoredKeys = ['id', 'children', 'edges', 'ports', 'layoutOptions', 'width', 'height', 'x', 'y', 'source', 'target', 'sections', 'vis_guide', 'in_ports', 'out_ports', 'parameters', 'topic'];
             
             let hasInfo = false;
             for (const [key, value] of Object.entries(data)) {
