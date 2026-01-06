@@ -307,6 +307,16 @@ class Instance:
                 node_params = cfg_param_set.parameters
                 logger.info(f"Applying parameter set '{param_set_name}' to component '{instance.name}'")
 
+                # Determine which resolver to use
+                resolver_to_use = self.parameter_resolver
+
+                # If local_variables exist and we have a resolver, create a scoped resolver
+                if cfg_param_set.local_variables and resolver_to_use:
+                    resolver_to_use = resolver_to_use.copy()
+                    # Resolve local variables (updating the scoped resolver's map)
+                    resolver_to_use.resolve_parameters(cfg_param_set.local_variables)
+                    logger.debug(f"Created scoped resolver for '{param_set_name}' with {len(cfg_param_set.local_variables)} local variables")
+
                 for param_config in node_params:
                     if isinstance(param_config, dict) and "node" in param_config:
                         node_namespace = param_config.get("node")
@@ -320,9 +330,9 @@ class Instance:
                         parameters = param_config.get("parameters", [])
 
                         # Resolve ROS substitutions if resolver is available
-                        if self.parameter_resolver:
-                            parameter_files_raw = self.parameter_resolver.resolve_parameter_files(parameter_files_raw)
-                            parameters = self.parameter_resolver.resolve_parameters(parameters)
+                        if resolver_to_use:
+                            parameter_files_raw = resolver_to_use.resolve_parameter_files(parameter_files_raw)
+                            parameters = resolver_to_use.resolve_parameters(parameters)
 
                         # Validate parameter_files format (should be list of dicts)
                         parameter_files = []

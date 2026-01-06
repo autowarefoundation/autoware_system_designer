@@ -167,6 +167,7 @@ class ParameterSetValidator(BaseValidator):
         return {
             'name': {'type': 'string'},
             'parameters': {'type': 'object_or_array'},
+            'local_variables': {'type': 'nullable_array'},
         }
 
 class SystemValidator(BaseValidator):

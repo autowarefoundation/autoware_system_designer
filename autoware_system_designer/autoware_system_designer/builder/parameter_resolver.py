@@ -73,6 +73,18 @@ class ParameterResolver:
         self.pkgshare_pattern = re.compile(r'\$\(find-pkg-share\s+([^)]+)\)')
         # eval_pattern removed in favor of manual parsing to support balanced parentheses
 
+    def copy(self) -> 'ParameterResolver':
+        """Create a shallow copy of the resolver with independent variable map.
+        
+        Returns:
+            New ParameterResolver instance with copied variable map
+        """
+        # Create a new instance with empty params
+        # We rely on manual population of variable_map and package_paths
+        new_resolver = ParameterResolver([], [], self.package_paths)
+        new_resolver.variable_map = self.variable_map.copy()
+        return new_resolver
+
     def update_variables(self, new_variables: Dict[str, str]):
         """Update the variable map with new variables.
         
