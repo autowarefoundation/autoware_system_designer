@@ -258,7 +258,7 @@ class Deployment:
                 
                 # Resolve parameters (apply global parameters and resolve substitutions)
                 global_params = self.config_yaml.get('global_parameters', [])
-                # deploy_instance.resolve_parameters(global_params)
+                deploy_instance.resolve_parameters(global_params)
 
                 # Store instance
                 mode_key = mode_name if mode_name else "default"

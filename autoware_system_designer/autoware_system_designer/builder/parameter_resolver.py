@@ -21,6 +21,27 @@ from typing import List, Dict, Any, Optional
 logger = logging.getLogger(__name__)
 
 
+SAFE_EVAL_SCOPE = {
+    '__builtins__': {},
+    'math': math,
+    'abs': abs,
+    'min': min,
+    'max': max,
+    'pow': pow,
+    'round': round,
+    'int': int,
+    'float': float,
+    'str': str,
+    # Add math constants and functions directly to scope for convenience
+    'pi': math.pi,
+    'sin': math.sin,
+    'cos': math.cos,
+    'tan': math.tan,
+    'sqrt': math.sqrt,
+    'atan2': math.atan2,
+}
+
+
 class ParameterResolver:
     """Resolves ROS-specific substitutions in parameters to make autoware_system_designer ROS-independent.
 
@@ -158,60 +179,56 @@ class ParameterResolver:
             return match.group(0)  # Return original if not found
 
     def _resolve_eval_substitutions(self, text: str) -> str:
-        """Resolve $(eval ...) with balanced parentheses support."""
+        """Resolve $(eval ...) expressions.
+
+        Note: Nested eval expressions are not supported (eval inside eval).
+        However, $(var ...) and $(env ...) can be inside $(eval ...).
+        """
         if not text or '$(eval ' not in text:
             return text
-            
-        result = text
-        cursor = 0
-        
+
+        result = []
+        current_idx = 0
+
         while True:
-            start_idx = result.find('$(eval ', cursor)
+            start_idx = text.find('$(eval ', current_idx)
             if start_idx == -1:
+                result.append(text[current_idx:])
                 break
-                
-            # Find matching parenthesis
+
+            result.append(text[current_idx:start_idx])
+
+            # Search for balanced closing parenthesis
             balance = 1
-            i = start_idx + len('$(eval ')
-            end_idx = -1
-            
-            while i < len(result):
-                if result[i] == '(':
+            # Length of "$(eval " is 7
+            scan_idx = start_idx + 7
+            found_closure = False
+
+            while scan_idx < len(text):
+                char = text[scan_idx]
+                if char == '(':
                     balance += 1
-                elif result[i] == ')':
+                elif char == ')':
                     balance -= 1
                     if balance == 0:
-                        end_idx = i
+                        found_closure = True
                         break
-                i += 1
-                
-            if end_idx != -1:
-                # Found the block
-                inner_expr = result[start_idx + len('$(eval '):end_idx]
-                
-                # Recursively resolve any evals inside this expression
-                resolved_inner = self._resolve_eval_substitutions(inner_expr)
-                
-                # Check if we can evaluate
-                if '$' in resolved_inner:
-                     replacement = f"$(eval {resolved_inner})"
-                     old_block = result[start_idx:end_idx+1]
-                     
-                     if replacement != old_block:
-                         result = result[:start_idx] + replacement + result[end_idx+1:]
-                         cursor = start_idx + len(replacement)
-                     else:
-                         cursor = end_idx + 1
-                else:
-                    # Evaluate
-                    evaluated = self._evaluate_expression(resolved_inner)
-                    result = result[:start_idx] + evaluated + result[end_idx+1:]
-                    cursor = start_idx + len(evaluated)
+                scan_idx += 1
+
+            if found_closure:
+                # Extract content inside $(eval ...)
+                expression = text[start_idx + 7 : scan_idx]
+                evaluated = self._evaluate_expression(expression)
+                result.append(evaluated)
+                current_idx = scan_idx + 1
             else:
-                # No matching paren
-                cursor = start_idx + len('$(eval ')
-                
-        return result
+                logger.warning(f"Unbalanced parentheses in eval substitution: {text[start_idx:]}")
+                result.append(text[start_idx:])
+                # Stop processing as we can't determine where this eval ends
+                current_idx = len(text)
+                break
+
+        return "".join(result)
 
     def _evaluate_expression(self, expression: str) -> str:
         """Evaluate a python expression safely."""
@@ -221,29 +238,7 @@ class ParameterResolver:
              return f"$(eval {expression})"
 
         try:
-            # Safe evaluation scope with math module
-            safe_scope = {
-                '__builtins__': {},
-                'math': math,
-                'abs': abs,
-                'min': min,
-                'max': max,
-                'pow': pow,
-                'round': round,
-                'int': int,
-                'float': float,
-                'str': str,
-                # Add math constants and functions directly to scope for convenience
-                'pi': math.pi,
-                'sin': math.sin,
-                'cos': math.cos,
-                'tan': math.tan,
-                'sqrt': math.sqrt,
-                'atan2': math.atan2,
-            }
-            
-            # Evaluate expression
-            result = eval(expression, safe_scope)
+            result = eval(expression, SAFE_EVAL_SCOPE)
             return str(result)
         except Exception as e:
             logger.warning(f"Failed to evaluate expression '$(eval {expression})': {e}")
