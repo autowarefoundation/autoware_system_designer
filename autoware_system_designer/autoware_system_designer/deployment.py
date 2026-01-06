@@ -15,7 +15,7 @@
 
 import os
 import logging
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Any
 from .config import SystemConfig
 from .models.config import Config
 from .models.parameters import ParameterType
@@ -67,6 +67,10 @@ class Deployment:
             env_params=self.config_yaml.get('environment_parameters', []),
             package_paths=package_paths
         )
+
+        # Process global parameter files
+        if 'global_parameter_files' in self.config_yaml:
+            self._load_global_parameter_files(self.config_yaml['global_parameter_files'])
 
         # Check the configuration
         self._check_config()
@@ -135,6 +139,69 @@ class Deployment:
             raise ValidationError(f"No system design configuration files collected.")
         return system_list, package_paths, file_package_map
 
+    def _load_global_parameter_files(self, global_param_files: List[Dict[str, str]]):
+        """Load parameters from external files and update parameter resolver."""
+        for file_entry in global_param_files:
+            for param_prefix, file_path in file_entry.items():
+                # Resolve file path
+                resolved_path = self.parameter_resolver.resolve_string(file_path)
+                
+                # Check if it's a find-pkg-share that couldn't be resolved (starts with $)
+                if resolved_path.startswith('$'):
+                    logger.warning(f"Could not resolve path for global parameter file: {file_path}")
+                    continue
+                
+                if not os.path.exists(resolved_path):
+                    logger.warning(f"Global parameter file not found: {resolved_path}")
+                    continue
+                    
+                try:
+                    data = yaml_parser.load_config(resolved_path)
+                    if not data:
+                        continue
+                        
+                    # Derive prefix from key (e.g., vehicle_info_file -> vehicle_info)
+                    prefix = param_prefix.replace('_file', '')
+                    
+                    variables = {}
+
+                    # Iterate through nodes in the yaml (standard ROS 2 param file structure)
+                    # node_name:
+                    #   ros__parameters:
+                    #     param_name: value
+                    for node_name, node_data in data.items():
+                        if isinstance(node_data, dict) and "ros__parameters" in node_data:
+                            params = node_data["ros__parameters"]
+                            flattened = self._flatten_parameters(params, parent_key=prefix)
+                            variables.update(flattened)
+                        # Handle case where file might be just key-value pairs without node/ros__parameters wrapper
+                        elif param_prefix == 'global_parameters' or param_prefix == 'global_parameters_file':
+                             # If explicitly global params file, maybe treat differently? 
+                             # For now assume ROS 2 param structure or flat if no ros__parameters
+                             pass 
+                            
+                    # Update resolver
+                    if variables:
+                        self.parameter_resolver.update_variables(variables)
+                        logger.info(f"Loaded {len(variables)} global parameters from {resolved_path}")
+                    else:
+                        logger.warning(f"No parameters found in {resolved_path} (expected standard ROS 2 parameter file format)")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to load global parameter file {resolved_path}: {e}")
+
+    def _flatten_parameters(self, params: Dict[str, Any], parent_key: str = "", separator: str = ".") -> Dict[str, str]:
+        """Flatten nested dictionary into dot-separated keys."""
+        items = {}
+        for k, v in params.items():
+            new_key = f"{parent_key}{separator}{k}" if parent_key else k
+            
+            if isinstance(v, dict):
+                items.update(self._flatten_parameters(v, new_key, separator))
+            else:
+                items[new_key] = str(v)
+        return items
+
     def _check_config(self) -> bool:
         """Validate & normalize deployment configuration.
 
@@ -191,7 +258,7 @@ class Deployment:
                 
                 # Resolve parameters (apply global parameters and resolve substitutions)
                 global_params = self.config_yaml.get('global_parameters', [])
-                deploy_instance.resolve_parameters(global_params)
+                # deploy_instance.resolve_parameters(global_params)
 
                 # Store instance
                 mode_key = mode_name if mode_name else "default"

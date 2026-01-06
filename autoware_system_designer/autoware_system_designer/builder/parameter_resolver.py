@@ -15,6 +15,7 @@
 import logging
 import re
 import os
+import math
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -27,9 +28,10 @@ class ParameterResolver:
     1. $(env ENV_VAR) -> environment variable value
     2. $(var variable_name) -> resolved variable value
     3. $(find-pkg-share package_name) -> absolute package path
-    4. Nested substitutions: $(find-pkg-share $(var vehicle_model)_description)
+    4. $(eval expression) -> evaluated python expression (e.g., $(eval 1 + 2))
+    5. Nested substitutions: $(find-pkg-share $(var vehicle_model)_description)
 
-    Resolution order: environment variables first, then variables, then find-pkg-share commands.
+    Resolution order: environment variables first, then variables, then find-pkg-share commands, then eval.
     """
 
     def __init__(self, global_params: List[Dict[str, Any]], env_params: List[Dict[str, Any]],
@@ -46,8 +48,17 @@ class ParameterResolver:
 
         # Regex patterns for substitutions
         self.env_pattern = re.compile(r'\$\(env\s+([^)]+)\)')
-        self.var_pattern = re.compile(r'\$\(var\s+(\w+)\)')
+        self.var_pattern = re.compile(r'\$\(var\s+([\w\.]+)\)')
         self.pkgshare_pattern = re.compile(r'\$\(find-pkg-share\s+([^)]+)\)')
+        # eval_pattern removed in favor of manual parsing to support balanced parentheses
+
+    def update_variables(self, new_variables: Dict[str, str]):
+        """Update the variable map with new variables.
+        
+        Args:
+            new_variables: Dictionary of new variables to add/update
+        """
+        self.variable_map.update(new_variables)
 
     def _build_variable_map(self, global_params: List[Dict[str, Any]],
                            env_params: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -98,6 +109,9 @@ class ParameterResolver:
 
             # Then resolve find-pkg-share commands
             result = self.pkgshare_pattern.sub(self._resolve_pkgshare_match, result)
+            
+            # Then resolve eval commands (last step to ensure all variables are resolved)
+            result = self._resolve_eval_substitutions(result)
 
             # If no changes were made, we're done
             if result == original_result:
@@ -143,6 +157,99 @@ class ParameterResolver:
             logger.warning(f"Package not found in manifest: $(find-pkg-share {resolved_package})")
             return match.group(0)  # Return original if not found
 
+    def _resolve_eval_substitutions(self, text: str) -> str:
+        """Resolve $(eval ...) with balanced parentheses support."""
+        if not text or '$(eval ' not in text:
+            return text
+            
+        result = text
+        cursor = 0
+        
+        while True:
+            start_idx = result.find('$(eval ', cursor)
+            if start_idx == -1:
+                break
+                
+            # Find matching parenthesis
+            balance = 1
+            i = start_idx + len('$(eval ')
+            end_idx = -1
+            
+            while i < len(result):
+                if result[i] == '(':
+                    balance += 1
+                elif result[i] == ')':
+                    balance -= 1
+                    if balance == 0:
+                        end_idx = i
+                        break
+                i += 1
+                
+            if end_idx != -1:
+                # Found the block
+                inner_expr = result[start_idx + len('$(eval '):end_idx]
+                
+                # Recursively resolve any evals inside this expression
+                resolved_inner = self._resolve_eval_substitutions(inner_expr)
+                
+                # Check if we can evaluate
+                if '$' in resolved_inner:
+                     replacement = f"$(eval {resolved_inner})"
+                     old_block = result[start_idx:end_idx+1]
+                     
+                     if replacement != old_block:
+                         result = result[:start_idx] + replacement + result[end_idx+1:]
+                         cursor = start_idx + len(replacement)
+                     else:
+                         cursor = end_idx + 1
+                else:
+                    # Evaluate
+                    evaluated = self._evaluate_expression(resolved_inner)
+                    result = result[:start_idx] + evaluated + result[end_idx+1:]
+                    cursor = start_idx + len(evaluated)
+            else:
+                # No matching paren
+                cursor = start_idx + len('$(eval ')
+                
+        return result
+
+    def _evaluate_expression(self, expression: str) -> str:
+        """Evaluate a python expression safely."""
+        expression = expression.strip()
+        
+        if '$' in expression:
+             return f"$(eval {expression})"
+
+        try:
+            # Safe evaluation scope with math module
+            safe_scope = {
+                '__builtins__': {},
+                'math': math,
+                'abs': abs,
+                'min': min,
+                'max': max,
+                'pow': pow,
+                'round': round,
+                'int': int,
+                'float': float,
+                'str': str,
+                # Add math constants and functions directly to scope for convenience
+                'pi': math.pi,
+                'sin': math.sin,
+                'cos': math.cos,
+                'tan': math.tan,
+                'sqrt': math.sqrt,
+                'atan2': math.atan2,
+            }
+            
+            # Evaluate expression
+            result = eval(expression, safe_scope)
+            return str(result)
+        except Exception as e:
+            logger.warning(f"Failed to evaluate expression '$(eval {expression})': {e}")
+            return f"$(eval {expression})"
+
+
     def resolve_parameter_file_path(self, file_path: str) -> str:
         """Resolve substitutions in a parameter file path.
 
@@ -187,6 +294,8 @@ class ParameterResolver:
             resolved_param = param.copy()
             if 'value' in resolved_param:
                 resolved_param['value'] = self.resolve_parameter_value(resolved_param['value'])
+                if 'name' in resolved_param:
+                    self.variable_map[resolved_param['name']] = str(resolved_param['value'])
             resolved_params.append(resolved_param)
         return resolved_params
 
