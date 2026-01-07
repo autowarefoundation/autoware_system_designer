@@ -39,9 +39,6 @@ class LogicDiagramModule {
                 console.log('svg-pan-zoom loaded');
             }
 
-            // Add interaction styles early
-            this.addInteractionStyles();
-
             // Load and render the diagram
             await this.loadAndRender();
         } catch (error) {
@@ -65,66 +62,6 @@ class LogicDiagramModule {
             };
             checkReady();
         });
-    }
-
-    addInteractionStyles() {
-        // Add CSS for interactions
-        const styleId = 'logic-diagram-interaction-styles';
-        let style = document.getElementById(styleId);
-        if (!style) {
-            style = document.createElement('style');
-            style.id = styleId;
-            document.head.appendChild(style);
-        }
-
-        const isDark = this.isDarkMode();
-        const hoverColor = isDark ? '#ffffff' : '#007bff';
-        const containerBg = isDark ? '#1a1a1a' : '#ffffff';
-        const highlightStroke = '#dc3545';
-
-        style.textContent = `
-            .logic-diagram-container {
-                width: 100%;
-                height: 100%;
-                min-height: 400px;
-                position: relative;
-                overflow: hidden;
-                background-color: ${containerBg};
-            }
-            .logic-diagram-container svg {
-                cursor: grab;
-                min-width: 100px;
-                min-height: 100px;
-            }
-            .logic-diagram-container svg:active {
-                cursor: grabbing;
-            }
-            .logic-diagram-node:hover {
-                stroke: ${hoverColor} !important;
-                stroke-width: 2px !important;
-            }
-            .logic-diagram-edge:hover {
-                stroke: ${hoverColor} !important;
-                stroke-width: 2px !important;
-            }
-            .logic-diagram-cluster:hover {
-                stroke: ${hoverColor} !important;
-                stroke-width: 2px !important;
-            }
-            .highlighted {
-                stroke: ${highlightStroke} !important;
-                stroke-width: 3px !important;
-            }
-            /* In logic diagram (viz.js), we manipulate SVG structure slightly different than custom D3/SVG */
-            g.node.highlighted polygon, g.node.highlighted ellipse {
-                stroke: ${highlightStroke} !important;
-                stroke-width: 3px !important;
-            }
-            g.edge.highlighted path {
-                stroke: ${highlightStroke} !important;
-                stroke-width: 3px !important;
-            }
-        `;
     }
 
     async loadScript(src) {
@@ -552,7 +489,6 @@ class LogicDiagramModule {
     }
 
     updateTheme() {
-        this.addInteractionStyles();
         if (window.logicDiagramData && window.logicDiagramData[this.options.mode]) {
             const data = window.logicDiagramData[this.options.mode];
             const dotSyntax = this.generateDotSyntax(data);

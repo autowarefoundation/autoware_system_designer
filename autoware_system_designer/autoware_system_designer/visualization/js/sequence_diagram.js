@@ -27,9 +27,6 @@ class SequenceDiagramModule {
             await this.loadScript('https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js');
         }
 
-        // Add interaction styles early
-        this.updateInteractionStyles();
-
         // Initialize Mermaid
         this.initializeMermaid();
 
@@ -51,43 +48,6 @@ class SequenceDiagramModule {
                 messageAlign: 'center'
             }
         });
-    }
-
-    updateInteractionStyles() {
-        // Add CSS for interactions
-        const styleId = 'sequence-diagram-interaction-styles';
-        let style = document.getElementById(styleId);
-        if (!style) {
-            style = document.createElement('style');
-            style.id = styleId;
-            document.head.appendChild(style);
-        }
-
-        const isDark = this.isDarkMode();
-        const strokeColor = isDark ? '#aaaaaa' : '#888888';
-        const hoverColor = isDark ? '#ffffff' : '#555555';
-
-        style.textContent = `
-            .mermaid g [class^="messageLine"],
-            .mermaid g [class^="messageText"] {
-                cursor: pointer !important;
-                pointer-events: all;
-            }
-            .mermaid g [class^="messageLine"] {
-                stroke: ${strokeColor};
-                stroke-width: 7px !important;
-            }
-            .mermaid .line-hover {
-                stroke: ${hoverColor};
-                stroke-width: 8px !important;
-            }
-            .mermaid .line-highlight {
-                stroke: #dc3545 !important;
-                stroke-width: 8px !important;
-                filter: drop-shadow(0 0 2px rgba(0,0,0,0.3)) !important;
-                stroke-dasharray: none !important;
-            }
-        `;
     }
 
     async loadScript(src) {
@@ -463,7 +423,6 @@ class SequenceDiagramModule {
     }
 
     updateTheme() {
-        this.updateInteractionStyles();
         this.initializeMermaid();
         if (window.sequenceDiagramData && window.sequenceDiagramData[this.options.mode]) {
             this.renderSequenceDiagram(window.sequenceDiagramData[this.options.mode]);

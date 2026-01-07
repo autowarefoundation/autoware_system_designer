@@ -116,6 +116,11 @@ def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_
         for module in js_modules:
             _copy_static_asset(module, web_dir)
 
+        # Copy static CSS modules
+        css_dir = os.path.join(web_dir, "css")
+        os.makedirs(css_dir, exist_ok=True)
+        _copy_static_asset("css/styles.css", css_dir)
+
         # Generate config.js
         systems_index_rel_path = _calculate_systems_index_path(web_dir)
         

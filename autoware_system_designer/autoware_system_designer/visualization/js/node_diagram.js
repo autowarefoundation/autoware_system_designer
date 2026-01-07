@@ -295,8 +295,32 @@ class NodeDiagramModule {
 
         // Add arrow marker
         const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-        const arrowColor = this.isDarkMode() ? "#6c757d" : "#adb5bd";
-        const highlightColor = "#0d6efd";
+        
+        const computedStyle = getComputedStyle(document.documentElement);
+        
+        // Cache style defaults for renderNode
+        this.styleDefaults = {
+            dark: {
+                bg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#2d2d2d",
+                nodeBg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#2d2d2d", // Fallback for node
+                stroke: computedStyle.getPropertyValue('--text-muted').trim() || "#666",
+                text: computedStyle.getPropertyValue('--text-primary').trim() || "#e9ecef",
+                rootBg: "#1e1e1e" // Distinct background for root node in dark mode
+            },
+            light: {
+                bg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#ffffff",
+                nodeBg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#ffffff",
+                stroke: "#333", // Usually darker than text-primary
+                text: computedStyle.getPropertyValue('--text-primary').trim() || "#333",
+                rootBg: "#f5f5f5"
+            }
+        };
+
+        const arrowColor = this.isDarkMode() ? 
+            (computedStyle.getPropertyValue('--text-muted').trim() || "#6c757d") : 
+            (computedStyle.getPropertyValue('--border-hover').trim() || "#adb5bd");
+        const highlightColor = computedStyle.getPropertyValue('--highlight').trim() || "#0d6efd";
+        
         defs.innerHTML = `
             <marker id="arrowhead" markerWidth="10" markerHeight="7"
             refX="10" refY="3.5" orient="auto">
@@ -384,30 +408,36 @@ class NodeDiagramModule {
         const userData = this.elementData.get(node.id) || {};
         const visGuide = userData.vis_guide || {};
         let fillColor, strokeColor;
+        
+        // Ensure styleDefaults is initialized (fallback if renderNode called outside renderNodeDiagram flow)
+        const defaults = this.styleDefaults || {
+            dark: { bg: "#2d2d2d", nodeBg: "#2d2d2d", stroke: "#666", rootBg: "#1e1e1e" },
+            light: { bg: "#ffffff", nodeBg: "#ffffff", stroke: "#333", rootBg: "#f5f5f5" }
+        };
 
         if (this.isDarkMode()) {
             // Use dark mode colors
-            fillColor = visGuide.dark_background_color || visGuide.background_color || "#2d2d2d";
+            fillColor = visGuide.dark_background_color || visGuide.background_color || defaults.dark.bg;
             if (userData.entity_type === "node") {
-                fillColor = visGuide.dark_medium_color || visGuide.medium_color || fillColor;
+                fillColor = visGuide.dark_medium_color || visGuide.medium_color || defaults.dark.nodeBg;
             }
-            strokeColor = visGuide.dark_color || visGuide.color || "#666";
+            strokeColor = visGuide.dark_color || visGuide.color || defaults.dark.stroke;
 
             // For depth 0 nodes, make background darker in dark mode
             if (depth === 0) {
-                fillColor = "#1e1e1e";
+                fillColor = defaults.dark.rootBg;
             }
         } else {
             // Use light mode colors
-            fillColor = visGuide.background_color || "#ffffff";
+            fillColor = visGuide.background_color || defaults.light.bg;
             if (userData.entity_type === "node") {
-                fillColor = visGuide.medium_color || fillColor;
+                fillColor = visGuide.medium_color || defaults.light.nodeBg;
             }
-            strokeColor = visGuide.color || "#333";
+            strokeColor = visGuide.color || defaults.light.stroke;
 
             // For depth 0 nodes, make background brighter in light mode
             if (depth === 0) {
-                fillColor = "#f5f5f5"
+                fillColor = defaults.light.rootBg;
             }
         }
 
