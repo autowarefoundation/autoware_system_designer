@@ -15,6 +15,7 @@ class NodeDiagramModule {
         this.isDragging = false;
         this.startPoint = { x: 0, y: 0 };
         this.elementData = new Map();
+        this.portToEdges = new Map();
 
         this.init();
     }
@@ -143,6 +144,7 @@ class NodeDiagramModule {
 
     transformDataToElk(root) {
         this.elementData.clear();
+        this.portToEdges.clear();
 
         function convertNode(instance) {
             if (!instance || !instance.unique_id) return null;
@@ -214,12 +216,23 @@ class NodeDiagramModule {
             if (instance.links) {
                 node.edges = instance.links.map((link, index) => {
                     if (!link.from_port || !link.to_port) return null;
-                    const edgeId = `edge_${link.from_port.unique_id}_${link.to_port.unique_id}_${index}`;
+                    const edgeId = link.unique_id;
                     this.elementData.set(edgeId, link);
+
+                    // Index edges for connectivity highlighting
+                    const fromId = String(link.from_port.unique_id);
+                    const toId = String(link.to_port.unique_id);
+                    
+                    if (!this.portToEdges.has(fromId)) this.portToEdges.set(fromId, []);
+                    this.portToEdges.get(fromId).push(edgeId);
+                    
+                    if (!this.portToEdges.has(toId)) this.portToEdges.set(toId, []);
+                    this.portToEdges.get(toId).push(edgeId);
+
                     return {
                         id: edgeId,
-                        sources: [String(link.from_port.unique_id)],
-                        targets: [String(link.to_port.unique_id)],
+                        sources: [fromId],
+                        targets: [toId],
                         properties: {}
                     };
                 }).filter(e => e);
@@ -438,6 +451,7 @@ class NodeDiagramModule {
         if (node.ports) {
             node.ports.forEach(port => {
                 const pg = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                pg.setAttribute("id", port.id);
                 pg.setAttribute("transform", `translate(${port.x},${port.y})`);
 
                 const prect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -453,7 +467,7 @@ class NodeDiagramModule {
                 pg.onclick = (e) => {
                     e.stopPropagation();
                     this.updateInfoPanel(portData, 'Port');
-                    prect.classList.add('port-highlighted');
+                    this.highlightConnected(port.id, 'Port');
                 };
                 pg.style.cursor = 'pointer';
 
@@ -483,6 +497,7 @@ class NodeDiagramModule {
             node.edges.forEach(edge => {
                 if (!edge.sections) return;
                 const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute("id", edge.id);
                 let d = "";
                 edge.sections.forEach(section => {
                     d += `M ${section.startPoint.x} ${section.startPoint.y} `;
@@ -498,11 +513,8 @@ class NodeDiagramModule {
                 const userData = this.elementData.get(edge.id) || {};
                 path.onclick = (e) => {
                     e.stopPropagation();
-                    document.querySelectorAll('.highlighted').forEach(el => el.classList.remove('highlighted'));
-                    document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
-                    path.classList.add('highlighted');
-                    path.setAttribute("marker-end", "url(#arrowhead)");
                     this.updateInfoPanel(userData, 'Link');
+                    this.highlightConnected(edge.id, 'Link');
                 };
 
                 g.appendChild(path);
@@ -542,6 +554,64 @@ class NodeDiagramModule {
                     }
                 }
             });
+        }
+    }
+
+    highlightConnected(startId, type) {
+        // Clear all highlights
+        document.querySelectorAll('.highlighted').forEach(el => el.classList.remove('highlighted'));
+        document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
+        document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
+        document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
+
+        const queue = [startId];
+        const visited = new Set();
+
+        while (queue.length > 0) {
+            const currentId = queue.shift();
+            if (visited.has(currentId)) continue;
+            visited.add(currentId);
+
+            const data = this.elementData.get(currentId);
+            if (!data) continue;
+
+            // Port Logic
+            if (data.msg_type && !data.from_port) {
+                const portGroup = document.getElementById(currentId);
+                if (portGroup) {
+                    const rect = portGroup.querySelector('.port-rect');
+                    if (rect) rect.classList.add('port-highlighted');
+                }
+
+                // 1. Visible Edges
+                const visibleEdges = this.portToEdges.get(currentId) || [];
+                visibleEdges.forEach(edgeId => {
+                    if (!visited.has(edgeId)) queue.push(edgeId);
+                });
+
+                // 2. Logical Connections
+                if (data.connected_ids) {
+                    data.connected_ids.forEach(connectedId => {
+                        if (!visited.has(connectedId)) queue.push(connectedId);
+                    });
+                }
+            } 
+            // Link Logic
+            else if (data.from_port && data.to_port) {
+                const edgePath = document.getElementById(currentId);
+                if (edgePath) {
+                    edgePath.classList.add('highlighted');
+                    edgePath.setAttribute("marker-end", "url(#arrowhead)");
+                }
+
+                // Add connected ports
+                if (data.from_port && data.from_port.unique_id) {
+                    queue.push(String(data.from_port.unique_id));
+                }
+                if (data.to_port && data.to_port.unique_id) {
+                    queue.push(String(data.to_port.unique_id));
+                }
+            }
         }
     }
 

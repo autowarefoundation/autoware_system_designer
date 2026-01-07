@@ -438,7 +438,7 @@ class Instance:
         }
 
     def _serialize_port(self, port):
-        return {
+        data = {
             "unique_id": port.unique_id,
             "name": port.name,
             "msg_type": port.msg_type,
@@ -448,6 +448,16 @@ class Instance:
             "port_path": port.port_path,
             "event": self._serialize_event(port.event)
         }
+        
+        # Add connected_ids for graph traversal
+        connected_ids = []
+        if hasattr(port, "servers"):  # InPort
+            connected_ids = [p.unique_id for p in port.servers]
+        elif hasattr(port, "users"):  # OutPort
+            connected_ids = [p.unique_id for p in port.users]
+        data["connected_ids"] = connected_ids
+        
+        return data
 
     def collect_instance_data(self) -> dict:
         data = {
@@ -467,6 +477,7 @@ class Instance:
             "links": (
                 [
                     {
+                        "unique_id": link.unique_id,
                         "from_port": self._serialize_port(link.from_port),
                         "to_port": self._serialize_port(link.to_port),
                         "msg_type": link.msg_type,

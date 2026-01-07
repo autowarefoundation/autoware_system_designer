@@ -16,6 +16,7 @@ from typing import List
 
 from .ports import Port, InPort, OutPort
 from ..exceptions import ValidationError, DeploymentError
+from ..utils.naming import generate_unique_id
 
 from enum import Enum
 
@@ -48,6 +49,10 @@ class Link:
             )
 
         self._check_connection()
+
+    @property
+    def unique_id(self):
+        return generate_unique_id(self.namespace, "link", self.from_port.unique_id, self.to_port.unique_id)
 
     def _check_connection(self):
         # if the from port is OutPort, it is internal port
