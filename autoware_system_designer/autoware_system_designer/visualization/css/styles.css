@@ -277,9 +277,25 @@ body {
     fill: var(--text-secondary);
 }
 
-.highlighted .node-rect {
+/* Node group highlighting - similar to module-highlighted */
+.node-group.highlighted {
+    stroke: none !important;
+    stroke-width: 0 !important;
+}
+
+.node-group.highlighted > .node-rect {
     stroke: var(--highlight) !important;
-    stroke-width: 2.5px;
+    stroke-width: 2.5px !important;
+}
+
+.node-group.highlighted > .edge-path {
+    stroke: var(--highlight) !important;
+    stroke-width: 2.5px !important;
+}
+
+.node-group.highlighted > g > .edge-arrow {
+    fill: var(--highlight) !important;
+    stroke-width: 2.5px !important;
 }
 
 .edge-path.highlighted {

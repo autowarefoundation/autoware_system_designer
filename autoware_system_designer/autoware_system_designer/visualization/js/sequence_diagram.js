@@ -1,21 +1,11 @@
 // Sequence Diagram Module
 // This module provides functionality to render sequence diagrams in a given container
 
-class SequenceDiagramModule {
+class SequenceDiagramModule extends DiagramBase {
     constructor(container, options = {}) {
-        this.container = container;
-        this.options = {
-            mode: options.mode || 'default',
-            deployment: options.deployment || '',
-            ...options
-        };
-
+        super(container, options);
         this.panZoomInstance = null;
         this.init();
-    }
-
-    isDarkMode() {
-        return document.documentElement.getAttribute('data-theme') === 'dark';
     }
 
     async init() {
@@ -50,31 +40,11 @@ class SequenceDiagramModule {
         });
     }
 
-    async loadScript(src) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = () => resolve();
-            script.onerror = (error) => reject(error);
-            document.head.appendChild(script);
-        });
-    }
-
-    async loadDataScript(mode) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = `data/${mode}_sequence_diagram.js`;
-            script.onload = () => resolve();
-            script.onerror = (error) => reject(error);
-            document.head.appendChild(script);
-        });
-    }
-
     async loadAndRender() {
         try {
             // Load data if not already loaded
             if (!window.sequenceDiagramData || !window.sequenceDiagramData[this.options.mode]) {
-                await this.loadDataScript(this.options.mode);
+                await this.loadDataScript(this.options.mode, 'sequence_diagram');
             }
 
             if (window.sequenceDiagramData && window.sequenceDiagramData[this.options.mode]) {
@@ -238,7 +208,10 @@ class SequenceDiagramModule {
         mermaidContainer.style.overflow = 'visible';
         mermaidContainer.style.display = 'flex';
         mermaidContainer.style.alignItems = 'stretch';
-        mermaidContainer.style.backgroundColor = this.isDarkMode() ? '#1a1a1a' : '#ffffff';
+        
+        const bgColor = this.getComputedStyleValue('--bg-secondary', this.isDarkMode() ? '#1a1a1a' : '#ffffff');
+            
+        mermaidContainer.style.backgroundColor = bgColor;
         mermaidContainer.style.padding = '20px';
         mermaidContainer.style.borderRadius = '8px';
         this.container.appendChild(mermaidContainer);
@@ -418,10 +391,6 @@ class SequenceDiagramModule {
         }
     }
 
-    showError(message) {
-        this.container.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: #dc3545;">${message}</div>`;
-    }
-
     updateTheme() {
         this.initializeMermaid();
         if (window.sequenceDiagramData && window.sequenceDiagramData[this.options.mode]) {
@@ -434,7 +403,7 @@ class SequenceDiagramModule {
             this.panZoomInstance.destroy();
             this.panZoomInstance = null;
         }
-        this.container.innerHTML = '';
+        super.destroy();
     }
 }
 

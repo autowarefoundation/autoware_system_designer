@@ -1,14 +1,9 @@
 // Node Diagram Module
 // This module provides functionality to render node diagrams in a given container
 
-class NodeDiagramModule {
+class NodeDiagramModule extends DiagramBase {
     constructor(container, options = {}) {
-        this.container = container;
-        this.options = {
-            mode: options.mode || 'default',
-            deployment: options.deployment || '',
-            ...options
-        };
+        super(container, options);
 
         this.currentGraph = null;
         this.transform = { x: 0, y: 0, k: 1 };
@@ -18,28 +13,6 @@ class NodeDiagramModule {
         this.portToEdges = new Map();
 
         this.init();
-    }
-
-    isDarkMode() {
-        return document.documentElement.getAttribute('data-theme') === 'dark';
-    }
-
-    adjustColorBrightness(hexColor, factor) {
-        // Remove # if present
-        hexColor = hexColor.replace('#', '');
-
-        // Parse RGB components
-        const r = parseInt(hexColor.substr(0, 2), 16);
-        const g = parseInt(hexColor.substr(2, 2), 16);
-        const b = parseInt(hexColor.substr(4, 2), 16);
-
-        // Adjust brightness
-        const newR = Math.min(255, Math.max(0, Math.round(r + (255 - r) * factor)));
-        const newG = Math.min(255, Math.max(0, Math.round(g + (255 - g) * factor)));
-        const newB = Math.min(255, Math.max(0, Math.round(b + (255 - b) * factor)));
-
-        // Convert back to hex
-        return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
     }
 
     async init() {
@@ -86,46 +59,11 @@ class NodeDiagramModule {
         await this.loadAndRender();
     }
 
-    async loadScript(src) {
-        return new Promise((resolve, reject) => {
-            // Check if script is already loaded
-            const existingScript = document.querySelector(`script[src="${src}"]`);
-            if (existingScript) {
-                console.log('ELK script already loaded');
-                resolve();
-                return;
-            }
-
-            console.log('Loading script:', src);
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = () => {
-                console.log('Script loaded successfully:', src);
-                resolve();
-            };
-            script.onerror = (error) => {
-                console.error('Failed to load script:', src, error);
-                reject(error);
-            };
-            document.head.appendChild(script);
-        });
-    }
-
-    async loadDataScript(mode) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = `data/${mode}_node_diagram.js`;
-            script.onload = () => resolve();
-            script.onerror = (error) => reject(error);
-            document.head.appendChild(script);
-        });
-    }
-
     async loadAndRender() {
         try {
             // Load data if not already loaded
             if (!window.systemDesignData || !window.systemDesignData[this.options.mode]) {
-                await this.loadDataScript(this.options.mode);
+                await this.loadDataScript(this.options.mode, 'node_diagram');
             }
 
             if (!window.systemDesignData || !window.systemDesignData[this.options.mode]) {
@@ -700,28 +638,12 @@ class NodeDiagramModule {
 
         this.updateTransform(svg);
     }
-
-    updateInfoPanel(data, type) {
-        // This will be handled by the parent overview page
-        if (this.options.onInfoUpdate) {
-            this.options.onInfoUpdate(data, type);
-        }
-    }
-
-    showError(message) {
-        this.container.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: var(--error-color);">${message}</div>`;
-    }
-
+    
     updateTheme() {
         // Re-render the diagram with new theme colors
         if (this.currentGraph && this.currentSvgRoot) {
             this.renderNodeDiagram(this.currentGraph);
         }
-    }
-
-    destroy() {
-        // Clean up event listeners and resources
-        this.container.innerHTML = '';
     }
 }
 

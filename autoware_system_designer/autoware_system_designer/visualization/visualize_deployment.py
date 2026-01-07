@@ -109,6 +109,7 @@ def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_
 
         # Copy static JS modules
         js_modules = [
+            "js/diagram_base.js",
             "js/node_diagram.js",
             "js/sequence_diagram.js",
             "js/logic_diagram.js"
