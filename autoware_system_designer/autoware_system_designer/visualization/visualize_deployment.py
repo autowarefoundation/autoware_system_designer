@@ -80,9 +80,9 @@ def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web
     renderer.render_template_to_file("visualization/data/common_design_data.js.jinja2", output_path, **node_data)
 
     # Sequence diagram data
-    sequence_data = {**data, "mode": mode_key}
+    sequence_data = {**data, "mode": mode_key, "window_variable": "sequenceDiagramData"}
     output_path = os.path.join(web_data_dir, f"{mode_key}_sequence_diagram.js")
-    renderer.render_template_to_file("visualization/data/sequence_diagram_data.js.jinja2", output_path, **sequence_data)
+    renderer.render_template_to_file("visualization/data/common_design_data.js.jinja2", output_path, **sequence_data)
 
     # Logic diagram data
     logic_data = {**data, "mode": mode_key, "window_variable": "logicDiagramData"}

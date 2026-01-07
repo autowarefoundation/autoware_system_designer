@@ -110,25 +110,160 @@ class SequenceDiagramModule {
         });
     }
 
-        async loadAndRender() {
-            try {
-                // Load data if not already loaded
-                if (!window.sequenceDiagramData || !window.sequenceDiagramData[this.options.mode]) {
-                    await this.loadDataScript(this.options.mode);
-                }
+    async loadAndRender() {
+        try {
+            // Load data if not already loaded
+            if (!window.sequenceDiagramData || !window.sequenceDiagramData[this.options.mode]) {
+                await this.loadDataScript(this.options.mode);
+            }
 
-                if (window.sequenceDiagramData && window.sequenceDiagramData[this.options.mode]) {
-                    // Render sequence diagram
-                    await this.renderSequenceDiagram(window.sequenceDiagramData[this.options.mode]);
+            if (window.sequenceDiagramData && window.sequenceDiagramData[this.options.mode]) {
+                // Render sequence diagram
+                const data = window.sequenceDiagramData[this.options.mode];
+                let mermaidSyntax = '';
+                
+                // Check if data is the new object format or legacy string format
+                if (typeof data === 'object') {
+                    mermaidSyntax = this.generateMermaidSyntax(data);
                 } else {
-                    this.showError(`Failed to load data for mode: ${this.options.mode}`);
+                    mermaidSyntax = data;
                 }
+                
+                await this.renderSequenceDiagram(mermaidSyntax);
+            } else {
+                this.showError(`Failed to load data for mode: ${this.options.mode}`);
+            }
 
-            } catch (error) {
-                console.error('Error loading sequence diagram:', error);
-                this.showError(`Error loading sequence diagram: ${error.message}`);
+        } catch (error) {
+            console.error('Error loading sequence diagram:', error);
+            this.showError(`Error loading sequence diagram: ${error.message}`);
+        }
+    }
+
+    generateMermaidSyntax(data) {
+        const lines = [];
+        lines.push("sequenceDiagram");
+        lines.push("");
+        lines.push("%% Definitions");
+
+        // Build a map of all events for quick lookup
+        const eventMap = new Map();
+        this.collectAllEvents(data, eventMap);
+
+        if (data.children && Array.isArray(data.children)) {
+            data.children.forEach(child => {
+                this.buildLogicGraph(child, lines);
+            });
+        }
+
+        lines.push("");
+        lines.push("%% Connections");
+
+        if (data.children && Array.isArray(data.children)) {
+            data.children.forEach(child => {
+                this.buildConnectionGraph(child, lines, eventMap);
+            });
+        }
+
+        return lines.join('\n');
+    }
+
+    collectAllEvents(instance, eventMap) {
+        // Collect events from this instance
+        if (instance.events && Array.isArray(instance.events)) {
+            instance.events.forEach(e => {
+                // If process_event is undefined, assume true for instance events
+                if (e.process_event === undefined) e.process_event = true;
+                eventMap.set(e.unique_id, e);
+            });
+        }
+        // Collect events from ports
+        if (instance.in_ports && Array.isArray(instance.in_ports)) {
+            instance.in_ports.forEach(p => {
+                if (p.event) {
+                    if (p.event.process_event === undefined) p.event.process_event = false;
+                    eventMap.set(p.event.unique_id, p.event);
+                }
+            });
+        }
+        if (instance.out_ports && Array.isArray(instance.out_ports)) {
+            instance.out_ports.forEach(p => {
+                if (p.event) {
+                    if (p.event.process_event === undefined) p.event.process_event = false;
+                    eventMap.set(p.event.unique_id, p.event);
+                }
+            });
+        }
+        
+        // Recurse
+        if (instance.children && Array.isArray(instance.children)) {
+            instance.children.forEach(child => this.collectAllEvents(child, eventMap));
+        }
+    }
+
+    buildLogicGraph(instance, lines) {
+        if (instance.entity_type === "node") {
+            if (instance.events && Array.isArray(instance.events)) {
+                instance.events.forEach(event => {
+                    const nsLabel = instance.namespace ? instance.namespace.join('<br/>') : '';
+                    const fullLabel = `${nsLabel}<br/><br/>[${event.name}]`;
+                    // Using unique_id from data
+                    lines.push(`participant ${event.unique_id} as ${fullLabel}`);
+                });
+            }
+        } else if (instance.entity_type === "module") {
+            if (instance.children && Array.isArray(instance.children)) {
+                instance.children.forEach(child => {
+                    this.buildLogicGraph(child, lines);
+                });
             }
         }
+    }
+
+    buildConnectionGraph(instance, lines, eventMap) {
+        if (instance.entity_type === "node") {
+            if (instance.events && Array.isArray(instance.events)) {
+                instance.events.forEach(event => {
+                    if (event.process_event === true) {
+                        if (event.trigger_ids && Array.isArray(event.trigger_ids)) {
+                            event.trigger_ids.forEach(triggerId => {
+                                const trigger = eventMap.get(triggerId);
+                                if (trigger) {
+                                    this.eventConnection(instance.name, event, trigger.name, trigger, lines, eventMap);
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+        } else if (instance.entity_type === "module") {
+            if (instance.children && Array.isArray(instance.children)) {
+                instance.children.forEach(child => {
+                    this.buildConnectionGraph(child, lines, eventMap);
+                });
+            }
+        }
+    }
+
+    eventConnection(rootName, eventOrigin, connectionName, eventTarget, lines, eventMap) {
+        if ((eventTarget.type === "on_input" || eventTarget.type === "to_output") && eventTarget.process_event === false) {
+            const newConnectionName = eventTarget.name;
+            if (eventTarget.trigger_ids && Array.isArray(eventTarget.trigger_ids)) {
+                eventTarget.trigger_ids.forEach(triggerId => {
+                    const trigger = eventMap.get(triggerId);
+                    if (trigger) {
+                        this.eventConnection(rootName, eventOrigin, newConnectionName, trigger, lines, eventMap);
+                    }
+                });
+            }
+        } else {
+            const targetNamespace = eventTarget.namespace && eventTarget.namespace.length > 0 
+                ? eventTarget.namespace[eventTarget.namespace.length - 1] 
+                : '';
+            const label = `${targetNamespace} to ${rootName}_${connectionName}`;
+            lines.push(`${eventTarget.unique_id}->>${eventOrigin.unique_id}: ${label}`);
+        }
+    }
 
     async renderSequenceDiagram(mermaidSyntax) {
         // Clear container
