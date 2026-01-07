@@ -403,6 +403,26 @@ class NodeDiagramModule extends DiagramBase {
                 // Regular node highlighting
                 g.classList.add('highlighted');
             }
+
+            // Also highlight all ports of this node
+            const allPortIds = [];
+            if (userData.in_ports) {
+                userData.in_ports.forEach(port => {
+                    if (port.unique_id) {
+                        allPortIds.push(String(port.unique_id));
+                    }
+                });
+            }
+            if (userData.out_ports) {
+                userData.out_ports.forEach(port => {
+                    if (port.unique_id) {
+                        allPortIds.push(String(port.unique_id));
+                    }
+                });
+            }
+            if (allPortIds.length > 0) {
+                this.highlightConnected(allPortIds, 'Port', false); // Don't clear existing highlights
+            }
         };
 
         g.appendChild(rect);
@@ -545,17 +565,24 @@ class NodeDiagramModule extends DiagramBase {
         }
     }
 
-    highlightConnected(startId, type) {
-        // Clear all highlights
-        document.querySelectorAll('.highlighted').forEach(el => {
-            el.classList.remove('highlighted');
-            if (el.tagName === 'path') el.setAttribute("marker-end", "url(#arrowhead)");
-        });
-        document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
-        document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
-        document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
+    highlightConnected(startIds, type, clearExisting = true) {
+        // Ensure startIds is an array
+        if (!Array.isArray(startIds)) {
+            startIds = [startIds];
+        }
 
-        const queue = [startId];
+        // Clear all highlights if requested
+        if (clearExisting) {
+            document.querySelectorAll('.highlighted').forEach(el => {
+                el.classList.remove('highlighted');
+                if (el.tagName === 'path') el.setAttribute("marker-end", "url(#arrowhead)");
+            });
+            document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
+            document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
+            document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
+        }
+
+        const queue = [...startIds];
         const visited = new Set();
 
         while (queue.length > 0) {
