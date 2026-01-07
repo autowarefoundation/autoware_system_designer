@@ -40,6 +40,7 @@ class SequenceDiagramModule {
     initializeMermaid() {
         mermaid.initialize({
             startOnLoad: false,
+            maxTextSize: 1000000,
             theme: this.isDarkMode() ? 'dark' : 'default',
             securityLevel: 'loose',
             sequence: {
