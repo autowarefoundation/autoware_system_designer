@@ -12,6 +12,9 @@ class NodeDiagramModule extends DiagramBase {
         this.elementData = new Map();
         this.portToEdges = new Map();
 
+        // Color presets will be initialized in renderNodeDiagram when computedStyle is available
+        this.colorPresets = null;
+
         this.init();
     }
 
@@ -233,8 +236,42 @@ class NodeDiagramModule extends DiagramBase {
 
         // Add arrow marker
         const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-        
+
         const computedStyle = getComputedStyle(document.documentElement);
+
+        // Initialize color presets using computed style
+        this.colorPresets = {
+            default: {
+                name: 'default',
+                edge: computedStyle.getPropertyValue('--highlight').trim() || "#0d6efd",
+                port: computedStyle.getPropertyValue('--highlight').trim() || "#0d6efd"
+            },
+            red: {
+                name: 'red',
+                edge: "#dc3545",
+                port: "#dc3545"
+            },
+            green: {
+                name: 'green',
+                edge: "#28a745",
+                port: "#28a745"
+            },
+            orange: {
+                name: 'orange',
+                edge: "#fd7e14",
+                port: "#fd7e14"
+            },
+            purple: {
+                name: 'purple',
+                edge: "#6f42c1",
+                port: "#6f42c1"
+            },
+            teal: {
+                name: 'teal',
+                edge: "#20c997",
+                port: "#20c997"
+            }
+        };
         
         // Cache style defaults for renderNode
         this.styleDefaults = {
@@ -254,21 +291,35 @@ class NodeDiagramModule extends DiagramBase {
             }
         };
 
-        const arrowColor = this.isDarkMode() ? 
-            (computedStyle.getPropertyValue('--text-muted').trim() || "#6c757d") : 
+        const arrowColor = this.isDarkMode() ?
+            (computedStyle.getPropertyValue('--text-muted').trim() || "#6c757d") :
             (computedStyle.getPropertyValue('--border-hover').trim() || "#adb5bd");
-        const highlightColor = computedStyle.getPropertyValue('--highlight').trim() || "#0d6efd";
-        
-        defs.innerHTML = `
+
+        // Create markers for default and all color presets
+        let markersHtml = `
             <marker id="arrowhead" markerWidth="10" markerHeight="7"
             refX="10" refY="3.5" orient="auto">
               <polygon points="0 0, 10 3.5, 0 7" fill="${arrowColor}" />
             </marker>
-            <marker id="arrowhead-highlighted" markerWidth="10" markerHeight="7"
+            <marker id="arrowhead-highlighted-default" markerWidth="10" markerHeight="7"
             refX="10" refY="3.5" orient="auto">
-              <polygon points="0 0, 10 3.5, 0 7" fill="${highlightColor}" />
+              <polygon points="0 0, 10 3.5, 0 7" fill="${this.colorPresets.default.edge}" />
             </marker>
         `;
+
+        // Add markers for other color presets
+        Object.keys(this.colorPresets).forEach(preset => {
+            if (preset !== 'default') {
+                markersHtml += `
+            <marker id="arrowhead-highlighted-${preset}" markerWidth="10" markerHeight="7"
+            refX="10" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="${this.colorPresets[preset].edge}" />
+            </marker>
+        `;
+            }
+        });
+
+        defs.innerHTML = markersHtml;
         svgRoot.insertBefore(defs, svg);
 
         this.renderNode(graph, svg);
@@ -390,11 +441,19 @@ class NodeDiagramModule extends DiagramBase {
             // Clear all highlights
             document.querySelectorAll('.highlighted').forEach(el => {
                 el.classList.remove('highlighted');
-                if (el.tagName === 'path') el.setAttribute("marker-end", "url(#arrowhead)");
+                if (el.tagName === 'path') {
+                    el.setAttribute("marker-end", "url(#arrowhead)");
+                    el.style.stroke = ''; // Clear any inline stroke color
+                    el.style.strokeWidth = ''; // Clear any inline stroke width
+                }
             });
             document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
             document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
-            document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
+            document.querySelectorAll('.port-highlighted').forEach(el => {
+                el.classList.remove('port-highlighted');
+                el.style.fill = ''; // Clear any inline fill color
+                el.style.stroke = ''; // Clear any inline stroke color
+            });
 
             // Check if this is a module (has children)
             if (node.children && node.children.length > 0) {
@@ -404,24 +463,33 @@ class NodeDiagramModule extends DiagramBase {
                 g.classList.add('highlighted');
             }
 
-            // Also highlight all ports of this node
-            const allPortIds = [];
+            // Highlight in-ports and out-ports with different colors
+            const inPortIds = [];
+            const outPortIds = [];
+
             if (userData.in_ports) {
                 userData.in_ports.forEach(port => {
                     if (port.unique_id) {
-                        allPortIds.push(String(port.unique_id));
+                        inPortIds.push(String(port.unique_id));
                     }
                 });
             }
             if (userData.out_ports) {
                 userData.out_ports.forEach(port => {
                     if (port.unique_id) {
-                        allPortIds.push(String(port.unique_id));
+                        outPortIds.push(String(port.unique_id));
                     }
                 });
             }
-            if (allPortIds.length > 0) {
-                this.highlightConnected(allPortIds, 'Port', false); // Don't clear existing highlights
+
+            // Highlight in-ports with green color
+            if (inPortIds.length > 0) {
+                this.highlightConnected(inPortIds, 'Port', false, 'green');
+            }
+
+            // Highlight out-ports with orange color
+            if (outPortIds.length > 0) {
+                this.highlightConnected(outPortIds, 'Port', false, 'orange');
             }
         };
 
@@ -565,7 +633,20 @@ class NodeDiagramModule extends DiagramBase {
         }
     }
 
-    highlightConnected(startIds, type, clearExisting = true) {
+    /**
+     * Highlights connected elements starting from the given IDs
+     * @param {string|string[]} startIds - IDs to start highlighting from
+     * @param {string} type - Type of element ('Port', 'Link', etc.)
+     * @param {boolean} clearExisting - Whether to clear existing highlights (default: true)
+     * @param {string} colorPreset - Color preset to use ('default', 'red', 'green', 'orange', 'purple', 'teal')
+     */
+    highlightConnected(startIds, type, clearExisting = true, colorPreset = 'default') {
+        // Validate colorPreset
+        if (!this.colorPresets[colorPreset]) {
+            console.warn(`Invalid color preset "${colorPreset}", using default`);
+            colorPreset = 'default';
+        }
+
         // Ensure startIds is an array
         if (!Array.isArray(startIds)) {
             startIds = [startIds];
@@ -575,11 +656,19 @@ class NodeDiagramModule extends DiagramBase {
         if (clearExisting) {
             document.querySelectorAll('.highlighted').forEach(el => {
                 el.classList.remove('highlighted');
-                if (el.tagName === 'path') el.setAttribute("marker-end", "url(#arrowhead)");
+                if (el.tagName === 'path') {
+                    el.setAttribute("marker-end", "url(#arrowhead)");
+                    el.style.stroke = ''; // Clear any inline stroke color
+                    el.style.strokeWidth = ''; // Clear any inline stroke width
+                }
             });
             document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
             document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
-            document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
+            document.querySelectorAll('.port-highlighted').forEach(el => {
+                el.classList.remove('port-highlighted');
+                el.style.fill = ''; // Clear any inline fill color
+                el.style.stroke = ''; // Clear any inline stroke color
+            });
         }
 
         const queue = [...startIds];
@@ -598,7 +687,12 @@ class NodeDiagramModule extends DiagramBase {
                 const portGroup = document.getElementById(currentId);
                 if (portGroup) {
                     const rect = portGroup.querySelector('.port-rect');
-                    if (rect) rect.classList.add('port-highlighted');
+                    if (rect) {
+                        rect.classList.add('port-highlighted');
+                        // Apply color preset styling
+                        rect.style.fill = this.colorPresets[colorPreset].port;
+                        rect.style.stroke = this.colorPresets[colorPreset].port;
+                    }
                 }
 
                 // 1. Visible Edges
@@ -621,8 +715,12 @@ class NodeDiagramModule extends DiagramBase {
 
                 if (edgePath) {
                     edgePath.classList.add('highlighted');
-                    edgePath.setAttribute("marker-end", "url(#arrowhead-highlighted)");
-                    
+                    edgePath.setAttribute("marker-end", `url(#arrowhead-highlighted-${colorPreset})`);
+
+                    // Apply color to the edge path itself
+                    edgePath.style.stroke = this.colorPresets[colorPreset].edge;
+                    edgePath.style.strokeWidth = '3px'; // Make highlighted edges thicker
+
                     // Bring to front to ensure visibility
                     if (edgePath.parentNode) {
                         edgePath.parentNode.appendChild(edgePath);

@@ -289,7 +289,7 @@ body {
 }
 
 .node-group.highlighted > .edge-path {
-    stroke: var(--highlight) !important;
+    /* stroke color set by inline styles, only set width */
     stroke-width: 2.5px !important;
 }
 
@@ -299,7 +299,7 @@ body {
 }
 
 .edge-path.highlighted {
-    stroke: var(--highlight) !important;
+    /* stroke color set by inline styles, only set width */
     stroke-width: 2.5px;
 }
 
@@ -493,17 +493,17 @@ body {
     stroke: #007bff !important;
 }
 
-/* Highlighting using consistent Blue color */
+/* Highlighting - stroke color set by inline styles, width by CSS */
 .highlighted {
-    stroke: var(--highlight) !important;
+    /* stroke color set by inline styles */
     stroke-width: 3px !important;
 }
 g.node.highlighted polygon, g.node.highlighted ellipse {
-    stroke: var(--highlight) !important;
+    /* stroke color set by inline styles */
     stroke-width: 3px !important;
 }
 g.edge.highlighted path {
-    stroke: var(--highlight) !important;
+    /* stroke color set by inline styles */
     stroke-width: 3px !important;
 }
 
