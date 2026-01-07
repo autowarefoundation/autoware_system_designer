@@ -61,6 +61,11 @@ class Link:
             from_port_list = self.from_port.get_reference_list()
             to_port_list = self.to_port.get_reference_list()
 
+            # if the to_port is not in the reference list (meaning it's a proxy/interface port),
+            # add it to the list so it gets updated with topic/servers too.
+            if self.to_port not in to_port_list:
+                to_port_list.append(self.to_port)
+
             # check the message type is the same
             from_port_ref = from_port_list[0]
             if from_port_ref.msg_type != self.msg_type:

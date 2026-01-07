@@ -79,7 +79,12 @@ class Port:
         return self.reference
 
     def set_topic(self, topic_namespace: List[str], topic_name: str):
-        self.topic = topic_namespace + [topic_name]
+        new_topic = topic_namespace + [topic_name]
+        # if the topic is already set, return False
+        if self.topic == new_topic:
+            return False
+        self.topic = new_topic
+        return True
     
     def get_topic(self) -> str:
         if self.topic == []:
@@ -116,6 +121,17 @@ class InPort(Port):
                 added.append(port.port_path)
         if added:
             logger.debug(f"InPort '{self.port_path}' added servers: {added}")
+
+    def set_topic(self, topic_namespace: List[str], topic_name: str):
+        """
+        Override to propagate topic changes to all references (Internal InPorts).
+        When topic is set by a higher layer (e.g., external connection),
+        all internal ports need to update their topic as well.
+        """
+        if not super().set_topic(topic_namespace, topic_name):
+            return
+        for ref_port in self.reference:
+            ref_port.set_topic(topic_namespace, topic_name)
 
 
 
@@ -160,7 +176,8 @@ class OutPort(Port):
         When topic is set by a higher layer (e.g., external connection),
         all subscribers need to update their topic as well.
         """
-        super().set_topic(topic_namespace, topic_name)
+        if not super().set_topic(topic_namespace, topic_name):
+            return
         # Propagate topic to all users (InPorts that subscribe to this OutPort)
         for user_port in self.users:
             user_port.set_topic(topic_namespace, topic_name)
