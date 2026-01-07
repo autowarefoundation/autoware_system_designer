@@ -79,11 +79,11 @@ def _generate_dot_files(renderer: TemplateRenderer, mode_key: str, data: Dict, v
     
     # Node graph
     output_path = os.path.join(mode_visualization_dir, f"{filename_base}_node_graph.dot")
-    renderer.render_template_to_file("node_diagram.dot.jinja2", output_path, **data)
+    renderer.render_template_to_file("visualization/diagram/node_diagram.dot.jinja2", output_path, **data)
     
     # Logic graph
     output_path = os.path.join(mode_visualization_dir, f"{filename_base}_logic_graph.dot")
-    renderer.render_template_to_file("logic_diagram.dot.jinja2", output_path, **data)
+    renderer.render_template_to_file("visualization/diagram/logic_diagram.dot.jinja2", output_path, **data)
 
 
 def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str) -> None:
@@ -94,11 +94,7 @@ def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web
     renderer.render_template_to_file("visualization/data/common_design_data.js.jinja2", output_path, **node_data)
 
     # Sequence diagram data
-    mermaid_syntax = renderer.render_template("visualization/data/sequence_diagram_mermaid.jinja2", **data)
-    sequence_data = {
-        "mode": mode_key,
-        "mermaid_syntax": mermaid_syntax
-    }
+    sequence_data = {**data, "mode": mode_key}
     output_path = os.path.join(web_data_dir, f"{mode_key}_sequence_diagram.js")
     renderer.render_template_to_file("visualization/data/sequence_diagram_data.js.jinja2", output_path, **sequence_data)
 
