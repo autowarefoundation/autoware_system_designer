@@ -296,10 +296,15 @@ class NodeDiagramModule {
         // Add arrow marker
         const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
         const arrowColor = this.isDarkMode() ? "#6c757d" : "#adb5bd";
+        const highlightColor = "#0d6efd";
         defs.innerHTML = `
             <marker id="arrowhead" markerWidth="10" markerHeight="7"
             refX="10" refY="3.5" orient="auto">
               <polygon points="0 0, 10 3.5, 0 7" fill="${arrowColor}" />
+            </marker>
+            <marker id="arrowhead-highlighted" markerWidth="10" markerHeight="7"
+            refX="10" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="${highlightColor}" />
             </marker>
         `;
         svgRoot.insertBefore(defs, svg);
@@ -405,7 +410,10 @@ class NodeDiagramModule {
             this.updateInfoPanel(userData, 'Node');
 
             // Clear all highlights
-            document.querySelectorAll('.highlighted').forEach(el => el.classList.remove('highlighted'));
+            document.querySelectorAll('.highlighted').forEach(el => {
+                el.classList.remove('highlighted');
+                if (el.tagName === 'path') el.setAttribute("marker-end", "url(#arrowhead)");
+            });
             document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
             document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
             document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
@@ -559,7 +567,10 @@ class NodeDiagramModule {
 
     highlightConnected(startId, type) {
         // Clear all highlights
-        document.querySelectorAll('.highlighted').forEach(el => el.classList.remove('highlighted'));
+        document.querySelectorAll('.highlighted').forEach(el => {
+            el.classList.remove('highlighted');
+            if (el.tagName === 'path') el.setAttribute("marker-end", "url(#arrowhead)");
+        });
         document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
         document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
         document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
@@ -598,18 +609,29 @@ class NodeDiagramModule {
             } 
             // Link Logic
             else if (data.from_port && data.to_port) {
-                const edgePath = document.getElementById(currentId);
+                const edgePath = document.getElementById(currentId) || 
+                               (this.container ? this.container.querySelector(`path[id="${currentId}"]`) : null);
+
                 if (edgePath) {
                     edgePath.classList.add('highlighted');
-                    edgePath.setAttribute("marker-end", "url(#arrowhead)");
+                    edgePath.setAttribute("marker-end", "url(#arrowhead-highlighted)");
+                    
+                    // Bring to front to ensure visibility
+                    if (edgePath.parentNode) {
+                        edgePath.parentNode.appendChild(edgePath);
+                    }
+                } else {
+                    console.warn(`Edge path not found for ID: ${currentId}`);
                 }
 
                 // Add connected ports
-                if (data.from_port && data.from_port.unique_id) {
-                    queue.push(String(data.from_port.unique_id));
+                if (data.from_port) {
+                    const fromId = data.from_port.unique_id || (typeof data.from_port === 'string' ? data.from_port : null);
+                    if (fromId) queue.push(String(fromId));
                 }
-                if (data.to_port && data.to_port.unique_id) {
-                    queue.push(String(data.to_port.unique_id));
+                if (data.to_port) {
+                    const toId = data.to_port.unique_id || (typeof data.to_port === 'string' ? data.to_port : null);
+                    if (toId) queue.push(String(toId));
                 }
             }
         }
