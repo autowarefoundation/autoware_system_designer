@@ -54,6 +54,13 @@ class Link:
     def unique_id(self):
         return generate_unique_id(self.namespace, "link", self.from_port.unique_id, self.to_port.unique_id)
 
+    @property
+    def topic(self):
+        """Get the topic name for this link."""
+        # Get topic from the from_port's reference port, as that's where topics are typically set
+        from_port_ref = self.from_port.get_reference_list()[0] if self.from_port.get_reference_list() else self.from_port
+        return from_port_ref.get_topic()
+
     def _check_connection(self):
         # if the from port is OutPort, it is internal port
         is_from_port_internal = isinstance(self.from_port, OutPort)

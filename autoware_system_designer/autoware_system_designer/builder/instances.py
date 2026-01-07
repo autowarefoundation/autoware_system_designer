@@ -481,6 +481,7 @@ class Instance:
                         "from_port": self._serialize_port(link.from_port),
                         "to_port": self._serialize_port(link.to_port),
                         "msg_type": link.msg_type,
+                        "topic": link.topic,
                     }
                     for link in self.link_manager.get_all_links()
                 ]
