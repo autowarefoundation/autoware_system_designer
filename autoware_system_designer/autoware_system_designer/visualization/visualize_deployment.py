@@ -25,48 +25,31 @@ logger = logging.getLogger(__name__)
 
 # Get template directories from installed location
 def _get_template_directories() -> List[str]:
-    """Get template directories from installed share location."""
-    try:
-        from ament_index_python.packages import get_package_share_directory
-        share_dir = get_package_share_directory('autoware_system_designer')
-        share_template_dir = os.path.join(share_dir, 'template')
+    """Get template directories from local source."""
+    # Check relative to this file (works for source and site-packages)
+    # autoware_system_designer/visualization/visualize_deployment.py
+    # -> autoware_system_designer/template
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    template_dir = os.path.join(base_dir, 'template')
+    
+    if os.path.exists(template_dir):
         return [
-            share_template_dir,
-            os.path.join(share_template_dir, "launcher"),
-            os.path.join(share_template_dir, "visualization"),
+            template_dir,
+            os.path.join(template_dir, "launcher"),
+            os.path.join(template_dir, "visualization"),
         ]
-    except ImportError:
-        # Fallback or silent failure if not running with ROS environment
-        return []
+    return []
 
 TEMPLATE_DIRS = _get_template_directories()
 
 def _get_static_file_path(filename: str) -> Optional[str]:
-    """Get static file path from installed share location or local source."""
+    """Get static file path from local source."""
     # Check relative to this file (works for source and site-packages)
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     local_file = os.path.join(current_dir, filename)
     if os.path.exists(local_file):
         return local_file
-
-    # Try installed location (legacy support)
-    try:
-        from ament_index_python.packages import get_package_share_directory
-        share_dir = get_package_share_directory('autoware_system_designer')
-        static_file = os.path.join(share_dir, 'static', filename)
-        if os.path.exists(static_file):
-            return static_file
-    except (ImportError, Exception):
-        pass
-
-    # Fallback to source location (relative to this file)
-    # this file is in autoware_system_designer/visualization/visualize_deployment.py
-    # static is in autoware_system_designer/static
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    static_file = os.path.join(base_dir, 'static', filename)
-    if os.path.exists(static_file):
-        return static_file
     
     logger.warning(f"Static file not found: {filename}")
     return None

@@ -292,7 +292,7 @@ class Deployment:
 
     def generate_system_monitor(self):
         # load the template file
-        template_dir = os.path.join(os.path.dirname(__file__), "../template")
+        template_dir = os.path.join(os.path.dirname(__file__), "template")
         topics_template_path = os.path.join(template_dir, "sys_monitor_topics.yaml.jinja2")
 
         # Generate system monitor for each mode

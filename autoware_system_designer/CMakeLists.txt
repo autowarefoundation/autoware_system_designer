@@ -10,12 +10,6 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 # Install Python package
 ament_python_install_package(${PROJECT_NAME})
 
-# Install template files to share directory (accessible via get_package_share_directory)
-install(
-  DIRECTORY template/
-  DESTINATION share/${PROJECT_NAME}/template
-)
-
 # Install scripts to share directory
 install(
   DIRECTORY script/
