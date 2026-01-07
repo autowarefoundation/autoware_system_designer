@@ -23,24 +23,6 @@ from .visualization_index import get_install_root
 
 logger = logging.getLogger(__name__)
 
-# Get template directories from installed location
-def _get_template_directories() -> List[str]:
-    """Get template directories from local source."""
-    # Check relative to this file (works for source and site-packages)
-    # autoware_system_designer/visualization/visualize_deployment.py
-    # -> autoware_system_designer/template
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    template_dir = os.path.join(base_dir, 'template')
-    
-    if os.path.exists(template_dir):
-        return [
-            template_dir,
-            os.path.join(template_dir, "launcher"),
-            os.path.join(template_dir, "visualization"),
-        ]
-    return []
-
-TEMPLATE_DIRS = _get_template_directories()
 
 def _get_static_file_path(filename: str) -> Optional[str]:
     """Get static file path from local source."""
@@ -111,7 +93,7 @@ def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_
         visualization_dir: Directory to output visualization files
     """
     # Initialize template renderer with template directories
-    renderer = TemplateRenderer(template_dir=TEMPLATE_DIRS)
+    renderer = TemplateRenderer()
     web_dir = os.path.join(visualization_dir, "web")
     web_data_dir = os.path.join(web_dir, "data")
     

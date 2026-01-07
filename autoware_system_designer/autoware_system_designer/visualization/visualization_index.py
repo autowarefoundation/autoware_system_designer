@@ -2,6 +2,7 @@ import fcntl
 import os
 from pathlib import Path
 import logging
+from ..utils.template_utils import TemplateRenderer
 
 logger = logging.getLogger(__name__)
 
@@ -138,157 +139,38 @@ def _generate_index_file(install_root: Path, output_file: Path):
     # Sort by package then system name
     deployments.sort(key=lambda x: (x['package'], x['name']))
 
-    # Generate HTML
-    html_content = """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Autoware System Designer Deployments</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f4f4f4;
-            color: #333;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #2c3e50;
-            border-bottom: 2px solid #eee;
-            padding-bottom: 10px;
-        }
-        .description {
-            color: #666;
-            margin-bottom: 30px;
-        }
-        .deployment-list {
-            list-style-type: none;
-            padding: 0;
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-        }
-        .deployment-item {
-            background: #fff;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
-            transition: transform 0.2s, box-shadow 0.2s;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-        .deployment-item:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
-            border-color: #b0b0b0;
-        }
-        .deployment-header {
-            padding: 20px 20px 15px 20px;
-        }
-        .diagram-buttons {
-            display: flex;
-            gap: 10px;
-            padding: 0 20px 20px 20px;
-            border-top: 1px solid #f0f0f0;
-            background: #fafafa;
-        }
-        .diagram-button {
-            text-decoration: none;
-            color: #0066cc;
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 4px;
-            padding: 8px 12px;
-            font-size: 0.9em;
-            font-weight: 500;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .diagram-button:hover {
-            background: #e9ecef;
-            border-color: #adb5bd;
-            color: #0056b3;
-        }
-        .diagram-icon {
-            display: flex;
-            align-items: center;
-        }
-        .deployment-name {
-            font-weight: bold;
-            font-size: 1.1em;
-            color: #0066cc;
-            margin-bottom: 10px;
-            word-break: break-word;
-            text-decoration: none;
-        }
-        .deployment-name:hover {
-            color: #0056b3;
-        }
-        .deployment-meta {
-            color: #666;
-            font-size: 0.9em;
-            margin-bottom: 10px;
-        }
-        .deployment-package {
-            display: inline-block;
-            background: #f0f0f0;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: monospace;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Autoware Systems and their Deployments</h1>
-        <p class="description">Index of available systems and their deployments found in the <code>install/</code> directory.</p>
-        <ul class="deployment-list">
-"""
-
+    # Prepare data for template
+    view_deployments = []
     for dep in deployments:
-        web_path = dep['path']  # This is now the web directory path
+        web_path = dep['path']
         deployment_overview_path = web_path / f"{dep['name']}_overview.html"
 
-        html_content += f"""
-            <li class="deployment-item">
-                <div class="deployment-header">"""
         main_link = f"{deployment_overview_path}?diagram={dep['diagram_types'][0]}"
-        html_content += f"""
-                    <a href="{main_link}" class="deployment-name">{dep['name']}</a>
-                    <div class="deployment-meta">Package: <span class="deployment-package">{dep['package']}</span></div>
-                </div>
-                <div class="diagram-buttons">"""
 
-        # Show diagram type buttons
+        diagrams = []
         for diagram_type in dep['diagram_types']:
             diagram_label = diagram_type.replace('_', ' ').title()
             diagram_link = f"{deployment_overview_path}?diagram={diagram_type}"
+            diagrams.append({
+                'label': diagram_label,
+                'link': diagram_link,
+                'type': diagram_type
+            })
 
-            html_content += f"""
-                    <a class="diagram-button" href="{diagram_link}" data-type="{diagram_type}">
-                        <span class="diagram-icon">{diagram_label}</span>
-                    </a>"""
+        view_deployments.append({
+            'name': dep['name'],
+            'package': dep['package'],
+            'main_link': main_link,
+            'diagrams': diagrams
+        })
 
-        html_content += """
-                </div>
-            </li>"""
-
-    html_content += """
-        </ul>
-    </div>
-</body>
-</html>
-"""
-
-    with open(output_file, 'w') as f:
-        f.write(html_content)
+    # Render template
+    try:
+        renderer = TemplateRenderer()
+        renderer.render_template_to_file(
+            "visualization/systems_index.html.jinja2",
+            str(output_file),
+            deployments=view_deployments
+        )
+    except Exception as e:
+        logger.error(f"Failed to render visualization index template: {e}")
