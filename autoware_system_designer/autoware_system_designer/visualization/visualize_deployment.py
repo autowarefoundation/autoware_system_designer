@@ -167,6 +167,16 @@ def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_
             "default_diagram_type": "node_diagram",
             "systems_index_path": systems_index_rel_path
         }
-        output_path = os.path.join(web_dir, f"{name}_overview.html")
-        renderer.render_template_to_file("visualization/page/deployment_overview.html.jinja2", output_path, **overview_data)
-        logger.info(f"Generated deployment overview: {name}_overview.html")
+        # Render config.js
+        config_output_path = os.path.join(web_dir, "config.js")
+        renderer.render_template_to_file("visualization/data/deployment_config.js.jinja2", config_output_path, **overview_data)
+        logger.info(f"Generated deployment config: config.js")
+
+        # Copy static overview HTML
+        overview_html_src = _get_static_file_path("visualization/deployment_overview.html")
+        if overview_html_src:
+            output_path = os.path.join(web_dir, f"{name}_overview.html")
+            shutil.copy2(overview_html_src, output_path)
+            logger.info(f"Generated deployment overview: {name}_overview.html")
+        else:
+            logger.error("Failed to find deployment_overview.html static file")

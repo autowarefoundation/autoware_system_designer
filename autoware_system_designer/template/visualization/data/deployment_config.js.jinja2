@@ -1,0 +1,10 @@
+const deploymentConfig = {
+    deploymentName: "{{ deployment_name }}",
+    packageName: "{{ package_name }}",
+    systemsIndexPath: "{{ systems_index_path }}",
+    availableModes: {{ available_modes | tojson }},
+    defaultMode: "{{ default_mode }}",
+    availableDiagramTypes: {{ available_diagram_types | tojson }},
+    defaultDiagramType: "{{ default_diagram_type }}"
+};
+

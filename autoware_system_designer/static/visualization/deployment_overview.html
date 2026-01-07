@@ -2,7 +2,8 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Autoware System Designer - {{ deployment_name }}</title>
+    <title>Autoware System Designer</title>
+    <script src="config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
@@ -465,9 +466,9 @@
     <!-- Sidebar -->
     <div id="sidebar">
         <div id="sidebar-header">
-            <a href="{{ systems_index_path }}" class="home-link">&larr; Back to Systems</a>
-            <h1>{{ deployment_name }}</h1>
-            <div class="package-info">Package: {{ package_name }}</div>
+            <a href="#" class="home-link">&larr; Back to Systems</a>
+            <h1></h1>
+            <div class="package-info"></div>
             <div class="dark-mode-toggle">
                 <label for="dark-mode-switch">Dark Mode</label>
                 <div class="toggle-switch" id="dark-mode-switch"></div>
@@ -477,19 +478,13 @@
         <div id="mode-selector-section">
             <label for="mode-selector">View Mode:</label>
             <select id="mode-selector">
-                {% for mode in available_modes %}
-                <option value="{{ mode }}" {% if mode == default_mode %}selected{% endif %}>{{ mode }}</option>
-                {% endfor %}
+                <!-- Populated by JS -->
             </select>
         </div>
 
         <div id="diagram-list">
             <div class="section-title">Diagram Types</div>
-            {% for diagram_type in available_diagram_types %}
-            <a class="diagram-type-item {% if diagram_type == default_diagram_type %}active{% endif %}" href="#" data-type="{{ diagram_type }}">
-                {{ diagram_type.replace('_', ' ').title() }}
-            </a>
-            {% endfor %}
+            <!-- Populated by JS -->
         </div>
 
         <div id="info-panel">
@@ -505,12 +500,21 @@
     </div>
 
     <script>
-        // Configuration
-        const deploymentName = "{{ deployment_name }}";
-        const availableDiagramTypes = {{ available_diagram_types | tojson }};
-        const availableModes = {{ available_modes | tojson }};
-        const defaultDiagramType = "{{ default_diagram_type }}";
-        const defaultMode = "{{ default_mode }}";
+        // Check if config exists
+        if (typeof deploymentConfig === 'undefined') {
+            console.error('deploymentConfig is not defined. Make sure config.js is loaded.');
+            alert('Error: Configuration not loaded.');
+        }
+
+        const { 
+            deploymentName, 
+            availableDiagramTypes, 
+            availableModes, 
+            defaultDiagramType, 
+            defaultMode,
+            packageName,
+            systemsIndexPath
+        } = deploymentConfig;
 
         // Dark mode functionality
         function getSystemThemePreference() {
@@ -574,7 +578,6 @@
         const diagramContainer = document.getElementById('diagram-container');
         const loading = document.getElementById('loading');
         const infoPanel = document.getElementById('info-panel');
-        const diagramTypeItems = document.querySelectorAll('.diagram-type-item');
         const darkModeToggle = document.getElementById('dark-mode-switch');
 
         // Current diagram module instance
@@ -725,7 +728,7 @@
 
         function updateDiagramTypeSelection() {
             // Update active state of diagram type items
-            diagramTypeItems.forEach(item => {
+            document.querySelectorAll('.diagram-type-item').forEach(item => {
                 if (item.getAttribute('data-type') === currentDiagramType) {
                     item.classList.add('active');
                 } else {
@@ -840,25 +843,61 @@
                 document.head.appendChild(script);
             });
         }
-
-
-
-
-        // Event listeners
-        diagramTypeItems.forEach(item => {
-            item.addEventListener('click', (e) => {
-                e.preventDefault();
-                currentDiagramType = item.getAttribute('data-type');
-                updateDiagramTypeSelection();
+        
+        function initializeUI() {
+            document.title = `Autoware System Designer - ${deploymentName}`;
+            
+            const backLink = document.querySelector('.home-link');
+            if (backLink) backLink.href = systemsIndexPath;
+            
+            const headerTitle = document.querySelector('#sidebar-header h1');
+            if (headerTitle) headerTitle.textContent = deploymentName;
+            
+            const packageInfoDiv = document.querySelector('.package-info');
+            if (packageInfoDiv) packageInfoDiv.textContent = `Package: ${packageName}`;
+            
+            // Populate mode selector
+            modeSelect.innerHTML = '';
+            availableModes.forEach(mode => {
+                const option = document.createElement('option');
+                option.value = mode;
+                option.textContent = mode;
+                if (mode === defaultMode) option.selected = true;
+                modeSelect.appendChild(option);
+            });
+            
+            // Populate diagram types
+            const diagramList = document.getElementById('diagram-list');
+            diagramList.innerHTML = '<div class="section-title">Diagram Types</div>';
+            availableDiagramTypes.forEach(type => {
+                const a = document.createElement('a');
+                a.className = `diagram-type-item ${type === defaultDiagramType ? 'active' : ''}`;
+                a.href = '#';
+                a.dataset.type = type;
+                // format title: replace _ with space and title case
+                const title = type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                a.textContent = title;
+                diagramList.appendChild(a);
+            });
+            
+            // Bind event listeners for diagram types
+            document.querySelectorAll('.diagram-type-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    currentDiagramType = item.getAttribute('data-type');
+                    updateDiagramTypeSelection();
+                    loadDiagram(currentDiagramType, currentMode);
+                });
+            });
+            
+            // Mode selector event listener
+            modeSelect.addEventListener('change', (e) => {
+                currentMode = e.target.value;
                 loadDiagram(currentDiagramType, currentMode);
             });
-        });
+        }
 
-        modeSelect.addEventListener('change', (e) => {
-            currentMode = e.target.value;
-            loadDiagram(currentDiagramType, currentMode);
-        });
-
+        // Dark mode listener
         darkModeToggle.addEventListener('click', toggleDarkMode);
 
         // Resizer functionality
@@ -902,6 +941,9 @@
 
         // Initialize
         window.addEventListener('load', () => {
+            // Initialize UI from config
+            initializeUI();
+
             // Initialize theme
             initializeTheme();
             
@@ -917,3 +959,4 @@
     </script>
 </body>
 </html>
+
