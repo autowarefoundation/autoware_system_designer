@@ -41,7 +41,7 @@ setup(
         "pathlib",
     ],
     package_data={
-        "autoware_system_designer": ["template/**/*", "static/**/*"],
+        "autoware_system_designer": ["template/**/*", "visualization/*.html", "visualization/js/*.js"],
     },
     extras_require={
         "dev": [
