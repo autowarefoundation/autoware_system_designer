@@ -16,6 +16,12 @@ install(
   DESTINATION share/${PROJECT_NAME}/template
 )
 
+# Install static files to share directory
+install(
+  DIRECTORY static/
+  DESTINATION share/${PROJECT_NAME}/static
+)
+
 # Install scripts to share directory
 install(
   DIRECTORY script/

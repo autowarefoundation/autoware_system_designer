@@ -15,6 +15,7 @@
 
 import os
 import logging
+import shutil
 from typing import Dict
 from pathlib import Path
 from ..utils.template_utils import TemplateRenderer
@@ -35,6 +36,29 @@ def _get_template_directories():
     ]
 
 TEMPLATE_DIRS = _get_template_directories()
+
+def _get_static_file_path(filename: str):
+    """Get static file path from installed share location or local source."""
+    # Try installed location
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        share_dir = get_package_share_directory('autoware_system_designer')
+        static_file = os.path.join(share_dir, 'static', filename)
+        if os.path.exists(static_file):
+            return static_file
+    except (ImportError, Exception):
+        pass
+
+    # Fallback to source location (relative to this file)
+    # this file is in autoware_system_designer/visualization/visualize_deployment.py
+    # static is in autoware_system_designer/static
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    static_file = os.path.join(base_dir, 'static', filename)
+    if os.path.exists(static_file):
+        return static_file
+    
+    logger.warning(f"Static file not found: {filename}")
+    return None
 
 
 def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_dir: str):
@@ -94,17 +118,33 @@ def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_
             "modes": modes,
             "default_mode": default_mode
         }
-        output_path = os.path.join(web_dir, "node_diagram.js")
-        renderer.render_template_to_file("visualization/page/node_diagram.js.jinja2", output_path, **module_data)
-        logger.info("Generated node diagram module: node_diagram.js")
+        
+        # Copy static node_diagram.js
+        node_diagram_src = _get_static_file_path("visualization/js/node_diagram.js")
+        if node_diagram_src:
+            output_path = os.path.join(web_dir, "node_diagram.js")
+            shutil.copy2(node_diagram_src, output_path)
+            logger.info("Copied node diagram module: node_diagram.js")
+        else:
+            logger.error("Failed to find node_diagram.js static file")
 
-        output_path = os.path.join(web_dir, "sequence_diagram.js")
-        renderer.render_template_to_file("visualization/page/sequence_diagram.js.jinja2", output_path, **module_data)
-        logger.info("Generated sequence diagram module: sequence_diagram.js")
+        # Copy static sequence_diagram.js
+        sequence_diagram_src = _get_static_file_path("visualization/js/sequence_diagram.js")
+        if sequence_diagram_src:
+            output_path = os.path.join(web_dir, "sequence_diagram.js")
+            shutil.copy2(sequence_diagram_src, output_path)
+            logger.info("Copied sequence diagram module: sequence_diagram.js")
+        else:
+            logger.error("Failed to find sequence_diagram.js static file")
 
-        output_path = os.path.join(web_dir, "logic_diagram.js")
-        renderer.render_template_to_file("visualization/page/logic_diagram.js.jinja2", output_path, **module_data)
-        logger.info("Generated logic diagram module: logic_diagram.js")
+        # Copy static logic_diagram.js
+        logic_diagram_src = _get_static_file_path("visualization/js/logic_diagram.js")
+        if logic_diagram_src:
+            output_path = os.path.join(web_dir, "logic_diagram.js")
+            shutil.copy2(logic_diagram_src, output_path)
+            logger.info("Copied logic diagram module: logic_diagram.js")
+        else:
+            logger.error("Failed to find logic_diagram.js static file")
 
         # Generate overview HTML file
         # Calculate relative path to systems index
