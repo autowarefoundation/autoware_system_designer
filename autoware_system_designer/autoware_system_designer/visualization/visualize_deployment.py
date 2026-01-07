@@ -89,9 +89,9 @@ def _generate_dot_files(renderer: TemplateRenderer, mode_key: str, data: Dict, v
 def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str) -> None:
     """Generate JavaScript data files for web visualization."""
     # Node diagram data
-    node_data = {**data, "mode": mode_key}
+    node_data = {**data, "mode": mode_key, "window_variable": "systemDesignData"}
     output_path = os.path.join(web_data_dir, f"{mode_key}_node_diagram.js")
-    renderer.render_template_to_file("visualization/data/node_diagram_data.js.jinja2", output_path, **node_data)
+    renderer.render_template_to_file("visualization/data/common_design_data.js.jinja2", output_path, **node_data)
 
     # Sequence diagram data
     mermaid_syntax = renderer.render_template("visualization/data/sequence_diagram_mermaid.jinja2", **data)
@@ -103,9 +103,9 @@ def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web
     renderer.render_template_to_file("visualization/data/sequence_diagram_data.js.jinja2", output_path, **sequence_data)
 
     # Logic diagram data
-    logic_data = {**data, "mode": mode_key}
+    logic_data = {**data, "mode": mode_key, "window_variable": "logicDiagramData"}
     output_path = os.path.join(web_data_dir, f"{mode_key}_logic_diagram.js")
-    renderer.render_template_to_file("visualization/data/logic_diagram_data.js.jinja2", output_path, **logic_data)
+    renderer.render_template_to_file("visualization/data/common_design_data.js.jinja2", output_path, **logic_data)
 
 
 def _calculate_systems_index_path(web_dir: str) -> str:
