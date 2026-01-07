@@ -338,6 +338,8 @@ class NodeDiagramModule {
 
         svgRoot.addEventListener('mousedown', (e) => {
             this.isDragging = true;
+            this.hasDragged = false;
+            this.dragStartRaw = { x: e.clientX, y: e.clientY };
             svgRoot.style.cursor = "grabbing";
             this.startPoint = { x: e.clientX - this.transform.x, y: e.clientY - this.transform.y };
         });
@@ -345,6 +347,13 @@ class NodeDiagramModule {
         window.addEventListener('mousemove', (e) => {
             if (!this.isDragging) return;
             e.preventDefault();
+
+            const dx = e.clientX - this.dragStartRaw.x;
+            const dy = e.clientY - this.dragStartRaw.y;
+            if (dx * dx + dy * dy > 25) {
+                this.hasDragged = true;
+            }
+
             this.transform.x = e.clientX - this.startPoint.x;
             this.transform.y = e.clientY - this.startPoint.y;
             this.updateTransform(svg);
@@ -406,6 +415,7 @@ class NodeDiagramModule {
         rect.setAttribute("stroke", strokeColor);
 
         rect.onclick = (e) => {
+            if (this.hasDragged) return;
             e.stopPropagation();
             this.updateInfoPanel(userData, 'Node');
 
@@ -473,6 +483,7 @@ class NodeDiagramModule {
                 prect.appendChild(title);
 
                 pg.onclick = (e) => {
+                    if (this.hasDragged) return;
                     e.stopPropagation();
                     this.updateInfoPanel(portData, 'Port');
                     this.highlightConnected(port.id, 'Port');
@@ -520,6 +531,7 @@ class NodeDiagramModule {
 
                 const userData = this.elementData.get(edge.id) || {};
                 path.onclick = (e) => {
+                    if (this.hasDragged) return;
                     e.stopPropagation();
                     this.updateInfoPanel(userData, 'Link');
                     this.highlightConnected(edge.id, 'Link');
