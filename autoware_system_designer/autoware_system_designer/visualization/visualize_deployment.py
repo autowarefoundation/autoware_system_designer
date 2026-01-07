@@ -72,20 +72,6 @@ def _copy_static_asset(filename: str, destination_dir: str) -> None:
         logger.error(f"Failed to find static file: {filename}")
 
 
-def _generate_dot_files(renderer: TemplateRenderer, mode_key: str, data: Dict, visualization_dir: str, name: str) -> None:
-    """Generate DOT graph files for a specific mode."""
-    mode_visualization_dir = os.path.join(visualization_dir, mode_key)
-    filename_base = f"{name}_{mode_key}" if mode_key != "default" else name
-    
-    # Node graph
-    output_path = os.path.join(mode_visualization_dir, f"{filename_base}_node_graph.dot")
-    renderer.render_template_to_file("visualization/diagram/node_diagram.dot.jinja2", output_path, **data)
-    
-    # Logic graph
-    output_path = os.path.join(mode_visualization_dir, f"{filename_base}_logic_graph.dot")
-    renderer.render_template_to_file("visualization/diagram/logic_diagram.dot.jinja2", output_path, **data)
-
-
 def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str) -> None:
     """Generate JavaScript data files for web visualization."""
     # Node diagram data
@@ -131,7 +117,6 @@ def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_
     
     # Generate visualization for each mode
     for mode_key, data in deploy_data.items():
-        _generate_dot_files(renderer, mode_key, data, visualization_dir, name)
         _generate_js_data(renderer, mode_key, data, web_data_dir)
         logger.info(f"Generated visualization for mode: {mode_key}")
 
