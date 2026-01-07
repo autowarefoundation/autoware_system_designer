@@ -148,7 +148,7 @@ class Instance:
 
     @property
     def unique_id(self):
-        return generate_unique_id(self.namespace, self.compute_unit, self.layer, self.name)
+        return generate_unique_id(self.namespace, "instance", self.compute_unit, self.layer, self.name)
     
     @property
     def vis_guide(self) -> dict:

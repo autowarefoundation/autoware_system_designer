@@ -50,7 +50,11 @@ class Event:
 
     @property
     def unique_id(self):
-        return generate_unique_id(self.namespace, self.name)
+        return generate_unique_id(self.namespace, "event", self.name)
+
+    @property
+    def is_port_event(self):
+        return False
 
     def set_type(self, type_str):
         if type_str not in self.type_list:

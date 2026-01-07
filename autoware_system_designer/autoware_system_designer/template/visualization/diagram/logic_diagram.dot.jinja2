@@ -24,10 +24,12 @@
 			{% endfor %}
 			// Events (logic elements inside node cluster)
 			{% for event in instance.events %}
-				{% if event.type == "periodic" %}
-					{{ event.unique_id }} [label="{{event.name}}\n#{{event.type}}\n@{{event.frequency}}", shape=diamond, fillcolor="{{ instance.vis_guide.medium_color }}"];
-				{% else %}
-					{{ event.unique_id }} [label="{{event.name}}\n#{{event.type}}\n@{{event.frequency}}", shape=box, fillcolor="{{ instance.vis_guide.medium_color }}"];
+				{% if not event.is_port_event %}
+					{% if event.type == "periodic" %}
+						{{ event.unique_id }} [label="{{event.name}}\n#{{event.type}}\n@{{event.frequency}}", shape=diamond, fillcolor="{{ instance.vis_guide.medium_color }}"];
+					{% else %}
+						{{ event.unique_id }} [label="{{event.name}}\n#{{event.type}}\n@{{event.frequency}}", shape=box, fillcolor="{{ instance.vis_guide.medium_color }}"];
+					{% endif %}
 				{% endif %}
 			{% endfor %}
 		}
@@ -40,9 +42,11 @@
 		{% endfor %}
 		// Event triggers
 		{% for event in instance.events %}
-			{% for event_trigger in event.triggers %}
-				{{ event_trigger.unique_id }} -> {{ event.unique_id }} [color="#555577"];
-			{% endfor %}
+			{% if not event.is_port_event %}
+				{% for event_trigger in event.triggers %}
+					{{ event_trigger.unique_id }} -> {{ event.unique_id }} [color="#555577"];
+				{% endfor %}
+			{% endif %}
 		{% endfor %}
 		// Output port triggers
 		{% for out_port in instance.out_ports %}
