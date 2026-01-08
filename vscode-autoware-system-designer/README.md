@@ -53,11 +53,12 @@ pip install -r server/requirements.txt
 ### Building the Extension
 
 ```bash
-# Install Node.js dependencies
-npm install
+npm install -g vsce
 
-# Compile TypeScript
-npm run compile
+cd path-to-package/
+vsce package
+
+code --install-extension vscode-autoware-system-designer-*.vsix
 ```
 
 ### Running the Extension
