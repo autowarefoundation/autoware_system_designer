@@ -268,7 +268,7 @@ class ValidationEngine:
                     return False, f"Output '{parts[1]}' not found. Available outputs: {', '.join(output_names)}"
                 return True, ""
 
-            elif parts[0].startswith('node_'):
+            else:
                 # Check instance ports
                 instance_name = parts[0]
                 port_type = parts[1] if len(parts) > 1 else None
@@ -370,7 +370,7 @@ class ValidationEngine:
             elif parts[0] == 'output':
                 # External output interface - no type info available
                 return None
-            elif parts[0].startswith('node_'):
+            else:
                 instance_name = parts[0]
                 port_type = parts[1]
                 port_name = parts[2]
