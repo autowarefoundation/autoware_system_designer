@@ -26,8 +26,9 @@ logger = logging.getLogger(__name__)
 class ConfigParser:
     """Parser for entity configuration files."""
     
-    def __init__(self):
+    def __init__(self, strict_mode: bool = True):
         self.validator_factory = ValidatorFactory()
+        self.strict_mode = strict_mode
     
     def parse_entity_file(self, config_yaml_path: str) -> Config:
         """Parse an entity configuration file."""
@@ -44,9 +45,11 @@ class ConfigParser:
         entity_name, entity_type = entity_name_decode(full_name)
 
         if entity_name != file_entity_name:
-            raise ValidationError(
-                f"Config name '{entity_name}' does not match file name '{file_entity_name}'. File: {file_path}"
-            )
+            msg = f"Config name '{entity_name}' does not match file name '{file_entity_name}'. File: {file_path}"
+            if self.strict_mode:
+                raise ValidationError(msg)
+            else:
+                logger.warning(msg)
         
         # Validate configuration
         validator = self.validator_factory.get_validator(entity_type)

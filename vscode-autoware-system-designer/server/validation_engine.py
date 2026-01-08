@@ -2,12 +2,15 @@
 
 import yaml
 import re
+import logging
 from typing import List, Optional, Tuple
 from lsprotocol import types as lsp
 
 from autoware_system_designer.models.config import Config, ConfigType
 
 from registry_manager import RegistryManager
+
+logger = logging.getLogger(__name__)
 
 
 class ValidationEngine:
@@ -21,18 +24,30 @@ class ValidationEngine:
         diagnostics = []
 
         # Validate YAML format first
-        if document_content:
-            diagnostics.extend(self.validate_yaml_format(document_content))
+        try:
+            if document_content:
+                diagnostics.extend(self.validate_yaml_format(document_content))
+        except Exception as e:
+            logger.warning(f"Error during YAML format validation: {e}")
 
         # Validate file name matching
-        diagnostics.extend(self.validate_filename_matching(config, document_content))
+        try:
+            diagnostics.extend(self.validate_filename_matching(config, document_content))
+        except Exception as e:
+            logger.warning(f"Error during filename matching validation: {e}")
 
         # Validate connections
-        diagnostics.extend(self.validate_connections(config, document_content))
+        try:
+            diagnostics.extend(self.validate_connections(config, document_content))
+        except Exception as e:
+            logger.warning(f"Error during connection validation: {e}")
 
         # Validate incomplete references (warnings instead of completions)
-        if document_content:
-            diagnostics.extend(self.validate_incomplete_references(config, document_content))
+        try:
+            if document_content:
+                diagnostics.extend(self.validate_incomplete_references(config, document_content))
+        except Exception as e:
+            logger.warning(f"Error during incomplete reference validation: {e}")
 
         return diagnostics
 
@@ -43,31 +58,42 @@ class ValidationEngine:
         if not document_content:
             return diagnostics
 
-        # Extract the name from document content (to catch unsaved changes)
-        name_from_content = self._extract_name_from_content(document_content)
-        actual_filename = config.file_path.stem  # filename without extension
+        try:
+            # Extract the name from document content (to catch unsaved changes)
+            name_from_content = self._extract_name_from_content(document_content)
+            
+            # Safely get filename stem
+            file_path = config.file_path
+            if isinstance(file_path, str):
+                from pathlib import Path
+                file_path = Path(file_path)
+                
+            actual_filename = file_path.stem  # filename without extension
 
-        # Compare the name from content with the filename
-        if name_from_content and name_from_content != actual_filename:
-            # Find the name field range to underline it
-            name_range = self._find_name_field_range(document_content)
+            # Compare the name from content with the filename
+            if name_from_content and name_from_content != actual_filename:
+                # Find the name field range to underline it
+                name_range = self._find_name_field_range(document_content)
 
-            if name_range:
-                diagnostics.append(lsp.Diagnostic(
-                    range=name_range,
-                    message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
-                    severity=lsp.DiagnosticSeverity.Error
-                ))
-            else:
-                # Fallback: put diagnostic at the beginning
-                diagnostics.append(lsp.Diagnostic(
-                    range=lsp.Range(
-                        start=lsp.Position(line=0, character=0),
-                        end=lsp.Position(line=0, character=1)
-                    ),
-                    message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
-                    severity=lsp.DiagnosticSeverity.Error
-                ))
+                if name_range:
+                    diagnostics.append(lsp.Diagnostic(
+                        range=name_range,
+                        message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
+                        severity=lsp.DiagnosticSeverity.Error
+                    ))
+                else:
+                    # Fallback: put diagnostic at the beginning
+                    diagnostics.append(lsp.Diagnostic(
+                        range=lsp.Range(
+                            start=lsp.Position(line=0, character=0),
+                            end=lsp.Position(line=0, character=1)
+                        ),
+                        message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
+                        severity=lsp.DiagnosticSeverity.Error
+                    ))
+        except Exception:
+            # Fallback if validation fails (e.g. file path issues)
+            pass
 
         return diagnostics
 
@@ -228,6 +254,30 @@ class ValidationEngine:
 
         return diagnostics
 
+    def _get_entity_inputs(self, config: Config) -> List[dict]:
+        """Get input ports from a config, handling both Node and Module types."""
+        if hasattr(config, 'inputs') and config.inputs:
+            return config.inputs
+        
+        if hasattr(config, 'external_interfaces'):
+            ext = config.external_interfaces or {}
+            if isinstance(ext, dict):
+                return ext.get('input', [])
+        
+        return []
+
+    def _get_entity_outputs(self, config: Config) -> List[dict]:
+        """Get output ports from a config, handling both Node and Module types."""
+        if hasattr(config, 'outputs') and config.outputs:
+            return config.outputs
+        
+        if hasattr(config, 'external_interfaces'):
+            ext = config.external_interfaces or {}
+            if isinstance(ext, dict):
+                return ext.get('output', [])
+        
+        return []
+
     def _validate_connection_reference(self, ref: str, config: Config) -> Tuple[bool, str]:
         """Validate if a connection reference is valid."""
         if not ref:
@@ -290,15 +340,17 @@ class ValidationEngine:
 
                         entity_config = self.registry_manager.entity_registry[entity_name]
                         if port_type == 'input':
-                            if not entity_config.inputs:
+                            inputs = self._get_entity_inputs(entity_config)
+                            if not inputs:
                                 return False, f"Entity '{entity_name}' has no input ports"
-                            input_names = [port.get('name') for port in entity_config.inputs if port.get('name')]
+                            input_names = [port.get('name') for port in inputs if port.get('name')]
                             if port_name not in input_names:
                                 return False, f"Input port '{port_name}' not found in entity '{entity_name}'. Available inputs: {', '.join(input_names)}"
                         elif port_type == 'output':
-                            if not entity_config.outputs:
+                            outputs = self._get_entity_outputs(entity_config)
+                            if not outputs:
                                 return False, f"Entity '{entity_name}' has no output ports"
-                            output_names = [port.get('name') for port in entity_config.outputs if port.get('name')]
+                            output_names = [port.get('name') for port in outputs if port.get('name')]
                             if port_name not in output_names:
                                 return False, f"Output port '{port_name}' not found in entity '{entity_name}'. Available outputs: {', '.join(output_names)}"
                         else:
@@ -328,15 +380,17 @@ class ValidationEngine:
 
                     entity_config = self.registry_manager.entity_registry[component_entity]
                     if port_type == 'input':
-                        if not entity_config.inputs:
+                        inputs = self._get_entity_inputs(entity_config)
+                        if not inputs:
                             return False, f"Entity '{component_entity}' has no input ports"
-                        input_names = [port.get('name') for port in entity_config.inputs if port.get('name')]
+                        input_names = [port.get('name') for port in inputs if port.get('name')]
                         if port_name not in input_names:
                             return False, f"Input port '{port_name}' not found in component '{component_name}'. Available inputs: {', '.join(input_names)}"
                     elif port_type == 'output':
-                        if not entity_config.outputs:
+                        outputs = self._get_entity_outputs(entity_config)
+                        if not outputs:
                             return False, f"Entity '{component_entity}' has no output ports"
-                        output_names = [port.get('name') for port in entity_config.outputs if port.get('name')]
+                        output_names = [port.get('name') for port in outputs if port.get('name')]
                         if port_name not in output_names:
                             return False, f"Output port '{port_name}' not found in component '{component_name}'. Available outputs: {', '.join(output_names)}"
                     else:
@@ -381,12 +435,14 @@ class ValidationEngine:
                         entity_name = instance.get('entity')
                         if entity_name in self.registry_manager.entity_registry:
                             entity_config = self.registry_manager.entity_registry[entity_name]
-                            if port_type == 'input' and entity_config.inputs:
-                                for port in entity_config.inputs:
+                            if port_type == 'input':
+                                inputs = self._get_entity_inputs(entity_config)
+                                for port in inputs:
                                     if port.get('name') == port_name:
                                         return port.get('message_type')
-                            elif port_type == 'output' and entity_config.outputs:
-                                for port in entity_config.outputs:
+                            elif port_type == 'output':
+                                outputs = self._get_entity_outputs(entity_config)
+                                for port in outputs:
                                     if port.get('name') == port_name:
                                         return port.get('message_type')
 
@@ -401,12 +457,14 @@ class ValidationEngine:
                     component_entity = component.get('entity')
                     if component_entity in self.registry_manager.entity_registry:
                         entity_config = self.registry_manager.entity_registry[component_entity]
-                        if port_type == 'input' and entity_config.inputs:
-                            for port in entity_config.inputs:
+                        if port_type == 'input':
+                            inputs = self._get_entity_inputs(entity_config)
+                            for port in inputs:
                                 if port.get('name') == port_name:
                                     return port.get('message_type')
-                        elif port_type == 'output' and entity_config.outputs:
-                            for port in entity_config.outputs:
+                        elif port_type == 'output':
+                            outputs = self._get_entity_outputs(entity_config)
+                            for port in outputs:
                                 if port.get('name') == port_name:
                                     return port.get('message_type')
 

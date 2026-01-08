@@ -32,7 +32,7 @@ class AutowareSystemDesignerLanguageServer:
 
     def __init__(self):
         self.server = LanguageServer("autoware-system-designer", "0.1.0")
-        self.config_parser = ConfigParser()
+        self.config_parser = ConfigParser(strict_mode=False)
 
         # Initialize components
         self.registry_manager = RegistryManager()

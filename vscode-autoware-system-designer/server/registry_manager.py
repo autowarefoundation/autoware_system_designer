@@ -15,7 +15,7 @@ class RegistryManager:
     """Manages entity and file registries for the language server."""
 
     def __init__(self):
-        self.config_parser = ConfigParser()
+        self.config_parser = ConfigParser(strict_mode=False)
         self.entity_registry: Dict[str, Config] = {}
         self.file_registry: Dict[str, Config] = {}
 
