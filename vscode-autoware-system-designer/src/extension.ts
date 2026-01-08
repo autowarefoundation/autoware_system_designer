@@ -16,10 +16,11 @@ export function activate(context: ExtensionContext) {
 
     // The server is implemented in Python
     const serverModule = path.join(__dirname, '..', 'server', 'server.py');
-
+    
     // Use Python executable from configuration or default to 'python'
     const pythonPath = config.get<string>('path', 'python');
 
+    // Run the server directly (server.py handles path setup for imports)
     // If the extension is launched in debug mode then the debug server options are used
     // Otherwise the run options are used
     const serverOptions: ServerOptions = {

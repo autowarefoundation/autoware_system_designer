@@ -12,8 +12,8 @@ from autoware_system_designer.parsers.data_parser import ConfigParser
 from autoware_system_designer.models.config import Config
 from autoware_system_designer.exceptions import ValidationError
 
-from .registry_manager import RegistryManager
-from .validation_engine import ValidationEngine
+from registry_manager import RegistryManager
+from validation_engine import ValidationEngine
 
 logger = logging.getLogger(__name__)
 
@@ -29,16 +29,22 @@ class DocumentProcessor:
     def process_document(self, uri: str, content: str, server: LanguageServer):
         """Process a document and update registries."""
         file_path = self._uri_to_path(uri)
+        file_path_obj = Path(file_path)
 
         # Try to parse the document
         try:
-            # Write content to temporary file for parsing
-            temp_path = Path(file_path)
-            if temp_path.exists():
-                # Unregister existing entity if file exists
-                self.registry_manager.unregister_entity(file_path)
+            # The parser requires the file to exist on disk with the correct filename
+            # to determine the entity type from the filename pattern
+            if not file_path_obj.exists():
+                logger.debug(f"File {file_path} does not exist yet, skipping parsing")
+                return
 
-            # Parse the content
+            # Unregister existing entity if it was already registered
+            self.registry_manager.unregister_entity(file_path)
+
+            # Parse the content from the file
+            # Note: The parser reads from disk, so unsaved changes won't be reflected
+            # until the file is saved. This is a limitation of the current parser design.
             config = self.config_parser.parse_entity_file(file_path)
             self.registry_manager.register_entity(config)
 

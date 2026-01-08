@@ -5,8 +5,8 @@ from lsprotocol import types as lsp
 
 from autoware_system_designer.models.config import Config, ConfigType
 
-from ..registry_manager import RegistryManager
-from ..utils.text_utils import get_word_at_position
+from registry_manager import RegistryManager
+from utils.text_utils import get_word_at_position
 
 
 class CompletionProvider:

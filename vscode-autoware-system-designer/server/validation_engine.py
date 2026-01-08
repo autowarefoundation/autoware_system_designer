@@ -5,7 +5,7 @@ from lsprotocol import types as lsp
 
 from autoware_system_designer.models.config import Config, ConfigType
 
-from .registry_manager import RegistryManager
+from registry_manager import RegistryManager
 
 
 class ValidationEngine:

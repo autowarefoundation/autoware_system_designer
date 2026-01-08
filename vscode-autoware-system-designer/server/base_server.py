@@ -15,12 +15,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'autoware
 from autoware_system_designer.parsers.data_parser import ConfigParser
 from autoware_system_designer.models.config import Config
 
-from .registry_manager import RegistryManager
-from .document_processor import DocumentProcessor
-from .validation_engine import ValidationEngine
-from .providers.completion_provider import CompletionProvider
-from .providers.definition_provider import DefinitionProvider
-from .providers.hover_provider import HoverProvider
+from registry_manager import RegistryManager
+from document_processor import DocumentProcessor
+from validation_engine import ValidationEngine
+from providers.completion_provider import CompletionProvider
+from providers.definition_provider import DefinitionProvider
+from providers.hover_provider import HoverProvider
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
