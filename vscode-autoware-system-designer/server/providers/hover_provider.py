@@ -7,7 +7,6 @@ from autoware_system_designer.models.config import Config, ConfigType
 
 from registry_manager import RegistryManager
 from utils.text_utils import get_word_at_position
-from utils.uri_utils import uri_to_path
 
 
 class HoverProvider:
@@ -30,15 +29,6 @@ class HoverProvider:
         if word in self.registry_manager.entity_registry:
             config = self.registry_manager.entity_registry[word]
             return self._create_entity_hover(config)
-
-        # Check if it's a connection reference
-        current_file_path = uri_to_path(params.text_document.uri)
-        current_config = self.registry_manager.get_entity_by_file(current_file_path)
-
-        if current_config:
-            hover = self._create_connection_hover(word, current_config)
-            if hover:
-                return hover
 
         return None
 
@@ -119,85 +109,3 @@ class HoverProvider:
                 value=hover_text
             )
         )
-
-    def _create_connection_hover(self, word: str, config: Config) -> Optional[lsp.Hover]:
-        """Create hover information for connection references."""
-        parts = word.split('.')
-
-        if config.entity_type == ConfigType.MODULE and len(parts) >= 3:
-            instance_name = parts[0]
-            port_type = parts[1]
-            port_name = parts[2]
-
-            # Find the instance and get port information
-            instances = config.instances or []
-            for instance in instances:
-                if instance.get('instance') == instance_name:
-                    entity_name = instance.get('entity')
-                    if entity_name in self.registry_manager.entity_registry:
-                        entity_config = self.registry_manager.entity_registry[entity_name]
-
-                        hover_text = f"**{word}**\n\n"
-                        hover_text += f"**Instance:** {instance_name}\n"
-                        hover_text += f"**Entity:** {entity_name}\n"
-                        hover_text += f"**Port Type:** {port_type}\n"
-
-                        # Get port details
-                        ports = entity_config.inputs if port_type == 'input' else entity_config.outputs
-                        if ports:
-                            for port in ports:
-                                if port.get('name') == port_name:
-                                    msg_type = port.get('message_type', 'unknown')
-                                    hover_text += f"**Message Type:** {msg_type}\n"
-
-                                    qos = port.get('qos')
-                                    if qos:
-                                        hover_text += f"**QoS:** {qos}\n"
-                                    break
-
-                        return lsp.Hover(
-                            contents=lsp.MarkupContent(
-                                kind=lsp.MarkupKind.Markdown,
-                                value=hover_text
-                            )
-                        )
-
-        elif config.entity_type == ConfigType.SYSTEM and len(parts) >= 3:
-            component_name = parts[0]
-            port_type = parts[1]
-            port_name = parts[2]
-
-            # Find the component and get port information
-            components = config.components or []
-            for component in components:
-                if component.get('name') == component_name:
-                    component_entity = component.get('entity')
-                    if component_entity in self.registry_manager.entity_registry:
-                        entity_config = self.registry_manager.entity_registry[component_entity]
-
-                        hover_text = f"**{word}**\n\n"
-                        hover_text += f"**Component:** {component_name}\n"
-                        hover_text += f"**Entity:** {component_entity}\n"
-                        hover_text += f"**Port Type:** {port_type}\n"
-
-                        # Get port details
-                        ports = entity_config.inputs if port_type == 'input' else entity_config.outputs
-                        if ports:
-                            for port in ports:
-                                if port.get('name') == port_name:
-                                    msg_type = port.get('message_type', 'unknown')
-                                    hover_text += f"**Message Type:** {msg_type}\n"
-
-                                    qos = port.get('qos')
-                                    if qos:
-                                        hover_text += f"**QoS:** {qos}\n"
-                                    break
-
-                        return lsp.Hover(
-                            contents=lsp.MarkupContent(
-                                kind=lsp.MarkupKind.Markdown,
-                                value=hover_text
-                            )
-                        )
-
-        return None

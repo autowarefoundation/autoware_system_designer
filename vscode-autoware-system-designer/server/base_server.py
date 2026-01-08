@@ -21,6 +21,7 @@ from validation_engine import ValidationEngine
 from providers.completion_provider import CompletionProvider
 from providers.definition_provider import DefinitionProvider
 from providers.hover_provider import HoverProvider
+from providers.inlay_hint_provider import InlayHintProvider
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class AutowareSystemDesignerLanguageServer:
         self.completion_provider = CompletionProvider(self.registry_manager)
         self.definition_provider = DefinitionProvider(self.registry_manager)
         self.hover_provider = HoverProvider(self.registry_manager)
+        self.inlay_hint_provider = InlayHintProvider(self.registry_manager)
 
         # Register handlers
         self._register_handlers()
@@ -71,6 +73,10 @@ class AutowareSystemDesignerLanguageServer:
         def hover(ls, params):
             return self._on_hover(ls, params)
 
+        @self.server.feature(lsp.TEXT_DOCUMENT_INLAY_HINT)
+        def inlay_hint(ls, params):
+            return self._on_inlay_hint(ls, params)
+
         @self.server.feature(lsp.INITIALIZE)
         def initialize(ls, params):
             return self._on_initialize(ls, params)
@@ -95,7 +101,8 @@ class AutowareSystemDesignerLanguageServer:
             #     trigger_characters=['.', ':']
             # ),
             definition_provider=True,
-            hover_provider=True
+            hover_provider=True,
+            inlay_hint_provider=True
         )
 
         return lsp.InitializeResult(capabilities=capabilities)
@@ -127,3 +134,7 @@ class AutowareSystemDesignerLanguageServer:
     def _on_hover(self, ls, params: lsp.HoverParams) -> Optional[lsp.Hover]:
         """Handle hover requests."""
         return self.hover_provider.get_hover(params, self.server)
+
+    def _on_inlay_hint(self, ls, params: lsp.InlayHintParams) -> Optional[List[lsp.InlayHint]]:
+        """Handle inlay hint requests."""
+        return self.inlay_hint_provider.get_inlay_hints(params, self.server)
