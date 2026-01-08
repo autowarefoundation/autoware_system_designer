@@ -1,10 +1,9 @@
 (function() {
-  // Initialize logic diagram data namespace
-  if (!window.logicDiagramData) window.logicDiagramData = {};
+  // Initialize design data namespace
+  if (!window.{{ window_variable }}) window.{{ window_variable }} = {};
 
   // Store data for the specific mode
-  // This data structure contains the full design data for logic diagram generation
-  window.logicDiagramData["{{ mode if mode else 'default' }}"] = {
+  window.{{ window_variable }}["{{ mode if mode else 'default' }}"] = {
     "name": {{ name | tojson }},
     "unique_id": {{ unique_id | tojson }},
     "entity_type": {{ entity_type | tojson }},
@@ -22,3 +21,4 @@
     {% endif %}
   };
 })();
+

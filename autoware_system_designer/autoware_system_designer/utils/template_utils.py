@@ -8,10 +8,24 @@ from jinja2 import Environment, FileSystemLoader
 
 def _get_template_directories():
     """Get template directories, checking both installed share location and source location."""
-    base_dir = os.path.dirname(__file__)
+    # Base dir is .../autoware_system_designer/utils
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Template dir is .../autoware_system_designer/template
+    template_dir = os.path.abspath(os.path.join(base_dir, "../template"))
+    
     template_dirs = []
     
-    # Try to find templates in ROS package share directory (installed location)
+    # Priority 1: Check relative to this file (works for source and site-packages)
+    if os.path.exists(template_dir):
+        template_dirs.extend([
+            template_dir,
+            os.path.join(template_dir, "launcher"),
+            os.path.join(template_dir, "visualization"),
+        ])
+        return template_dirs
+
+    # Priority 2: Try to find templates in ROS package share directory (legacy/fallback)
     try:
         from ament_index_python.packages import get_package_share_directory
         share_dir = get_package_share_directory('autoware_system_designer')
@@ -25,13 +39,6 @@ def _get_template_directories():
             return template_dirs
     except (ImportError, Exception):
         pass
-    
-    # Fallback to source location (for development)
-    template_dirs.extend([
-        os.path.join(base_dir, "../template"),
-        os.path.join(base_dir, "../template/launcher"),
-        os.path.join(base_dir, "../template/visualization"),
-    ])
     
     return template_dirs
 

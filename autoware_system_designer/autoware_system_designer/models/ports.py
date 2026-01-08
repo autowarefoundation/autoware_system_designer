@@ -25,6 +25,22 @@ def generate_port_path(namespace: List[str], name: str) -> str:
         return "/" + "/".join(namespace) + "/" + name
     return "/" + name
 
+class PortEvent(Event):
+    def __init__(self, name: str, namespace: List[str], direction: str, port_name: str):
+        super().__init__(name, namespace)
+        self.direction = direction  # "input" or "output"
+        self.port_name = port_name
+
+    @property
+    def unique_id(self):
+        # Match the Port's unique_id format
+        return generate_unique_id(self.namespace, "port", self.direction, self.port_name)
+
+    @property
+    def is_port_event(self):
+        return True
+
+
 class Port:
     def __init__(self, name: str, msg_type: str, namespace: List[str] = [], remap_target: str = None):
         self.name = name
@@ -41,7 +57,7 @@ class Port:
 
     @property
     def unique_id(self):
-        return generate_unique_id(self.namespace, self.name)
+        return generate_unique_id(self.namespace, "port", self.name)
     
     @property
     def port_path(self):
@@ -63,7 +79,12 @@ class Port:
         return self.reference
 
     def set_topic(self, topic_namespace: List[str], topic_name: str):
-        self.topic = topic_namespace + [topic_name]
+        new_topic = topic_namespace + [topic_name]
+        # if the topic is already set, return False
+        if self.topic == new_topic:
+            return False
+        self.topic = new_topic
+        return True
     
     def get_topic(self) -> str:
         if self.topic == []:
@@ -77,7 +98,7 @@ class InPort(Port):
         # Servers list: ports that this port is subscribed to (for hierarchical port connections).
         # InPort (subscriber) can have multiple servers (one topic subscribed by multiple nodes).
         self.servers: List[Port] = []
-        self.event = Event("input_" + name, namespace)
+        self.event = PortEvent("input_" + name, namespace, "input", name)
         self.event.set_type("on_input")
 
         if self.remap_target is None:
@@ -85,7 +106,7 @@ class InPort(Port):
 
     @property
     def unique_id(self):
-        return generate_unique_id(self.namespace, "input_" + self.name)
+        return generate_unique_id(self.namespace, "port", "input", self.name)
     
     @property
     def port_path(self):
@@ -101,6 +122,17 @@ class InPort(Port):
         if added:
             logger.debug(f"InPort '{self.port_path}' added servers: {added}")
 
+    def set_topic(self, topic_namespace: List[str], topic_name: str):
+        """
+        Override to propagate topic changes to all references (Internal InPorts).
+        When topic is set by a higher layer (e.g., external connection),
+        all internal ports need to update their topic as well.
+        """
+        if not super().set_topic(topic_namespace, topic_name):
+            return
+        for ref_port in self.reference:
+            ref_port.set_topic(topic_namespace, topic_name)
+
 
 
 class OutPort(Port):
@@ -111,7 +143,7 @@ class OutPort(Port):
         self.users: List[Port] = []
         # Users list: ports that this port is subscribed to (for hierarchical port connections).
         # OutPort (publisher) can have multiple users (one topic subscribed by multiple nodes).
-        self.event = Event("output_" + name, namespace)
+        self.event = PortEvent("output_" + name, namespace, "output", name)
         self.event.set_type("to_output")
 
         # set default topic
@@ -122,7 +154,7 @@ class OutPort(Port):
 
     @property
     def unique_id(self):
-        return generate_unique_id(self.namespace, "output_" + self.name)
+        return generate_unique_id(self.namespace, "port", "output", self.name)
 
     @property
     def port_path(self):
@@ -144,7 +176,8 @@ class OutPort(Port):
         When topic is set by a higher layer (e.g., external connection),
         all subscribers need to update their topic as well.
         """
-        super().set_topic(topic_namespace, topic_name)
+        if not super().set_topic(topic_namespace, topic_name):
+            return
         # Propagate topic to all users (InPorts that subscribe to this OutPort)
         for user_port in self.users:
             user_port.set_topic(topic_namespace, topic_name)

@@ -40,6 +40,9 @@ setup(
         "Jinja2>=3.0.0",
         "pathlib",
     ],
+    package_data={
+        "autoware_system_designer": ["template/**/*", "visualization/*.html", "visualization/js/*.js"],
+    },
     extras_require={
         "dev": [
             "pytest>=6.0",

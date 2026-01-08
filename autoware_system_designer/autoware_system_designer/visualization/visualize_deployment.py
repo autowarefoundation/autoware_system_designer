@@ -15,26 +15,73 @@
 
 import os
 import logging
-from typing import Dict
+import shutil
+from typing import Dict, List, Optional
 from pathlib import Path
 from ..utils.template_utils import TemplateRenderer
 from .visualization_index import get_install_root
 
 logger = logging.getLogger(__name__)
 
-# Get template directories from installed location
-def _get_template_directories():
-    """Get template directories from installed share location."""
-    from ament_index_python.packages import get_package_share_directory
-    share_dir = get_package_share_directory('autoware_system_designer')
-    share_template_dir = os.path.join(share_dir, 'template')
-    return [
-        share_template_dir,
-        os.path.join(share_template_dir, "launcher"),
-        os.path.join(share_template_dir, "visualization"),
-    ]
 
-TEMPLATE_DIRS = _get_template_directories()
+def _get_static_file_path(filename: str) -> Optional[str]:
+    """Get static file path from local source."""
+    # Check relative to this file (works for source and site-packages)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+
+    local_file = os.path.join(current_dir, filename)
+    if os.path.exists(local_file):
+        return local_file
+    
+    logger.warning(f"Static file not found: {filename}")
+    return None
+
+
+def _copy_static_asset(filename: str, destination_dir: str) -> None:
+    """Copy a static asset to the destination directory.
+    
+    Args:
+        filename: Relative path of the static asset (e.g. 'visualization/js/node.js')
+        destination_dir: Directory where the file should be copied
+    """
+    src = _get_static_file_path(filename)
+    if src:
+        dest_filename = os.path.basename(filename)
+        output_path = os.path.join(destination_dir, dest_filename)
+        shutil.copy2(src, output_path)
+        logger.info(f"Copied static asset: {dest_filename}")
+    else:
+        logger.error(f"Failed to find static file: {filename}")
+
+
+def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str) -> None:
+    """Generate JavaScript data files for web visualization."""
+    # Node diagram data
+    node_data = {**data, "mode": mode_key, "window_variable": "systemDesignData"}
+    output_path = os.path.join(web_data_dir, f"{mode_key}_node_diagram.js")
+    renderer.render_template_to_file("visualization/data/common_design_data.js.jinja2", output_path, **node_data)
+
+    # Sequence diagram data
+    sequence_data = {**data, "mode": mode_key, "window_variable": "sequenceDiagramData"}
+    output_path = os.path.join(web_data_dir, f"{mode_key}_sequence_diagram.js")
+    renderer.render_template_to_file("visualization/data/common_design_data.js.jinja2", output_path, **sequence_data)
+
+    # Logic diagram data
+    logic_data = {**data, "mode": mode_key, "window_variable": "logicDiagramData"}
+    output_path = os.path.join(web_data_dir, f"{mode_key}_logic_diagram.js")
+    renderer.render_template_to_file("visualization/data/common_design_data.js.jinja2", output_path, **logic_data)
+
+
+def _calculate_systems_index_path(web_dir: str) -> str:
+    """Calculate relative path to systems.html index."""
+    install_root = get_install_root(Path(web_dir))
+    if install_root:
+        try:
+            rel_to_root = os.path.relpath(install_root, web_dir)
+            return os.path.join(rel_to_root, "systems.html")
+        except ValueError:
+            logger.warning(f"Could not calculate relative path from {web_dir} to {install_root}")
+    return "../../../../../../../systems.html"
 
 
 def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_dir: str):
@@ -46,87 +93,57 @@ def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_
         visualization_dir: Directory to output visualization files
     """
     # Initialize template renderer with template directories
-    renderer = TemplateRenderer(template_dir=TEMPLATE_DIRS)
-
+    renderer = TemplateRenderer()
+    web_dir = os.path.join(visualization_dir, "web")
+    web_data_dir = os.path.join(web_dir, "data")
+    
     # Generate visualization for each mode
     for mode_key, data in deploy_data.items():
-
-        # Create mode-specific output directory
-        mode_visualization_dir = os.path.join(visualization_dir, mode_key)
-
-        # Generate diagrams with mode suffix in filename
-        filename_base = f"{name}_{mode_key}" if mode_key != "default" else name
-        output_path = os.path.join(mode_visualization_dir, filename_base + "_node_graph.dot")
-        renderer.render_template_to_file("node_diagram.dot.jinja2", output_path, **data)
-        output_path = os.path.join(mode_visualization_dir, filename_base + "_logic_graph.dot")
-        renderer.render_template_to_file("logic_diagram.dot.jinja2", output_path, **data)
-
-        # Generate JS data for web visualization
-        web_data_dir = os.path.join(visualization_dir, "web", "data")
-        node_data_with_mode = {**data, "mode": mode_key}
-        output_path = os.path.join(web_data_dir, f"{mode_key}_node_diagram.js")
-        renderer.render_template_to_file("visualization/data/node_diagram_data.js.jinja2", output_path, **node_data_with_mode)
-
-        # Generate sequence diagram Mermaid syntax and data
-        mermaid_syntax = renderer.render_template("visualization/data/sequence_diagram_mermaid.jinja2", **data)
-        sequence_data = {
-            "mode": mode_key,
-            "mermaid_syntax": mermaid_syntax
-        }
-        output_path = os.path.join(web_data_dir, f"{mode_key}_sequence_diagram.js")
-        renderer.render_template_to_file("visualization/data/sequence_diagram_data.js.jinja2", output_path, **sequence_data)
-
-        # Generate logic diagram data
-        logic_data = {**data, "mode": mode_key}
-        output_path = os.path.join(web_data_dir, f"{mode_key}_logic_diagram.js")
-        renderer.render_template_to_file("visualization/data/logic_diagram_data.js.jinja2", output_path, **logic_data)
-
+        _generate_js_data(renderer, mode_key, data, web_data_dir)
         logger.info(f"Generated visualization for mode: {mode_key}")
 
     # Generate web visualization files
     if deploy_data:
-        web_dir = os.path.join(visualization_dir, "web")
         modes = list(deploy_data.keys())
         default_mode = "default" if "default" in modes else modes[0]
 
-        # Generate module JS files for overview page
-        module_data = {
-            "modes": modes,
-            "default_mode": default_mode
-        }
-        output_path = os.path.join(web_dir, "node_diagram.js")
-        renderer.render_template_to_file("visualization/page/node_diagram.js.jinja2", output_path, **module_data)
-        logger.info("Generated node diagram module: node_diagram.js")
+        # Copy static JS modules
+        js_modules = [
+            "js/diagram_base.js",
+            "js/node_diagram.js",
+            "js/sequence_diagram.js",
+            "js/logic_diagram.js"
+        ]
+        for module in js_modules:
+            _copy_static_asset(module, web_dir)
 
-        output_path = os.path.join(web_dir, "sequence_diagram.js")
-        renderer.render_template_to_file("visualization/page/sequence_diagram.js.jinja2", output_path, **module_data)
-        logger.info("Generated sequence diagram module: sequence_diagram.js")
+        # Copy static CSS modules
+        css_dir = os.path.join(web_dir, "css")
+        os.makedirs(css_dir, exist_ok=True)
+        _copy_static_asset("css/styles.css", css_dir)
 
-        output_path = os.path.join(web_dir, "logic_diagram.js")
-        renderer.render_template_to_file("visualization/page/logic_diagram.js.jinja2", output_path, **module_data)
-        logger.info("Generated logic diagram module: logic_diagram.js")
-
-        # Generate overview HTML file
-        # Calculate relative path to systems index
-        install_root = get_install_root(Path(web_dir))
-        systems_index_rel_path = "../../../../../../../systems.html" # fallback default
-        if install_root:
-            try:
-                # Calculate path from web directory (where html file is) to install root
-                rel_to_root = os.path.relpath(install_root, web_dir)
-                systems_index_rel_path = os.path.join(rel_to_root, "systems.html")
-            except ValueError:
-                logger.warning(f"Could not calculate relative path from {web_dir} to {install_root}")
-
+        # Generate config.js
+        systems_index_rel_path = _calculate_systems_index_path(web_dir)
+        
         overview_data = {
             "deployment_name": name,
-            "package_name": name,  # Using name as package name for now
+            "package_name": name,
             "available_modes": modes,
             "available_diagram_types": ["node_diagram", "sequence_diagram", "logic_diagram"],
             "default_mode": default_mode,
             "default_diagram_type": "node_diagram",
             "systems_index_path": systems_index_rel_path
         }
-        output_path = os.path.join(web_dir, f"{name}_overview.html")
-        renderer.render_template_to_file("visualization/page/deployment_overview.html.jinja2", output_path, **overview_data)
-        logger.info(f"Generated deployment overview: {name}_overview.html")
+        
+        config_output_path = os.path.join(web_dir, "config.js")
+        renderer.render_template_to_file("visualization/data/deployment_config.js.jinja2", config_output_path, **overview_data)
+        logger.info(f"Generated deployment config: config.js")
+
+        # Copy static overview HTML
+        overview_html_src = _get_static_file_path("deployment_overview.html")
+        if overview_html_src:
+            output_path = os.path.join(web_dir, f"{name}_overview.html")
+            shutil.copy2(overview_html_src, output_path)
+            logger.info(f"Generated deployment overview: {name}_overview.html")
+        else:
+            logger.error("Failed to find deployment_overview.html static file")

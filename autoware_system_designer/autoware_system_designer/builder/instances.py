@@ -148,7 +148,7 @@ class Instance:
 
     @property
     def unique_id(self):
-        return generate_unique_id(self.namespace, self.compute_unit, self.layer, self.name)
+        return generate_unique_id(self.namespace, "instance", self.compute_unit, self.layer, self.name)
     
     @property
     def vis_guide(self) -> dict:
@@ -421,6 +421,44 @@ class Instance:
         # delegate to event manager
         self.event_manager.set_event_tree()
 
+    def _serialize_event(self, event):
+        if not event:
+            return None
+        return {
+            "unique_id": event.unique_id,
+            "name": event.name,
+            "type": event.type,
+            "process_event": event.process_event,
+            "frequency": event.frequency,
+            "warn_rate": event.warn_rate,
+            "error_rate": event.error_rate,
+            "timeout": event.timeout,
+            "trigger_ids": [t.unique_id for t in event.triggers],
+            "action_ids": [a.unique_id for a in event.actions],
+        }
+
+    def _serialize_port(self, port):
+        data = {
+            "unique_id": port.unique_id,
+            "name": port.name,
+            "msg_type": port.msg_type,
+            "namespace": port.namespace,
+            "topic": port.topic,
+            "is_global": port.is_global,
+            "port_path": port.port_path,
+            "event": self._serialize_event(port.event)
+        }
+        
+        # Add connected_ids for graph traversal
+        connected_ids = []
+        if hasattr(port, "servers"):  # InPort
+            connected_ids = [p.unique_id for p in port.servers]
+        elif hasattr(port, "users"):  # OutPort
+            connected_ids = [p.unique_id for p in port.users]
+        data["connected_ids"] = connected_ids
+        
+        return data
+
     def collect_instance_data(self) -> dict:
         data = {
             "name": self.name,
@@ -429,8 +467,8 @@ class Instance:
             "namespace": self.namespace,
             "compute_unit": self.compute_unit,
             "vis_guide": self.vis_guide,
-            "in_ports": self.link_manager.get_all_in_ports(),
-            "out_ports": self.link_manager.get_all_out_ports(),
+            "in_ports": [self._serialize_port(p) for p in self.link_manager.get_all_in_ports()],
+            "out_ports": [self._serialize_port(p) for p in self.link_manager.get_all_out_ports()],
             "children": (
                 [child.collect_instance_data() for child in self.children.values()]
                 if hasattr(self, "children")
@@ -439,16 +477,18 @@ class Instance:
             "links": (
                 [
                     {
-                        "from_port": link.from_port,
-                        "to_port": link.to_port,
+                        "unique_id": link.unique_id,
+                        "from_port": self._serialize_port(link.from_port),
+                        "to_port": self._serialize_port(link.to_port),
                         "msg_type": link.msg_type,
+                        "topic": link.topic,
                     }
                     for link in self.link_manager.get_all_links()
                 ]
                 if hasattr(self.link_manager, "links")
                 else []
             ),
-            "events": self.event_manager.get_all_events(),
+            "events": [self._serialize_event(e) for e in self.event_manager.get_all_events()],
             "parameters": [
                 {
                     "name": p.name,

@@ -1,21 +1,11 @@
 // Logic Diagram Module
 // This module provides functionality to render logic diagrams using Viz.js (Graphviz)
 
-class LogicDiagramModule {
+class LogicDiagramModule extends DiagramBase {
     constructor(container, options = {}) {
-        this.container = container;
-        this.options = {
-            mode: options.mode || 'default',
-            deployment: options.deployment || '',
-            ...options
-        };
-
+        super(container, options);
         this.panZoomInstance = null;
         this.init();
-    }
-
-    isDarkMode() {
-        return document.documentElement.getAttribute('data-theme') === 'dark';
     }
 
     async init() {
@@ -38,9 +28,6 @@ class LogicDiagramModule {
                 await this.loadScript('https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js');
                 console.log('svg-pan-zoom loaded');
             }
-
-            // Add interaction styles early
-            this.addInteractionStyles();
 
             // Load and render the diagram
             await this.loadAndRender();
@@ -67,102 +54,11 @@ class LogicDiagramModule {
         });
     }
 
-    addInteractionStyles() {
-        // Add CSS for interactions
-        const styleId = 'logic-diagram-interaction-styles';
-        let style = document.getElementById(styleId);
-        if (!style) {
-            style = document.createElement('style');
-            style.id = styleId;
-            document.head.appendChild(style);
-        }
-
-        const isDark = this.isDarkMode();
-        const hoverColor = isDark ? '#ffffff' : '#007bff';
-        const containerBg = isDark ? '#1a1a1a' : '#ffffff';
-        const highlightStroke = '#dc3545';
-
-        style.textContent = `
-            .logic-diagram-container {
-                width: 100%;
-                height: 100%;
-                min-height: 400px;
-                position: relative;
-                overflow: hidden;
-                background-color: ${containerBg};
-            }
-            .logic-diagram-container svg {
-                cursor: grab;
-                min-width: 100px;
-                min-height: 100px;
-            }
-            .logic-diagram-container svg:active {
-                cursor: grabbing;
-            }
-            .logic-diagram-node:hover {
-                stroke: ${hoverColor} !important;
-                stroke-width: 2px !important;
-            }
-            .logic-diagram-edge:hover {
-                stroke: ${hoverColor} !important;
-                stroke-width: 2px !important;
-            }
-            .logic-diagram-cluster:hover {
-                stroke: ${hoverColor} !important;
-                stroke-width: 2px !important;
-            }
-            .highlighted {
-                stroke: ${highlightStroke} !important;
-                stroke-width: 3px !important;
-            }
-            /* In logic diagram (viz.js), we manipulate SVG structure slightly different than custom D3/SVG */
-            g.node.highlighted polygon, g.node.highlighted ellipse {
-                stroke: ${highlightStroke} !important;
-                stroke-width: 3px !important;
-            }
-            g.edge.highlighted path {
-                stroke: ${highlightStroke} !important;
-                stroke-width: 3px !important;
-            }
-        `;
-    }
-
-    async loadScript(src) {
-        return new Promise((resolve, reject) => {
-            // Check if script is already loaded
-            const existingScript = document.querySelector(`script[src="${src}"]`);
-            if (existingScript) {
-                resolve();
-                return;
-            }
-
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = () => resolve();
-            script.onerror = (event) => {
-                const error = new Error(`Failed to load script: ${src}`);
-                error.event = event;
-                reject(error);
-            };
-            document.head.appendChild(script);
-        });
-    }
-
-    async loadDataScript(mode) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = `data/${mode}_logic_diagram.js`;
-            script.onload = () => resolve();
-            script.onerror = (error) => reject(error);
-            document.head.appendChild(script);
-        });
-    }
-
     async loadAndRender() {
         try {
             // Load data if not already loaded
             if (!window.logicDiagramData || !window.logicDiagramData[this.options.mode]) {
-                await this.loadDataScript(this.options.mode);
+                await this.loadDataScript(this.options.mode, 'logic_diagram');
             }
 
             if (!window.logicDiagramData || !window.logicDiagramData[this.options.mode]) {
@@ -182,15 +78,16 @@ class LogicDiagramModule {
 
     generateDotSyntax(root) {
         const isDark = this.isDarkMode();
+        
         const colors = {
-            bg: isDark ? "#2d2d2d" : "#dddddd",
-            nodeBg: isDark ? "#1e1e1e" : "white",
-            edge: isDark ? "#6c757d" : "#000066",
-            text: isDark ? "#e9ecef" : "#333333",
+            bg: this.getComputedStyleValue('--bg-secondary', isDark ? "#2d2d2d" : "#dddddd"),
+            nodeBg: this.getComputedStyleValue('--bg-primary', isDark ? "#1e1e1e" : "white"),
+            edge: this.getComputedStyleValue('--text-muted', isDark ? "#6c757d" : "#000066"),
+            text: this.getComputedStyleValue('--text-primary', isDark ? "#e9ecef" : "#333333"),
             input: isDark ? "#004085" : "#e0f7ff",
             output: isDark ? "#856404" : "#fff4e0",
-            cloud: isDark ? "#adb5bd" : "gray",
-            cloudEdge: isDark ? "#6c757d" : "#555577"
+            cloud: this.getComputedStyleValue('--border-hover', isDark ? "#adb5bd" : "gray"),
+            cloudEdge: this.getComputedStyleValue('--text-muted', isDark ? "#6c757d" : "#555577")
         };
 
         let dotLines = [];
@@ -544,24 +441,12 @@ class LogicDiagramModule {
         });
     }
 
-    updateInfoPanel(data, type) {
-        // This will be handled by the parent overview page
-        if (this.options.onInfoUpdate) {
-            this.options.onInfoUpdate(data, type);
-        }
-    }
-
     updateTheme() {
-        this.addInteractionStyles();
         if (window.logicDiagramData && window.logicDiagramData[this.options.mode]) {
             const data = window.logicDiagramData[this.options.mode];
             const dotSyntax = this.generateDotSyntax(data);
             this.renderLogicDiagram(dotSyntax);
         }
-    }
-
-    showError(message) {
-        this.container.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: #dc3545;">${message}</div>`;
     }
 
     destroy() {
@@ -570,7 +455,7 @@ class LogicDiagramModule {
             this.panZoomInstance.destroy();
             this.panZoomInstance = null;
         }
-        this.container.innerHTML = '';
+        super.destroy();
     }
 }
 

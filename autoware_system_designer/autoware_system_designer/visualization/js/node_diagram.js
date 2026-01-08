@@ -1,44 +1,21 @@
 // Node Diagram Module
 // This module provides functionality to render node diagrams in a given container
 
-class NodeDiagramModule {
+class NodeDiagramModule extends DiagramBase {
     constructor(container, options = {}) {
-        this.container = container;
-        this.options = {
-            mode: options.mode || 'default',
-            deployment: options.deployment || '',
-            ...options
-        };
+        super(container, options);
 
         this.currentGraph = null;
         this.transform = { x: 0, y: 0, k: 1 };
         this.isDragging = false;
         this.startPoint = { x: 0, y: 0 };
         this.elementData = new Map();
+        this.portToEdges = new Map();
+
+        // Color presets will be initialized in renderNodeDiagram when computedStyle is available
+        this.colorPresets = null;
 
         this.init();
-    }
-
-    isDarkMode() {
-        return document.documentElement.getAttribute('data-theme') === 'dark';
-    }
-
-    adjustColorBrightness(hexColor, factor) {
-        // Remove # if present
-        hexColor = hexColor.replace('#', '');
-
-        // Parse RGB components
-        const r = parseInt(hexColor.substr(0, 2), 16);
-        const g = parseInt(hexColor.substr(2, 2), 16);
-        const b = parseInt(hexColor.substr(4, 2), 16);
-
-        // Adjust brightness
-        const newR = Math.min(255, Math.max(0, Math.round(r + (255 - r) * factor)));
-        const newG = Math.min(255, Math.max(0, Math.round(g + (255 - g) * factor)));
-        const newB = Math.min(255, Math.max(0, Math.round(b + (255 - b) * factor)));
-
-        // Convert back to hex
-        return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
     }
 
     async init() {
@@ -85,46 +62,11 @@ class NodeDiagramModule {
         await this.loadAndRender();
     }
 
-    async loadScript(src) {
-        return new Promise((resolve, reject) => {
-            // Check if script is already loaded
-            const existingScript = document.querySelector(`script[src="${src}"]`);
-            if (existingScript) {
-                console.log('ELK script already loaded');
-                resolve();
-                return;
-            }
-
-            console.log('Loading script:', src);
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = () => {
-                console.log('Script loaded successfully:', src);
-                resolve();
-            };
-            script.onerror = (error) => {
-                console.error('Failed to load script:', src, error);
-                reject(error);
-            };
-            document.head.appendChild(script);
-        });
-    }
-
-    async loadDataScript(mode) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = `data/${mode}_node_diagram.js`;
-            script.onload = () => resolve();
-            script.onerror = (error) => reject(error);
-            document.head.appendChild(script);
-        });
-    }
-
     async loadAndRender() {
         try {
             // Load data if not already loaded
             if (!window.systemDesignData || !window.systemDesignData[this.options.mode]) {
-                await this.loadDataScript(this.options.mode);
+                await this.loadDataScript(this.options.mode, 'node_diagram');
             }
 
             if (!window.systemDesignData || !window.systemDesignData[this.options.mode]) {
@@ -143,6 +85,7 @@ class NodeDiagramModule {
 
     transformDataToElk(root) {
         this.elementData.clear();
+        this.portToEdges.clear();
 
         function convertNode(instance) {
             if (!instance || !instance.unique_id) return null;
@@ -214,12 +157,23 @@ class NodeDiagramModule {
             if (instance.links) {
                 node.edges = instance.links.map((link, index) => {
                     if (!link.from_port || !link.to_port) return null;
-                    const edgeId = `edge_${link.from_port.unique_id}_${link.to_port.unique_id}_${index}`;
+                    const edgeId = link.unique_id;
                     this.elementData.set(edgeId, link);
+
+                    // Index edges for connectivity highlighting
+                    const fromId = String(link.from_port.unique_id);
+                    const toId = String(link.to_port.unique_id);
+                    
+                    if (!this.portToEdges.has(fromId)) this.portToEdges.set(fromId, []);
+                    this.portToEdges.get(fromId).push(edgeId);
+                    
+                    if (!this.portToEdges.has(toId)) this.portToEdges.set(toId, []);
+                    this.portToEdges.get(toId).push(edgeId);
+
                     return {
                         id: edgeId,
-                        sources: [String(link.from_port.unique_id)],
-                        targets: [String(link.to_port.unique_id)],
+                        sources: [fromId],
+                        targets: [toId],
                         properties: {}
                     };
                 }).filter(e => e);
@@ -282,13 +236,90 @@ class NodeDiagramModule {
 
         // Add arrow marker
         const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-        const arrowColor = this.isDarkMode() ? "#6c757d" : "#adb5bd";
-        defs.innerHTML = `
+
+        const computedStyle = getComputedStyle(document.documentElement);
+
+        // Initialize color presets using computed style
+        this.colorPresets = {
+            default: {
+                name: 'default',
+                edge: computedStyle.getPropertyValue('--highlight').trim() || "#0d6efd",
+                port: computedStyle.getPropertyValue('--highlight').trim() || "#0d6efd"
+            },
+            red: {
+                name: 'red',
+                edge: "#dc3545",
+                port: "#dc3545"
+            },
+            green: {
+                name: 'green',
+                edge: "#28a745",
+                port: "#28a745"
+            },
+            orange: {
+                name: 'orange',
+                edge: "#fd7e14",
+                port: "#fd7e14"
+            },
+            purple: {
+                name: 'purple',
+                edge: "#6f42c1",
+                port: "#6f42c1"
+            },
+            teal: {
+                name: 'teal',
+                edge: "#20c997",
+                port: "#20c997"
+            }
+        };
+        
+        // Cache style defaults for renderNode
+        this.styleDefaults = {
+            dark: {
+                bg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#2d2d2d",
+                nodeBg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#2d2d2d", // Fallback for node
+                stroke: computedStyle.getPropertyValue('--text-muted').trim() || "#666",
+                text: computedStyle.getPropertyValue('--text-primary').trim() || "#e9ecef",
+                rootBg: "#1e1e1e" // Distinct background for root node in dark mode
+            },
+            light: {
+                bg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#ffffff",
+                nodeBg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#ffffff",
+                stroke: "#333", // Usually darker than text-primary
+                text: computedStyle.getPropertyValue('--text-primary').trim() || "#333",
+                rootBg: "#f5f5f5"
+            }
+        };
+
+        const arrowColor = this.isDarkMode() ?
+            (computedStyle.getPropertyValue('--text-muted').trim() || "#6c757d") :
+            (computedStyle.getPropertyValue('--border-hover').trim() || "#adb5bd");
+
+        // Create markers for default and all color presets
+        let markersHtml = `
             <marker id="arrowhead" markerWidth="10" markerHeight="7"
             refX="10" refY="3.5" orient="auto">
               <polygon points="0 0, 10 3.5, 0 7" fill="${arrowColor}" />
             </marker>
+            <marker id="arrowhead-highlighted-default" markerWidth="10" markerHeight="7"
+            refX="10" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="${this.colorPresets.default.edge}" />
+            </marker>
         `;
+
+        // Add markers for other color presets
+        Object.keys(this.colorPresets).forEach(preset => {
+            if (preset !== 'default') {
+                markersHtml += `
+            <marker id="arrowhead-highlighted-${preset}" markerWidth="10" markerHeight="7"
+            refX="10" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="${this.colorPresets[preset].edge}" />
+            </marker>
+        `;
+            }
+        });
+
+        defs.innerHTML = markersHtml;
         svgRoot.insertBefore(defs, svg);
 
         this.renderNode(graph, svg);
@@ -320,6 +351,8 @@ class NodeDiagramModule {
 
         svgRoot.addEventListener('mousedown', (e) => {
             this.isDragging = true;
+            this.hasDragged = false;
+            this.dragStartRaw = { x: e.clientX, y: e.clientY };
             svgRoot.style.cursor = "grabbing";
             this.startPoint = { x: e.clientX - this.transform.x, y: e.clientY - this.transform.y };
         });
@@ -327,6 +360,13 @@ class NodeDiagramModule {
         window.addEventListener('mousemove', (e) => {
             if (!this.isDragging) return;
             e.preventDefault();
+
+            const dx = e.clientX - this.dragStartRaw.x;
+            const dy = e.clientY - this.dragStartRaw.y;
+            if (dx * dx + dy * dy > 25) {
+                this.hasDragged = true;
+            }
+
             this.transform.x = e.clientX - this.startPoint.x;
             this.transform.y = e.clientY - this.startPoint.y;
             this.updateTransform(svg);
@@ -357,30 +397,36 @@ class NodeDiagramModule {
         const userData = this.elementData.get(node.id) || {};
         const visGuide = userData.vis_guide || {};
         let fillColor, strokeColor;
+        
+        // Ensure styleDefaults is initialized (fallback if renderNode called outside renderNodeDiagram flow)
+        const defaults = this.styleDefaults || {
+            dark: { bg: "#2d2d2d", nodeBg: "#2d2d2d", stroke: "#666", rootBg: "#1e1e1e" },
+            light: { bg: "#ffffff", nodeBg: "#ffffff", stroke: "#333", rootBg: "#f5f5f5" }
+        };
 
         if (this.isDarkMode()) {
             // Use dark mode colors
-            fillColor = visGuide.dark_background_color || visGuide.background_color || "#2d2d2d";
+            fillColor = visGuide.dark_background_color || visGuide.background_color || defaults.dark.bg;
             if (userData.entity_type === "node") {
-                fillColor = visGuide.dark_medium_color || visGuide.medium_color || fillColor;
+                fillColor = visGuide.dark_medium_color || visGuide.medium_color || defaults.dark.nodeBg;
             }
-            strokeColor = visGuide.dark_color || visGuide.color || "#666";
+            strokeColor = visGuide.dark_color || visGuide.color || defaults.dark.stroke;
 
             // For depth 0 nodes, make background darker in dark mode
             if (depth === 0) {
-                fillColor = "#1e1e1e";
+                fillColor = defaults.dark.rootBg;
             }
         } else {
             // Use light mode colors
-            fillColor = visGuide.background_color || "#ffffff";
+            fillColor = visGuide.background_color || defaults.light.bg;
             if (userData.entity_type === "node") {
-                fillColor = visGuide.medium_color || fillColor;
+                fillColor = visGuide.medium_color || defaults.light.nodeBg;
             }
-            strokeColor = visGuide.color || "#333";
+            strokeColor = visGuide.color || defaults.light.stroke;
 
             // For depth 0 nodes, make background brighter in light mode
             if (depth === 0) {
-                fillColor = "#f5f5f5"
+                fillColor = defaults.light.rootBg;
             }
         }
 
@@ -388,14 +434,26 @@ class NodeDiagramModule {
         rect.setAttribute("stroke", strokeColor);
 
         rect.onclick = (e) => {
+            if (this.hasDragged) return;
             e.stopPropagation();
             this.updateInfoPanel(userData, 'Node');
 
             // Clear all highlights
-            document.querySelectorAll('.highlighted').forEach(el => el.classList.remove('highlighted'));
+            document.querySelectorAll('.highlighted').forEach(el => {
+                el.classList.remove('highlighted');
+                if (el.tagName === 'path') {
+                    el.setAttribute("marker-end", "url(#arrowhead)");
+                    el.style.stroke = ''; // Clear any inline stroke color
+                    el.style.strokeWidth = ''; // Clear any inline stroke width
+                }
+            });
             document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
             document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
-            document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
+            document.querySelectorAll('.port-highlighted').forEach(el => {
+                el.classList.remove('port-highlighted');
+                el.style.fill = ''; // Clear any inline fill color
+                el.style.stroke = ''; // Clear any inline stroke color
+            });
 
             // Check if this is a module (has children)
             if (node.children && node.children.length > 0) {
@@ -403,6 +461,35 @@ class NodeDiagramModule {
             } else {
                 // Regular node highlighting
                 g.classList.add('highlighted');
+            }
+
+            // Highlight in-ports and out-ports with different colors
+            const inPortIds = [];
+            const outPortIds = [];
+
+            if (userData.in_ports) {
+                userData.in_ports.forEach(port => {
+                    if (port.unique_id) {
+                        inPortIds.push(String(port.unique_id));
+                    }
+                });
+            }
+            if (userData.out_ports) {
+                userData.out_ports.forEach(port => {
+                    if (port.unique_id) {
+                        outPortIds.push(String(port.unique_id));
+                    }
+                });
+            }
+
+            // Highlight in-ports with green color
+            if (inPortIds.length > 0) {
+                this.highlightConnected(inPortIds, 'Port', false, 'green');
+            }
+
+            // Highlight out-ports with orange color
+            if (outPortIds.length > 0) {
+                this.highlightConnected(outPortIds, 'Port', false, 'orange');
             }
         };
 
@@ -438,6 +525,7 @@ class NodeDiagramModule {
         if (node.ports) {
             node.ports.forEach(port => {
                 const pg = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                pg.setAttribute("id", port.id);
                 pg.setAttribute("transform", `translate(${port.x},${port.y})`);
 
                 const prect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -451,9 +539,10 @@ class NodeDiagramModule {
                 prect.appendChild(title);
 
                 pg.onclick = (e) => {
+                    if (this.hasDragged) return;
                     e.stopPropagation();
                     this.updateInfoPanel(portData, 'Port');
-                    prect.classList.add('port-highlighted');
+                    this.highlightConnected(port.id, 'Port');
                 };
                 pg.style.cursor = 'pointer';
 
@@ -483,6 +572,7 @@ class NodeDiagramModule {
             node.edges.forEach(edge => {
                 if (!edge.sections) return;
                 const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute("id", edge.id);
                 let d = "";
                 edge.sections.forEach(section => {
                     d += `M ${section.startPoint.x} ${section.startPoint.y} `;
@@ -497,12 +587,10 @@ class NodeDiagramModule {
 
                 const userData = this.elementData.get(edge.id) || {};
                 path.onclick = (e) => {
+                    if (this.hasDragged) return;
                     e.stopPropagation();
-                    document.querySelectorAll('.highlighted').forEach(el => el.classList.remove('highlighted'));
-                    document.querySelectorAll('.port-highlighted').forEach(el => el.classList.remove('port-highlighted'));
-                    path.classList.add('highlighted');
-                    path.setAttribute("marker-end", "url(#arrowhead)");
                     this.updateInfoPanel(userData, 'Link');
+                    this.highlightConnected(edge.id, 'Link');
                 };
 
                 g.appendChild(path);
@@ -545,6 +633,115 @@ class NodeDiagramModule {
         }
     }
 
+    /**
+     * Highlights connected elements starting from the given IDs
+     * @param {string|string[]} startIds - IDs to start highlighting from
+     * @param {string} type - Type of element ('Port', 'Link', etc.)
+     * @param {boolean} clearExisting - Whether to clear existing highlights (default: true)
+     * @param {string} colorPreset - Color preset to use ('default', 'red', 'green', 'orange', 'purple', 'teal')
+     */
+    highlightConnected(startIds, type, clearExisting = true, colorPreset = 'default') {
+        // Validate colorPreset
+        if (!this.colorPresets[colorPreset]) {
+            console.warn(`Invalid color preset "${colorPreset}", using default`);
+            colorPreset = 'default';
+        }
+
+        // Ensure startIds is an array
+        if (!Array.isArray(startIds)) {
+            startIds = [startIds];
+        }
+
+        // Clear all highlights if requested
+        if (clearExisting) {
+            document.querySelectorAll('.highlighted').forEach(el => {
+                el.classList.remove('highlighted');
+                if (el.tagName === 'path') {
+                    el.setAttribute("marker-end", "url(#arrowhead)");
+                    el.style.stroke = ''; // Clear any inline stroke color
+                    el.style.strokeWidth = ''; // Clear any inline stroke width
+                }
+            });
+            document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
+            document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
+            document.querySelectorAll('.port-highlighted').forEach(el => {
+                el.classList.remove('port-highlighted');
+                el.style.fill = ''; // Clear any inline fill color
+                el.style.stroke = ''; // Clear any inline stroke color
+            });
+        }
+
+        const queue = [...startIds];
+        const visited = new Set();
+
+        while (queue.length > 0) {
+            const currentId = queue.shift();
+            if (visited.has(currentId)) continue;
+            visited.add(currentId);
+
+            const data = this.elementData.get(currentId);
+            if (!data) continue;
+
+            // Port Logic
+            if (data.msg_type && !data.from_port) {
+                const portGroup = document.getElementById(currentId);
+                if (portGroup) {
+                    const rect = portGroup.querySelector('.port-rect');
+                    if (rect) {
+                        rect.classList.add('port-highlighted');
+                        // Apply color preset styling
+                        rect.style.fill = this.colorPresets[colorPreset].port;
+                        rect.style.stroke = this.colorPresets[colorPreset].port;
+                    }
+                }
+
+                // 1. Visible Edges
+                const visibleEdges = this.portToEdges.get(currentId) || [];
+                visibleEdges.forEach(edgeId => {
+                    if (!visited.has(edgeId)) queue.push(edgeId);
+                });
+
+                // 2. Logical Connections
+                if (data.connected_ids) {
+                    data.connected_ids.forEach(connectedId => {
+                        if (!visited.has(connectedId)) queue.push(connectedId);
+                    });
+                }
+            } 
+            // Link Logic
+            else if (data.from_port && data.to_port) {
+                const edgePath = document.getElementById(currentId) || 
+                               (this.container ? this.container.querySelector(`path[id="${currentId}"]`) : null);
+
+                if (edgePath) {
+                    edgePath.classList.add('highlighted');
+                    edgePath.setAttribute("marker-end", `url(#arrowhead-highlighted-${colorPreset})`);
+
+                    // Apply color to the edge path itself
+                    edgePath.style.stroke = this.colorPresets[colorPreset].edge;
+                    edgePath.style.strokeWidth = '3px'; // Make highlighted edges thicker
+
+                    // Bring to front to ensure visibility
+                    if (edgePath.parentNode) {
+                        edgePath.parentNode.appendChild(edgePath);
+                    }
+                } else {
+                    console.warn(`Edge path not found for ID: ${currentId}`);
+                }
+
+                // Add connected ports
+                if (data.from_port) {
+                    const fromId = data.from_port.unique_id || (typeof data.from_port === 'string' ? data.from_port : null);
+                    if (fromId) queue.push(String(fromId));
+                }
+                if (data.to_port) {
+                    const toId = data.to_port.unique_id || (typeof data.to_port === 'string' ? data.to_port : null);
+                    if (toId) queue.push(String(toId));
+                }
+            }
+        }
+    }
+
     fitToScreen() {
         const svg = this.container.querySelector('#zoom-layer');
         if (!svg) return;
@@ -566,28 +763,12 @@ class NodeDiagramModule {
 
         this.updateTransform(svg);
     }
-
-    updateInfoPanel(data, type) {
-        // This will be handled by the parent overview page
-        if (this.options.onInfoUpdate) {
-            this.options.onInfoUpdate(data, type);
-        }
-    }
-
-    showError(message) {
-        this.container.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: var(--error-color);">${message}</div>`;
-    }
-
+    
     updateTheme() {
         // Re-render the diagram with new theme colors
         if (this.currentGraph && this.currentSvgRoot) {
             this.renderNodeDiagram(this.currentGraph);
         }
-    }
-
-    destroy() {
-        // Clean up event listeners and resources
-        this.container.innerHTML = '';
     }
 }
 
