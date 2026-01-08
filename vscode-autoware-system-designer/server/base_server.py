@@ -57,6 +57,10 @@ class AutowareSystemDesignerLanguageServer:
         def did_change(ls, params):
             self._on_text_document_did_change(ls, params)
 
+        @self.server.feature(lsp.TEXT_DOCUMENT_DID_SAVE)
+        def did_save(ls, params):
+            self._on_text_document_did_save(ls, params)
+
         @self.server.feature(lsp.TEXT_DOCUMENT_DID_CLOSE)
         def did_close(ls, params):
             self._on_text_document_did_close(ls, params)
@@ -95,7 +99,11 @@ class AutowareSystemDesignerLanguageServer:
                 self.registry_manager.scan_workspace(folder.uri)
 
         capabilities = lsp.ServerCapabilities(
-            text_document_sync=lsp.TextDocumentSyncKind.Full,
+            text_document_sync=lsp.TextDocumentSyncOptions(
+                open_close=True,
+                change=lsp.TextDocumentSyncKind.Full,
+                save=lsp.SaveOptions(include_text=True)
+            ),
             # Completion provider disabled - using diagnostics instead
             # completion_provider=lsp.CompletionOptions(
             #     trigger_characters=['.', ':']
@@ -118,6 +126,11 @@ class AutowareSystemDesignerLanguageServer:
         if params.content_changes:
             content = params.content_changes[0].text
             self.document_processor.process_document(params.text_document.uri, content, self.server)
+
+    def _on_text_document_did_save(self, ls, params: lsp.DidSaveTextDocumentParams):
+        """Handle document save event."""
+        if params.text:
+            self.document_processor.process_document(params.text_document.uri, params.text, self.server)
 
     def _on_text_document_did_close(self, ls, params: lsp.DidCloseTextDocumentParams):
         """Handle document close event."""

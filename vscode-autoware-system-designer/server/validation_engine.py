@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import yaml
+import re
 from typing import List, Optional, Tuple
 from lsprotocol import types as lsp
 
@@ -73,26 +74,28 @@ class ValidationEngine:
     def validate_filename_matching_from_content(self, document_content: str, file_path: str) -> List[lsp.Diagnostic]:
         """Validate filename matching from content and file path without requiring a config object."""
         diagnostics = []
-
+        
         if not document_content:
             return diagnostics
 
         from pathlib import Path
         file_path_obj = Path(file_path)
         actual_filename = file_path_obj.stem  # filename without extension
-
+        
         # Extract the name from document content
         name_from_content = self._extract_name_from_content(document_content)
-
+        
         # Compare the name from content with the filename
         if name_from_content and name_from_content != actual_filename:
             # Find the name field range to underline it
             name_range = self._find_name_field_range(document_content)
+            
+            message = f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'"
 
             if name_range:
                 diagnostics.append(lsp.Diagnostic(
                     range=name_range,
-                    message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
+                    message=message,
                     severity=lsp.DiagnosticSeverity.Error
                 ))
             else:
@@ -102,7 +105,7 @@ class ValidationEngine:
                         start=lsp.Position(line=0, character=0),
                         end=lsp.Position(line=0, character=1)
                     ),
-                    message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
+                    message=message,
                     severity=lsp.DiagnosticSeverity.Error
                 ))
 
@@ -477,57 +480,33 @@ class ValidationEngine:
 
     def _extract_name_from_content(self, document_content: str) -> Optional[str]:
         """Extract the name value from document content."""
-        lines = document_content.split('\n')
+        # Use regex to find "name: value" at the start of a line
+        # Handles optional quotes and comments
+        pattern = r'^name:\s*(?P<quote>[\'"]?)(?P<name>.*?)(?P=quote)\s*(?:#.*)?$'
+        
+        lines = document_content.splitlines()
         for line in lines:
-            stripped = line.strip()
-            if stripped.startswith('name:'):
-                # Extract the name value
-                colon_pos = stripped.find(':')
-                if colon_pos == -1:
-                    continue
-                
-                name_value = stripped[colon_pos + 1:].strip()
-                # Remove quotes if present
-                if name_value.startswith('"') and name_value.endswith('"'):
-                    name_value = name_value[1:-1]
-                elif name_value.startswith("'") and name_value.endswith("'"):
-                    name_value = name_value[1:-1]
-                
-                return name_value if name_value else None
+            match = re.match(pattern, line)
+            if match:
+                return match.group('name')
         return None
 
     def _find_name_field_range(self, document_content: str) -> Optional[lsp.Range]:
         """Find the range of the name field value in the document content."""
-        lines = document_content.split('\n')
+        pattern = r'^name:\s*(?P<quote>[\'"]?)(?P<name>.*?)(?P=quote)\s*(?:#.*)?$'
+        lines = document_content.splitlines()
         for line_num, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith('name:'):
-                # Find the colon position
-                colon_pos = line.find(':')
-                if colon_pos == -1:
-                    continue
+            match = re.match(pattern, line)
+            if match:
+                # Get the value range
+                value_start = match.start('name')
+                value_end = match.end('name')
                 
-                # Get everything after the colon and strip it
-                after_colon = line[colon_pos + 1:].strip()
-                if not after_colon:
-                    continue
-                
-                # Find where the value starts in the original line (after colon and whitespace)
-                value_start = colon_pos + 1
-                while value_start < len(line) and line[value_start].isspace():
-                    value_start += 1
-                
-                # Find where the value ends (handle quotes)
-                value_end = value_start
-                if after_colon.startswith('"') and after_colon.endswith('"'):
-                    # Include the quotes
-                    value_end = value_start + len(after_colon)
-                elif after_colon.startswith("'") and after_colon.endswith("'"):
-                    # Include the quotes
-                    value_end = value_start + len(after_colon)
-                else:
-                    # No quotes, value ends at the end of the trimmed string
-                    value_end = value_start + len(after_colon)
+                # Include quotes if present
+                quote = match.group('quote')
+                if quote:
+                    value_start -= len(quote)
+                    value_end += len(quote)
                 
                 return lsp.Range(
                     start=lsp.Position(line=line_num, character=value_start),

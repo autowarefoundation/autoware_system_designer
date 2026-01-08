@@ -82,12 +82,8 @@ class DocumentProcessor:
 
         # Send diagnostics
         try:
-            server.text_document_publish_diagnostics(
-                lsp.PublishDiagnosticsParams(
-                    uri=uri,
-                    diagnostics=diagnostics
-                )
-            )
+            logger.info(f"Publishing {len(diagnostics)} diagnostics for {uri}")
+            server.publish_diagnostics(uri, diagnostics)
         except Exception as e:
             logger.error(f"Failed to publish diagnostics {uri}: {e}")
 
