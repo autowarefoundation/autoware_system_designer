@@ -1,0 +1,58 @@
+{
+  "name": "vscode-autoware-system-designer",
+  "displayName": "Autoware System Designer",
+  "description": "VSCode extension for Autoware System Design Format with connection validation and interactive features",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:yaml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Autoware System Designer",
+      "properties": {
+        "autowareSystemDesigner.languageServer.path": {
+          "type": "string",
+          "default": "python",
+          "description": "Path to Python executable for the language server"
+        },
+        "autowareSystemDesigner.languageServer.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug logging for the language server"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^8.1.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "eslint": "^8.28.0",
+    "typescript": "^4.9.0",
+    "@typescript-eslint/eslint-plugin": "^5.42.0",
+    "@typescript-eslint/parser": "^5.42.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tier4/autoware_system_designer"
+  },
+  "publisher": "TIER IV, Inc."
+}
