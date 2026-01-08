@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import yaml
 from typing import List, Optional, Tuple
 from lsprotocol import types as lsp
 
@@ -14,7 +15,143 @@ class ValidationEngine:
     def __init__(self, registry_manager: RegistryManager):
         self.registry_manager = registry_manager
 
-    def validate_connections(self, config: Config) -> List[lsp.Diagnostic]:
+    def validate_all(self, config: Config, document_content: str = None) -> List[lsp.Diagnostic]:
+        """Validate all aspects of the config and return diagnostics."""
+        diagnostics = []
+
+        # Validate YAML format first
+        if document_content:
+            diagnostics.extend(self.validate_yaml_format(document_content))
+
+        # Validate file name matching
+        diagnostics.extend(self.validate_filename_matching(config, document_content))
+
+        # Validate connections
+        diagnostics.extend(self.validate_connections(config, document_content))
+
+        # Validate incomplete references (warnings instead of completions)
+        if document_content:
+            diagnostics.extend(self.validate_incomplete_references(config, document_content))
+
+        return diagnostics
+
+    def validate_filename_matching(self, config: Config, document_content: str = None) -> List[lsp.Diagnostic]:
+        """Validate that the file name matches the design format name."""
+        diagnostics = []
+
+        if not document_content:
+            return diagnostics
+
+        # Extract the name from document content (to catch unsaved changes)
+        name_from_content = self._extract_name_from_content(document_content)
+        actual_filename = config.file_path.stem  # filename without extension
+
+        # Compare the name from content with the filename
+        if name_from_content and name_from_content != actual_filename:
+            # Find the name field range to underline it
+            name_range = self._find_name_field_range(document_content)
+
+            if name_range:
+                diagnostics.append(lsp.Diagnostic(
+                    range=name_range,
+                    message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
+                    severity=lsp.DiagnosticSeverity.Error
+                ))
+            else:
+                # Fallback: put diagnostic at the beginning
+                diagnostics.append(lsp.Diagnostic(
+                    range=lsp.Range(
+                        start=lsp.Position(line=0, character=0),
+                        end=lsp.Position(line=0, character=1)
+                    ),
+                    message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
+                    severity=lsp.DiagnosticSeverity.Error
+                ))
+
+        return diagnostics
+
+    def validate_filename_matching_from_content(self, document_content: str, file_path: str) -> List[lsp.Diagnostic]:
+        """Validate filename matching from content and file path without requiring a config object."""
+        diagnostics = []
+
+        if not document_content:
+            return diagnostics
+
+        from pathlib import Path
+        file_path_obj = Path(file_path)
+        actual_filename = file_path_obj.stem  # filename without extension
+
+        # Extract the name from document content
+        name_from_content = self._extract_name_from_content(document_content)
+
+        # Compare the name from content with the filename
+        if name_from_content and name_from_content != actual_filename:
+            # Find the name field range to underline it
+            name_range = self._find_name_field_range(document_content)
+
+            if name_range:
+                diagnostics.append(lsp.Diagnostic(
+                    range=name_range,
+                    message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
+                    severity=lsp.DiagnosticSeverity.Error
+                ))
+            else:
+                # Fallback: put diagnostic at the beginning
+                diagnostics.append(lsp.Diagnostic(
+                    range=lsp.Range(
+                        start=lsp.Position(line=0, character=0),
+                        end=lsp.Position(line=0, character=1)
+                    ),
+                    message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
+                    severity=lsp.DiagnosticSeverity.Error
+                ))
+
+        return diagnostics
+
+    def validate_yaml_format(self, document_content: str) -> List[lsp.Diagnostic]:
+        """Validate YAML format and syntax."""
+        diagnostics = []
+        
+        try:
+            yaml.safe_load(document_content)
+        except yaml.YAMLError as e:
+            # Try to extract line number from error
+            error_msg = str(e)
+            line_num = 0
+            if hasattr(e, 'problem_mark') and e.problem_mark:
+                line_num = e.problem_mark.line
+            elif 'line' in error_msg.lower():
+                # Try to extract line number from error message
+                import re
+                match = re.search(r'line\s+(\d+)', error_msg, re.IGNORECASE)
+                if match:
+                    line_num = int(match.group(1)) - 1  # Convert to 0-based
+            
+            lines = document_content.split('\n')
+            if line_num < len(lines):
+                line = lines[line_num]
+                diagnostics.append(lsp.Diagnostic(
+                    range=lsp.Range(
+                        start=lsp.Position(line=line_num, character=0),
+                        end=lsp.Position(line=line_num, character=len(line))
+                    ),
+                    message=f"YAML syntax error: {error_msg}",
+                    severity=lsp.DiagnosticSeverity.Error
+                ))
+            else:
+                # Fallback if we can't determine the line
+                diagnostics.append(lsp.Diagnostic(
+                    range=lsp.Range(
+                        start=lsp.Position(line=0, character=0),
+                        end=lsp.Position(line=0, character=1)
+                    ),
+                    message=f"YAML syntax error: {error_msg}",
+                    severity=lsp.DiagnosticSeverity.Error
+                ))
+        
+        return diagnostics
+
+    def validate_connections(self, config: Config, document_content: str = None) -> List[lsp.Diagnostic]:
         """Validate connections in the config and return diagnostics."""
         diagnostics = []
 
@@ -28,7 +165,7 @@ class ValidationEngine:
                 from_valid, from_message = self._validate_connection_reference(from_ref, config)
                 if not from_valid:
                     diagnostics.append(lsp.Diagnostic(
-                        range=self._get_connection_range(i, 'from'),
+                        range=self._get_connection_range(i, 'from', document_content),
                         message=f"Invalid connection source: {from_message}",
                         severity=lsp.DiagnosticSeverity.Error
                     ))
@@ -37,7 +174,7 @@ class ValidationEngine:
                 to_valid, to_message = self._validate_connection_reference(to_ref, config)
                 if not to_valid:
                     diagnostics.append(lsp.Diagnostic(
-                        range=self._get_connection_range(i, 'to'),
+                        range=self._get_connection_range(i, 'to', document_content),
                         message=f"Invalid connection destination: {to_message}",
                         severity=lsp.DiagnosticSeverity.Error
                     ))
@@ -47,9 +184,9 @@ class ValidationEngine:
                     compatibility_issue = self._check_message_type_compatibility(from_ref, to_ref, config)
                     if compatibility_issue:
                         diagnostics.append(lsp.Diagnostic(
-                            range=self._get_connection_range(i, 'to'),
+                            range=self._get_connection_range(i, 'to', document_content),
                             message=f"Message type mismatch: {compatibility_issue}",
-                            severity=lsp.DiagnosticSeverity.Warning
+                            severity=lsp.DiagnosticSeverity.Error
                         ))
 
         elif config.entity_type == ConfigType.SYSTEM:
@@ -62,7 +199,7 @@ class ValidationEngine:
                 from_valid, from_message = self._validate_connection_reference(from_ref, config)
                 if not from_valid:
                     diagnostics.append(lsp.Diagnostic(
-                        range=self._get_connection_range(i, 'from'),
+                        range=self._get_connection_range(i, 'from', document_content),
                         message=f"Invalid connection source: {from_message}",
                         severity=lsp.DiagnosticSeverity.Error
                     ))
@@ -71,7 +208,7 @@ class ValidationEngine:
                 to_valid, to_message = self._validate_connection_reference(to_ref, config)
                 if not to_valid:
                     diagnostics.append(lsp.Diagnostic(
-                        range=self._get_connection_range(i, 'to'),
+                        range=self._get_connection_range(i, 'to', document_content),
                         message=f"Invalid connection destination: {to_message}",
                         severity=lsp.DiagnosticSeverity.Error
                     ))
@@ -81,9 +218,9 @@ class ValidationEngine:
                     compatibility_issue = self._check_message_type_compatibility(from_ref, to_ref, config)
                     if compatibility_issue:
                         diagnostics.append(lsp.Diagnostic(
-                            range=self._get_connection_range(i, 'to'),
+                            range=self._get_connection_range(i, 'to', document_content),
                             message=f"Message type mismatch: {compatibility_issue}",
-                            severity=lsp.DiagnosticSeverity.Warning
+                            severity=lsp.DiagnosticSeverity.Error
                         ))
 
         return diagnostics
@@ -272,12 +409,202 @@ class ValidationEngine:
 
         return None
 
-    def _get_connection_range(self, connection_index: int, field: str) -> lsp.Range:
-        """Get the range for a connection field (approximate)."""
-        # This is a simplified implementation
-        # In a real implementation, you'd parse the YAML and get exact positions
-        line = 20 + connection_index * 5  # Approximate line number
+    def _get_connection_range(self, connection_index: int, field: str, document_content: str = None) -> lsp.Range:
+        """Get the range for a connection field."""
+        if document_content:
+            # Try to find the actual line in the document
+            lines = document_content.split('\n')
+            connections_found = 0
+            in_connections_section = False
+            
+            for line_num, line in enumerate(lines):
+                stripped = line.strip()
+                
+                # Check if we're entering the connections section
+                if stripped == 'connections:' or stripped.startswith('connections:'):
+                    in_connections_section = True
+                    continue
+                
+                # Check if we're leaving the connections section (new top-level key)
+                if in_connections_section and stripped and not line[0].isspace() and not stripped.startswith('-'):
+                    in_connections_section = False
+                    continue
+                
+                # Look for connection items (lines starting with '-')
+                if in_connections_section and stripped.startswith('-'):
+                    # This might be the start of a new connection
+                    # Look ahead to find 'from:' or 'to:' fields
+                    connection_start_line = line_num
+                    found_field = False
+                    
+                    # Look ahead in the same connection block
+                    for next_line_num in range(line_num, min(line_num + 10, len(lines))):
+                        next_line = lines[next_line_num]
+                        next_stripped = next_line.strip()
+                        
+                        # Check if this line contains our field
+                        if f'{field}:' in next_stripped:
+                            if connections_found == connection_index:
+                                # Found the right connection, get the field value
+                                colon_pos = next_line.find(':')
+                                if colon_pos != -1:
+                                    value = next_line[colon_pos + 1:].strip().strip('"\'')
+                                    value_start_pos = next_line.find(value, colon_pos)
+                                    if value_start_pos == -1:
+                                        value_start_pos = colon_pos + 1
+                                    return lsp.Range(
+                                        start=lsp.Position(line=next_line_num, character=value_start_pos),
+                                        end=lsp.Position(line=next_line_num, character=value_start_pos + len(value))
+                                    )
+                            found_field = True
+                            break
+                        
+                        # If we hit another connection item or top-level key, stop
+                        if next_line_num > line_num:
+                            if (next_stripped.startswith('-') and next_line_num != line_num) or \
+                               (next_stripped and not next_line[0].isspace() and not next_stripped.startswith('-')):
+                                break
+                    
+                    if found_field:
+                        connections_found += 1
+        
+        # Fallback: approximate line number
+        line = 20 + connection_index * 5
         return lsp.Range(
             start=lsp.Position(line=line, character=0),
             end=lsp.Position(line=line, character=50)
         )
+
+    def _extract_name_from_content(self, document_content: str) -> Optional[str]:
+        """Extract the name value from document content."""
+        lines = document_content.split('\n')
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('name:'):
+                # Extract the name value
+                colon_pos = stripped.find(':')
+                if colon_pos == -1:
+                    continue
+                
+                name_value = stripped[colon_pos + 1:].strip()
+                # Remove quotes if present
+                if name_value.startswith('"') and name_value.endswith('"'):
+                    name_value = name_value[1:-1]
+                elif name_value.startswith("'") and name_value.endswith("'"):
+                    name_value = name_value[1:-1]
+                
+                return name_value if name_value else None
+        return None
+
+    def _find_name_field_range(self, document_content: str) -> Optional[lsp.Range]:
+        """Find the range of the name field value in the document content."""
+        lines = document_content.split('\n')
+        for line_num, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith('name:'):
+                # Find the colon position
+                colon_pos = line.find(':')
+                if colon_pos == -1:
+                    continue
+                
+                # Get everything after the colon and strip it
+                after_colon = line[colon_pos + 1:].strip()
+                if not after_colon:
+                    continue
+                
+                # Find where the value starts in the original line (after colon and whitespace)
+                value_start = colon_pos + 1
+                while value_start < len(line) and line[value_start].isspace():
+                    value_start += 1
+                
+                # Find where the value ends (handle quotes)
+                value_end = value_start
+                if after_colon.startswith('"') and after_colon.endswith('"'):
+                    # Include the quotes
+                    value_end = value_start + len(after_colon)
+                elif after_colon.startswith("'") and after_colon.endswith("'"):
+                    # Include the quotes
+                    value_end = value_start + len(after_colon)
+                else:
+                    # No quotes, value ends at the end of the trimmed string
+                    value_end = value_start + len(after_colon)
+                
+                return lsp.Range(
+                    start=lsp.Position(line=line_num, character=value_start),
+                    end=lsp.Position(line=line_num, character=value_end)
+                )
+        return None
+
+    def validate_incomplete_references(self, config: Config, document_content: str) -> List[lsp.Diagnostic]:
+        """Validate incomplete references and show warnings with underlines."""
+        diagnostics = []
+        lines = document_content.split('\n')
+
+        for line_num, line in enumerate(lines):
+            stripped = line.strip()
+
+            # Check for entity references that might be incomplete
+            if 'entity:' in stripped:
+                entity_value = stripped.split(':', 1)[1].strip().strip('"\'')
+                if entity_value and not self._is_valid_entity_reference(entity_value):
+                    # Find the entity value in the line
+                    value_start = line.find(entity_value)
+                    if value_start != -1:
+                        diagnostics.append(lsp.Diagnostic(
+                            range=lsp.Range(
+                                start=lsp.Position(line=line_num, character=value_start),
+                                end=lsp.Position(line=line_num, character=value_start + len(entity_value))
+                            ),
+                            message=f"Entity '{entity_value}' not found in registry",
+                            severity=lsp.DiagnosticSeverity.Error
+                        ))
+
+            # Check for connection references that might be incomplete
+            elif 'from:' in stripped or 'to:' in stripped:
+                ref_value = stripped.split(':', 1)[1].strip().strip('"\'')
+                if ref_value and not ref_value.startswith('*'):  # Skip wildcards
+                    # Basic validation - check if it looks like a reference but might be incomplete
+                    if '.' in ref_value and not self._is_valid_connection_reference(ref_value, config):
+                        # Find the reference value in the line
+                        value_start = line.find(ref_value)
+                        if value_start != -1:
+                            diagnostics.append(lsp.Diagnostic(
+                                range=lsp.Range(
+                                    start=lsp.Position(line=line_num, character=value_start),
+                                    end=lsp.Position(line=line_num, character=value_start + len(ref_value))
+                                ),
+                                message=f"Connection reference '{ref_value}' may be incomplete or invalid",
+                                severity=lsp.DiagnosticSeverity.Error
+                            ))
+
+            # Check for message types that might be incomplete
+            elif 'message_type:' in stripped:
+                msg_type = stripped.split(':', 1)[1].strip().strip('"\'')
+                if msg_type and '/' in msg_type and not self._is_valid_message_type(msg_type):
+                    # Find the message type in the line
+                    value_start = line.find(msg_type)
+                    if value_start != -1:
+                        diagnostics.append(lsp.Diagnostic(
+                            range=lsp.Range(
+                                start=lsp.Position(line=line_num, character=value_start),
+                                end=lsp.Position(line=line_num, character=value_start + len(msg_type))
+                            ),
+                            message=f"Message type '{msg_type}' may not be valid",
+                            severity=lsp.DiagnosticSeverity.Error
+                        ))
+
+        return diagnostics
+
+    def _is_valid_entity_reference(self, entity_name: str) -> bool:
+        """Check if an entity reference is valid."""
+        return entity_name in self.registry_manager.entity_registry
+
+    def _is_valid_connection_reference(self, ref: str, config: Config) -> bool:
+        """Check if a connection reference is valid (simplified check)."""
+        valid, _ = self._validate_connection_reference(ref, config)
+        return valid
+
+    def _is_valid_message_type(self, msg_type: str) -> bool:
+        """Check if a message type looks valid (basic check)."""
+        # Basic check for ROS 2 message type format
+        return '/' in msg_type and msg_type.count('/') >= 1

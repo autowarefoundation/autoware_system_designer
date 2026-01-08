@@ -90,9 +90,10 @@ class AutowareSystemDesignerLanguageServer:
 
         capabilities = lsp.ServerCapabilities(
             text_document_sync=lsp.TextDocumentSyncKind.Full,
-            completion_provider=lsp.CompletionOptions(
-                trigger_characters=['.', ':']
-            ),
+            # Completion provider disabled - using diagnostics instead
+            # completion_provider=lsp.CompletionOptions(
+            #     trigger_characters=['.', ':']
+            # ),
             definition_provider=True,
             hover_provider=True
         )

@@ -31,44 +31,57 @@ class DocumentProcessor:
         file_path = self._uri_to_path(uri)
         file_path_obj = Path(file_path)
 
+        # Always validate, even if parsing fails
+        diagnostics = []
+        config = None
+        
         # Try to parse the document
         try:
             # The parser requires the file to exist on disk with the correct filename
             # to determine the entity type from the filename pattern
-            if not file_path_obj.exists():
-                logger.debug(f"File {file_path} does not exist yet, skipping parsing")
-                return
+            if file_path_obj.exists():
+                try:
+                    # Unregister existing entity if it was already registered
+                    self.registry_manager.unregister_entity(file_path)
 
-            # Unregister existing entity if it was already registered
-            self.registry_manager.unregister_entity(file_path)
+                    # Parse the content from the file
+                    # Note: The parser reads from disk, so unsaved changes won't be reflected
+                    # until the file is saved. This is a limitation of the current parser design.
+                    config = self.config_parser.parse_entity_file(file_path)
+                    self.registry_manager.register_entity(config)
+                except (ValidationError, Exception) as parse_error:
+                    logger.debug(f"Failed to parse {file_path}: {parse_error}")
+                    # Continue with validation even if parsing fails
+                    config = None
+            else:
+                logger.debug(f"File {file_path} does not exist yet, validating format only")
 
-            # Parse the content from the file
-            # Note: The parser reads from disk, so unsaved changes won't be reflected
-            # until the file is saved. This is a limitation of the current parser design.
-            config = self.config_parser.parse_entity_file(file_path)
-            self.registry_manager.register_entity(config)
+        except Exception as e:
+            logger.warning(f"Error during document processing setup {uri}: {e}")
 
-            # Send diagnostics
-            diagnostics = self.validation_engine.validate_connections(config)
-            server.text_document_publish_diagnostics(
-                lsp.PublishDiagnosticsParams(
-                    uri=uri,
-                    diagnostics=diagnostics
-                )
-            )
+        # Always validate, regardless of parsing success
+        try:
+            if config:
+                diagnostics = self.validation_engine.validate_all(config, content)
+            else:
+                # Validate YAML format and filename matching even if parsing failed
+                diagnostics = self.validation_engine.validate_yaml_format(content)
+                # Also validate filename matching if we have the file path
+                if file_path:
+                    filename_diagnostics = self.validation_engine.validate_filename_matching_from_content(
+                        content, file_path
+                    )
+                    diagnostics.extend(filename_diagnostics)
+        except Exception as validation_error:
+            logger.warning(f"Error during validation {uri}: {validation_error}")
+            # Still send YAML format validation if possible
+            try:
+                diagnostics = self.validation_engine.validate_yaml_format(content)
+            except:
+                pass
 
-        except ValidationError as e:
-            # Send validation error diagnostics
-            diagnostics = [
-                lsp.Diagnostic(
-                    range=lsp.Range(
-                        start=lsp.Position(line=0, character=0),
-                        end=lsp.Position(line=0, character=1)
-                    ),
-                    message=str(e),
-                    severity=lsp.DiagnosticSeverity.Error
-                )
-            ]
+        # Send diagnostics
+        try:
             server.text_document_publish_diagnostics(
                 lsp.PublishDiagnosticsParams(
                     uri=uri,
@@ -76,7 +89,7 @@ class DocumentProcessor:
                 )
             )
         except Exception as e:
-            logger.warning(f"Failed to process document {uri}: {e}")
+            logger.error(f"Failed to publish diagnostics {uri}: {e}")
 
     def close_document(self, uri: str):
         """Handle document close event."""
