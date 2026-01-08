@@ -31,13 +31,27 @@ class RegistryManager:
             '**/*.parameter_set.yaml'
         ]
 
+        # Collect all files first
+        all_files = []
         for pattern in patterns:
-            for file_path in Path(workspace_path).glob(pattern):
-                try:
-                    config = self.config_parser.parse_entity_file(str(file_path))
-                    self._register_entity(config)
-                except Exception as e:
-                    logger.warning(f"Failed to parse {file_path}: {e}")
+            all_files.extend(Path(workspace_path).glob(pattern))
+
+        # Sort files to prioritize src over other folders (src files processed last to overwrite duplicates)
+        def sort_key(file_path):
+            path_str = str(file_path)
+            if '/src/' in path_str:
+                return (1, path_str)  # src files come after (higher priority)
+            else:
+                return (0, path_str)  # other files come first
+
+        all_files.sort(key=sort_key)
+
+        for file_path in all_files:
+            try:
+                config = self.config_parser.parse_entity_file(str(file_path))
+                self._register_entity(config)
+            except Exception as e:
+                logger.warning(f"Failed to parse {file_path}: {e}")
 
     def register_entity(self, config: Config):
         """Register an entity in the registry."""
