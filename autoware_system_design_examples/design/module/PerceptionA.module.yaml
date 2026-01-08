@@ -18,11 +18,6 @@ external_interfaces:
     - name: pointcloud
   output:
     - name: objects
-  parameter:
-    - name: detector_a
-    - name: detector_b
-    - name: filter_a
-    - name: tracker
 
 connections:
   - from: input.pointcloud
