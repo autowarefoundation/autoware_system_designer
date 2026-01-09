@@ -164,7 +164,7 @@ class ResolutionService:
         elif config.entity_type == ConfigType.SYSTEM:
             components = config.components or []
             for comp in components:
-                if comp.get('name') == instance_name:
+                if comp.get('component') == instance_name:
                     entity_name = comp.get('entity')
                     break
         

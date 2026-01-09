@@ -93,7 +93,7 @@ class HoverProvider:
             if components:
                 hover_text += "\n### Components\n"
                 for component in components[:5]:  # Show first 5
-                    comp_name = component.get('name', 'unknown')
+                    comp_name = component.get('component', 'unknown')
                     entity = component.get('entity', 'unknown')
                     hover_text += f"- `{comp_name}`: {entity}\n"
                 if len(components) > 5:

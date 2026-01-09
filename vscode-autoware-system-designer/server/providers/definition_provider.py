@@ -87,7 +87,7 @@ class DefinitionProvider:
                     # Find the component
                     components = config.components or []
                     for component in components:
-                        if component.get('name') == component_name:
+                        if component.get('component') == component_name:
                             component_entity = component.get('entity')
                             if component_entity in self.registry_manager.entity_registry:
                                 entity_config = self.registry_manager.entity_registry[component_entity]
