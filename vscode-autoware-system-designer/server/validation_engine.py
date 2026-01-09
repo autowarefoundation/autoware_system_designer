@@ -370,12 +370,12 @@ class ValidationEngine:
                 return False, f"Invalid component reference format: {ref}"
 
             components = config.components or []
-            component_names = [comp.get('name') for comp in components if comp.get('name')]
+            component_names = [comp.get('component') for comp in components if comp.get('component')]
             if component_name not in component_names:
                 return False, f"Component '{component_name}' not found. Available components: {', '.join(component_names)}"
 
             for component in components:
-                if component.get('name') == component_name:
+                if component.get('component') == component_name:
                     component_entity = component.get('entity')
                     if component_entity not in self.registry_manager.entity_registry:
                         return False, f"Entity '{component_entity}' not found in registry"
