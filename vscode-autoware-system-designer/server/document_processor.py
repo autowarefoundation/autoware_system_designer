@@ -26,7 +26,7 @@ class DocumentProcessor:
         self.registry_manager = registry_manager
         self.validation_engine = ValidationEngine(registry_manager)
 
-    def process_document(self, uri: str, content: str, server: LanguageServer):
+    def process_document(self, uri: str, content: str, server: LanguageServer, update_registry: bool = False):
         """Process a document and update registries."""
         file_path = self._uri_to_path(uri)
         file_path_obj = Path(file_path)
@@ -37,24 +37,19 @@ class DocumentProcessor:
         
         # Try to parse the document
         try:
-            # The parser requires the file to exist on disk with the correct filename
-            # to determine the entity type from the filename pattern
-            if file_path_obj.exists():
-                try:
-                    # Unregister existing entity if it was already registered
-                    self.registry_manager.unregister_entity(file_path)
-
-                    # Parse the content from the file
-                    # Note: The parser reads from disk, so unsaved changes won't be reflected
-                    # until the file is saved. This is a limitation of the current parser design.
-                    config = self.config_parser.parse_entity_file(file_path)
+            # Parse the content from string
+            try:
+                # Use the new parse_entity_from_content method
+                config = self.config_parser.parse_entity_from_content(content, file_path)
+                
+                # Update registry only if requested (e.g. on save or open)
+                if update_registry and config:
                     self.registry_manager.register_entity(config)
-                except (ValidationError, Exception) as parse_error:
-                    logger.debug(f"Failed to parse {file_path}: {parse_error}")
-                    # Continue with validation even if parsing fails
-                    config = None
-            else:
-                logger.debug(f"File {file_path} does not exist yet, validating format only")
+                    
+            except (ValidationError, Exception) as parse_error:
+                logger.debug(f"Failed to parse {file_path}: {parse_error}")
+                # Continue with validation even if parsing fails
+                config = None
 
         except Exception as e:
             logger.warning(f"Error during document processing setup {uri}: {e}")
@@ -89,8 +84,9 @@ class DocumentProcessor:
 
     def close_document(self, uri: str):
         """Handle document close event."""
-        file_path = self._uri_to_path(uri)
-        self.registry_manager.unregister_entity(file_path)
+        # We don't unregister on close anymore, as the file might still exist in the workspace
+        # File watching will handle unregistration if the file is deleted
+        pass
 
     def _uri_to_path(self, uri: str) -> str:
         """Convert URI to file path."""

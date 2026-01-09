@@ -58,6 +58,47 @@ class ConfigParser:
         # Create appropriate data structure
         return self._create_entity_data(entity_name, full_name, entity_type, config, file_path)
     
+    def parse_entity_from_content(self, content: str, config_yaml_path: str) -> Config:
+        """Parse an entity configuration from string content."""
+        file_path = Path(config_yaml_path)
+        # get entity type from file name 
+        # file/path/to/<entity_name>.<entity_type>.yaml
+        file_entity_name, file_entity_type = entity_name_decode(file_path.stem)
+
+        # Load configuration from string
+        try:
+            config = yaml_parser.load_config_from_string(content)
+        except Exception as e:
+            logger.error(f"Failed to parse content: {e}")
+            raise ValidationError(f"Error parsing YAML content: {e}")
+        
+        # Parse entity name and type
+        full_name = config.get("name")
+        if not full_name:
+            # If name is missing, we can't fully validate entity matching, but proceed with file info
+            # This allows for partial validation of incomplete files
+            entity_name = file_entity_name
+            entity_type = file_entity_type
+        else:
+            entity_name, entity_type = entity_name_decode(full_name)
+
+        if full_name and entity_name != file_entity_name:
+            msg = f"Config name '{entity_name}' does not match file name '{file_entity_name}'. File: {file_path}"
+            if self.strict_mode:
+                raise ValidationError(msg)
+            else:
+                logger.warning(msg)
+        
+        # Validate configuration
+        # For in-memory validation, we might want to skip deep validation if basic structure is invalid
+        if full_name:
+            validator = self.validator_factory.get_validator(entity_type)
+            # Use the file path for reference even if content is from memory
+            validator.validate_all(config, entity_type, file_entity_type, str(file_path))
+        
+        # Create appropriate data structure
+        return self._create_entity_data(entity_name, full_name or f"{entity_name}.{entity_type}", entity_type, config, file_path)
+    
     def _load_config(self, file_path: Path) -> Dict[str, Any]:
         """Load YAML configuration file."""
         try:

@@ -81,6 +81,10 @@ class AutowareSystemDesignerLanguageServer:
         def inlay_hint(ls, params):
             return self._on_inlay_hint(ls, params)
 
+        @self.server.feature(lsp.WORKSPACE_DID_CHANGE_WATCHED_FILES)
+        def did_change_watched_files(ls, params):
+            self._on_workspace_did_change_watched_files(ls, params)
+
         @self.server.feature(lsp.INITIALIZE)
         def initialize(ls, params):
             return self._on_initialize(ls, params)
@@ -117,20 +121,72 @@ class AutowareSystemDesignerLanguageServer:
 
     def _on_text_document_did_open(self, ls, params: lsp.DidOpenTextDocumentParams):
         """Handle document open event."""
-        self.document_processor.process_document(params.text_document.uri, params.text_document.text, self.server)
+        # Don't update registry on open (assume already in registry or will be handled by save/watcher)
+        self.document_processor.process_document(params.text_document.uri, params.text_document.text, self.server, update_registry=False)
 
     def _on_text_document_did_change(self, ls, params: lsp.DidChangeTextDocumentParams):
         """Handle document change event."""
-        # For simplicity, we reprocess the entire document on change
-        # In a production implementation, you'd want incremental updates
-        if params.content_changes:
-            content = params.content_changes[0].text
-            self.document_processor.process_document(params.text_document.uri, content, self.server)
+        # Per user requirement, we do NOT process/validate on change, only on save.
+        pass
+
+    def _on_workspace_did_change_watched_files(self, ls, params: lsp.DidChangeWatchedFilesParams):
+        """Handle watched file changes."""
+        registry_updated = False
+        
+        for change in params.changes:
+            uri = change.uri
+            # Simple conversion since we don't have easy access to helper here without importing
+            from urllib.parse import urlparse, unquote
+            parsed = urlparse(uri)
+            file_path = unquote(parsed.path)
+            
+            if change.type == lsp.FileChangeType.Created:
+                try:
+                    config = self.config_parser.parse_entity_file(file_path)
+                    self.registry_manager.register_entity(config)
+                    registry_updated = True
+                except Exception as e:
+                    logger.warning(f"Failed to register created file {file_path}: {e}")
+                    
+            elif change.type == lsp.FileChangeType.Changed:
+                try:
+                    config = self.config_parser.parse_entity_file(file_path)
+                    self.registry_manager.register_entity(config)
+                    registry_updated = True
+                except Exception as e:
+                    logger.warning(f"Failed to update changed file {file_path}: {e}")
+                    
+            elif change.type == lsp.FileChangeType.Deleted:
+                self.registry_manager.unregister_entity(file_path)
+                registry_updated = True
+                
+        # If registry changed, re-validate all open documents
+        if registry_updated:
+            self._revalidate_open_documents()
 
     def _on_text_document_did_save(self, ls, params: lsp.DidSaveTextDocumentParams):
         """Handle document save event."""
         if params.text:
-            self.document_processor.process_document(params.text_document.uri, params.text, self.server)
+            # Update registry on save
+            self.document_processor.process_document(params.text_document.uri, params.text, self.server, update_registry=True)
+            # Re-validate other open documents since registry changed
+            self._revalidate_open_documents(exclude_uri=params.text_document.uri)
+
+    def _revalidate_open_documents(self, exclude_uri: str = None):
+        """Re-validate all open documents."""
+        try:
+            # Iterate over all open documents in the workspace
+            # pygls server.workspace.documents is a dict mapping URI to Document object
+            for uri, document in self.server.workspace.documents.items():
+                if uri == exclude_uri:
+                    continue
+                
+                # Re-process the document (parse, validate, publish diagnostics)
+                # We don't update registry here, just validate against current registry
+                self.document_processor.process_document(uri, document.source, self.server, update_registry=False)
+        except Exception as e:
+            logger.error(f"Failed to revalidate open documents: {e}")
+
 
     def _on_text_document_did_close(self, ls, params: lsp.DidCloseTextDocumentParams):
         """Handle document close event."""

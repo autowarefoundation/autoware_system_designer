@@ -9,6 +9,7 @@ from lsprotocol import types as lsp
 from autoware_system_designer.models.config import Config, ConfigType
 
 from registry_manager import RegistryManager
+from resolution_service import ResolutionService
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ class ValidationEngine:
 
     def __init__(self, registry_manager: RegistryManager):
         self.registry_manager = registry_manager
+        self.resolution_service = ResolutionService(registry_manager)
 
     def validate_all(self, config: Config, document_content: str = None) -> List[lsp.Diagnostic]:
         """Validate all aspects of the config and return diagnostics."""
@@ -416,57 +418,63 @@ class ValidationEngine:
             return None  # Wildcards don't have specific types
 
         parts = ref.split('.')
+        # Reference validation is already done elsewhere, assuming valid structure mostly
+        if len(parts) < 2:
+            return None
+
+        target_entity_config = config
+        port_type = None
+        port_name = None
 
         if config.entity_type == ConfigType.MODULE:
             if parts[0] == 'input':
-                # External input interface - no type info available
-                return None
+                # External input interface
+                # For validation inside the module, 'input.X' refers to the source of data coming IN.
+                # Its type is determined by what feeds it externally? No, in module design, we define interfaces.
+                # But typically we want to check consistency.
+                # If we are checking "from: input.X", we want the type of X.
+                # In our ResolutionService, resolve_port_type(module, 'input', X) checks internal connections
+                # starting from input.X to find what it connects TO.
+                # Wait, if input.X -> instance.input.Y. Then input.X "should be" type(Y).
+                # ResolutionService logic:
+                # if port_type == 'input': finds connection FROM input.X TO instance.input.Y. Returns type(Y).
+                # This seems correct for "what type is required for input.X".
+                port_type = 'input'
+                port_name = parts[1]
             elif parts[0] == 'output':
-                # External output interface - no type info available
-                return None
+                # External output interface
+                # If "to: output.X", we want type of X.
+                # ResolutionService: if port_type == 'output': finds connection FROM instance.output.Y TO output.X. Returns type(Y).
+                port_type = 'output'
+                port_name = parts[1]
             else:
+                # instance.input.X or instance.output.X
                 instance_name = parts[0]
                 port_type = parts[1]
-                port_name = parts[2]
-
-                instances = config.instances or []
-                for instance in instances:
-                    if instance.get('instance') == instance_name:
-                        entity_name = instance.get('entity')
-                        if entity_name in self.registry_manager.entity_registry:
-                            entity_config = self.registry_manager.entity_registry[entity_name]
-                            if port_type == 'input':
-                                inputs = self._get_entity_inputs(entity_config)
-                                for port in inputs:
-                                    if port.get('name') == port_name:
-                                        return port.get('message_type')
-                            elif port_type == 'output':
-                                outputs = self._get_entity_outputs(entity_config)
-                                for port in outputs:
-                                    if port.get('name') == port_name:
-                                        return port.get('message_type')
+                port_name = parts[2] if len(parts) > 2 else None
+                
+                if not port_name:
+                    return None
+                    
+                target_entity_config = self.resolution_service.get_instance_entity(config, instance_name)
+                if not target_entity_config:
+                    return None
 
         elif config.entity_type == ConfigType.SYSTEM:
+            # component.input.X or component.output.X
             component_name = parts[0]
             port_type = parts[1]
-            port_name = parts[2]
-
-            components = config.components or []
-            for component in components:
-                if component.get('name') == component_name:
-                    component_entity = component.get('entity')
-                    if component_entity in self.registry_manager.entity_registry:
-                        entity_config = self.registry_manager.entity_registry[component_entity]
-                        if port_type == 'input':
-                            inputs = self._get_entity_inputs(entity_config)
-                            for port in inputs:
-                                if port.get('name') == port_name:
-                                    return port.get('message_type')
-                        elif port_type == 'output':
-                            outputs = self._get_entity_outputs(entity_config)
-                            for port in outputs:
-                                if port.get('name') == port_name:
-                                    return port.get('message_type')
+            port_name = parts[2] if len(parts) > 2 else None
+            
+            if not port_name:
+                return None
+                
+            target_entity_config = self.resolution_service.get_instance_entity(config, component_name)
+            if not target_entity_config:
+                return None
+                
+        if target_entity_config and port_type and port_name:
+            return self.resolution_service.resolve_port_type(target_entity_config, port_type, port_name)
 
         return None
 
