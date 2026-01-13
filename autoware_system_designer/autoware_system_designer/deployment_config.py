@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class SystemConfig:
+class DeploymentConfig:
     """Configuration class for the autoware system deployment."""
     debug_mode: bool = False
     layer_limit: int = 50
@@ -34,7 +34,7 @@ class SystemConfig:
     output_root_dir: str = "build"
 
     @classmethod
-    def from_env(cls) -> 'SystemConfig':
+    def from_env(cls) -> 'DeploymentConfig':
         """Create configuration from environment variables."""
         return cls(
             debug_mode=os.getenv('autoware_system_designer_DEBUG', 'false').lower() == 'true',
@@ -63,4 +63,4 @@ class SystemConfig:
 
 
 # Global configuration instance
-config = SystemConfig.from_env()
+deploy_config = DeploymentConfig.from_env()

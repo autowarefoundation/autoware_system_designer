@@ -16,9 +16,7 @@
 import os
 import logging
 from typing import Dict, Tuple, List, Any
-from .config import SystemConfig
-from .models.config import Config
-from .models.parameters import ParameterType
+from .deployment_config import DeploymentConfig
 from .builder.config_registry import ConfigRegistry
 from .builder.instances import DeploymentInstance
 from .builder.launcher_generator import generate_module_launch_file
@@ -35,28 +33,28 @@ logger = logging.getLogger(__name__)
 debug_mode = True
 
 class Deployment:
-    def __init__(self, system_config: SystemConfig ):
+    def __init__(self, deploy_config: DeploymentConfig ):
         # entity collection
-        system_yaml_list, package_paths, file_package_map = self._get_system_list(system_config)
+        system_yaml_list, package_paths, file_package_map = self._get_system_list(deploy_config)
         self.config_registry = ConfigRegistry(system_yaml_list, package_paths, file_package_map)
 
         # detect mode of input file (deployment vs system only)
         # if deployment_file ends with .system, it's a system-only file
-        logger.info("deployment init Deployment file: %s", system_config.deployment_file)
-        if system_config.deployment_file.endswith(".system"):
+        logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)
+        if deploy_config.deployment_file.endswith(".system"):
             logger.info("Detected system-only deployment file.")
             # need to parse the absolute path of the file from the config_registry
             # generate deployment config in-memory
-            self.config_yaml_dir = system_config.deployment_file
+            self.config_yaml_dir = deploy_config.deployment_file
             self.config_yaml = {}
-            self.config_yaml['system'] = system_config.deployment_file
-            self.config_yaml['name'] = system_config.deployment_file
+            self.config_yaml['system'] = deploy_config.deployment_file
+            self.config_yaml['name'] = deploy_config.deployment_file
             self.config_yaml.setdefault('variables', [])
             self.name = self.config_yaml.get("name")
 
         else:
             # input is a deployment file
-            self.config_yaml_dir = system_config.deployment_file
+            self.config_yaml_dir = deploy_config.deployment_file
             self.config_yaml = yaml_parser.load_config(self.config_yaml_dir)
             self.name = self.config_yaml.get("name")
 
@@ -75,12 +73,9 @@ class Deployment:
 
         # member variables - now supports multiple instances (one per mode)
         self.deploy_instances: Dict[str, DeploymentInstance] = {}  # mode_name -> DeploymentInstance
-        self.global_parameters_yaml = None
-        self.sensor_calibration_yaml = None
-        self.map_yaml = None
 
         # output paths
-        self.output_root_dir = system_config.output_root_dir
+        self.output_root_dir = deploy_config.output_root_dir
         self.launcher_dir = os.path.join(self.output_root_dir, "exports", self.name, "launcher/")
         self.system_monitor_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_monitor/")
         self.visualization_dir = os.path.join(self.output_root_dir, "exports", self.name,"visualization/")
@@ -92,11 +87,11 @@ class Deployment:
         # resolve parameter variables
 
 
-    def _get_system_list(self, system_config: SystemConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
+    def _get_system_list(self, deploy_config: DeploymentConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
         system_list: list[str] = []
         package_paths: Dict[str, str] = {}
         file_package_map: Dict[str, str] = {}
-        manifest_dir = system_config.manifest_dir
+        manifest_dir = deploy_config.manifest_dir
         if not os.path.isdir(manifest_dir):
             raise ValidationError(f"System design manifest directory not found or not a directory: {manifest_dir}")
 
@@ -111,16 +106,16 @@ class Deployment:
                 if 'package_map' in manifest_yaml:
                     package_paths.update(manifest_yaml['package_map'])
 
-                files = manifest_yaml.get('system_config_files')
+                files = manifest_yaml.get('deploy_config_files')
                 # Allow the field to be empty or null without raising an error
                 if files in (None, []):
                     logger.debug(
-                        f"Manifest '{entry}' has empty system_config_files; skipping."
+                        f"Manifest '{entry}' has empty deploy_config_files; skipping."
                     )
                     continue
                 if not isinstance(files, list):
                     logger.warning(
-                        f"Manifest '{entry}' has unexpected type for system_config_files: {type(files)}; skipping."
+                        f"Manifest '{entry}' has unexpected type for deploy_config_files: {type(files)}; skipping."
                     )
                     continue
                 for f in files:

@@ -13,3 +13,4 @@ variables:
     value: lanelet2_map.osm
   - name: pointcloud_map_file
     value: pointcloud_map.pcd
+

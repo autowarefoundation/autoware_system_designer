@@ -18,7 +18,7 @@ from typing import List, Dict
 from ..models.config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
 from ..models.parameters import ParameterType
 from ..parsers.data_parser import entity_name_decode
-from ..config import config
+from ..deployment_config import deploy_config
 from ..exceptions import ValidationError
 from ..utils.naming import generate_unique_id
 from ..visualization.visualization_guide import get_component_color, get_component_position
@@ -109,8 +109,8 @@ class Instance:
 
         self.compute_unit: str = compute_unit
         self.layer: int = layer
-        if self.layer > config.layer_limit:
-            raise ValidationError(f"Instance layer is too deep (limit: {config.layer_limit})")
+        if self.layer > deploy_config.layer_limit:
+            raise ValidationError(f"Instance layer is too deep (limit: {deploy_config.layer_limit})")
 
         # configuration
         self.configuration: NodeConfig | ModuleConfig | ParameterSetConfig | SystemConfig | None = None

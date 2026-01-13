@@ -8,6 +8,8 @@ variables:
   - name: lanelet2_map_file
   - name: pointcloud_map_file
 
+variable_files: []
+
 modes:
   - name: default
     description: Default mode
