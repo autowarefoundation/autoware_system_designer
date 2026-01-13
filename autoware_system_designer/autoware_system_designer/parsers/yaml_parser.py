@@ -82,6 +82,31 @@ class YamlParser:
         except Exception as exc:
             raise ValidationError(f"Failed to read configuration file {path}: {exc}")
     
+    def load_config_from_string(self, content: str) -> Dict[str, Any]:
+        """Load YAML configuration from string content.
+        
+        Args:
+            content: YAML string content
+            
+        Returns:
+            Parsed YAML content as dictionary
+            
+        Raises:
+            ValidationError: If content cannot be parsed
+        """
+        try:
+            config_data = yaml.safe_load(content)
+            
+            if config_data is None:
+                config_data = {}
+                
+            return config_data
+            
+        except yaml.YAMLError as exc:
+            raise ValidationError(f"Failed to parse YAML content: {exc}")
+        except Exception as exc:
+            raise ValidationError(f"Failed to process configuration content: {exc}")
+
     def load_config_list(self, file_list_path: Union[str, Path]) -> Dict[str, Any]:
         """Load configuration files from a list file.
         

@@ -6,12 +6,6 @@ find_package(autoware_system_designer REQUIRED)
 
 autoware_package()
 
-ament_auto_package(
-  INSTALL_TO_SHARE
-  design
-)
-
-
 autoware_system_designer_generate_launcher()
 
 # Add a dummy library to make a target
