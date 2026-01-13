@@ -39,53 +39,71 @@ class Deployment:
         self.config_registry = ConfigRegistry(system_yaml_list, package_paths, file_package_map)
 
         # detect mode of input file (deployment vs system only)
-        # if deployment_file ends with .system, it's a system-only file
         logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)
-        if deploy_config.deployment_file.endswith(".system"):
-            logger.info("Detected system-only deployment file.")
-            # need to parse the absolute path of the file from the config_registry
-            # generate deployment config in-memory
-            self.config_yaml_dir = deploy_config.deployment_file
-            self.config_yaml = {}
-            self.config_yaml['system'] = deploy_config.deployment_file
-            self.config_yaml['name'] = deploy_config.deployment_file
-            self.config_yaml.setdefault('variables', [])
-            self.name = self.config_yaml.get("name")
+        self.config_yaml_dir = deploy_config.deployment_file
+        
+        # 1. check the given deploy_config.deployment_file 
+        is_inheritance = False
+        system_name = None
+        self.config_yaml = {}
 
-        else:
-            # input is a deployment file
-            self.config_yaml_dir = deploy_config.deployment_file
+        if os.path.exists(self.config_yaml_dir):
+            # a1. try load the file
             self.config_yaml = yaml_parser.load_config(self.config_yaml_dir)
-            self.name = self.config_yaml.get("name")
+            is_inheritance = True
+            system_name = self.config_yaml["system"]
+        else:
+             # b. if it is 'system', it is a system config name. nothing to do
+             system_name = os.path.basename(self.config_yaml_dir)
+        
+        system_name, _ = entity_name_decode(system_name)
 
-        # Check the configuration
-        self._check_config()
+        # 2. load the system configuration
+        system = self.config_registry.get_system(system_name)
+        if not system:
+            raise ValidationError(f"System not found: {system_name}")
 
+        # If it is system name, config_yaml is empty, load it from system path
+        if not self.config_yaml:
+             self.config_yaml_dir = str(system.file_path)
+             logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
+             self.config_yaml = yaml_parser.load_config(self.config_yaml_dir)
+             
+             logger.info("Detected system-only deployment file.")
+             if 'system' not in self.config_yaml:
+                  self.config_yaml['system'] = self.config_yaml.get('name', system_name)
+
+        self.name = self.config_yaml.get("name")
+
+        # 3. set parameter resolver
         # create parameter resolver for ROS-independent operation
         self.parameter_resolver = ParameterResolver(
-            variables=self.config_yaml.get('variables', []),
+            variables=[],
             package_paths=package_paths
         )
 
-        # Process global parameter files
-        if 'variable_files' in self.config_yaml:
-            self._load_variable_files(self.config_yaml['variable_files'])
+        # 4. if it is inheritance, append/override variables and variable files
+        if is_inheritance:
+            variables = self.config_yaml.get('variables', [])
+            variable_map = self.parameter_resolver._build_variable_map(variables)
+            self.parameter_resolver.update_variables(variable_map)
+
+            # Process variable files
+            if 'variable_files' in self.config_yaml:
+                self._load_variable_files(self.config_yaml['variable_files'])
 
         # member variables - now supports multiple instances (one per mode)
         self.deploy_instances: Dict[str, DeploymentInstance] = {}  # mode_name -> DeploymentInstance
 
-        # output paths
+        # 4. set output paths
         self.output_root_dir = deploy_config.output_root_dir
         self.launcher_dir = os.path.join(self.output_root_dir, "exports", self.name, "launcher/")
         self.system_monitor_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_monitor/")
         self.visualization_dir = os.path.join(self.output_root_dir, "exports", self.name,"visualization/")
         self.parameter_set_dir = os.path.join(self.output_root_dir, "exports", self.name,"parameter_set/")
 
-        # build the deployment
-        self.build()
-
-        # resolve parameter variables
-
+        # 5. build the deployment
+        self._build(system)
 
     def _get_system_list(self, deploy_config: DeploymentConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
         system_list: list[str] = []
@@ -195,35 +213,7 @@ class Deployment:
                 items[new_key] = str(v)
         return items
 
-    def _check_config(self) -> bool:
-        """Validate & normalize deployment configuration.
-
-        Two supported input forms:
-        1. Deployment YAML (fields: name, system, variables)
-        2. Raw System YAML (only 'name' ending with '.system'). We synthesize a minimal
-           deployment in-memory (no vehicles / environment parameters) so downstream logic works.
-        """
-        # Validate required fields now present
-        for field in ['name', 'system']:
-            if field not in self.config_yaml:
-                raise ValidationError(
-                    f"Field '{field}' is required in deployment configuration file {self.config_yaml_dir}"
-                )
-
-        # Optional lists: default to empty if omitted
-        if 'variables' not in self.config_yaml:
-            self.config_yaml['variables'] = []
-
-        return True
-
-    def build(self):
-        # 1. Get system configuration
-        system_name, _ = entity_name_decode(self.config_yaml.get("system"))
-        system = self.config_registry.get_system(system_name)
-
-        if not system:
-            raise ValidationError(f"System not found: {system_name}")
-
+    def _build(self, system):
         # 2. Determine modes to build
         modes_config = system.modes or []
         if modes_config:
