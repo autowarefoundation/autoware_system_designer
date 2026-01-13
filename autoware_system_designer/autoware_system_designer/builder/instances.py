@@ -593,6 +593,14 @@ class DeploymentInstance(Instance):
         self.configuration = system
         self.entity_type = "system"
 
+        # Apply system variables and variable files to the parameter resolver if available
+        if self.parameter_resolver:
+            if hasattr(system, 'variables') and system.variables:
+                self.parameter_resolver.load_system_variables(system.variables)
+            
+            if hasattr(system, 'variable_files') and system.variable_files:
+                self.parameter_resolver.load_system_variable_files(system.variable_files)
+
         # 1. set component instances
         logger.info(f"Instance '{self.name}': setting component instances")
         self.set_instances(system.full_name, config_registry)

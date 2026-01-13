@@ -183,6 +183,7 @@ class SystemValidator(BaseValidator):
             'components': {'type': 'array'},
             'connections': {'type': 'array'},
             'variables': {'type': 'nullable_array'},
+            'variable_files': {'type': 'nullable_array'},
         }
 
 class ValidatorFactory:

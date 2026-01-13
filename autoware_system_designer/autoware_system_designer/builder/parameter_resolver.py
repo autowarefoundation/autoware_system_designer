@@ -18,6 +18,8 @@ import os
 import math
 from typing import List, Dict, Any, Optional
 
+from ..parsers.yaml_parser import yaml_parser
+
 logger = logging.getLogger(__name__)
 
 
@@ -85,11 +87,14 @@ class ParameterResolver:
 
     def update_variables(self, new_variables: Dict[str, str]):
         """Update the variable map with new variables.
+        Prioritizes non-empty values.
         
         Args:
             new_variables: Dictionary of new variables to add/update
         """
-        self.variable_map.update(new_variables)
+        for k, v in new_variables.items():
+            if v or k not in self.variable_map:
+                self.variable_map[k] = v
 
     def _build_variable_map(self, variables_list: List[Dict[str, Any]]) -> Dict[str, str]:
         """Build variable mapping from deployment parameters."""
@@ -324,3 +329,102 @@ class ParameterResolver:
         """
         resolved_name = self.resolve_string(package_name)
         return self.package_paths.get(resolved_name)
+
+    def load_system_variables(self, variables: List[Dict[str, Any]]):
+        """Load system variables into the resolver, respecting existing overrides.
+        
+        System variables act as defaults. If a variable is already defined (e.g. from deployment),
+        it will NOT be overwritten by the system variable unless the deployment variable is empty.
+        
+        Args:
+            variables: List of variable dictionaries from system configuration
+        """
+        if not variables:
+            return
+
+        system_variables = {}
+        for param in variables:
+            name = param.get('name')
+            value = param.get('value')
+            if name and value is not None:
+                system_variables[name] = str(value)
+        
+        # Update variables in the resolver
+        # Add system variables if not in map OR if existing map value is empty (prioritize non-empty)
+        for k, v in system_variables.items():
+            if k not in self.variable_map or not self.variable_map[k]:
+                self.variable_map[k] = v
+                logger.debug(f"Added/Updated system variable default: {k}={v}")
+            else:
+                logger.debug(f"System variable '{k}' overridden by non-empty deployment variable")
+
+    def load_system_variable_files(self, variable_files: List[Dict[str, str]]):
+        """Load variables from system variable files.
+        
+        Args:
+            variable_files: List of dicts with 'name' (prefix) and 'value' (file path)
+        """
+        if not variable_files:
+            return
+
+        variables_to_add = {}
+        
+        for file_entry in variable_files:
+            prefix = file_entry.get('name')
+            file_path = file_entry.get('value')
+            
+            if not prefix or not file_path:
+                logger.warning(f"Skipping invalid system variable file entry: {file_entry}")
+                continue
+
+            resolved_path = self.resolve_string(file_path)
+            
+            if resolved_path.startswith('$'):
+                logger.warning(f"Could not resolve path for system variable file: {file_path}")
+                continue
+            
+            if not os.path.exists(resolved_path):
+                logger.warning(f"System variable file not found: {resolved_path}")
+                continue
+                
+            try:
+                data = yaml_parser.load_config(resolved_path)
+                if not data:
+                    continue
+                    
+                # Iterate through nodes in the yaml (standard ROS 2 param file structure)
+                for node_name, node_data in data.items():
+                    if isinstance(node_data, dict) and "ros__parameters" in node_data:
+                        params = node_data["ros__parameters"]
+                        flattened = self._flatten_parameters(params, parent_key=prefix)
+                        variables_to_add.update(flattened)
+                
+            except Exception as e:
+                logger.warning(f"Failed to load system variable file {resolved_path}: {e}")
+
+        # Update resolver with new variables if they don't exist or if existing is empty
+        for k, v in variables_to_add.items():
+            if k not in self.variable_map or not self.variable_map[k]:
+                self.variable_map[k] = v
+                logger.debug(f"Added/Updated system variable file parameter default: {k}={v}")
+
+    def _flatten_parameters(self, params: Dict[str, Any], parent_key: str = "", separator: str = ".") -> Dict[str, str]:
+        """Flatten nested dictionary into dot-separated keys.
+        
+        Args:
+            params: Dictionary to flatten
+            parent_key: Key prefix from parent levels
+            separator: Separator for keys
+            
+        Returns:
+            Flattened dictionary with string values
+        """
+        items = {}
+        for k, v in params.items():
+            new_key = f"{parent_key}{separator}{k}" if parent_key else k
+            
+            if isinstance(v, dict):
+                items.update(self._flatten_parameters(v, new_key, separator))
+            else:
+                items[new_key] = str(v)
+        return items

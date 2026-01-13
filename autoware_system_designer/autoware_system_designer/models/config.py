@@ -73,3 +73,4 @@ class SystemConfig(Config):
     components: List[Dict[str, Any]] = None
     connections: List[Dict[str, Any]] = None
     variables: List[Dict[str, Any]] = None
+    variable_files: List[Dict[str, Any]] = None
