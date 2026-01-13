@@ -70,8 +70,8 @@ class Deployment:
         )
 
         # Process global parameter files
-        if 'global_parameter_files' in self.config_yaml:
-            self._load_global_parameter_files(self.config_yaml['global_parameter_files'])
+        if 'variable_files' in self.config_yaml:
+            self._load_variable_files(self.config_yaml['variable_files'])
 
         # member variables - now supports multiple instances (one per mode)
         self.deploy_instances: Dict[str, DeploymentInstance] = {}  # mode_name -> DeploymentInstance
@@ -137,9 +137,9 @@ class Deployment:
             raise ValidationError(f"No system design configuration files collected.")
         return system_list, package_paths, file_package_map
 
-    def _load_global_parameter_files(self, global_param_files: List[Dict[str, str]]):
+    def _load_variable_files(self, variable_files: List[Dict[str, str]]):
         """Load parameters from external files and update parameter resolver."""
-        for file_entry in global_param_files:
+        for file_entry in variable_files:
             for param_prefix, file_path in file_entry.items():
                 # Resolve file path
                 resolved_path = self.parameter_resolver.resolve_string(file_path)
@@ -173,7 +173,7 @@ class Deployment:
                             flattened = self._flatten_parameters(params, parent_key=prefix)
                             variables.update(flattened)
                         # Handle case where file might be just key-value pairs without node/ros__parameters wrapper
-                        elif param_prefix == 'global_parameters' or param_prefix == 'global_parameters_file':
+                        elif param_prefix == 'variables' or param_prefix == 'variable_file':
                              # If explicitly global params file, maybe treat differently? 
                              # For now assume ROS 2 param structure or flat if no ros__parameters
                              pass 
