@@ -14,9 +14,6 @@ external_interfaces:
     - name: vector_map
   output:
     - name: objects
-  parameter:
-    - name: detector
-    - name: filter
 
 connections:
   - from: input.pointcloud

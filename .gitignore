@@ -15,6 +15,7 @@ log/
 # Python
 *.pyc
 __pycache__/
+*.egg-info/
 
 # Jetbrains
 .idea/
