@@ -429,22 +429,10 @@ class ValidationEngine:
         if config.entity_type == ConfigType.MODULE:
             if parts[0] == 'input':
                 # External input interface
-                # For validation inside the module, 'input.X' refers to the source of data coming IN.
-                # Its type is determined by what feeds it externally? No, in module design, we define interfaces.
-                # But typically we want to check consistency.
-                # If we are checking "from: input.X", we want the type of X.
-                # In our ResolutionService, resolve_port_type(module, 'input', X) checks internal connections
-                # starting from input.X to find what it connects TO.
-                # Wait, if input.X -> instance.input.Y. Then input.X "should be" type(Y).
-                # ResolutionService logic:
-                # if port_type == 'input': finds connection FROM input.X TO instance.input.Y. Returns type(Y).
-                # This seems correct for "what type is required for input.X".
                 port_type = 'input'
                 port_name = parts[1]
             elif parts[0] == 'output':
                 # External output interface
-                # If "to: output.X", we want type of X.
-                # ResolutionService: if port_type == 'output': finds connection FROM instance.output.Y TO output.X. Returns type(Y).
                 port_type = 'output'
                 port_name = parts[1]
             else:
