@@ -153,7 +153,8 @@ class ConfigParser:
                 **base_data,
                 modes=config.get('modes'),
                 components=config.get('components'),
-                connections=config.get('connections')
+                connections=config.get('connections'),
+                variables=config.get('variables')
             )
         else:
             raise ValidationError(f"Unknown entity type: {entity_type}")

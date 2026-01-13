@@ -51,8 +51,7 @@ class Deployment:
             self.config_yaml = {}
             self.config_yaml['system'] = system_config.deployment_file
             self.config_yaml['name'] = system_config.deployment_file
-            self.config_yaml.setdefault('global_parameters', [])
-            self.config_yaml.setdefault('environment_parameters', [])
+            self.config_yaml.setdefault('variables', [])
             self.name = self.config_yaml.get("name")
 
         else:
@@ -61,19 +60,18 @@ class Deployment:
             self.config_yaml = yaml_parser.load_config(self.config_yaml_dir)
             self.name = self.config_yaml.get("name")
 
+        # Check the configuration
+        self._check_config()
+
         # create parameter resolver for ROS-independent operation
         self.parameter_resolver = ParameterResolver(
-            global_params=self.config_yaml.get('global_parameters', []),
-            env_params=self.config_yaml.get('environment_parameters', []),
+            variables=self.config_yaml.get('variables', []),
             package_paths=package_paths
         )
 
         # Process global parameter files
         if 'global_parameter_files' in self.config_yaml:
             self._load_global_parameter_files(self.config_yaml['global_parameter_files'])
-
-        # Check the configuration
-        self._check_config()
 
         # member variables - now supports multiple instances (one per mode)
         self.deploy_instances: Dict[str, DeploymentInstance] = {}  # mode_name -> DeploymentInstance
@@ -206,7 +204,7 @@ class Deployment:
         """Validate & normalize deployment configuration.
 
         Two supported input forms:
-        1. Deployment YAML (fields: name, system, global_parameters, environment_parameters)
+        1. Deployment YAML (fields: name, system, variables)
         2. Raw System YAML (only 'name' ending with '.system'). We synthesize a minimal
            deployment in-memory (no vehicles / environment parameters) so downstream logic works.
         """
@@ -218,10 +216,8 @@ class Deployment:
                 )
 
         # Optional lists: default to empty if omitted
-        if 'global_parameters' not in self.config_yaml:
-            self.config_yaml['global_parameters'] = []
-        if 'environment_parameters' not in self.config_yaml:
-            self.config_yaml['environment_parameters'] = []
+        if 'variables' not in self.config_yaml:
+            self.config_yaml['variables'] = []
 
         return True
 
@@ -257,8 +253,8 @@ class Deployment:
                 )
                 
                 # Resolve parameters (apply global parameters and resolve substitutions)
-                global_params = self.config_yaml.get('global_parameters', [])
-                deploy_instance.resolve_parameters(global_params)
+                variables = self.config_yaml.get('variables', [])
+                deploy_instance.resolve_parameters(variables)
 
                 # Store instance
                 mode_key = mode_name if mode_name else "default"
@@ -357,4 +353,3 @@ class Deployment:
             logger.info(f"Generated {len(output_path_list)} parameter set templates for mode: {mode_key}")
         
         return output_paths
-

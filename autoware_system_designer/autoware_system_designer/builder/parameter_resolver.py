@@ -55,16 +55,14 @@ class ParameterResolver:
     Resolution order: environment variables first, then variables, then find-pkg-share commands, then eval.
     """
 
-    def __init__(self, global_params: List[Dict[str, Any]], env_params: List[Dict[str, Any]],
-                 package_paths: Dict[str, str]):
+    def __init__(self, variables: List[Dict[str, Any]], package_paths: Dict[str, str]):
         """Initialize resolver with deployment parameters and package paths.
 
         Args:
-            global_params: Global parameters from deployment.yaml
-            env_params: Environment parameters from deployment.yaml
+            variables: Variables from deployment.yaml
             package_paths: Mapping of package_name -> absolute_path from manifest_dir
         """
-        self.variable_map = self._build_variable_map(global_params, env_params)
+        self.variable_map = self._build_variable_map(variables)
         self.package_paths = package_paths.copy()
 
         # Regex patterns for substitutions
@@ -81,7 +79,7 @@ class ParameterResolver:
         """
         # Create a new instance with empty params
         # We rely on manual population of variable_map and package_paths
-        new_resolver = ParameterResolver([], [], self.package_paths)
+        new_resolver = ParameterResolver([], self.package_paths)
         new_resolver.variable_map = self.variable_map.copy()
         return new_resolver
 
@@ -93,20 +91,12 @@ class ParameterResolver:
         """
         self.variable_map.update(new_variables)
 
-    def _build_variable_map(self, global_params: List[Dict[str, Any]],
-                           env_params: List[Dict[str, Any]]) -> Dict[str, str]:
+    def _build_variable_map(self, variables_list: List[Dict[str, Any]]) -> Dict[str, str]:
         """Build variable mapping from deployment parameters."""
         variables = {}
 
-        # Add global parameters
-        for param in global_params:
-            name = param.get('name')
-            value = param.get('value')
-            if name and value is not None:
-                variables[name] = str(value)
-
-        # Add environment parameters
-        for param in env_params:
+        # Add variables
+        for param in variables_list:
             name = param.get('name')
             value = param.get('value')
             if name and value is not None:

@@ -72,3 +72,4 @@ class SystemConfig(Config):
     modes: List[Dict[str, Any]] = None
     components: List[Dict[str, Any]] = None
     connections: List[Dict[str, Any]] = None
+    variables: List[Dict[str, Any]] = None

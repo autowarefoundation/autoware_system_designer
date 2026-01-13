@@ -505,17 +505,17 @@ class Instance:
 
         return data
 
-    def resolve_parameters(self, global_params_config):
+    def resolve_parameters(self, variables_config):
         """Apply global parameters from deployment configuration to all nodes in the instance.
         And then resolve all parameters in the instance tree that may contain substitutions.
 
         Args:
-            global_params_config: List of global parameter configurations from deployment
+            variables_config: List of global parameter configurations from deployment
         """
-        if global_params_config:
-            logger.info(f"Applying {len(global_params_config)} global parameters to all nodes")
+        if variables_config:
+            logger.info(f"Applying {len(variables_config)} global parameters to all nodes")
             # Traverse all instances and apply global parameters to nodes
-            self._resolve_parameters_recursive(global_params_config)
+            self._resolve_parameters_recursive(variables_config)
         else:
             logger.debug("No global parameters defined in deployment configuration")
 
@@ -523,15 +523,15 @@ class Instance:
         # This includes global parameters resolution and other substitutions like ${input ...}
         self._finalize_parameters_recursive()
 
-    def _resolve_parameters_recursive(self, global_params_config):
+    def _resolve_parameters_recursive(self, variables_config):
         """Recursively apply global parameters to all nodes in the instance tree and resolve any remaining substitutions.
 
         Args:
-            global_params_config: List of global parameter configurations
+            variables_config: List of global parameter configurations
         """
         # If this is a node, apply global parameters to it
         if self.entity_type == "node":
-            for param_config in global_params_config:
+            for param_config in variables_config:
                 param_name = param_config.get('name')
                 param_value = param_config.get('value')
                 param_type = param_config.get('type', 'string')  # Default to string if not specified
@@ -552,7 +552,7 @@ class Instance:
 
         # Recursively process children
         for child in self.children.values():
-            child._resolve_parameters_recursive(global_params_config)
+            child._resolve_parameters_recursive(variables_config)
 
     def _finalize_parameters_recursive(self):
         """Recursively finalize all parameters in the instance tree.

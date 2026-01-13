@@ -2,6 +2,12 @@ autoware_system_design_format: v0.1.0
 
 name: TypeAlpha.system
 
+variables:
+  - name: vehicle_id
+  - name: data_path
+  - name: lanelet2_map_file
+  - name: pointcloud_map_file
+
 modes:
   - name: default
     description: Default mode
