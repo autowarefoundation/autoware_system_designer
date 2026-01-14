@@ -32,7 +32,12 @@ logger = logging.getLogger(__name__)
 
 
 class Instance:
-    # Common attributes for node hierarch instance
+    """Base class for all instances in the system hierarchy.
+    
+    Represents a node in the instance tree, which can be a system, module, or node.
+    Manages configuration, topology, interfaces, parameters, and events.
+    """
+    
     def __init__(
         self, name: str, compute_unit: str = "", namespace: list[str] = [], layer: int = 0
     ):
@@ -113,8 +118,10 @@ class Instance:
             raise ValidationError(f"Error setting instances for {entity_id}, at {self.configuration.file_path}")
 
     def _set_system_instances(self, config_registry: ConfigRegistry):
-        """Set instances for system entity type."""
-        # No more mode filtering - components are already resolved by mode configuration
+        """Set instances for system entity type.
+        
+        Creates component instances from the system configuration.
+        """
         components_to_instantiate = self.configuration.components
         
         # First pass: create all component instances
@@ -146,8 +153,6 @@ class Instance:
             logger.debug(f"System instance '{self.namespace_str}' added component '{instance_name}' (uid={instance.unique_id})")
         
         # Apply system-level parameter sets
-        # The parameter_sets in configuration have already been resolved by deployment.py
-        # (including any mode-specific overrides)
         if hasattr(self.configuration, 'parameter_sets') and self.configuration.parameter_sets:
             parameter_sets_to_apply = self.configuration.parameter_sets
             logger.info(f"Applying {len(parameter_sets_to_apply)} system-level parameter set(s)")
@@ -439,30 +444,28 @@ class Instance:
             child._finalize_parameters_recursive()
 
 class DeploymentInstance(Instance):
-    def __init__(self, name: str, mode: str = None):
+    """Top-level deployment instance representing a complete system deployment.
+    
+    This instance manages the entire system hierarchy, including setting up the system
+    configuration, building the instance tree, establishing connections, and resolving parameters.
+    """
+    
+    def __init__(self, name: str):
         super().__init__(name)
-        self.mode = mode  # Store mode for this deployment instance
 
     def set_system(
         self,
         system_config: SystemConfig,
         config_registry,
-        mode: str = None,
         package_paths: Dict[str, str] = {},
     ):
         """Set system for this deployment instance.
 
         Args:
-            system_config: System configuration (should have mode-specific config already applied)
+            system_config: System configuration
             config_registry: Registry of all configurations
-            mode: Optional mode name for metadata (not used for filtering - deprecated)
             package_paths: Package paths for parameter resolution
-        
-        Note:
-            Mode-specific configuration should be applied to system_config before calling this method.
-            The mode parameter is kept for backward compatibility and metadata only.
         """
-        self.mode = mode
         self.parameter_resolver = ParameterResolver(variables=[], package_paths=package_paths)
         logger.info(f"Setting system {system_config.full_name} for instance {self.name}")
         self.configuration = system_config

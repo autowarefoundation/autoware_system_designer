@@ -305,11 +305,10 @@ class Deployment:
                 
                 mode_suffix = f"_{mode_name}" if mode_name else ""
                 instance_name = f"{self.name}{mode_suffix}"
-                deploy_instance = DeploymentInstance(instance_name, mode=mode_name)
+                deploy_instance = DeploymentInstance(instance_name)
                 
-                # Set system with modified configuration (no mode filtering needed)
                 deploy_instance.set_system(
-                    mode_system_config, self.config_registry, mode=None, package_paths=package_paths
+                    mode_system_config, self.config_registry, package_paths=package_paths
                 )
 
                 # Store instance
