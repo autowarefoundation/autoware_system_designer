@@ -145,18 +145,18 @@ class Instance:
             self.children[instance_name] = instance
             logger.debug(f"System instance '{self.namespace_str}' added component '{instance_name}' (uid={instance.unique_id})")
         
-        # Apply mode parameter set (between component creation and component parameter sets)
-        if hasattr(self, 'mode') and self.mode:
-            modes_config = self.configuration.modes or []
-            mode_config = next((m for m in modes_config if m.get('name') == self.mode), None)
-            if mode_config and 'parameter_set' in mode_config:
-                logger.info(f"Applying mode '{self.mode}' parameter set to system")
-                # Create a dummy component config to reuse _apply_parameter_set
-                dummy_component_config = {'parameter_set': mode_config['parameter_set']}
-                # Apply to self (root), disabling namespace check to allow global parameters
-                self._apply_parameter_set(self, dummy_component_config, config_registry, check_namespace=False,
-                                          file_parameter_type=ParameterType.MODE_FILE,
-                                          direct_parameter_type=ParameterType.MODE)
+        # Apply system-level parameter sets
+        # The parameter_sets in configuration have already been resolved by deployment.py
+        # (including any mode-specific overrides)
+        if hasattr(self.configuration, 'parameter_sets') and self.configuration.parameter_sets:
+            parameter_sets_to_apply = self.configuration.parameter_sets
+            logger.info(f"Applying {len(parameter_sets_to_apply)} system-level parameter set(s)")
+            # Create a dummy component config to reuse _apply_parameter_set
+            dummy_component_config = {'parameter_set': parameter_sets_to_apply}
+            # Apply to self (root), disabling namespace check to allow global parameters
+            self._apply_parameter_set(self, dummy_component_config, config_registry, check_namespace=False,
+                                      file_parameter_type=ParameterType.MODE_FILE,
+                                      direct_parameter_type=ParameterType.MODE)
 
         # Second pass: apply parameter sets after all instances are created
         # This ensures that parameter_sets can target nodes across different components
@@ -423,10 +423,6 @@ class Instance:
                 } for p in self.parameter_manager.get_all_parameters()
             ],
         }
-        
-        # Add mode information if this is a deployment instance
-        if hasattr(self, 'mode') and self.mode is not None:
-            data["mode"] = self.mode
 
         return data
 
@@ -468,8 +464,7 @@ class DeploymentInstance(Instance):
         """
         self.mode = mode
         self.parameter_resolver = ParameterResolver(variables=[], package_paths=package_paths)
-        logger.info(f"Setting system {system_config.full_name} for instance {self.name}" +
-                   (f" (mode: {mode})" if mode else ""))
+        logger.info(f"Setting system {system_config.full_name} for instance {self.name}")
         self.configuration = system_config
         self.entity_type = "system"
 

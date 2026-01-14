@@ -233,8 +233,9 @@ class SystemValidator(BaseValidator):
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         return {
             'name': {'type': 'string'},
-            'inheritance': {'type': 'string'},  # New field
+            'inheritance': {'type': 'string'},
             'modes': {'type': 'nullable_array'},
+            'parameter_sets': {'type': 'nullable_array'},  # System-level parameter sets
             'components': {'type': 'array'},
             'connections': {'type': 'array'},
             'variables': {'type': 'nullable_array'},

@@ -140,6 +140,7 @@ class SystemInheritanceResolver(InheritanceResolver):
             {'field': 'variables', 'key_field': 'name'},
             {'field': 'variable_files', 'key_field': None},
             {'field': 'modes', 'key_field': 'name'},
+            {'field': 'parameter_sets', 'key_field': None},  # Parameter sets are appended
             {'field': 'components', 'key_field': 'component'},
             {'field': 'connections', 'key_field': None},
         ]
@@ -153,6 +154,7 @@ class SystemInheritanceResolver(InheritanceResolver):
     def _apply_removals(self, system_config: SystemConfig, remove_config: Dict[str, Any]):
         remove_specs = [
             {'field': 'modes', 'key_field': 'name'},
+            {'field': 'parameter_sets', 'key_field': None},  # Remove parameter sets by value
             {'field': 'components', 'key_field': 'component'},
             {'field': 'variables', 'key_field': 'name'},
             {'field': 'connections', 'key_field': None},

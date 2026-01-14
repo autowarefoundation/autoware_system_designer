@@ -173,6 +173,7 @@ class ConfigParser:
                 sub_type=sub_type,
                 modes=config.get('modes'),
                 mode_configs=mode_configs if mode_configs else None,
+                parameter_sets=config.get('parameter_sets'),
                 components=config.get('components'),
                 connections=config.get('connections'),
                 variables=config.get('variables'),

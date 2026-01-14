@@ -90,8 +90,15 @@ def _apply_overrides(config: SystemConfig, override_spec: Dict[str, Any]) -> Non
     
     Args:
         config: SystemConfig to modify in-place
-        override_spec: Dictionary containing 'components' and/or 'connections' to override/add
+        override_spec: Dictionary containing 'components', 'connections', and/or 'parameter_sets' to override/add
     """
+    # Override parameter_sets (replaces base parameter_sets completely)
+    if 'parameter_sets' in override_spec:
+        override_parameter_sets = override_spec['parameter_sets']
+        if override_parameter_sets is not None:
+            config.parameter_sets = override_parameter_sets
+            logger.info(f"Overrode parameter_sets with {len(override_parameter_sets) if isinstance(override_parameter_sets, list) else 1} parameter set(s)")
+    
     # Override/add components
     if 'components' in override_spec:
         override_components = override_spec['components']

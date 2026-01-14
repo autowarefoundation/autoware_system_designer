@@ -82,6 +82,7 @@ class SystemConfig(Config):
     """Data structure for system entities."""
     modes: List[Dict[str, Any]] = None
     mode_configs: Dict[str, Dict[str, Any]] = None  # Mode-specific overrides/removals
+    parameter_sets: List[str] = None  # System-level parameter sets
     components: List[Dict[str, Any]] = None
     connections: List[Dict[str, Any]] = None
     variables: List[Dict[str, Any]] = None
