@@ -27,7 +27,7 @@ from .exceptions import ValidationError, DeploymentError
 from .utils.template_utils import TemplateRenderer
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
-from .models.config import SystemConfig
+from .resolvers.inheritance_resolver import SystemInheritanceResolver
 
 logger = logging.getLogger(__name__)
 debug_mode = True
@@ -74,84 +74,9 @@ class Deployment:
             if not system_config:
                 raise ValidationError(f"System not found: {system_name}")
 
-            # Generalize inheritance: Merge lists using _merge_list helper
-            
-            # 1. Variables (key='name')
-            system_config.variables = self._merge_list(
-                system_config.variables or [], 
-                config_yaml.get('variables', []), 
-                key_field='name'
-            )
-            
-            # 2. Variable Files (append only)
-            system_config.variable_files = self._merge_list(
-                system_config.variable_files or [], 
-                config_yaml.get('variable_files', []), 
-                key_field=None
-            )
-
-            # 3. Modes (key='name')
-            system_config.modes = self._merge_list(
-                system_config.modes or [],
-                config_yaml.get('modes', []),
-                key_field='name'
-            )
-
-            # 4. Components (key='component')
-            system_config.components = self._merge_list(
-                system_config.components or [],
-                config_yaml.get('components', []),
-                key_field='component'
-            )
-
-            # 5. Connections (append only, or key='name' if connections have names and need overriding)
-            # Plan specified append only for connections.
-            system_config.connections = self._merge_list(
-                system_config.connections or [],
-                config_yaml.get('connections', []),
-                key_field=None
-            )
-
-            # Apply removals if 'remove' section exists
-            remove_config = config_yaml.get('remove', {})
-            if remove_config:
-                # 1. Remove Modes (key='name')
-                if 'modes' in remove_config:
-                    # Capture removed mode names for component cleanup
-                    removed_mode_names = [m.get('name') for m in remove_config['modes'] if 'name' in m]
-                    
-                    system_config.modes = self._remove_list(
-                        system_config.modes,
-                        remove_config['modes'],
-                        key_field='name'
-                    )
-                    
-                    # Cleanup components referencing removed modes
-                    self._cleanup_components_modes(system_config, removed_mode_names)
-                
-                # 2. Remove Components (key='component')
-                if 'components' in remove_config:
-                    system_config.components = self._remove_list(
-                        system_config.components,
-                        remove_config['components'],
-                        key_field='component'
-                    )
-
-                # 3. Remove Variables (key='name')
-                if 'variables' in remove_config:
-                    system_config.variables = self._remove_list(
-                        system_config.variables,
-                        remove_config['variables'],
-                        key_field='name'
-                    )
-
-                # 4. Remove Connections (subset match)
-                if 'connections' in remove_config:
-                    system_config.connections = self._remove_list(
-                        system_config.connections,
-                        remove_config['connections'],
-                        key_field=None
-                    )
+            # Generalize inheritance: Use SystemInheritanceResolver
+            resolver = SystemInheritanceResolver()
+            resolver.resolve(system_config, config_yaml)
 
         self.name = config_yaml.get("name")
 
@@ -167,112 +92,6 @@ class Deployment:
 
         # 5. build the deployment
         self._build(system_config, package_paths)
-
-    def _merge_list(self, base_list: List[Dict], override_list: List[Dict], key_field: str = None) -> List[Dict]:
-        """
-        Merge override_list into base_list.
-        If key_field is provided, items with matching key_field in override_list replace those in base_list.
-        Otherwise, items are appended.
-        """
-        if not override_list:
-            return base_list
-
-        merged_list = [item.copy() for item in base_list]
-
-        if key_field:
-            # Create a map for quick lookup and replacement
-            base_map = {item[key_field]: i for i, item in enumerate(merged_list) if key_field in item}
-            
-            for item in override_list:
-                key = item.get(key_field)
-                if key and key in base_map:
-                    # Replace existing item
-                    merged_list[base_map[key]] = item
-                else:
-                    # Append new item
-                    merged_list.append(item)
-        else:
-            # Simple append if no key_field is provided
-            merged_list.extend(override_list)
-
-        return merged_list
-
-    def _remove_list(self, target_list: List[Dict], remove_specs: List[Dict], key_field: str = None) -> List[Dict]:
-        """
-        Remove items from target_list based on remove_specs.
-        If key_field is provided, remove items where item[key_field] matches spec[key_field].
-        Otherwise, remove items that match all properties in spec.
-        """
-        if not remove_specs or not target_list:
-            return target_list
-
-        result_list = []
-        
-        # Prepare lookup for key-based removal
-        remove_keys = set()
-        if key_field:
-            for spec in remove_specs:
-                if key_field in spec:
-                    remove_keys.add(spec[key_field])
-
-        for item in target_list:
-            should_remove = False
-            if key_field:
-                if item.get(key_field) in remove_keys:
-                    should_remove = True
-            else:
-                # Subset match: checks if any spec matches the item
-                for spec in remove_specs:
-                    # Check if spec is a subset of item
-                    if all(item.get(k) == v for k, v in spec.items()):
-                        should_remove = True
-                        break
-            
-            if not should_remove:
-                result_list.append(item)
-
-        return result_list
-
-    def _cleanup_components_modes(self, system_config: SystemConfig, removed_modes: List[str]):
-        """Remove removed modes from components' mode lists.
-           If a component was specific to a removed mode and has no modes left, remove the component.
-        """
-        if not system_config.components:
-            return
-
-        components_to_keep = []
-        removed_set = set(removed_modes)
-
-        for comp in system_config.components:
-            mode_field = comp.get('mode')
-            
-            # If mode is not specified (None or empty), it applies to all modes.
-            # We don't need to change anything, as it will apply to whatever modes remain.
-            if not mode_field:
-                components_to_keep.append(comp)
-                continue
-                
-            # Normalize to list
-            current_modes = mode_field if isinstance(mode_field, list) else [mode_field]
-            
-            # Check intersection
-            if not any(m in removed_set for m in current_modes):
-                components_to_keep.append(comp)
-                continue
-                
-            # Filter out removed modes
-            new_modes = [m for m in current_modes if m not in removed_set]
-            
-            if new_modes:
-                # Update component with new modes
-                comp['mode'] = new_modes
-                components_to_keep.append(comp)
-            else:
-                # Component has no modes left (and it was not "all modes" initially)
-                # Drop the component
-                logger.info(f"Dropping component '{comp.get('component')}' as all its modes {current_modes} were removed.")
-                
-        system_config.components = components_to_keep
 
     def _get_system_list(self, deploy_config: DeploymentConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
         system_list: list[str] = []
