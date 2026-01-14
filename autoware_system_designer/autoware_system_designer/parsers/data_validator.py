@@ -130,17 +130,33 @@ class NodeValidator(BaseValidator):
     """Validator for node entities."""
     
     def get_required_fields(self) -> List[str]:
-        return ["name", "launch", "inputs", "outputs", "parameter_files", "parameters", "processes"]
+        return ["name"]
+
+    def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
+        """
+        Validate that all required fields are present.
+        """
+        super().validate_required_fields(config, file_path)
+        
+        if "inheritance" not in config:
+             required_full = ["launch", "inputs", "outputs", "parameter_files", "parameters", "processes"]
+             missing = [f for f in required_full if f not in config]
+             if missing:
+                raise ValidationError(
+                    f"Missing required fields {missing} in base node configuration (no inheritance). File: {file_path}"
+                )
     
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         return {
             'name': {'type': 'string'},
+            'inheritance': {'type': 'string'},
             'launch': {'type': 'object'},
             'inputs': {'type': 'array'},
             'outputs': {'type': 'array'},
             'parameter_files': {'type': 'object_or_array'},
             'parameters': {'type': 'object_or_array'},
-            'processes': {'type': 'array'}
+            'processes': {'type': 'array'},
+            'remove': {'type': 'object'}
         }
 
 class ModuleValidator(BaseValidator):

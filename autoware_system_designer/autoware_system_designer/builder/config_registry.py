@@ -19,7 +19,7 @@ import copy
 from ..parsers.data_parser import ConfigParser
 from ..models.config import Config, ConfigType, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigSubType
 from ..exceptions import ValidationError, NodeConfigurationError, ModuleConfigurationError, ParameterConfigurationError
-from ..resolvers.inheritance_resolver import SystemInheritanceResolver
+from ..resolvers.inheritance_resolver import SystemInheritanceResolver, NodeInheritanceResolver
 
 from ..parsers.data_validator import entity_name_decode
 
@@ -80,9 +80,48 @@ class ConfigRegistry:
     def get_node(self, name: str) -> NodeConfig:
         """Get a node entity by name."""
         entity = self._type_map[ConfigType.NODE].get(name)
+        
+        # If not found, try decoding the name (e.g. MyNode.node -> MyNode)
+        if entity is None and "." in name:
+            try:
+                decoded_name, entity_type = entity_name_decode(name)
+                if entity_type == ConfigType.NODE:
+                    entity = self._type_map[ConfigType.NODE].get(decoded_name)
+            except ValidationError:
+                pass
+        
         if entity is None:
             available = list(self._type_map[ConfigType.NODE].keys())
             raise NodeConfigurationError(f"Node '{name}' not found. Available nodes: {available}")
+        
+        if entity.sub_type == ConfigSubType.INHERITANCE:
+            # Get parent name
+            inheritance_target = entity.config.get('inheritance')
+            if not inheritance_target:
+                 # Should have been validated, but fallback
+                 return entity
+
+            # Resolve parent (recursive)
+            parent = self.get_node(inheritance_target)
+            
+            # Create a deep copy of the parent to serve as the base for this entity
+            # This ensures we don't modify the parent object
+            resolved_node = copy.deepcopy(parent)
+            
+            # Update the identity of the resolved node to match the current entity
+            resolved_node.name = entity.name
+            resolved_node.full_name = entity.full_name
+            resolved_node.file_path = entity.file_path
+            resolved_node.package = entity.package
+            resolved_node.sub_type = entity.sub_type
+            resolved_node.config = entity.config # Keep original config with overrides
+            
+            # Apply overrides from this entity's config
+            resolver = NodeInheritanceResolver()
+            resolver.resolve(resolved_node, entity.config)
+            
+            return resolved_node
+
         return entity
     
     def get_module(self, name: str) -> ModuleConfig:

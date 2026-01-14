@@ -14,7 +14,7 @@
 
 import logging
 from typing import List, Dict, Any, TypeVar, Optional
-from ..models.config import SystemConfig
+from ..models.config import SystemConfig, NodeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -214,3 +214,98 @@ class SystemInheritanceResolver(InheritanceResolver):
                 logger.info(f"Dropping component '{comp.get('component')}' as all its modes {current_modes} were removed.")
                 
         system_config.components = components_to_keep
+
+class NodeInheritanceResolver(InheritanceResolver):
+    """Resolver for Node entity inheritance."""
+
+    def resolve(self, node_config: NodeConfig, config_yaml: Dict[str, Any]):
+        """
+        Apply inheritance rules from config_yaml to node_config.
+        Modifies node_config in-place.
+        """
+        # 1. Launch (dict merge)
+        if 'launch' in config_yaml:
+             if node_config.launch is None:
+                 node_config.launch = {}
+             node_config.launch.update(config_yaml['launch'])
+
+        # 2. Inputs (key='name')
+        node_config.inputs = self._merge_list(
+            node_config.inputs,
+            config_yaml.get('inputs', []),
+            key_field='name'
+        )
+
+        # 3. Outputs (key='name')
+        node_config.outputs = self._merge_list(
+            node_config.outputs,
+            config_yaml.get('outputs', []),
+            key_field='name'
+        )
+        
+        # 4. Parameter Files (key='name')
+        node_config.parameter_files = self._merge_list(
+            node_config.parameter_files,
+            config_yaml.get('parameter_files', []),
+            key_field='name'
+        )
+
+        # 5. Parameters (key='name')
+        node_config.parameters = self._merge_list(
+            node_config.parameters,
+            config_yaml.get('parameters', []),
+            key_field='name'
+        )
+        
+        # 6. Processes (key='name')
+        node_config.processes = self._merge_list(
+            node_config.processes,
+            config_yaml.get('processes', []),
+            key_field='name'
+        )
+
+        # Apply removals if 'remove' section exists
+        remove_config = config_yaml.get('remove', {})
+        if remove_config:
+            self._apply_removals(node_config, remove_config)
+
+    def _apply_removals(self, node_config: NodeConfig, remove_config: Dict[str, Any]):
+        # 1. Remove Inputs
+        if 'inputs' in remove_config:
+            node_config.inputs = self._remove_list(
+                node_config.inputs,
+                remove_config['inputs'],
+                key_field='name'
+            )
+
+        # 2. Remove Outputs
+        if 'outputs' in remove_config:
+            node_config.outputs = self._remove_list(
+                node_config.outputs,
+                remove_config['outputs'],
+                key_field='name'
+            )
+
+        # 3. Remove Parameter Files
+        if 'parameter_files' in remove_config:
+            node_config.parameter_files = self._remove_list(
+                node_config.parameter_files,
+                remove_config['parameter_files'],
+                key_field='name'
+            )
+
+        # 4. Remove Parameters
+        if 'parameters' in remove_config:
+            node_config.parameters = self._remove_list(
+                node_config.parameters,
+                remove_config['parameters'],
+                key_field='name'
+            )
+
+        # 5. Remove Processes
+        if 'processes' in remove_config:
+            node_config.processes = self._remove_list(
+                node_config.processes,
+                remove_config['processes'],
+                key_field='name'
+            )

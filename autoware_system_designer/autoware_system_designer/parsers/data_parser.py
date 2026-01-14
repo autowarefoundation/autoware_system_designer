@@ -126,8 +126,10 @@ class ConfigParser:
                     if 'default' in param and 'value' not in param:
                         param['value'] = param['default']
 
+            sub_type = ConfigSubType.INHERITANCE if "inheritance" in config else ConfigSubType.BASE
             return NodeConfig(
                 **base_data,
+                sub_type=sub_type,
                 launch=config.get('launch'),
                 inputs=config.get('inputs'),
                 outputs=config.get('outputs'),
