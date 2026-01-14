@@ -21,7 +21,7 @@ from .builder.config_registry import ConfigRegistry
 from .builder.instances import DeploymentInstance
 from .builder.launcher_generator import generate_module_launch_file
 from .builder.parameter_template_generator import ParameterTemplateGenerator
-from .builder.parameter_resolver import ParameterResolver
+# from .builder.parameter_resolver import ParameterResolver
 from .parsers.data_validator import entity_name_decode
 from .parsers.yaml_parser import yaml_parser
 from .exceptions import ValidationError, DeploymentError
@@ -44,59 +44,59 @@ class Deployment:
         input_path = deploy_config.deployment_file
         config_yaml = {}
         system_name = None
-        is_inheritance = False
-        system = None
-
+        system_config = None
+        
         if not os.path.exists(input_path):
             # System
             system_name = os.path.basename(input_path)
             system_name, _ = entity_name_decode(system_name)
             
-            system = self.config_registry.get_system(system_name)
-            if not system:
+            system_config = self.config_registry.get_system(system_name)
+            if not system_config:
                 raise ValidationError(f"System not found: {system_name}")
             
-            self.config_yaml_dir = str(system.file_path)
+            self.config_yaml_dir = str(system_config.file_path)
             logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
             
             config_yaml = yaml_parser.load_config(self.config_yaml_dir)
             logger.info("Detected system-only deployment file.")
-            
-            if 'system' not in config_yaml:
-                 config_yaml['system'] = config_yaml.get('name', system_name)
 
         else:
             # Deployment(system inheritance)
             self.config_yaml_dir = input_path
             
             config_yaml = yaml_parser.load_config(self.config_yaml_dir)
-            is_inheritance = True
             
-            system_name = config_yaml["system"]
+            system_name = config_yaml['system']
             system_name, _ = entity_name_decode(system_name)
 
-            system = self.config_registry.get_system(system_name)
-            if not system:
+            system_config = self.config_registry.get_system(system_name)
+            if not system_config:
                 raise ValidationError(f"System not found: {system_name}")
 
+            # merge variables and variable files
+            merged_deployment_variables = [v.copy() for v in (system_config.variables or [])]
+            merged_deployment_variable_files = list(system_config.variable_files or [])
+
+            override_deployment_variables = config_yaml.get('variables', [])
+            override_deployment_variable_files = config_yaml.get('variable_files', [])
+            
+            # if same key exists, override the value 
+            # if key does not exist, add the value
+            var_map = {v['name']: v for v in merged_deployment_variables}
+            for v in override_deployment_variables:
+                if v['name'] in var_map:
+                    var_map[v['name']]['value'] = v.get('value')
+                else:
+                    merged_deployment_variables.append(v)
+            
+            for file_entry in override_deployment_variable_files:
+                merged_deployment_variable_files.append(file_entry)
+
+            system_config.variables = merged_deployment_variables
+            system_config.variable_files = merged_deployment_variable_files
+
         self.name = config_yaml.get("name")
-
-        # set parameter resolver
-        # create parameter resolver for ROS-independent operation
-        self.parameter_resolver = ParameterResolver(
-            variables=[],
-            package_paths=package_paths
-        )
-
-        # if it is inheritance, append/override variables and variable files
-        if is_inheritance:
-            variables = config_yaml.get('variables', [])
-            variable_map = self.parameter_resolver._build_variable_map(variables)
-            self.parameter_resolver.update_variables(variable_map)
-
-            # Process variable files
-            if 'variable_files' in config_yaml:
-                self._load_variable_files(config_yaml['variable_files'])
 
         # member variables - now supports multiple instances (one per mode)
         self.deploy_instances: Dict[str, DeploymentInstance] = {}  # mode_name -> DeploymentInstance
@@ -109,7 +109,7 @@ class Deployment:
         self.parameter_set_dir = os.path.join(self.output_root_dir, "exports", self.name,"parameter_set/")
 
         # 5. build the deployment
-        self._build(system)
+        self._build(system_config, package_paths)
 
     def _get_system_list(self, deploy_config: DeploymentConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
         system_list: list[str] = []
@@ -156,72 +156,9 @@ class Deployment:
             raise ValidationError(f"No system design configuration files collected.")
         return system_list, package_paths, file_package_map
 
-    def _load_variable_files(self, variable_files: List[Dict[str, str]]):
-        """Load parameters from external files and update parameter resolver."""
-        for file_entry in variable_files:
-            for param_prefix, file_path in file_entry.items():
-                # Resolve file path
-                resolved_path = self.parameter_resolver.resolve_string(file_path)
-                
-                # Check if it's a find-pkg-share that couldn't be resolved (starts with $)
-                if resolved_path.startswith('$'):
-                    logger.warning(f"Could not resolve path for global parameter file: {file_path}")
-                    continue
-                
-                if not os.path.exists(resolved_path):
-                    logger.warning(f"Global parameter file not found: {resolved_path}")
-                    continue
-                    
-                try:
-                    data = yaml_parser.load_config(resolved_path)
-                    if not data:
-                        continue
-                        
-                    # Derive prefix from key (e.g., vehicle_info_file -> vehicle_info)
-                    prefix = param_prefix.replace('_file', '')
-                    
-                    variables = {}
-
-                    # Iterate through nodes in the yaml (standard ROS 2 param file structure)
-                    # node_name:
-                    #   ros__parameters:
-                    #     param_name: value
-                    for node_name, node_data in data.items():
-                        if isinstance(node_data, dict) and "ros__parameters" in node_data:
-                            params = node_data["ros__parameters"]
-                            flattened = self._flatten_parameters(params, parent_key=prefix)
-                            variables.update(flattened)
-                        # Handle case where file might be just key-value pairs without node/ros__parameters wrapper
-                        elif param_prefix == 'variables' or param_prefix == 'variable_file':
-                             # If explicitly global params file, maybe treat differently? 
-                             # For now assume ROS 2 param structure or flat if no ros__parameters
-                             pass 
-                            
-                    # Update resolver
-                    if variables:
-                        self.parameter_resolver.update_variables(variables)
-                        logger.info(f"Loaded {len(variables)} global parameters from {resolved_path}")
-                    else:
-                        logger.warning(f"No parameters found in {resolved_path} (expected standard ROS 2 parameter file format)")
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to load global parameter file {resolved_path}: {e}")
-
-    def _flatten_parameters(self, params: Dict[str, Any], parent_key: str = "", separator: str = ".") -> Dict[str, str]:
-        """Flatten nested dictionary into dot-separated keys."""
-        items = {}
-        for k, v in params.items():
-            new_key = f"{parent_key}{separator}{k}" if parent_key else k
-            
-            if isinstance(v, dict):
-                items.update(self._flatten_parameters(v, new_key, separator))
-            else:
-                items[new_key] = str(v)
-        return items
-
-    def _build(self, system):
+    def _build(self, system_config, package_paths):
         # 2. Determine modes to build
-        modes_config = system.modes or []
+        modes_config = system_config.modes or []
         if modes_config:
             # Build one instance per mode
             mode_names = [m.get('name') for m in modes_config]
@@ -240,7 +177,7 @@ class Deployment:
                 
                 # Set system with mode filtering
                 deploy_instance.set_system(
-                    system, self.config_registry, mode=mode_name, parameter_resolver=self.parameter_resolver
+                    system_config, self.config_registry, mode=mode_name, package_paths=package_paths
                 )
 
                 # Store instance

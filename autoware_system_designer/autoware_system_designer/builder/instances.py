@@ -23,6 +23,7 @@ from ..exceptions import ValidationError
 from ..utils.naming import generate_unique_id
 from ..visualization.visualization_guide import get_component_color, get_component_position
 from .config_registry import ConfigRegistry
+from .parameter_resolver import ParameterResolver
 from .parameter_manager import ParameterManager
 from .link_manager import LinkManager
 from .event_manager import EventManager
@@ -530,41 +531,40 @@ class DeploymentInstance(Instance):
 
     def set_system(
         self,
-        system: Config,
+        system_config: SystemConfig,
         config_registry,
         mode: str = None,
-        parameter_resolver = None,
+        package_paths: Dict[str, str] = {},
     ):
         """Set system for this deployment instance.
 
         Args:
-            system: System configuration
+            system_config: System configuration
             config_registry: Registry of all configurations
             mode: Optional mode name to filter components (None means no filtering)
             parameter_resolver: Resolver for ROS-independent parameter substitution
         """
         self.mode = mode
-        self.parameter_resolver = parameter_resolver
-        logger.info(f"Setting system {system.full_name} for instance {self.name}" +
+        self.parameter_resolver = ParameterResolver(variables=[], package_paths=package_paths)
+        logger.info(f"Setting system {system_config.full_name} for instance {self.name}" +
                    (f" (mode: {mode})" if mode else ""))
-        self.configuration = system
+        self.configuration = system_config
         self.entity_type = "system"
 
         # Apply system variables and variable files to the parameter resolver if available
         if self.parameter_resolver:
-            if hasattr(system, 'variables') and system.variables:
-                self.parameter_resolver.load_system_variables(system.variables)
+            if hasattr(system_config, 'variables') and system_config.variables:
+                self.parameter_resolver.load_system_variables(system_config.variables)
             
-            if hasattr(system, 'variable_files') and system.variable_files:
-                self.parameter_resolver.load_system_variable_files(system.variable_files)
+            if hasattr(system_config, 'variable_files') and system_config.variable_files:
+                self.parameter_resolver.load_system_variable_files(system_config.variable_files)
 
         # 1. set component instances
         logger.info(f"Instance '{self.name}': setting component instances")
-        self.set_instances(system.full_name, config_registry)
+        self.set_instances(system_config.full_name, config_registry)
 
         # Propagate parameter resolver to all instances in the tree (now that they exist)
-        if parameter_resolver:
-            self.set_parameter_resolver(parameter_resolver)
+        self.set_parameter_resolver(self.parameter_resolver)
 
         # 2. set connections
         logger.info(f"Instance '{self.name}': setting connections")
