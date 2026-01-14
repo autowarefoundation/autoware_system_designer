@@ -40,57 +40,63 @@ class Deployment:
 
         # detect mode of input file (deployment vs system only)
         logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)
-        self.config_yaml_dir = deploy_config.deployment_file
         
-        # 1. check the given deploy_config.deployment_file 
-        is_inheritance = False
+        input_path = deploy_config.deployment_file
+        config_yaml = {}
         system_name = None
-        self.config_yaml = {}
+        is_inheritance = False
+        system = None
 
-        if os.path.exists(self.config_yaml_dir):
-            # a1. try load the file
-            self.config_yaml = yaml_parser.load_config(self.config_yaml_dir)
-            is_inheritance = True
-            system_name = self.config_yaml["system"]
+        if not os.path.exists(input_path):
+            # System
+            system_name = os.path.basename(input_path)
+            system_name, _ = entity_name_decode(system_name)
+            
+            system = self.config_registry.get_system(system_name)
+            if not system:
+                raise ValidationError(f"System not found: {system_name}")
+            
+            self.config_yaml_dir = str(system.file_path)
+            logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
+            
+            config_yaml = yaml_parser.load_config(self.config_yaml_dir)
+            logger.info("Detected system-only deployment file.")
+            
+            if 'system' not in config_yaml:
+                 config_yaml['system'] = config_yaml.get('name', system_name)
+
         else:
-             # b. if it is 'system', it is a system config name. nothing to do
-             system_name = os.path.basename(self.config_yaml_dir)
-        
-        system_name, _ = entity_name_decode(system_name)
+            # Deployment(system inheritance)
+            self.config_yaml_dir = input_path
+            
+            config_yaml = yaml_parser.load_config(self.config_yaml_dir)
+            is_inheritance = True
+            
+            system_name = config_yaml["system"]
+            system_name, _ = entity_name_decode(system_name)
 
-        # 2. load the system configuration
-        system = self.config_registry.get_system(system_name)
-        if not system:
-            raise ValidationError(f"System not found: {system_name}")
+            system = self.config_registry.get_system(system_name)
+            if not system:
+                raise ValidationError(f"System not found: {system_name}")
 
-        # If it is system name, config_yaml is empty, load it from system path
-        if not self.config_yaml:
-             self.config_yaml_dir = str(system.file_path)
-             logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
-             self.config_yaml = yaml_parser.load_config(self.config_yaml_dir)
-             
-             logger.info("Detected system-only deployment file.")
-             if 'system' not in self.config_yaml:
-                  self.config_yaml['system'] = self.config_yaml.get('name', system_name)
+        self.name = config_yaml.get("name")
 
-        self.name = self.config_yaml.get("name")
-
-        # 3. set parameter resolver
+        # set parameter resolver
         # create parameter resolver for ROS-independent operation
         self.parameter_resolver = ParameterResolver(
             variables=[],
             package_paths=package_paths
         )
 
-        # 4. if it is inheritance, append/override variables and variable files
+        # if it is inheritance, append/override variables and variable files
         if is_inheritance:
-            variables = self.config_yaml.get('variables', [])
+            variables = config_yaml.get('variables', [])
             variable_map = self.parameter_resolver._build_variable_map(variables)
             self.parameter_resolver.update_variables(variable_map)
 
             # Process variable files
-            if 'variable_files' in self.config_yaml:
-                self._load_variable_files(self.config_yaml['variable_files'])
+            if 'variable_files' in config_yaml:
+                self._load_variable_files(config_yaml['variable_files'])
 
         # member variables - now supports multiple instances (one per mode)
         self.deploy_instances: Dict[str, DeploymentInstance] = {}  # mode_name -> DeploymentInstance
