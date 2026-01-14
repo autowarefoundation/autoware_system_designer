@@ -154,10 +154,25 @@ class ConfigParser:
             )
         elif entity_type == ConfigType.SYSTEM:
             sub_type = ConfigSubType.INHERITANCE if "inheritance" in config else ConfigSubType.BASE
+            
+            # Parse mode-specific configurations
+            mode_configs = {}
+            modes = config.get('modes')
+            if modes:
+                # Extract mode names from modes list
+                mode_names = [m.get('name') for m in modes if isinstance(m, dict) and 'name' in m]
+                
+                # Look for top-level keys matching mode names
+                for mode_name in mode_names:
+                    if mode_name in config:
+                        mode_configs[mode_name] = config[mode_name]
+                        logger.debug(f"Found mode-specific configuration for mode '{mode_name}'")
+            
             return SystemConfig(
                 **base_data,
                 sub_type=sub_type,
                 modes=config.get('modes'),
+                mode_configs=mode_configs if mode_configs else None,
                 components=config.get('components'),
                 connections=config.get('connections'),
                 variables=config.get('variables'),

@@ -151,11 +151,6 @@ class SystemInheritanceResolver(InheritanceResolver):
             self._apply_removals(system_config, remove_config)
 
     def _apply_removals(self, system_config: SystemConfig, remove_config: Dict[str, Any]):
-        # Capture removed mode names for component cleanup
-        removed_mode_names = []
-        if 'modes' in remove_config:
-            removed_mode_names = [m.get('name') for m in remove_config['modes'] if 'name' in m]
-
         remove_specs = [
             {'field': 'modes', 'key_field': 'name'},
             {'field': 'components', 'key_field': 'component'},
@@ -163,51 +158,6 @@ class SystemInheritanceResolver(InheritanceResolver):
             {'field': 'connections', 'key_field': None},
         ]
         self._resolve_removals(system_config, remove_config, remove_specs)
-
-        # Cleanup components referencing removed modes
-        if removed_mode_names:
-            self._cleanup_components_modes(system_config, removed_mode_names)
-
-    def _cleanup_components_modes(self, system_config: SystemConfig, removed_modes: List[str]):
-        """Remove removed modes from components' mode lists.
-           If a component was specific to a removed mode and has no modes left, remove the component.
-        """
-        if not system_config.components:
-            return
-
-        components_to_keep = []
-        removed_set = set(removed_modes)
-
-        for comp in system_config.components:
-            mode_field = comp.get('mode')
-            
-            # If mode is not specified (None or empty), it applies to all modes.
-            # We don't need to change anything, as it will apply to whatever modes remain.
-            if not mode_field:
-                components_to_keep.append(comp)
-                continue
-                
-            # Normalize to list
-            current_modes = mode_field if isinstance(mode_field, list) else [mode_field]
-            
-            # Check intersection
-            if not any(m in removed_set for m in current_modes):
-                components_to_keep.append(comp)
-                continue
-                
-            # Filter out removed modes
-            new_modes = [m for m in current_modes if m not in removed_set]
-            
-            if new_modes:
-                # Update component with new modes
-                comp['mode'] = new_modes
-                components_to_keep.append(comp)
-            else:
-                # Component has no modes left (and it was not "all modes" initially)
-                # Drop the component
-                logger.info(f"Dropping component '{comp.get('component')}' as all its modes {current_modes} were removed.")
-                
-        system_config.components = components_to_keep
 
 
 class NodeInheritanceResolver(InheritanceResolver):

@@ -15,6 +15,7 @@
 
 import os
 import logging
+import copy
 from typing import Dict, Tuple, List, Any
 from .deployment_config import DeploymentConfig
 from .builder.config_registry import ConfigRegistry
@@ -27,9 +28,156 @@ from .exceptions import ValidationError, DeploymentError
 from .utils.template_utils import TemplateRenderer
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
+from .models.config import SystemConfig
 
 logger = logging.getLogger(__name__)
 debug_mode = True
+
+
+def _apply_removals(config: SystemConfig, remove_spec: Dict[str, Any]) -> None:
+    """
+    Remove components and connections from system configuration.
+    
+    Args:
+        config: SystemConfig to modify in-place
+        remove_spec: Dictionary containing 'components' and/or 'connections' to remove
+    """
+    # Remove components
+    if 'components' in remove_spec:
+        components_to_remove = remove_spec['components']
+        if components_to_remove:
+            # Build set of component names to remove
+            remove_names = set()
+            for item in components_to_remove:
+                if isinstance(item, dict) and 'component' in item:
+                    remove_names.add(item['component'])
+            
+            # Filter out components to remove
+            if config.components:
+                config.components = [
+                    comp for comp in config.components 
+                    if comp.get('component') not in remove_names
+                ]
+                logger.debug(f"Removed {len(remove_names)} components: {remove_names}")
+    
+    # Remove connections
+    if 'connections' in remove_spec:
+        connections_to_remove = remove_spec['connections']
+        if connections_to_remove and config.connections:
+            # For connections, we need to match all fields in the spec
+            original_count = len(config.connections)
+            filtered_connections = []
+            
+            for conn in config.connections:
+                should_remove = False
+                for remove_conn in connections_to_remove:
+                    # Check if all fields in remove_conn match the connection
+                    if all(conn.get(k) == v for k, v in remove_conn.items()):
+                        should_remove = True
+                        break
+                
+                if not should_remove:
+                    filtered_connections.append(conn)
+            
+            config.connections = filtered_connections
+            removed_count = original_count - len(filtered_connections)
+            logger.debug(f"Removed {removed_count} connections")
+
+
+def _apply_overrides(config: SystemConfig, override_spec: Dict[str, Any]) -> None:
+    """
+    Apply overrides/additions to system configuration.
+    
+    Args:
+        config: SystemConfig to modify in-place
+        override_spec: Dictionary containing 'components' and/or 'connections' to override/add
+    """
+    # Override/add components
+    if 'components' in override_spec:
+        override_components = override_spec['components']
+        if override_components:
+            if not config.components:
+                config.components = []
+            
+            # Build a map of existing components by name
+            component_map = {
+                comp.get('component'): idx 
+                for idx, comp in enumerate(config.components)
+                if 'component' in comp
+            }
+            
+            # Apply overrides or add new components
+            for override_comp in override_components:
+                comp_name = override_comp.get('component')
+                if comp_name in component_map:
+                    # Override existing component
+                    idx = component_map[comp_name]
+                    config.components[idx] = override_comp
+                    logger.debug(f"Overrode component '{comp_name}'")
+                else:
+                    # Add new component
+                    config.components.append(override_comp)
+                    logger.debug(f"Added new component '{comp_name}'")
+    
+    # Add/override connections
+    if 'connections' in override_spec:
+        override_connections = override_spec['connections']
+        if override_connections:
+            if not config.connections:
+                config.connections = []
+            
+            # For connections, we simply append them (no override logic needed)
+            # as connections are uniquely identified by their from/to combination
+            config.connections.extend(override_connections)
+            logger.debug(f"Added {len(override_connections)} connections")
+
+
+def apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -> SystemConfig:
+    """
+    Create a copy of base system and apply mode-specific overrides/removals.
+    
+    Args:
+        base_system_config: The base system configuration
+        mode_name: Name of the mode to apply (or "default" for base)
+    
+    Returns:
+        Modified system configuration with mode applied
+    """
+    # Create a deep copy to avoid modifying original
+    modified_config = copy.deepcopy(base_system_config)
+    
+    # Filter out components with explicit 'mode' fields from base (deprecated old format)
+    # These components should be defined in mode-specific sections instead
+    if modified_config.components:
+        filtered_components = []
+        for comp in modified_config.components:
+            if 'mode' in comp:
+                logger.debug(f"Filtering out component '{comp.get('component')}' with deprecated 'mode' field from base")
+            else:
+                filtered_components.append(comp)
+        modified_config.components = filtered_components
+    
+    # If mode is "default" or no mode configs exist, return the filtered base
+    if mode_name == "default" or not base_system_config.mode_configs:
+        return modified_config
+    
+    mode_config = base_system_config.mode_configs.get(mode_name)
+    if not mode_config:
+        # Mode not found, return base configuration
+        logger.warning(f"Mode '{mode_name}' not found in mode_configs, using base configuration")
+        return modified_config
+    
+    logger.info(f"Applying mode configuration for mode '{mode_name}'")
+    
+    # Apply removals first
+    if 'remove' in mode_config:
+        _apply_removals(modified_config, mode_config['remove'])
+    
+    # Apply overrides/additions
+    if 'override' in mode_config:
+        _apply_overrides(modified_config, mode_config['override'])
+    
+    return modified_config
 
 class Deployment:
     def __init__(self, deploy_config: DeploymentConfig ):
@@ -128,29 +276,37 @@ class Deployment:
     def _build(self, system_config, package_paths):
         # 2. Determine modes to build
         modes_config = system_config.modes or []
+        
         if modes_config:
-            # Build one instance per mode
+            # Use defined modes
             mode_names = [m.get('name') for m in modes_config]
-            logger.info(f"Building deployment for {len(mode_names)} modes: {mode_names}")
+            
+            # If a mode has default=true, use that as default, otherwise use first mode
+            default_mode = next((m.get('name') for m in modes_config if m.get('default')), mode_names[0])
+            logger.info(f"Building deployment for {len(mode_names)} modes: {mode_names}, default: {default_mode}")
         else:
-            # No modes defined - build single instance without mode filtering
-            mode_names = [None]
-            logger.info(f"Building deployment without mode filtering")
+            # No modes defined - use "default" as the mode name
+            mode_names = ["default"]
+            default_mode = "default"
+            logger.info(f"Building deployment with single 'default' mode")
 
         # 3. Create deployment instance for each mode
         for mode_name in mode_names:
             try:
+                # Apply mode configuration on top of base system
+                mode_system_config = apply_mode_configuration(system_config, mode_name)
+                
                 mode_suffix = f"_{mode_name}" if mode_name else ""
                 instance_name = f"{self.name}{mode_suffix}"
                 deploy_instance = DeploymentInstance(instance_name, mode=mode_name)
                 
-                # Set system with mode filtering
+                # Set system with modified configuration (no mode filtering needed)
                 deploy_instance.set_system(
-                    system_config, self.config_registry, mode=mode_name, package_paths=package_paths
+                    mode_system_config, self.config_registry, mode=None, package_paths=package_paths
                 )
 
                 # Store instance
-                mode_key = mode_name if mode_name else "default"
+                mode_key = mode_name if mode_name else default_mode
                 self.deploy_instances[mode_key] = deploy_instance
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
                 
