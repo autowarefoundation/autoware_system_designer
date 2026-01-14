@@ -86,6 +86,47 @@ class InheritanceResolver:
 
         return result_list
 
+    def _resolve_merges(self, config_object: Any, config_yaml: Dict[str, Any], merge_specs: List[Dict[str, Any]]):
+        """
+        Generic merge resolver.
+        merge_specs format:
+        [
+            {'field': 'variables', 'key_field': 'name'},
+            {'field': 'connections', 'key_field': None}
+        ]
+        """
+        for spec in merge_specs:
+            field = spec['field']
+            key_field = spec['key_field']
+            
+            # Get current list from object
+            base_list = getattr(config_object, field)
+            
+            # Get override list from yaml
+            override_list = config_yaml.get(field, [])
+            
+            # Merge
+            merged_list = self._merge_list(base_list, override_list, key_field)
+            
+            # Set back to object
+            setattr(config_object, field, merged_list)
+
+    def _resolve_removals(self, config_object: Any, remove_config: Dict[str, Any], remove_specs: List[Dict[str, Any]]):
+        """
+        Generic removal resolver.
+        remove_specs format: same as merge_specs
+        """
+        for spec in remove_specs:
+            field = spec['field']
+            key_field = spec['key_field']
+            
+            if field in remove_config:
+                target_list = getattr(config_object, field)
+                remove_items = remove_config[field]
+                
+                result_list = self._remove_list(target_list, remove_items, key_field)
+                setattr(config_object, field, result_list)
+
 
 class SystemInheritanceResolver(InheritanceResolver):
     """Resolver for System entity inheritance."""
@@ -95,40 +136,14 @@ class SystemInheritanceResolver(InheritanceResolver):
         Apply inheritance rules from config_yaml to system_config.
         Modifies system_config in-place.
         """
-        # 1. Variables (key='name')
-        system_config.variables = self._merge_list(
-            system_config.variables, 
-            config_yaml.get('variables', []), 
-            key_field='name'
-        )
-        
-        # 2. Variable Files (append only)
-        system_config.variable_files = self._merge_list(
-            system_config.variable_files, 
-            config_yaml.get('variable_files', []), 
-            key_field=None
-        )
-
-        # 3. Modes (key='name')
-        system_config.modes = self._merge_list(
-            system_config.modes,
-            config_yaml.get('modes', []),
-            key_field='name'
-        )
-
-        # 4. Components (key='component')
-        system_config.components = self._merge_list(
-            system_config.components,
-            config_yaml.get('components', []),
-            key_field='component'
-        )
-
-        # 5. Connections (append only)
-        system_config.connections = self._merge_list(
-            system_config.connections,
-            config_yaml.get('connections', []),
-            key_field=None
-        )
+        merge_specs = [
+            {'field': 'variables', 'key_field': 'name'},
+            {'field': 'variable_files', 'key_field': None},
+            {'field': 'modes', 'key_field': 'name'},
+            {'field': 'components', 'key_field': 'component'},
+            {'field': 'connections', 'key_field': None},
+        ]
+        self._resolve_merges(system_config, config_yaml, merge_specs)
 
         # Apply removals if 'remove' section exists
         remove_config = config_yaml.get('remove', {})
@@ -136,43 +151,22 @@ class SystemInheritanceResolver(InheritanceResolver):
             self._apply_removals(system_config, remove_config)
 
     def _apply_removals(self, system_config: SystemConfig, remove_config: Dict[str, Any]):
-        # 1. Remove Modes (key='name')
+        # Capture removed mode names for component cleanup
+        removed_mode_names = []
         if 'modes' in remove_config:
-            # Capture removed mode names for component cleanup
             removed_mode_names = [m.get('name') for m in remove_config['modes'] if 'name' in m]
-            
-            system_config.modes = self._remove_list(
-                system_config.modes,
-                remove_config['modes'],
-                key_field='name'
-            )
-            
-            # Cleanup components referencing removed modes
+
+        remove_specs = [
+            {'field': 'modes', 'key_field': 'name'},
+            {'field': 'components', 'key_field': 'component'},
+            {'field': 'variables', 'key_field': 'name'},
+            {'field': 'connections', 'key_field': None},
+        ]
+        self._resolve_removals(system_config, remove_config, remove_specs)
+
+        # Cleanup components referencing removed modes
+        if removed_mode_names:
             self._cleanup_components_modes(system_config, removed_mode_names)
-        
-        # 2. Remove Components (key='component')
-        if 'components' in remove_config:
-            system_config.components = self._remove_list(
-                system_config.components,
-                remove_config['components'],
-                key_field='component'
-            )
-
-        # 3. Remove Variables (key='name')
-        if 'variables' in remove_config:
-            system_config.variables = self._remove_list(
-                system_config.variables,
-                remove_config['variables'],
-                key_field='name'
-            )
-
-        # 4. Remove Connections (subset match)
-        if 'connections' in remove_config:
-            system_config.connections = self._remove_list(
-                system_config.connections,
-                remove_config['connections'],
-                key_field=None
-            )
 
     def _cleanup_components_modes(self, system_config: SystemConfig, removed_modes: List[str]):
         """Remove removed modes from components' mode lists.
@@ -215,6 +209,7 @@ class SystemInheritanceResolver(InheritanceResolver):
                 
         system_config.components = components_to_keep
 
+
 class NodeInheritanceResolver(InheritanceResolver):
     """Resolver for Node entity inheritance."""
 
@@ -229,40 +224,14 @@ class NodeInheritanceResolver(InheritanceResolver):
                  node_config.launch = {}
              node_config.launch.update(config_yaml['launch'])
 
-        # 2. Inputs (key='name')
-        node_config.inputs = self._merge_list(
-            node_config.inputs,
-            config_yaml.get('inputs', []),
-            key_field='name'
-        )
-
-        # 3. Outputs (key='name')
-        node_config.outputs = self._merge_list(
-            node_config.outputs,
-            config_yaml.get('outputs', []),
-            key_field='name'
-        )
-        
-        # 4. Parameter Files (key='name')
-        node_config.parameter_files = self._merge_list(
-            node_config.parameter_files,
-            config_yaml.get('parameter_files', []),
-            key_field='name'
-        )
-
-        # 5. Parameters (key='name')
-        node_config.parameters = self._merge_list(
-            node_config.parameters,
-            config_yaml.get('parameters', []),
-            key_field='name'
-        )
-        
-        # 6. Processes (key='name')
-        node_config.processes = self._merge_list(
-            node_config.processes,
-            config_yaml.get('processes', []),
-            key_field='name'
-        )
+        merge_specs = [
+            {'field': 'inputs', 'key_field': 'name'},
+            {'field': 'outputs', 'key_field': 'name'},
+            {'field': 'parameter_files', 'key_field': 'name'},
+            {'field': 'parameters', 'key_field': 'name'},
+            {'field': 'processes', 'key_field': 'name'},
+        ]
+        self._resolve_merges(node_config, config_yaml, merge_specs)
 
         # Apply removals if 'remove' section exists
         remove_config = config_yaml.get('remove', {})
@@ -270,42 +239,11 @@ class NodeInheritanceResolver(InheritanceResolver):
             self._apply_removals(node_config, remove_config)
 
     def _apply_removals(self, node_config: NodeConfig, remove_config: Dict[str, Any]):
-        # 1. Remove Inputs
-        if 'inputs' in remove_config:
-            node_config.inputs = self._remove_list(
-                node_config.inputs,
-                remove_config['inputs'],
-                key_field='name'
-            )
-
-        # 2. Remove Outputs
-        if 'outputs' in remove_config:
-            node_config.outputs = self._remove_list(
-                node_config.outputs,
-                remove_config['outputs'],
-                key_field='name'
-            )
-
-        # 3. Remove Parameter Files
-        if 'parameter_files' in remove_config:
-            node_config.parameter_files = self._remove_list(
-                node_config.parameter_files,
-                remove_config['parameter_files'],
-                key_field='name'
-            )
-
-        # 4. Remove Parameters
-        if 'parameters' in remove_config:
-            node_config.parameters = self._remove_list(
-                node_config.parameters,
-                remove_config['parameters'],
-                key_field='name'
-            )
-
-        # 5. Remove Processes
-        if 'processes' in remove_config:
-            node_config.processes = self._remove_list(
-                node_config.processes,
-                remove_config['processes'],
-                key_field='name'
-            )
+        remove_specs = [
+            {'field': 'inputs', 'key_field': 'name'},
+            {'field': 'outputs', 'key_field': 'name'},
+            {'field': 'parameter_files', 'key_field': 'name'},
+            {'field': 'parameters', 'key_field': 'name'},
+            {'field': 'processes', 'key_field': 'name'},
+        ]
+        self._resolve_removals(node_config, remove_config, remove_specs)
