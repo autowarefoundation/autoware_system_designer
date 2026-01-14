@@ -213,6 +213,9 @@ class Instance:
             # create instance
             instance = Instance(instance_name, compute_unit_name, namespace)
             instance.parent = self
+            if self.parameter_resolver:
+                instance.set_parameter_resolver(self.parameter_resolver)
+
             try:
                 instance.set_instances(entity_id, config_registry)
             except Exception as e:
@@ -367,6 +370,9 @@ class Instance:
             )
             instance.parent = self
             instance.parent_module_list = self.parent_module_list.copy()
+            if self.parameter_resolver:
+                instance.set_parameter_resolver(self.parameter_resolver)
+
             # recursive call of set_instances
             try:
                 instance.set_instances(cfg_node.get("entity"), config_registry)
@@ -505,55 +511,6 @@ class Instance:
 
         return data
 
-    def resolve_parameters(self, variables_config):
-        """Apply global parameters from deployment configuration to all nodes in the instance.
-        And then resolve all parameters in the instance tree that may contain substitutions.
-
-        Args:
-            variables_config: List of global parameter configurations from deployment
-        """
-        if variables_config:
-            logger.info(f"Applying {len(variables_config)} global parameters to all nodes")
-            # Traverse all instances and apply global parameters to nodes
-            self._resolve_parameters_recursive(variables_config)
-        else:
-            logger.debug("No global parameters defined in deployment configuration")
-
-        # Now that global parameters are applied, resolve any remaining substitutions in all parameters
-        # This includes global parameters resolution and other substitutions like ${input ...}
-        self._finalize_parameters_recursive()
-
-    def _resolve_parameters_recursive(self, variables_config):
-        """Recursively apply global parameters to all nodes in the instance tree and resolve any remaining substitutions.
-
-        Args:
-            variables_config: List of global parameter configurations
-        """
-        # If this is a node, apply global parameters to it
-        if self.entity_type == "node":
-            for param_config in variables_config:
-                param_name = param_config.get('name')
-                param_value = param_config.get('value')
-                param_type = param_config.get('type', 'string')  # Default to string if not specified
-
-                # Resolve parameter value if resolver is available
-                if self.parameter_resolver:
-                    param_value = self.parameter_resolver.resolve_parameter_value(param_value)
-
-                if param_name is not None and param_value is not None:
-                    self.parameter_manager.parameters.set_parameter(
-                        param_name,
-                        param_value,
-                        data_type=param_type,
-                        allow_substs=True,
-                        parameter_type=ParameterType.GLOBAL
-                    )
-                    logger.debug(f"Applied global parameter '{param_name}'={param_value} to node '{self.namespace_str}'")
-
-        # Recursively process children
-        for child in self.children.values():
-            child._resolve_parameters_recursive(variables_config)
-
     def _finalize_parameters_recursive(self):
         """Recursively finalize all parameters in the instance tree.
         Resolve any remaining substitutions in all parameters and parameter files.
@@ -621,6 +578,9 @@ class DeploymentInstance(Instance):
 
         # 4. validate node namespaces
         self.check_duplicate_node_namespaces()
+
+        # 5. finalize parameters (resolve substitutions)
+        self._finalize_parameters_recursive()
 
     def check_duplicate_node_namespaces(self):
         """Check for duplicate node namespaces in the entire system."""

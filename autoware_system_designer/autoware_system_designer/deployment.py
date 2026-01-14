@@ -236,10 +236,6 @@ class Deployment:
                 deploy_instance.set_system(
                     system, self.config_registry, mode=mode_name, parameter_resolver=self.parameter_resolver
                 )
-                
-                # Resolve parameters (apply global parameters and resolve substitutions)
-                variables = self.config_yaml.get('variables', [])
-                deploy_instance.resolve_parameters(variables)
 
                 # Store instance
                 mode_key = mode_name if mode_name else "default"
