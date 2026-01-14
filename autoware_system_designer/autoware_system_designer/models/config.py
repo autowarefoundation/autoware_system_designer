@@ -28,6 +28,16 @@ class ConfigType:
         """Get all valid entity types."""
         return [cls.NODE, cls.MODULE, cls.PARAMETER_SET, cls.SYSTEM]
 
+class ConfigSubType:
+    """Constants for entity sub-types."""
+    # For SYSTEM
+    BASE = "base"
+    INHERITANCE = "inheritance"
+
+    @classmethod
+    def get_all_sub_types(cls) -> List[str]:
+        return [cls.BASE, cls.INHERITANCE]
+
 @dataclass
 class Config:
     """Pure data structure for entity configuration."""
@@ -37,6 +47,7 @@ class Config:
     config: Dict[str, Any]
     file_path: Path
     package: Optional[str] = None
+    sub_type: Optional[str] = None
     
     def __post_init__(self):
         """Ensure file_path is a Path object."""

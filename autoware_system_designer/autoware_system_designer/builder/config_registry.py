@@ -15,9 +15,13 @@
 from typing import List, Dict, Optional
 import logging
 
+import copy
 from ..parsers.data_parser import ConfigParser
-from ..models.config import Config, ConfigType, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
+from ..models.config import Config, ConfigType, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigSubType
 from ..exceptions import ValidationError, NodeConfigurationError, ModuleConfigurationError, ParameterConfigurationError
+from ..resolvers.inheritance_resolver import SystemInheritanceResolver
+
+from ..parsers.data_validator import entity_name_decode
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +102,51 @@ class ConfigRegistry:
         return entity
     
     def get_system(self, name: str) -> SystemConfig:
-        """Get an system entity by name."""
+        """Get an system entity by name. Resolves inheritance if applicable."""
         entity = self._type_map[ConfigType.SYSTEM].get(name)
+        
+        # If not found, try decoding the name (e.g. TypeAlpha.system -> TypeAlpha)
+        if entity is None and "." in name:
+            try:
+                decoded_name, entity_type = entity_name_decode(name)
+                if entity_type == ConfigType.SYSTEM:
+                    entity = self._type_map[ConfigType.SYSTEM].get(decoded_name)
+            except ValidationError:
+                # Name might not be in name.type format, which is fine, we just fall through
+                pass
+        
         if entity is None:
             available = list(self._type_map[ConfigType.SYSTEM].keys())
             raise ValidationError(f"System '{name}' not found. Available systems: {available}")
+            
+        if entity.sub_type == ConfigSubType.INHERITANCE:
+            # Get parent name
+            inheritance_target = entity.config.get('inheritance')
+            if not inheritance_target:
+                 # Should have been validated, but fallback
+                 return entity
+
+            # Resolve parent (recursive)
+            parent = self.get_system(inheritance_target)
+            
+            # Create a deep copy of the parent to serve as the base for this entity
+            # This ensures we don't modify the parent object
+            resolved_system = copy.deepcopy(parent)
+            
+            # Update the identity of the resolved system to match the current entity
+            resolved_system.name = entity.name
+            resolved_system.full_name = entity.full_name
+            resolved_system.file_path = entity.file_path
+            resolved_system.package = entity.package
+            resolved_system.sub_type = entity.sub_type
+            resolved_system.config = entity.config # Keep original config with overrides
+            
+            # Apply overrides from this entity's config
+            resolver = SystemInheritanceResolver()
+            resolver.resolve(resolved_system, entity.config)
+            
+            return resolved_system
+
         return entity
     
     def get_entity_by_type(self, name: str, entity_type: str) -> Config:

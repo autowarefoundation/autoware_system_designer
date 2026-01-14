@@ -35,12 +35,10 @@ macro(autoware_system_designer_build_deploy project_name)
     set(_DEPLOYMENT_FILE "${_INPUT_NAME}")
     set(_LOG_DESC "(design=${_INPUT_NAME})")
   else()
-    # If it's a deployment name, resolve to the deployment file path.
-    set(_DEPLOYMENT_FILE "${CMAKE_SOURCE_DIR}/deployment/${_INPUT_NAME}.yaml")
-    set(_LOG_DESC "(deployment=${_INPUT_NAME})")
-    if(NOT EXISTS "${_DEPLOYMENT_FILE}")
-      message(FATAL_ERROR "autoware_system_designer_build_deploy: file not found: ${_DEPLOYMENT_FILE}")
-    endif()
+    # If it's a deployment name, treat as a system name/file within the system.
+    # We assume usage of system files now.
+    set(_DEPLOYMENT_FILE "${_INPUT_NAME}.system.yaml")
+    set(_LOG_DESC "(system=${_INPUT_NAME})")
   endif()
 
   add_custom_target(run_build_py_${_INPUT_NAME} ALL

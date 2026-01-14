@@ -174,16 +174,40 @@ class SystemValidator(BaseValidator):
     """Validator for system entities."""
     
     def get_required_fields(self) -> List[str]:
-        return ["name", "components", "connections"]
+        # Basic requirement is name
+        return ["name"]
     
+    def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
+        """
+        Validate that all required fields are present.
+        For System entities, requirements depend on whether it's an inheritance (child) or base system.
+        """
+        super().validate_required_fields(config, file_path)
+        
+        # If it has 'inheritance', it's a child config -> components/connections are optional (inherited)
+        # If it does NOT have 'inheritance', it's a base config -> components/connections are required
+        if "inheritance" not in config:
+            missing = []
+            if "components" not in config:
+                missing.append("components")
+            if "connections" not in config:
+                missing.append("connections")
+                
+            if missing:
+                raise ValidationError(
+                    f"Missing required fields {missing} in base system configuration (no inheritance). File: {file_path}"
+                )
+
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         return {
             'name': {'type': 'string'},
+            'inheritance': {'type': 'string'},  # New field
             'modes': {'type': 'nullable_array'},
             'components': {'type': 'array'},
             'connections': {'type': 'array'},
             'variables': {'type': 'nullable_array'},
             'variable_files': {'type': 'nullable_array'},
+            'remove': {'type': 'object'}, # Support for removal in inheritance
         }
 
 class ValidatorFactory:

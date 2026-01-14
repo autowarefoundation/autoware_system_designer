@@ -18,7 +18,7 @@ import logging
 
 from ..parsers.yaml_parser import yaml_parser
 from .data_validator import ValidatorFactory, entity_name_decode
-from ..models.config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigType
+from ..models.config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigType, ConfigSubType
 from ..exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -149,8 +149,10 @@ class ConfigParser:
                 local_variables=config.get('local_variables')
             )
         elif entity_type == ConfigType.SYSTEM:
+            sub_type = ConfigSubType.INHERITANCE if "inheritance" in config else ConfigSubType.BASE
             return SystemConfig(
                 **base_data,
+                sub_type=sub_type,
                 modes=config.get('modes'),
                 components=config.get('components'),
                 connections=config.get('connections'),

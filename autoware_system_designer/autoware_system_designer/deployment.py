@@ -27,7 +27,6 @@ from .exceptions import ValidationError, DeploymentError
 from .utils.template_utils import TemplateRenderer
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
-from .resolvers.inheritance_resolver import SystemInheritanceResolver
 
 logger = logging.getLogger(__name__)
 debug_mode = True
@@ -42,43 +41,31 @@ class Deployment:
         logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)
         
         input_path = deploy_config.deployment_file
-        config_yaml = {}
         system_name = None
-        system_config = None
         
-        if not os.path.exists(input_path):
-            # System
-            system_name = os.path.basename(input_path)
-            system_name, _ = entity_name_decode(system_name)
+        # System by name
+        system_name = os.path.basename(input_path)
+        # Remove extension if present, though entity_name_decode handles check
+        if system_name.endswith('.yaml'):
+            system_name = system_name[:-5]
             
-            system_config = self.config_registry.get_system(system_name)
-            if not system_config:
-                raise ValidationError(f"System not found: {system_name}")
-            
-            self.config_yaml_dir = str(system_config.file_path)
-            logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
-            
-            config_yaml = yaml_parser.load_config(self.config_yaml_dir)
-            logger.info("Detected system-only deployment file.")
+        # If name is full name (name.system), decode it
+        if "." in system_name:
+                system_name, _ = entity_name_decode(system_name)
 
-        else:
-            # Deployment(system inheritance)
-            self.config_yaml_dir = input_path
-            
-            config_yaml = yaml_parser.load_config(self.config_yaml_dir)
-            
-            system_name = config_yaml['system']
-            system_name, _ = entity_name_decode(system_name)
-
-            system_config = self.config_registry.get_system(system_name)
-            if not system_config:
-                raise ValidationError(f"System not found: {system_name}")
-
-            # Generalize inheritance: Use SystemInheritanceResolver
-            resolver = SystemInheritanceResolver()
-            resolver.resolve(system_config, config_yaml)
-
-        self.name = config_yaml.get("name")
+        # Get system from registry (this handles inheritance resolution)
+        system_config = self.config_registry.get_system(system_name)
+        if not system_config:
+            raise ValidationError(f"System not found: {system_name}")
+        
+        self.config_yaml_dir = str(system_config.file_path)
+        logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
+        
+        # Load the resolved config (which is what get_system returned)
+        # Wait, get_system returns a SystemConfig object which HAS the config dict.
+        # We don't need to load yaml again.
+        
+        self.name = system_config.name
 
         # member variables - now supports multiple instances (one per mode)
         self.deploy_instances: Dict[str, DeploymentInstance] = {}  # mode_name -> DeploymentInstance

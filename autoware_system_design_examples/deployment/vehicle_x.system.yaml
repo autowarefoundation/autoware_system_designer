@@ -1,8 +1,8 @@
 autoware_system_design_format: v0.1.0
 
-name: vehicle_x.deployment
+name: vehicle_x.system
 
-system: TypeAlpha.system
+inheritance: TypeAlpha.system
 
 variables:
   - name: vehicle_id
