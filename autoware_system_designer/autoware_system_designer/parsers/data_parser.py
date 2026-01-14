@@ -138,8 +138,10 @@ class ConfigParser:
                 processes=config.get('processes')
             )
         elif entity_type == ConfigType.MODULE:
+            sub_type = ConfigSubType.INHERITANCE if "inheritance" in config else ConfigSubType.BASE
             return ModuleConfig(
                 **base_data,
+                sub_type=sub_type,
                 instances=config.get('instances'),
                 external_interfaces=config.get('external_interfaces'),
                 connections=config.get('connections')

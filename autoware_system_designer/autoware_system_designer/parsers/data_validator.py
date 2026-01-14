@@ -163,14 +163,30 @@ class ModuleValidator(BaseValidator):
     """Validator for module entities."""
     
     def get_required_fields(self) -> List[str]:
-        return ["name", "instances", "external_interfaces", "connections"]
+        return ["name"]
+
+    def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
+        """
+        Validate that all required fields are present.
+        """
+        super().validate_required_fields(config, file_path)
+        
+        if "inheritance" not in config:
+             required_full = ["instances", "external_interfaces", "connections"]
+             missing = [f for f in required_full if f not in config]
+             if missing:
+                raise ValidationError(
+                    f"Missing required fields {missing} in base module configuration (no inheritance). File: {file_path}"
+                )
     
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         return {
             'name': {'type': 'string'},
+            'inheritance': {'type': 'string'},
             'instances': {'type': 'array'},
             'external_interfaces': {'type': 'object_or_array'},
             'connections': {'type': 'array'},
+            'remove': {'type': 'object'},
         }
 
 class ParameterSetValidator(BaseValidator):

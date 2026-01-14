@@ -19,7 +19,7 @@ import copy
 from ..parsers.data_parser import ConfigParser
 from ..models.config import Config, ConfigType, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigSubType
 from ..exceptions import ValidationError, NodeConfigurationError, ModuleConfigurationError, ParameterConfigurationError
-from ..resolvers.inheritance_resolver import SystemInheritanceResolver, NodeInheritanceResolver, InheritanceResolver
+from ..resolvers.inheritance_resolver import SystemInheritanceResolver, NodeInheritanceResolver, ModuleInheritanceResolver, InheritanceResolver
 
 from ..parsers.data_validator import entity_name_decode
 
@@ -150,7 +150,9 @@ class ConfigRegistry:
         return self._get_entity_with_inheritance(
             name,
             ConfigType.MODULE,
-            ModuleConfigurationError
+            ModuleConfigurationError,
+            ModuleInheritanceResolver,
+            self.get_module
         )
     
     def get_parameter_set(self, name: str) -> ParameterSetConfig:
