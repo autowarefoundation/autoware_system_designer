@@ -49,16 +49,8 @@ def find_yaml_files(paths: List[Path]) -> List[Path]:
 
 
 def resolve_default_paths(workspace: Path) -> List[Path]:
-    """Resolve default config directories from workspace root."""
-    autoware_root = workspace / "autoware" / "src" / "autoware"
-    if not autoware_root.exists():
-        autoware_root = workspace
-
-    candidates = [
-        autoware_root / "autoware_systems",
-        autoware_root / "autoware_system_designer" / "autoware_system_design_examples",
-    ]
-    return [path for path in candidates if path.exists()]
+    """Resolve default config search path from launch path."""
+    return [workspace]
 
 
 def main() -> None:
@@ -87,7 +79,8 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    workspace = Path(args.workspace).resolve()
+    workspace_arg = args.workspace or "."
+    workspace = Path(workspace_arg).resolve()
     if args.paths:
         lint_targets = [Path(p).resolve() for p in args.paths]
     else:

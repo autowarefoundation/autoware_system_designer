@@ -20,6 +20,7 @@ from typing import Dict, Any
 
 from ..parsers.yaml_parser import yaml_parser
 from ..parsers.data_validator import entity_name_decode
+from ..models.config import ConfigType
 from .report import LintResult
 
 
@@ -39,12 +40,19 @@ class NamingLinter:
             result.add_error(f"Failed to load YAML file: {str(e)}")
             return
         
+        # Skip name format checks for parameter_set files
+        if file_path.name.endswith(".parameter_set.yaml"):
+            return
+
         # Check entity name format
         if 'name' in config:
             entity_name = config['name']
             try:
                 name_part, type_part = entity_name_decode(entity_name)
                 inheritance_value = config.get('inheritance')
+
+                if type_part == ConfigType.PARAMETER_SET:
+                    return
 
                 # Check entity name format based on inheritance
                 if inheritance_value:
@@ -196,7 +204,12 @@ class NamingLinter:
             return False
 
         suffix = name[len(base_name) + 1:]
-        return bool(suffix) and self._is_snake_case(suffix)
+        return bool(suffix) and self._is_snake_suffix(suffix)
+
+    @staticmethod
+    def _is_snake_suffix(name: str) -> bool:
+        """Allow lowercase/digits/underscores, leading digit OK."""
+        return bool(re.match(r'^[a-z0-9][a-z0-9_]*$', name))
 
     @staticmethod
     def _get_inheritance_base_name(inheritance_value: Any) -> str:

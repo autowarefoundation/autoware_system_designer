@@ -61,6 +61,9 @@ class FileLinter:
         # Extract base name (without extension)
         base_name = file_name[:-len(valid_extension)]
 
+        if expected_type == ConfigType.PARAMETER_SET:
+            return
+
         # Load config to detect inheritance-specific naming rules
         inheritance_value = None
         try:
@@ -80,19 +83,20 @@ class FileLinter:
                         f"File name type part '{type_part}' does not match "
                         f"file extension type '{expected_type}'"
                     )
-                if inheritance_value:
-                    if not self._is_allowed_inheritance_name(name_part, inheritance_value):
-                        base_hint = self._get_inheritance_base_name(inheritance_value) or "OriginalName"
-                        result.add_error(
-                            f"Entity name '{name_part}' should be snake_case or "
-                            f"'{base_hint}_snake_variant' for inheritance config"
-                        )
-                else:
-                    if not self._is_pascal_case(name_part):
-                        result.add_error(
-                            f"Entity name '{name_part}' should be in PascalCase format "
-                            f"(e.g., 'DetectorA', 'MyModule')"
-                        )
+                if expected_type != ConfigType.PARAMETER_SET:
+                    if inheritance_value:
+                        if not self._is_allowed_inheritance_name(name_part, inheritance_value):
+                            base_hint = self._get_inheritance_base_name(inheritance_value) or "OriginalName"
+                            result.add_error(
+                                f"Entity name '{name_part}' should be snake_case or "
+                                f"'{base_hint}_snake_variant' for inheritance config"
+                            )
+                    else:
+                        if not self._is_pascal_case(name_part):
+                            result.add_error(
+                                f"Entity name '{name_part}' should be in PascalCase format "
+                                f"(e.g., 'DetectorA', 'MyModule')"
+                            )
             else:
                 result.add_error(
                     f"File name '{base_name}' should be in format 'Name.type' "
@@ -101,19 +105,20 @@ class FileLinter:
         else:
             # If no dot, the entire base name should be PascalCase
             # This handles the case where file is just Name.yaml (though not standard)
-            if inheritance_value:
-                if not self._is_allowed_inheritance_name(base_name, inheritance_value):
-                    base_hint = self._get_inheritance_base_name(inheritance_value) or "OriginalName"
-                    result.add_error(
-                        f"File name '{base_name}' should be snake_case or "
-                        f"'{base_hint}_snake_variant' for inheritance config"
-                    )
-            else:
-                if not self._is_pascal_case(base_name):
-                    result.add_error(
-                        f"File name '{base_name}' should be in PascalCase format "
-                        f"(e.g., 'DetectorA', 'MyModule')"
-                    )
+            if expected_type != ConfigType.PARAMETER_SET:
+                if inheritance_value:
+                    if not self._is_allowed_inheritance_name(base_name, inheritance_value):
+                        base_hint = self._get_inheritance_base_name(inheritance_value) or "OriginalName"
+                        result.add_error(
+                            f"File name '{base_name}' should be snake_case or "
+                            f"'{base_hint}_snake_variant' for inheritance config"
+                        )
+                else:
+                    if not self._is_pascal_case(base_name):
+                        result.add_error(
+                            f"File name '{base_name}' should be in PascalCase format "
+                            f"(e.g., 'DetectorA', 'MyModule')"
+                        )
     
     @staticmethod
     def _is_pascal_case(name: str) -> bool:
@@ -163,7 +168,12 @@ class FileLinter:
             return False
 
         suffix = name[len(base_name) + 1:]
-        return bool(suffix) and self._is_snake_case(suffix)
+        return bool(suffix) and self._is_snake_suffix(suffix)
+
+    @staticmethod
+    def _is_snake_suffix(name: str) -> bool:
+        """Allow lowercase/digits/underscores, leading digit OK."""
+        return bool(re.match(r'^[a-z0-9][a-z0-9_]*$', name))
 
     @staticmethod
     def _get_inheritance_base_name(inheritance_value: str) -> str:
