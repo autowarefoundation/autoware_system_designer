@@ -13,6 +13,7 @@ variable_files: []
 modes:
   - name: default
     description: Default mode
+    default: true
   - name: simulation
     description: Simulation mode
 
@@ -36,16 +37,6 @@ components:
     parameter_set: [
       PerceptionModuleA.parameter_set
     ]
-    mode: [default]
-  - component: object_recognition
-    entity: PerceptionB.module
-    namespace: perception/object_recognition
-    compute_unit: main_ecu
-    parameter_set: [
-      PerceptionModuleA.parameter_set,  
-      PerceptionModuleABuild.parameter_set,
-    ]
-    mode: simulation
   - component: planner
     entity: PlanningDummy.node
     namespace: planning
@@ -64,3 +55,14 @@ connections:
     to: planner.input.lanelet_map
   - from: object_recognition.output.objects
     to: planner.input.predicted_objects
+
+simulation:
+  override:
+  - component: object_recognition
+    entity: PerceptionB.module
+    namespace: perception/object_recognition
+    compute_unit: main_ecu
+    parameter_set: [
+      PerceptionModuleA.parameter_set,  
+      PerceptionModuleABuild.parameter_set,
+    ]
