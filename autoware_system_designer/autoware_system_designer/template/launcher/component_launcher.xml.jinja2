@@ -12,7 +12,7 @@
 
 <!-- Parameters - Non-Override Parameters -->
 {% for param in node.parameters %}
-{% if param.parameter_type.name != 'OVERRIDE' %}
+{% if param.parameter_type.name != 'OVERRIDE' and param.parameter_type.name != 'MODE' %}
 <param name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
 {% endfor %}
@@ -34,6 +34,13 @@
 <!-- Parameters - Overrides -->
 {% for param in node.parameters %}
 {% if param.parameter_type.name == 'OVERRIDE' %}
+<param name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
+{% endfor %}
+
+<!-- Parameters - Mode Overrides (highest priority) -->
+{% for param in node.parameters %}
+{% if param.parameter_type.name == 'MODE' %}
 <param name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
 {% endfor %}

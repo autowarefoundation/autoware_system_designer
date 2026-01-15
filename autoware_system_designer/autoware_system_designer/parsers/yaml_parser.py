@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Dict, Any, Union
 from functools import lru_cache
 
-from ..config import config
+from ..deployment_config import deploy_config
 from ..exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class YamlParser:
         Args:
             cache_enabled: Whether to enable caching. If None, uses global config.
         """
-        self.cache_enabled = cache_enabled if cache_enabled is not None else config.cache_enabled
+        self.cache_enabled = cache_enabled if cache_enabled is not None else deploy_config.cache_enabled
         self._cache: Dict[Path, Dict[str, Any]] = {}
     
     def load_config(self, file_path: Union[str, Path]) -> Dict[str, Any]:

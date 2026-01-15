@@ -188,14 +188,14 @@ def main():
         
         data = {
             'package_name': pkg,
-            'system_config_files': []
+            'deploy_config_files': []
         }
         
         for f in files:
             t = infer_type(os.path.basename(f))
             if t == 'unknown':
                 continue
-            data['system_config_files'].append({
+            data['deploy_config_files'].append({
                 'path': f,
                 'type': t
             })

@@ -14,7 +14,7 @@
 
 import sys
 from autoware_system_designer.deployment import Deployment
-from autoware_system_designer.config import SystemConfig
+from autoware_system_designer.deployment_config import DeploymentConfig
 from autoware_system_designer.visualization.visualization_index import update_index
 
 # build the deployment
@@ -22,23 +22,23 @@ from autoware_system_designer.visualization.visualization_index import update_in
 def build(deployment_file: str, manifest_dir: str, output_root_dir: str):
     # Inputs:
     #   deployment_file: YAML deployment configuration
-    #   manifest_dir: directory containing per-package manifest YAML files (each lists system_config_files)
+    #   manifest_dir: directory containing per-package manifest YAML files (each lists deploy_config_files)
     #   output_root_dir: root directory for generated exports
 
     # configure the autoware system design format files
-    system_config = SystemConfig()
-    system_config.debug_mode = True
-    system_config.log_level = "INFO"
+    deploy_config = DeploymentConfig()
+    deploy_config.debug_mode = True
+    deploy_config.log_level = "INFO"
 
-    system_config.deployment_file = deployment_file
-    system_config.manifest_dir = manifest_dir
-    system_config.output_root_dir = output_root_dir
+    deploy_config.deployment_file = deployment_file
+    deploy_config.manifest_dir = manifest_dir
+    deploy_config.output_root_dir = output_root_dir
 
-    logger = system_config.set_logging()
+    logger = deploy_config.set_logging()
 
     # load and build the deployment
     logger.info("Autoware System Designer: Building deployment...")
-    deployment = Deployment(system_config)
+    deployment = Deployment(deploy_config)
 
     # parameter set template export
     logger.info("Autoware System Designer: Exporting parameter set template...")

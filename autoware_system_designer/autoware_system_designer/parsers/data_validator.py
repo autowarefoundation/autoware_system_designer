@@ -130,31 +130,63 @@ class NodeValidator(BaseValidator):
     """Validator for node entities."""
     
     def get_required_fields(self) -> List[str]:
-        return ["name", "launch", "inputs", "outputs", "parameter_files", "parameters", "processes"]
+        return ["name"]
+
+    def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
+        """
+        Validate that all required fields are present.
+        """
+        super().validate_required_fields(config, file_path)
+        
+        if "inheritance" not in config:
+             required_full = ["launch", "inputs", "outputs", "parameter_files", "parameters", "processes"]
+             missing = [f for f in required_full if f not in config]
+             if missing:
+                raise ValidationError(
+                    f"Missing required fields {missing} in base node configuration (no inheritance). File: {file_path}"
+                )
     
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         return {
             'name': {'type': 'string'},
+            'inheritance': {'type': 'string'},
             'launch': {'type': 'object'},
             'inputs': {'type': 'array'},
             'outputs': {'type': 'array'},
             'parameter_files': {'type': 'object_or_array'},
             'parameters': {'type': 'object_or_array'},
-            'processes': {'type': 'array'}
+            'processes': {'type': 'array'},
+            'remove': {'type': 'object'}
         }
 
 class ModuleValidator(BaseValidator):
     """Validator for module entities."""
     
     def get_required_fields(self) -> List[str]:
-        return ["name", "instances", "external_interfaces", "connections"]
+        return ["name"]
+
+    def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
+        """
+        Validate that all required fields are present.
+        """
+        super().validate_required_fields(config, file_path)
+        
+        if "inheritance" not in config:
+             required_full = ["instances", "external_interfaces", "connections"]
+             missing = [f for f in required_full if f not in config]
+             if missing:
+                raise ValidationError(
+                    f"Missing required fields {missing} in base module configuration (no inheritance). File: {file_path}"
+                )
     
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         return {
             'name': {'type': 'string'},
+            'inheritance': {'type': 'string'},
             'instances': {'type': 'array'},
             'external_interfaces': {'type': 'object_or_array'},
             'connections': {'type': 'array'},
+            'remove': {'type': 'object'},
         }
 
 class ParameterSetValidator(BaseValidator):
@@ -174,14 +206,41 @@ class SystemValidator(BaseValidator):
     """Validator for system entities."""
     
     def get_required_fields(self) -> List[str]:
-        return ["name", "components", "connections"]
+        # Basic requirement is name
+        return ["name"]
     
+    def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
+        """
+        Validate that all required fields are present.
+        For System entities, requirements depend on whether it's an inheritance (child) or base system.
+        """
+        super().validate_required_fields(config, file_path)
+        
+        # If it has 'inheritance', it's a child config -> components/connections are optional (inherited)
+        # If it does NOT have 'inheritance', it's a base config -> components/connections are required
+        if "inheritance" not in config:
+            missing = []
+            if "components" not in config:
+                missing.append("components")
+            if "connections" not in config:
+                missing.append("connections")
+                
+            if missing:
+                raise ValidationError(
+                    f"Missing required fields {missing} in base system configuration (no inheritance). File: {file_path}"
+                )
+
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         return {
             'name': {'type': 'string'},
+            'inheritance': {'type': 'string'},
             'modes': {'type': 'nullable_array'},
+            'parameter_sets': {'type': 'nullable_array'},  # System-level parameter sets
             'components': {'type': 'array'},
             'connections': {'type': 'array'},
+            'variables': {'type': 'nullable_array'},
+            'variable_files': {'type': 'nullable_array'},
+            'remove': {'type': 'object'}, # Support for removal in inheritance
         }
 
 class ValidatorFactory:

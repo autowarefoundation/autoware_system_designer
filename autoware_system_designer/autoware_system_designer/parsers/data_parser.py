@@ -18,7 +18,7 @@ import logging
 
 from ..parsers.yaml_parser import yaml_parser
 from .data_validator import ValidatorFactory, entity_name_decode
-from ..models.config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigType
+from ..models.config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigType, ConfigSubType
 from ..exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -126,8 +126,10 @@ class ConfigParser:
                     if 'default' in param and 'value' not in param:
                         param['value'] = param['default']
 
+            sub_type = ConfigSubType.INHERITANCE if "inheritance" in config else ConfigSubType.BASE
             return NodeConfig(
                 **base_data,
+                sub_type=sub_type,
                 launch=config.get('launch'),
                 inputs=config.get('inputs'),
                 outputs=config.get('outputs'),
@@ -136,8 +138,10 @@ class ConfigParser:
                 processes=config.get('processes')
             )
         elif entity_type == ConfigType.MODULE:
+            sub_type = ConfigSubType.INHERITANCE if "inheritance" in config else ConfigSubType.BASE
             return ModuleConfig(
                 **base_data,
+                sub_type=sub_type,
                 instances=config.get('instances'),
                 external_interfaces=config.get('external_interfaces'),
                 connections=config.get('connections')
@@ -149,11 +153,31 @@ class ConfigParser:
                 local_variables=config.get('local_variables')
             )
         elif entity_type == ConfigType.SYSTEM:
+            sub_type = ConfigSubType.INHERITANCE if "inheritance" in config else ConfigSubType.BASE
+            
+            # Parse mode-specific configurations
+            mode_configs = {}
+            modes = config.get('modes')
+            if modes:
+                # Extract mode names from modes list
+                mode_names = [m.get('name') for m in modes if isinstance(m, dict) and 'name' in m]
+                
+                # Look for top-level keys matching mode names
+                for mode_name in mode_names:
+                    if mode_name in config:
+                        mode_configs[mode_name] = config[mode_name]
+                        logger.debug(f"Found mode-specific configuration for mode '{mode_name}'")
+            
             return SystemConfig(
                 **base_data,
+                sub_type=sub_type,
                 modes=config.get('modes'),
+                mode_configs=mode_configs if mode_configs else None,
+                parameter_sets=config.get('parameter_sets'),
                 components=config.get('components'),
-                connections=config.get('connections')
+                connections=config.get('connections'),
+                variables=config.get('variables'),
+                variable_files=config.get('variable_files')
             )
         else:
             raise ValidationError(f"Unknown entity type: {entity_type}")

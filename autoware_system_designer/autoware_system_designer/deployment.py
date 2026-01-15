@@ -15,90 +15,231 @@
 
 import os
 import logging
+import copy
 from typing import Dict, Tuple, List, Any
-from .config import SystemConfig
-from .models.config import Config
-from .models.parameters import ParameterType
+from .deployment_config import DeploymentConfig
 from .builder.config_registry import ConfigRegistry
 from .builder.instances import DeploymentInstance
 from .builder.launcher_generator import generate_module_launch_file
 from .builder.parameter_template_generator import ParameterTemplateGenerator
-from .builder.parameter_resolver import ParameterResolver
 from .parsers.data_validator import entity_name_decode
 from .parsers.yaml_parser import yaml_parser
 from .exceptions import ValidationError, DeploymentError
 from .utils.template_utils import TemplateRenderer
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
+from .models.config import SystemConfig
 
 logger = logging.getLogger(__name__)
 debug_mode = True
 
+
+def _apply_removals(config: SystemConfig, remove_spec: Dict[str, Any]) -> None:
+    """
+    Remove components and connections from system configuration.
+    
+    Args:
+        config: SystemConfig to modify in-place
+        remove_spec: Dictionary containing 'components' and/or 'connections' to remove
+    """
+    # Remove components
+    if 'components' in remove_spec:
+        components_to_remove = remove_spec['components']
+        if components_to_remove:
+            # Build set of component names to remove
+            remove_names = set()
+            for item in components_to_remove:
+                if isinstance(item, dict) and 'component' in item:
+                    remove_names.add(item['component'])
+            
+            # Filter out components to remove
+            if config.components:
+                config.components = [
+                    comp for comp in config.components 
+                    if comp.get('component') not in remove_names
+                ]
+                logger.debug(f"Removed {len(remove_names)} components: {remove_names}")
+    
+    # Remove connections
+    if 'connections' in remove_spec:
+        connections_to_remove = remove_spec['connections']
+        if connections_to_remove and config.connections:
+            # For connections, we need to match all fields in the spec
+            original_count = len(config.connections)
+            filtered_connections = []
+            
+            for conn in config.connections:
+                should_remove = False
+                for remove_conn in connections_to_remove:
+                    # Check if all fields in remove_conn match the connection
+                    if all(conn.get(k) == v for k, v in remove_conn.items()):
+                        should_remove = True
+                        break
+                
+                if not should_remove:
+                    filtered_connections.append(conn)
+            
+            config.connections = filtered_connections
+            removed_count = original_count - len(filtered_connections)
+            logger.debug(f"Removed {removed_count} connections")
+
+
+def _apply_overrides(config: SystemConfig, override_spec: Dict[str, Any]) -> None:
+    """
+    Apply overrides/additions to system configuration.
+    
+    Args:
+        config: SystemConfig to modify in-place
+        override_spec: Dictionary containing 'components', 'connections', and/or 'parameter_sets' to override/add
+    """
+    # Override parameter_sets (replaces base parameter_sets completely)
+    if 'parameter_sets' in override_spec:
+        override_parameter_sets = override_spec['parameter_sets']
+        if override_parameter_sets is not None:
+            config.parameter_sets = override_parameter_sets
+            logger.info(f"Overrode parameter_sets with {len(override_parameter_sets) if isinstance(override_parameter_sets, list) else 1} parameter set(s)")
+    
+    # Override/add components
+    if 'components' in override_spec:
+        override_components = override_spec['components']
+        if override_components:
+            if not config.components:
+                config.components = []
+            
+            # Build a map of existing components by name
+            component_map = {
+                comp.get('component'): idx 
+                for idx, comp in enumerate(config.components)
+                if 'component' in comp
+            }
+            
+            # Apply overrides or add new components
+            for override_comp in override_components:
+                comp_name = override_comp.get('component')
+                if comp_name in component_map:
+                    # Override existing component
+                    idx = component_map[comp_name]
+                    config.components[idx] = override_comp
+                    logger.debug(f"Overrode component '{comp_name}'")
+                else:
+                    # Add new component
+                    config.components.append(override_comp)
+                    logger.debug(f"Added new component '{comp_name}'")
+    
+    # Add/override connections
+    if 'connections' in override_spec:
+        override_connections = override_spec['connections']
+        if override_connections:
+            if not config.connections:
+                config.connections = []
+            
+            # For connections, we simply append them (no override logic needed)
+            # as connections are uniquely identified by their from/to combination
+            config.connections.extend(override_connections)
+            logger.debug(f"Added {len(override_connections)} connections")
+
+
+def apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -> SystemConfig:
+    """
+    Create a copy of base system and apply mode-specific overrides/removals.
+    
+    Args:
+        base_system_config: The base system configuration
+        mode_name: Name of the mode to apply (or "default" for base)
+    
+    Returns:
+        Modified system configuration with mode applied
+    """
+    # Create a deep copy to avoid modifying original
+    modified_config = copy.deepcopy(base_system_config)
+    
+    # Filter out components with explicit 'mode' fields from base (deprecated old format)
+    # These components should be defined in mode-specific sections instead
+    if modified_config.components:
+        filtered_components = []
+        for comp in modified_config.components:
+            if 'mode' in comp:
+                logger.debug(f"Filtering out component '{comp.get('component')}' with deprecated 'mode' field from base")
+            else:
+                filtered_components.append(comp)
+        modified_config.components = filtered_components
+    
+    # If mode is "default" or no mode configs exist, return the filtered base
+    if mode_name == "default" or not base_system_config.mode_configs:
+        return modified_config
+    
+    mode_config = base_system_config.mode_configs.get(mode_name)
+    if not mode_config:
+        # Mode not found, return base configuration
+        logger.warning(f"Mode '{mode_name}' not found in mode_configs, using base configuration")
+        return modified_config
+    
+    logger.info(f"Applying mode configuration for mode '{mode_name}'")
+    
+    # Apply removals first
+    if 'remove' in mode_config:
+        _apply_removals(modified_config, mode_config['remove'])
+    
+    # Apply overrides/additions
+    if 'override' in mode_config:
+        _apply_overrides(modified_config, mode_config['override'])
+    
+    return modified_config
+
 class Deployment:
-    def __init__(self, system_config: SystemConfig ):
+    def __init__(self, deploy_config: DeploymentConfig ):
         # entity collection
-        system_yaml_list, package_paths, file_package_map = self._get_system_list(system_config)
+        system_yaml_list, package_paths, file_package_map = self._get_system_list(deploy_config)
         self.config_registry = ConfigRegistry(system_yaml_list, package_paths, file_package_map)
 
         # detect mode of input file (deployment vs system only)
-        # if deployment_file ends with .system, it's a system-only file
-        logger.info("deployment init Deployment file: %s", system_config.deployment_file)
-        if system_config.deployment_file.endswith(".system"):
-            logger.info("Detected system-only deployment file.")
-            # need to parse the absolute path of the file from the config_registry
-            # generate deployment config in-memory
-            self.config_yaml_dir = system_config.deployment_file
-            self.config_yaml = {}
-            self.config_yaml['system'] = system_config.deployment_file
-            self.config_yaml['name'] = system_config.deployment_file
-            self.config_yaml.setdefault('global_parameters', [])
-            self.config_yaml.setdefault('environment_parameters', [])
-            self.name = self.config_yaml.get("name")
+        logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)
+        
+        input_path = deploy_config.deployment_file
+        system_name = None
+        
+        # System by name
+        system_name = os.path.basename(input_path)
+        # Remove extension if present, though entity_name_decode handles check
+        if system_name.endswith('.yaml'):
+            system_name = system_name[:-5]
+            
+        # If name is full name (name.system), decode it
+        if "." in system_name:
+                system_name, _ = entity_name_decode(system_name)
 
-        else:
-            # input is a deployment file
-            self.config_yaml_dir = system_config.deployment_file
-            self.config_yaml = yaml_parser.load_config(self.config_yaml_dir)
-            self.name = self.config_yaml.get("name")
-
-        # create parameter resolver for ROS-independent operation
-        self.parameter_resolver = ParameterResolver(
-            global_params=self.config_yaml.get('global_parameters', []),
-            env_params=self.config_yaml.get('environment_parameters', []),
-            package_paths=package_paths
-        )
-
-        # Process global parameter files
-        if 'global_parameter_files' in self.config_yaml:
-            self._load_global_parameter_files(self.config_yaml['global_parameter_files'])
-
-        # Check the configuration
-        self._check_config()
+        # Get system from registry (this handles inheritance resolution)
+        system_config = self.config_registry.get_system(system_name)
+        if not system_config:
+            raise ValidationError(f"System not found: {system_name}")
+        
+        self.config_yaml_dir = str(system_config.file_path)
+        logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
+        
+        # Load the resolved config (which is what get_system returned)
+        # Wait, get_system returns a SystemConfig object which HAS the config dict.
+        # We don't need to load yaml again.
+        
+        self.name = system_config.name
 
         # member variables - now supports multiple instances (one per mode)
         self.deploy_instances: Dict[str, DeploymentInstance] = {}  # mode_name -> DeploymentInstance
-        self.global_parameters_yaml = None
-        self.sensor_calibration_yaml = None
-        self.map_yaml = None
 
-        # output paths
-        self.output_root_dir = system_config.output_root_dir
+        # 4. set output paths
+        self.output_root_dir = deploy_config.output_root_dir
         self.launcher_dir = os.path.join(self.output_root_dir, "exports", self.name, "launcher/")
         self.system_monitor_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_monitor/")
         self.visualization_dir = os.path.join(self.output_root_dir, "exports", self.name,"visualization/")
         self.parameter_set_dir = os.path.join(self.output_root_dir, "exports", self.name,"parameter_set/")
 
-        # build the deployment
-        self.build()
+        # 5. build the deployment
+        self._build(system_config, package_paths)
 
-        # resolve parameter variables
-
-
-    def _get_system_list(self, system_config: SystemConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
+    def _get_system_list(self, deploy_config: DeploymentConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
         system_list: list[str] = []
         package_paths: Dict[str, str] = {}
         file_package_map: Dict[str, str] = {}
-        manifest_dir = system_config.manifest_dir
+        manifest_dir = deploy_config.manifest_dir
         if not os.path.isdir(manifest_dir):
             raise ValidationError(f"System design manifest directory not found or not a directory: {manifest_dir}")
 
@@ -113,16 +254,16 @@ class Deployment:
                 if 'package_map' in manifest_yaml:
                     package_paths.update(manifest_yaml['package_map'])
 
-                files = manifest_yaml.get('system_config_files')
+                files = manifest_yaml.get('deploy_config_files')
                 # Allow the field to be empty or null without raising an error
                 if files in (None, []):
                     logger.debug(
-                        f"Manifest '{entry}' has empty system_config_files; skipping."
+                        f"Manifest '{entry}' has empty deploy_config_files; skipping."
                     )
                     continue
                 if not isinstance(files, list):
                     logger.warning(
-                        f"Manifest '{entry}' has unexpected type for system_config_files: {type(files)}; skipping."
+                        f"Manifest '{entry}' has unexpected type for deploy_config_files: {type(files)}; skipping."
                     )
                     continue
                 for f in files:
@@ -139,129 +280,39 @@ class Deployment:
             raise ValidationError(f"No system design configuration files collected.")
         return system_list, package_paths, file_package_map
 
-    def _load_global_parameter_files(self, global_param_files: List[Dict[str, str]]):
-        """Load parameters from external files and update parameter resolver."""
-        for file_entry in global_param_files:
-            for param_prefix, file_path in file_entry.items():
-                # Resolve file path
-                resolved_path = self.parameter_resolver.resolve_string(file_path)
-                
-                # Check if it's a find-pkg-share that couldn't be resolved (starts with $)
-                if resolved_path.startswith('$'):
-                    logger.warning(f"Could not resolve path for global parameter file: {file_path}")
-                    continue
-                
-                if not os.path.exists(resolved_path):
-                    logger.warning(f"Global parameter file not found: {resolved_path}")
-                    continue
-                    
-                try:
-                    data = yaml_parser.load_config(resolved_path)
-                    if not data:
-                        continue
-                        
-                    # Derive prefix from key (e.g., vehicle_info_file -> vehicle_info)
-                    prefix = param_prefix.replace('_file', '')
-                    
-                    variables = {}
-
-                    # Iterate through nodes in the yaml (standard ROS 2 param file structure)
-                    # node_name:
-                    #   ros__parameters:
-                    #     param_name: value
-                    for node_name, node_data in data.items():
-                        if isinstance(node_data, dict) and "ros__parameters" in node_data:
-                            params = node_data["ros__parameters"]
-                            flattened = self._flatten_parameters(params, parent_key=prefix)
-                            variables.update(flattened)
-                        # Handle case where file might be just key-value pairs without node/ros__parameters wrapper
-                        elif param_prefix == 'global_parameters' or param_prefix == 'global_parameters_file':
-                             # If explicitly global params file, maybe treat differently? 
-                             # For now assume ROS 2 param structure or flat if no ros__parameters
-                             pass 
-                            
-                    # Update resolver
-                    if variables:
-                        self.parameter_resolver.update_variables(variables)
-                        logger.info(f"Loaded {len(variables)} global parameters from {resolved_path}")
-                    else:
-                        logger.warning(f"No parameters found in {resolved_path} (expected standard ROS 2 parameter file format)")
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to load global parameter file {resolved_path}: {e}")
-
-    def _flatten_parameters(self, params: Dict[str, Any], parent_key: str = "", separator: str = ".") -> Dict[str, str]:
-        """Flatten nested dictionary into dot-separated keys."""
-        items = {}
-        for k, v in params.items():
-            new_key = f"{parent_key}{separator}{k}" if parent_key else k
-            
-            if isinstance(v, dict):
-                items.update(self._flatten_parameters(v, new_key, separator))
-            else:
-                items[new_key] = str(v)
-        return items
-
-    def _check_config(self) -> bool:
-        """Validate & normalize deployment configuration.
-
-        Two supported input forms:
-        1. Deployment YAML (fields: name, system, global_parameters, environment_parameters)
-        2. Raw System YAML (only 'name' ending with '.system'). We synthesize a minimal
-           deployment in-memory (no vehicles / environment parameters) so downstream logic works.
-        """
-        # Validate required fields now present
-        for field in ['name', 'system']:
-            if field not in self.config_yaml:
-                raise ValidationError(
-                    f"Field '{field}' is required in deployment configuration file {self.config_yaml_dir}"
-                )
-
-        # Optional lists: default to empty if omitted
-        if 'global_parameters' not in self.config_yaml:
-            self.config_yaml['global_parameters'] = []
-        if 'environment_parameters' not in self.config_yaml:
-            self.config_yaml['environment_parameters'] = []
-
-        return True
-
-    def build(self):
-        # 1. Get system configuration
-        system_name, _ = entity_name_decode(self.config_yaml.get("system"))
-        system = self.config_registry.get_system(system_name)
-
-        if not system:
-            raise ValidationError(f"System not found: {system_name}")
-
+    def _build(self, system_config, package_paths):
         # 2. Determine modes to build
-        modes_config = system.modes or []
+        modes_config = system_config.modes or []
+        
         if modes_config:
-            # Build one instance per mode
+            # Use defined modes
             mode_names = [m.get('name') for m in modes_config]
-            logger.info(f"Building deployment for {len(mode_names)} modes: {mode_names}")
+            
+            # If a mode has default=true, use that as default, otherwise use first mode
+            default_mode = next((m.get('name') for m in modes_config if m.get('default')), mode_names[0])
+            logger.info(f"Building deployment for {len(mode_names)} modes: {mode_names}, default: {default_mode}")
         else:
-            # No modes defined - build single instance without mode filtering
-            mode_names = [None]
-            logger.info(f"Building deployment without mode filtering")
+            # No modes defined - use "default" as the mode name
+            mode_names = ["default"]
+            default_mode = "default"
+            logger.info(f"Building deployment with single 'default' mode")
 
         # 3. Create deployment instance for each mode
         for mode_name in mode_names:
             try:
+                # Apply mode configuration on top of base system
+                mode_system_config = apply_mode_configuration(system_config, mode_name)
+                
                 mode_suffix = f"_{mode_name}" if mode_name else ""
                 instance_name = f"{self.name}{mode_suffix}"
-                deploy_instance = DeploymentInstance(instance_name, mode=mode_name)
+                deploy_instance = DeploymentInstance(instance_name)
                 
-                # Set system with mode filtering
                 deploy_instance.set_system(
-                    system, self.config_registry, mode=mode_name, parameter_resolver=self.parameter_resolver
+                    mode_system_config, self.config_registry, package_paths=package_paths
                 )
-                
-                # Resolve parameters (apply global parameters and resolve substitutions)
-                global_params = self.config_yaml.get('global_parameters', [])
-                deploy_instance.resolve_parameters(global_params)
 
                 # Store instance
-                mode_key = mode_name if mode_name else "default"
+                mode_key = mode_name if mode_name else default_mode
                 self.deploy_instances[mode_key] = deploy_instance
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
                 
@@ -357,4 +408,3 @@ class Deployment:
             logger.info(f"Generated {len(output_path_list)} parameter set templates for mode: {mode_key}")
         
         return output_paths
-

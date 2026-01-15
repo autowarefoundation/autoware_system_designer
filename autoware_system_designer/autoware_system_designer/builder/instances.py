@@ -18,11 +18,12 @@ from typing import List, Dict
 from ..models.config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
 from ..models.parameters import ParameterType
 from ..parsers.data_parser import entity_name_decode
-from ..config import config
+from ..deployment_config import deploy_config
 from ..exceptions import ValidationError
 from ..utils.naming import generate_unique_id
 from ..visualization.visualization_guide import get_component_color, get_component_position
 from .config_registry import ConfigRegistry
+from .parameter_resolver import ParameterResolver
 from .parameter_manager import ParameterManager
 from .link_manager import LinkManager
 from .event_manager import EventManager
@@ -30,75 +31,13 @@ from .event_manager import EventManager
 logger = logging.getLogger(__name__)
 
 
-def normalize_mode_field(mode_field) -> List[str]:
-    """Normalize mode field to list of mode names.
-    
-    Args:
-        mode_field: Can be None, string, or list of strings
-        
-    Returns:
-        List of mode names (empty list if None)
-    """
-    if mode_field is None:
-        return []
-    if isinstance(mode_field, str):
-        return [mode_field]
-    if isinstance(mode_field, list):
-        return mode_field
-    raise ValidationError(f"Invalid mode field type: {type(mode_field)}")
-
-def filter_components_by_mode(components: List[Dict], mode_name: str, available_modes: List[str]) -> List[Dict]:
-    """Filter components that are enabled for the given mode.
-    
-    Args:
-        components: List of component configurations
-        mode_name: Name of the mode to filter for
-        available_modes: List of all available mode names
-        
-    Returns:
-        Filtered list of components enabled for this mode
-        
-    Raises:
-        ValidationError: If mode references are invalid or components overlap
-    """
-    enabled_components = []
-    component_mode_map = {}  # Track which modes each component name uses
-    
-    for cfg_component in components:
-        component_name = cfg_component.get("component")
-        component_modes = normalize_mode_field(cfg_component.get("mode"))
-        
-        # If no mode specified, enable for all modes
-        if not component_modes:
-            component_modes = available_modes
-        
-        # Validate mode references
-        for mode in component_modes:
-            if mode not in available_modes:
-                raise ValidationError(
-                    f"Component '{component_name}' references undefined mode '{mode}'. "
-                    f"Available modes: {available_modes}"
-                )
-        
-        # Check for mode overlap with same component name
-        if component_name not in component_mode_map:
-            component_mode_map[component_name] = set()
-        
-        for mode in component_modes:
-            if mode in component_mode_map[component_name]:
-                raise ValidationError(
-                    f"Component '{component_name}' is defined multiple times for mode '{mode}'"
-                )
-            component_mode_map[component_name].add(mode)
-        
-        # Add to enabled list if this mode is in component's mode list
-        if mode_name in component_modes:
-            enabled_components.append(cfg_component)
-    
-    return enabled_components
-
 class Instance:
-    # Common attributes for node hierarch instance
+    """Base class for all instances in the system hierarchy.
+    
+    Represents a node in the instance tree, which can be a system, module, or node.
+    Manages configuration, topology, interfaces, parameters, and events.
+    """
+    
     def __init__(
         self, name: str, compute_unit: str = "", namespace: list[str] = [], layer: int = 0
     ):
@@ -109,8 +48,8 @@ class Instance:
 
         self.compute_unit: str = compute_unit
         self.layer: int = layer
-        if self.layer > config.layer_limit:
-            raise ValidationError(f"Instance layer is too deep (limit: {config.layer_limit})")
+        if self.layer > deploy_config.layer_limit:
+            raise ValidationError(f"Instance layer is too deep (limit: {deploy_config.layer_limit})")
 
         # configuration
         self.configuration: NodeConfig | ModuleConfig | ParameterSetConfig | SystemConfig | None = None
@@ -179,24 +118,11 @@ class Instance:
             raise ValidationError(f"Error setting instances for {entity_id}, at {self.configuration.file_path}")
 
     def _set_system_instances(self, config_registry: ConfigRegistry):
-        """Set instances for system entity type."""
-        # Determine which components to instantiate based on mode
-        components_to_instantiate = self.configuration.components
+        """Set instances for system entity type.
         
-        # If this is a DeploymentInstance with a mode, filter components
-        if hasattr(self, 'mode') and self.mode is not None:
-            # Get available modes from configuration
-            modes_config = self.configuration.modes or []
-            available_modes = [m.get('name') for m in modes_config]
-            
-            # Filter components for this mode
-            components_to_instantiate = filter_components_by_mode(
-                self.configuration.components, 
-                self.mode, 
-                available_modes
-            )
-            logger.info(f"System instance '{self.namespace_str}' mode '{self.mode}': "
-                       f"{len(components_to_instantiate)}/{len(self.configuration.components)} components enabled")
+        Creates component instances from the system configuration.
+        """
+        components_to_instantiate = self.configuration.components
         
         # First pass: create all component instances
         for cfg_component in components_to_instantiate:
@@ -213,6 +139,9 @@ class Instance:
             # create instance
             instance = Instance(instance_name, compute_unit_name, namespace)
             instance.parent = self
+            if self.parameter_resolver:
+                instance.set_parameter_resolver(self.parameter_resolver)
+
             try:
                 instance.set_instances(entity_id, config_registry)
             except Exception as e:
@@ -223,18 +152,16 @@ class Instance:
             self.children[instance_name] = instance
             logger.debug(f"System instance '{self.namespace_str}' added component '{instance_name}' (uid={instance.unique_id})")
         
-        # Apply mode parameter set (between component creation and component parameter sets)
-        if hasattr(self, 'mode') and self.mode:
-            modes_config = self.configuration.modes or []
-            mode_config = next((m for m in modes_config if m.get('name') == self.mode), None)
-            if mode_config and 'parameter_set' in mode_config:
-                logger.info(f"Applying mode '{self.mode}' parameter set to system")
-                # Create a dummy component config to reuse _apply_parameter_set
-                dummy_component_config = {'parameter_set': mode_config['parameter_set']}
-                # Apply to self (root), disabling namespace check to allow global parameters
-                self._apply_parameter_set(self, dummy_component_config, config_registry, check_namespace=False,
-                                          file_parameter_type=ParameterType.MODE_FILE,
-                                          direct_parameter_type=ParameterType.MODE)
+        # Apply system-level parameter sets
+        if hasattr(self.configuration, 'parameter_sets') and self.configuration.parameter_sets:
+            parameter_sets_to_apply = self.configuration.parameter_sets
+            logger.info(f"Applying {len(parameter_sets_to_apply)} system-level parameter set(s)")
+            # Create a dummy component config to reuse _apply_parameter_set
+            dummy_component_config = {'parameter_set': parameter_sets_to_apply}
+            # Apply to self (root), disabling namespace check to allow global parameters
+            self._apply_parameter_set(self, dummy_component_config, config_registry, check_namespace=False,
+                                      file_parameter_type=ParameterType.MODE_FILE,
+                                      direct_parameter_type=ParameterType.MODE)
 
         # Second pass: apply parameter sets after all instances are created
         # This ensures that parameter_sets can target nodes across different components
@@ -367,6 +294,9 @@ class Instance:
             )
             instance.parent = self
             instance.parent_module_list = self.parent_module_list.copy()
+            if self.parameter_resolver:
+                instance.set_parameter_resolver(self.parameter_resolver)
+
             # recursive call of set_instances
             try:
                 instance.set_instances(cfg_node.get("entity"), config_registry)
@@ -498,61 +428,8 @@ class Instance:
                 } for p in self.parameter_manager.get_all_parameters()
             ],
         }
-        
-        # Add mode information if this is a deployment instance
-        if hasattr(self, 'mode') and self.mode is not None:
-            data["mode"] = self.mode
 
         return data
-
-    def resolve_parameters(self, global_params_config):
-        """Apply global parameters from deployment configuration to all nodes in the instance.
-        And then resolve all parameters in the instance tree that may contain substitutions.
-
-        Args:
-            global_params_config: List of global parameter configurations from deployment
-        """
-        if global_params_config:
-            logger.info(f"Applying {len(global_params_config)} global parameters to all nodes")
-            # Traverse all instances and apply global parameters to nodes
-            self._resolve_parameters_recursive(global_params_config)
-        else:
-            logger.debug("No global parameters defined in deployment configuration")
-
-        # Now that global parameters are applied, resolve any remaining substitutions in all parameters
-        # This includes global parameters resolution and other substitutions like ${input ...}
-        self._finalize_parameters_recursive()
-
-    def _resolve_parameters_recursive(self, global_params_config):
-        """Recursively apply global parameters to all nodes in the instance tree and resolve any remaining substitutions.
-
-        Args:
-            global_params_config: List of global parameter configurations
-        """
-        # If this is a node, apply global parameters to it
-        if self.entity_type == "node":
-            for param_config in global_params_config:
-                param_name = param_config.get('name')
-                param_value = param_config.get('value')
-                param_type = param_config.get('type', 'string')  # Default to string if not specified
-
-                # Resolve parameter value if resolver is available
-                if self.parameter_resolver:
-                    param_value = self.parameter_resolver.resolve_parameter_value(param_value)
-
-                if param_name is not None and param_value is not None:
-                    self.parameter_manager.parameters.set_parameter(
-                        param_name,
-                        param_value,
-                        data_type=param_type,
-                        allow_substs=True,
-                        parameter_type=ParameterType.GLOBAL
-                    )
-                    logger.debug(f"Applied global parameter '{param_name}'={param_value} to node '{self.namespace_str}'")
-
-        # Recursively process children
-        for child in self.children.values():
-            child._resolve_parameters_recursive(global_params_config)
 
     def _finalize_parameters_recursive(self):
         """Recursively finalize all parameters in the instance tree.
@@ -567,39 +444,47 @@ class Instance:
             child._finalize_parameters_recursive()
 
 class DeploymentInstance(Instance):
-    def __init__(self, name: str, mode: str = None):
+    """Top-level deployment instance representing a complete system deployment.
+    
+    This instance manages the entire system hierarchy, including setting up the system
+    configuration, building the instance tree, establishing connections, and resolving parameters.
+    """
+    
+    def __init__(self, name: str):
         super().__init__(name)
-        self.mode = mode  # Store mode for this deployment instance
 
     def set_system(
         self,
-        system: Config,
+        system_config: SystemConfig,
         config_registry,
-        mode: str = None,
-        parameter_resolver = None,
+        package_paths: Dict[str, str] = {},
     ):
         """Set system for this deployment instance.
 
         Args:
-            system: System configuration
+            system_config: System configuration
             config_registry: Registry of all configurations
-            mode: Optional mode name to filter components (None means no filtering)
-            parameter_resolver: Resolver for ROS-independent parameter substitution
+            package_paths: Package paths for parameter resolution
         """
-        self.mode = mode
-        self.parameter_resolver = parameter_resolver
-        logger.info(f"Setting system {system.full_name} for instance {self.name}" +
-                   (f" (mode: {mode})" if mode else ""))
-        self.configuration = system
+        self.parameter_resolver = ParameterResolver(variables=[], package_paths=package_paths)
+        logger.info(f"Setting system {system_config.full_name} for instance {self.name}")
+        self.configuration = system_config
         self.entity_type = "system"
+
+        # Apply system variables and variable files to the parameter resolver if available
+        if self.parameter_resolver:
+            if hasattr(system_config, 'variables') and system_config.variables:
+                self.parameter_resolver.load_system_variables(system_config.variables)
+            
+            if hasattr(system_config, 'variable_files') and system_config.variable_files:
+                self.parameter_resolver.load_system_variable_files(system_config.variable_files)
 
         # 1. set component instances
         logger.info(f"Instance '{self.name}': setting component instances")
-        self.set_instances(system.full_name, config_registry)
+        self.set_instances(system_config.full_name, config_registry)
 
         # Propagate parameter resolver to all instances in the tree (now that they exist)
-        if parameter_resolver:
-            self.set_parameter_resolver(parameter_resolver)
+        self.set_parameter_resolver(self.parameter_resolver)
 
         # 2. set connections
         logger.info(f"Instance '{self.name}': setting connections")
@@ -613,6 +498,9 @@ class DeploymentInstance(Instance):
 
         # 4. validate node namespaces
         self.check_duplicate_node_namespaces()
+
+        # 5. finalize parameters (resolve substitutions)
+        self._finalize_parameters_recursive()
 
     def check_duplicate_node_namespaces(self):
         """Check for duplicate node namespaces in the entire system."""

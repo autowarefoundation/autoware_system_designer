@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Type, Callable, Any
 import logging
 
+import copy
 from ..parsers.data_parser import ConfigParser
-from ..models.config import Config, ConfigType, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
+from ..models.config import Config, ConfigType, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigSubType
 from ..exceptions import ValidationError, NodeConfigurationError, ModuleConfigurationError, ParameterConfigurationError
+from ..resolvers.inheritance_resolver import SystemInheritanceResolver, NodeInheritanceResolver, ModuleInheritanceResolver, InheritanceResolver
+
+from ..parsers.data_validator import entity_name_decode
 
 logger = logging.getLogger(__name__)
 
@@ -72,38 +76,102 @@ class ConfigRegistry:
         """Get entity by name with default value."""
         return self.entities.get(name, default)
     
+    def _get_entity_with_inheritance(self, 
+                                     name: str, 
+                                     config_type: str, 
+                                     error_cls: Type[Exception],
+                                     resolver_cls: Optional[Type[InheritanceResolver]] = None,
+                                     recursive_getter: Optional[Callable[[str], Config]] = None) -> Config:
+        """
+        Generic method to get an entity and resolve inheritance if applicable.
+        """
+        entity = self._type_map[config_type].get(name)
+        
+        # If not found, try decoding the name (e.g. MyNode.node -> MyNode)
+        if entity is None and "." in name:
+            try:
+                decoded_name, entity_type = entity_name_decode(name)
+                if entity_type == config_type:
+                    entity = self._type_map[config_type].get(decoded_name)
+            except ValidationError:
+                pass
+        
+        if entity is None:
+            available = list(self._type_map[config_type].keys())
+            raise error_cls(f"{config_type.capitalize()} '{name}' not found. Available {config_type}s: {available}")
+        
+        if entity.sub_type == ConfigSubType.INHERITANCE:
+            if not resolver_cls or not recursive_getter:
+                # Inheritance requested but no resolver provided, return as is (or could raise error)
+                return entity
+
+            # Get parent name
+            inheritance_target = entity.config.get('inheritance')
+            if not inheritance_target:
+                 # Should have been validated, but fallback
+                 return entity
+
+            # Resolve parent (recursive)
+            parent = recursive_getter(inheritance_target)
+            
+            # Create a deep copy of the parent to serve as the base for this entity
+            # This ensures we don't modify the parent object
+            resolved_entity = copy.deepcopy(parent)
+            
+            # Update the identity of the resolved entity to match the current entity
+            resolved_entity.name = entity.name
+            resolved_entity.full_name = entity.full_name
+            resolved_entity.file_path = entity.file_path
+            resolved_entity.package = entity.package
+            resolved_entity.sub_type = entity.sub_type
+            resolved_entity.config = entity.config # Keep original config with overrides
+            
+            # Apply overrides from this entity's config
+            resolver = resolver_cls()
+            resolver.resolve(resolved_entity, entity.config)
+            
+            return resolved_entity
+
+        return entity
+
     # Enhanced methods for type-safe entity access
     def get_node(self, name: str) -> NodeConfig:
         """Get a node entity by name."""
-        entity = self._type_map[ConfigType.NODE].get(name)
-        if entity is None:
-            available = list(self._type_map[ConfigType.NODE].keys())
-            raise NodeConfigurationError(f"Node '{name}' not found. Available nodes: {available}")
-        return entity
+        return self._get_entity_with_inheritance(
+            name, 
+            ConfigType.NODE, 
+            NodeConfigurationError, 
+            NodeInheritanceResolver, 
+            self.get_node
+        )
     
     def get_module(self, name: str) -> ModuleConfig:
         """Get a module entity by name."""
-        entity = self._type_map[ConfigType.MODULE].get(name)
-        if entity is None:
-            available = list(self._type_map[ConfigType.MODULE].keys())
-            raise ModuleConfigurationError(f"Module '{name}' not found. Available modules: {available}")
-        return entity
+        return self._get_entity_with_inheritance(
+            name,
+            ConfigType.MODULE,
+            ModuleConfigurationError,
+            ModuleInheritanceResolver,
+            self.get_module
+        )
     
     def get_parameter_set(self, name: str) -> ParameterSetConfig:
         """Get a parameter set entity by name."""
-        entity = self._type_map[ConfigType.PARAMETER_SET].get(name)
-        if entity is None:
-            available = list(self._type_map[ConfigType.PARAMETER_SET].keys())
-            raise ParameterConfigurationError(f"Parameter set '{name}' not found. Available parameter sets: {available}")
-        return entity
+        return self._get_entity_with_inheritance(
+            name,
+            ConfigType.PARAMETER_SET,
+            ParameterConfigurationError
+        )
     
     def get_system(self, name: str) -> SystemConfig:
-        """Get an system entity by name."""
-        entity = self._type_map[ConfigType.SYSTEM].get(name)
-        if entity is None:
-            available = list(self._type_map[ConfigType.SYSTEM].keys())
-            raise ValidationError(f"System '{name}' not found. Available systems: {available}")
-        return entity
+        """Get an system entity by name. Resolves inheritance if applicable."""
+        return self._get_entity_with_inheritance(
+            name,
+            ConfigType.SYSTEM,
+            ValidationError, # System uses ValidationError in original code, keeping it
+            SystemInheritanceResolver,
+            self.get_system
+        )
     
     def get_entity_by_type(self, name: str, entity_type: str) -> Config:
         """Get an entity by name and type."""
