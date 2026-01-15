@@ -140,6 +140,8 @@ def main() -> None:
     total_errors = sum(len(r.errors) for r in results)
     if total_errors > 0:
         sys.exit(1)
+    if args.format == "human":
+        print("Lint succeeded with no errors.")
 
 
 if __name__ == "__main__":

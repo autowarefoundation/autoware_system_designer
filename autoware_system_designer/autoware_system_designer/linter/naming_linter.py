@@ -234,7 +234,6 @@ class NamingLinter:
             self._lint_named_list(override.get('instances'), result, "Override instance", key="instance")
             self._lint_named_list(override.get('variables'), result, "Override variable")
             self._lint_named_list(override.get('variable_files'), result, "Override variable file")
-            self._lint_named_list(override.get('modes'), result, "Override mode")
             self._lint_named_list(override.get('components'), result, "Override component", key="component")
             self._lint_external_interfaces(override.get('external_interfaces'), result, "Override")
 
@@ -247,7 +246,6 @@ class NamingLinter:
             self._lint_named_list(remove.get('processes'), result, "Remove process")
             self._lint_named_list(remove.get('instances'), result, "Remove instance", key="instance")
             self._lint_named_list(remove.get('variables'), result, "Remove variable")
-            self._lint_named_list(remove.get('modes'), result, "Remove mode")
             self._lint_named_list(remove.get('components'), result, "Remove component", key="component")
             self._lint_external_interfaces(remove.get('external_interfaces'), result, "Remove")
 

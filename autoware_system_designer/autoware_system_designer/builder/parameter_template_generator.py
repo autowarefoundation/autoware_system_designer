@@ -80,11 +80,12 @@ class ParameterTemplateGenerator:
         # Generate per-component templates referencing shared system_root paths
         generated: List[str] = []
         for comp_name, nodes in component_nodes.items():
-            output_path = os.path.join(output_dir, f"{deployment_name}.{comp_name}.parameter_set.yaml")
+            output_file_name = f"{deployment_name}__{comp_name}.parameter_set"
+            output_path = os.path.join(output_dir, f"{output_file_name}.yaml")
             template_renderer.render_template_to_file(
                 "parameter_set.yaml.jinja2",
                 output_path,
-                name=f"{deployment_name}.{comp_name}.parameter_set",
+                name=output_file_name,
                 parameters=nodes,
             )
             logger.info(f"Generated component parameter set template: {output_path} (shared root: {system_root})")
