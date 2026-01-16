@@ -127,7 +127,7 @@ class Instance:
         # First pass: create all component instances
         for cfg_component in components_to_instantiate:
             compute_unit_name = cfg_component.get("compute_unit")
-            instance_name = cfg_component.get("component")
+            instance_name = cfg_component.get("name")
             entity_id = cfg_component.get("entity")
             namespace = cfg_component.get("namespace")
             if namespace:
@@ -166,7 +166,7 @@ class Instance:
         # Second pass: apply parameter sets after all instances are created
         # This ensures that parameter_sets can target nodes across different components
         for cfg_component in components_to_instantiate:
-            instance_name = cfg_component.get("component")
+            instance_name = cfg_component.get("name")
             instance = self.children[instance_name]
             self._apply_parameter_set(instance, cfg_component, config_registry)
         

@@ -49,14 +49,14 @@ def _apply_removals(config: SystemConfig, remove_spec: Dict[str, Any]) -> None:
             # Build set of component names to remove
             remove_names = set()
             for item in components_to_remove:
-                if isinstance(item, dict) and 'component' in item:
-                    remove_names.add(item['component'])
+                if isinstance(item, dict) and 'name' in item:
+                    remove_names.add(item['name'])
             
             # Filter out components to remove
             if config.components:
                 config.components = [
                     comp for comp in config.components 
-                    if comp.get('component') not in remove_names
+                    if comp.get('name') not in remove_names
                 ]
                 logger.debug(f"Removed {len(remove_names)} components: {remove_names}")
     
@@ -108,14 +108,14 @@ def _apply_overrides(config: SystemConfig, override_spec: Dict[str, Any]) -> Non
             
             # Build a map of existing components by name
             component_map = {
-                comp.get('component'): idx 
+                comp.get('name'): idx 
                 for idx, comp in enumerate(config.components)
-                if 'component' in comp
+                if 'name' in comp
             }
             
             # Apply overrides or add new components
             for override_comp in override_components:
-                comp_name = override_comp.get('component')
+                comp_name = override_comp.get('name')
                 if comp_name in component_map:
                     # Override existing component
                     idx = component_map[comp_name]
@@ -159,7 +159,7 @@ def apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -
         filtered_components = []
         for comp in modified_config.components:
             if 'mode' in comp:
-                logger.debug(f"Filtering out component '{comp.get('component')}' with deprecated 'mode' field from base")
+                logger.debug(f"Filtering out component '{comp.get('name')}' with deprecated 'mode' field from base")
             else:
                 filtered_components.append(comp)
         modified_config.components = filtered_components
