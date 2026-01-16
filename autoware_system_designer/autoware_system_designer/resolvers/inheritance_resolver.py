@@ -95,6 +95,7 @@ class InheritanceResolver:
             {'field': 'connections', 'key_field': None}
         ]
         """
+        override_config = config_yaml.get('override', {})
         for spec in merge_specs:
             field = spec['field']
             key_field = spec['key_field']
@@ -103,7 +104,7 @@ class InheritanceResolver:
             base_list = getattr(config_object, field)
             
             # Get override list from yaml
-            override_list = config_yaml.get(field, [])
+            override_list = override_config.get(field, [])
             
             # Merge
             merged_list = self._merge_list(base_list, override_list, key_field)
@@ -136,6 +137,7 @@ class SystemInheritanceResolver(InheritanceResolver):
         Apply inheritance rules from config_yaml to system_config.
         Modifies system_config in-place.
         """
+        override_config = config_yaml.get('override', {})
         merge_specs = [
             {'field': 'variables', 'key_field': 'name'},
             {'field': 'variable_files', 'key_field': None},
@@ -145,6 +147,19 @@ class SystemInheritanceResolver(InheritanceResolver):
             {'field': 'connections', 'key_field': None},
         ]
         self._resolve_merges(system_config, config_yaml, merge_specs)
+
+        # Handle mode_configs manual merge from override
+        if system_config.modes:
+            if system_config.mode_configs is None:
+                system_config.mode_configs = {}
+            
+            # mode names are already merged in system_config.modes
+            mode_names = [m.get('name') for m in system_config.modes if isinstance(m, dict) and 'name' in m]
+            
+            for mode_name in mode_names:
+                if mode_name in override_config:
+                    # Overwrite/Update mode config from override
+                    system_config.mode_configs[mode_name] = override_config[mode_name]
 
         # Apply removals if 'remove' section exists
         remove_config = config_yaml.get('remove', {})
@@ -170,11 +185,13 @@ class NodeInheritanceResolver(InheritanceResolver):
         Apply inheritance rules from config_yaml to node_config.
         Modifies node_config in-place.
         """
+        override_config = config_yaml.get('override', {})
+        
         # 1. Launch (dict merge)
-        if 'launch' in config_yaml:
+        if 'launch' in override_config:
              if node_config.launch is None:
                  node_config.launch = {}
-             node_config.launch.update(config_yaml['launch'])
+             node_config.launch.update(override_config['launch'])
 
         merge_specs = [
             {'field': 'inputs', 'key_field': 'name'},
@@ -209,6 +226,8 @@ class ModuleInheritanceResolver(InheritanceResolver):
         Apply inheritance rules from config_yaml to module_config.
         Modifies module_config in-place.
         """
+        override_config = config_yaml.get('override', {})
+        
         merge_specs = [
             {'field': 'instances', 'key_field': 'instance'},
             {'field': 'connections', 'key_field': None},
@@ -216,8 +235,8 @@ class ModuleInheritanceResolver(InheritanceResolver):
         self._resolve_merges(module_config, config_yaml, merge_specs)
 
         # Merge external_interfaces
-        if 'external_interfaces' in config_yaml:
-            self._resolve_external_interfaces(module_config, config_yaml['external_interfaces'])
+        if 'external_interfaces' in override_config:
+            self._resolve_external_interfaces(module_config, override_config['external_interfaces'])
 
         # Apply removals if 'remove' section exists
         remove_config = config_yaml.get('remove', {})

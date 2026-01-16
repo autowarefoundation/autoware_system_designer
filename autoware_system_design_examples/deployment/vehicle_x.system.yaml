@@ -4,7 +4,8 @@ name: vehicle_x.system
 
 inheritance: TypeAlpha.system
 
-variables:
+override:
+  variables:
   - name: vehicle_id
     value: vehicle_x
   - name: data_path

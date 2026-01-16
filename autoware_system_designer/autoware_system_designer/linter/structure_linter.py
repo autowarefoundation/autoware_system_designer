@@ -15,7 +15,7 @@
 """Structure and schema linter for autoware_system_design_format files."""
 
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from ..parsers.yaml_parser import yaml_parser
 from ..parsers.data_validator import ValidatorFactory, entity_name_decode
@@ -154,6 +154,9 @@ class StructureLinter:
                     result.add_error(f"Process at index {idx} missing 'trigger_conditions' field")
                 if 'outcomes' not in process:
                     result.add_error(f"Process at index {idx} missing 'outcomes' field")
+
+        # Validate inheritance override/remove blocks for node configs
+        self._validate_node_inheritance_blocks(config, result)
     
     def _validate_module_schema(self, config: Dict[str, Any], result: LintResult):
         """Validate module-specific schema."""
@@ -202,6 +205,9 @@ class StructureLinter:
                     result.add_error(f"Connection at index {idx} missing 'from' field")
                 if 'to' not in connection:
                     result.add_error(f"Connection at index {idx} missing 'to' field")
+
+        # Validate inheritance override/remove blocks for module configs
+        self._validate_module_inheritance_blocks(config, result)
     
     def _validate_system_schema(self, config: Dict[str, Any], result: LintResult):
         """Validate system-specific schema."""
@@ -228,10 +234,169 @@ class StructureLinter:
                     result.add_error(f"Connection at index {idx} missing 'from' field")
                 if 'to' not in connection:
                     result.add_error(f"Connection at index {idx} missing 'to' field")
+
+        # Validate inheritance override/remove blocks for system configs
+        self._validate_system_inheritance_blocks(config, result)
     
     def _validate_parameter_set_schema(self, config: Dict[str, Any], result: LintResult):
         """Validate parameter set-specific schema."""
         # Parameters can be dict or list, both are valid
         # Additional validation can be added here if needed
         pass
+
+    def _validate_node_inheritance_blocks(self, config: Dict[str, Any], result: LintResult):
+        """Validate node inheritance override/remove blocks."""
+        override = config.get('override')
+        if override is not None:
+            if not isinstance(override, dict):
+                result.add_error("'override' must be a dictionary in inheritance config")
+            else:
+                if 'launch' in override and not isinstance(override['launch'], dict):
+                    result.add_error("Override 'launch' must be a dictionary")
+                self._validate_list_block(override, 'inputs', result, required_keys=['name'],
+                                          label_prefix="Override input")
+                self._validate_list_block(override, 'outputs', result, required_keys=['name'],
+                                          label_prefix="Override output")
+                self._validate_list_block(override, 'parameter_files', result, required_keys=['name'],
+                                          label_prefix="Override parameter file")
+                self._validate_list_block(override, 'parameters', result, required_keys=['name'],
+                                          label_prefix="Override parameter")
+                self._validate_list_block(override, 'processes', result, required_keys=['name'],
+                                          label_prefix="Override process")
+
+        remove = config.get('remove')
+        if remove is not None:
+            if not isinstance(remove, dict):
+                result.add_error("'remove' must be a dictionary in inheritance config")
+            else:
+                self._validate_list_block(remove, 'inputs', result, required_keys=['name'],
+                                          label_prefix="Remove input")
+                self._validate_list_block(remove, 'outputs', result, required_keys=['name'],
+                                          label_prefix="Remove output")
+                self._validate_list_block(remove, 'parameter_files', result, required_keys=['name'],
+                                          label_prefix="Remove parameter file")
+                self._validate_list_block(remove, 'parameters', result, required_keys=['name'],
+                                          label_prefix="Remove parameter")
+                self._validate_list_block(remove, 'processes', result, required_keys=['name'],
+                                          label_prefix="Remove process")
+
+    def _validate_module_inheritance_blocks(self, config: Dict[str, Any], result: LintResult):
+        """Validate module inheritance override/remove blocks."""
+        override = config.get('override')
+        if override is not None:
+            if not isinstance(override, dict):
+                result.add_error("'override' must be a dictionary in inheritance config")
+            else:
+                self._validate_list_block(override, 'instances', result, required_keys=['instance'],
+                                          label_prefix="Override instance")
+                self._validate_list_block(override, 'connections', result, required_keys=None,
+                                          label_prefix="Override connection")
+                self._validate_external_interfaces_block(override.get('external_interfaces'), result, "Override")
+
+        remove = config.get('remove')
+        if remove is not None:
+            if not isinstance(remove, dict):
+                result.add_error("'remove' must be a dictionary in inheritance config")
+            else:
+                self._validate_list_block(remove, 'instances', result, required_keys=['instance'],
+                                          label_prefix="Remove instance")
+                self._validate_list_block(remove, 'connections', result, required_keys=None,
+                                          label_prefix="Remove connection")
+                self._validate_external_interfaces_block(remove.get('external_interfaces'), result, "Remove")
+
+    def _validate_system_inheritance_blocks(self, config: Dict[str, Any], result: LintResult):
+        """Validate system inheritance override/remove blocks."""
+        override = config.get('override')
+        if override is not None:
+            if not isinstance(override, dict):
+                result.add_error("'override' must be a dictionary in inheritance config")
+            else:
+                self._validate_list_block(override, 'variables', result, required_keys=['name'],
+                                          label_prefix="Override variable")
+                self._validate_list_block(override, 'variable_files', result, required_keys=['name', 'value'],
+                                          label_prefix="Override variable file")
+                self._validate_list_block(override, 'modes', result, required_keys=['name'],
+                                          label_prefix="Override mode")
+                self._validate_list_block(override, 'parameter_sets', result, required_keys=None,
+                                          label_prefix="Override parameter set")
+                self._validate_list_block(override, 'components', result, required_keys=['component'],
+                                          label_prefix="Override component")
+                self._validate_list_block(override, 'connections', result, required_keys=None,
+                                          label_prefix="Override connection")
+
+        remove = config.get('remove')
+        if remove is not None:
+            if not isinstance(remove, dict):
+                result.add_error("'remove' must be a dictionary in inheritance config")
+            else:
+                self._validate_list_block(remove, 'modes', result, required_keys=['name'],
+                                          label_prefix="Remove mode")
+                self._validate_list_block(remove, 'parameter_sets', result, required_keys=None,
+                                          label_prefix="Remove parameter set")
+                self._validate_list_block(remove, 'components', result, required_keys=['component'],
+                                          label_prefix="Remove component")
+                self._validate_list_block(remove, 'variables', result, required_keys=['name'],
+                                          label_prefix="Remove variable")
+                self._validate_list_block(remove, 'connections', result, required_keys=None,
+                                          label_prefix="Remove connection")
+
+    def _validate_list_block(
+        self,
+        container: Dict[str, Any],
+        field: str,
+        result: LintResult,
+        required_keys: List[str] = None,
+        label_prefix: str = "Item",
+    ):
+        """Validate a list field inside a container dict."""
+        if field not in container:
+            return
+
+        value = container[field]
+        if not isinstance(value, list):
+            result.add_error(f"{label_prefix} list '{field}' must be a list")
+            return
+
+        for idx, item in enumerate(value):
+            if not isinstance(item, dict):
+                result.add_error(f"{label_prefix} at index {idx} must be a dictionary")
+                continue
+
+            if required_keys:
+                for key in required_keys:
+                    if key not in item:
+                        result.add_error(f"{label_prefix} at index {idx} missing '{key}' field")
+
+    def _validate_external_interfaces_block(
+        self,
+        external_interfaces: Any,
+        result: LintResult,
+        label_prefix: str,
+    ):
+        """Validate external_interfaces block when present."""
+        if external_interfaces is None:
+            return
+
+        if not isinstance(external_interfaces, dict):
+            result.add_error(f"{label_prefix} external_interfaces must be a dictionary")
+            return
+
+        for interface_type in ['input', 'output']:
+            if interface_type in external_interfaces:
+                entries = external_interfaces[interface_type]
+                if not isinstance(entries, list):
+                    result.add_error(
+                        f"{label_prefix} external_interfaces '{interface_type}' must be a list"
+                    )
+                    continue
+                for idx, entry in enumerate(entries):
+                    if not isinstance(entry, dict):
+                        result.add_error(
+                            f"{label_prefix} external_interfaces '{interface_type}' at index {idx} must be a dictionary"
+                        )
+                        continue
+                    if 'name' not in entry:
+                        result.add_error(
+                            f"{label_prefix} external_interfaces '{interface_type}' at index {idx} missing 'name' field"
+                        )
 

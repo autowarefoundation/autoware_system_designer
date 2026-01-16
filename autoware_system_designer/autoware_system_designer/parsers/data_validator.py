@@ -55,6 +55,11 @@ class BaseValidator(ABC):
         pass
     
     @abstractmethod
+    def get_override_fields(self) -> List[str]:
+        """Get fields that must be in override block for inheritance."""
+        return []
+
+    @abstractmethod
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         """Get schema properties for validation."""
         pass
@@ -123,14 +128,39 @@ class BaseValidator(ABC):
         self.validate_basic_structure(config, file_path)
         self.validate_entity_type(entity_type, expected_type, file_path)
         self.validate_required_fields(config, file_path)
+        self.validate_inheritance_structure(config, file_path)
       
         self.validate_schema(config, file_path)
+
+    def validate_inheritance_structure(self, config: Dict[str, Any], file_path: str) -> None:
+        """Validate inheritance structure."""
+        if "inheritance" in config:
+            # Check for forbidden root fields
+            forbidden = self.get_override_fields()
+            found = [f for f in forbidden if f in config]
+            if found:
+                raise ValidationError(f"Fields {found} must be under 'override' block in inheritance config. File: {file_path}")
+            
+            # Validate override block if present
+            if "override" in config:
+                override = config["override"]
+                if not isinstance(override, dict):
+                    raise ValidationError(f"'override' must be a dictionary. File: {file_path}")
+                
+                # Recursively validate schema for override fields
+                # We reuse validate_schema but apply it to override dict
+                # Note: This checks that fields inside 'override' match the schema properties
+                # It doesn't complain about unknown fields unless we enforce strict schema, which validate_schema doesn't do yet.
+                self.validate_schema(override, f"{file_path} (override)")
 
 class NodeValidator(BaseValidator):
     """Validator for node entities."""
     
     def get_required_fields(self) -> List[str]:
         return ["name"]
+
+    def get_override_fields(self) -> List[str]:
+        return ["launch", "inputs", "outputs", "parameter_files", "parameters", "processes"]
 
     def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
         """
@@ -156,7 +186,8 @@ class NodeValidator(BaseValidator):
             'parameter_files': {'type': 'object_or_array'},
             'parameters': {'type': 'object_or_array'},
             'processes': {'type': 'array'},
-            'remove': {'type': 'object'}
+            'remove': {'type': 'object'},
+            'override': {'type': 'object'}
         }
 
 class ModuleValidator(BaseValidator):
@@ -164,6 +195,9 @@ class ModuleValidator(BaseValidator):
     
     def get_required_fields(self) -> List[str]:
         return ["name"]
+
+    def get_override_fields(self) -> List[str]:
+        return ["instances", "external_interfaces", "connections"]
 
     def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
         """
@@ -187,6 +221,7 @@ class ModuleValidator(BaseValidator):
             'external_interfaces': {'type': 'object_or_array'},
             'connections': {'type': 'array'},
             'remove': {'type': 'object'},
+            'override': {'type': 'object'},
         }
 
 class ParameterSetValidator(BaseValidator):
@@ -195,6 +230,9 @@ class ParameterSetValidator(BaseValidator):
     def get_required_fields(self) -> List[str]:
         return ["name", "parameters"]
     
+    def get_override_fields(self) -> List[str]:
+        return []
+
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         return {
             'name': {'type': 'string'},
@@ -208,6 +246,9 @@ class SystemValidator(BaseValidator):
     def get_required_fields(self) -> List[str]:
         # Basic requirement is name
         return ["name"]
+
+    def get_override_fields(self) -> List[str]:
+        return ["modes", "parameter_sets", "components", "connections", "variables", "variable_files"]
     
     def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
         """
@@ -241,6 +282,7 @@ class SystemValidator(BaseValidator):
             'variables': {'type': 'nullable_array'},
             'variable_files': {'type': 'nullable_array'},
             'remove': {'type': 'object'}, # Support for removal in inheritance
+            'override': {'type': 'object'},
         }
 
 class ValidatorFactory:

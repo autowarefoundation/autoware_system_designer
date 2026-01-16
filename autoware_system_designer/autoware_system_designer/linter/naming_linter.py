@@ -20,6 +20,7 @@ from typing import Dict, Any
 
 from ..parsers.yaml_parser import yaml_parser
 from ..parsers.data_validator import entity_name_decode
+from ..models.config import ConfigType
 from .report import LintResult
 
 
@@ -39,18 +40,35 @@ class NamingLinter:
             result.add_error(f"Failed to load YAML file: {str(e)}")
             return
         
+        # Skip name format checks for parameter_set files
+        if file_path.name.endswith(".parameter_set.yaml"):
+            return
+
         # Check entity name format
         if 'name' in config:
             entity_name = config['name']
             try:
                 name_part, type_part = entity_name_decode(entity_name)
-                
-                # Check entity name is PascalCase
-                if not self._is_pascal_case(name_part):
-                    result.add_error(
-                        f"Entity name '{name_part}' should be in PascalCase format "
-                        f"(e.g., 'DetectorA', 'MyModule')"
-                    )
+                inheritance_value = config.get('inheritance')
+
+                if type_part == ConfigType.PARAMETER_SET:
+                    return
+
+                # Check entity name format based on inheritance
+                if inheritance_value:
+                    if not self._is_allowed_inheritance_name(name_part, inheritance_value):
+                        base_name = self._get_inheritance_base_name(inheritance_value)
+                        base_hint = base_name if base_name else "OriginalName"
+                        result.add_error(
+                            f"Entity name '{name_part}' should be snake_case or "
+                            f"'{base_hint}_snake_variant' for inheritance config"
+                        )
+                else:
+                    if not self._is_pascal_case(name_part):
+                        result.add_error(
+                            f"Entity name '{name_part}' should be in PascalCase format "
+                            f"(e.g., 'DetectorA', 'MyModule')"
+                        )
             except Exception as e:
                 result.add_error(f"Invalid entity name format: {str(e)}")
         
@@ -65,6 +83,9 @@ class NamingLinter:
                             f"(e.g., 'node_detector', 'pointcloud_input')"
                         )
         
+        # Check inheritance override/remove names
+        self._lint_inheritance_names(config, result)
+
         # Check port names (for nodes)
         if 'inputs' in config and isinstance(config['inputs'], list):
             for idx, input_port in enumerate(config['inputs']):
@@ -150,6 +171,8 @@ class NamingLinter:
         
         snake_case: Lowercase letters, numbers, and underscores. Must start with a letter.
         Examples: pointcloud_input, node_detector, my_port_123
+        Also allows slash-delimited segments with snake_case each:
+        Examples: lidar/front_lower/pointcloud, camera/camera0/image_raw
         
         Args:
             name: String to check
@@ -164,7 +187,99 @@ class NamingLinter:
         if not name[0].islower():
             return False
         
-        # Rest should be lowercase letters, numbers, or underscores
-        pattern = r'^[a-z][a-z0-9_]*$'
+        # Allow slash-delimited snake_case segments
+        pattern = r'^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$'
         return bool(re.match(pattern, name))
+
+    def _is_allowed_inheritance_name(self, name: str, inheritance_value: str) -> bool:
+        """Check inheritance name rules for temporary/variant configs."""
+        if self._is_snake_case(name):
+            return True
+
+        base_name = self._get_inheritance_base_name(inheritance_value)
+        if not base_name:
+            return False
+
+        if not name.startswith(f"{base_name}_"):
+            return False
+
+        suffix = name[len(base_name) + 1:]
+        return bool(suffix) and self._is_snake_suffix(suffix)
+
+    @staticmethod
+    def _is_snake_suffix(name: str) -> bool:
+        """Allow lowercase/digits/underscores, leading digit OK."""
+        return bool(re.match(r'^[a-z0-9][a-z0-9_]*$', name))
+
+    @staticmethod
+    def _get_inheritance_base_name(inheritance_value: Any) -> str:
+        """Get base name from inheritance field."""
+        if not isinstance(inheritance_value, str):
+            return ""
+        try:
+            base_name, _ = entity_name_decode(inheritance_value)
+            return base_name
+        except Exception:
+            return ""
+
+    def _lint_inheritance_names(self, config: Dict[str, Any], result: LintResult):
+        """Lint naming conventions in inheritance override/remove blocks."""
+        override = config.get('override')
+        if isinstance(override, dict):
+            self._lint_named_list(override.get('inputs'), result, "Override input")
+            self._lint_named_list(override.get('outputs'), result, "Override output")
+            self._lint_named_list(override.get('parameters'), result, "Override parameter")
+            self._lint_named_list(override.get('parameter_files'), result, "Override parameter file")
+            self._lint_named_list(override.get('processes'), result, "Override process")
+            self._lint_named_list(override.get('instances'), result, "Override instance", key="instance")
+            self._lint_named_list(override.get('variables'), result, "Override variable")
+            self._lint_named_list(override.get('variable_files'), result, "Override variable file")
+            self._lint_named_list(override.get('components'), result, "Override component", key="component")
+            self._lint_external_interfaces(override.get('external_interfaces'), result, "Override")
+
+        remove = config.get('remove')
+        if isinstance(remove, dict):
+            self._lint_named_list(remove.get('inputs'), result, "Remove input")
+            self._lint_named_list(remove.get('outputs'), result, "Remove output")
+            self._lint_named_list(remove.get('parameters'), result, "Remove parameter")
+            self._lint_named_list(remove.get('parameter_files'), result, "Remove parameter file")
+            self._lint_named_list(remove.get('processes'), result, "Remove process")
+            self._lint_named_list(remove.get('instances'), result, "Remove instance", key="instance")
+            self._lint_named_list(remove.get('variables'), result, "Remove variable")
+            self._lint_named_list(remove.get('components'), result, "Remove component", key="component")
+            self._lint_external_interfaces(remove.get('external_interfaces'), result, "Remove")
+
+    def _lint_named_list(
+        self,
+        items: Any,
+        result: LintResult,
+        label: str,
+        key: str = "name",
+    ):
+        """Lint snake_case for named list items."""
+        if not isinstance(items, list):
+            return
+
+        for idx, item in enumerate(items):
+            if isinstance(item, dict) and key in item:
+                name_value = item[key]
+                if not self._is_snake_case(name_value):
+                    result.add_error(
+                        f"{label} name '{name_value}' should be in snake_case format"
+                    )
+
+    def _lint_external_interfaces(self, external_interfaces: Any, result: LintResult, label: str):
+        """Lint external interface names in inheritance blocks."""
+        if not isinstance(external_interfaces, dict):
+            return
+
+        for interface_type in ['input', 'output', 'parameter']:
+            if interface_type in external_interfaces and isinstance(external_interfaces[interface_type], list):
+                for entry in external_interfaces[interface_type]:
+                    if isinstance(entry, dict) and 'name' in entry:
+                        port_name = entry['name']
+                        if not self._is_snake_case(port_name):
+                            result.add_error(
+                                f"{label} external {interface_type} name '{port_name}' should be in snake_case format"
+                            )
 
