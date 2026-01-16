@@ -167,8 +167,8 @@ class StructureLinter:
                     result.add_error(f"Instance at index {idx} must be a dictionary")
                     continue
                 
-                if 'instance' not in instance:
-                    result.add_error(f"Instance at index {idx} missing 'instance' field")
+                if 'name' not in instance:
+                    result.add_error(f"Instance at index {idx} missing 'name' field")
                 if 'entity' not in instance:
                     result.add_error(f"Instance at index {idx} missing 'entity' field")
         

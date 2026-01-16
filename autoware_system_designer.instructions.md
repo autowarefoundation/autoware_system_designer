@@ -79,7 +79,7 @@ Top-level entry point defining the complete system.
 - `name`: Must match filename (e.g., `MyCar.system`).
 - `modes`: List of operation modes (e.g., `default`, `simulation`).
 - `components`: Top-level instances.
-  - `component`: Name of the component instance.
+  - `name`: Name of the component instance.
   - `entity`: Reference to module/node (e.g., `SensingModule.module`).
   - `namespace`: ROS namespace prefix.
   - `compute_unit`: Hardware resource identifier (e.g., `ecu_1`).
@@ -133,7 +133,7 @@ processes:
 ```yaml
 name: Perception.module
 instances:
-  - instance: detector
+  - name: detector
     entity: Detector.node
 external_interfaces:
   input:

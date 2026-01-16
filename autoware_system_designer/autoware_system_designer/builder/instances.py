@@ -284,11 +284,11 @@ class Instance:
         """Create child instances for module entities."""
         cfg_node_list = self.configuration.instances
         for cfg_node in cfg_node_list:
-            # check if cfg_node has 'node' and 'entity'
-            if "instance" not in cfg_node or "entity" not in cfg_node:
-                raise ValidationError(f"Module instance configuration must have 'node' and 'entity' fields, at {self.configuration.file_path}")
+            # check if cfg_node has 'name' and 'entity'
+            if "name" not in cfg_node or "entity" not in cfg_node:
+                raise ValidationError(f"Module instance configuration must have 'name' and 'entity' fields, at {self.configuration.file_path}")
 
-            child_name = cfg_node.get("instance")
+            child_name = cfg_node.get("name")
             instance = Instance(
                 child_name, self.compute_unit, self.namespace + [child_name], self.layer + 1
             )

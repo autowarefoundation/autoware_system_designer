@@ -3,22 +3,22 @@ autoware_system_design_format: v0.1.0
 name: RadarDummy.module
 
 instances:
-  - instance: radar_front_center
+  - name: radar_front_center
     entity: RadarDummyDriver.node
-  - instance: radar_front_left
+  - name: radar_front_left
     entity: RadarDummyDriver.node
-  - instance: radar_front_right
+  - name: radar_front_right
     entity: RadarDummyDriver.node
-  - instance: radar_rear_center
+  - name: radar_rear_center
     entity: RadarDummyDriver.node
-  - instance: radar_rear_left
+  - name: radar_rear_left
     entity: RadarDummyDriver.node
-  - instance: radar_rear_right
+  - name: radar_rear_right
     entity: RadarDummyDriver.node
 
-  - instance: simple_object_merger
+  - name: simple_object_merger
     entity: DetectedObjectMergerDummy6.node
-  - instance: simple_tracked_object_merger
+  - name: simple_tracked_object_merger
     entity: TrackedObjectMergerDummy6.node
 
 external_interfaces:

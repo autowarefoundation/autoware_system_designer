@@ -3,21 +3,21 @@ autoware_system_design_format: v0.1.0
 name: CameraDummy.module
 
 instances:
-  - instance: camera_0
+  - name: camera_0
     entity: CameraDummyDriver.node
-  - instance: camera_1
+  - name: camera_1
     entity: CameraDummyDriver.node
-  - instance: camera_2
+  - name: camera_2
     entity: CameraDummyDriver.node
-  - instance: camera_3
+  - name: camera_3
     entity: CameraDummyDriver.node
-  - instance: camera_4
+  - name: camera_4
     entity: CameraDummyDriver.node
-  - instance: camera_5
+  - name: camera_5
     entity: CameraDummyDriver.node
-  - instance: camera_6
+  - name: camera_6
     entity: CameraDummyDriver.node
-  - instance: camera_7
+  - name: camera_7
     entity: CameraDummyDriver.node
 
 external_interfaces:

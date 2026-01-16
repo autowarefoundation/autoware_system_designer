@@ -88,7 +88,7 @@ class CompletionProvider:
             # Instance ports
             instances = config.instances or []
             for instance in instances:
-                instance_name = instance.get('instance')
+                instance_name = instance.get('name')
                 entity_name = instance.get('entity')
 
                 if instance_name and entity_name and entity_name in self.registry_manager.entity_registry:

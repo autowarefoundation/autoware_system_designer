@@ -3,15 +3,15 @@ autoware_system_design_format: v0.1.0
 name: LidarDummy.module
 
 instances:
-  - instance: lidar_top
+  - name: lidar_top
     entity: LidarDummyDriver.node
-  - instance: lidar_left
+  - name: lidar_left
     entity: LidarDummyDriver.node
-  - instance: lidar_right
+  - name: lidar_right
     entity: LidarDummyDriver.node
-  - instance: lidar_rear
+  - name: lidar_rear
     entity: LidarDummyDriver.node
-  - instance: lidar_concatenate
+  - name: lidar_concatenate
     entity: ConcatenatePointcloudDummy.node
 
 external_interfaces:

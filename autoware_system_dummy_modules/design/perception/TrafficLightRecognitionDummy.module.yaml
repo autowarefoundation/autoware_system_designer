@@ -3,7 +3,7 @@ autoware_system_design_format: v0.1.0
 name: TrafficLightRecognitionDummy.module
 
 instances:
-  - instance: classification
+  - name: classification
     entity: TrafficLightRecognitionDummy.node
 
 external_interfaces:

@@ -3,9 +3,9 @@ autoware_system_design_format: v0.1.0
 name: DetectorA.module
 
 instances:
-  - instance: node_detector
+  - name: node_detector
     entity: DetectorA.node
-  - instance: node_filter
+  - name: node_filter
     entity: FilterA.node
 
 external_interfaces:
