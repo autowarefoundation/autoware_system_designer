@@ -18,26 +18,26 @@ modes:
     description: Simulation mode
 
 components:
-  - component: lidar
+  - name: lidar
     entity: LidarDummy.module
     namespace: sensing/lidar
     compute_unit: perception_ecu_1
-  - component: map_loader
+  - name: map_loader
     entity: MapDummy.node
     namespace: map
     compute_unit: dummy_ecu_1
-  - component: localizer
+  - name: localizer
     entity: LocalizationDummy.node
     namespace: localization
     compute_unit: dummy_ecu_1
-  - component: object_recognition
+  - name: object_recognition
     entity: PerceptionA.module
     namespace: perception/object_recognition
     compute_unit: main_ecu
     parameter_set: [
       PerceptionModuleA.parameter_set
     ]
-  - component: planner
+  - name: planner
     entity: PlanningDummy.node
     namespace: planning
     compute_unit: dummy_ecu_2
@@ -58,11 +58,12 @@ connections:
 
 simulation:
   override:
-  - component: object_recognition
-    entity: PerceptionB.module
-    namespace: perception/object_recognition
-    compute_unit: main_ecu
-    parameter_set: [
-      PerceptionModuleA.parameter_set,  
-      PerceptionModuleABuild.parameter_set,
-    ]
+    components:
+    - name: object_recognition
+      entity: PerceptionB.module
+      namespace: perception/object_recognition
+      compute_unit: main_ecu
+      parameter_set: [
+        PerceptionModuleA.parameter_set,  
+        PerceptionModuleABuild.parameter_set,
+      ]

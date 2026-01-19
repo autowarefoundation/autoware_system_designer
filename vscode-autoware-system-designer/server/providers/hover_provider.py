@@ -78,7 +78,7 @@ class HoverProvider:
             if instances:
                 hover_text += "\n### Instances\n"
                 for instance in instances[:5]:  # Show first 5
-                    inst_name = instance.get('instance', 'unknown')
+                    inst_name = instance.get('name', 'unknown')
                     entity = instance.get('entity', 'unknown')
                     hover_text += f"- `{inst_name}`: {entity}\n"
                 if len(instances) > 5:
@@ -93,7 +93,7 @@ class HoverProvider:
             if components:
                 hover_text += "\n### Components\n"
                 for component in components[:5]:  # Show first 5
-                    comp_name = component.get('component', 'unknown')
+                    comp_name = component.get('name', 'unknown')
                     entity = component.get('entity', 'unknown')
                     hover_text += f"- `{comp_name}`: {entity}\n"
                 if len(components) > 5:

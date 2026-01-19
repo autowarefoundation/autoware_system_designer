@@ -3,13 +3,13 @@ autoware_system_design_format: v0.1.0
 name: PerceptionA.module
 
 instances:
-  - instance: detector_a1
+  - name: detector_a1
     entity: DetectorA.module
-  - instance: detector_a2
+  - name: detector_a2
     entity: DetectorA.module
-  - instance: node_tracker
+  - name: node_tracker
     entity: Tracker.node
-  - instance: node_predictor
+  - name: node_predictor
     entity: Predictor.node
 
 external_interfaces:

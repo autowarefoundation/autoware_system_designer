@@ -330,12 +330,12 @@ class ValidationEngine:
                     return False, f"Invalid instance reference format: {ref}"
 
                 instances = config.instances or []
-                instance_names = [inst.get('instance') for inst in instances if inst.get('instance')]
+                instance_names = [inst.get('name') for inst in instances if inst.get('name')]
                 if instance_name not in instance_names:
                     return False, f"Instance '{instance_name}' not found. Available instances: {', '.join(instance_names)}"
 
                 for instance in instances:
-                    if instance.get('instance') == instance_name:
+                    if instance.get('name') == instance_name:
                         entity_name = instance.get('entity')
                         if entity_name not in self.registry_manager.entity_registry:
                             return False, f"Entity '{entity_name}' not found in registry"
@@ -370,12 +370,12 @@ class ValidationEngine:
                 return False, f"Invalid component reference format: {ref}"
 
             components = config.components or []
-            component_names = [comp.get('component') for comp in components if comp.get('component')]
+            component_names = [comp.get('name') for comp in components if comp.get('name')]
             if component_name not in component_names:
                 return False, f"Component '{component_name}' not found. Available components: {', '.join(component_names)}"
 
             for component in components:
-                if component.get('component') == component_name:
+                if component.get('name') == component_name:
                     component_entity = component.get('entity')
                     if component_entity not in self.registry_manager.entity_registry:
                         return False, f"Entity '{component_entity}' not found in registry"

@@ -143,7 +143,7 @@ class SystemInheritanceResolver(InheritanceResolver):
             {'field': 'variable_files', 'key_field': None},
             {'field': 'modes', 'key_field': 'name'},
             {'field': 'parameter_sets', 'key_field': None},  # Parameter sets are appended
-            {'field': 'components', 'key_field': 'component'},
+            {'field': 'components', 'key_field': 'name'},
             {'field': 'connections', 'key_field': None},
         ]
         self._resolve_merges(system_config, config_yaml, merge_specs)
@@ -170,7 +170,7 @@ class SystemInheritanceResolver(InheritanceResolver):
         remove_specs = [
             {'field': 'modes', 'key_field': 'name'},
             {'field': 'parameter_sets', 'key_field': None},  # Remove parameter sets by value
-            {'field': 'components', 'key_field': 'component'},
+            {'field': 'components', 'key_field': 'name'},
             {'field': 'variables', 'key_field': 'name'},
             {'field': 'connections', 'key_field': None},
         ]
@@ -229,7 +229,7 @@ class ModuleInheritanceResolver(InheritanceResolver):
         override_config = config_yaml.get('override', {})
         
         merge_specs = [
-            {'field': 'instances', 'key_field': 'instance'},
+            {'field': 'instances', 'key_field': 'name'},
             {'field': 'connections', 'key_field': None},
         ]
         self._resolve_merges(module_config, config_yaml, merge_specs)
@@ -262,7 +262,7 @@ class ModuleInheritanceResolver(InheritanceResolver):
 
     def _apply_removals(self, module_config: ModuleConfig, remove_config: Dict[str, Any]):
         remove_specs = [
-            {'field': 'instances', 'key_field': 'instance'},
+            {'field': 'instances', 'key_field': 'name'},
             {'field': 'connections', 'key_field': None},
         ]
         self._resolve_removals(module_config, remove_config, remove_specs)

@@ -127,7 +127,7 @@ class Instance:
         # First pass: create all component instances
         for cfg_component in components_to_instantiate:
             compute_unit_name = cfg_component.get("compute_unit")
-            instance_name = cfg_component.get("component")
+            instance_name = cfg_component.get("name")
             entity_id = cfg_component.get("entity")
             namespace = cfg_component.get("namespace")
             if namespace:
@@ -166,7 +166,7 @@ class Instance:
         # Second pass: apply parameter sets after all instances are created
         # This ensures that parameter_sets can target nodes across different components
         for cfg_component in components_to_instantiate:
-            instance_name = cfg_component.get("component")
+            instance_name = cfg_component.get("name")
             instance = self.children[instance_name]
             self._apply_parameter_set(instance, cfg_component, config_registry)
         
@@ -284,11 +284,11 @@ class Instance:
         """Create child instances for module entities."""
         cfg_node_list = self.configuration.instances
         for cfg_node in cfg_node_list:
-            # check if cfg_node has 'node' and 'entity'
-            if "instance" not in cfg_node or "entity" not in cfg_node:
-                raise ValidationError(f"Module instance configuration must have 'node' and 'entity' fields, at {self.configuration.file_path}")
+            # check if cfg_node has 'name' and 'entity'
+            if "name" not in cfg_node or "entity" not in cfg_node:
+                raise ValidationError(f"Module instance configuration must have 'name' and 'entity' fields, at {self.configuration.file_path}")
 
-            child_name = cfg_node.get("instance")
+            child_name = cfg_node.get("name")
             instance = Instance(
                 child_name, self.compute_unit, self.namespace + [child_name], self.layer + 1
             )

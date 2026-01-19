@@ -167,8 +167,8 @@ class StructureLinter:
                     result.add_error(f"Instance at index {idx} must be a dictionary")
                     continue
                 
-                if 'instance' not in instance:
-                    result.add_error(f"Instance at index {idx} missing 'instance' field")
+                if 'name' not in instance:
+                    result.add_error(f"Instance at index {idx} missing 'name' field")
                 if 'entity' not in instance:
                     result.add_error(f"Instance at index {idx} missing 'entity' field")
         
@@ -218,8 +218,8 @@ class StructureLinter:
                     result.add_error(f"Component at index {idx} must be a dictionary")
                     continue
                 
-                if 'component' not in component:
-                    result.add_error(f"Component at index {idx} missing 'component' field")
+                if 'name' not in component:
+                    result.add_error(f"Component at index {idx} missing 'name' field")
                 if 'entity' not in component:
                     result.add_error(f"Component at index {idx} missing 'entity' field")
         
@@ -319,7 +319,7 @@ class StructureLinter:
                                           label_prefix="Override mode")
                 self._validate_list_block(override, 'parameter_sets', result, required_keys=None,
                                           label_prefix="Override parameter set")
-                self._validate_list_block(override, 'components', result, required_keys=['component'],
+                self._validate_list_block(override, 'components', result, required_keys=['name'],
                                           label_prefix="Override component")
                 self._validate_list_block(override, 'connections', result, required_keys=None,
                                           label_prefix="Override connection")
@@ -333,7 +333,7 @@ class StructureLinter:
                                           label_prefix="Remove mode")
                 self._validate_list_block(remove, 'parameter_sets', result, required_keys=None,
                                           label_prefix="Remove parameter set")
-                self._validate_list_block(remove, 'components', result, required_keys=['component'],
+                self._validate_list_block(remove, 'components', result, required_keys=['name'],
                                           label_prefix="Remove component")
                 self._validate_list_block(remove, 'variables', result, required_keys=['name'],
                                           label_prefix="Remove variable")
