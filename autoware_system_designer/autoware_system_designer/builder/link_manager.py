@@ -267,7 +267,13 @@ class LinkManager:
 
         kind: 'input' or 'output'.
         """
-        cfg_list = self.instance.configuration.external_interfaces.get(kind, [])
+        external_interfaces = getattr(self.instance.configuration, "external_interfaces", None)
+        if not isinstance(external_interfaces, dict):
+            # Systems do not define external_interfaces by design.
+            if self.instance.entity_type == "system":
+                return
+            external_interfaces = {}
+        cfg_list = external_interfaces.get(kind, [])
         declared_names = {item.get("name") for item in cfg_list}
         if port_obj.name not in declared_names:
             raise ValidationError(self._err_external_decl(kind, port_obj.name, sorted(declared_names)))
@@ -529,10 +535,12 @@ class LinkManager:
     def _create_external_ports(self):
         """Create external ports based on link list."""
         for link in self.links:
-            if link.from_port.namespace == self.instance.namespace:
-                self.set_in_port(link.from_port)
-            if link.to_port.namespace == self.instance.namespace:
-                self.set_out_port(link.to_port)
+            if link.connection_type == ConnectionType.EXTERNAL_TO_INTERNAL:
+                if link.from_port.namespace == self.instance.namespace:
+                    self.set_in_port(link.from_port)
+            elif link.connection_type == ConnectionType.INTERNAL_TO_EXTERNAL:
+                if link.to_port.namespace == self.instance.namespace:
+                    self.set_out_port(link.to_port)
 
     def initialize_node_ports(self):
         """Initialize ports for node entity during node configuration."""

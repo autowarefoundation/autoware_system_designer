@@ -158,36 +158,38 @@ class Connection:
         if connection_to is None:
             raise DeploymentError(f"Connection couldn't found : {connection_dict}")
 
-        from_instance, from_port_name = self.parse_port_name(connection_from)
-        to_instance, to_port_name = self.parse_port_name(connection_to)
+        from_instance, from_port_name, from_is_external = self.parse_port_name(connection_from)
+        to_instance, to_port_name, to_is_external = self.parse_port_name(connection_to)
 
-        if from_instance == "" and to_instance == "":
+        if from_is_external and to_is_external:
             raise DeploymentError(f"Invalid connection: {connection_dict}")
-        elif from_instance == "" and to_instance != "":
+        elif from_is_external and not to_is_external:
             self.type = ConnectionType.EXTERNAL_TO_INTERNAL
-        elif from_instance != "" and to_instance == "":
+        elif not from_is_external and to_is_external:
             self.type = ConnectionType.INTERNAL_TO_EXTERNAL
-        elif from_instance != "" and to_instance != "":
+        elif not from_is_external and not to_is_external:
             self.type = ConnectionType.INTERNAL_TO_INTERNAL
 
         self.from_instance: str = from_instance
         self.from_port_name: str = from_port_name
         self.to_instance: str = to_instance
         self.to_port_name: str = to_port_name
+        self.from_is_external: bool = from_is_external
+        self.to_is_external: bool = to_is_external
 
-    def parse_port_name(self, port_name: str) -> tuple[str, str]:  # (instance_name, port_name)
+    def parse_port_name(self, port_name: str) -> tuple[str, str, bool]:  # (instance_name, port_name, is_external)
         name_splitted = port_name.split(".")
         if len(name_splitted) == 2:
             if name_splitted[0] == "input":
-                return "", name_splitted[1]  # external input
+                return "", name_splitted[1], True  # external input
             if name_splitted[0] == "output":
-                return "", name_splitted[1]  # external output
+                return "", name_splitted[1], True  # external output
             raise DeploymentError(f"Invalid port name: {port_name}")
         elif len(name_splitted) == 3:
             if name_splitted[1] == "input":
-                return name_splitted[0], name_splitted[2]  # internal input
+                return name_splitted[0], name_splitted[2], False  # internal input
             if name_splitted[1] == "output":
-                return name_splitted[0], name_splitted[2]  # internal output
+                return name_splitted[0], name_splitted[2], False  # internal output
             raise DeploymentError(f"Invalid port name: {port_name}")
         else:
             raise DeploymentError(f"Invalid port name: {port_name}")
