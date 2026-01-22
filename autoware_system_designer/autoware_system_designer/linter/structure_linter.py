@@ -287,7 +287,7 @@ class StructureLinter:
             if not isinstance(override, dict):
                 result.add_error("'override' must be a dictionary in variant config")
             else:
-                self._validate_list_block(override, 'instances', result, required_keys=['instance'],
+                self._validate_list_block(override, 'instances', result, required_keys=['name'],
                                           label_prefix="Override instance")
                 self._validate_list_block(override, 'connections', result, required_keys=None,
                                           label_prefix="Override connection")
@@ -298,7 +298,7 @@ class StructureLinter:
             if not isinstance(remove, dict):
                 result.add_error("'remove' must be a dictionary in variant config")
             else:
-                self._validate_list_block(remove, 'instances', result, required_keys=['instance'],
+                self._validate_list_block(remove, 'instances', result, required_keys=['name'],
                                           label_prefix="Remove instance")
                 self._validate_list_block(remove, 'connections', result, required_keys=None,
                                           label_prefix="Remove connection")
