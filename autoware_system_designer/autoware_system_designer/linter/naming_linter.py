@@ -75,8 +75,8 @@ class NamingLinter:
         # Check instance names (for modules)
         if 'instances' in config and isinstance(config['instances'], list):
             for idx, instance in enumerate(config['instances']):
-                if isinstance(instance, dict) and 'instance' in instance:
-                    instance_name = instance['instance']
+                if isinstance(instance, dict) and 'name' in instance:
+                    instance_name = instance['name']
                     if not self._is_snake_case(instance_name):
                         result.add_error(
                             f"Instance name '{instance_name}' should be in snake_case format "
@@ -231,7 +231,7 @@ class NamingLinter:
             self._lint_named_list(override.get('parameters'), result, "Override parameter")
             self._lint_named_list(override.get('parameter_files'), result, "Override parameter file")
             self._lint_named_list(override.get('processes'), result, "Override process")
-            self._lint_named_list(override.get('instances'), result, "Override instance", key="instance")
+            self._lint_named_list(override.get('instances'), result, "Override instance", key="name")
             self._lint_named_list(override.get('variables'), result, "Override variable")
             self._lint_named_list(override.get('variable_files'), result, "Override variable file")
             self._lint_named_list(override.get('components'), result, "Override component", key="component")
@@ -244,7 +244,7 @@ class NamingLinter:
             self._lint_named_list(remove.get('parameters'), result, "Remove parameter")
             self._lint_named_list(remove.get('parameter_files'), result, "Remove parameter file")
             self._lint_named_list(remove.get('processes'), result, "Remove process")
-            self._lint_named_list(remove.get('instances'), result, "Remove instance", key="instance")
+            self._lint_named_list(remove.get('instances'), result, "Remove instance", key="name")
             self._lint_named_list(remove.get('variables'), result, "Remove variable")
             self._lint_named_list(remove.get('components'), result, "Remove component", key="component")
             self._lint_external_interfaces(remove.get('external_interfaces'), result, "Remove")
