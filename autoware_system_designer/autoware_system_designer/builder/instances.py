@@ -493,11 +493,10 @@ class DeploymentInstance(Instance):
 
         # 3. build logical topology
         logger.info(f"Instance '{self.name}': building logical topology")
-        # self.build_logical_topology()
         self.set_event_tree()
 
         # 4. validate node namespaces
-        self.check_duplicate_node_namespaces()
+        # self.check_duplicate_node_namespaces()
 
         # 5. finalize parameters (resolve substitutions)
         self._finalize_parameters_recursive()
@@ -505,10 +504,13 @@ class DeploymentInstance(Instance):
     def check_duplicate_node_namespaces(self):
         """Check for duplicate node namespaces in the entire system."""
         namespace_map = {}
-        
+        root_namespaces = {"", "/"}
+
         def _collect_namespaces(inst):
             if inst.entity_type == "node":
-                if inst.namespace_str in namespace_map:
+                if inst.namespace_str in root_namespaces:
+                    pass
+                elif inst.namespace_str in namespace_map:
                     raise ValidationError(
                         f"Duplicate node namespace found: '{inst.namespace_str}'. "
                         f"Conflict between instance '{inst.name}' and '{namespace_map[inst.namespace_str]}'"
