@@ -33,10 +33,13 @@ def parse_design_file(filepath):
     try:
         with open(filepath, 'r') as f:
             content = yaml.safe_load(f)
-            if content and isinstance(content, dict) and 'autoware_system_design_format' in content:
-                return content
-    except:
-        pass
+    except (yaml.YAMLError, UnicodeDecodeError) as exc:
+        raise ValueError(f"Failed to parse YAML file: {filepath}") from exc
+    except OSError as exc:
+        raise ValueError(f"Failed to read YAML file: {filepath}") from exc
+
+    if content and isinstance(content, dict) and 'autoware_system_design_format' in content:
+        return content
     return None
 
 def infer_type(filename):
@@ -49,6 +52,9 @@ def infer_type(filename):
     elif filename.endswith('parameter_set.yaml'):
         return 'parameter_set'
     return 'unknown'
+
+def is_target_design_file(filename):
+    return infer_type(filename) != 'unknown'
 
 def find_source_root(start_path):
     """
@@ -118,11 +124,20 @@ def main():
     # Using recursive glob
     yaml_files = glob.glob(os.path.join(workspace_root, '**', '*.yaml'), recursive=True)
     
+    yaml_parse_errors = []
+
     for yf in yaml_files:
         yf_abs = os.path.abspath(yf)
-        
+
+        if not is_target_design_file(os.path.basename(yf_abs)):
+            continue
+
         # Check content first (it's a hard requirement)
-        content = parse_design_file(yf_abs)
+        try:
+            content = parse_design_file(yf_abs)
+        except ValueError:
+            yaml_parse_errors.append(yf_abs)
+            continue
         if not content:
             continue
             
@@ -153,6 +168,11 @@ def main():
         if target_pkg not in pkg_files:
             pkg_files[target_pkg] = []
         pkg_files[target_pkg].append(yf_abs)
+
+    if yaml_parse_errors:
+        unique_files = sorted(set(yaml_parse_errors))
+        error_list = "\n".join(f"- {path}" for path in unique_files)
+        raise RuntimeError(f"Corrupted YAML design files detected:\n{error_list}")
 
     print(f"Found system descriptions in {len(pkg_files)} packages")
 
