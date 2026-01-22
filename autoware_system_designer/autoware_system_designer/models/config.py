@@ -32,11 +32,11 @@ class ConfigSubType:
     """Constants for entity sub-types."""
     # For SYSTEM
     BASE = "base"
-    INHERITANCE = "inheritance"
+    VARIANT = "variant"
 
     @classmethod
     def get_all_sub_types(cls) -> List[str]:
-        return [cls.BASE, cls.INHERITANCE]
+        return [cls.BASE, cls.VARIANT]
 
 @dataclass
 class Config:

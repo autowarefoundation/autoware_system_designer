@@ -56,7 +56,7 @@ class BaseValidator(ABC):
     
     @abstractmethod
     def get_override_fields(self) -> List[str]:
-        """Get fields that must be in override block for inheritance."""
+        """Get fields that must be in override block for variant config."""
         return []
 
     @abstractmethod
@@ -128,18 +128,18 @@ class BaseValidator(ABC):
         self.validate_basic_structure(config, file_path)
         self.validate_entity_type(entity_type, expected_type, file_path)
         self.validate_required_fields(config, file_path)
-        self.validate_inheritance_structure(config, file_path)
+        self.validate_base_structure(config, file_path)
       
         self.validate_schema(config, file_path)
 
-    def validate_inheritance_structure(self, config: Dict[str, Any], file_path: str) -> None:
-        """Validate inheritance structure."""
-        if "inheritance" in config:
+    def validate_base_structure(self, config: Dict[str, Any], file_path: str) -> None:
+        """Validate base/variant structure."""
+        if "base" in config:
             # Check for forbidden root fields
             forbidden = self.get_override_fields()
             found = [f for f in forbidden if f in config]
             if found:
-                raise ValidationError(f"Fields {found} must be under 'override' block in inheritance config. File: {file_path}")
+                raise ValidationError(f"Fields {found} must be under 'override' block in variant config. File: {file_path}")
             
             # Validate override block if present
             if "override" in config:
@@ -168,18 +168,18 @@ class NodeValidator(BaseValidator):
         """
         super().validate_required_fields(config, file_path)
         
-        if "inheritance" not in config:
+        if "base" not in config:
              required_full = ["launch", "inputs", "outputs", "parameter_files", "parameters", "processes"]
              missing = [f for f in required_full if f not in config]
              if missing:
                 raise ValidationError(
-                    f"Missing required fields {missing} in base node configuration (no inheritance). File: {file_path}"
+                    f"Missing required fields {missing} in base node configuration (no base). File: {file_path}"
                 )
     
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         return {
             'name': {'type': 'string'},
-            'inheritance': {'type': 'string'},
+            'base': {'type': 'string'},
             'launch': {'type': 'object'},
             'inputs': {'type': 'array'},
             'outputs': {'type': 'array'},
@@ -205,18 +205,18 @@ class ModuleValidator(BaseValidator):
         """
         super().validate_required_fields(config, file_path)
         
-        if "inheritance" not in config:
+        if "base" not in config:
              required_full = ["instances", "external_interfaces", "connections"]
              missing = [f for f in required_full if f not in config]
              if missing:
                 raise ValidationError(
-                    f"Missing required fields {missing} in base module configuration (no inheritance). File: {file_path}"
+                    f"Missing required fields {missing} in base module configuration (no base). File: {file_path}"
                 )
     
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         return {
             'name': {'type': 'string'},
-            'inheritance': {'type': 'string'},
+            'base': {'type': 'string'},
             'instances': {'type': 'array'},
             'external_interfaces': {'type': 'object_or_array'},
             'connections': {'type': 'array'},
@@ -253,13 +253,13 @@ class SystemValidator(BaseValidator):
     def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
         """
         Validate that all required fields are present.
-        For System entities, requirements depend on whether it's an inheritance (child) or base system.
+        For System entities, requirements depend on whether it's a variant (child) or base system.
         """
         super().validate_required_fields(config, file_path)
         
-        # If it has 'inheritance', it's a child config -> components/connections are optional (inherited)
-        # If it does NOT have 'inheritance', it's a base config -> components/connections are required
-        if "inheritance" not in config:
+        # If it has 'base', it's a variant config -> components/connections are optional (inherited)
+        # If it does NOT have 'base', it's a base config -> components/connections are required
+        if "base" not in config:
             missing = []
             if "components" not in config:
                 missing.append("components")
@@ -268,20 +268,20 @@ class SystemValidator(BaseValidator):
                 
             if missing:
                 raise ValidationError(
-                    f"Missing required fields {missing} in base system configuration (no inheritance). File: {file_path}"
+                    f"Missing required fields {missing} in base system configuration (no base). File: {file_path}"
                 )
 
     def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
         return {
             'name': {'type': 'string'},
-            'inheritance': {'type': 'string'},
+            'base': {'type': 'string'},
             'modes': {'type': 'nullable_array'},
             'parameter_sets': {'type': 'nullable_array'},  # System-level parameter sets
             'components': {'type': 'array'},
             'connections': {'type': 'array'},
             'variables': {'type': 'nullable_array'},
             'variable_files': {'type': 'nullable_array'},
-            'remove': {'type': 'object'}, # Support for removal in inheritance
+            'remove': {'type': 'object'}, # Support for removal in variant config
             'override': {'type': 'object'},
         }
 

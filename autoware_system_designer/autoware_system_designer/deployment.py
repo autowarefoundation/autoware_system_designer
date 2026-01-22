@@ -208,7 +208,7 @@ class Deployment:
         if "." in system_name:
                 system_name, _ = entity_name_decode(system_name)
 
-        # Get system from registry (this handles inheritance resolution)
+        # Get system from registry (this handles base/variant resolution)
         system_config = self.config_registry.get_system(system_name)
         if not system_config:
             raise ValidationError(f"System not found: {system_name}")
