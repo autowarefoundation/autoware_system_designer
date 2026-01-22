@@ -155,8 +155,8 @@ class StructureLinter:
                 if 'outcomes' not in process:
                     result.add_error(f"Process at index {idx} missing 'outcomes' field")
 
-        # Validate inheritance override/remove blocks for node configs
-        self._validate_node_inheritance_blocks(config, result)
+        # Validate variant override/remove blocks for node configs
+        self._validate_node_variant_blocks(config, result)
     
     def _validate_module_schema(self, config: Dict[str, Any], result: LintResult):
         """Validate module-specific schema."""
@@ -206,8 +206,8 @@ class StructureLinter:
                 if 'to' not in connection:
                     result.add_error(f"Connection at index {idx} missing 'to' field")
 
-        # Validate inheritance override/remove blocks for module configs
-        self._validate_module_inheritance_blocks(config, result)
+        # Validate variant override/remove blocks for module configs
+        self._validate_module_variant_blocks(config, result)
     
     def _validate_system_schema(self, config: Dict[str, Any], result: LintResult):
         """Validate system-specific schema."""
@@ -235,8 +235,8 @@ class StructureLinter:
                 if 'to' not in connection:
                     result.add_error(f"Connection at index {idx} missing 'to' field")
 
-        # Validate inheritance override/remove blocks for system configs
-        self._validate_system_inheritance_blocks(config, result)
+        # Validate variant override/remove blocks for system configs
+        self._validate_system_variant_blocks(config, result)
     
     def _validate_parameter_set_schema(self, config: Dict[str, Any], result: LintResult):
         """Validate parameter set-specific schema."""
@@ -244,12 +244,12 @@ class StructureLinter:
         # Additional validation can be added here if needed
         pass
 
-    def _validate_node_inheritance_blocks(self, config: Dict[str, Any], result: LintResult):
-        """Validate node inheritance override/remove blocks."""
+    def _validate_node_variant_blocks(self, config: Dict[str, Any], result: LintResult):
+        """Validate node variant override/remove blocks."""
         override = config.get('override')
         if override is not None:
             if not isinstance(override, dict):
-                result.add_error("'override' must be a dictionary in inheritance config")
+                result.add_error("'override' must be a dictionary in variant config")
             else:
                 if 'launch' in override and not isinstance(override['launch'], dict):
                     result.add_error("Override 'launch' must be a dictionary")
@@ -267,7 +267,7 @@ class StructureLinter:
         remove = config.get('remove')
         if remove is not None:
             if not isinstance(remove, dict):
-                result.add_error("'remove' must be a dictionary in inheritance config")
+                result.add_error("'remove' must be a dictionary in variant config")
             else:
                 self._validate_list_block(remove, 'inputs', result, required_keys=['name'],
                                           label_prefix="Remove input")
@@ -280,12 +280,12 @@ class StructureLinter:
                 self._validate_list_block(remove, 'processes', result, required_keys=['name'],
                                           label_prefix="Remove process")
 
-    def _validate_module_inheritance_blocks(self, config: Dict[str, Any], result: LintResult):
-        """Validate module inheritance override/remove blocks."""
+    def _validate_module_variant_blocks(self, config: Dict[str, Any], result: LintResult):
+        """Validate module variant override/remove blocks."""
         override = config.get('override')
         if override is not None:
             if not isinstance(override, dict):
-                result.add_error("'override' must be a dictionary in inheritance config")
+                result.add_error("'override' must be a dictionary in variant config")
             else:
                 self._validate_list_block(override, 'instances', result, required_keys=['instance'],
                                           label_prefix="Override instance")
@@ -296,7 +296,7 @@ class StructureLinter:
         remove = config.get('remove')
         if remove is not None:
             if not isinstance(remove, dict):
-                result.add_error("'remove' must be a dictionary in inheritance config")
+                result.add_error("'remove' must be a dictionary in variant config")
             else:
                 self._validate_list_block(remove, 'instances', result, required_keys=['instance'],
                                           label_prefix="Remove instance")
@@ -304,12 +304,12 @@ class StructureLinter:
                                           label_prefix="Remove connection")
                 self._validate_external_interfaces_block(remove.get('external_interfaces'), result, "Remove")
 
-    def _validate_system_inheritance_blocks(self, config: Dict[str, Any], result: LintResult):
-        """Validate system inheritance override/remove blocks."""
+    def _validate_system_variant_blocks(self, config: Dict[str, Any], result: LintResult):
+        """Validate system variant override/remove blocks."""
         override = config.get('override')
         if override is not None:
             if not isinstance(override, dict):
-                result.add_error("'override' must be a dictionary in inheritance config")
+                result.add_error("'override' must be a dictionary in variant config")
             else:
                 self._validate_list_block(override, 'variables', result, required_keys=['name'],
                                           label_prefix="Override variable")
@@ -327,7 +327,7 @@ class StructureLinter:
         remove = config.get('remove')
         if remove is not None:
             if not isinstance(remove, dict):
-                result.add_error("'remove' must be a dictionary in inheritance config")
+                result.add_error("'remove' must be a dictionary in variant config")
             else:
                 self._validate_list_block(remove, 'modes', result, required_keys=['name'],
                                           label_prefix="Remove mode")

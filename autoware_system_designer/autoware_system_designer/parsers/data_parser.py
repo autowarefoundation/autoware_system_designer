@@ -126,7 +126,7 @@ class ConfigParser:
                     if 'default' in param and 'value' not in param:
                         param['value'] = param['default']
 
-            sub_type = ConfigSubType.INHERITANCE if "inheritance" in config else ConfigSubType.BASE
+            sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
             return NodeConfig(
                 **base_data,
                 sub_type=sub_type,
@@ -138,7 +138,7 @@ class ConfigParser:
                 processes=config.get('processes')
             )
         elif entity_type == ConfigType.MODULE:
-            sub_type = ConfigSubType.INHERITANCE if "inheritance" in config else ConfigSubType.BASE
+            sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
             return ModuleConfig(
                 **base_data,
                 sub_type=sub_type,
@@ -153,7 +153,7 @@ class ConfigParser:
                 local_variables=config.get('local_variables')
             )
         elif entity_type == ConfigType.SYSTEM:
-            sub_type = ConfigSubType.INHERITANCE if "inheritance" in config else ConfigSubType.BASE
+            sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
             
             # Parse mode-specific configurations
             mode_configs = {}

@@ -49,19 +49,19 @@ class NamingLinter:
             entity_name = config['name']
             try:
                 name_part, type_part = entity_name_decode(entity_name)
-                inheritance_value = config.get('inheritance')
+                base_ref = config.get('base')
 
                 if type_part == ConfigType.PARAMETER_SET:
                     return
 
-                # Check entity name format based on inheritance
-                if inheritance_value:
-                    if not self._is_allowed_inheritance_name(name_part, inheritance_value):
-                        base_name = self._get_inheritance_base_name(inheritance_value)
+                # Check entity name format based on base/variant
+                if base_ref:
+                    if not self._is_allowed_variant_name(name_part, base_ref):
+                        base_name = self._get_base_name(base_ref)
                         base_hint = base_name if base_name else "OriginalName"
                         result.add_error(
                             f"Entity name '{name_part}' should be snake_case or "
-                            f"'{base_hint}_snake_variant' for inheritance config"
+                            f"'{base_hint}_snake_variant' for variant config"
                         )
                 else:
                     if not self._is_pascal_case(name_part):
@@ -83,8 +83,8 @@ class NamingLinter:
                             f"(e.g., 'node_detector', 'pointcloud_input')"
                         )
         
-        # Check inheritance override/remove names
-        self._lint_inheritance_names(config, result)
+        # Check variant override/remove names
+        self._lint_variant_names(config, result)
 
         # Check port names (for nodes)
         if 'inputs' in config and isinstance(config['inputs'], list):
@@ -191,12 +191,12 @@ class NamingLinter:
         pattern = r'^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$'
         return bool(re.match(pattern, name))
 
-    def _is_allowed_inheritance_name(self, name: str, inheritance_value: str) -> bool:
-        """Check inheritance name rules for temporary/variant configs."""
+    def _is_allowed_variant_name(self, name: str, base_ref: str) -> bool:
+        """Check variant name rules for temporary/variant configs."""
         if self._is_snake_case(name):
             return True
 
-        base_name = self._get_inheritance_base_name(inheritance_value)
+        base_name = self._get_base_name(base_ref)
         if not base_name:
             return False
 
@@ -212,18 +212,18 @@ class NamingLinter:
         return bool(re.match(r'^[a-z0-9][a-z0-9_]*$', name))
 
     @staticmethod
-    def _get_inheritance_base_name(inheritance_value: Any) -> str:
-        """Get base name from inheritance field."""
-        if not isinstance(inheritance_value, str):
+    def _get_base_name(base_ref: Any) -> str:
+        """Get base name from base field."""
+        if not isinstance(base_ref, str):
             return ""
         try:
-            base_name, _ = entity_name_decode(inheritance_value)
+            base_name, _ = entity_name_decode(base_ref)
             return base_name
         except Exception:
             return ""
 
-    def _lint_inheritance_names(self, config: Dict[str, Any], result: LintResult):
-        """Lint naming conventions in inheritance override/remove blocks."""
+    def _lint_variant_names(self, config: Dict[str, Any], result: LintResult):
+        """Lint naming conventions in variant override/remove blocks."""
         override = config.get('override')
         if isinstance(override, dict):
             self._lint_named_list(override.get('inputs'), result, "Override input")
@@ -269,7 +269,7 @@ class NamingLinter:
                     )
 
     def _lint_external_interfaces(self, external_interfaces: Any, result: LintResult, label: str):
-        """Lint external interface names in inheritance blocks."""
+        """Lint external interface names in variant blocks."""
         if not isinstance(external_interfaces, dict):
             return
 

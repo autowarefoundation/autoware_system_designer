@@ -19,7 +19,7 @@ import copy
 from ..parsers.data_parser import ConfigParser
 from ..models.config import Config, ConfigType, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigSubType
 from ..exceptions import ValidationError, NodeConfigurationError, ModuleConfigurationError, ParameterConfigurationError
-from ..resolvers.inheritance_resolver import SystemInheritanceResolver, NodeInheritanceResolver, ModuleInheritanceResolver, InheritanceResolver
+from ..resolvers.variant_resolver import SystemVariantResolver, NodeVariantResolver, ModuleVariantResolver, VariantResolver
 
 from ..parsers.data_validator import entity_name_decode
 
@@ -76,14 +76,14 @@ class ConfigRegistry:
         """Get entity by name with default value."""
         return self.entities.get(name, default)
     
-    def _get_entity_with_inheritance(self, 
+    def _get_entity_with_base(self, 
                                      name: str, 
                                      config_type: str, 
                                      error_cls: Type[Exception],
-                                     resolver_cls: Optional[Type[InheritanceResolver]] = None,
+                                     resolver_cls: Optional[Type[VariantResolver]] = None,
                                      recursive_getter: Optional[Callable[[str], Config]] = None) -> Config:
         """
-        Generic method to get an entity and resolve inheritance if applicable.
+        Generic method to get an entity and resolve base/variant if applicable.
         """
         entity = self._type_map[config_type].get(name)
         
@@ -100,19 +100,19 @@ class ConfigRegistry:
             available = list(self._type_map[config_type].keys())
             raise error_cls(f"{config_type.capitalize()} '{name}' not found. Available {config_type}s: {available}")
         
-        if entity.sub_type == ConfigSubType.INHERITANCE:
+        if entity.sub_type == ConfigSubType.VARIANT:
             if not resolver_cls or not recursive_getter:
-                # Inheritance requested but no resolver provided, return as is (or could raise error)
+                # Variant requested but no resolver provided, return as is (or could raise error)
                 return entity
 
             # Get parent name
-            inheritance_target = entity.config.get('inheritance')
-            if not inheritance_target:
+            base_target = entity.config.get('base')
+            if not base_target:
                  # Should have been validated, but fallback
                  return entity
 
             # Resolve parent (recursive)
-            parent = recursive_getter(inheritance_target)
+            parent = recursive_getter(base_target)
             
             # Create a deep copy of the parent to serve as the base for this entity
             # This ensures we don't modify the parent object
@@ -137,39 +137,39 @@ class ConfigRegistry:
     # Enhanced methods for type-safe entity access
     def get_node(self, name: str) -> NodeConfig:
         """Get a node entity by name."""
-        return self._get_entity_with_inheritance(
+        return self._get_entity_with_base(
             name, 
             ConfigType.NODE, 
             NodeConfigurationError, 
-            NodeInheritanceResolver, 
+            NodeVariantResolver, 
             self.get_node
         )
     
     def get_module(self, name: str) -> ModuleConfig:
         """Get a module entity by name."""
-        return self._get_entity_with_inheritance(
+        return self._get_entity_with_base(
             name,
             ConfigType.MODULE,
             ModuleConfigurationError,
-            ModuleInheritanceResolver,
+            ModuleVariantResolver,
             self.get_module
         )
     
     def get_parameter_set(self, name: str) -> ParameterSetConfig:
         """Get a parameter set entity by name."""
-        return self._get_entity_with_inheritance(
+        return self._get_entity_with_base(
             name,
             ConfigType.PARAMETER_SET,
             ParameterConfigurationError
         )
     
     def get_system(self, name: str) -> SystemConfig:
-        """Get an system entity by name. Resolves inheritance if applicable."""
-        return self._get_entity_with_inheritance(
+        """Get an system entity by name. Resolves base/variant if applicable."""
+        return self._get_entity_with_base(
             name,
             ConfigType.SYSTEM,
             ValidationError, # System uses ValidationError in original code, keeping it
-            SystemInheritanceResolver,
+            SystemVariantResolver,
             self.get_system
         )
     

@@ -64,14 +64,14 @@ class FileLinter:
         if expected_type == ConfigType.PARAMETER_SET:
             return
 
-        # Load config to detect inheritance-specific naming rules
-        inheritance_value = None
+        # Load config to detect base/variant naming rules
+        base_ref = None
         try:
             config = yaml_parser.load_config(str(file_path))
             if isinstance(config, dict):
-                inheritance_value = config.get('inheritance')
+                base_ref = config.get('base')
         except Exception:
-            inheritance_value = None
+            base_ref = None
         
         # Check that file name matches expected pattern: Name.type.yaml
         if '.' in base_name:
@@ -84,12 +84,12 @@ class FileLinter:
                         f"file extension type '{expected_type}'"
                     )
                 if expected_type != ConfigType.PARAMETER_SET:
-                    if inheritance_value:
-                        if not self._is_allowed_inheritance_name(name_part, inheritance_value):
-                            base_hint = self._get_inheritance_base_name(inheritance_value) or "OriginalName"
+                    if base_ref:
+                        if not self._is_allowed_variant_name(name_part, base_ref):
+                            base_hint = self._get_base_name(base_ref) or "OriginalName"
                             result.add_error(
                                 f"Entity name '{name_part}' should be snake_case or "
-                                f"'{base_hint}_snake_variant' for inheritance config"
+                                f"'{base_hint}_snake_variant' for variant config"
                             )
                     else:
                         if not self._is_pascal_case(name_part):
@@ -106,12 +106,12 @@ class FileLinter:
             # If no dot, the entire base name should be PascalCase
             # This handles the case where file is just Name.yaml (though not standard)
             if expected_type != ConfigType.PARAMETER_SET:
-                if inheritance_value:
-                    if not self._is_allowed_inheritance_name(base_name, inheritance_value):
-                        base_hint = self._get_inheritance_base_name(inheritance_value) or "OriginalName"
+                if base_ref:
+                    if not self._is_allowed_variant_name(base_name, base_ref):
+                        base_hint = self._get_base_name(base_ref) or "OriginalName"
                         result.add_error(
                             f"File name '{base_name}' should be snake_case or "
-                            f"'{base_hint}_snake_variant' for inheritance config"
+                            f"'{base_hint}_snake_variant' for variant config"
                         )
                 else:
                     if not self._is_pascal_case(base_name):
@@ -155,12 +155,12 @@ class FileLinter:
         pattern = r'^[a-z][a-z0-9_]*$'
         return bool(re.match(pattern, name))
 
-    def _is_allowed_inheritance_name(self, name: str, inheritance_value: str) -> bool:
-        """Check inheritance name rules for temporary/variant configs."""
+    def _is_allowed_variant_name(self, name: str, base_ref: str) -> bool:
+        """Check variant name rules for temporary/variant configs."""
         if self._is_snake_case(name):
             return True
 
-        base_name = self._get_inheritance_base_name(inheritance_value)
+        base_name = self._get_base_name(base_ref)
         if not base_name:
             return False
 
@@ -176,12 +176,12 @@ class FileLinter:
         return bool(re.match(r'^[a-z0-9][a-z0-9_]*$', name))
 
     @staticmethod
-    def _get_inheritance_base_name(inheritance_value: str) -> str:
-        """Get base name from inheritance field."""
-        if not isinstance(inheritance_value, str):
+    def _get_base_name(base_ref: str) -> str:
+        """Get base name from base field."""
+        if not isinstance(base_ref, str):
             return ""
         try:
-            base_name, _ = entity_name_decode(inheritance_value)
+            base_name, _ = entity_name_decode(base_ref)
             return base_name
         except Exception:
             return ""

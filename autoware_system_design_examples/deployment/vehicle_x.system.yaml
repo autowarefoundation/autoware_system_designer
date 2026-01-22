@@ -2,7 +2,7 @@ autoware_system_design_format: v0.1.0
 
 name: vehicle_x.system
 
-inheritance: TypeAlpha.system
+base: TypeAlpha.system
 
 override:
   variables:
