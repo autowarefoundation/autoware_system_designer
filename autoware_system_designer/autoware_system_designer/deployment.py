@@ -288,6 +288,53 @@ class Deployment:
             raise ValidationError(f"No system design configuration files collected.")
         return system_list, package_paths, file_package_map
 
+    def _create_snapshot_callback(
+        self,
+        mode_key: str,
+        deploy_instance: DeploymentInstance,
+        snapshot_store: Dict[str, Any],
+    ):
+        def snapshot_callback(step: str, error: Exception | None = None) -> None:
+            snapshot_path = os.path.join(self.system_structure_dir, f"{mode_key}_{step}.json")
+            payload = save_system_structure_snapshot(
+                snapshot_path, deploy_instance, self.name, mode_key, step, error
+            )
+            snapshot_store[step] = payload
+
+        return snapshot_callback
+
+    def _build_mode_instance(
+        self,
+        mode_name: str,
+        mode_system_config: SystemConfig,
+        package_paths: Dict[str, str],
+        default_mode: str,
+    ) -> Tuple[str, Dict[str, Any]]:
+        mode_suffix = f"_{mode_name}" if mode_name else ""
+        instance_name = f"{self.name}{mode_suffix}"
+        deploy_instance = DeploymentInstance(instance_name)
+
+        snapshot_store: Dict[str, Any] = {}
+        mode_key = mode_name if mode_name else default_mode
+
+        snapshot_callback = self._create_snapshot_callback(
+            mode_key, deploy_instance, snapshot_store
+        )
+
+        deploy_instance.set_system(
+            mode_system_config,
+            self.config_registry,
+            package_paths=package_paths,
+            snapshot_callback=snapshot_callback,
+        )
+
+        # Save system structure JSON for downstream consumers
+        structure_payload = deploy_instance.collect_system_structure(self.name, mode_key)
+        structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
+        save_system_structure(structure_path, structure_payload)
+
+        return mode_key, snapshot_store
+
     def _build(self, system_config, package_paths):
         # 2. Determine modes to build
         modes_config = system_config.modes or []
@@ -308,40 +355,19 @@ class Deployment:
         # 3. Create deployment instance for each mode
         self.mode_keys = []
         for mode_name in mode_names:
+            mode_key = mode_name if mode_name else default_mode
+            snapshot_store: Dict[str, Any] = {}
             try:
                 # Apply mode configuration on top of base system
                 mode_system_config = apply_mode_configuration(system_config, mode_name)
-                
-                mode_suffix = f"_{mode_name}" if mode_name else ""
-                instance_name = f"{self.name}{mode_suffix}"
-                deploy_instance = DeploymentInstance(instance_name)
 
-                snapshot_store: Dict[str, Any] = {}
-                mode_key = mode_name if mode_name else default_mode
-
-                def snapshot_callback(step: str, error: Exception | None = None) -> None:
-                    snapshot_path = os.path.join(self.system_structure_dir, f"{mode_key}_{step}.json")
-                    payload = save_system_structure_snapshot(
-                        snapshot_path, deploy_instance, self.name, mode_key, step, error
-                    )
-                    snapshot_store[step] = payload
-                
-                deploy_instance.set_system(
-                    mode_system_config,
-                    self.config_registry,
-                    package_paths=package_paths,
-                    snapshot_callback=snapshot_callback,
+                mode_key, snapshot_store = self._build_mode_instance(
+                    mode_name, mode_system_config, package_paths, default_mode
                 )
                 self.mode_keys.append(mode_key)
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
 
-                # Save system structure JSON for downstream consumers
-                structure_payload = deploy_instance.collect_system_structure(self.name, mode_key)
-                structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
-                save_system_structure(structure_path, structure_payload)
-
                 self.system_structure_snapshots[mode_key] = snapshot_store
-                
             except Exception as e:
                 self.system_structure_snapshots[mode_key] = snapshot_store
                 # try to visualize the system to show error status
