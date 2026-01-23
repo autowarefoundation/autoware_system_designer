@@ -20,6 +20,7 @@ from typing import Dict, List, Optional
 from pathlib import Path
 from ..utils.template_utils import TemplateRenderer
 from .visualization_index import get_install_root
+from ..utils.system_structure_json import extract_system_structure_data
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ def _copy_static_asset(filename: str, destination_dir: str) -> None:
 
 def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str) -> None:
     """Generate JavaScript data files for web visualization."""
+    data, _ = extract_system_structure_data(data)
     # Node diagram data
     node_data = {**data, "mode": mode_key, "window_variable": "systemDesignData"}
     output_path = os.path.join(web_data_dir, f"{mode_key}_node_diagram.js")

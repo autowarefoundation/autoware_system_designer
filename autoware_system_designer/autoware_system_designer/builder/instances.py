@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import logging
-from typing import List, Dict
+from datetime import datetime, timezone
+from typing import List, Dict, Any
 
 from ..models.config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
 from ..models.parameters import ParameterType
@@ -21,6 +22,7 @@ from ..parsers.data_parser import entity_name_decode
 from ..deployment_config import deploy_config
 from ..exceptions import ValidationError
 from ..utils.naming import generate_unique_id
+from ..utils.system_structure_json import SCHEMA_VERSION
 from ..visualization.visualization_guide import get_component_color, get_component_position
 from .config_registry import ConfigRegistry
 from .parameter_resolver import ParameterResolver
@@ -388,6 +390,81 @@ class Instance:
         data["connected_ids"] = connected_ids
         
         return data
+    
+    def _serialize_parameter_type(self, param_type) -> str:
+        if hasattr(param_type, "name"):
+            return param_type.name
+        return str(param_type)
+
+    def _collect_launcher_data(self) -> Dict[str, Any]:
+        """Collect node data required for launcher generation."""
+        if self.entity_type != "node" or not self.configuration:
+            return {}
+
+        launch_config = self.configuration.launch or {}
+        launcher_data: Dict[str, Any] = {
+            "package": launch_config.get("package", ""),
+            "ros2_launch_file": launch_config.get("ros2_launch_file", None),
+            "node_output": launch_config.get("node_output", "screen"),
+        }
+
+        # Resolve args substitutions (e.g., ${input ...}, ${parameter ...})
+        raw_args = launch_config.get("args", "")
+        launcher_data["args"] = self.parameter_manager.resolve_substitutions(raw_args)
+
+        is_ros2_file_launch = True if launcher_data["ros2_launch_file"] is not None else False
+        launcher_data["is_ros2_file_launch"] = is_ros2_file_launch
+
+        if not is_ros2_file_launch:
+            launcher_data["plugin"] = launch_config.get("plugin", "")
+            launcher_data["executable"] = launch_config.get("executable", "")
+            launcher_data["use_container"] = launch_config.get("use_container", False)
+            launcher_data["container"] = launch_config.get("container_name", "perception_container")
+
+        # Collect ports with resolved topics
+        ports = []
+        for port in self.link_manager.get_all_in_ports():
+            if port.is_global:
+                continue
+            topic = port.get_topic()
+            if not topic:
+                continue
+            ports.append({
+                "direction": "input",
+                "name": port.name,
+                "topic": topic,
+                "remap_target": port.remap_target
+            })
+        for port in self.link_manager.get_all_out_ports():
+            if port.is_global:
+                continue
+            topic = port.get_topic()
+            if not topic:
+                continue
+            ports.append({
+                "direction": "output",
+                "name": port.name,
+                "topic": topic,
+                "remap_target": port.remap_target
+            })
+        launcher_data["ports"] = ports
+
+        # Parameters and parameter files for launch
+        parameters = []
+        for param in self.parameter_manager.get_parameters_for_launch():
+            param_copy = dict(param)
+            param_copy["parameter_type"] = self._serialize_parameter_type(param.get("parameter_type"))
+            parameters.append(param_copy)
+        launcher_data["parameters"] = parameters
+
+        parameter_files = []
+        for param_file in self.parameter_manager.get_parameter_files_for_launch():
+            param_file_copy = dict(param_file)
+            param_file_copy["parameter_type"] = self._serialize_parameter_type(param_file.get("parameter_type"))
+            parameter_files.append(param_file_copy)
+        launcher_data["parameter_files"] = parameter_files
+
+        return launcher_data
 
     def collect_instance_data(self) -> dict:
         data = {
@@ -424,12 +501,27 @@ class Instance:
                     "name": p.name,
                     "value": p.value,
                     "type": p.data_type,
-                    "parameter_type": p.parameter_type.name if hasattr(p.parameter_type, 'name') else str(p.parameter_type)
+                    "parameter_type": self._serialize_parameter_type(p.parameter_type)
                 } for p in self.parameter_manager.get_all_parameters()
             ],
         }
 
+        if self.entity_type == "node":
+            data["launcher"] = self._collect_launcher_data()
+
         return data
+
+    def collect_system_structure(self, system_name: str, mode: str) -> dict:
+        """Collect instance data with schema/version metadata for JSON handover."""
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "metadata": {
+                "system_name": system_name,
+                "mode": mode,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            "data": self.collect_instance_data(),
+        }
 
     def _finalize_parameters_recursive(self):
         """Recursively finalize all parameters in the instance tree.

@@ -26,6 +26,7 @@ from .parsers.data_validator import entity_name_decode
 from .parsers.yaml_parser import yaml_parser
 from .exceptions import ValidationError, DeploymentError
 from .utils.template_utils import TemplateRenderer
+from .utils.system_structure_json import save_system_structure, load_system_structure, extract_system_structure_data
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig
@@ -231,6 +232,7 @@ class Deployment:
         self.system_monitor_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_monitor/")
         self.visualization_dir = os.path.join(self.output_root_dir, "exports", self.name,"visualization/")
         self.parameter_set_dir = os.path.join(self.output_root_dir, "exports", self.name,"parameter_set/")
+        self.system_structure_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_structure/")
 
         # 5. build the deployment
         self._build(system_config, package_paths)
@@ -315,6 +317,11 @@ class Deployment:
                 mode_key = mode_name if mode_name else default_mode
                 self.deploy_instances[mode_key] = deploy_instance
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
+
+                # Save system structure JSON for downstream consumers
+                structure_payload = deploy_instance.collect_system_structure(self.name, mode_key)
+                structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
+                save_system_structure(structure_path, structure_payload)
                 
             except Exception as e:
                 # try to visualize the system to show error status
@@ -324,8 +331,11 @@ class Deployment:
     def visualize(self):
         # Collect data from all deployment instances
         deploy_data = {}
-        for mode_key, deploy_instance in self.deploy_instances.items():
-            deploy_data[mode_key] = deploy_instance.collect_instance_data()
+        for mode_key in self.deploy_instances:
+            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
+            payload = load_system_structure(structure_path)
+            data, _ = extract_system_structure_data(payload)
+            deploy_data[mode_key] = data
 
         visualize_deployment(deploy_data, self.name, self.visualization_dir)
 
@@ -371,12 +381,14 @@ class Deployment:
 
     def generate_launcher(self):
         # Generate launcher files for each mode
-        for mode_key, deploy_instance in self.deploy_instances.items():
+        for mode_key in self.deploy_instances:
             # Create mode-specific launcher directory
             mode_launcher_dir = os.path.join(self.launcher_dir, mode_key)
             
-            # Generate module launch files
-            generate_module_launch_file(deploy_instance, mode_launcher_dir)
+            # Generate module launch files from JSON structure
+            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
+            payload = load_system_structure(structure_path)
+            generate_module_launch_file(payload, mode_launcher_dir)
             
             logger.info(f"Generated launcher for mode: {mode_key}")
 

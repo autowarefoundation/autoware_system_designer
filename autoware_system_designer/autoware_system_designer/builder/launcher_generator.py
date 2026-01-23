@@ -17,6 +17,7 @@ import logging
 from typing import List, Dict, Any
 from .instances import Instance
 from ..utils.template_utils import TemplateRenderer
+from ..utils.system_structure_json import extract_system_structure_data
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,28 @@ def _collect_all_nodes_recursively(instance: Instance) -> List[Dict[str, Any]]:
         node_data = _extract_node_data(instance, [])
         nodes.append(node_data)
     
+    return nodes
+
+
+def _collect_all_nodes_recursively_data(instance_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Recursively collect all nodes within a component, tracking their namespace paths."""
+    nodes = []
+
+    def traverse(current_data: Dict[str, Any], module_path: List[str]):
+        for child in current_data.get("children", []):
+            if child.get("entity_type") == "node":
+                node_data = _extract_node_data_from_dict(child, module_path)
+                nodes.append(node_data)
+            elif child.get("entity_type") == "module":
+                new_module_path = module_path + [child.get("name")]
+                traverse(child, new_module_path)
+
+    if instance_data.get("entity_type") == "module":
+        traverse(instance_data, [])
+    elif instance_data.get("entity_type") == "node":
+        node_data = _extract_node_data_from_dict(instance_data, [])
+        nodes.append(node_data)
+
     return nodes
 
 
@@ -134,6 +157,34 @@ def _extract_node_data(node_instance: Instance, module_path: List[str]) -> Dict[
     # Get parameters and parameter files from parameter_manager
     node_data["parameters"] =  node_instance.parameter_manager.get_parameters_for_launch()
     node_data["parameter_files"] = node_instance.parameter_manager.get_parameter_files_for_launch()
+
+    return node_data
+
+
+def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: List[str]) -> Dict[str, Any]:
+    """Extract node data from serialized instance dict for launcher generation."""
+    node_data = {
+        "name": node_instance.get("name", ""),
+        "namespace_groups": module_path.copy(),
+        "full_namespace_path": "/".join(module_path) if module_path else "",
+    }
+
+    launch_data = node_instance.get("launcher", {})
+    node_data["package"] = launch_data.get("package", "")
+    node_data["ros2_launch_file"] = launch_data.get("ros2_launch_file", None)
+    node_data["is_ros2_file_launch"] = True if node_data["ros2_launch_file"] is not None else False
+    node_data["node_output"] = launch_data.get("node_output", "screen")
+    node_data["args"] = launch_data.get("args", "")
+
+    if not node_data["is_ros2_file_launch"]:
+        node_data["plugin"] = launch_data.get("plugin", "")
+        node_data["executable"] = launch_data.get("executable", "")
+        node_data["use_container"] = launch_data.get("use_container", False)
+        node_data["container"] = launch_data.get("container", "perception_container")
+
+    node_data["ports"] = launch_data.get("ports", [])
+    node_data["parameters"] = launch_data.get("parameters", [])
+    node_data["parameter_files"] = launch_data.get("parameter_files", [])
 
     return node_data
 
@@ -210,38 +261,112 @@ def _generate_component_launcher(compute_unit: str, namespace: str, components: 
     _render_template_to_file('component_launcher.xml.jinja2', launcher_file, template_data)
 
 
+def _generate_component_launcher_from_data(compute_unit: str, namespace: str, components: list, output_dir: str):
+    """Generate component launcher file from serialized system structure."""
+    component_dir = os.path.join(output_dir, compute_unit, namespace)
+    _ensure_directory(component_dir)
+
+    filename = namespace.replace('/', '__')
+    launcher_file = os.path.join(component_dir, f"{filename}.launch.xml")
+
+    logger.debug(f"Creating component launcher: {launcher_file}")
+
+    all_nodes = []
+    component_full_namespace = []
+    for component in components:
+        nodes = _collect_all_nodes_recursively_data(component)
+        all_nodes.extend(nodes)
+        if not component_full_namespace:
+            component_full_namespace = component.get("namespace", [])
+
+    for node in all_nodes:
+        full_ns_list = component_full_namespace + node["namespace_groups"]
+        node["full_namespace"] = "/".join(full_ns_list)
+
+    template_data = {
+        "compute_unit": compute_unit,
+        "namespace": namespace,
+        "component_full_namespace": component_full_namespace,
+        "nodes": all_nodes
+    }
+
+    _render_template_to_file('component_launcher.xml.jinja2', launcher_file, template_data)
+
+
+def _generate_compute_unit_launcher_from_data(compute_unit: str, components: list, output_dir: str):
+    """Generate compute unit launcher from serialized system structure."""
+    compute_unit_dir = os.path.join(output_dir, compute_unit)
+    _ensure_directory(compute_unit_dir)
+
+    launcher_file = os.path.join(compute_unit_dir, f"{compute_unit.lower()}.launch.xml")
+    logger.debug(f"Creating compute unit launcher: {launcher_file}")
+
+    namespaces_data = []
+    for component in sorted(components, key=lambda c: c.get("name", "")):
+        namespace_info = {
+            "namespace": component.get("name", ""),
+            "component_count": 1,
+            "args": []
+        }
+        namespaces_data.append(namespace_info)
+
+    template_data = {
+        "compute_unit": compute_unit,
+        "namespaces": namespaces_data
+    }
+
+    _render_template_to_file('compute_unit_launcher.xml.jinja2', launcher_file, template_data)
+
+
 def generate_module_launch_file(instance: Instance, output_dir: str):
     """Main entry point for launcher generation."""
-    logger.debug(f"Generating launcher for {instance.name} (type: {instance.entity_type}) in {output_dir}")
-    
-    if instance.entity_type == "system":
-        # Group components by compute unit
-        compute_unit_map = {}
-        for child in instance.children.values():
-            if child.compute_unit not in compute_unit_map:
-                compute_unit_map[child.compute_unit] = []
-            compute_unit_map[child.compute_unit].append(child)
-        
-        # Group components by compute unit and child instance (no longer by first namespace element)
-        namespace_map = {}
-        for child in instance.children.values():
-            key = (child.compute_unit, child.name)
-            namespace_map[key] = [child]
+    if isinstance(instance, Instance):
+        logger.debug(f"Generating launcher for {instance.name} (type: {instance.entity_type}) in {output_dir}")
 
-        # Generate compute unit launchers
-        for compute_unit, components in compute_unit_map.items():
-            _generate_compute_unit_launcher(compute_unit, components, output_dir)
+        if instance.entity_type == "system":
+            compute_unit_map = {}
+            for child in instance.children.values():
+                if child.compute_unit not in compute_unit_map:
+                    compute_unit_map[child.compute_unit] = []
+                compute_unit_map[child.compute_unit].append(child)
 
-        # Generate component launchers (one per direct child instance)
-        for (compute_unit, namespace), components in namespace_map.items():
-            _generate_component_launcher(compute_unit, namespace, components, output_dir)
-    
-    elif instance.entity_type == "module":
-        # Modules are now handled within component launchers, no separate files needed
-        logger.debug(f"Skipping separate module launcher for {instance.name} - handled in component launcher")
+            namespace_map = {}
+            for child in instance.children.values():
+                key = (child.compute_unit, child.name)
+                namespace_map[key] = [child]
+
+            for compute_unit, components in compute_unit_map.items():
+                _generate_compute_unit_launcher(compute_unit, components, output_dir)
+
+            for (compute_unit, namespace), components in namespace_map.items():
+                _generate_component_launcher(compute_unit, namespace, components, output_dir)
+
+        elif instance.entity_type == "module":
+            logger.debug(f"Skipping separate module launcher for {instance.name} - handled in component launcher")
+            return
+
+        elif instance.entity_type == "node":
+            logger.debug(f"Skipping node launcher for {instance.name} - handled by package")
+            return
         return
-    
-    elif instance.entity_type == "node":
-        # Node launch files are generated by the package build process
-        logger.debug(f"Skipping node launcher for {instance.name} - handled by package")
+
+    instance_data, _ = extract_system_structure_data(instance)
+    logger.debug(f"Generating launcher from system structure data in {output_dir}")
+
+    if instance_data.get("entity_type") != "system":
+        logger.debug("Launcher generation expects system-level data; skipping.")
         return
+
+    compute_unit_map = {}
+    namespace_map = {}
+    for child in instance_data.get("children", []):
+        compute_unit = child.get("compute_unit", "")
+        compute_unit_map.setdefault(compute_unit, []).append(child)
+        key = (compute_unit, child.get("name", ""))
+        namespace_map[key] = [child]
+
+    for compute_unit, components in compute_unit_map.items():
+        _generate_compute_unit_launcher_from_data(compute_unit, components, output_dir)
+
+    for (compute_unit, namespace), components in namespace_map.items():
+        _generate_component_launcher_from_data(compute_unit, namespace, components, output_dir)
