@@ -37,6 +37,20 @@ def build_system_structure_snapshot(
     return payload
 
 
+def save_system_structure_snapshot(
+    output_path: str,
+    instance,
+    system_name: str,
+    mode: str,
+    step: str,
+    error: Exception | None = None,
+) -> Dict[str, Any]:
+    """Build and save a system structure snapshot payload to JSON."""
+    payload = build_system_structure_snapshot(instance, system_name, mode, step, error)
+    save_system_structure(output_path, payload)
+    return payload
+
+
 def save_system_structure(output_path: str, payload: Dict[str, Any]) -> None:
     """Save system structure payload to JSON."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

@@ -28,9 +28,9 @@ from .exceptions import ValidationError, DeploymentError
 from .utils.template_utils import TemplateRenderer
 from .utils.system_structure_json import (
     save_system_structure,
+    save_system_structure_snapshot,
     load_system_structure,
     extract_system_structure_data,
-    build_system_structure_snapshot,
 )
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
@@ -320,12 +320,11 @@ class Deployment:
                 mode_key = mode_name if mode_name else default_mode
 
                 def snapshot_callback(step: str, error: Exception | None = None) -> None:
-                    payload = build_system_structure_snapshot(
-                        deploy_instance, self.name, mode_key, step, error=error
+                    snapshot_path = os.path.join(self.system_structure_dir, f"{mode_key}_{step}.json")
+                    payload = save_system_structure_snapshot(
+                        snapshot_path, deploy_instance, self.name, mode_key, step, error
                     )
                     snapshot_store[step] = payload
-                    snapshot_path = os.path.join(self.system_structure_dir, f"{mode_key}_{step}.json")
-                    save_system_structure(snapshot_path, payload)
                 
                 deploy_instance.set_system(
                     mode_system_config,
