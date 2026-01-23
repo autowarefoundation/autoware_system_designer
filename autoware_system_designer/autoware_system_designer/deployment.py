@@ -26,7 +26,12 @@ from .parsers.data_validator import entity_name_decode
 from .parsers.yaml_parser import yaml_parser
 from .exceptions import ValidationError, DeploymentError
 from .utils.template_utils import TemplateRenderer
-from .utils.system_structure_json import save_system_structure, load_system_structure, extract_system_structure_data
+from .utils.system_structure_json import (
+    save_system_structure,
+    load_system_structure,
+    extract_system_structure_data,
+    build_system_structure_snapshot,
+)
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig
@@ -233,6 +238,7 @@ class Deployment:
         self.visualization_dir = os.path.join(self.output_root_dir, "exports", self.name,"visualization/")
         self.parameter_set_dir = os.path.join(self.output_root_dir, "exports", self.name,"parameter_set/")
         self.system_structure_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_structure/")
+        self.system_structure_snapshots: Dict[str, Dict[str, Any]] = {}
 
         # 5. build the deployment
         self._build(system_config, package_paths)
@@ -309,12 +315,24 @@ class Deployment:
                 mode_suffix = f"_{mode_name}" if mode_name else ""
                 instance_name = f"{self.name}{mode_suffix}"
                 deploy_instance = DeploymentInstance(instance_name)
+
+                snapshot_store: Dict[str, Any] = {}
+                mode_key = mode_name if mode_name else default_mode
+
+                def snapshot_callback(step: str, error: Exception | None = None) -> None:
+                    payload = build_system_structure_snapshot(
+                        deploy_instance, self.name, mode_key, step, error=error
+                    )
+                    snapshot_store[step] = payload
+                    snapshot_path = os.path.join(self.system_structure_dir, f"{mode_key}_{step}.json")
+                    save_system_structure(snapshot_path, payload)
                 
                 deploy_instance.set_system(
-                    mode_system_config, self.config_registry, package_paths=package_paths
+                    mode_system_config,
+                    self.config_registry,
+                    package_paths=package_paths,
+                    snapshot_callback=snapshot_callback,
                 )
-
-                mode_key = mode_name if mode_name else default_mode
                 self.mode_keys.append(mode_key)
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
 
@@ -322,8 +340,11 @@ class Deployment:
                 structure_payload = deploy_instance.collect_system_structure(self.name, mode_key)
                 structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
                 save_system_structure(structure_path, structure_payload)
+
+                self.system_structure_snapshots[mode_key] = snapshot_store
                 
             except Exception as e:
+                self.system_structure_snapshots[mode_key] = snapshot_store
                 # try to visualize the system to show error status
                 self.visualize()
                 raise DeploymentError(f"Error in setting deploy for mode '{mode_name}': {e}")

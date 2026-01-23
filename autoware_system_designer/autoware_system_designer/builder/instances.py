@@ -14,7 +14,7 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable
 
 from ..models.config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
 from ..models.parameters import ParameterType
@@ -562,6 +562,7 @@ class DeploymentInstance(Instance):
         system_config: SystemConfig,
         config_registry,
         package_paths: Dict[str, str] = {},
+        snapshot_callback: Callable[[str, Exception | None], None] | None = None,
     ):
         """Set system for this deployment instance.
 
@@ -570,40 +571,56 @@ class DeploymentInstance(Instance):
             config_registry: Registry of all configurations
             package_paths: Package paths for parameter resolution
         """
-        self.parameter_resolver = ParameterResolver(variables=[], package_paths=package_paths)
-        logger.info(f"Setting system {system_config.full_name} for instance {self.name}")
-        self.configuration = system_config
-        self.entity_type = "system"
+        def _snapshot(step: str, error: Exception | None = None) -> None:
+            if snapshot_callback:
+                snapshot_callback(step, error)
 
-        # Apply system variables and variable files to the parameter resolver if available
-        if self.parameter_resolver:
-            if hasattr(system_config, 'variables') and system_config.variables:
-                self.parameter_resolver.load_system_variables(system_config.variables)
-            
-            if hasattr(system_config, 'variable_files') and system_config.variable_files:
-                self.parameter_resolver.load_system_variable_files(system_config.variable_files)
+        current_step = "parse"
+        try:
+            self.parameter_resolver = ParameterResolver(variables=[], package_paths=package_paths)
+            logger.info(f"Setting system {system_config.full_name} for instance {self.name}")
+            self.configuration = system_config
+            self.entity_type = "system"
 
-        # 1. set component instances
-        logger.info(f"Instance '{self.name}': setting component instances")
-        self.set_instances(system_config.full_name, config_registry)
+            # Apply system variables and variable files to the parameter resolver if available
+            if self.parameter_resolver:
+                if hasattr(system_config, 'variables') and system_config.variables:
+                    self.parameter_resolver.load_system_variables(system_config.variables)
+                
+                if hasattr(system_config, 'variable_files') and system_config.variable_files:
+                    self.parameter_resolver.load_system_variable_files(system_config.variable_files)
 
-        # Propagate parameter resolver to all instances in the tree (now that they exist)
-        self.set_parameter_resolver(self.parameter_resolver)
+            # 1. set component instances
+            logger.info(f"Instance '{self.name}': setting component instances")
+            self.set_instances(system_config.full_name, config_registry)
+            _snapshot("1_parse")
 
-        # 2. set connections
-        logger.info(f"Instance '{self.name}': setting connections")
-        self.link_manager.set_links()
-        self.check_ports()
+            # Propagate parameter resolver to all instances in the tree (now that they exist)
+            self.set_parameter_resolver(self.parameter_resolver)
 
-        # 3. build logical topology
-        logger.info(f"Instance '{self.name}': building logical topology")
-        self.set_event_tree()
+            # 2. set connections
+            current_step = "connections"
+            logger.info(f"Instance '{self.name}': setting connections")
+            self.link_manager.set_links()
+            self.check_ports()
+            _snapshot("2_connections")
 
-        # 4. validate node namespaces
-        self.check_duplicate_node_namespaces()
+            # 3. build logical topology
+            current_step = "events"
+            logger.info(f"Instance '{self.name}': building logical topology")
+            self.set_event_tree()
+            _snapshot("3_events")
 
-        # 5. finalize parameters (resolve substitutions)
-        self._finalize_parameters_recursive()
+            # 4. validate node namespaces
+            current_step = "validate"
+            self.check_duplicate_node_namespaces()
+
+            # 5. finalize parameters (resolve substitutions)
+            current_step = "finalize"
+            self._finalize_parameters_recursive()
+        except Exception as e:
+            _snapshot(current_step, e)
+            raise
 
     def check_duplicate_node_namespaces(self):
         """Check for duplicate node namespaces in the entire system."""

@@ -22,6 +22,21 @@ def build_system_structure(instance, system_name: str, mode: str) -> Dict[str, A
     }
 
 
+def build_system_structure_snapshot(
+    instance, system_name: str, mode: str, step: str, error: Exception | None = None
+) -> Dict[str, Any]:
+    """Build a system structure payload with step/error metadata for snapshots."""
+    payload = build_system_structure(instance, system_name, mode)
+    metadata = payload.setdefault("metadata", {})
+    metadata["step"] = step
+    if error:
+        metadata["error"] = {
+            "message": str(error),
+            "type": error.__class__.__name__,
+        }
+    return payload
+
+
 def save_system_structure(output_path: str, payload: Dict[str, Any]) -> None:
     """Save system structure payload to JSON."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
