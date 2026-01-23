@@ -182,9 +182,28 @@ def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: Lis
         node_data["use_container"] = launch_data.get("use_container", False)
         node_data["container"] = launch_data.get("container", "perception_container")
 
+    def normalize_parameter_type(param_type: Any) -> Dict[str, Any]:
+        if isinstance(param_type, dict) and "name" in param_type:
+            return param_type
+        if isinstance(param_type, str):
+            return {"name": param_type}
+        return {"name": str(param_type)}
+
     node_data["ports"] = launch_data.get("ports", [])
-    node_data["parameters"] = launch_data.get("parameters", [])
-    node_data["parameter_files"] = launch_data.get("parameter_files", [])
+
+    parameters = []
+    for param in launch_data.get("parameters", []):
+        param_copy = dict(param)
+        param_copy["parameter_type"] = normalize_parameter_type(param.get("parameter_type"))
+        parameters.append(param_copy)
+    node_data["parameters"] = parameters
+
+    parameter_files = []
+    for param_file in launch_data.get("parameter_files", []):
+        param_file_copy = dict(param_file)
+        param_file_copy["parameter_type"] = normalize_parameter_type(param_file.get("parameter_type"))
+        parameter_files.append(param_file_copy)
+    node_data["parameter_files"] = parameter_files
 
     return node_data
 

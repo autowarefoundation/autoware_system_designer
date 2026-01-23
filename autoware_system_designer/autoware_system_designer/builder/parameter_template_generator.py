@@ -91,6 +91,16 @@ class ParameterTemplateGenerator:
             logger.info(f"Generated component parameter set template: {output_path} (shared root: {system_root})")
             generated.append(output_path)
         return generated
+
+    @classmethod
+    def generate_parameter_set_template_from_data(cls, root_data: Dict[str, Any],
+                                                  deployment_name: str,
+                                                  template_renderer, output_dir: str) -> List[str]:
+        """Generate parameter set templates from serialized system structure data."""
+        generator = cls.__new__(cls)
+        return generator._generate_parameter_set_template_from_data(
+            root_data, deployment_name, template_renderer, output_dir
+        )
     
     def collect_node_parameter_files_for_template(self, base_namespace: str = "") -> List[Dict[str, Any]]:
         """Collect parameter template data for all nodes in the deployment instance.
@@ -142,6 +152,96 @@ class ParameterTemplateGenerator:
         if hasattr(instance, 'children') and instance.children:
             for child in instance.children.values():
                 self._collect_node_parameter_files_recursive(child, node_data, current_namespace)
+
+    def _generate_parameter_set_template_from_data(self, root_data: Dict[str, Any],
+                                                   deployment_name: str,
+                                                   template_renderer, output_dir: str) -> List[str]:
+        component_nodes: Dict[str, List[Dict[str, Any]]] = {}
+        for comp in root_data.get("children", []):
+            comp_name = comp.get("name", "unknown_component")
+            nodes: List[Dict[str, Any]] = []
+            self._collect_node_parameter_files_recursive_data(comp, nodes)
+            component_nodes[comp_name] = nodes
+
+        system_root = os.path.join(output_dir, f"{deployment_name}.parameter_set")
+        os.makedirs(system_root, exist_ok=True)
+
+        for nodes in component_nodes.values():
+            for node in nodes:
+                self._create_namespace_structure_and_copy_configs(node, system_root)
+
+        generated: List[str] = []
+        for comp_name, nodes in component_nodes.items():
+            output_file_name = f"{deployment_name}__{comp_name}.parameter_set"
+            output_path = os.path.join(output_dir, f"{output_file_name}.yaml")
+            template_renderer.render_template_to_file(
+                "parameter_set.yaml.jinja2",
+                output_path,
+                name=output_file_name,
+                parameters=nodes,
+            )
+            logger.info(f"Generated component parameter set template: {output_path} (shared root: {system_root})")
+            generated.append(output_path)
+        return generated
+
+    def _collect_node_parameter_files_recursive_data(self, instance_data: Dict[str, Any],
+                                                     node_data: List[Dict[str, Any]]) -> None:
+        if instance_data.get("entity_type") == "node":
+            namespace_str = instance_data.get("namespace_str")
+            if not namespace_str:
+                namespace = instance_data.get("namespace", [])
+                namespace_str = "/" + "/".join(namespace) if namespace else "/"
+
+            parameter_files_list, parameters = self._extract_parameters_from_data(instance_data, namespace_str)
+            parameter_files = {pf["name"]: pf["path"] for pf in parameter_files_list}
+
+            if parameter_files or parameters:
+                node_info = {
+                    "node": namespace_str,
+                    "parameter_files": parameter_files,
+                    "parameters": parameters,
+                    "package": instance_data.get("launcher", {}).get("package", "unknown_package")
+                }
+                node_data.append(node_info)
+
+        for child in instance_data.get("children", []):
+            self._collect_node_parameter_files_recursive_data(child, node_data)
+
+    def _extract_parameters_from_data(self, instance_data: Dict[str, Any], namespace_str: str) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        parameter_files = []
+        parameters = []
+
+        base_path = namespace_str
+        for param_file in instance_data.get("parameter_files_all", []):
+            param_name = param_file.get("name")
+            if not param_name:
+                continue
+            template_path = f"{base_path}/{param_name}.param.yaml"
+            priority = 2 if param_file.get("is_override") else 1
+            parameter_files.append({
+                "name": param_name,
+                "path": template_path,
+                "priority": priority
+            })
+
+        skip_types = {ParameterType.DEFAULT_FILE.name, ParameterType.OVERRIDE_FILE.name, ParameterType.GLOBAL.name}
+        type_priority = {ptype.name: ptype.value for ptype in ParameterType}
+        for param in instance_data.get("parameters", []):
+            param_type = param.get("parameter_type")
+            if param_type in skip_types:
+                continue
+            configuration = {
+                "name": param.get("name"),
+                "type": param.get("type"),
+                "value": param.get("value"),
+                "priority": type_priority.get(param_type, 0)
+            }
+            parameters.append(configuration)
+
+        parameter_files.sort(key=lambda pf: pf["priority"])
+        parameters.sort(key=lambda p: p["priority"])
+
+        return parameter_files, parameters
     
     def _extract_parameters_from_manager(self, node_instance: 'Instance') -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """Extract parameter files and parameters from parameter manager.

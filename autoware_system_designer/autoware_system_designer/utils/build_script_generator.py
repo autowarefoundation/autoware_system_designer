@@ -18,6 +18,18 @@ from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
+def _collect_packages_from_data(instance_data: Dict[str, Any], packages_by_ecu: Dict[str, set]) -> None:
+    """Collect package names by ECU from serialized system structure data."""
+    if instance_data.get("entity_type") == "node":
+        pkg = instance_data.get("launcher", {}).get("package", "") or instance_data.get("package", "")
+        compute_unit = instance_data.get("compute_unit", "")
+        if pkg and compute_unit:
+            packages_by_ecu.setdefault(compute_unit, set()).add(pkg)
+
+    for child in instance_data.get("children", []):
+        _collect_packages_from_data(child, packages_by_ecu)
+
+
 def generate_build_scripts(
     deploy_instances: Dict[str, Any],
     output_root_dir: str,
@@ -39,23 +51,26 @@ def generate_build_scripts(
         # Collection structure: ecu_name -> set of package names
         packages_by_ecu: Dict[str, set] = {}
         
-        # Helper function to recursively collect packages
-        def collect_packages(instance):
-            # If it's a node, find its package
-            if instance.entity_type == "node" and instance.configuration:
-                pkg = instance.configuration.package
-                if pkg and instance.compute_unit:
-                    if instance.compute_unit not in packages_by_ecu:
-                        packages_by_ecu[instance.compute_unit] = set()
-                    packages_by_ecu[instance.compute_unit].add(pkg)
-            
-            # Recurse for children
-            if hasattr(instance, "children"):
-                for child in instance.children.values():
-                    collect_packages(child)
+        if isinstance(deploy_instance, dict):
+            _collect_packages_from_data(deploy_instance, packages_by_ecu)
+        else:
+            # Helper function to recursively collect packages
+            def collect_packages(instance):
+                # If it's a node, find its package
+                if instance.entity_type == "node" and instance.configuration:
+                    pkg = instance.configuration.package
+                    if pkg and instance.compute_unit:
+                        if instance.compute_unit not in packages_by_ecu:
+                            packages_by_ecu[instance.compute_unit] = set()
+                        packages_by_ecu[instance.compute_unit].add(pkg)
+                
+                # Recurse for children
+                if hasattr(instance, "children"):
+                    for child in instance.children.values():
+                        collect_packages(child)
 
-        # Start collection from the root instance
-        collect_packages(deploy_instance)
+            # Start collection from the root instance
+            collect_packages(deploy_instance)
         
         # Generate scripts
         scripts_dir = os.path.join(output_root_dir, "exports", deployment_name, "build_scripts", mode_key)

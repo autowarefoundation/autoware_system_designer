@@ -472,6 +472,7 @@ class Instance:
             "unique_id": self.unique_id,
             "entity_type": self.entity_type,
             "namespace": self.namespace,
+            "namespace_str": self.namespace_str,
             "compute_unit": self.compute_unit,
             "vis_guide": self.vis_guide,
             "in_ports": [self._serialize_port(p) for p in self.link_manager.get_all_in_ports()],
@@ -507,6 +508,17 @@ class Instance:
         }
 
         if self.entity_type == "node":
+            launch_config = self.configuration.launch or {}
+            data["package"] = launch_config.get("package", "")
+            data["parameter_files_all"] = [
+                {
+                    "name": pf.name,
+                    "path": pf.path,
+                    "allow_substs": pf.allow_substs,
+                    "is_override": pf.is_override,
+                    "parameter_type": self._serialize_parameter_type(pf.parameter_type)
+                } for pf in self.parameter_manager.get_all_parameter_files()
+            ]
             data["launcher"] = self._collect_launcher_data()
 
         return data
