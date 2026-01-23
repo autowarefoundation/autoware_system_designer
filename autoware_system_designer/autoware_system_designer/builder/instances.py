@@ -496,7 +496,7 @@ class DeploymentInstance(Instance):
         self.set_event_tree()
 
         # 4. validate node namespaces
-        # self.check_duplicate_node_namespaces()
+        self.check_duplicate_node_namespaces()
 
         # 5. finalize parameters (resolve substitutions)
         self._finalize_parameters_recursive()
