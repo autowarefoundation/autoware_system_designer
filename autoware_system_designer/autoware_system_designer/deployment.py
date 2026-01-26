@@ -57,14 +57,33 @@ def _apply_removals(config: SystemConfig, remove_spec: Dict[str, Any]) -> None:
             for item in components_to_remove:
                 if isinstance(item, dict) and 'name' in item:
                     remove_names.add(item['name'])
-            
+
             # Filter out components to remove
             if config.components:
                 config.components = [
-                    comp for comp in config.components 
+                    comp for comp in config.components
                     if comp.get('name') not in remove_names
                 ]
                 logger.debug(f"Removed {len(remove_names)} components: {remove_names}")
+
+            # Also remove connections from/to removed components
+            if config.connections:
+                def _endpoint_component(endpoint: Any) -> str | None:
+                    if not isinstance(endpoint, str):
+                        return None
+                    return endpoint.split('.', 1)[0] if endpoint else None
+
+                original_count = len(config.connections)
+                config.connections = [
+                    conn for conn in config.connections
+                    if _endpoint_component(conn.get('from')) not in remove_names
+                    and _endpoint_component(conn.get('to')) not in remove_names
+                ]
+                removed_count = original_count - len(config.connections)
+                if removed_count:
+                    logger.debug(
+                        f"Removed {removed_count} connections referencing removed components"
+                    )
     
     # Remove connections
     if 'connections' in remove_spec:
