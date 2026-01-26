@@ -185,13 +185,18 @@ class NodeVariantResolver(VariantResolver):
         Apply variant rules from config_yaml to node_config.
         Modifies node_config in-place.
         """
+        # Apply removals first
+        remove_config = config_yaml.get('remove', {})
+        if remove_config:
+            self._apply_removals(node_config, remove_config)
+
         override_config = config_yaml.get('override', {})
-        
+
         # 1. Launch (dict merge)
         if 'launch' in override_config:
-             if node_config.launch is None:
-                 node_config.launch = {}
-             node_config.launch.update(override_config['launch'])
+            if node_config.launch is None:
+                node_config.launch = {}
+            node_config.launch.update(override_config['launch'])
 
         merge_specs = [
             {'field': 'inputs', 'key_field': 'name'},
@@ -201,11 +206,6 @@ class NodeVariantResolver(VariantResolver):
             {'field': 'processes', 'key_field': 'name'},
         ]
         self._resolve_merges(node_config, config_yaml, merge_specs)
-
-        # Apply removals if 'remove' section exists
-        remove_config = config_yaml.get('remove', {})
-        if remove_config:
-            self._apply_removals(node_config, remove_config)
 
     def _apply_removals(self, node_config: NodeConfig, remove_config: Dict[str, Any]):
         remove_specs = [
@@ -226,6 +226,11 @@ class ModuleVariantResolver(VariantResolver):
         Apply variant rules from config_yaml to module_config.
         Modifies module_config in-place.
         """
+        # Apply removals first
+        remove_config = config_yaml.get('remove', {})
+        if remove_config:
+            self._apply_removals(module_config, remove_config)
+
         override_config = config_yaml.get('override', {})
         
         merge_specs = [
@@ -237,11 +242,6 @@ class ModuleVariantResolver(VariantResolver):
         # Merge external_interfaces
         if 'external_interfaces' in override_config:
             self._resolve_external_interfaces(module_config, override_config['external_interfaces'])
-
-        # Apply removals if 'remove' section exists
-        remove_config = config_yaml.get('remove', {})
-        if remove_config:
-            self._apply_removals(module_config, remove_config)
 
     def _resolve_external_interfaces(self, module_config: ModuleConfig, overrides: Dict[str, Any]):
         # Ensure base is initialized
@@ -261,6 +261,26 @@ class ModuleVariantResolver(VariantResolver):
                 module_config.external_interfaces[interface_type] = merged
 
     def _apply_removals(self, module_config: ModuleConfig, remove_config: Dict[str, Any]):
+        if 'instances' in remove_config:
+            removed_names = [
+                spec.get('name')
+                for spec in remove_config.get('instances', [])
+                if isinstance(spec, dict) and spec.get('name')
+            ]
+            if removed_names and module_config.connections:
+                removed_set = set(removed_names)
+
+                def _endpoint_instance(endpoint: Any) -> Optional[str]:
+                    if not isinstance(endpoint, str):
+                        return None
+                    return endpoint.split('.', 1)[0] if endpoint else None
+
+                module_config.connections = [
+                    conn for conn in module_config.connections
+                    if _endpoint_instance(conn.get('from')) not in removed_set
+                    and _endpoint_instance(conn.get('to')) not in removed_set
+                ]
+
         remove_specs = [
             {'field': 'instances', 'key_field': 'name'},
             {'field': 'connections', 'key_field': None},
