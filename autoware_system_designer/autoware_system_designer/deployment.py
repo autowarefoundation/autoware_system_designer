@@ -26,6 +26,12 @@ from .parsers.data_validator import entity_name_decode
 from .parsers.yaml_parser import yaml_parser
 from .exceptions import ValidationError, DeploymentError
 from .utils.template_utils import TemplateRenderer
+from .utils.system_structure_json import (
+    save_system_structure,
+    save_system_structure_snapshot,
+    load_system_structure,
+    extract_system_structure_data,
+)
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig
@@ -222,8 +228,8 @@ class Deployment:
         
         self.name = system_config.name
 
-        # member variables - now supports multiple instances (one per mode)
-        self.deploy_instances: Dict[str, DeploymentInstance] = {}  # mode_name -> DeploymentInstance
+        # member variables - now supports multiple modes
+        self.mode_keys: List[str] = []
 
         # 4. set output paths
         self.output_root_dir = deploy_config.output_root_dir
@@ -231,6 +237,8 @@ class Deployment:
         self.system_monitor_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_monitor/")
         self.visualization_dir = os.path.join(self.output_root_dir, "exports", self.name,"visualization/")
         self.parameter_set_dir = os.path.join(self.output_root_dir, "exports", self.name,"parameter_set/")
+        self.system_structure_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_structure/")
+        self.system_structure_snapshots: Dict[str, Dict[str, Any]] = {}
 
         # 5. build the deployment
         self._build(system_config, package_paths)
@@ -280,6 +288,53 @@ class Deployment:
             raise ValidationError(f"No system design configuration files collected.")
         return system_list, package_paths, file_package_map
 
+    def _create_snapshot_callback(
+        self,
+        mode_key: str,
+        deploy_instance: DeploymentInstance,
+        snapshot_store: Dict[str, Any],
+    ):
+        def snapshot_callback(step: str, error: Exception | None = None) -> None:
+            snapshot_path = os.path.join(self.system_structure_dir, f"{mode_key}_{step}.json")
+            payload = save_system_structure_snapshot(
+                snapshot_path, deploy_instance, self.name, mode_key, step, error
+            )
+            snapshot_store[step] = payload
+
+        return snapshot_callback
+
+    def _build_mode_instance(
+        self,
+        mode_name: str,
+        mode_system_config: SystemConfig,
+        package_paths: Dict[str, str],
+        default_mode: str,
+    ) -> Tuple[str, Dict[str, Any]]:
+        mode_suffix = f"_{mode_name}" if mode_name else ""
+        instance_name = f"{self.name}{mode_suffix}"
+        deploy_instance = DeploymentInstance(instance_name)
+
+        snapshot_store: Dict[str, Any] = {}
+        mode_key = mode_name if mode_name else default_mode
+
+        snapshot_callback = self._create_snapshot_callback(
+            mode_key, deploy_instance, snapshot_store
+        )
+
+        deploy_instance.set_system(
+            mode_system_config,
+            self.config_registry,
+            package_paths=package_paths,
+            snapshot_callback=snapshot_callback,
+        )
+
+        # Save system structure JSON for downstream consumers
+        structure_payload = deploy_instance.collect_system_structure(self.name, mode_key)
+        structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
+        save_system_structure(structure_path, structure_payload)
+
+        return mode_key, snapshot_store
+
     def _build(self, system_config, package_paths):
         # 2. Determine modes to build
         modes_config = system_config.modes or []
@@ -298,25 +353,23 @@ class Deployment:
             logger.info(f"Building deployment with single 'default' mode")
 
         # 3. Create deployment instance for each mode
+        self.mode_keys = []
         for mode_name in mode_names:
+            mode_key = mode_name if mode_name else default_mode
+            snapshot_store: Dict[str, Any] = {}
             try:
                 # Apply mode configuration on top of base system
                 mode_system_config = apply_mode_configuration(system_config, mode_name)
-                
-                mode_suffix = f"_{mode_name}" if mode_name else ""
-                instance_name = f"{self.name}{mode_suffix}"
-                deploy_instance = DeploymentInstance(instance_name)
-                
-                deploy_instance.set_system(
-                    mode_system_config, self.config_registry, package_paths=package_paths
-                )
 
-                # Store instance
-                mode_key = mode_name if mode_name else default_mode
-                self.deploy_instances[mode_key] = deploy_instance
+                mode_key, snapshot_store = self._build_mode_instance(
+                    mode_name, mode_system_config, package_paths, default_mode
+                )
+                self.mode_keys.append(mode_key)
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
-                
+
+                self.system_structure_snapshots[mode_key] = snapshot_store
             except Exception as e:
+                self.system_structure_snapshots[mode_key] = snapshot_store
                 # try to visualize the system to show error status
                 self.visualize()
                 raise DeploymentError(f"Error in setting deploy for mode '{mode_name}': {e}")
@@ -324,8 +377,11 @@ class Deployment:
     def visualize(self):
         # Collect data from all deployment instances
         deploy_data = {}
-        for mode_key, deploy_instance in self.deploy_instances.items():
-            deploy_data[mode_key] = deploy_instance.collect_instance_data()
+        for mode_key in self.mode_keys:
+            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
+            payload = load_system_structure(structure_path)
+            data, _ = extract_system_structure_data(payload)
+            deploy_data[mode_key] = data
 
         visualize_deployment(deploy_data, self.name, self.visualization_dir)
 
@@ -347,9 +403,10 @@ class Deployment:
         topics_template_path = os.path.join(template_dir, "sys_monitor_topics.yaml.jinja2")
 
         # Generate system monitor for each mode
-        for mode_key, deploy_instance in self.deploy_instances.items():
-            # Collect data from the system instance
-            data = deploy_instance.collect_instance_data()
+        for mode_key in self.mode_keys:
+            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
+            payload = load_system_structure(structure_path)
+            data, _ = extract_system_structure_data(payload)
             
             # Create mode-specific output directory
             mode_monitor_dir = os.path.join(self.system_monitor_dir, mode_key, "component_state_monitor")
@@ -360,8 +417,15 @@ class Deployment:
 
     def generate_build_scripts(self):
         """Generate shell scripts to build necessary packages for each ECU."""
+        deploy_data = {}
+        for mode_key in self.mode_keys:
+            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
+            payload = load_system_structure(structure_path)
+            data, _ = extract_system_structure_data(payload)
+            deploy_data[mode_key] = data
+
         generate_build_scripts(
-            self.deploy_instances,
+            deploy_data,
             self.output_root_dir,
             self.name,
             self.config_yaml_dir,
@@ -371,23 +435,25 @@ class Deployment:
 
     def generate_launcher(self):
         # Generate launcher files for each mode
-        for mode_key, deploy_instance in self.deploy_instances.items():
+        for mode_key in self.mode_keys:
             # Create mode-specific launcher directory
             mode_launcher_dir = os.path.join(self.launcher_dir, mode_key)
             
-            # Generate module launch files
-            generate_module_launch_file(deploy_instance, mode_launcher_dir)
+            # Generate module launch files from JSON structure
+            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
+            payload = load_system_structure(structure_path)
+            generate_module_launch_file(payload, mode_launcher_dir)
             
             logger.info(f"Generated launcher for mode: {mode_key}")
 
     def generate_parameter_set_template(self):
         """Generate parameter set template using ParameterTemplateGenerator."""
-        if not self.deploy_instances:
+        if not self.mode_keys:
             raise DeploymentError("Deployment instances are not initialized")
         
         # Generate parameter set template for each mode
         output_paths = {}
-        for mode_key, deploy_instance in self.deploy_instances.items():
+        for mode_key in self.mode_keys:
             # Create mode-specific output directory
             mode_parameter_dir = os.path.join(self.parameter_set_dir, mode_key)
             os.makedirs(mode_parameter_dir, exist_ok=True)
@@ -396,9 +462,12 @@ class Deployment:
             renderer = TemplateRenderer()
             
             # Create parameter template generator and generate the template
-            generator = ParameterTemplateGenerator(deploy_instance)
+            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
+            payload = load_system_structure(structure_path)
+            data, _ = extract_system_structure_data(payload)
             template_name = f"{self.name}_{mode_key}" if mode_key != "default" else self.name
-            output_path_list = generator.generate_parameter_set_template(
+            output_path_list = ParameterTemplateGenerator.generate_parameter_set_template_from_data(
+                data,
                 template_name,
                 renderer,
                 mode_parameter_dir
