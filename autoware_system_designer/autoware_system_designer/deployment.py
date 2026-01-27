@@ -117,6 +117,31 @@ def _apply_overrides(config: SystemConfig, override_spec: Dict[str, Any]) -> Non
         config: SystemConfig to modify in-place
         override_spec: Dictionary containing 'components', 'connections', and/or 'parameter_sets' to override/add
     """
+    def _merge_named_list(base_list: List[Dict[str, Any]] | None, override_list: List[Dict[str, Any]] | None) -> List[Dict[str, Any]]:
+        if not override_list:
+            return base_list or []
+        merged = [item.copy() for item in (base_list or [])]
+        index_by_name = {item.get('name'): i for i, item in enumerate(merged) if isinstance(item, dict)}
+        for item in override_list:
+            name = item.get('name') if isinstance(item, dict) else None
+            if name and name in index_by_name:
+                merged[index_by_name[name]] = item
+            else:
+                merged.append(item)
+        return merged
+
+    # Override/merge variables
+    if 'variables' in override_spec:
+        override_variables = override_spec['variables']
+        if override_variables is not None:
+            config.variables = _merge_named_list(config.variables, override_variables)
+
+    # Override/merge variable_files
+    if 'variable_files' in override_spec:
+        override_variable_files = override_spec['variable_files']
+        if override_variable_files is not None:
+            config.variable_files = _merge_named_list(config.variable_files, override_variable_files)
+
     # Override parameter_sets (replaces base parameter_sets completely)
     if 'parameter_sets' in override_spec:
         override_parameter_sets = override_spec['parameter_sets']
