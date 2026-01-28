@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Any, List, Tuple
+from __future__ import annotations
+
+from typing import Any, Dict, List, Tuple
 from abc import ABC, abstractmethod
 
 from ..config import ConfigType
@@ -49,11 +51,16 @@ def entity_name_decode(entity_name: str) -> Tuple[str, str]:
 
 class BaseValidator(ABC):
     """Abstract base validator."""
-    
-    @abstractmethod
-    def get_entity_type(self) -> str:
+
+    ENTITY_TYPE: str
+
+    @classmethod
+    def get_entity_type(cls) -> str:
         """Return the entity type this validator validates."""
-        raise NotImplementedError
+        entity_type = getattr(cls, "ENTITY_TYPE", None)
+        if not isinstance(entity_type, str) or not entity_type:
+            raise NotImplementedError("Validator must define ENTITY_TYPE")
+        return entity_type
     
     def validate_basic_structure(self, config: Dict[str, Any], file_path: str) -> None:
         """Validate basic structure requirements."""
@@ -70,43 +77,53 @@ class BaseValidator(ABC):
                 f"Invalid entity type '{entity_type}'. Expected '{expected_type}'. File: {file_path}"
             )
 
+    def validate_validator_type(self, entity_type: str, file_path: str) -> None:
+        """Ensure the validator used matches the entity_type being validated."""
+        validator_type = self.get_entity_type()
+        if entity_type != validator_type:
+            raise ValidationError(
+                f"Internal error: validator '{validator_type}' used for entity type '{entity_type}'. File: {file_path}"
+            )
+
+    @staticmethod
+    def _format_schema_issues(issues) -> str:
+        return "\n".join(
+            f"  - {i.message}" + (f" (yaml_path={i.yaml_path})" if getattr(i, "yaml_path", None) else "")
+            for i in issues
+        )
+
     def validate_all(self, config: Dict[str, Any], entity_type: str, expected_type: str, file_path: str) -> None:
         """Perform complete validation."""
         self.validate_basic_structure(config, file_path)
+        self.validate_validator_type(entity_type, file_path)
         self.validate_entity_type(entity_type, expected_type, file_path)
+
         # Schema-driven structural + semantic validation
-        schema = get_entity_schema(self.get_entity_type())
+        schema = get_entity_schema(entity_type)
         issues = validate_against_schema(config, schema=schema)
         if issues:
-            details = "\n".join(
-                f"  - {i.message}" + (f" (yaml_path={i.yaml_path})" if i.yaml_path else "")
-                for i in issues
-            )
+            details = self._format_schema_issues(issues)
             raise ValidationError(f"Schema validation failed for {file_path}:\n{details}")
 
 class NodeValidator(BaseValidator):
     """Validator for node entities."""
 
-    def get_entity_type(self) -> str:
-        return ConfigType.NODE
+    ENTITY_TYPE = ConfigType.NODE
 
 class ModuleValidator(BaseValidator):
     """Validator for module entities."""
 
-    def get_entity_type(self) -> str:
-        return ConfigType.MODULE
+    ENTITY_TYPE = ConfigType.MODULE
 
 class ParameterSetValidator(BaseValidator):
     """Validator for parameter set entities."""
 
-    def get_entity_type(self) -> str:
-        return ConfigType.PARAMETER_SET
+    ENTITY_TYPE = ConfigType.PARAMETER_SET
 
 class SystemValidator(BaseValidator):
     """Validator for system entities."""
 
-    def get_entity_type(self) -> str:
-        return ConfigType.SYSTEM
+    ENTITY_TYPE = ConfigType.SYSTEM
 
 class ValidatorFactory:
     """Factory for creating validators."""
