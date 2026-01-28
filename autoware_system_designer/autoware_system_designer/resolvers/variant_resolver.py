@@ -15,6 +15,7 @@
 import logging
 from typing import List, Dict, Any, TypeVar, Optional
 from ..models.config import SystemConfig, NodeConfig, ModuleConfig
+from ..utils.connection_utils import filter_connections_by_removed_entities
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,17 @@ class SystemVariantResolver(VariantResolver):
             self._apply_removals(system_config, remove_config)
 
     def _apply_removals(self, system_config: SystemConfig, remove_config: Dict[str, Any]):
+        if 'components' in remove_config:
+            removed_names = [
+                spec.get('name')
+                for spec in remove_config.get('components', [])
+                if isinstance(spec, dict) and spec.get('name')
+            ]
+            if removed_names and system_config.connections:
+                system_config.connections = filter_connections_by_removed_entities(
+                    system_config.connections, removed_names
+                )
+
         remove_specs = [
             {'field': 'modes', 'key_field': 'name'},
             {'field': 'parameter_sets', 'key_field': None},  # Remove parameter sets by value
@@ -268,18 +280,9 @@ class ModuleVariantResolver(VariantResolver):
                 if isinstance(spec, dict) and spec.get('name')
             ]
             if removed_names and module_config.connections:
-                removed_set = set(removed_names)
-
-                def _endpoint_instance(endpoint: Any) -> Optional[str]:
-                    if not isinstance(endpoint, str):
-                        return None
-                    return endpoint.split('.', 1)[0] if endpoint else None
-
-                module_config.connections = [
-                    conn for conn in module_config.connections
-                    if _endpoint_instance(conn.get('from')) not in removed_set
-                    and _endpoint_instance(conn.get('to')) not in removed_set
-                ]
+                module_config.connections = filter_connections_by_removed_entities(
+                    module_config.connections, removed_names
+                )
 
         remove_specs = [
             {'field': 'instances', 'key_field': 'name'},

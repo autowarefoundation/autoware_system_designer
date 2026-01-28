@@ -37,6 +37,7 @@ from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig
 from .utils.source_location import SourceLocation, source_from_config, format_source
+from .utils.connection_utils import filter_connections_by_removed_entities
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +54,16 @@ def _apply_removals(config: SystemConfig, remove_spec: Dict[str, Any]) -> None:
     if 'components' in remove_spec:
         components_to_remove = remove_spec['components']
         if components_to_remove:
-            # Build set of component names to remove
-            remove_names = set()
+            # Build set of component names to remove (accept both {'name': ...} and 'name')
+            remove_names: set[str] = set()
             for item in components_to_remove:
-                if isinstance(item, dict) and 'name' in item:
+                if isinstance(item, str) and item:
+                    remove_names.add(item)
+                elif isinstance(item, dict) and item.get('name'):
                     remove_names.add(item['name'])
 
             # Filter out components to remove
-            if config.components:
+            if config.components and remove_names:
                 config.components = [
                     comp for comp in config.components
                     if comp.get('name') not in remove_names
@@ -68,18 +71,11 @@ def _apply_removals(config: SystemConfig, remove_spec: Dict[str, Any]) -> None:
                 logger.debug(f"Removed {len(remove_names)} components: {remove_names}")
 
             # Also remove connections from/to removed components
-            if config.connections:
-                def _endpoint_component(endpoint: Any) -> str | None:
-                    if not isinstance(endpoint, str):
-                        return None
-                    return endpoint.split('.', 1)[0] if endpoint else None
-
+            if config.connections and remove_names:
                 original_count = len(config.connections)
-                config.connections = [
-                    conn for conn in config.connections
-                    if _endpoint_component(conn.get('from')) not in remove_names
-                    and _endpoint_component(conn.get('to')) not in remove_names
-                ]
+                config.connections = filter_connections_by_removed_entities(
+                    config.connections, remove_names
+                )
                 removed_count = original_count - len(config.connections)
                 if removed_count:
                     logger.debug(
