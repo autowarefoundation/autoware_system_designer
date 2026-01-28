@@ -39,7 +39,6 @@ from .models.config import SystemConfig
 from .utils.source_location import SourceLocation, source_from_config, format_source
 
 logger = logging.getLogger(__name__)
-debug_mode = True
 
 
 def _apply_removals(config: SystemConfig, remove_spec: Dict[str, Any]) -> None:

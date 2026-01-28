@@ -24,7 +24,6 @@ from autoware_system_designer.utils.logging_utils import configure_split_stream_
 @dataclass
 class DeploymentConfig:
     """Configuration class for the autoware system deployment."""
-    debug_mode: bool = False
     layer_limit: int = 50
     log_level: str = "INFO"
     print_level: str = "ERROR"
@@ -40,7 +39,6 @@ class DeploymentConfig:
     def from_env(cls) -> 'DeploymentConfig':
         """Create configuration from environment variables."""
         return cls(
-            debug_mode=os.getenv('autoware_system_designer_DEBUG', 'false').lower() == 'true',
             layer_limit=int(os.getenv('autoware_system_designer_LAYER_LIMIT', '50')),
             log_level=os.getenv('autoware_system_designer_LOG_LEVEL', 'INFO'),
             print_level=os.getenv('autoware_system_designer_PRINT_LEVEL', 'ERROR'),
@@ -51,14 +49,7 @@ class DeploymentConfig:
     def set_logging(self) -> logging.Logger:
         """Setup logging based on configuration."""
         level = getattr(logging, self.log_level.upper(), logging.INFO)
-        if self.debug_mode:
-            level = logging.DEBUG
-
         stderr_level = getattr(logging, self.print_level.upper(), logging.ERROR)
-        if self.debug_mode:
-            # Keep debug mode semantics for what is logged, while still allowing
-            # terminal filtering via stderr_level.
-            pass
 
         formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
         configure_split_stream_logging(level=level, stderr_level=stderr_level, formatter=formatter)
