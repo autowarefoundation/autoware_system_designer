@@ -16,12 +16,32 @@ macro(autoware_system_designer_build_deploy project_name)
   # Supported invocation patterns:
   #   autoware_system_designer_build_deploy(<project> <deployment_file>)
   #   autoware_system_designer_build_deploy(<project> <design_file>)
+  #   autoware_system_designer_build_deploy(<project> <deployment|design> PRINT_LEVEL=<LEVEL>)
+  # PRINT_LEVEL controls what is printed to the terminal (stderr).
+  # Full logs are still written to the per-target log file.
+  # Valid levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
   set(_EXTRA_ARGS ${ARGN})
   list(LENGTH _EXTRA_ARGS _EXTRA_LEN)
   if(_EXTRA_LEN LESS 1)
     message(FATAL_ERROR "autoware_system_designer_build_deploy: expected at least 1 extra arg (<deployment|design>), got ${_EXTRA_LEN}: ${_EXTRA_ARGS}")
   endif()
   list(GET _EXTRA_ARGS 0 _INPUT_NAME)
+
+  # Defaults
+  set(_PRINT_LEVEL "ERROR")
+
+  # Parse optional args: only PRINT_LEVEL=<LEVEL> is supported.
+  if(_EXTRA_LEN GREATER 1)
+    if(_EXTRA_LEN GREATER 2)
+      message(FATAL_ERROR "autoware_system_designer_build_deploy: only PRINT_LEVEL=<LEVEL> is supported as an optional arg. Got: ${ARGN}")
+    endif()
+    list(GET _EXTRA_ARGS 1 _ONLY)
+    if(NOT _ONLY MATCHES "^PRINT_LEVEL=.+$")
+      message(FATAL_ERROR "autoware_system_designer_build_deploy: only PRINT_LEVEL=<LEVEL> is supported (e.g. PRINT_LEVEL=WARNING). Got: ${_ONLY}")
+    endif()
+    string(REPLACE "=" ";" _PAIR "${_ONLY}")
+    list(GET _PAIR 1 _PRINT_LEVEL)
+  endif()
 
   set(BUILD_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/deployment_process.py")
   set(TEE_RUN_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/tee_run.py")
@@ -45,8 +65,11 @@ macro(autoware_system_designer_build_deploy project_name)
 
   add_custom_target(run_build_py_${_INPUT_NAME} ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${LOG_DIR}
-    COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${SYSTEM_DESIGNER_SOURCE_DIR}:$ENV{PYTHONPATH} python3 ${TEE_RUN_SCRIPT} --log-file ${LOG_FILE} -- python3 -d ${BUILD_PY_SCRIPT} ${_DEPLOYMENT_FILE} ${SYSTEM_DESIGNER_RESOURCE_DIR} ${OUTPUT_ROOT_DIR}
-    COMMENT "Running build.py script ${_LOG_DESC}. Terminal shows warnings/errors; full log: ${LOG_FILE}"
+    COMMAND ${CMAKE_COMMAND} -E env
+      PYTHONPATH=${SYSTEM_DESIGNER_SOURCE_DIR}:$ENV{PYTHONPATH}
+      autoware_system_designer_PRINT_LEVEL=${_PRINT_LEVEL}
+      python3 ${TEE_RUN_SCRIPT} --log-file ${LOG_FILE} -- python3 -d ${BUILD_PY_SCRIPT} ${_DEPLOYMENT_FILE} ${SYSTEM_DESIGNER_RESOURCE_DIR} ${OUTPUT_ROOT_DIR}
+    COMMENT "Running build.py script ${_LOG_DESC}. PRINT_LEVEL=${_PRINT_LEVEL}; full log: ${LOG_FILE}"
   )
   add_dependencies(${project_name} run_build_py_${_INPUT_NAME})
 endmacro()

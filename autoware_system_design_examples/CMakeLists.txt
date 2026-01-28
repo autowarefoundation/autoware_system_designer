@@ -11,4 +11,4 @@ autoware_system_designer_generate_launcher()
 # Add a dummy library to make a target
 add_library(${PROJECT_NAME} SHARED src/empty.cpp)
 
-autoware_system_designer_build_deploy(${PROJECT_NAME} vehicle_x.system)
+autoware_system_designer_build_deploy(${PROJECT_NAME} vehicle_x.system PRINT_LEVEL=WARNING)

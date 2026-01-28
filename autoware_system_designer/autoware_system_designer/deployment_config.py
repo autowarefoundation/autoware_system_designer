@@ -27,6 +27,7 @@ class DeploymentConfig:
     debug_mode: bool = False
     layer_limit: int = 50
     log_level: str = "INFO"
+    print_level: str = "ERROR"
     cache_enabled: bool = False
     max_cache_size: int = 128
 
@@ -42,6 +43,7 @@ class DeploymentConfig:
             debug_mode=os.getenv('autoware_system_designer_DEBUG', 'false').lower() == 'true',
             layer_limit=int(os.getenv('autoware_system_designer_LAYER_LIMIT', '50')),
             log_level=os.getenv('autoware_system_designer_LOG_LEVEL', 'INFO'),
+            print_level=os.getenv('autoware_system_designer_PRINT_LEVEL', 'ERROR'),
             cache_enabled=os.getenv('autoware_system_designer_CACHE_ENABLED', 'true').lower() == 'true',
             max_cache_size=int(os.getenv('autoware_system_designer_MAX_CACHE_SIZE', '128'))
         )
@@ -52,8 +54,14 @@ class DeploymentConfig:
         if self.debug_mode:
             level = logging.DEBUG
 
+        stderr_level = getattr(logging, self.print_level.upper(), logging.ERROR)
+        if self.debug_mode:
+            # Keep debug mode semantics for what is logged, while still allowing
+            # terminal filtering via stderr_level.
+            pass
+
         formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
-        configure_split_stream_logging(level=level, formatter=formatter)
+        configure_split_stream_logging(level=level, stderr_level=stderr_level, formatter=formatter)
 
         return logging.getLogger('autoware_system_designer')
 

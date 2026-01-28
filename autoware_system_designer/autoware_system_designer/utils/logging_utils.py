@@ -15,6 +15,7 @@ class _MaxLevelFilter(logging.Filter):
 def configure_split_stream_logging(
     *,
     level: int = logging.INFO,
+    stderr_level: int = logging.WARNING,
     formatter: Optional[logging.Formatter] = None,
 ) -> None:
     """Configure root logging:
@@ -33,13 +34,16 @@ def configure_split_stream_logging(
     if formatter is None:
         formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
 
+    if stderr_level < logging.DEBUG:
+        stderr_level = logging.DEBUG
+
     stdout_handler = logging.StreamHandler(stream=sys.stdout)
     stdout_handler.setLevel(logging.DEBUG)
-    stdout_handler.addFilter(_MaxLevelFilter(logging.INFO))
+    stdout_handler.addFilter(_MaxLevelFilter(stderr_level - 1))
     stdout_handler.setFormatter(formatter)
 
     stderr_handler = logging.StreamHandler(stream=sys.stderr)
-    stderr_handler.setLevel(logging.WARNING)
+    stderr_handler.setLevel(stderr_level)
     stderr_handler.setFormatter(formatter)
 
     root.addHandler(stdout_handler)

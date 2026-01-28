@@ -26,9 +26,9 @@ def build(deployment_file: str, manifest_dir: str, output_root_dir: str):
     #   output_root_dir: root directory for generated exports
 
     # configure the autoware system design format files
-    deploy_config = DeploymentConfig()
+    # Start from env defaults so callers (e.g. CMake) can control terminal verbosity.
+    deploy_config = DeploymentConfig.from_env()
     deploy_config.debug_mode = True
-    deploy_config.log_level = "INFO"
 
     deploy_config.deployment_file = deployment_file
     deploy_config.manifest_dir = manifest_dir
