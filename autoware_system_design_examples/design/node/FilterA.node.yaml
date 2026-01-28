@@ -5,6 +5,7 @@ name: FilterA.node
 launch:
   package: autoware_perception_dummy_nodes
   plugin: autoware::perception_dummy_nodes::FilterA
+  executable: filter_a_node
   node_output: screen
 
 # interfaces

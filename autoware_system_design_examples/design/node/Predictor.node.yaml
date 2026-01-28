@@ -5,6 +5,7 @@ name: Predictor.node
 launch:
   package: autoware_perception_dummy_nodes
   plugin: autoware::perception_dummy_nodes::Predictor
+  executable: predictor_node
 
 # interfaces
 inputs:
