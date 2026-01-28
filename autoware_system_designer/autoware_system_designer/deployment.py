@@ -16,6 +16,7 @@
 import os
 import logging
 import copy
+from pathlib import Path
 from typing import Dict, Tuple, List, Any
 from .deployment_config import DeploymentConfig
 from .builder.config_registry import ConfigRegistry
@@ -35,158 +36,10 @@ from .utils.system_structure_json import (
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig
+from .utils.source_location import SourceLocation, source_from_config, format_source
+from .resolvers.variant_resolver import SystemVariantResolver
 
 logger = logging.getLogger(__name__)
-debug_mode = True
-
-
-def _apply_removals(config: SystemConfig, remove_spec: Dict[str, Any]) -> None:
-    """
-    Remove components and connections from system configuration.
-    
-    Args:
-        config: SystemConfig to modify in-place
-        remove_spec: Dictionary containing 'components' and/or 'connections' to remove
-    """
-    # Remove components
-    if 'components' in remove_spec:
-        components_to_remove = remove_spec['components']
-        if components_to_remove:
-            # Build set of component names to remove
-            remove_names = set()
-            for item in components_to_remove:
-                if isinstance(item, dict) and 'name' in item:
-                    remove_names.add(item['name'])
-
-            # Filter out components to remove
-            if config.components:
-                config.components = [
-                    comp for comp in config.components
-                    if comp.get('name') not in remove_names
-                ]
-                logger.debug(f"Removed {len(remove_names)} components: {remove_names}")
-
-            # Also remove connections from/to removed components
-            if config.connections:
-                def _endpoint_component(endpoint: Any) -> str | None:
-                    if not isinstance(endpoint, str):
-                        return None
-                    return endpoint.split('.', 1)[0] if endpoint else None
-
-                original_count = len(config.connections)
-                config.connections = [
-                    conn for conn in config.connections
-                    if _endpoint_component(conn.get('from')) not in remove_names
-                    and _endpoint_component(conn.get('to')) not in remove_names
-                ]
-                removed_count = original_count - len(config.connections)
-                if removed_count:
-                    logger.debug(
-                        f"Removed {removed_count} connections referencing removed components"
-                    )
-    
-    # Remove connections
-    if 'connections' in remove_spec:
-        connections_to_remove = remove_spec['connections']
-        if connections_to_remove and config.connections:
-            # For connections, we need to match all fields in the spec
-            original_count = len(config.connections)
-            filtered_connections = []
-            
-            for conn in config.connections:
-                should_remove = False
-                for remove_conn in connections_to_remove:
-                    # Check if all fields in remove_conn match the connection
-                    if all(conn.get(k) == v for k, v in remove_conn.items()):
-                        should_remove = True
-                        break
-                
-                if not should_remove:
-                    filtered_connections.append(conn)
-            
-            config.connections = filtered_connections
-            removed_count = original_count - len(filtered_connections)
-            logger.debug(f"Removed {removed_count} connections")
-
-
-def _apply_overrides(config: SystemConfig, override_spec: Dict[str, Any]) -> None:
-    """
-    Apply overrides/additions to system configuration.
-    
-    Args:
-        config: SystemConfig to modify in-place
-        override_spec: Dictionary containing 'components', 'connections', and/or 'parameter_sets' to override/add
-    """
-    def _merge_named_list(base_list: List[Dict[str, Any]] | None, override_list: List[Dict[str, Any]] | None) -> List[Dict[str, Any]]:
-        if not override_list:
-            return base_list or []
-        merged = [item.copy() for item in (base_list or [])]
-        index_by_name = {item.get('name'): i for i, item in enumerate(merged) if isinstance(item, dict)}
-        for item in override_list:
-            name = item.get('name') if isinstance(item, dict) else None
-            if name and name in index_by_name:
-                merged[index_by_name[name]] = item
-            else:
-                merged.append(item)
-        return merged
-
-    # Override/merge variables
-    if 'variables' in override_spec:
-        override_variables = override_spec['variables']
-        if override_variables is not None:
-            config.variables = _merge_named_list(config.variables, override_variables)
-
-    # Override/merge variable_files
-    if 'variable_files' in override_spec:
-        override_variable_files = override_spec['variable_files']
-        if override_variable_files is not None:
-            config.variable_files = _merge_named_list(config.variable_files, override_variable_files)
-
-    # Override parameter_sets (replaces base parameter_sets completely)
-    if 'parameter_sets' in override_spec:
-        override_parameter_sets = override_spec['parameter_sets']
-        if override_parameter_sets is not None:
-            config.parameter_sets = override_parameter_sets
-            logger.info(f"Overrode parameter_sets with {len(override_parameter_sets) if isinstance(override_parameter_sets, list) else 1} parameter set(s)")
-    
-    # Override/add components
-    if 'components' in override_spec:
-        override_components = override_spec['components']
-        if override_components:
-            if not config.components:
-                config.components = []
-            
-            # Build a map of existing components by name
-            component_map = {
-                comp.get('name'): idx 
-                for idx, comp in enumerate(config.components)
-                if 'name' in comp
-            }
-            
-            # Apply overrides or add new components
-            for override_comp in override_components:
-                comp_name = override_comp.get('name')
-                if comp_name in component_map:
-                    # Override existing component
-                    idx = component_map[comp_name]
-                    config.components[idx] = override_comp
-                    logger.debug(f"Overrode component '{comp_name}'")
-                else:
-                    # Add new component
-                    config.components.append(override_comp)
-                    logger.debug(f"Added new component '{comp_name}'")
-    
-    # Add/override connections
-    if 'connections' in override_spec:
-        override_connections = override_spec['connections']
-        if override_connections:
-            if not config.connections:
-                config.connections = []
-            
-            # For connections, we simply append them (no override logic needed)
-            # as connections are uniquely identified by their from/to combination
-            config.connections.extend(override_connections)
-            logger.debug(f"Added {len(override_connections)} connections")
 
 
 def apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -> SystemConfig:
@@ -221,18 +74,22 @@ def apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -
     mode_config = base_system_config.mode_configs.get(mode_name)
     if not mode_config:
         # Mode not found, return base configuration
-        logger.warning(f"Mode '{mode_name}' not found in mode_configs, using base configuration")
+        src = source_from_config(base_system_config, "/modes")
+        logger.warning(
+            f"Mode '{mode_name}' not found in mode_configs, using base configuration{format_source(src)}"
+        )
         return modified_config
     
     logger.info(f"Applying mode configuration for mode '{mode_name}'")
-    
-    # Apply removals first
-    if 'remove' in mode_config:
-        _apply_removals(modified_config, mode_config['remove'])
-    
-    # Apply overrides/additions
-    if 'override' in mode_config:
-        _apply_overrides(modified_config, mode_config['override'])
+
+    resolver = SystemVariantResolver()
+    resolver.resolve(
+        modified_config,
+        {
+            'override': mode_config.get('override', {}),
+            'remove': mode_config.get('remove', {}),
+        },
+    )
     
     return modified_config
 
@@ -241,6 +98,8 @@ class Deployment:
         # entity collection
         system_yaml_list, package_paths, file_package_map = self._get_system_list(deploy_config)
         self.config_registry = ConfigRegistry(system_yaml_list, package_paths, file_package_map)
+        deployment_file_abs = str(Path(deploy_config.deployment_file).resolve())
+        self.config_registry.deployment_package_name = file_package_map.get(deployment_file_abs)
 
         # detect mode of input file (deployment vs system only)
         logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)
@@ -314,8 +173,9 @@ class Deployment:
                     )
                     continue
                 if not isinstance(files, list):
+                    manifest_src = SourceLocation(file_path=Path(manifest_file))
                     logger.warning(
-                        f"Manifest '{entry}' has unexpected type for deploy_config_files: {type(files)}; skipping."
+                        f"Manifest '{entry}' has unexpected type for deploy_config_files: {type(files)}; skipping.{format_source(manifest_src)}"
                     )
                     continue
                 for f in files:
@@ -327,7 +187,8 @@ class Deployment:
                         file_package_map[file_path] = manifest_yaml['package_name']
 
             except Exception as e:
-                logger.warning(f"Failed to load manifest {manifest_file}: {e}")
+                manifest_src = SourceLocation(file_path=Path(manifest_file))
+                logger.warning(f"Failed to load manifest {manifest_file}: {e}{format_source(manifest_src)}")
         if not system_list:
             raise ValidationError(f"No system design configuration files collected.")
         return system_list, package_paths, file_package_map
@@ -416,7 +277,22 @@ class Deployment:
                 self.system_structure_snapshots[mode_key] = snapshot_store
                 # try to visualize the system to show error status
                 self.visualize()
-                raise DeploymentError(f"Error in setting deploy for mode '{mode_name}': {e}")
+                details = []
+                if mode_key == default_mode:
+                    details.append("default")
+                system_path = getattr(system_config, "file_path", None)
+                if system_path:
+                    details.append(f"system= {system_path} ")
+                details_str = f" ({', '.join(details)})" if details else ""
+
+                hint = (
+                    "Hint: top-level 'connections' apply to all modes; "
+                    "use '<Mode>.override.connections' or '<Mode>.remove.connections' for mode-specific wiring."
+                )
+
+                raise DeploymentError(
+                    f"Error while building deploy for mode '{mode_key}'{details_str}: {e}\n{hint}"
+                ) from e
 
     def visualize(self):
         # Collect data from all deployment instances

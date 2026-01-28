@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from ..exceptions import ValidationError
 from ..models.parameters import ParameterType
 from ..parsers.data_parser import entity_name_decode
+from ..utils.source_location import source_from_config, format_source
 
 if TYPE_CHECKING:
     from .config_registry import ConfigRegistry
@@ -57,15 +58,30 @@ def apply_parameter_set(
             # If local_variables exist and we have a resolver, create a scoped resolver
             if cfg_param_set.local_variables and resolver_to_use:
                 resolver_to_use = resolver_to_use.copy()
-                # Resolve local variables (updating the scoped resolver's map)
-                resolver_to_use.resolve_parameters(cfg_param_set.local_variables)
+                # Resolve local variables (updating the scoped resolver's map) with source context
+                resolved_local_vars = []
+                for lv_idx, lv in enumerate(cfg_param_set.local_variables):
+                    if not isinstance(lv, dict):
+                        continue
+                    resolved_lv = lv.copy()
+                    lv_source = source_from_config(cfg_param_set, f"/local_variables/{lv_idx}")
+                    if 'value' in resolved_lv:
+                        resolved_lv['value'] = resolver_to_use.resolve_parameter_value(
+                            resolved_lv['value'], source=lv_source
+                        )
+                        if 'name' in resolved_lv:
+                            resolver_to_use.variable_map[resolved_lv['name']] = str(resolved_lv['value'])
+                    resolved_local_vars.append(resolved_lv)
+                # Keep for any downstream logic expecting resolved list
+                cfg_param_set.local_variables = resolved_local_vars
                 logger.debug(
                     f"Created scoped resolver for '{param_set_name}' with {len(cfg_param_set.local_variables)} local variables"
                 )
 
-            for param_config in node_params:
+            for node_idx, param_config in enumerate(node_params):
                 if isinstance(param_config, dict) and "node" in param_config:
                     node_namespace = param_config.get("node")
+                    node_source = source_from_config(cfg_param_set, f"/parameters/{node_idx}/node")
 
                     # Only apply if the target node is under this component's namespace
                     if (
@@ -81,32 +97,57 @@ def apply_parameter_set(
                     parameter_files_raw = param_config.get("parameter_files", [])
                     parameters = param_config.get("parameters", [])
 
-                    # Resolve ROS substitutions if resolver is available
-                    if resolver_to_use:
-                        parameter_files_raw = resolver_to_use.resolve_parameter_files(
-                            parameter_files_raw
-                        )
-                        parameters = resolver_to_use.resolve_parameters(parameters)
-
-                    # Validate parameter_files format (should be list of dicts)
+                    # Resolve + validate parameter_files with per-entry source context
                     parameter_files = []
+                    parameter_file_sources = []
                     if parameter_files_raw:
-                        for pf in parameter_files_raw:
-                            if isinstance(pf, dict):
-                                parameter_files.append(pf)
-                            else:
+                        for pf_idx, pf in enumerate(parameter_files_raw):
+                            if not isinstance(pf, dict):
                                 logger.warning(
-                                    f"Invalid parameter_files format in parameter set '{param_set_name}': {pf}"
+                                    f"Invalid parameter_files format in parameter set '{param_set_name}': {pf}{format_source(node_source)}"
                                 )
+                                continue
+                            pf_source = source_from_config(cfg_param_set, f"/parameters/{node_idx}/parameter_files/{pf_idx}")
+                            resolved_mapping = {}
+                            for param_name, file_path in pf.items():
+                                if resolver_to_use:
+                                    resolved_mapping[param_name] = resolver_to_use.resolve_parameter_file_path(
+                                        file_path, source=pf_source
+                                    )
+                                else:
+                                    resolved_mapping[param_name] = file_path
+                            parameter_files.append(resolved_mapping)
+                            parameter_file_sources.append(pf_source)
+
+                    # Resolve parameters with per-entry source context
+                    resolved_parameters = []
+                    parameter_sources = []
+                    if parameters:
+                        for p_idx, p in enumerate(parameters):
+                            if not isinstance(p, dict):
+                                continue
+                            p_source = source_from_config(cfg_param_set, f"/parameters/{node_idx}/parameters/{p_idx}")
+                            resolved_p = p.copy()
+                            if resolver_to_use and 'value' in resolved_p:
+                                resolved_p['value'] = resolver_to_use.resolve_parameter_value(
+                                    resolved_p['value'], source=p_source
+                                )
+                            if resolver_to_use and 'name' in resolved_p and 'value' in resolved_p:
+                                resolver_to_use.variable_map[resolved_p['name']] = str(resolved_p['value'])
+                            resolved_parameters.append(resolved_p)
+                            parameter_sources.append(p_source)
 
                     # Apply parameters directly to the target node
                     target_instance.parameter_manager.apply_node_parameters(
                         node_namespace,
                         parameter_files,
-                        parameters,
+                        resolved_parameters,
                         config_registry,
                         file_parameter_type=file_parameter_type,
                         direct_parameter_type=direct_parameter_type,
+                        source=node_source,
+                        parameter_file_sources=parameter_file_sources,
+                        parameter_sources=parameter_sources,
                     )
                     logger.debug(
                         f"Applied parameters to node '{node_namespace}' from set '{param_set_name}' files={len(parameter_files)} configs={len(parameters)}"

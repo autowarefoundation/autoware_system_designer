@@ -5,6 +5,7 @@ name: Tracker.node
 launch:
   package: autoware_perception_dummy_nodes
   plugin: autoware::perception_dummy_nodes::Tracker
+  executable: tracker_node
 
 # interfaces
 inputs:

@@ -14,6 +14,7 @@
 
 from typing import List, Dict, Optional, Type, Callable, Any
 import logging
+from pathlib import Path
 
 import copy
 from ..parsers.data_parser import ConfigParser
@@ -22,6 +23,7 @@ from ..exceptions import ValidationError, NodeConfigurationError, ModuleConfigur
 from ..resolvers.variant_resolver import SystemVariantResolver, NodeVariantResolver, ModuleVariantResolver, VariantResolver
 
 from ..parsers.data_validator import entity_name_decode
+from ..utils.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,10 @@ class ConfigRegistry:
         }
         self.package_paths = package_paths or {}
         self.file_package_map = file_package_map or {}
+        self._package_source_paths: Dict[str, Optional[str]] = {}
+        # Name of the package currently being built/exported (deployment package).
+        # When set, build-time source fallbacks should be restricted to this package only.
+        self.deployment_package_name: Optional[str] = None
         
         self.parser = ConfigParser()
         self._load_entities(config_yaml_file_paths)
@@ -57,7 +63,7 @@ class ConfigRegistry:
                 
                 # Check for duplicates
                 if entity_data.full_name in self.entities:
-                    existing = self.entities[entity_data.name]
+                    existing = self.entities[entity_data.full_name]
                     raise ValidationError(
                         f"Duplicate entity '{entity_data.full_name}' found:\n"
                         f"  New: {entity_data.file_path}\n"
@@ -69,7 +75,8 @@ class ConfigRegistry:
                 self._type_map[entity_data.entity_type][entity_data.name] = entity_data
                 
             except Exception as e:
-                logger.error(f"Failed to load entity from {file_path}: {e}")
+                src = SourceLocation(file_path=Path(file_path))
+                logger.error(f"Failed to load entity from {file_path}: {e}{format_source(src)}")
                 raise
     
     def get(self, name: str, default=None) -> Optional[Config]:
@@ -189,3 +196,35 @@ class ConfigRegistry:
     def get_package_path(self, package_name: str) -> Optional[str]:
         """Get package path by package name."""
         return self.package_paths.get(package_name)
+
+    def get_package_source_path(self, package_name: str) -> Optional[str]:
+        """Best-effort lookup of a package's *source* directory.
+
+        This is intentionally independent from the install/share path stored in package_paths.
+        It is used to avoid false negatives during build-time checks, where install/share may
+        not yet contain installed resources (e.g., config/*.yaml).
+        """
+        if not package_name:
+            return None
+        if package_name in self._package_source_paths:
+            return self._package_source_paths[package_name]
+
+        # Find any design/config yaml that belongs to this package, then walk up to package.xml.
+        for file_path, pkg in self.file_package_map.items():
+            if pkg != package_name:
+                continue
+            try:
+                current = Path(file_path).resolve().parent
+                while True:
+                    if (current / "package.xml").exists():
+                        self._package_source_paths[package_name] = str(current)
+                        return self._package_source_paths[package_name]
+                    if current.parent == current:
+                        break
+                    current = current.parent
+            except Exception:
+                continue
+
+        # Cache negative result to avoid repeated scans.
+        self._package_source_paths[package_name] = None
+        return None

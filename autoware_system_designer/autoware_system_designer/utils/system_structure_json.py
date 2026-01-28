@@ -2,7 +2,10 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Tuple
+
+from ..utils.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +62,8 @@ def save_system_structure(output_path: str, payload: Dict[str, Any]) -> None:
             json.dump(payload, f, indent=2, ensure_ascii=True)
         logger.info(f"Saved system structure JSON: {output_path}")
     except Exception as e:
-        logger.error(f"Failed to save system structure JSON: {output_path}: {e}")
+        src = SourceLocation(file_path=Path(output_path))
+        logger.error(f"Failed to save system structure JSON: {output_path}: {e}{format_source(src)}")
         raise
 
 
@@ -69,7 +73,8 @@ def load_system_structure(input_path: str) -> Dict[str, Any]:
         with open(input_path, "r") as f:
             return json.load(f)
     except Exception as e:
-        logger.error(f"Failed to load system structure JSON: {input_path}: {e}")
+        src = SourceLocation(file_path=Path(input_path))
+        logger.error(f"Failed to load system structure JSON: {input_path}: {e}{format_source(src)}")
         raise
 
 

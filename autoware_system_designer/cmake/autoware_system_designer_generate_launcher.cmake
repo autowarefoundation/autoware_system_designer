@@ -19,6 +19,7 @@ macro(autoware_system_designer_generate_launcher)
   if(EXISTS ${DESIGN_DIR})
     # Set up paths - use absolute path to the script
     set(GENERATE_LAUNCHER_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/generate_node_launcher.py")
+    set(TEE_RUN_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/tee_run.py")
     set(LAUNCHER_FILE_DIR "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/launcher/")
     
     # Set up logging
@@ -46,9 +47,9 @@ macro(autoware_system_designer_generate_launcher)
           OUTPUT ${LAUNCHER_FILE}
           COMMAND ${CMAKE_COMMAND} -E make_directory ${LAUNCHER_FILE_DIR}
           COMMAND ${CMAKE_COMMAND} -E make_directory ${LOG_DIR}
-          COMMAND python3 ${GENERATE_LAUNCHER_PY_SCRIPT} ${NODE_YAML_FILE} ${LAUNCHER_FILE_DIR} >> ${LOG_FILE} 2>&1
-          DEPENDS ${NODE_YAML_FILE} ${GENERATE_LAUNCHER_PY_SCRIPT}
-          COMMENT "Generating launcher file ${NODE_NAME}.launch.xml. Check log: ${LOG_FILE}"
+          COMMAND python3 ${TEE_RUN_SCRIPT} --log-file ${LOG_FILE} --append -- python3 ${GENERATE_LAUNCHER_PY_SCRIPT} ${NODE_YAML_FILE} ${LAUNCHER_FILE_DIR}
+          DEPENDS ${NODE_YAML_FILE} ${GENERATE_LAUNCHER_PY_SCRIPT} ${TEE_RUN_SCRIPT}
+          COMMENT "Generating launcher file ${NODE_NAME}.launch.xml. Terminal shows warnings/errors; full log: ${LOG_FILE}"
           VERBATIM
         )
       endforeach()

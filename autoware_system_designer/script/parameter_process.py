@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
+from autoware_system_designer.utils.logging_utils import configure_split_stream_logging
+
 
 class CustomDumper(yaml.SafeDumper):
     """Custom YAML dumper to handle list formatting and line breaks."""
@@ -222,8 +224,9 @@ class SchemaToRosParamConverter:
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    configure_split_stream_logging(
+        level=logging.INFO,
+        formatter=logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"),
     )
     
     parser = argparse.ArgumentParser(
@@ -242,19 +245,21 @@ def main() -> None:
     schema_dir = Path(args.schema_dir)
     output_dir = Path(args.output_dir)
 
+    logger = logging.getLogger(__name__)
+
     if not schema_dir.exists():
-        logging.error(f"Schema directory does not exist: {schema_dir}")
+        logger.error(f"Schema directory does not exist: {schema_dir}")
         sys.exit(1)
 
     schema_files = list(schema_dir.glob("*.schema.json"))
 
     if not schema_files:
-        logging.error(f"No schema files found in: {schema_dir}")
+        logger.error(f"No schema files found in: {schema_dir}")
         sys.exit(1)
 
-    logging.info(f"Found {len(schema_files)} schema file(s)")
+    logger.info(f"Found {len(schema_files)} schema file(s)")
     if args.package_name:
-        logging.info(f"Using package name: {args.package_name}")
+        logger.info(f"Using package name: {args.package_name}")
 
     success_count = 0
     for schema_file in schema_files:
@@ -264,7 +269,7 @@ def main() -> None:
         if converter.process():
             success_count += 1
 
-    logging.info(
+    logger.info(
         f"Successfully processed {success_count}/{len(schema_files)} schema files"
     )
 

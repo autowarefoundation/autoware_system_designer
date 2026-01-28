@@ -33,7 +33,8 @@ ament_package(
 )
 
 # Copy the script to the build directory
-file(GLOB_RECURSE SCRIPT_FILES ${CMAKE_SOURCE_DIR}/script/*.py)
+# Reconfigure when scripts change so build/*/script stays up-to-date.
+file(GLOB_RECURSE SCRIPT_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/script/*.py)
 
 foreach(SCRIPT_FILE ${SCRIPT_FILES})
   get_filename_component(SCRIPT_FILE_NAME ${SCRIPT_FILE} NAME)

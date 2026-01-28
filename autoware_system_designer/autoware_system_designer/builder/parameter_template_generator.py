@@ -16,8 +16,10 @@ import logging
 from typing import TYPE_CHECKING, List, Dict, Any, Optional
 import os
 import shutil
+from pathlib import Path
 
 from ..models.parameters import ParameterType
+from ..utils.source_location import SourceLocation, format_source
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -354,4 +356,5 @@ class ParameterTemplateGenerator:
             logger.info(f"Created empty config file: {dest_path}")
             
         except Exception as e:
-            logger.error(f"Failed to create empty config file {dest_path}: {e}")
+            src = SourceLocation(file_path=Path(dest_path))
+            logger.error(f"Failed to create empty config file {dest_path}: {e}{format_source(src)}")

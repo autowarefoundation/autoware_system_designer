@@ -20,6 +20,7 @@ from ..parsers.yaml_parser import yaml_parser
 from .data_validator import ValidatorFactory, entity_name_decode
 from ..models.config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigType, ConfigSubType
 from ..exceptions import ValidationError
+from ..utils.source_location import SourceLocation, lookup_source, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +38,25 @@ class ConfigParser:
         # file/path/to/<entity_name>.<entity_type>.yaml
         file_entity_name, file_entity_type = entity_name_decode(file_path.stem)
 
-        # Load configuration
-        config = self._load_config(file_path)
+        # Load configuration (+ source map for better diagnostics)
+        config, source_map = self._load_config_with_source(file_path)
         
         # Parse entity name and type
         full_name = config.get("name")
         entity_name, entity_type = entity_name_decode(full_name)
 
         if entity_name != file_entity_name:
-            msg = f"Config name '{entity_name}' does not match file name '{file_entity_name}'. File: {file_path}"
+            name_loc = lookup_source(source_map, "/name")
+            name_src = SourceLocation(
+                file_path=file_path,
+                yaml_path=name_loc.yaml_path,
+                line=name_loc.line,
+                column=name_loc.column,
+            )
+            msg = (
+                f"Config name '{entity_name}' does not match file name '{file_entity_name}'."
+                f"{format_source(name_src)}"
+            )
             if self.strict_mode:
                 raise ValidationError(msg)
             else:
@@ -56,7 +67,7 @@ class ConfigParser:
         validator.validate_all(config, entity_type, file_entity_type, str(file_path))
         
         # Create appropriate data structure
-        return self._create_entity_data(entity_name, full_name, entity_type, config, file_path)
+        return self._create_entity_data(entity_name, full_name, entity_type, config, file_path, source_map)
     
     def parse_entity_from_content(self, content: str, config_yaml_path: str) -> Config:
         """Parse an entity configuration from string content."""
@@ -65,11 +76,11 @@ class ConfigParser:
         # file/path/to/<entity_name>.<entity_type>.yaml
         file_entity_name, file_entity_type = entity_name_decode(file_path.stem)
 
-        # Load configuration from string
+        # Load configuration from string (+ source map for better diagnostics)
         try:
-            config = yaml_parser.load_config_from_string(content)
+            config, source_map = yaml_parser.load_config_from_string_with_source(content)
         except Exception as e:
-            logger.error(f"Failed to parse content: {e}")
+            logger.error(f"Failed to parse content for {file_path}: {e}")
             raise ValidationError(f"Error parsing YAML content: {e}")
         
         # Parse entity name and type
@@ -83,7 +94,17 @@ class ConfigParser:
             entity_name, entity_type = entity_name_decode(full_name)
 
         if full_name and entity_name != file_entity_name:
-            msg = f"Config name '{entity_name}' does not match file name '{file_entity_name}'. File: {file_path}"
+            name_loc = lookup_source(source_map, "/name")
+            name_src = SourceLocation(
+                file_path=file_path,
+                yaml_path=name_loc.yaml_path,
+                line=name_loc.line,
+                column=name_loc.column,
+            )
+            msg = (
+                f"Config name '{entity_name}' does not match file name '{file_entity_name}'."
+                f"{format_source(name_src)}"
+            )
             if self.strict_mode:
                 raise ValidationError(msg)
             else:
@@ -97,25 +118,34 @@ class ConfigParser:
             validator.validate_all(config, entity_type, file_entity_type, str(file_path))
         
         # Create appropriate data structure
-        return self._create_entity_data(entity_name, full_name or f"{entity_name}.{entity_type}", entity_type, config, file_path)
+        return self._create_entity_data(
+            entity_name,
+            full_name or f"{entity_name}.{entity_type}",
+            entity_type,
+            config,
+            file_path,
+            source_map,
+        )
     
-    def _load_config(self, file_path: Path) -> Dict[str, Any]:
-        """Load YAML configuration file."""
+    def _load_config_with_source(self, file_path: Path) -> tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
+        """Load YAML configuration file and return (config, source_map)."""
         try:
-            return yaml_parser.load_config(str(file_path))
+            return yaml_parser.load_config_with_source(str(file_path))
         except Exception as e:
             logger.error(f"Failed to load config from {file_path}: {e}")
             raise ValidationError(f"Error parsing YAML file {file_path}: {e}")
 
     def _create_entity_data(self, entity_name: str, full_name: str, entity_type: str, 
-                           config: Dict[str, Any], file_path: Path) -> Config:
+                           config: Dict[str, Any], file_path: Path,
+                           source_map: Dict[str, Dict[str, int]] | None = None) -> Config:
         """Create appropriate data structure based on entity type."""
         base_data = {
             'name': entity_name,
             'full_name': full_name,
             'entity_type': entity_type,
             'config': config,
-            'file_path': file_path
+            'file_path': file_path,
+            'source_map': source_map,
         }
         
         if entity_type == ConfigType.NODE:

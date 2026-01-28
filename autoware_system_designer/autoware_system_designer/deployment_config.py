@@ -18,13 +18,15 @@ import os
 import logging
 from dataclasses import dataclass
 
+from autoware_system_designer.utils.logging_utils import configure_split_stream_logging
+
 
 @dataclass
 class DeploymentConfig:
     """Configuration class for the autoware system deployment."""
-    debug_mode: bool = False
     layer_limit: int = 50
     log_level: str = "INFO"
+    print_level: str = "ERROR"
     cache_enabled: bool = False
     max_cache_size: int = 128
 
@@ -37,29 +39,22 @@ class DeploymentConfig:
     def from_env(cls) -> 'DeploymentConfig':
         """Create configuration from environment variables."""
         return cls(
-            debug_mode=os.getenv('autoware_system_designer_DEBUG', 'false').lower() == 'true',
             layer_limit=int(os.getenv('autoware_system_designer_LAYER_LIMIT', '50')),
             log_level=os.getenv('autoware_system_designer_LOG_LEVEL', 'INFO'),
+            print_level=os.getenv('autoware_system_designer_PRINT_LEVEL', 'ERROR'),
             cache_enabled=os.getenv('autoware_system_designer_CACHE_ENABLED', 'true').lower() == 'true',
             max_cache_size=int(os.getenv('autoware_system_designer_MAX_CACHE_SIZE', '128'))
         )
 
     def set_logging(self) -> logging.Logger:
         """Setup logging based on configuration."""
-        logger = logging.getLogger('autoware_system_designer')
-        # Clear existing handlers
-        logger.handlers.clear()
-        # Create handler
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        # Set level
         level = getattr(logging, self.log_level.upper(), logging.INFO)
-        if self.debug_mode:
-            level = logging.DEBUG
-        logger.setLevel(level)
-        return logger
+        stderr_level = getattr(logging, self.print_level.upper(), logging.ERROR)
+
+        formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+        configure_split_stream_logging(level=level, stderr_level=stderr_level, formatter=formatter)
+
+        return logging.getLogger('autoware_system_designer')
 
 
 # Global configuration instance

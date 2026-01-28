@@ -21,6 +21,7 @@ import re
 from ..models.parameters import ParameterList, ParameterFileList, Parameter, ParameterFile, ParameterType
 from ..parsers.yaml_parser import yaml_parser
 from ..exceptions import ParameterConfigurationError, ValidationError
+from ..utils.source_location import SourceLocation, source_from_config, format_source
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -47,12 +48,13 @@ class ParameterManager:
         self.input_topic_pattern = re.compile(r'\$\{input\s+([^}]+)\}')
         self.output_topic_pattern = re.compile(r'\$\{output\s+([^}]+)\}')
         self.parameter_pattern = re.compile(r'\$\{parameter\s+([^}]+)\}')
+        self._substitution_source_context: Optional[SourceLocation] = None
 
     # =========================================================================
     # Public API Methods
     # =========================================================================
 
-    def resolve_substitutions(self, input_string: str) -> str:
+    def resolve_substitutions(self, input_string: str, source: Optional[SourceLocation] = None) -> str:
         """Resolve all substitutions in a string.
         
         Handles:
@@ -64,22 +66,27 @@ class ParameterManager:
         if not input_string or not isinstance(input_string, str):
             return input_string
 
-        resolved_value = input_string
-        
-        # 1. Resolve ${input ...}
-        resolved_value = self._resolve_input_topic_string(resolved_value)
-        
-        # 2. Resolve ${output ...}
-        resolved_value = self._resolve_output_topic_string(resolved_value)
-        
-        # 3. Resolve ${parameter ...}
-        resolved_value = self._resolve_parameter_string(resolved_value)
+        prev_ctx = self._substitution_source_context
+        self._substitution_source_context = source
+        try:
+            resolved_value = input_string
 
-        # 4. Resolve global/env vars if resolver exists
-        if self.parameter_resolver:
-            resolved_value = self.parameter_resolver.resolve_string(resolved_value)
+            # 1. Resolve ${input ...}
+            resolved_value = self._resolve_input_topic_string(resolved_value)
 
-        return resolved_value
+            # 2. Resolve ${output ...}
+            resolved_value = self._resolve_output_topic_string(resolved_value)
+
+            # 3. Resolve ${parameter ...}
+            resolved_value = self._resolve_parameter_string(resolved_value)
+
+            # 4. Resolve global/env vars if resolver exists
+            if self.parameter_resolver:
+                resolved_value = self.parameter_resolver.resolve_string(resolved_value, source=source)
+
+            return resolved_value
+        finally:
+            self._substitution_source_context = prev_ctx
 
     def get_all_parameters(self):
         """Get all parameters."""
@@ -142,14 +149,14 @@ class ParameterManager:
         # Resolve all parameter values
         for param in self.parameters.list:
             if param.value is not None and isinstance(param.value, str):
-                resolved_value = self.resolve_substitutions(param.value)
+                resolved_value = self.resolve_substitutions(param.value, source=getattr(param, "source", None))
                 if resolved_value != param.value:
                     param.value = resolved_value
 
         # Resolve all parameter file paths
         for param_file in self.parameter_files.list:
             if param_file.path and isinstance(param_file.path, str):
-                resolved_path = self.resolve_substitutions(param_file.path)
+                resolved_path = self.resolve_substitutions(param_file.path, source=getattr(param_file, "source", None))
                 
                 if resolved_path != param_file.path:
                     param_file.path = resolved_path
@@ -171,7 +178,9 @@ class ParameterManager:
             else:
                 return "none"
         except ValidationError:
-            logger.warning(f"Input port not found for substitution: {port_name} in {self.instance.name}")
+            logger.warning(
+                f"Input port not found for substitution: {port_name} in {self.instance.name}{format_source(self._substitution_source_context)}"
+            )
             return match.group(0)  # Return original if not found
 
     def _resolve_output_topic_string(self, input_string: str) -> str:
@@ -191,7 +200,9 @@ class ParameterManager:
             else:
                 return "none"
         except ValidationError:
-            logger.warning(f"Output port not found for substitution: {port_name} in {self.instance.name}")
+            logger.warning(
+                f"Output port not found for substitution: {port_name} in {self.instance.name}{format_source(self._substitution_source_context)}"
+            )
             return match.group(0)  # Return original if not found
 
     def _resolve_parameter_string(self, input_string: str) -> str:
@@ -210,7 +221,9 @@ class ParameterManager:
         if param_value is not None:
             return str(param_value)
         else:
-            logger.warning(f"Parameter not found for substitution: {param_name} in {self.instance.name}")
+            logger.warning(
+                f"Parameter not found for substitution: {param_name} in {self.instance.name}{format_source(self._substitution_source_context)}"
+            )
             return match.group(0)  # Return original if not found
 
     def _get_package_name(self) -> Optional[str]:
@@ -299,9 +312,18 @@ class ParameterManager:
     # Parameter Application (from parameter sets)
     # =========================================================================
     
-    def apply_node_parameters(self, node_namespace: str, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
-                              file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
-                              direct_parameter_type: ParameterType = ParameterType.OVERRIDE):
+    def apply_node_parameters(
+        self,
+        node_namespace: str,
+        parameter_files: list,
+        parameters: list,
+        config_registry: Optional['ConfigRegistry'] = None,
+        file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
+        direct_parameter_type: ParameterType = ParameterType.OVERRIDE,
+        source: Optional[SourceLocation] = None,
+        parameter_file_sources: Optional[List[SourceLocation]] = None,
+        parameter_sources: Optional[List[SourceLocation]] = None,
+    ):
         """Apply parameters directly to a target node using new parameter set format.
         
         This method finds a node by its absolute namespace and applies both parameter_files 
@@ -325,12 +347,21 @@ class ParameterManager:
 
         target_instances = self.find_matching_nodes(node_namespace)
         if not target_instances:
-            logger.warning(f"Target node not found: {node_namespace}")
+            logger.warning(f"Target node not found: {node_namespace}{format_source(source)}")
             return
             
         for target_instance in target_instances:
             logger.info(f"Applying parameters to node: {node_namespace} (instance: {target_instance.name})")
-            self._apply_parameters_to_instance(target_instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+            self._apply_parameters_to_instance(
+                target_instance,
+                parameter_files,
+                parameters,
+                config_registry,
+                file_parameter_type,
+                direct_parameter_type,
+                parameter_file_sources=parameter_file_sources,
+                parameter_sources=parameter_sources,
+            )
 
     def apply_parameters_to_all_nodes(self, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
                                       file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
@@ -361,25 +392,38 @@ class ParameterManager:
         for child in instance.children.values():
             self._apply_parameters_recursive(child, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
 
-    def _apply_parameters_to_instance(self, target_instance, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
-                                      file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
-                                      direct_parameter_type: ParameterType = ParameterType.OVERRIDE):
+    def _apply_parameters_to_instance(
+        self,
+        target_instance,
+        parameter_files: list,
+        parameters: list,
+        config_registry: Optional['ConfigRegistry'] = None,
+        file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
+        direct_parameter_type: ParameterType = ParameterType.OVERRIDE,
+        *,
+        parameter_file_sources: Optional[List[SourceLocation]] = None,
+        parameter_sources: Optional[List[SourceLocation]] = None,
+    ):
         """Apply parameters directly to a target instance object."""
             
         # Apply parameter files first (as overrides, not defaults)
         if parameter_files:
-            for param_file_mapping in parameter_files:
+            for idx, param_file_mapping in enumerate(parameter_files):
+                pf_source = None
+                if parameter_file_sources and idx < len(parameter_file_sources):
+                    pf_source = parameter_file_sources[idx]
                 for param_name, param_path in param_file_mapping.items():
                     # Resolve parameter file path if resolver is available
                     if self.parameter_resolver:
-                        param_path = self.parameter_resolver.resolve_parameter_file_path(param_path)
+                        param_path = self.parameter_resolver.resolve_parameter_file_path(param_path, source=pf_source)
 
                     target_instance.parameter_manager.parameter_files.add_parameter_file(
                         param_name,
                         param_path,
                         allow_substs=True,
                         is_override=True,  # Parameter set parameter files are overrides
-                        parameter_type=file_parameter_type
+                        parameter_type=file_parameter_type,
+                        source=pf_source,
                     )
 
                     # Load parameters from this file for visualization
@@ -387,26 +431,31 @@ class ParameterManager:
                         param_path,
                         is_override=True,
                         config_registry=config_registry,
-                        parameter_type=file_parameter_type
+                        parameter_type=file_parameter_type,
+                        source=pf_source,
                     )
         
         # Apply parameters (these override parameter files)
         if parameters:
-            for param in parameters:
+            for idx, param in enumerate(parameters):
+                p_source = None
+                if parameter_sources and idx < len(parameter_sources):
+                    p_source = parameter_sources[idx]
                 param_name = param.get("name")
                 param_type = param.get("type", "string")
                 param_value = param.get("value")
 
                 # Resolve parameter value if resolver is available
                 if self.parameter_resolver:
-                    param_value = self.parameter_resolver.resolve_parameter_value(param_value)
+                    param_value = self.parameter_resolver.resolve_parameter_value(param_value, source=p_source)
 
                 target_instance.parameter_manager.parameters.set_parameter(
                     param_name,
                     param_value,
                     data_type=param_type,
                     allow_substs=True,
-                    parameter_type=direct_parameter_type  # Parameter set overrides
+                    parameter_type=direct_parameter_type,  # Parameter set overrides
+                    source=p_source,
                 )
 
     # =========================================================================
@@ -460,17 +509,19 @@ class ParameterManager:
         
         # 1. Set default parameter_files from node configuration
         if hasattr(self.instance.configuration, 'parameter_files') and self.instance.configuration.parameter_files:
-            for cfg_param in self.instance.configuration.parameter_files:
+            for idx, cfg_param in enumerate(self.instance.configuration.parameter_files):
                 param_name = cfg_param.get("name")
                 param_value = cfg_param.get("value", cfg_param.get("default"))
                 # param_schema = cfg_param.get("schema")
+
+                cfg_source = source_from_config(self.instance.configuration, f"/parameter_files/{idx}")
 
                 if param_name is None or param_value is None:
                     raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, parameter_files: {self.instance.configuration.parameter_files}")
 
                 # Resolve parameter file path if resolver is available
                 if self.parameter_resolver:
-                    param_value = self.parameter_resolver.resolve_parameter_file_path(param_value)
+                    param_value = self.parameter_resolver.resolve_parameter_file_path(param_value, source=cfg_source)
 
                 # Add to parameter_files list
                 self.parameter_files.add_parameter_file(
@@ -478,7 +529,8 @@ class ParameterManager:
                     param_value,
                     allow_substs=True,
                     is_override=False,
-                    parameter_type=ParameterType.DEFAULT_FILE
+                    parameter_type=ParameterType.DEFAULT_FILE,
+                    source=cfg_source,
                 )
 
                 # Load individual parameters from this file
@@ -486,22 +538,25 @@ class ParameterManager:
                     param_value,
                     package_name=package_name,
                     is_override=False,  # Node configuration parameter files are defaults
-                    config_registry=config_registry
+                    config_registry=config_registry,
+                    source=cfg_source,
                 )
         
         # 2. Set default parameters from node parameters
         if hasattr(self.instance.configuration, 'parameters') and self.instance.configuration.parameters:
-            for cfg_param in self.instance.configuration.parameters:
+            for idx, cfg_param in enumerate(self.instance.configuration.parameters):
                 param_name = cfg_param.get("name")
                 param_value = cfg_param.get("value", cfg_param.get("default"))
                 param_type = cfg_param.get("type", "string")
+
+                cfg_source = source_from_config(self.instance.configuration, f"/parameters/{idx}")
 
                 if param_name is None or param_value is None:
                     raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, parameter_files: {self.instance.configuration.parameter_files}")
 
                 # Resolve parameter value if resolver is available
                 if self.parameter_resolver:
-                    param_value = self.parameter_resolver.resolve_parameter_value(param_value)
+                    param_value = self.parameter_resolver.resolve_parameter_value(param_value, source=cfg_source)
 
                 # Only set if a default value is provided
                 if param_value is not None:
@@ -510,7 +565,8 @@ class ParameterManager:
                         param_value,
                         data_type=param_type,
                         allow_substs=True,
-                        parameter_type=ParameterType.DEFAULT  # These are default parameters
+                        parameter_type=ParameterType.DEFAULT,  # These are default parameters
+                        source=cfg_source,
                     )
 
     def _flatten_parameters(self, params: Dict[str, Any], parent_key: str = "", separator: str = ".") -> Dict[str, Any]:
@@ -534,83 +590,144 @@ class ParameterManager:
                 items[new_key] = v
         return items
 
-    def _load_parameters_from_file(self, file_path: str, package_name: Optional[str] = None,
-                                  is_override: bool = True, config_registry: Optional['ConfigRegistry'] = None,
-                                  parameter_type: Optional[ParameterType] = None):
+    def _infer_package_from_share_path(self, absolute_path: str) -> Optional[str]:
+        if not absolute_path or not os.path.isabs(absolute_path):
+            return None
+        parts = absolute_path.split(os.sep)
+        if "share" not in parts:
+            return None
+        # Pick the last 'share/<pkg>/' segment (works for merged and isolated installs).
+        share_idx = len(parts) - 1 - parts[::-1].index("share")
+        if share_idx + 1 >= len(parts):
+            return None
+        return parts[share_idx + 1]
+
+    def _resolve_existing_parameter_file_path(
+        self,
+        file_path: str,
+        package_name: Optional[str],
+        is_override: bool,
+        config_registry: 'ConfigRegistry',
+        source: Optional[SourceLocation],
+    ) -> Optional[str]:
+        """Resolve a parameter file path to an existing absolute path (for visualization/template generation).
+
+        This is used for *loading* parameter YAML contents. It intentionally returns None when the
+        path can't be resolved to an existing absolute file.
+        """
+
+        resolved_path = self._resolve_parameter_file_path(file_path, package_name, is_override, config_registry)
+
+        # Only load when resolved to an absolute filesystem path with no remaining substitutions.
+        if not resolved_path or resolved_path.startswith("$") or not os.path.isabs(resolved_path):
+            logger.debug(
+                f"Skipping parameter file load for {file_path}: Could not resolve to absolute path ({resolved_path})"
+            )
+            return None
+
+        if os.path.exists(resolved_path):
+            return resolved_path
+
+        deployment_pkg = getattr(config_registry, "deployment_package_name", None)
+        if not deployment_pkg:
+            logger.warning(f"Parameter file not found: {resolved_path}{format_source(source)}")
+            return None
+
+        # Build-time fallback (deployment build only): install/share may not be populated yet.
+        inferred_pkg = package_name or self._infer_package_from_share_path(resolved_path)
+        if inferred_pkg != deployment_pkg:
+            logger.warning(f"Parameter file not found: {resolved_path}{format_source(source)}")
+            return None
+
+        if inferred_pkg:
+            marker = os.path.join(os.sep, "share", inferred_pkg, "")
+            idx = resolved_path.find(marker)
+            if idx != -1:
+                rel = resolved_path[idx + len(marker) :]
+                src_pkg = config_registry.get_package_source_path(inferred_pkg)
+                if src_pkg:
+                    candidate = os.path.join(src_pkg, rel)
+                    if os.path.exists(candidate):
+                        return candidate
+
+        logger.warning(f"Parameter file not found: {resolved_path}{format_source(source)}")
+        return None
+
+    def _infer_ros_param_type(self, value: Any) -> str:
+        if isinstance(value, bool):
+            return "bool"
+        if isinstance(value, int):
+            return "int"
+        if isinstance(value, float):
+            return "double"
+        if isinstance(value, list):
+            if len(value) == 0:
+                return "string_array"
+            if isinstance(value[0], bool):
+                return "bool_array"
+            if isinstance(value[0], int):
+                return "int_array"
+            if isinstance(value[0], float):
+                return "double_array"
+            if isinstance(value[0], str):
+                return "string_array"
+            return "string_array"
+        return "string"
+
+    def _load_parameters_from_file(
+        self,
+        file_path: str,
+        package_name: Optional[str] = None,
+        is_override: bool = True,
+        config_registry: Optional['ConfigRegistry'] = None,
+        parameter_type: Optional[ParameterType] = None,
+        source: Optional[SourceLocation] = None,
+    ):
         """Load parameters from a YAML file and add them to the parameter list."""
         if not config_registry:
             logger.debug(f"Skipping parameter file load for {file_path}: No config_registry provided")
             return
 
         try:
-            # Resolve the full path
-            resolved_path = self._resolve_parameter_file_path(file_path, package_name, is_override, config_registry)
-            
-            # Skip if we couldn't resolve to an absolute path or it involves substitutions
-            if not resolved_path or resolved_path.startswith("$") or not os.path.isabs(resolved_path):
-                logger.debug(f"Skipping parameter file load for {file_path}: Could not resolve to absolute path ({resolved_path})")
+            existing_path = self._resolve_existing_parameter_file_path(
+                file_path,
+                package_name,
+                is_override,
+                config_registry,
+                source,
+            )
+            if not existing_path:
                 return
-            
-            if not os.path.exists(resolved_path):
-                logger.warning(f"Parameter file not found: {resolved_path}")
-                return
-                
-            logger.debug(f"Loading parameters from file: {resolved_path}")
-            data = yaml_parser.load_config(resolved_path)
-            
+
+            logger.debug(f"Loading parameters from file: {existing_path}")
+            data = yaml_parser.load_config(existing_path)
             if not data:
                 return
 
-            # Parse ROS 2 parameter file structure
-            # Format:
-            # node_name:
-            #   ros__parameters:
-            #     param_name: value
-            
             node_name = self.instance.name
-            
-            # Find relevant sections
             for key, value in data.items():
-                # Check if key matches node name or wildcard
-                # Simple matching: exact match or /**
-                # Could look into more complex ROS 2 matching rules if needed
-                if key == "/**" or key == f"/{node_name}" or key == node_name:
-                    if "ros__parameters" in value:
-                        # Flatten the nested structure
-                        flattened_params = self._flatten_parameters(value["ros__parameters"])
-                        
-                        for p_name, p_value in flattened_params.items():
-                            # Resolve parameter value if resolver is available
-                            if self.parameter_resolver:
-                                p_value = self.parameter_resolver.resolve_parameter_value(p_value)
+                if key not in ("/**", f"/{node_name}", node_name):
+                    continue
+                ros_params = value.get("ros__parameters") if isinstance(value, dict) else None
+                if not ros_params:
+                    continue
 
-                            # Infer type
-                            p_type = "string"
-                            if isinstance(p_value, bool):
-                                p_type = "bool"
-                            elif isinstance(p_value, int):
-                                p_type = "int"
-                            elif isinstance(p_value, float):
-                                p_type = "double"
-                            elif isinstance(p_value, list):
-                                # arrays
-                                if len(p_value) > 0:
-                                    if isinstance(p_value[0], int): p_type = "int_array"
-                                    elif isinstance(p_value[0], float): p_type = "double_array"
-                                    elif isinstance(p_value[0], str): p_type = "string_array"
-                                    elif isinstance(p_value[0], bool): p_type = "bool_array"
+                flattened_params = self._flatten_parameters(ros_params)
+                effective_type = parameter_type or (
+                    ParameterType.OVERRIDE_FILE if is_override else ParameterType.DEFAULT_FILE
+                )
 
-                            # Use appropriate parameter type based on whether this is from an override file
-                            if parameter_type:
-                                param_type = parameter_type
-                            else:
-                                param_type = ParameterType.OVERRIDE_FILE if is_override else ParameterType.DEFAULT_FILE
-                                
-                            self.parameters.set_parameter(
-                                p_name,
-                                p_value,
-                                data_type=p_type,
-                                parameter_type=param_type
-                            )
+                for p_name, p_value in flattened_params.items():
+                    if self.parameter_resolver:
+                        p_value = self.parameter_resolver.resolve_parameter_value(p_value, source=source)
+                    self.parameters.set_parameter(
+                        p_name,
+                        p_value,
+                        data_type=self._infer_ros_param_type(p_value),
+                        parameter_type=effective_type,
+                        source=source,
+                    )
         except Exception as e:
-            logger.warning(f"Failed to load parameters from file {file_path}: {e}")
+            logger.warning(
+                f"Failed to load parameters from file {file_path}: {e}{format_source(source)}"
+            )

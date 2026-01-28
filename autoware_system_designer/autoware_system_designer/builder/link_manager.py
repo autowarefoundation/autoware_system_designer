@@ -21,6 +21,7 @@ from typing import Any, Dict, List, TYPE_CHECKING
 from ..models.ports import InPort, OutPort
 from ..models.links import Link, Connection, ConnectionType
 from ..exceptions import ValidationError
+from ..utils.source_location import source_from_config, format_source
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -229,9 +230,9 @@ class LinkManager:
     # ------------------------------------------------------------------
     @staticmethod
     def _suggest(target: str, pool: List[str], n: int = 5) -> str:
-        """Return comma list of close matches or '-' if none."""
+        """Return comma list of close matches or a clear placeholder if none."""
         m = difflib.get_close_matches(target, pool, n=n, cutoff=0.6)
-        return ", ".join(m) if m else "-"
+        return ", ".join(m) if m else "(no close matches)"
 
     def _err_external_decl(self, kind: str, name: str, declared: List[str]):
         return (
@@ -248,6 +249,7 @@ class LinkManager:
         return (
             "[E_WILDCARD_EMPTY] No ports matched wildcard patterns. "
             f"From='{connection.from_instance}.{connection.from_port_name}' To='{connection.to_instance}.{connection.to_port_name}'"
+            f"{format_source(getattr(connection, 'source', None))}"
         )
 
     def _err_missing_external_io(self, kind: str, name: str, available: List[str]):
@@ -374,7 +376,11 @@ class LinkManager:
         
         # Validate matched ports
         if not port_pairs:
-            logger.warning(self._err_wildcard_no_matches(connection))
+            msg = self._err_wildcard_no_matches(connection)
+            if self.instance.entity_type in ("module", "system"):
+                raise ValidationError(msg)
+
+            logger.warning(msg)
             return
 
         # Create links for each matched pair
@@ -426,7 +432,10 @@ class LinkManager:
             if conn_signature in seen_connections:
                 conn_str = _format_connection_string(conn)
                 file_path = getattr(self.instance.configuration, 'file_path', 'unknown')
-                raise ValidationError(f"[E_DUPLICATE_CONNECTION] Duplicate connection found: {conn_str} (type={conn.type.name}). At {file_path}")
+                cfg_src = source_from_config(self.instance.configuration, "/connections")
+                raise ValidationError(
+                    f"[E_DUPLICATE_CONNECTION] Duplicate connection found: {conn_str} (type={conn.type.name}). At {file_path}{format_source(cfg_src)}"
+                )
             else:
                 seen_connections[conn_signature] = conn
         
@@ -435,9 +444,16 @@ class LinkManager:
 
     def set_links(self):
         """Set up links based on entity connections."""
-        connection_list: List[Connection] = [Connection(cfg) for cfg in self.instance.configuration.connections]
+        cfg_connections = self.instance.configuration.connections or []
+        connection_list: List[Connection] = []
+        for idx, cfg in enumerate(cfg_connections):
+            src = source_from_config(self.instance.configuration, f"/connections/{idx}")
+            connection_list.append(Connection(cfg, source=src))
         if len(connection_list) == 0:
-            logger.warning(f"Module '{self.instance.name}' has no connections configured, at {self.instance.configuration.file_path}")
+            cfg_src = source_from_config(self.instance.configuration, "/connections")
+            logger.warning(
+                f"Module '{self.instance.name}' has no connections configured{format_source(cfg_src)}"
+            )
             return
         
         # Check for and deduplicate duplicate connections
@@ -501,8 +517,9 @@ class LinkManager:
                             k.split(".")[1] for k in port_list_from.keys() if k.startswith(f"{instance_name}.")
                         ])
                         msg = self._err_missing_internal("output", instance_name, connection.from_port_name, available)
+                    msg = msg + f"; Connection: '{from_key}' -> '{to_key}'" + format_source(getattr(connection, "source", None))
 
-                    if self.instance.entity_type == "module":
+                    if self.instance.entity_type in ("module", "system"):
                         raise ValidationError(msg)
                     logger.warning(msg)
                     continue
@@ -520,8 +537,9 @@ class LinkManager:
                             k.split(".")[1] for k in port_list_to.keys() if k.startswith(f"{instance_name}.")
                         ])
                         msg = self._err_missing_internal("input", instance_name, connection.to_port_name, available)
+                    msg = msg + f"; Connection: '{from_key}' -> '{to_key}'" + format_source(getattr(connection, "source", None))
 
-                    if self.instance.entity_type == "module":
+                    if self.instance.entity_type in ("module", "system"):
                         raise ValidationError(msg)
                     logger.warning(msg)
                     continue

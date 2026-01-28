@@ -46,6 +46,7 @@ class Config:
     entity_type: str
     config: Dict[str, Any]
     file_path: Path
+    source_map: Optional[Dict[str, Dict[str, int]]] = None
     package: Optional[str] = None
     sub_type: Optional[str] = None
     
