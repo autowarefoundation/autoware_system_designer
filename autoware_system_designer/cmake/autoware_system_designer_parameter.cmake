@@ -19,6 +19,7 @@ macro(autoware_system_designer_parameter)
   if(EXISTS ${SCHEMA_DIR})
     # Set up paths - use absolute path to the script
     set(PARAMETER_PROCESS_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/parameter_process.py")
+    set(TEE_RUN_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/tee_run.py")
     set(CONFIG_OUTPUT_DIR "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/config")
     
     # Set up logging
@@ -44,9 +45,9 @@ macro(autoware_system_designer_parameter)
         OUTPUT ${CONFIG_FILES}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${CONFIG_OUTPUT_DIR}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${LOG_DIR}
-        COMMAND python3 ${PARAMETER_PROCESS_SCRIPT} ${SCHEMA_DIR} ${CONFIG_OUTPUT_DIR} --package-name ${PROJECT_NAME} > ${LOG_FILE} 2>&1
-        DEPENDS ${SCHEMA_FILES} ${PARAMETER_PROCESS_SCRIPT}
-        COMMENT "Generating parameter files for ${PROJECT_NAME} from schema files. Check log: ${LOG_FILE}"
+        COMMAND python3 ${TEE_RUN_SCRIPT} --log-file ${LOG_FILE} -- python3 ${PARAMETER_PROCESS_SCRIPT} ${SCHEMA_DIR} ${CONFIG_OUTPUT_DIR} --package-name ${PROJECT_NAME}
+        DEPENDS ${SCHEMA_FILES} ${PARAMETER_PROCESS_SCRIPT} ${TEE_RUN_SCRIPT}
+        COMMENT "Generating parameter files for ${PROJECT_NAME} from schema files. Terminal shows warnings/errors; full log: ${LOG_FILE}"
         VERBATIM
       )
       

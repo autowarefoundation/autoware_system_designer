@@ -20,6 +20,7 @@ import yaml
 import logging
 
 from autoware_system_designer.utils import pascal_to_snake
+from autoware_system_designer.utils.logging_utils import configure_split_stream_logging
 from autoware_system_designer.utils.template_utils import TemplateRenderer
 
 
@@ -98,9 +99,11 @@ def create_node_launcher_xml(node_yaml) -> str:
 
 
 def generate_launcher(node_yaml_dir, launch_file_dir) -> None:
-
+    configure_split_stream_logging(
+        level=logging.INFO,
+        formatter=logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'),
+    )
     logger = logging.getLogger(__name__)
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     # parse the autoware system design format files
     with open(node_yaml_dir, "r") as stream:

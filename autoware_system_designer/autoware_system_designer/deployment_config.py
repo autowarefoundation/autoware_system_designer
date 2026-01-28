@@ -18,6 +18,8 @@ import os
 import logging
 from dataclasses import dataclass
 
+from autoware_system_designer.utils.logging_utils import configure_split_stream_logging
+
 
 @dataclass
 class DeploymentConfig:
@@ -46,20 +48,14 @@ class DeploymentConfig:
 
     def set_logging(self) -> logging.Logger:
         """Setup logging based on configuration."""
-        logger = logging.getLogger('autoware_system_designer')
-        # Clear existing handlers
-        logger.handlers.clear()
-        # Create handler
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        # Set level
         level = getattr(logging, self.log_level.upper(), logging.INFO)
         if self.debug_mode:
             level = logging.DEBUG
-        logger.setLevel(level)
-        return logger
+
+        formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+        configure_split_stream_logging(level=level, formatter=formatter)
+
+        return logging.getLogger('autoware_system_designer')
 
 
 # Global configuration instance
