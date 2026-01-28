@@ -16,6 +16,7 @@
 import os
 import logging
 import copy
+from pathlib import Path
 from typing import Dict, Tuple, List, Any
 from .deployment_config import DeploymentConfig
 from .builder.config_registry import ConfigRegistry
@@ -35,7 +36,7 @@ from .utils.system_structure_json import (
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig
-from .utils.source_location import source_from_config, format_source
+from .utils.source_location import SourceLocation, source_from_config, format_source
 
 logger = logging.getLogger(__name__)
 debug_mode = True
@@ -318,8 +319,9 @@ class Deployment:
                     )
                     continue
                 if not isinstance(files, list):
+                    manifest_src = SourceLocation(file_path=Path(manifest_file))
                     logger.warning(
-                        f"Manifest '{entry}' has unexpected type for deploy_config_files: {type(files)}; skipping."
+                        f"Manifest '{entry}' has unexpected type for deploy_config_files: {type(files)}; skipping.{format_source(manifest_src)}"
                     )
                     continue
                 for f in files:
@@ -331,7 +333,8 @@ class Deployment:
                         file_package_map[file_path] = manifest_yaml['package_name']
 
             except Exception as e:
-                logger.warning(f"Failed to load manifest {manifest_file}: {e}")
+                manifest_src = SourceLocation(file_path=Path(manifest_file))
+                logger.warning(f"Failed to load manifest {manifest_file}: {e}{format_source(manifest_src)}")
         if not system_list:
             raise ValidationError(f"No system design configuration files collected.")
         return system_list, package_paths, file_package_map

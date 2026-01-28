@@ -14,10 +14,12 @@
 
 import os
 import logging
+from pathlib import Path
 from typing import List, Dict, Any
 from .instances import Instance
 from ..utils.template_utils import TemplateRenderer
 from ..utils.system_structure_json import extract_system_structure_data
+from ..utils.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +41,8 @@ def _render_template_to_file(template_name: str, output_file_path: str, template
         logger.info(f"Successfully generated launcher: {output_file_path}")
         
     except Exception as e:
-        logger.error(f"Failed to generate launcher {output_file_path}: {e}")
+        src = SourceLocation(file_path=Path(output_file_path))
+        logger.error(f"Failed to generate launcher {output_file_path}: {e}{format_source(src)}")
         raise
 
 

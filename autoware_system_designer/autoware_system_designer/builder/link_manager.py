@@ -249,6 +249,7 @@ class LinkManager:
         return (
             "[E_WILDCARD_EMPTY] No ports matched wildcard patterns. "
             f"From='{connection.from_instance}.{connection.from_port_name}' To='{connection.to_instance}.{connection.to_port_name}'"
+            f"{format_source(getattr(connection, 'source', None))}"
         )
 
     def _err_missing_external_io(self, kind: str, name: str, available: List[str]):
@@ -427,7 +428,10 @@ class LinkManager:
             if conn_signature in seen_connections:
                 conn_str = _format_connection_string(conn)
                 file_path = getattr(self.instance.configuration, 'file_path', 'unknown')
-                raise ValidationError(f"[E_DUPLICATE_CONNECTION] Duplicate connection found: {conn_str} (type={conn.type.name}). At {file_path}")
+                cfg_src = source_from_config(self.instance.configuration, "/connections")
+                raise ValidationError(
+                    f"[E_DUPLICATE_CONNECTION] Duplicate connection found: {conn_str} (type={conn.type.name}). At {file_path}{format_source(cfg_src)}"
+                )
             else:
                 seen_connections[conn_signature] = conn
         
@@ -442,7 +446,10 @@ class LinkManager:
             src = source_from_config(self.instance.configuration, f"/connections/{idx}")
             connection_list.append(Connection(cfg, source=src))
         if len(connection_list) == 0:
-            logger.warning(f"Module '{self.instance.name}' has no connections configured, at {self.instance.configuration.file_path}")
+            cfg_src = source_from_config(self.instance.configuration, "/connections")
+            logger.warning(
+                f"Module '{self.instance.name}' has no connections configured{format_source(cfg_src)}"
+            )
             return
         
         # Check for and deduplicate duplicate connections

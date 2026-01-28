@@ -34,13 +34,15 @@ class Parameter:
     """Represents a single parameter with its value and metadata."""
     def __init__(self, name: str, value: Any, data_type: str = "string",
                  schema_path: Optional[str] = None, allow_substs: bool = True,
-                 parameter_type: ParameterType = ParameterType.DEFAULT):
+                 parameter_type: ParameterType = ParameterType.DEFAULT,
+                 source: Optional[SourceLocation] = None):
         self.name = name
         self.value = value
         self.data_type = data_type  # string, bool, int, float, etc.
         self.schema_path = schema_path  # path to the schema file if available
         self.allow_substs = allow_substs  # whether to allow substitutions in ROS launch
         self.parameter_type = parameter_type  # Parameter type with priority
+        self.source = source
 
 class ParameterList:
     """Manages a list of parameters with priority-based resolution.
@@ -64,7 +66,8 @@ class ParameterList:
 
     def set_parameter(self, parameter_name, parameter_value, data_type: str = "string",
                      schema_path: Optional[str] = None, allow_substs: bool = True,
-                     parameter_type: ParameterType = ParameterType.DEFAULT):
+                     parameter_type: ParameterType = ParameterType.DEFAULT,
+                     source: Optional[SourceLocation] = None):
         """Set a parameter value.
 
         Higher priority parameters override lower priority ones.
@@ -88,12 +91,14 @@ class ParameterList:
                     parameter.schema_path = schema_path
                     parameter.allow_substs = allow_substs
                     parameter.parameter_type = parameter_type
+                    if source is not None:
+                        parameter.source = source
                 # If lower priority, don't update (higher priority takes precedence)
                 return
 
         # Not found, add new parameter
         self.list.append(Parameter(parameter_name, parameter_value, data_type,
-                                 schema_path, allow_substs, parameter_type))
+                                 schema_path, allow_substs, parameter_type, source))
 
 class ParameterFile:
     """Represents a parameter file reference."""

@@ -21,6 +21,7 @@ from pathlib import Path
 from ..utils.template_utils import TemplateRenderer
 from .visualization_index import get_install_root
 from ..utils.system_structure_json import extract_system_structure_data
+from ..utils.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,8 @@ def _get_static_file_path(filename: str) -> Optional[str]:
     if os.path.exists(local_file):
         return local_file
     
-    logger.warning(f"Static file not found: {filename}")
+    src = SourceLocation(file_path=Path(local_file))
+    logger.warning(f"Static file not found: {filename}{format_source(src)}")
     return None
 
 
@@ -52,7 +54,10 @@ def _copy_static_asset(filename: str, destination_dir: str) -> None:
         shutil.copy2(src, output_path)
         logger.info(f"Copied static asset: {dest_filename}")
     else:
-        logger.error(f"Failed to find static file: {filename}")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        expected_file = os.path.join(current_dir, filename)
+        src = SourceLocation(file_path=Path(expected_file))
+        logger.error(f"Failed to find static file: {filename}{format_source(src)}")
 
 
 def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str) -> None:
@@ -148,4 +153,7 @@ def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_
             shutil.copy2(overview_html_src, output_path)
             logger.info(f"Generated deployment overview: {name}_overview.html")
         else:
-            logger.error("Failed to find deployment_overview.html static file")
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            expected_file = os.path.join(current_dir, "deployment_overview.html")
+            src = SourceLocation(file_path=Path(expected_file))
+            logger.error(f"Failed to find deployment_overview.html static file{format_source(src)}")

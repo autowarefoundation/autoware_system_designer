@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from ..exceptions import ValidationError
 from ..parsers.data_parser import entity_name_decode
 from ..models.parameters import ParameterType
+from ..utils.source_location import source_from_config, format_source
 from .parameter_set_applier import apply_parameter_set
 
 if TYPE_CHECKING:
@@ -174,8 +175,9 @@ def run_module_configuration(instance: "Instance") -> None:
 
     # set connections
     if len(instance.configuration.connections) == 0:
+        cfg_src = source_from_config(instance.configuration, "/connections")
         logger.warning(
-            f"Module '{instance.name}' has no connections configured, at {instance.configuration.file_path}"
+            f"Module '{instance.name}' has no connections configured{format_source(cfg_src)}"
         )
         return
 

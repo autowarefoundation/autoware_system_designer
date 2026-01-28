@@ -20,6 +20,7 @@ from ..parsers.yaml_parser import yaml_parser
 from .data_validator import ValidatorFactory, entity_name_decode
 from ..models.config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigType, ConfigSubType
 from ..exceptions import ValidationError
+from ..utils.source_location import SourceLocation, lookup_source, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,17 @@ class ConfigParser:
         entity_name, entity_type = entity_name_decode(full_name)
 
         if entity_name != file_entity_name:
-            msg = f"Config name '{entity_name}' does not match file name '{file_entity_name}'. File: {file_path}"
+            name_loc = lookup_source(source_map, "/name")
+            name_src = SourceLocation(
+                file_path=file_path,
+                yaml_path=name_loc.yaml_path,
+                line=name_loc.line,
+                column=name_loc.column,
+            )
+            msg = (
+                f"Config name '{entity_name}' does not match file name '{file_entity_name}'."
+                f"{format_source(name_src)}"
+            )
             if self.strict_mode:
                 raise ValidationError(msg)
             else:
@@ -69,7 +80,7 @@ class ConfigParser:
         try:
             config, source_map = yaml_parser.load_config_from_string_with_source(content)
         except Exception as e:
-            logger.error(f"Failed to parse content: {e}")
+            logger.error(f"Failed to parse content for {file_path}: {e}")
             raise ValidationError(f"Error parsing YAML content: {e}")
         
         # Parse entity name and type
@@ -83,7 +94,17 @@ class ConfigParser:
             entity_name, entity_type = entity_name_decode(full_name)
 
         if full_name and entity_name != file_entity_name:
-            msg = f"Config name '{entity_name}' does not match file name '{file_entity_name}'. File: {file_path}"
+            name_loc = lookup_source(source_map, "/name")
+            name_src = SourceLocation(
+                file_path=file_path,
+                yaml_path=name_loc.yaml_path,
+                line=name_loc.line,
+                column=name_loc.column,
+            )
+            msg = (
+                f"Config name '{entity_name}' does not match file name '{file_entity_name}'."
+                f"{format_source(name_src)}"
+            )
             if self.strict_mode:
                 raise ValidationError(msg)
             else:

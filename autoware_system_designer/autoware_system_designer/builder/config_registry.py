@@ -14,6 +14,7 @@
 
 from typing import List, Dict, Optional, Type, Callable, Any
 import logging
+from pathlib import Path
 
 import copy
 from ..parsers.data_parser import ConfigParser
@@ -22,6 +23,7 @@ from ..exceptions import ValidationError, NodeConfigurationError, ModuleConfigur
 from ..resolvers.variant_resolver import SystemVariantResolver, NodeVariantResolver, ModuleVariantResolver, VariantResolver
 
 from ..parsers.data_validator import entity_name_decode
+from ..utils.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +71,8 @@ class ConfigRegistry:
                 self._type_map[entity_data.entity_type][entity_data.name] = entity_data
                 
             except Exception as e:
-                logger.error(f"Failed to load entity from {file_path}: {e}")
+                src = SourceLocation(file_path=Path(file_path))
+                logger.error(f"Failed to load entity from {file_path}: {e}{format_source(src)}")
                 raise
     
     def get(self, name: str, default=None) -> Optional[Config]:

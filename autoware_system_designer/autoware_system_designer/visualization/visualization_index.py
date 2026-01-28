@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import logging
 from ..utils.template_utils import TemplateRenderer
+from ..utils.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,10 @@ def update_index(output_root_dir: str):
     install_root = get_install_root(output_path)
 
     if not install_root or not install_root.exists():
-        logger.warning(f"Could not determine install root from {output_root_dir}. Skipping index update.")
+        src = SourceLocation(file_path=Path(output_root_dir))
+        logger.warning(
+            f"Could not determine install root from {output_root_dir}. Skipping index update.{format_source(src)}"
+        )
         return
 
     index_file = install_root / "systems.html"
@@ -69,7 +73,8 @@ def update_index(output_root_dir: str):
                 # Release lock
                 fcntl.flock(lock, fcntl.LOCK_UN)
     except Exception as e:
-        logger.error(f"Failed to update visualization index: {e}")
+        src = SourceLocation(file_path=Path(output_root_dir))
+        logger.error(f"Failed to update visualization index: {e}{format_source(src)}")
 
 
 def _generate_index_file(install_root: Path, output_file: Path):

@@ -48,12 +48,13 @@ class ParameterManager:
         self.input_topic_pattern = re.compile(r'\$\{input\s+([^}]+)\}')
         self.output_topic_pattern = re.compile(r'\$\{output\s+([^}]+)\}')
         self.parameter_pattern = re.compile(r'\$\{parameter\s+([^}]+)\}')
+        self._substitution_source_context: Optional[SourceLocation] = None
 
     # =========================================================================
     # Public API Methods
     # =========================================================================
 
-    def resolve_substitutions(self, input_string: str) -> str:
+    def resolve_substitutions(self, input_string: str, source: Optional[SourceLocation] = None) -> str:
         """Resolve all substitutions in a string.
         
         Handles:
@@ -65,22 +66,27 @@ class ParameterManager:
         if not input_string or not isinstance(input_string, str):
             return input_string
 
-        resolved_value = input_string
-        
-        # 1. Resolve ${input ...}
-        resolved_value = self._resolve_input_topic_string(resolved_value)
-        
-        # 2. Resolve ${output ...}
-        resolved_value = self._resolve_output_topic_string(resolved_value)
-        
-        # 3. Resolve ${parameter ...}
-        resolved_value = self._resolve_parameter_string(resolved_value)
+        prev_ctx = self._substitution_source_context
+        self._substitution_source_context = source
+        try:
+            resolved_value = input_string
 
-        # 4. Resolve global/env vars if resolver exists
-        if self.parameter_resolver:
-            resolved_value = self.parameter_resolver.resolve_string(resolved_value)
+            # 1. Resolve ${input ...}
+            resolved_value = self._resolve_input_topic_string(resolved_value)
 
-        return resolved_value
+            # 2. Resolve ${output ...}
+            resolved_value = self._resolve_output_topic_string(resolved_value)
+
+            # 3. Resolve ${parameter ...}
+            resolved_value = self._resolve_parameter_string(resolved_value)
+
+            # 4. Resolve global/env vars if resolver exists
+            if self.parameter_resolver:
+                resolved_value = self.parameter_resolver.resolve_string(resolved_value, source=source)
+
+            return resolved_value
+        finally:
+            self._substitution_source_context = prev_ctx
 
     def get_all_parameters(self):
         """Get all parameters."""
@@ -143,14 +149,14 @@ class ParameterManager:
         # Resolve all parameter values
         for param in self.parameters.list:
             if param.value is not None and isinstance(param.value, str):
-                resolved_value = self.resolve_substitutions(param.value)
+                resolved_value = self.resolve_substitutions(param.value, source=getattr(param, "source", None))
                 if resolved_value != param.value:
                     param.value = resolved_value
 
         # Resolve all parameter file paths
         for param_file in self.parameter_files.list:
             if param_file.path and isinstance(param_file.path, str):
-                resolved_path = self.resolve_substitutions(param_file.path)
+                resolved_path = self.resolve_substitutions(param_file.path, source=getattr(param_file, "source", None))
                 
                 if resolved_path != param_file.path:
                     param_file.path = resolved_path
@@ -172,7 +178,9 @@ class ParameterManager:
             else:
                 return "none"
         except ValidationError:
-            logger.warning(f"Input port not found for substitution: {port_name} in {self.instance.name}")
+            logger.warning(
+                f"Input port not found for substitution: {port_name} in {self.instance.name}{format_source(self._substitution_source_context)}"
+            )
             return match.group(0)  # Return original if not found
 
     def _resolve_output_topic_string(self, input_string: str) -> str:
@@ -192,7 +200,9 @@ class ParameterManager:
             else:
                 return "none"
         except ValidationError:
-            logger.warning(f"Output port not found for substitution: {port_name} in {self.instance.name}")
+            logger.warning(
+                f"Output port not found for substitution: {port_name} in {self.instance.name}{format_source(self._substitution_source_context)}"
+            )
             return match.group(0)  # Return original if not found
 
     def _resolve_parameter_string(self, input_string: str) -> str:
@@ -211,7 +221,9 @@ class ParameterManager:
         if param_value is not None:
             return str(param_value)
         else:
-            logger.warning(f"Parameter not found for substitution: {param_name} in {self.instance.name}")
+            logger.warning(
+                f"Parameter not found for substitution: {param_name} in {self.instance.name}{format_source(self._substitution_source_context)}"
+            )
             return match.group(0)  # Return original if not found
 
     def _get_package_name(self) -> Optional[str]:
@@ -442,7 +454,8 @@ class ParameterManager:
                     param_value,
                     data_type=param_type,
                     allow_substs=True,
-                    parameter_type=direct_parameter_type  # Parameter set overrides
+                    parameter_type=direct_parameter_type,  # Parameter set overrides
+                    source=p_source,
                 )
 
     # =========================================================================
@@ -552,7 +565,8 @@ class ParameterManager:
                         param_value,
                         data_type=param_type,
                         allow_substs=True,
-                        parameter_type=ParameterType.DEFAULT  # These are default parameters
+                        parameter_type=ParameterType.DEFAULT,  # These are default parameters
+                        source=cfg_source,
                     )
 
     def _flatten_parameters(self, params: Dict[str, Any], parent_key: str = "", separator: str = ".") -> Dict[str, Any]:
@@ -658,7 +672,8 @@ class ParameterManager:
                                 p_name,
                                 p_value,
                                 data_type=p_type,
-                                parameter_type=param_type
+                                parameter_type=param_type,
+                                source=source,
                             )
         except Exception as e:
             logger.warning(f"Failed to load parameters from file {file_path}: {e}{format_source(source)}")

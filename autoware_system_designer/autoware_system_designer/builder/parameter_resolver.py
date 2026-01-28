@@ -248,7 +248,9 @@ class ParameterResolver:
                 result.append(evaluated)
                 current_idx = scan_idx + 1
             else:
-                logger.warning(f"Unbalanced parentheses in eval substitution: {text[start_idx:]}")
+                logger.warning(
+                    f"Unbalanced parentheses in eval substitution: {text[start_idx:]}{format_source(self._source_context)}"
+                )
                 result.append(text[start_idx:])
                 # Stop processing as we can't determine where this eval ends
                 current_idx = len(text)
@@ -267,7 +269,9 @@ class ParameterResolver:
             result = eval(expression, SAFE_EVAL_SCOPE)
             return str(result)
         except Exception as e:
-            logger.warning(f"Failed to evaluate expression '$(eval {expression})': {e}")
+            logger.warning(
+                f"Failed to evaluate expression '$(eval {expression})': {e}{format_source(self._source_context)}"
+            )
             return f"$(eval {expression})"
 
 
@@ -393,17 +397,23 @@ class ParameterResolver:
             file_path = file_entry.get('value')
             
             if not prefix or not file_path:
-                logger.warning(f"Skipping invalid system variable file entry: {file_entry}")
+                logger.warning(
+                    f"Skipping invalid system variable file entry: {file_entry}{format_source(self._source_context)}"
+                )
                 continue
 
             resolved_path = self.resolve_string(file_path)
             
             if resolved_path.startswith('$'):
-                logger.warning(f"Could not resolve path for system variable file: {file_path}")
+                logger.warning(
+                    f"Could not resolve path for system variable file: {file_path}{format_source(self._source_context)}"
+                )
                 continue
             
             if not os.path.exists(resolved_path):
-                logger.warning(f"System variable file not found: {resolved_path}")
+                logger.warning(
+                    f"System variable file not found: {resolved_path}{format_source(self._source_context)}"
+                )
                 continue
                 
             try:
@@ -419,7 +429,9 @@ class ParameterResolver:
                         variables_to_add.update(flattened)
                 
             except Exception as e:
-                logger.warning(f"Failed to load system variable file {resolved_path}: {e}")
+                logger.warning(
+                    f"Failed to load system variable file {resolved_path}: {e}{format_source(self._source_context)}"
+                )
 
         # Update resolver with new variables if they don't exist or if existing is empty
         for k, v in variables_to_add.items():
