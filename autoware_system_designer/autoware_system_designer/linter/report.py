@@ -31,7 +31,13 @@ class LintResult:
         self.errors: List[Dict[str, Any]] = []
         self.warnings: List[Dict[str, Any]] = []
     
-    def add_error(self, message: str, line: Optional[int] = None):
+    def add_error(
+        self,
+        message: str,
+        line: Optional[int] = None,
+        column: Optional[int] = None,
+        yaml_path: Optional[str] = None,
+    ):
         """Add an error message.
         
         Args:
@@ -41,9 +47,19 @@ class LintResult:
         error = {'message': message}
         if line is not None:
             error['line'] = line
+        if column is not None:
+            error['column'] = column
+        if yaml_path is not None:
+            error['yaml_path'] = yaml_path
         self.errors.append(error)
     
-    def add_warning(self, message: str, line: Optional[int] = None):
+    def add_warning(
+        self,
+        message: str,
+        line: Optional[int] = None,
+        column: Optional[int] = None,
+        yaml_path: Optional[str] = None,
+    ):
         """Add a warning message.
         
         Args:
@@ -53,5 +69,9 @@ class LintResult:
         warning = {'message': message}
         if line is not None:
             warning['line'] = line
+        if column is not None:
+            warning['column'] = column
+        if yaml_path is not None:
+            warning['yaml_path'] = yaml_path
         self.warnings.append(warning)
 

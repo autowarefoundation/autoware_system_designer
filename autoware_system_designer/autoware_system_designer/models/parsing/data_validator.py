@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 
 from ..config import ConfigType
 from ...exceptions import ValidationError
+from ...schema.yaml_schema import get_entity_schema, validate_against_schema
 
 
 def entity_name_decode(entity_name: str) -> Tuple[str, str]:
@@ -50,19 +51,9 @@ class BaseValidator(ABC):
     """Abstract base validator."""
     
     @abstractmethod
-    def get_required_fields(self) -> List[str]:
-        """Get required fields for this entity type."""
-        pass
-    
-    @abstractmethod
-    def get_override_fields(self) -> List[str]:
-        """Get fields that must be in override block for variant config."""
-        return []
-
-    @abstractmethod
-    def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
-        """Get schema properties for validation."""
-        pass
+    def get_entity_type(self) -> str:
+        """Return the entity type this validator validates."""
+        raise NotImplementedError
     
     def validate_basic_structure(self, config: Dict[str, Any], file_path: str) -> None:
         """Validate basic structure requirements."""
@@ -79,211 +70,43 @@ class BaseValidator(ABC):
                 f"Invalid entity type '{entity_type}'. Expected '{expected_type}'. File: {file_path}"
             )
 
-    def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
-        """Validate that all required fields are present."""
-        required_fields = self.get_required_fields()
-        missing_fields = [field for field in required_fields if field not in config]
-        
-        if missing_fields:
-            raise ValidationError(
-                f"Missing required fields {missing_fields} in configuration. File: {file_path}"
-            )
-    
-    def validate_schema(self, config: Dict[str, Any], file_path: str) -> None:
-        """Validate configuration against schema."""
-        errors = []
-        schema_properties = self.get_schema_properties()
-        
-        for field, field_schema in schema_properties.items():
-            if field in config:
-                expected_type = field_schema.get('type')
-                if expected_type and not self._validate_type(config[field], expected_type):
-                    errors.append(f"Field '{field}' has invalid type. Expected: {expected_type}")
-        
-        if errors:
-            error_msg = f"Schema validation failed for {file_path}:\n" + "\n".join(f"  - {error}" for error in errors)
-            raise ValidationError(error_msg)
-    
-    def _validate_type(self, value: Any, expected_type: str) -> bool:
-        """Validate that a value matches the expected type."""
-        type_map = {
-            'string': str,
-            'integer': int,
-            'number': (int, float),
-            'boolean': bool,
-            'array': list,
-            'object': dict,
-            'object_or_array': (dict, list),
-            'nullable_object': (dict, type(None)),
-            'nullable_array': (list, type(None)),
-        }
-        
-        if expected_type in type_map:
-            expected_types = type_map[expected_type]
-            return isinstance(value, expected_types if isinstance(expected_types, tuple) else (expected_types,))
-        return True
-
     def validate_all(self, config: Dict[str, Any], entity_type: str, expected_type: str, file_path: str) -> None:
         """Perform complete validation."""
         self.validate_basic_structure(config, file_path)
         self.validate_entity_type(entity_type, expected_type, file_path)
-        self.validate_required_fields(config, file_path)
-        self.validate_base_structure(config, file_path)
-      
-        self.validate_schema(config, file_path)
-
-    def validate_base_structure(self, config: Dict[str, Any], file_path: str) -> None:
-        """Validate base/variant structure."""
-        if "base" in config:
-            # Check for forbidden root fields
-            forbidden = self.get_override_fields()
-            found = [f for f in forbidden if f in config]
-            if found:
-                raise ValidationError(f"Fields {found} must be under 'override' block in variant config. File: {file_path}")
-            
-            # Validate override block if present
-            if "override" in config:
-                override = config["override"]
-                if not isinstance(override, dict):
-                    raise ValidationError(f"'override' must be a dictionary. File: {file_path}")
-                
-                # Recursively validate schema for override fields
-                # We reuse validate_schema but apply it to override dict
-                # Note: This checks that fields inside 'override' match the schema properties
-                # It doesn't complain about unknown fields unless we enforce strict schema, which validate_schema doesn't do yet.
-                self.validate_schema(override, f"{file_path} (override)")
+        # Schema-driven structural + semantic validation
+        schema = get_entity_schema(self.get_entity_type())
+        issues = validate_against_schema(config, schema=schema)
+        if issues:
+            details = "\n".join(
+                f"  - {i.message}" + (f" (yaml_path={i.yaml_path})" if i.yaml_path else "")
+                for i in issues
+            )
+            raise ValidationError(f"Schema validation failed for {file_path}:\n{details}")
 
 class NodeValidator(BaseValidator):
     """Validator for node entities."""
-    
-    def get_required_fields(self) -> List[str]:
-        return ["name"]
 
-    def get_override_fields(self) -> List[str]:
-        return ["launch", "inputs", "outputs", "parameter_files", "parameters", "processes"]
-
-    def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
-        """
-        Validate that all required fields are present.
-        """
-        super().validate_required_fields(config, file_path)
-        
-        if "base" not in config:
-             required_full = ["launch", "inputs", "outputs", "parameter_files", "parameters", "processes"]
-             missing = [f for f in required_full if f not in config]
-             if missing:
-                raise ValidationError(
-                    f"Missing required fields {missing} in base node configuration (no base). File: {file_path}"
-                )
-    
-    def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
-        return {
-            'name': {'type': 'string'},
-            'base': {'type': 'string'},
-            'launch': {'type': 'object'},
-            'inputs': {'type': 'array'},
-            'outputs': {'type': 'array'},
-            'parameter_files': {'type': 'object_or_array'},
-            'parameters': {'type': 'object_or_array'},
-            'processes': {'type': 'array'},
-            'remove': {'type': 'object'},
-            'override': {'type': 'object'}
-        }
+    def get_entity_type(self) -> str:
+        return ConfigType.NODE
 
 class ModuleValidator(BaseValidator):
     """Validator for module entities."""
-    
-    def get_required_fields(self) -> List[str]:
-        return ["name"]
 
-    def get_override_fields(self) -> List[str]:
-        return ["instances", "external_interfaces", "connections"]
-
-    def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
-        """
-        Validate that all required fields are present.
-        """
-        super().validate_required_fields(config, file_path)
-        
-        if "base" not in config:
-             required_full = ["instances", "external_interfaces", "connections"]
-             missing = [f for f in required_full if f not in config]
-             if missing:
-                raise ValidationError(
-                    f"Missing required fields {missing} in base module configuration (no base). File: {file_path}"
-                )
-    
-    def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
-        return {
-            'name': {'type': 'string'},
-            'base': {'type': 'string'},
-            'instances': {'type': 'array'},
-            'external_interfaces': {'type': 'object_or_array'},
-            'connections': {'type': 'array'},
-            'remove': {'type': 'object'},
-            'override': {'type': 'object'},
-        }
+    def get_entity_type(self) -> str:
+        return ConfigType.MODULE
 
 class ParameterSetValidator(BaseValidator):
     """Validator for parameter set entities."""
-    
-    def get_required_fields(self) -> List[str]:
-        return ["name", "parameters"]
-    
-    def get_override_fields(self) -> List[str]:
-        return []
 
-    def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
-        return {
-            'name': {'type': 'string'},
-            'parameters': {'type': 'object_or_array'},
-            'local_variables': {'type': 'nullable_array'},
-        }
+    def get_entity_type(self) -> str:
+        return ConfigType.PARAMETER_SET
 
 class SystemValidator(BaseValidator):
     """Validator for system entities."""
-    
-    def get_required_fields(self) -> List[str]:
-        # Basic requirement is name
-        return ["name"]
 
-    def get_override_fields(self) -> List[str]:
-        return ["modes", "parameter_sets", "components", "connections", "variables", "variable_files"]
-    
-    def validate_required_fields(self, config: Dict[str, Any], file_path: str) -> None:
-        """
-        Validate that all required fields are present.
-        For System entities, requirements depend on whether it's a variant (child) or base system.
-        """
-        super().validate_required_fields(config, file_path)
-        
-        # If it has 'base', it's a variant config -> components/connections are optional (inherited)
-        # If it does NOT have 'base', it's a base config -> components/connections are required
-        if "base" not in config:
-            missing = []
-            if "components" not in config:
-                missing.append("components")
-            if "connections" not in config:
-                missing.append("connections")
-                
-            if missing:
-                raise ValidationError(
-                    f"Missing required fields {missing} in base system configuration (no base). File: {file_path}"
-                )
-
-    def get_schema_properties(self) -> Dict[str, Dict[str, str]]:
-        return {
-            'name': {'type': 'string'},
-            'base': {'type': 'string'},
-            'modes': {'type': 'nullable_array'},
-            'parameter_sets': {'type': 'nullable_array'},  # System-level parameter sets
-            'components': {'type': 'array'},
-            'connections': {'type': 'array'},
-            'variables': {'type': 'nullable_array'},
-            'variable_files': {'type': 'nullable_array'},
-            'remove': {'type': 'object'}, # Support for removal in variant config
-            'override': {'type': 'object'},
-        }
+    def get_entity_type(self) -> str:
+        return ConfigType.SYSTEM
 
 class ValidatorFactory:
     """Factory for creating validators."""
