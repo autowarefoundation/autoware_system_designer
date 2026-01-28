@@ -35,6 +35,7 @@ from .utils.system_structure_json import (
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig
+from .utils.source_location import source_from_config, format_source
 
 logger = logging.getLogger(__name__)
 debug_mode = True
@@ -221,7 +222,10 @@ def apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -
     mode_config = base_system_config.mode_configs.get(mode_name)
     if not mode_config:
         # Mode not found, return base configuration
-        logger.warning(f"Mode '{mode_name}' not found in mode_configs, using base configuration")
+        src = source_from_config(base_system_config, "/modes")
+        logger.warning(
+            f"Mode '{mode_name}' not found in mode_configs, using base configuration{format_source(src)}"
+        )
         return modified_config
     
     logger.info(f"Applying mode configuration for mode '{mode_name}'")

@@ -21,6 +21,7 @@ from typing import Any, Dict, List, TYPE_CHECKING
 from ..models.ports import InPort, OutPort
 from ..models.links import Link, Connection, ConnectionType
 from ..exceptions import ValidationError
+from ..utils.source_location import source_from_config, format_source
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -435,7 +436,11 @@ class LinkManager:
 
     def set_links(self):
         """Set up links based on entity connections."""
-        connection_list: List[Connection] = [Connection(cfg) for cfg in self.instance.configuration.connections]
+        cfg_connections = self.instance.configuration.connections or []
+        connection_list: List[Connection] = []
+        for idx, cfg in enumerate(cfg_connections):
+            src = source_from_config(self.instance.configuration, f"/connections/{idx}")
+            connection_list.append(Connection(cfg, source=src))
         if len(connection_list) == 0:
             logger.warning(f"Module '{self.instance.name}' has no connections configured, at {self.instance.configuration.file_path}")
             return
@@ -501,6 +506,7 @@ class LinkManager:
                             k.split(".")[1] for k in port_list_from.keys() if k.startswith(f"{instance_name}.")
                         ])
                         msg = self._err_missing_internal("output", instance_name, connection.from_port_name, available)
+                    msg = msg + format_source(getattr(connection, "source", None))
 
                     if self.instance.entity_type == "module":
                         raise ValidationError(msg)
@@ -520,6 +526,7 @@ class LinkManager:
                             k.split(".")[1] for k in port_list_to.keys() if k.startswith(f"{instance_name}.")
                         ])
                         msg = self._err_missing_internal("input", instance_name, connection.to_port_name, available)
+                    msg = msg + format_source(getattr(connection, "source", None))
 
                     if self.instance.entity_type == "module":
                         raise ValidationError(msg)

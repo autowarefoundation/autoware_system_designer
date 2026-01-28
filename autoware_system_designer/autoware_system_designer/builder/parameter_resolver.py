@@ -19,6 +19,7 @@ import math
 from typing import List, Dict, Any, Optional
 
 from ..parsers.yaml_parser import yaml_parser
+from ..utils.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,9 @@ class ParameterResolver:
         self.variable_map = self._build_variable_map(variables)
         self.package_paths = package_paths.copy()
 
+        # Optional location context for improved warning messages
+        self._source_context: Optional[SourceLocation] = None
+
         # Regex patterns for substitutions
         self.env_pattern = re.compile(r'\$\(env\s+([^)]+)\)')
         self.var_pattern = re.compile(r'\$\(var\s+([\w\.]+)\)')
@@ -109,7 +113,7 @@ class ParameterResolver:
 
         return variables
 
-    def resolve_string(self, input_string: str) -> str:
+    def resolve_string(self, input_string: str, source: Optional[SourceLocation] = None) -> str:
         """Resolve all substitutions in a string.
 
         Args:
@@ -121,36 +125,45 @@ class ParameterResolver:
         if not input_string or not isinstance(input_string, str):
             return input_string
 
-        result = input_string
-        max_iterations = 10  # Prevent infinite loops from circular references
-        iteration = 0
+        prev_source = self._source_context
+        if source is not None:
+            self._source_context = source
 
-        while iteration < max_iterations:
-            # Track if any substitutions were made this iteration
-            original_result = result
+        try:
+            result = input_string
+            max_iterations = 10  # Prevent infinite loops from circular references
+            iteration = 0
 
-            # First resolve environment variables (they might be used in other substitutions)
-            result = self.env_pattern.sub(self._resolve_env_match, result)
+            while iteration < max_iterations:
+                # Track if any substitutions were made this iteration
+                original_result = result
 
-            # Then resolve variables (they might be used in find-pkg-share)
-            result = self.var_pattern.sub(self._resolve_var_match, result)
+                # First resolve environment variables (they might be used in other substitutions)
+                result = self.env_pattern.sub(self._resolve_env_match, result)
 
-            # Then resolve find-pkg-share commands
-            result = self.pkgshare_pattern.sub(self._resolve_pkgshare_match, result)
-            
-            # Then resolve eval commands (last step to ensure all variables are resolved)
-            result = self._resolve_eval_substitutions(result)
+                # Then resolve variables (they might be used in find-pkg-share)
+                result = self.var_pattern.sub(self._resolve_var_match, result)
 
-            # If no changes were made, we're done
-            if result == original_result:
-                break
+                # Then resolve find-pkg-share commands
+                result = self.pkgshare_pattern.sub(self._resolve_pkgshare_match, result)
 
-            iteration += 1
+                # Then resolve eval commands (last step to ensure all variables are resolved)
+                result = self._resolve_eval_substitutions(result)
 
-        if iteration >= max_iterations:
-            logger.warning(f"Possible circular reference in parameter resolution: {input_string}")
+                # If no changes were made, we're done
+                if result == original_result:
+                    break
 
-        return result
+                iteration += 1
+
+            if iteration >= max_iterations:
+                logger.warning(
+                    f"Possible circular reference in parameter resolution: {input_string}{format_source(self._source_context)}"
+                )
+
+            return result
+        finally:
+            self._source_context = prev_source
 
     def _resolve_env_match(self, match) -> str:
         """Resolve a single $(env ENV_VAR) match."""
@@ -159,7 +172,9 @@ class ParameterResolver:
         if env_value is not None:
             return env_value
         else:
-            logger.warning(f"Environment variable not set: $(env {env_var})")
+            logger.warning(
+                f"Environment variable not set: $(env {env_var}){format_source(self._source_context)}"
+            )
             return match.group(0)  # Return original if not found
 
     def _resolve_var_match(self, match) -> str:
@@ -168,7 +183,9 @@ class ParameterResolver:
         if var_name in self.variable_map:
             return self.variable_map[var_name]
         else:
-            logger.warning(f"Undefined variable: $(var {var_name})")
+            logger.warning(
+                f"Undefined variable: $(var {var_name}){format_source(self._source_context)}"
+            )
             return match.group(0)  # Return original if not found
 
     def _resolve_pkgshare_match(self, match) -> str:
@@ -182,7 +199,9 @@ class ParameterResolver:
         if resolved_package in self.package_paths:
             return self.package_paths[resolved_package]
         else:
-            logger.warning(f"Package not found in manifest: $(find-pkg-share {resolved_package})")
+            logger.warning(
+                f"Package not found in manifest: $(find-pkg-share {resolved_package}){format_source(self._source_context)}"
+            )
             return match.group(0)  # Return original if not found
 
     def _resolve_eval_substitutions(self, text: str) -> str:
@@ -252,7 +271,7 @@ class ParameterResolver:
             return f"$(eval {expression})"
 
 
-    def resolve_parameter_file_path(self, file_path: str) -> str:
+    def resolve_parameter_file_path(self, file_path: str, source: Optional[SourceLocation] = None) -> str:
         """Resolve substitutions in a parameter file path.
 
         Args:
@@ -261,9 +280,9 @@ class ParameterResolver:
         Returns:
             Resolved file path
         """
-        return self.resolve_string(file_path)
+        return self.resolve_string(file_path, source=source)
 
-    def resolve_parameter_value(self, param_value: Any) -> Any:
+    def resolve_parameter_value(self, param_value: Any, source: Optional[SourceLocation] = None) -> Any:
         """Resolve substitutions in a parameter value.
 
         Args:
@@ -273,11 +292,11 @@ class ParameterResolver:
             Parameter value with substitutions resolved
         """
         if isinstance(param_value, str):
-            return self.resolve_string(param_value)
+            return self.resolve_string(param_value, source=source)
         elif isinstance(param_value, list):
-            return [self.resolve_parameter_value(item) for item in param_value]
+            return [self.resolve_parameter_value(item, source=source) for item in param_value]
         elif isinstance(param_value, dict):
-            return {key: self.resolve_parameter_value(value) for key, value in param_value.items()}
+            return {key: self.resolve_parameter_value(value, source=source) for key, value in param_value.items()}
         else:
             # Non-string values (int, float, bool) don't need resolution
             return param_value

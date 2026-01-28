@@ -16,6 +16,7 @@ import logging
 from typing import List, TYPE_CHECKING
 
 from ..models.events import Event, Process
+from ..utils.source_location import source_from_config, format_source
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -51,7 +52,8 @@ class EventManager:
         process_event_list = [process.event for process in self.processes]
         if len(process_event_list) == 0:
             # process configuration is not found
-            logger.warning(f"No process found in {self.instance.name}, at {self.instance.configuration.file_path}")
+            src = source_from_config(self.instance.configuration, "/processes")
+            logger.warning(f"No process found in {self.instance.name}{format_source(src)}")
             return
         for process in self.processes:
             process.set_condition(process_event_list, on_input_events)

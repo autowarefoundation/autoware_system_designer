@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List
+from typing import List, Optional
 
 from .ports import Port, InPort, OutPort
 from ..exceptions import ValidationError, DeploymentError
 from ..utils.naming import generate_unique_id
+from ..utils.source_location import SourceLocation
 
 from enum import Enum
 
@@ -146,7 +147,9 @@ class Link:
 class Connection:
     # Connection is a connection between two entities
     # In other words, it is a configuration to create link(s)
-    def __init__(self, connection_dict: dict):
+    def __init__(self, connection_dict: dict, source: Optional[SourceLocation] = None):
+
+        self.source = source
 
         # connection type
         self.type: ConnectionType = ConnectionType.UNDEFINED

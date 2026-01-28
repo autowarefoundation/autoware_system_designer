@@ -17,7 +17,7 @@
 import yaml
 import logging
 from pathlib import Path
-from typing import Dict, Any, Union
+from typing import Dict, Any, Union, Optional, Tuple
 from functools import lru_cache
 
 from ..deployment_config import deploy_config
@@ -37,6 +37,112 @@ class YamlParser:
         """
         self.cache_enabled = cache_enabled if cache_enabled is not None else deploy_config.cache_enabled
         self._cache: Dict[Path, Dict[str, Any]] = {}
+        self._source_cache: Dict[Path, Dict[str, Dict[str, int]]] = {}
+
+    @staticmethod
+    def _json_pointer_escape(token: str) -> str:
+        # JSON Pointer escaping: "~" -> "~0", "/" -> "~1"
+        return token.replace("~", "~0").replace("/", "~1")
+
+    @classmethod
+    def _build_source_map_from_yaml(cls, content: str) -> Dict[str, Dict[str, int]]:
+        """Build a mapping from YAML JSON-pointer-like paths to 1-based line/column.
+
+        This uses PyYAML's node tree (yaml.compose) so we can track locations without
+        changing the parsed data shapes returned by safe_load.
+        """
+        source_map: Dict[str, Dict[str, int]] = {}
+
+        try:
+            root = yaml.compose(content, Loader=yaml.SafeLoader)
+        except Exception:
+            # If compose fails, return empty source map. Parsing errors are handled elsewhere.
+            return source_map
+
+        if root is None:
+            return source_map
+
+        def _record(path: str, node) -> None:
+            mark = getattr(node, "start_mark", None)
+            if mark is None:
+                return
+            # PyYAML uses 0-based line/column
+            source_map[path] = {"line": int(mark.line) + 1, "column": int(mark.column) + 1}
+
+        def _walk(node, path: str) -> None:
+            _record(path, node)
+
+            if isinstance(node, yaml.nodes.MappingNode):
+                for key_node, value_node in node.value:
+                    key = getattr(key_node, "value", None)
+                    if key is None:
+                        continue
+                    child_path = f"{path}/{cls._json_pointer_escape(str(key))}" if path else f"/{cls._json_pointer_escape(str(key))}"
+                    _walk(value_node, child_path)
+            elif isinstance(node, yaml.nodes.SequenceNode):
+                for idx, item_node in enumerate(node.value):
+                    child_path = f"{path}/{idx}" if path else f"/{idx}"
+                    _walk(item_node, child_path)
+            else:
+                # ScalarNode - already recorded
+                return
+
+        _walk(root, "")
+        return source_map
+
+    def load_config_with_source(
+        self, file_path: Union[str, Path]
+    ) -> Tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
+        """Load YAML configuration file and return (data, source_map).
+
+        source_map keys are JSON-pointer-like YAML paths (e.g. "/parameters/0/value").
+        Values contain 1-based line/column.
+        """
+        path = Path(file_path)
+
+        if not path.exists():
+            raise ValidationError(f"Configuration file not found: {path}")
+
+        if not path.is_file():
+            raise ValidationError(f"Path is not a file: {path}")
+
+        if self.cache_enabled and path in self._cache and path in self._source_cache:
+            logger.debug(f"Loading configuration (with source) from cache: {path}")
+            return self._cache[path], self._source_cache[path]
+
+        try:
+            logger.debug(f"Loading configuration file (with source): {path}")
+            content = path.read_text(encoding="utf-8")
+            config_data = yaml.safe_load(content)
+            if config_data is None:
+                config_data = {}
+
+            source_map = self._build_source_map_from_yaml(content)
+
+            if self.cache_enabled:
+                self._cache[path] = config_data
+                self._source_cache[path] = source_map
+
+            return config_data, source_map
+        except yaml.YAMLError as exc:
+            raise ValidationError(f"Failed to parse YAML file {path}: {exc}")
+        except Exception as exc:
+            raise ValidationError(f"Failed to read configuration file {path}: {exc}")
+
+    def load_config_from_string_with_source(
+        self, content: str
+    ) -> Tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
+        """Load YAML configuration from string content and return (data, source_map)."""
+        try:
+            config_data = yaml.safe_load(content)
+            if config_data is None:
+                config_data = {}
+            source_map = self._build_source_map_from_yaml(content)
+            return config_data, source_map
+        except yaml.YAMLError as exc:
+            raise ValidationError(f"Failed to parse YAML content: {exc}")
+        except Exception as exc:
+            raise ValidationError(f"Failed to process configuration content: {exc}")
     
     def load_config(self, file_path: Union[str, Path]) -> Dict[str, Any]:
         """Load YAML configuration file.
@@ -51,32 +157,32 @@ class YamlParser:
             ValidationError: If file cannot be read or parsed
         """
         path = Path(file_path)
-        
+
         if not path.exists():
             raise ValidationError(f"Configuration file not found: {path}")
-        
+
         if not path.is_file():
             raise ValidationError(f"Path is not a file: {path}")
-        
+
         # Check cache first
         if self.cache_enabled and path in self._cache:
             logger.debug(f"Loading configuration from cache: {path}")
             return self._cache[path]
-        
+
         try:
             logger.debug(f"Loading configuration file: {path}")
             with open(path, 'r', encoding='utf-8') as stream:
                 config_data = yaml.safe_load(stream)
-                
+
             if config_data is None:
                 config_data = {}
-                
+
             # Cache the result
             if self.cache_enabled and config_data is not None:
                 self._cache[path] = config_data
-                
+
             return config_data
-            
+
         except yaml.YAMLError as exc:
             raise ValidationError(f"Failed to parse YAML file {path}: {exc}")
         except Exception as exc:
@@ -145,6 +251,7 @@ class YamlParser:
     def clear_cache(self):
         """Clear the configuration cache."""
         self._cache.clear()
+        self._source_cache.clear()
         logger.debug("Configuration cache cleared")
     
     @lru_cache(maxsize=None)

@@ -21,6 +21,7 @@ import re
 from ..models.parameters import ParameterList, ParameterFileList, Parameter, ParameterFile, ParameterType
 from ..parsers.yaml_parser import yaml_parser
 from ..exceptions import ParameterConfigurationError, ValidationError
+from ..utils.source_location import SourceLocation, source_from_config, format_source
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -299,9 +300,18 @@ class ParameterManager:
     # Parameter Application (from parameter sets)
     # =========================================================================
     
-    def apply_node_parameters(self, node_namespace: str, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
-                              file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
-                              direct_parameter_type: ParameterType = ParameterType.OVERRIDE):
+    def apply_node_parameters(
+        self,
+        node_namespace: str,
+        parameter_files: list,
+        parameters: list,
+        config_registry: Optional['ConfigRegistry'] = None,
+        file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
+        direct_parameter_type: ParameterType = ParameterType.OVERRIDE,
+        source: Optional[SourceLocation] = None,
+        parameter_file_sources: Optional[List[SourceLocation]] = None,
+        parameter_sources: Optional[List[SourceLocation]] = None,
+    ):
         """Apply parameters directly to a target node using new parameter set format.
         
         This method finds a node by its absolute namespace and applies both parameter_files 
@@ -325,12 +335,21 @@ class ParameterManager:
 
         target_instances = self.find_matching_nodes(node_namespace)
         if not target_instances:
-            logger.warning(f"Target node not found: {node_namespace}")
+            logger.warning(f"Target node not found: {node_namespace}{format_source(source)}")
             return
             
         for target_instance in target_instances:
             logger.info(f"Applying parameters to node: {node_namespace} (instance: {target_instance.name})")
-            self._apply_parameters_to_instance(target_instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+            self._apply_parameters_to_instance(
+                target_instance,
+                parameter_files,
+                parameters,
+                config_registry,
+                file_parameter_type,
+                direct_parameter_type,
+                parameter_file_sources=parameter_file_sources,
+                parameter_sources=parameter_sources,
+            )
 
     def apply_parameters_to_all_nodes(self, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
                                       file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
@@ -361,25 +380,38 @@ class ParameterManager:
         for child in instance.children.values():
             self._apply_parameters_recursive(child, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
 
-    def _apply_parameters_to_instance(self, target_instance, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
-                                      file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
-                                      direct_parameter_type: ParameterType = ParameterType.OVERRIDE):
+    def _apply_parameters_to_instance(
+        self,
+        target_instance,
+        parameter_files: list,
+        parameters: list,
+        config_registry: Optional['ConfigRegistry'] = None,
+        file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
+        direct_parameter_type: ParameterType = ParameterType.OVERRIDE,
+        *,
+        parameter_file_sources: Optional[List[SourceLocation]] = None,
+        parameter_sources: Optional[List[SourceLocation]] = None,
+    ):
         """Apply parameters directly to a target instance object."""
             
         # Apply parameter files first (as overrides, not defaults)
         if parameter_files:
-            for param_file_mapping in parameter_files:
+            for idx, param_file_mapping in enumerate(parameter_files):
+                pf_source = None
+                if parameter_file_sources and idx < len(parameter_file_sources):
+                    pf_source = parameter_file_sources[idx]
                 for param_name, param_path in param_file_mapping.items():
                     # Resolve parameter file path if resolver is available
                     if self.parameter_resolver:
-                        param_path = self.parameter_resolver.resolve_parameter_file_path(param_path)
+                        param_path = self.parameter_resolver.resolve_parameter_file_path(param_path, source=pf_source)
 
                     target_instance.parameter_manager.parameter_files.add_parameter_file(
                         param_name,
                         param_path,
                         allow_substs=True,
                         is_override=True,  # Parameter set parameter files are overrides
-                        parameter_type=file_parameter_type
+                        parameter_type=file_parameter_type,
+                        source=pf_source,
                     )
 
                     # Load parameters from this file for visualization
@@ -387,19 +419,23 @@ class ParameterManager:
                         param_path,
                         is_override=True,
                         config_registry=config_registry,
-                        parameter_type=file_parameter_type
+                        parameter_type=file_parameter_type,
+                        source=pf_source,
                     )
         
         # Apply parameters (these override parameter files)
         if parameters:
-            for param in parameters:
+            for idx, param in enumerate(parameters):
+                p_source = None
+                if parameter_sources and idx < len(parameter_sources):
+                    p_source = parameter_sources[idx]
                 param_name = param.get("name")
                 param_type = param.get("type", "string")
                 param_value = param.get("value")
 
                 # Resolve parameter value if resolver is available
                 if self.parameter_resolver:
-                    param_value = self.parameter_resolver.resolve_parameter_value(param_value)
+                    param_value = self.parameter_resolver.resolve_parameter_value(param_value, source=p_source)
 
                 target_instance.parameter_manager.parameters.set_parameter(
                     param_name,
@@ -460,17 +496,19 @@ class ParameterManager:
         
         # 1. Set default parameter_files from node configuration
         if hasattr(self.instance.configuration, 'parameter_files') and self.instance.configuration.parameter_files:
-            for cfg_param in self.instance.configuration.parameter_files:
+            for idx, cfg_param in enumerate(self.instance.configuration.parameter_files):
                 param_name = cfg_param.get("name")
                 param_value = cfg_param.get("value", cfg_param.get("default"))
                 # param_schema = cfg_param.get("schema")
+
+                cfg_source = source_from_config(self.instance.configuration, f"/parameter_files/{idx}")
 
                 if param_name is None or param_value is None:
                     raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, parameter_files: {self.instance.configuration.parameter_files}")
 
                 # Resolve parameter file path if resolver is available
                 if self.parameter_resolver:
-                    param_value = self.parameter_resolver.resolve_parameter_file_path(param_value)
+                    param_value = self.parameter_resolver.resolve_parameter_file_path(param_value, source=cfg_source)
 
                 # Add to parameter_files list
                 self.parameter_files.add_parameter_file(
@@ -478,7 +516,8 @@ class ParameterManager:
                     param_value,
                     allow_substs=True,
                     is_override=False,
-                    parameter_type=ParameterType.DEFAULT_FILE
+                    parameter_type=ParameterType.DEFAULT_FILE,
+                    source=cfg_source,
                 )
 
                 # Load individual parameters from this file
@@ -486,22 +525,25 @@ class ParameterManager:
                     param_value,
                     package_name=package_name,
                     is_override=False,  # Node configuration parameter files are defaults
-                    config_registry=config_registry
+                    config_registry=config_registry,
+                    source=cfg_source,
                 )
         
         # 2. Set default parameters from node parameters
         if hasattr(self.instance.configuration, 'parameters') and self.instance.configuration.parameters:
-            for cfg_param in self.instance.configuration.parameters:
+            for idx, cfg_param in enumerate(self.instance.configuration.parameters):
                 param_name = cfg_param.get("name")
                 param_value = cfg_param.get("value", cfg_param.get("default"))
                 param_type = cfg_param.get("type", "string")
+
+                cfg_source = source_from_config(self.instance.configuration, f"/parameters/{idx}")
 
                 if param_name is None or param_value is None:
                     raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, parameter_files: {self.instance.configuration.parameter_files}")
 
                 # Resolve parameter value if resolver is available
                 if self.parameter_resolver:
-                    param_value = self.parameter_resolver.resolve_parameter_value(param_value)
+                    param_value = self.parameter_resolver.resolve_parameter_value(param_value, source=cfg_source)
 
                 # Only set if a default value is provided
                 if param_value is not None:
@@ -534,9 +576,15 @@ class ParameterManager:
                 items[new_key] = v
         return items
 
-    def _load_parameters_from_file(self, file_path: str, package_name: Optional[str] = None,
-                                  is_override: bool = True, config_registry: Optional['ConfigRegistry'] = None,
-                                  parameter_type: Optional[ParameterType] = None):
+    def _load_parameters_from_file(
+        self,
+        file_path: str,
+        package_name: Optional[str] = None,
+        is_override: bool = True,
+        config_registry: Optional['ConfigRegistry'] = None,
+        parameter_type: Optional[ParameterType] = None,
+        source: Optional[SourceLocation] = None,
+    ):
         """Load parameters from a YAML file and add them to the parameter list."""
         if not config_registry:
             logger.debug(f"Skipping parameter file load for {file_path}: No config_registry provided")
@@ -552,7 +600,7 @@ class ParameterManager:
                 return
             
             if not os.path.exists(resolved_path):
-                logger.warning(f"Parameter file not found: {resolved_path}")
+                logger.warning(f"Parameter file not found: {resolved_path}{format_source(source)}")
                 return
                 
             logger.debug(f"Loading parameters from file: {resolved_path}")
@@ -582,7 +630,7 @@ class ParameterManager:
                         for p_name, p_value in flattened_params.items():
                             # Resolve parameter value if resolver is available
                             if self.parameter_resolver:
-                                p_value = self.parameter_resolver.resolve_parameter_value(p_value)
+                                p_value = self.parameter_resolver.resolve_parameter_value(p_value, source=source)
 
                             # Infer type
                             p_type = "string"
@@ -613,4 +661,4 @@ class ParameterManager:
                                 parameter_type=param_type
                             )
         except Exception as e:
-            logger.warning(f"Failed to load parameters from file {file_path}: {e}")
+            logger.warning(f"Failed to load parameters from file {file_path}: {e}{format_source(source)}")
