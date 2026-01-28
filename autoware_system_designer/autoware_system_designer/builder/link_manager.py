@@ -230,9 +230,9 @@ class LinkManager:
     # ------------------------------------------------------------------
     @staticmethod
     def _suggest(target: str, pool: List[str], n: int = 5) -> str:
-        """Return comma list of close matches or '-' if none."""
+        """Return comma list of close matches or a clear placeholder if none."""
         m = difflib.get_close_matches(target, pool, n=n, cutoff=0.6)
-        return ", ".join(m) if m else "-"
+        return ", ".join(m) if m else "(no close matches)"
 
     def _err_external_decl(self, kind: str, name: str, declared: List[str]):
         return (
@@ -376,7 +376,11 @@ class LinkManager:
         
         # Validate matched ports
         if not port_pairs:
-            logger.warning(self._err_wildcard_no_matches(connection))
+            msg = self._err_wildcard_no_matches(connection)
+            if self.instance.entity_type in ("module", "system"):
+                raise ValidationError(msg)
+
+            logger.warning(msg)
             return
 
         # Create links for each matched pair
@@ -513,9 +517,9 @@ class LinkManager:
                             k.split(".")[1] for k in port_list_from.keys() if k.startswith(f"{instance_name}.")
                         ])
                         msg = self._err_missing_internal("output", instance_name, connection.from_port_name, available)
-                    msg = msg + format_source(getattr(connection, "source", None))
+                    msg = msg + f"; Connection: '{from_key}' -> '{to_key}'" + format_source(getattr(connection, "source", None))
 
-                    if self.instance.entity_type == "module":
+                    if self.instance.entity_type in ("module", "system"):
                         raise ValidationError(msg)
                     logger.warning(msg)
                     continue
@@ -533,9 +537,9 @@ class LinkManager:
                             k.split(".")[1] for k in port_list_to.keys() if k.startswith(f"{instance_name}.")
                         ])
                         msg = self._err_missing_internal("input", instance_name, connection.to_port_name, available)
-                    msg = msg + format_source(getattr(connection, "source", None))
+                    msg = msg + f"; Connection: '{from_key}' -> '{to_key}'" + format_source(getattr(connection, "source", None))
 
-                    if self.instance.entity_type == "module":
+                    if self.instance.entity_type in ("module", "system"):
                         raise ValidationError(msg)
                     logger.warning(msg)
                     continue

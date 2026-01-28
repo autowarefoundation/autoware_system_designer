@@ -424,7 +424,22 @@ class Deployment:
                 self.system_structure_snapshots[mode_key] = snapshot_store
                 # try to visualize the system to show error status
                 self.visualize()
-                raise DeploymentError(f"Error in setting deploy for mode '{mode_name}': {e}")
+                details = []
+                if mode_key == default_mode:
+                    details.append("default")
+                system_path = getattr(system_config, "file_path", None)
+                if system_path:
+                    details.append(f"system= {system_path} ")
+                details_str = f" ({', '.join(details)})" if details else ""
+
+                hint = (
+                    "Hint: top-level 'connections' apply to all modes; "
+                    "use '<Mode>.override.connections' or '<Mode>.remove.connections' for mode-specific wiring."
+                )
+
+                raise DeploymentError(
+                    f"Error while building deploy for mode '{mode_key}'{details_str}: {e}\n{hint}"
+                ) from e
 
     def visualize(self):
         # Collect data from all deployment instances
