@@ -245,6 +245,8 @@ class Deployment:
         # entity collection
         system_yaml_list, package_paths, file_package_map = self._get_system_list(deploy_config)
         self.config_registry = ConfigRegistry(system_yaml_list, package_paths, file_package_map)
+        deployment_file_abs = str(Path(deploy_config.deployment_file).resolve())
+        self.config_registry.deployment_package_name = file_package_map.get(deployment_file_abs)
 
         # detect mode of input file (deployment vs system only)
         logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)

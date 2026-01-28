@@ -590,6 +590,90 @@ class ParameterManager:
                 items[new_key] = v
         return items
 
+    def _infer_package_from_share_path(self, absolute_path: str) -> Optional[str]:
+        if not absolute_path or not os.path.isabs(absolute_path):
+            return None
+        parts = absolute_path.split(os.sep)
+        if "share" not in parts:
+            return None
+        # Pick the last 'share/<pkg>/' segment (works for merged and isolated installs).
+        share_idx = len(parts) - 1 - parts[::-1].index("share")
+        if share_idx + 1 >= len(parts):
+            return None
+        return parts[share_idx + 1]
+
+    def _resolve_existing_parameter_file_path(
+        self,
+        file_path: str,
+        package_name: Optional[str],
+        is_override: bool,
+        config_registry: 'ConfigRegistry',
+        source: Optional[SourceLocation],
+    ) -> Optional[str]:
+        """Resolve a parameter file path to an existing absolute path (for visualization/template generation).
+
+        This is used for *loading* parameter YAML contents. It intentionally returns None when the
+        path can't be resolved to an existing absolute file.
+        """
+
+        resolved_path = self._resolve_parameter_file_path(file_path, package_name, is_override, config_registry)
+
+        # Only load when resolved to an absolute filesystem path with no remaining substitutions.
+        if not resolved_path or resolved_path.startswith("$") or not os.path.isabs(resolved_path):
+            logger.debug(
+                f"Skipping parameter file load for {file_path}: Could not resolve to absolute path ({resolved_path})"
+            )
+            return None
+
+        if os.path.exists(resolved_path):
+            return resolved_path
+
+        deployment_pkg = getattr(config_registry, "deployment_package_name", None)
+        if not deployment_pkg:
+            logger.warning(f"Parameter file not found: {resolved_path}{format_source(source)}")
+            return None
+
+        # Build-time fallback (deployment build only): install/share may not be populated yet.
+        inferred_pkg = package_name or self._infer_package_from_share_path(resolved_path)
+        if inferred_pkg != deployment_pkg:
+            logger.warning(f"Parameter file not found: {resolved_path}{format_source(source)}")
+            return None
+
+        if inferred_pkg:
+            marker = os.path.join(os.sep, "share", inferred_pkg, "")
+            idx = resolved_path.find(marker)
+            if idx != -1:
+                rel = resolved_path[idx + len(marker) :]
+                src_pkg = config_registry.get_package_source_path(inferred_pkg)
+                if src_pkg:
+                    candidate = os.path.join(src_pkg, rel)
+                    if os.path.exists(candidate):
+                        return candidate
+
+        logger.warning(f"Parameter file not found: {resolved_path}{format_source(source)}")
+        return None
+
+    def _infer_ros_param_type(self, value: Any) -> str:
+        if isinstance(value, bool):
+            return "bool"
+        if isinstance(value, int):
+            return "int"
+        if isinstance(value, float):
+            return "double"
+        if isinstance(value, list):
+            if len(value) == 0:
+                return "string_array"
+            if isinstance(value[0], bool):
+                return "bool_array"
+            if isinstance(value[0], int):
+                return "int_array"
+            if isinstance(value[0], float):
+                return "double_array"
+            if isinstance(value[0], str):
+                return "string_array"
+            return "string_array"
+        return "string"
+
     def _load_parameters_from_file(
         self,
         file_path: str,
@@ -605,75 +689,45 @@ class ParameterManager:
             return
 
         try:
-            # Resolve the full path
-            resolved_path = self._resolve_parameter_file_path(file_path, package_name, is_override, config_registry)
-            
-            # Skip if we couldn't resolve to an absolute path or it involves substitutions
-            if not resolved_path or resolved_path.startswith("$") or not os.path.isabs(resolved_path):
-                logger.debug(f"Skipping parameter file load for {file_path}: Could not resolve to absolute path ({resolved_path})")
+            existing_path = self._resolve_existing_parameter_file_path(
+                file_path,
+                package_name,
+                is_override,
+                config_registry,
+                source,
+            )
+            if not existing_path:
                 return
-            
-            if not os.path.exists(resolved_path):
-                logger.warning(f"Parameter file not found: {resolved_path}{format_source(source)}")
-                return
-                
-            logger.debug(f"Loading parameters from file: {resolved_path}")
-            data = yaml_parser.load_config(resolved_path)
-            
+
+            logger.debug(f"Loading parameters from file: {existing_path}")
+            data = yaml_parser.load_config(existing_path)
             if not data:
                 return
 
-            # Parse ROS 2 parameter file structure
-            # Format:
-            # node_name:
-            #   ros__parameters:
-            #     param_name: value
-            
             node_name = self.instance.name
-            
-            # Find relevant sections
             for key, value in data.items():
-                # Check if key matches node name or wildcard
-                # Simple matching: exact match or /**
-                # Could look into more complex ROS 2 matching rules if needed
-                if key == "/**" or key == f"/{node_name}" or key == node_name:
-                    if "ros__parameters" in value:
-                        # Flatten the nested structure
-                        flattened_params = self._flatten_parameters(value["ros__parameters"])
-                        
-                        for p_name, p_value in flattened_params.items():
-                            # Resolve parameter value if resolver is available
-                            if self.parameter_resolver:
-                                p_value = self.parameter_resolver.resolve_parameter_value(p_value, source=source)
+                if key not in ("/**", f"/{node_name}", node_name):
+                    continue
+                ros_params = value.get("ros__parameters") if isinstance(value, dict) else None
+                if not ros_params:
+                    continue
 
-                            # Infer type
-                            p_type = "string"
-                            if isinstance(p_value, bool):
-                                p_type = "bool"
-                            elif isinstance(p_value, int):
-                                p_type = "int"
-                            elif isinstance(p_value, float):
-                                p_type = "double"
-                            elif isinstance(p_value, list):
-                                # arrays
-                                if len(p_value) > 0:
-                                    if isinstance(p_value[0], int): p_type = "int_array"
-                                    elif isinstance(p_value[0], float): p_type = "double_array"
-                                    elif isinstance(p_value[0], str): p_type = "string_array"
-                                    elif isinstance(p_value[0], bool): p_type = "bool_array"
+                flattened_params = self._flatten_parameters(ros_params)
+                effective_type = parameter_type or (
+                    ParameterType.OVERRIDE_FILE if is_override else ParameterType.DEFAULT_FILE
+                )
 
-                            # Use appropriate parameter type based on whether this is from an override file
-                            if parameter_type:
-                                param_type = parameter_type
-                            else:
-                                param_type = ParameterType.OVERRIDE_FILE if is_override else ParameterType.DEFAULT_FILE
-                                
-                            self.parameters.set_parameter(
-                                p_name,
-                                p_value,
-                                data_type=p_type,
-                                parameter_type=param_type,
-                                source=source,
-                            )
+                for p_name, p_value in flattened_params.items():
+                    if self.parameter_resolver:
+                        p_value = self.parameter_resolver.resolve_parameter_value(p_value, source=source)
+                    self.parameters.set_parameter(
+                        p_name,
+                        p_value,
+                        data_type=self._infer_ros_param_type(p_value),
+                        parameter_type=effective_type,
+                        source=source,
+                    )
         except Exception as e:
-            logger.warning(f"Failed to load parameters from file {file_path}: {e}{format_source(source)}")
+            logger.warning(
+                f"Failed to load parameters from file {file_path}: {e}{format_source(source)}"
+            )
