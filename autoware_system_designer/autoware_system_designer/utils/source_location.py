@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -42,21 +43,67 @@ def source_from_config(config: Any, yaml_path: Optional[str]) -> SourceLocation:
     )
 
 
+def _infer_workspace_root(path: Path) -> Optional[Path]:
+    """Infer a reasonable workspace root to make paths relative.
+
+    Heuristic: if the path contains one of {src, install, build, log}, treat the
+    parent directory of that segment as the workspace root.
+    """
+
+    try:
+        env_root = os.environ.get("AUTOWARE_SYSTEM_DESIGNER_SOURCE_ROOT")
+        if env_root:
+            return Path(env_root)
+    except Exception:
+        pass
+
+    parts = path.parts
+    for marker in ("src", "install", "build", "log"):
+        try:
+            idx = parts.index(marker)
+        except ValueError:
+            continue
+        if idx <= 0:
+            return None
+        return Path(*parts[:idx])
+
+    return None
+
+
+def _format_file_path(path: Path) -> str:
+    root = _infer_workspace_root(path)
+    if not root:
+        return str(path)
+
+    try:
+        if path.is_relative_to(root):
+            return str(path.relative_to(root))
+    except Exception:
+        # Fallback for older Python or unexpected path types
+        try:
+            return str(path.relative_to(root))
+        except Exception:
+            return str(path)
+
+    return str(path)
+
+
 def format_source(loc: Optional[SourceLocation]) -> str:
     if not loc:
         return ""
 
     parts = []
     if loc.file_path is not None:
+        file_path = _format_file_path(loc.file_path)
         if loc.line is not None and loc.column is not None:
-            parts.append(f"source= {loc.file_path}:{loc.line}:{loc.column} ")
+            parts.append(f"source= {file_path}:{loc.line}:{loc.column} ")
         elif loc.line is not None:
-            parts.append(f"source= {loc.file_path}:{loc.line} ")
+            parts.append(f"source= {file_path}:{loc.line} ")
         else:
-            parts.append(f"source= {loc.file_path} ")
+            parts.append(f"source= {file_path} ")
 
     if loc.yaml_path:
-        parts.append(f"yaml_path= {loc.yaml_path} ")
+        parts.append(f"yaml_path={loc.yaml_path}")
 
     if not parts:
         return ""
