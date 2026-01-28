@@ -21,13 +21,13 @@ from typing import Dict, Tuple, List, Any
 from .deployment_config import DeploymentConfig
 from .builder.config_registry import ConfigRegistry
 from .builder.instances import DeploymentInstance
-from .builder.launcher_generator import generate_module_launch_file
+from .ros2_launcher.generator import generate_module_launch_file
 from .builder.parameter_template_generator import ParameterTemplateGenerator
 from .parsers.data_validator import entity_name_decode
 from .parsers.yaml_parser import yaml_parser
 from .exceptions import ValidationError, DeploymentError
-from .utils.template_utils import TemplateRenderer
-from .utils.system_structure_json import (
+from .file_io.template_renderer import TemplateRenderer
+from .file_io.system_structure_json import (
     save_system_structure,
     save_system_structure_snapshot,
     load_system_structure,
@@ -36,7 +36,7 @@ from .utils.system_structure_json import (
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig
-from .utils.source_location import SourceLocation, source_from_config, format_source
+from .file_io.source_location import SourceLocation, source_from_config, format_source
 from .resolvers.variant_resolver import SystemVariantResolver
 
 logger = logging.getLogger(__name__)
@@ -316,6 +316,7 @@ class Deployment:
         # Render template and save to file
         output_path = os.path.join(output_dir, output_filename)
         renderer.render_template_to_file(template_name, output_path, **data)
+
 
     def generate_system_monitor(self):
         # load the template file

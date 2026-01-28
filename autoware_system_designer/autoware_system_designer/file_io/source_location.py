@@ -31,6 +31,7 @@ def lookup_source(source_map: Optional[Dict[str, Dict[str, int]]], yaml_path: Op
 
 def source_from_config(config: Any, yaml_path: Optional[str]) -> SourceLocation:
     """Create a SourceLocation using a Config-like object (file_path + optional source_map)."""
+
     file_path = getattr(config, "file_path", None)
     source_map = getattr(config, "source_map", None)
 
@@ -44,11 +45,7 @@ def source_from_config(config: Any, yaml_path: Optional[str]) -> SourceLocation:
 
 
 def _infer_workspace_root(path: Path) -> Optional[Path]:
-    """Infer a reasonable workspace root to make paths relative.
-
-    Heuristic: if the path contains one of {src, install, build, log}, treat the
-    parent directory of that segment as the workspace root.
-    """
+    """Infer a reasonable workspace root to make paths relative."""
 
     try:
         env_root = os.environ.get("AUTOWARE_SYSTEM_DESIGNER_SOURCE_ROOT")
@@ -79,7 +76,6 @@ def _format_file_path(path: Path) -> str:
         if path.is_relative_to(root):
             return str(path.relative_to(root))
     except Exception:
-        # Fallback for older Python or unexpected path types
         try:
             return str(path.relative_to(root))
         except Exception:

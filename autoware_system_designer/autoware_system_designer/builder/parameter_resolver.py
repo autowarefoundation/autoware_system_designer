@@ -19,7 +19,7 @@ import math
 from typing import List, Dict, Any, Optional
 
 from ..parsers.yaml_parser import yaml_parser
-from ..utils.source_location import SourceLocation, format_source
+from ..file_io.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 

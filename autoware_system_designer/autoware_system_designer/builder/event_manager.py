@@ -16,7 +16,7 @@ import logging
 from typing import List, TYPE_CHECKING
 
 from ..models.events import Event, Process
-from ..utils.source_location import source_from_config, format_source
+from ..file_io.source_location import source_from_config, format_source
 
 if TYPE_CHECKING:
     from .instances import Instance

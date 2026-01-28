@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from ..exceptions import ValidationError
 from ..parsers.data_parser import entity_name_decode
 from ..models.parameters import ParameterType
-from ..utils.source_location import source_from_config, format_source
+from ..file_io.source_location import source_from_config, format_source
 from .parameter_set_applier import apply_parameter_set
 
 if TYPE_CHECKING:

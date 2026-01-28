@@ -19,7 +19,7 @@ import shutil
 from pathlib import Path
 
 from ..models.parameters import ParameterType
-from ..utils.source_location import SourceLocation, format_source
+from ..file_io.source_location import SourceLocation, format_source
 
 if TYPE_CHECKING:
     from .instances import Instance

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, TYPE_CHECKING
 
-from ..utils.system_structure_json import SCHEMA_VERSION
+from ..file_io.system_structure_json import SCHEMA_VERSION
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -207,3 +207,4 @@ def collect_system_structure(instance: "Instance", system_name: str, mode: str) 
         },
         "data": collect_instance_data(instance),
     }
+

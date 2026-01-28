@@ -21,7 +21,7 @@ import re
 from ..models.parameters import ParameterList, ParameterFileList, Parameter, ParameterFile, ParameterType
 from ..parsers.yaml_parser import yaml_parser
 from ..exceptions import ParameterConfigurationError, ValidationError
-from ..utils.source_location import SourceLocation, source_from_config, format_source
+from ..file_io.source_location import SourceLocation, source_from_config, format_source
 
 if TYPE_CHECKING:
     from .instances import Instance

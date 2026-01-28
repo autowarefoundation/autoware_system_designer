@@ -2,8 +2,8 @@ import fcntl
 import os
 from pathlib import Path
 import logging
-from ..utils.template_utils import TemplateRenderer
-from ..utils.source_location import SourceLocation, format_source
+from ..file_io.template_renderer import TemplateRenderer
+from ..file_io.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -179,3 +179,4 @@ def _generate_index_file(install_root: Path, output_file: Path):
         )
     except Exception as e:
         logger.error(f"Failed to render visualization index template: {e}")
+

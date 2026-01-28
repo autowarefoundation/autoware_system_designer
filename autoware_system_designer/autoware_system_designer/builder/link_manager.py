@@ -21,7 +21,7 @@ from typing import Any, Dict, List, TYPE_CHECKING
 from ..models.ports import InPort, OutPort
 from ..models.links import Link, Connection, ConnectionType
 from ..exceptions import ValidationError
-from ..utils.source_location import source_from_config, format_source
+from ..file_io.source_location import source_from_config, format_source
 
 if TYPE_CHECKING:
     from .instances import Instance

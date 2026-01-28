@@ -21,7 +21,7 @@ import logging
 
 from autoware_system_designer.utils import pascal_to_snake
 from autoware_system_designer.utils.logging_utils import configure_split_stream_logging
-from autoware_system_designer.utils.template_utils import TemplateRenderer
+from autoware_system_designer.file_io.template_renderer import TemplateRenderer
 
 
 def create_node_launcher_xml(node_yaml) -> str:

@@ -23,7 +23,7 @@ from ..exceptions import ValidationError, NodeConfigurationError, ModuleConfigur
 from ..resolvers.variant_resolver import SystemVariantResolver, NodeVariantResolver, ModuleVariantResolver, VariantResolver
 
 from ..parsers.data_validator import entity_name_decode
-from ..utils.source_location import SourceLocation, format_source
+from ..file_io.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 

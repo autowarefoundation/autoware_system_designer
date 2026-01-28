@@ -18,10 +18,10 @@ import logging
 import shutil
 from typing import Dict, List, Optional
 from pathlib import Path
-from ..utils.template_utils import TemplateRenderer
+from ..file_io.template_renderer import TemplateRenderer
 from .visualization_index import get_install_root
-from ..utils.system_structure_json import extract_system_structure_data
-from ..utils.source_location import SourceLocation, format_source
+from ..file_io.system_structure_json import extract_system_structure_data
+from ..file_io.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +108,7 @@ def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_
     for mode_key, data in deploy_data.items():
         _generate_js_data(renderer, mode_key, data, web_data_dir)
         logger.info(f"Generated visualization for mode: {mode_key}")
+
 
     # Generate web visualization files
     if deploy_data:
