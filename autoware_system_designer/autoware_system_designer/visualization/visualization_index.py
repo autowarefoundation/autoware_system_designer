@@ -173,7 +173,7 @@ def _generate_index_file(install_root: Path, output_file: Path):
     try:
         renderer = TemplateRenderer()
         renderer.render_template_to_file(
-            "visualization/systems_index.html.jinja2",
+            "systems_index.html.jinja2",
             str(output_file),
             deployments=view_deployments
         )

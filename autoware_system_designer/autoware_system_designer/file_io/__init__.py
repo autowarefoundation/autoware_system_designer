@@ -6,8 +6,8 @@ formatting file-backed diagnostics.
 
 from .source_location import SourceLocation, lookup_source, source_from_config, format_source
 from .template_renderer import TemplateRenderer
+from ..models.system_structure import SCHEMA_VERSION
 from .system_structure_json import (
-    SCHEMA_VERSION,
     build_system_structure,
     build_system_structure_snapshot,
     save_system_structure,

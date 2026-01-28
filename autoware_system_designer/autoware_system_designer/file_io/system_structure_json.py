@@ -5,14 +5,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
+from ..models.system_structure import (
+    SCHEMA_VERSION,
+    InstanceData,
+    SystemStructureMetadata,
+    SystemStructurePayload,
+)
+
 from .source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.0"
-
-
-def build_system_structure(instance, system_name: str, mode: str) -> Dict[str, Any]:
+def build_system_structure(instance, system_name: str, mode: str) -> SystemStructurePayload:
     """Build a schema-versioned system structure payload from an Instance."""
 
     return {
@@ -28,11 +32,11 @@ def build_system_structure(instance, system_name: str, mode: str) -> Dict[str, A
 
 def build_system_structure_snapshot(
     instance, system_name: str, mode: str, step: str, error: Exception | None = None
-) -> Dict[str, Any]:
+) -> SystemStructurePayload:
     """Build a system structure payload with step/error metadata for snapshots."""
 
     payload = build_system_structure(instance, system_name, mode)
-    metadata = payload.setdefault("metadata", {})
+    metadata: SystemStructureMetadata = payload.setdefault("metadata", {})
     metadata["step"] = step
     if error:
         metadata["error"] = {
@@ -87,7 +91,7 @@ def load_system_structure(input_path: str) -> Dict[str, Any]:
         raise
 
 
-def extract_system_structure_data(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def extract_system_structure_data(payload: Dict[str, Any]) -> Tuple[InstanceData, SystemStructureMetadata]:
     """Return (data, metadata) from payload or raw data if unversioned."""
 
     if isinstance(payload, dict) and "schema_version" in payload and "data" in payload:

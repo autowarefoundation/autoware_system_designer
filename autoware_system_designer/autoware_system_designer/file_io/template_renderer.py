@@ -19,6 +19,9 @@ def _get_template_directories() -> list[str]:
 
     # Templates bundled in-package
     core_template_dir = os.path.abspath(os.path.join(base_dir, "../template"))
+    visualization_template_dir = os.path.abspath(
+        os.path.join(base_dir, "../visualization/templates")
+    )
     ros2_launcher_template_dir = os.path.abspath(
         os.path.join(base_dir, "../ros2_launcher/templates")
     )
@@ -27,6 +30,9 @@ def _get_template_directories() -> list[str]:
 
     if os.path.exists(core_template_dir):
         template_dirs.append(core_template_dir)
+
+    if os.path.exists(visualization_template_dir):
+        template_dirs.append(visualization_template_dir)
 
     if os.path.exists(ros2_launcher_template_dir):
         template_dirs.append(ros2_launcher_template_dir)
@@ -40,10 +46,16 @@ def _get_template_directories() -> list[str]:
 
         share_dir = get_package_share_directory("autoware_system_designer")
         share_template_dir = os.path.join(share_dir, "template")
+        share_visualization_template_dir = os.path.join(
+            share_dir, "visualization", "templates"
+        )
         share_ros2_launcher_template_dir = os.path.join(share_dir, "ros2_launcher", "templates")
 
         if os.path.exists(share_template_dir):
             template_dirs.append(share_template_dir)
+
+        if os.path.exists(share_visualization_template_dir):
+            template_dirs.append(share_visualization_template_dir)
 
         if os.path.exists(share_ros2_launcher_template_dir):
             template_dirs.append(share_ros2_launcher_template_dir)

@@ -22,6 +22,7 @@ from ..file_io.template_renderer import TemplateRenderer
 from .visualization_index import get_install_root
 from ..file_io.system_structure_json import extract_system_structure_data
 from ..file_io.source_location import SourceLocation, format_source
+from ..models.system_structure import DeploymentDataByMode
 
 logger = logging.getLogger(__name__)
 
@@ -60,23 +61,25 @@ def _copy_static_asset(filename: str, destination_dir: str) -> None:
         logger.error(f"Failed to find static file: {filename}{format_source(src)}")
 
 
-def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str) -> None:
+def _generate_js_data(
+    renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str
+) -> None:
     """Generate JavaScript data files for web visualization."""
     data, _ = extract_system_structure_data(data)
     # Node diagram data
     node_data = {**data, "mode": mode_key, "window_variable": "systemDesignData"}
     output_path = os.path.join(web_data_dir, f"{mode_key}_node_diagram.js")
-    renderer.render_template_to_file("visualization/data/common_design_data.js.jinja2", output_path, **node_data)
+    renderer.render_template_to_file("data/common_design_data.js.jinja2", output_path, **node_data)
 
     # Sequence diagram data
     sequence_data = {**data, "mode": mode_key, "window_variable": "sequenceDiagramData"}
     output_path = os.path.join(web_data_dir, f"{mode_key}_sequence_diagram.js")
-    renderer.render_template_to_file("visualization/data/common_design_data.js.jinja2", output_path, **sequence_data)
+    renderer.render_template_to_file("data/common_design_data.js.jinja2", output_path, **sequence_data)
 
     # Logic diagram data
     logic_data = {**data, "mode": mode_key, "window_variable": "logicDiagramData"}
     output_path = os.path.join(web_data_dir, f"{mode_key}_logic_diagram.js")
-    renderer.render_template_to_file("visualization/data/common_design_data.js.jinja2", output_path, **logic_data)
+    renderer.render_template_to_file("data/common_design_data.js.jinja2", output_path, **logic_data)
 
 
 def _calculate_systems_index_path(web_dir: str) -> str:
@@ -91,7 +94,7 @@ def _calculate_systems_index_path(web_dir: str) -> str:
     return "../../../../../../../systems.html"
 
 
-def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_dir: str):
+def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualization_dir: str):
     """Generate visualization files for deployment data.
 
     Args:
@@ -144,7 +147,7 @@ def visualize_deployment(deploy_data: Dict[str, Dict], name: str, visualization_
         }
         
         config_output_path = os.path.join(web_dir, "config.js")
-        renderer.render_template_to_file("visualization/data/deployment_config.js.jinja2", config_output_path, **overview_data)
+        renderer.render_template_to_file("data/deployment_config.js.jinja2", config_output_path, **overview_data)
         logger.info(f"Generated deployment config: config.js")
 
         # Copy static overview HTML

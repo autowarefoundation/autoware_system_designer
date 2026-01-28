@@ -1,13 +1,19 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, TYPE_CHECKING
 
-from ..file_io.system_structure_json import SCHEMA_VERSION
+from ..models.system_structure import (
+    SCHEMA_VERSION,
+    EventData,
+    InstanceData,
+    PortData,
+    SystemStructurePayload,
+)
 
 if TYPE_CHECKING:
     from .instances import Instance
 
 
-def serialize_event(event):
+def serialize_event(event) -> EventData | None:
     if not event:
         return None
     return {
@@ -24,7 +30,7 @@ def serialize_event(event):
     }
 
 
-def serialize_port(port):
+def serialize_port(port) -> PortData:
     data = {
         "unique_id": port.unique_id,
         "name": port.name,
@@ -134,7 +140,7 @@ def collect_launcher_data(instance: "Instance") -> Dict[str, Any]:
     return launcher_data
 
 
-def collect_instance_data(instance: "Instance") -> dict:
+def collect_instance_data(instance: "Instance") -> InstanceData:
     data = {
         "name": instance.name,
         "unique_id": instance.unique_id,
@@ -196,7 +202,7 @@ def collect_instance_data(instance: "Instance") -> dict:
     return data
 
 
-def collect_system_structure(instance: "Instance", system_name: str, mode: str) -> dict:
+def collect_system_structure(instance: "Instance", system_name: str, mode: str) -> SystemStructurePayload:
     """Collect instance data with schema/version metadata for JSON handover."""
     return {
         "schema_version": SCHEMA_VERSION,

@@ -44,8 +44,10 @@ setup(
         "autoware_system_designer": [
             "template/**/*",
             "ros2_launcher/templates/**/*",
+            "visualization/templates/**/*",
             "visualization/*.html",
             "visualization/js/*.js",
+            "visualization/css/*.css",
         ],
     },
     extras_require={
