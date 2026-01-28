@@ -14,7 +14,7 @@
 
 from typing import List
 import logging
-from ..utils.naming import generate_unique_id
+from ...utils.naming import generate_unique_id
 
 logger = logging.getLogger(__name__)
 

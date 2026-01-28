@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-from ..builder.instances import Instance
+from ..builder.instances.instances import Instance
 from ..file_io.source_location import SourceLocation, format_source
 from ..file_io.system_structure_json import extract_system_structure_data
 from ..file_io.template_renderer import TemplateRenderer

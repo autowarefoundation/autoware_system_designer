@@ -18,13 +18,13 @@ import re
 import difflib
 from typing import Any, Dict, List, TYPE_CHECKING
 
-from ..models.ports import InPort, OutPort
-from ..models.links import Link, Connection, ConnectionType
-from ..exceptions import ValidationError
-from ..file_io.source_location import source_from_config, format_source
+from ..runtime.ports import InPort, OutPort
+from ..runtime.links import Link, Connection, ConnectionType
+from ...exceptions import ValidationError
+from ...file_io.source_location import source_from_config, format_source
 
 if TYPE_CHECKING:
-    from .instances import Instance
+    from ..instances.instances import Instance
 
 logger = logging.getLogger(__name__)
 

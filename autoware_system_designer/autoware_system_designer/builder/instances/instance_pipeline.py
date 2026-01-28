@@ -1,8 +1,8 @@
 import logging
 from typing import Callable, Dict
 
-from ..exceptions import ValidationError
-from .parameter_resolver import ParameterResolver
+from ...exceptions import ValidationError
+from ..parameters.parameter_resolver import ParameterResolver
 from .instance_tree import set_instances
 
 logger = logging.getLogger(__name__)

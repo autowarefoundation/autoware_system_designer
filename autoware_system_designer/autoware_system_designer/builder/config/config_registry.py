@@ -17,13 +17,13 @@ import logging
 from pathlib import Path
 
 import copy
-from ..parsers.data_parser import ConfigParser
-from ..models.config import Config, ConfigType, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigSubType
-from ..exceptions import ValidationError, NodeConfigurationError, ModuleConfigurationError, ParameterConfigurationError
-from ..resolvers.variant_resolver import SystemVariantResolver, NodeVariantResolver, ModuleVariantResolver, VariantResolver
+from ...models.parsing.data_parser import ConfigParser
+from ...models.config import Config, ConfigType, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigSubType
+from ...exceptions import ValidationError, NodeConfigurationError, ModuleConfigurationError, ParameterConfigurationError
+from ..resolution.variant_resolver import SystemVariantResolver, NodeVariantResolver, ModuleVariantResolver, VariantResolver
 
-from ..parsers.data_validator import entity_name_decode
-from ..file_io.source_location import SourceLocation, format_source
+from ...models.parsing.data_validator import entity_name_decode
+from ...file_io.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 

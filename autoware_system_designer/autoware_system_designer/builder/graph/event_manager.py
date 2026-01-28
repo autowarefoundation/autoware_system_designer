@@ -15,11 +15,11 @@
 import logging
 from typing import List, TYPE_CHECKING
 
-from ..models.events import Event, Process
-from ..file_io.source_location import source_from_config, format_source
+from ..runtime.events import Event, Process
+from ...file_io.source_location import source_from_config, format_source
 
 if TYPE_CHECKING:
-    from .instances import Instance
+    from ..instances.instances import Instance
 
 logger = logging.getLogger(__name__)
 

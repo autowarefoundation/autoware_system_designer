@@ -16,11 +16,11 @@ from typing import Dict, Any
 from pathlib import Path
 import logging
 
-from ..parsers.yaml_parser import yaml_parser
+from .yaml_parser import yaml_parser
 from .data_validator import ValidatorFactory, entity_name_decode
-from ..models.config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigType, ConfigSubType
-from ..exceptions import ValidationError
-from ..file_io.source_location import SourceLocation, lookup_source, format_source
+from ..config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigType, ConfigSubType
+from ...exceptions import ValidationError
+from ...file_io.source_location import SourceLocation, lookup_source, format_source
 
 logger = logging.getLogger(__name__)
 

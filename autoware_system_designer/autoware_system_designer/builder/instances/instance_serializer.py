@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, TYPE_CHECKING
 
-from ..models.system_structure import (
+from ...models.system_structure import (
     SCHEMA_VERSION,
     EventData,
     InstanceData,

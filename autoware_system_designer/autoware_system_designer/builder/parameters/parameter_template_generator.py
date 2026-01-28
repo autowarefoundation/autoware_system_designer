@@ -18,11 +18,11 @@ import os
 import shutil
 from pathlib import Path
 
-from ..models.parameters import ParameterType
-from ..file_io.source_location import SourceLocation, format_source
+from ..runtime.parameters import ParameterType
+from ...file_io.source_location import SourceLocation, format_source
 
 if TYPE_CHECKING:
-    from .instances import Instance
+    from ..instances.instances import Instance
 
 logger = logging.getLogger(__name__)
 

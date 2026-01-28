@@ -1,14 +1,14 @@
 import logging
 from typing import TYPE_CHECKING
 
-from ..exceptions import ValidationError
-from ..models.parameters import ParameterType
-from ..parsers.data_parser import entity_name_decode
-from ..file_io.source_location import source_from_config, format_source
+from ...exceptions import ValidationError
+from ..runtime.parameters import ParameterType
+from ...models.parsing.data_validator import entity_name_decode
+from ...file_io.source_location import source_from_config, format_source
 
 if TYPE_CHECKING:
-    from .config_registry import ConfigRegistry
-    from .instances import Instance
+    from ..config.config_registry import ConfigRegistry
+    from ..instances.instances import Instance
 
 logger = logging.getLogger(__name__)
 

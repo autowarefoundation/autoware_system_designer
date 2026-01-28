@@ -15,7 +15,7 @@
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
-from ..file_io.source_location import SourceLocation
+from ...file_io.source_location import SourceLocation
 
 
 class ParameterType(Enum):

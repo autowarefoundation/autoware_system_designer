@@ -15,8 +15,8 @@
 from typing import List
 import logging
 from .events import Event
-from ..utils.naming import generate_unique_id
-from ..exceptions import ValidationError
+from ...utils.naming import generate_unique_id
+from ...exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 

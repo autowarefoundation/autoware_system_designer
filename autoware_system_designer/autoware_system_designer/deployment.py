@@ -19,12 +19,12 @@ import copy
 from pathlib import Path
 from typing import Dict, Tuple, List, Any
 from .deployment_config import DeploymentConfig
-from .builder.config_registry import ConfigRegistry
-from .builder.instances import DeploymentInstance
+from .builder.config.config_registry import ConfigRegistry
+from .builder.instances.instances import DeploymentInstance
 from .ros2_launcher.generator import generate_module_launch_file
-from .builder.parameter_template_generator import ParameterTemplateGenerator
-from .parsers.data_validator import entity_name_decode
-from .parsers.yaml_parser import yaml_parser
+from .builder.parameters.parameter_template_generator import ParameterTemplateGenerator
+from .models.parsing.data_validator import entity_name_decode
+from .models.parsing.yaml_parser import yaml_parser
 from .exceptions import ValidationError, DeploymentError
 from .file_io.template_renderer import TemplateRenderer
 from .file_io.system_structure_json import (
@@ -37,7 +37,7 @@ from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig
 from .file_io.source_location import SourceLocation, source_from_config, format_source
-from .resolvers.variant_resolver import SystemVariantResolver
+from .builder.resolution.variant_resolver import SystemVariantResolver
 
 logger = logging.getLogger(__name__)
 

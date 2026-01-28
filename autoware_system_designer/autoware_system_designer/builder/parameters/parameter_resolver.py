@@ -18,8 +18,8 @@ import os
 import math
 from typing import List, Dict, Any, Optional
 
-from ..parsers.yaml_parser import yaml_parser
-from ..file_io.source_location import SourceLocation, format_source
+from ...models.parsing.yaml_parser import yaml_parser
+from ...file_io.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 

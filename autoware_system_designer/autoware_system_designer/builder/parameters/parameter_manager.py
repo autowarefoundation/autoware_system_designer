@@ -18,14 +18,14 @@ import os
 import shutil
 import re
 
-from ..models.parameters import ParameterList, ParameterFileList, Parameter, ParameterFile, ParameterType
-from ..parsers.yaml_parser import yaml_parser
-from ..exceptions import ParameterConfigurationError, ValidationError
-from ..file_io.source_location import SourceLocation, source_from_config, format_source
+from ..runtime.parameters import ParameterList, ParameterFileList, Parameter, ParameterFile, ParameterType
+from ...models.parsing.yaml_parser import yaml_parser
+from ...exceptions import ParameterConfigurationError, ValidationError
+from ...file_io.source_location import SourceLocation, source_from_config, format_source
 
 if TYPE_CHECKING:
-    from .instances import Instance
-    from .config_registry import ConfigRegistry
+    from ..instances.instances import Instance
+    from ..config.config_registry import ConfigRegistry
 
 logger = logging.getLogger(__name__)
 

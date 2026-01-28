@@ -15,9 +15,9 @@
 from typing import List, Optional
 
 from .ports import Port, InPort, OutPort
-from ..exceptions import ValidationError, DeploymentError
-from ..utils.naming import generate_unique_id
-from ..file_io.source_location import SourceLocation
+from ...exceptions import ValidationError, DeploymentError
+from ...utils.naming import generate_unique_id
+from ...file_io.source_location import SourceLocation
 
 from enum import Enum
 

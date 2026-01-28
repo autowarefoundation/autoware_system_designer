@@ -14,14 +14,14 @@
 
 from typing import List, Dict, Any, Callable
 
-from ..models.config import NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
-from ..deployment_config import deploy_config
-from ..exceptions import ValidationError
-from ..utils.naming import generate_unique_id
-from ..visualization.visualization_guide import get_component_color, get_component_position
-from .parameter_manager import ParameterManager
-from .link_manager import LinkManager
-from .event_manager import EventManager
+from ...models.config import NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
+from ...deployment_config import deploy_config
+from ...exceptions import ValidationError
+from ...utils.naming import generate_unique_id
+from ...visualization.visualization_guide import get_component_color, get_component_position
+from ..parameters.parameter_manager import ParameterManager
+from ..graph.link_manager import LinkManager
+from ..graph.event_manager import EventManager
 from .instance_serializer import (
     collect_instance_data,
     collect_system_structure,

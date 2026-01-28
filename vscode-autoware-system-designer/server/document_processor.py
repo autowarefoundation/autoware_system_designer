@@ -8,7 +8,7 @@ from urllib.parse import urlparse, unquote
 from pygls.server import LanguageServer
 from lsprotocol import types as lsp
 
-from autoware_system_designer.parsers.data_parser import ConfigParser
+from autoware_system_designer.models.parsing.data_parser import ConfigParser
 from autoware_system_designer.models.config import Config
 from autoware_system_designer.exceptions import ValidationError
 

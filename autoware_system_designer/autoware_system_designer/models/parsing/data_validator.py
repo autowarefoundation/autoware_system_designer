@@ -15,8 +15,8 @@
 from typing import Dict, Any, List, Tuple
 from abc import ABC, abstractmethod
 
-from ..models.config import ConfigType
-from ..exceptions import ValidationError
+from ..config import ConfigType
+from ...exceptions import ValidationError
 
 
 def entity_name_decode(entity_name: str) -> Tuple[str, str]:

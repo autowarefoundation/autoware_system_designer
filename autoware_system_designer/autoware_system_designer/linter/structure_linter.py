@@ -17,8 +17,8 @@
 from pathlib import Path
 from typing import Dict, Any, List
 
-from ..parsers.yaml_parser import yaml_parser
-from ..parsers.data_validator import ValidatorFactory, entity_name_decode
+from ..models.parsing.yaml_parser import yaml_parser
+from ..models.parsing.data_validator import ValidatorFactory, entity_name_decode
 from ..models.config import ConfigType
 from .report import LintResult
 
