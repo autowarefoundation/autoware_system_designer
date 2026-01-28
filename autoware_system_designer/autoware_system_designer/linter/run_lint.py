@@ -20,7 +20,16 @@ import sys
 from pathlib import Path
 from typing import List
 
-from ..linter import lint_files, LintResult
+try:
+    from . import lint_files, LintResult
+except ImportError:  # pragma: no cover
+    # Allow direct execution: `python path/to/run_lint.py ...`
+    SCRIPT_DIR = Path(__file__).resolve().parent
+    REPO_ROOT = SCRIPT_DIR.parent.parent
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+
+    from autoware_system_designer.linter import lint_files, LintResult
 
 
 def find_yaml_files(paths: List[str]) -> List[Path]:
@@ -51,7 +60,7 @@ def find_yaml_files(paths: List[str]) -> List[Path]:
     return sorted(set(yaml_files))
 
 
-def main():
+def main(argv: List[str] | None = None) -> None:
     """Main entry point for the linter CLI."""
     parser = argparse.ArgumentParser(
         description='Lint autoware_system_design_format YAML files',
@@ -59,8 +68,9 @@ def main():
     )
     parser.add_argument(
         'paths',
-        nargs='+',
-        help='File paths or directories to lint',
+        nargs='*',
+        default=None,
+        help='File paths or directories to lint (default: current directory)',
     )
     parser.add_argument(
         '--format',
@@ -69,7 +79,10 @@ def main():
         help='Output format (default: human)',
     )
     
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    if not args.paths:
+        args.paths = ['.']
     
     # Find all YAML files
     yaml_files = find_yaml_files(args.paths)
@@ -119,6 +132,8 @@ def main():
     total_errors = sum(len(r.errors) for r in results)
     if total_errors > 0:
         sys.exit(1)
+    if args.format == 'human':
+        print("Lint succeeded with no errors.")
     sys.exit(0)
 
 
