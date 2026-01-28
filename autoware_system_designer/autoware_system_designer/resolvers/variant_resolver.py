@@ -15,7 +15,7 @@
 import logging
 from typing import List, Dict, Any, TypeVar, Optional
 from ..models.config import SystemConfig, NodeConfig, ModuleConfig
-from ..utils.connection_utils import filter_connections_by_removed_entities
+from .connection_utils import filter_connections_by_removed_entities
 
 logger = logging.getLogger(__name__)
 
@@ -31,19 +31,27 @@ class VariantResolver:
         if not override_list:
             return base_list or []
 
-        merged_list = [item.copy() for item in (base_list or [])]
+        merged_list = [item.copy() if isinstance(item, dict) else item for item in (base_list or [])]
 
         if key_field:
             # Create a map for quick lookup and replacement
-            base_map = {item[key_field]: i for i, item in enumerate(merged_list) if key_field in item}
+            base_map = {
+                item[key_field]: i
+                for i, item in enumerate(merged_list)
+                if isinstance(item, dict) and key_field in item
+            }
             
             for item in override_list:
-                key = item.get(key_field)
-                if key and key in base_map:
-                    # Replace existing item
-                    merged_list[base_map[key]] = item
+                if isinstance(item, dict):
+                    key = item.get(key_field)
+                    if key and key in base_map:
+                        # Replace existing item
+                        merged_list[base_map[key]] = item
+                    else:
+                        # Append new item
+                        merged_list.append(item)
                 else:
-                    # Append new item
+                    # For non-dict items, always append
                     merged_list.append(item)
         else:
             # Simple append if no key_field is provided
@@ -51,7 +59,7 @@ class VariantResolver:
 
         return merged_list
 
-    def _remove_list(self, target_list: List[Dict], remove_specs: List[Dict], key_field: str = None) -> List[Dict]:
+    def _remove_list(self, target_list: List[Any], remove_specs: List[Any], key_field: str = None) -> List[Any]:
         """
         Remove items from target_list based on remove_specs.
         If key_field is provided, remove items where item[key_field] matches spec[key_field].
@@ -62,25 +70,35 @@ class VariantResolver:
 
         result_list = []
         
-        # Prepare lookup for key-based removal
+        # Prepare lookup for key-based removal (dict items only)
         remove_keys = set()
         if key_field:
             for spec in remove_specs:
-                if key_field in spec:
+                if isinstance(spec, dict) and key_field in spec:
                     remove_keys.add(spec[key_field])
+
+        # Prepare lookup for scalar removals
+        scalar_remove_values = {spec for spec in remove_specs if not isinstance(spec, dict)}
 
         for item in target_list:
             should_remove = False
             if key_field:
-                if item.get(key_field) in remove_keys:
+                if isinstance(item, dict) and item.get(key_field) in remove_keys:
+                    should_remove = True
+                elif not isinstance(item, dict) and item in scalar_remove_values:
                     should_remove = True
             else:
-                # Subset match: checks if any spec matches the item
-                for spec in remove_specs:
-                    # Check if spec is a subset of item
-                    if all(item.get(k) == v for k, v in spec.items()):
+                if not isinstance(item, dict):
+                    if item in scalar_remove_values:
                         should_remove = True
-                        break
+                else:
+                    # Subset match: checks if any dict spec matches the item
+                    for spec in remove_specs:
+                        if not isinstance(spec, dict):
+                            continue
+                        if all(item.get(k) == v for k, v in spec.items()):
+                            should_remove = True
+                            break
             
             if not should_remove:
                 result_list.append(item)
@@ -170,9 +188,9 @@ class SystemVariantResolver(VariantResolver):
     def _apply_removals(self, system_config: SystemConfig, remove_config: Dict[str, Any]):
         if 'components' in remove_config:
             removed_names = [
-                spec.get('name')
+                spec if isinstance(spec, str) else spec.get('name')
                 for spec in remove_config.get('components', [])
-                if isinstance(spec, dict) and spec.get('name')
+                if (isinstance(spec, str) and spec) or (isinstance(spec, dict) and spec.get('name'))
             ]
             if removed_names and system_config.connections:
                 system_config.connections = filter_connections_by_removed_entities(

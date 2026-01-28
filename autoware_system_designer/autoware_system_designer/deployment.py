@@ -37,153 +37,9 @@ from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig
 from .utils.source_location import SourceLocation, source_from_config, format_source
-from .utils.connection_utils import filter_connections_by_removed_entities
+from .resolvers.variant_resolver import SystemVariantResolver
 
 logger = logging.getLogger(__name__)
-
-
-def _apply_removals(config: SystemConfig, remove_spec: Dict[str, Any]) -> None:
-    """
-    Remove components and connections from system configuration.
-    
-    Args:
-        config: SystemConfig to modify in-place
-        remove_spec: Dictionary containing 'components' and/or 'connections' to remove
-    """
-    # Remove components
-    if 'components' in remove_spec:
-        components_to_remove = remove_spec['components']
-        if components_to_remove:
-            # Build set of component names to remove (accept both {'name': ...} and 'name')
-            remove_names: set[str] = set()
-            for item in components_to_remove:
-                if isinstance(item, str) and item:
-                    remove_names.add(item)
-                elif isinstance(item, dict) and item.get('name'):
-                    remove_names.add(item['name'])
-
-            # Filter out components to remove
-            if config.components and remove_names:
-                config.components = [
-                    comp for comp in config.components
-                    if comp.get('name') not in remove_names
-                ]
-                logger.debug(f"Removed {len(remove_names)} components: {remove_names}")
-
-            # Also remove connections from/to removed components
-            if config.connections and remove_names:
-                original_count = len(config.connections)
-                config.connections = filter_connections_by_removed_entities(
-                    config.connections, remove_names
-                )
-                removed_count = original_count - len(config.connections)
-                if removed_count:
-                    logger.debug(
-                        f"Removed {removed_count} connections referencing removed components"
-                    )
-    
-    # Remove connections
-    if 'connections' in remove_spec:
-        connections_to_remove = remove_spec['connections']
-        if connections_to_remove and config.connections:
-            # For connections, we need to match all fields in the spec
-            original_count = len(config.connections)
-            filtered_connections = []
-            
-            for conn in config.connections:
-                should_remove = False
-                for remove_conn in connections_to_remove:
-                    # Check if all fields in remove_conn match the connection
-                    if all(conn.get(k) == v for k, v in remove_conn.items()):
-                        should_remove = True
-                        break
-                
-                if not should_remove:
-                    filtered_connections.append(conn)
-            
-            config.connections = filtered_connections
-            removed_count = original_count - len(filtered_connections)
-            logger.debug(f"Removed {removed_count} connections")
-
-
-def _apply_overrides(config: SystemConfig, override_spec: Dict[str, Any]) -> None:
-    """
-    Apply overrides/additions to system configuration.
-    
-    Args:
-        config: SystemConfig to modify in-place
-        override_spec: Dictionary containing 'components', 'connections', and/or 'parameter_sets' to override/add
-    """
-    def _merge_named_list(base_list: List[Dict[str, Any]] | None, override_list: List[Dict[str, Any]] | None) -> List[Dict[str, Any]]:
-        if not override_list:
-            return base_list or []
-        merged = [item.copy() for item in (base_list or [])]
-        index_by_name = {item.get('name'): i for i, item in enumerate(merged) if isinstance(item, dict)}
-        for item in override_list:
-            name = item.get('name') if isinstance(item, dict) else None
-            if name and name in index_by_name:
-                merged[index_by_name[name]] = item
-            else:
-                merged.append(item)
-        return merged
-
-    # Override/merge variables
-    if 'variables' in override_spec:
-        override_variables = override_spec['variables']
-        if override_variables is not None:
-            config.variables = _merge_named_list(config.variables, override_variables)
-
-    # Override/merge variable_files
-    if 'variable_files' in override_spec:
-        override_variable_files = override_spec['variable_files']
-        if override_variable_files is not None:
-            config.variable_files = _merge_named_list(config.variable_files, override_variable_files)
-
-    # Override parameter_sets (replaces base parameter_sets completely)
-    if 'parameter_sets' in override_spec:
-        override_parameter_sets = override_spec['parameter_sets']
-        if override_parameter_sets is not None:
-            config.parameter_sets = override_parameter_sets
-            logger.info(f"Overrode parameter_sets with {len(override_parameter_sets) if isinstance(override_parameter_sets, list) else 1} parameter set(s)")
-    
-    # Override/add components
-    if 'components' in override_spec:
-        override_components = override_spec['components']
-        if override_components:
-            if not config.components:
-                config.components = []
-            
-            # Build a map of existing components by name
-            component_map = {
-                comp.get('name'): idx 
-                for idx, comp in enumerate(config.components)
-                if 'name' in comp
-            }
-            
-            # Apply overrides or add new components
-            for override_comp in override_components:
-                comp_name = override_comp.get('name')
-                if comp_name in component_map:
-                    # Override existing component
-                    idx = component_map[comp_name]
-                    config.components[idx] = override_comp
-                    logger.debug(f"Overrode component '{comp_name}'")
-                else:
-                    # Add new component
-                    config.components.append(override_comp)
-                    logger.debug(f"Added new component '{comp_name}'")
-    
-    # Add/override connections
-    if 'connections' in override_spec:
-        override_connections = override_spec['connections']
-        if override_connections:
-            if not config.connections:
-                config.connections = []
-            
-            # For connections, we simply append them (no override logic needed)
-            # as connections are uniquely identified by their from/to combination
-            config.connections.extend(override_connections)
-            logger.debug(f"Added {len(override_connections)} connections")
 
 
 def apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -> SystemConfig:
@@ -225,14 +81,15 @@ def apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -
         return modified_config
     
     logger.info(f"Applying mode configuration for mode '{mode_name}'")
-    
-    # Apply removals first
-    if 'remove' in mode_config:
-        _apply_removals(modified_config, mode_config['remove'])
-    
-    # Apply overrides/additions
-    if 'override' in mode_config:
-        _apply_overrides(modified_config, mode_config['override'])
+
+    resolver = SystemVariantResolver()
+    resolver.resolve(
+        modified_config,
+        {
+            'override': mode_config.get('override', {}),
+            'remove': mode_config.get('remove', {}),
+        },
+    )
     
     return modified_config
 
