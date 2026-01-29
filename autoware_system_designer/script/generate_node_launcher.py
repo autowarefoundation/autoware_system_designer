@@ -12,19 +12,71 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import re
-import sys
-
-import yaml
+import argparse
 import logging
+import os
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from autoware_system_designer.utils import pascal_to_snake
-from autoware_system_designer.utils.logging_utils import configure_split_stream_logging
-from autoware_system_designer.file_io.template_renderer import TemplateRenderer
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+PACKAGE_ROOT = SCRIPT_DIR.parent
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_ROOT))
 
 
-def create_node_launcher_xml(node_yaml) -> str:
+from autoware_system_designer.exceptions import ValidationError  # noqa: E402
+from autoware_system_designer.file_io.template_renderer import TemplateRenderer  # noqa: E402
+from autoware_system_designer.models.config import ConfigType, NodeConfig  # noqa: E402
+from autoware_system_designer.models.parsing.data_parser import ConfigParser  # noqa: E402
+from autoware_system_designer.utils import pascal_to_snake  # noqa: E402
+from autoware_system_designer.utils.logging_utils import configure_split_stream_logging  # noqa: E402
+
+
+def _normalize_parameter_files(parameter_files: Any) -> List[Dict[str, Any]]:
+    if not parameter_files:
+        return []
+
+    if isinstance(parameter_files, list):
+        return [dict(item) for item in parameter_files if isinstance(item, dict)]
+
+    if isinstance(parameter_files, dict):
+        # Single object form: {name: ..., default/path: ..., ...}
+        if "name" in parameter_files:
+            return [dict(parameter_files)]
+
+        # Mapping form: {param_file_name: path}
+        result: List[Dict[str, Any]] = []
+        for name, path in parameter_files.items():
+            result.append({"name": str(name), "default": path})
+        return result
+
+    return []
+
+
+def _normalize_parameters(parameters: Any) -> List[Dict[str, Any]]:
+    if not parameters:
+        return []
+
+    if isinstance(parameters, list):
+        return [dict(item) for item in parameters if isinstance(item, dict)]
+
+    if isinstance(parameters, dict):
+        # Single object form
+        if "name" in parameters:
+            return [dict(parameters)]
+
+        # Mapping form: {param_name: value}
+        result: List[Dict[str, Any]] = []
+        for name, value in parameters.items():
+            result.append({"name": str(name), "default": value})
+        return result
+
+    return []
+
+
+def create_node_launcher_xml(node_config: NodeConfig) -> str:
     """
     Generate XML launcher content using Jinja2 template.
     
@@ -34,15 +86,10 @@ def create_node_launcher_xml(node_yaml) -> str:
     Returns:
         Generated XML content as string
     """
-    template_data = {}
-    # Node name: snake case of the node name which the original is in pascal case
-    # e.g. ObjectDetector.node -> object_detector
-    node_name = node_yaml.get("name").split(".")[0]
-    node_name = pascal_to_snake(node_name)
-    template_data["node_name"] = node_name
+    template_data: Dict[str, Any] = {}
+    template_data["node_name"] = pascal_to_snake(node_config.name)
 
-    # Extract necessary information from the node YAML
-    launch_config = node_yaml.get("launch")
+    launch_config = node_config.launch or {}
 
     # Launch configuration
     package_name = launch_config.get("package")
@@ -58,16 +105,14 @@ def create_node_launcher_xml(node_yaml) -> str:
         template_data["node_output"] = launch_config.get("node_output", "screen")
         template_data["use_container"] = launch_config.get("use_container", False)
 
-        if template_data["use_container"] and not launch_config.get("container_name"):
-            raise ValueError("Container name is required when use_container is True")
         template_data["container_name"] = launch_config.get("container_name")
 
     # Extract interface information
-    template_data["inputs"] = node_yaml.get("inputs", [])
-    template_data["outputs"] = node_yaml.get("outputs", [])
+    template_data["inputs"] = node_config.inputs or []
+    template_data["outputs"] = node_config.outputs or []
 
     # Extract parameter set information
-    param_path_list = node_yaml.get("parameter_files", [])
+    param_path_list = _normalize_parameter_files(node_config.parameter_files)
     template_data["parameter_files"] = [
         {
             'name': param_file.get('name'),
@@ -76,13 +121,13 @@ def create_node_launcher_xml(node_yaml) -> str:
         }
         for param_file in param_path_list
     ]
-    parameter_list = node_yaml.get("parameters", [])
+    parameter_list = _normalize_parameters(node_config.parameters)
     template_data["parameters"] = [
         {
             'name': param.get('name'),
             'default_value': (
                 str(param.get('default')).lower()
-                if param.get('type') == 'bool'
+                if param.get('type') == 'bool' or isinstance(param.get('default'), bool)
                 else param.get('default')
             )
         }
@@ -98,42 +143,29 @@ def create_node_launcher_xml(node_yaml) -> str:
     return launcher_xml
 
 
-def generate_launcher(node_yaml_dir, launch_file_dir) -> None:
+def generate_launcher(node_yaml_path: str, launch_file_dir: str) -> None:
     configure_split_stream_logging(
         level=logging.INFO,
         formatter=logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'),
     )
     logger = logging.getLogger(__name__)
 
-    # parse the autoware system design format files
-    with open(node_yaml_dir, "r") as stream:
-        try:
-            node_yaml = yaml.safe_load(stream)
-        except yaml.YAMLError as exc:
-            logger.error(f"Error parsing YAML file {node_yaml_dir}: {exc}")
-            return
-    if "name" not in node_yaml:
-        logger.error(f"Field 'name' is required in node configuration., {node_yaml_dir}")
-        return
-    
-    # Check if launch configuration exists and has required fields
-    if "launch" not in node_yaml:
-        logger.error(f"Field 'launch' is required in node configuration., {node_yaml_dir}")
+    try:
+        parser = ConfigParser(strict_mode=True)
+        config = parser.parse_entity_file(node_yaml_path)
+    except ValidationError as exc:
+        logger.error(f"Invalid node config: {exc}")
         return
 
-    launch_config = node_yaml.get("launch")
-    if "executable" not in launch_config and "ros2_launch_file" not in launch_config:
-        logger.error(f"Either 'executable' or 'ros2_launch_file' field is required in launch configuration., {node_yaml_dir}")
+    if config.entity_type != ConfigType.NODE or not isinstance(config, NodeConfig):
+        logger.error(f"Expected a node config file, got '{config.entity_type}': {node_yaml_path}")
         return
-    
-    node_name = node_yaml.get("name")
-    node_name = node_name.split(".")[0]
-    node_name = pascal_to_snake(node_name)
 
+    node_name = pascal_to_snake(config.name)
     logger.info(f"Generating launcher for node: {node_name}")
 
     # generate xml launcher file
-    launcher_xml = create_node_launcher_xml(node_yaml)
+    launcher_xml = create_node_launcher_xml(config)
 
     # generate the launch file
     launch_file = f"{node_name}.launch.xml"
@@ -141,16 +173,10 @@ def generate_launcher(node_yaml_dir, launch_file_dir) -> None:
 
     logger.info(f"Saving launcher to: {launch_file_path}")
 
-    # if the directory does not exist, create the directory
     os.makedirs(os.path.dirname(launch_file_path), exist_ok=True)
-
-    # if file exists, remove the file
-    if os.path.exists(launch_file_path):
-        os.remove(launch_file_path)
 
     # save the launch file to the launch file directory
     with open(launch_file_path, "w") as f:
-        # save empty file at this moment
         f.write(launcher_xml)
 
 
@@ -174,5 +200,15 @@ def _process_parameter_path(path, package_name):
     return path
 
 
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="Generate a ROS 2 launch XML for a single node config YAML")
+    parser.add_argument("node_yaml", help="Path to '<Name>.node.yaml'")
+    parser.add_argument("output_dir", help="Directory to write '<name>.launch.xml'")
+
+    args = parser.parse_args(argv)
+    generate_launcher(args.node_yaml, args.output_dir)
+    return 0
+
+
 if __name__ == "__main__":
-    generate_launcher(sys.argv[1], sys.argv[2])
+    raise SystemExit(main())
