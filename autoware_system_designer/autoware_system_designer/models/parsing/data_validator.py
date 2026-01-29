@@ -18,8 +18,8 @@ from typing import Any, Dict, List, Tuple
 from abc import ABC, abstractmethod
 
 from ..config import ConfigType
+from ..yaml_schema import get_entity_schema, validate_against_schema
 from ...exceptions import ValidationError
-from ...schema.yaml_schema import get_entity_schema, validate_against_schema
 
 
 def entity_name_decode(entity_name: str) -> Tuple[str, str]:

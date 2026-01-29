@@ -24,7 +24,7 @@ from typing import Any, Dict
 from ..models.parsing.yaml_parser import yaml_parser
 from ..models.parsing.data_validator import entity_name_decode
 from ..file_io.source_location import SourceLocation, lookup_source, format_source
-from ..schema.yaml_schema import get_entity_schema, validate_against_schema
+from ..models.yaml_schema import get_entity_schema, validate_against_schema
 from .report import LintResult
 
 

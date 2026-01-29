@@ -247,7 +247,9 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
                 "launch": FieldSpec(_OBJ, required=False),
                 "inputs": FieldSpec(_list_of_objects(required_keys=("name", "message_type")), required=False),
                 "outputs": FieldSpec(_list_of_objects(required_keys=("name", "message_type")), required=False),
-                "parameter_files": FieldSpec(UnionSpec((TypeSpec((dict,)), _list_of_objects(required_keys=("name",)))), required=False),
+                "parameter_files": FieldSpec(
+                    UnionSpec((TypeSpec((dict,)), _list_of_objects(required_keys=("name",)))), required=False
+                ),
                 "parameters": FieldSpec(UnionSpec((TypeSpec((dict,)), _list_of_objects(required_keys=("name",)))), required=False),
                 "processes": FieldSpec(_list_of_objects(required_keys=("name", "trigger_conditions", "outcomes")), required=False),
             },
