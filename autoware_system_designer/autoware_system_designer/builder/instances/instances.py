@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Dict, Any, Callable
+from typing import List, Dict
 
 from ...models.config import NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
 from ...deployment_config import deploy_config
@@ -25,10 +25,6 @@ from ..graph.event_manager import EventManager
 from .instance_serializer import (
     collect_instance_data,
     collect_system_structure,
-)
-from .instance_pipeline import (
-    set_system as set_system_impl,
-    check_duplicate_node_namespaces as check_duplicate_node_namespaces_impl,
 )
 
 class Instance:
@@ -128,32 +124,3 @@ class Instance:
 
     def collect_system_structure(self, system_name: str, mode: str) -> dict:
         return collect_system_structure(self, system_name, mode)
-
-class DeploymentInstance(Instance):
-    """Top-level deployment instance representing a complete system deployment.
-    
-    This instance manages the entire system hierarchy, including setting up the system
-    configuration, building the instance tree, establishing connections, and resolving parameters.
-    """
-    
-    def __init__(self, name: str):
-        super().__init__(name)
-
-    def set_system(
-        self,
-        system_config: SystemConfig,
-        config_registry,
-        package_paths: Dict[str, str] = {},
-        snapshot_callback: Callable[[str, Exception | None], None] | None = None,
-    ):
-        set_system_impl(
-            self,
-            system_config,
-            config_registry,
-            package_paths=package_paths,
-            snapshot_callback=snapshot_callback,
-        )
-
-    def check_duplicate_node_namespaces(self):
-        """Check for duplicate node namespaces in the entire system."""
-        check_duplicate_node_namespaces_impl(self)
