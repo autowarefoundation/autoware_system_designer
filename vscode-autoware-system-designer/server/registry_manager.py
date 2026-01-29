@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Optional
 from urllib.parse import urlparse, unquote
 
-from autoware_system_designer.parsers.data_parser import ConfigParser
+from autoware_system_designer.models.parsing.data_parser import ConfigParser
 from autoware_system_designer.models.config import Config
 
 logger = logging.getLogger(__name__)

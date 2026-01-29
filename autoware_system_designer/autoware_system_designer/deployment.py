@@ -19,15 +19,15 @@ import copy
 from pathlib import Path
 from typing import Dict, Tuple, List, Any
 from .deployment_config import DeploymentConfig
-from .builder.config_registry import ConfigRegistry
-from .builder.instances import DeploymentInstance
-from .builder.launcher_generator import generate_module_launch_file
-from .builder.parameter_template_generator import ParameterTemplateGenerator
-from .parsers.data_validator import entity_name_decode
-from .parsers.yaml_parser import yaml_parser
+from .builder.config.config_registry import ConfigRegistry
+from .builder.deployment_instance import DeploymentInstance
+from .ros2_launcher.generate_module_launcher import generate_module_launch_file
+from .template.parameter_template_generator import ParameterTemplateGenerator
+from .models.parsing.data_validator import entity_name_decode
+from .models.parsing.yaml_parser import yaml_parser
 from .exceptions import ValidationError, DeploymentError
-from .utils.template_utils import TemplateRenderer
-from .utils.system_structure_json import (
+from .file_io.template_renderer import TemplateRenderer
+from .file_io.system_structure_json import (
     save_system_structure,
     save_system_structure_snapshot,
     load_system_structure,
@@ -36,8 +36,8 @@ from .utils.system_structure_json import (
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig
-from .utils.source_location import SourceLocation, source_from_config, format_source
-from .resolvers.variant_resolver import SystemVariantResolver
+from .file_io.source_location import SourceLocation, source_from_config, format_source
+from .builder.resolution.variant_resolver import SystemVariantResolver
 
 logger = logging.getLogger(__name__)
 
@@ -124,17 +124,13 @@ class Deployment:
         
         self.config_yaml_dir = str(system_config.file_path)
         logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
-        
-        # Load the resolved config (which is what get_system returned)
-        # Wait, get_system returns a SystemConfig object which HAS the config dict.
-        # We don't need to load yaml again.
-        
+                
         self.name = system_config.name
 
-        # member variables - now supports multiple modes
+        # mode identifiers
         self.mode_keys: List[str] = []
 
-        # 4. set output paths
+        # set output paths
         self.output_root_dir = deploy_config.output_root_dir
         self.launcher_dir = os.path.join(self.output_root_dir, "exports", self.name, "launcher/")
         self.system_monitor_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_monitor/")
@@ -143,7 +139,7 @@ class Deployment:
         self.system_structure_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_structure/")
         self.system_structure_snapshots: Dict[str, Dict[str, Any]] = {}
 
-        # 5. build the deployment
+        # build the deployment
         self._build(system_config, package_paths)
 
     def _get_system_list(self, deploy_config: DeploymentConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
@@ -241,7 +237,7 @@ class Deployment:
         return mode_key, snapshot_store
 
     def _build(self, system_config, package_paths):
-        # 2. Determine modes to build
+        # Determine modes to build
         modes_config = system_config.modes or []
         
         if modes_config:
@@ -257,7 +253,7 @@ class Deployment:
             default_mode = "default"
             logger.info(f"Building deployment with single 'default' mode")
 
-        # 3. Create deployment instance for each mode
+        # Create deployment instance for each mode
         self.mode_keys = []
         for mode_name in mode_names:
             mode_key = mode_name if mode_name else default_mode
@@ -316,6 +312,7 @@ class Deployment:
         # Render template and save to file
         output_path = os.path.join(output_dir, output_filename)
         renderer.render_template_to_file(template_name, output_path, **data)
+
 
     def generate_system_monitor(self):
         # load the template file

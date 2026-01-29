@@ -2,8 +2,8 @@ import fcntl
 import os
 from pathlib import Path
 import logging
-from ..utils.template_utils import TemplateRenderer
-from ..utils.source_location import SourceLocation, format_source
+from ..file_io.template_renderer import TemplateRenderer
+from ..file_io.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
@@ -173,9 +173,10 @@ def _generate_index_file(install_root: Path, output_file: Path):
     try:
         renderer = TemplateRenderer()
         renderer.render_template_to_file(
-            "visualization/systems_index.html.jinja2",
+            "systems_index.html.jinja2",
             str(output_file),
             deployments=view_deployments
         )
     except Exception as e:
         logger.error(f"Failed to render visualization index template: {e}")
+

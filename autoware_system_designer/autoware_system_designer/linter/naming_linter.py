@@ -18,8 +18,8 @@ import re
 from pathlib import Path
 from typing import Dict, Any
 
-from ..parsers.yaml_parser import yaml_parser
-from ..parsers.data_validator import entity_name_decode
+from ..models.parsing.yaml_parser import yaml_parser
+from ..models.parsing.data_validator import entity_name_decode
 from ..models.config import ConfigType
 from .report import LintResult
 

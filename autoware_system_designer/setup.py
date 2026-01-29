@@ -41,7 +41,14 @@ setup(
         "pathlib",
     ],
     package_data={
-        "autoware_system_designer": ["template/**/*", "visualization/*.html", "visualization/js/*.js"],
+        "autoware_system_designer": [
+            "template/**/*",
+            "ros2_launcher/templates/**/*",
+            "visualization/templates/**/*",
+            "visualization/*.html",
+            "visualization/js/*.js",
+            "visualization/css/*.css",
+        ],
     },
     extras_require={
         "dev": [
@@ -74,3 +81,4 @@ setup(
     include_package_data=True,
     zip_safe=False,
 )
+

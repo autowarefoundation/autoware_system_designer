@@ -12,7 +12,7 @@ from lsprotocol import types as lsp
 # Import from the autoware_system_designer package
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'autoware_system_designer'))
 
-from autoware_system_designer.parsers.data_parser import ConfigParser
+from autoware_system_designer.models.parsing.data_parser import ConfigParser
 from autoware_system_designer.models.config import Config
 
 from registry_manager import RegistryManager
