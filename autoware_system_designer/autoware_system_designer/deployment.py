@@ -124,17 +124,13 @@ class Deployment:
         
         self.config_yaml_dir = str(system_config.file_path)
         logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
-        
-        # Load the resolved config (which is what get_system returned)
-        # Wait, get_system returns a SystemConfig object which HAS the config dict.
-        # We don't need to load yaml again.
-        
+                
         self.name = system_config.name
 
-        # member variables - now supports multiple modes
+        # mode identifiers
         self.mode_keys: List[str] = []
 
-        # 4. set output paths
+        # set output paths
         self.output_root_dir = deploy_config.output_root_dir
         self.launcher_dir = os.path.join(self.output_root_dir, "exports", self.name, "launcher/")
         self.system_monitor_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_monitor/")
@@ -143,7 +139,7 @@ class Deployment:
         self.system_structure_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_structure/")
         self.system_structure_snapshots: Dict[str, Dict[str, Any]] = {}
 
-        # 5. build the deployment
+        # build the deployment
         self._build(system_config, package_paths)
 
     def _get_system_list(self, deploy_config: DeploymentConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
@@ -241,7 +237,7 @@ class Deployment:
         return mode_key, snapshot_store
 
     def _build(self, system_config, package_paths):
-        # 2. Determine modes to build
+        # Determine modes to build
         modes_config = system_config.modes or []
         
         if modes_config:
@@ -257,7 +253,7 @@ class Deployment:
             default_mode = "default"
             logger.info(f"Building deployment with single 'default' mode")
 
-        # 3. Create deployment instance for each mode
+        # Create deployment instance for each mode
         self.mode_keys = []
         for mode_name in mode_names:
             mode_key = mode_name if mode_name else default_mode

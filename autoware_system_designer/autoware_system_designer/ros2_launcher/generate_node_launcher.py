@@ -53,7 +53,6 @@ def _normalize_parameters(parameters: Any) -> List[Dict[str, Any]]:
         return [dict(item) for item in parameters if isinstance(item, dict)]
 
     if isinstance(parameters, dict):
-        # Single object form
         if "name" in parameters:
             return [dict(parameters)]
 

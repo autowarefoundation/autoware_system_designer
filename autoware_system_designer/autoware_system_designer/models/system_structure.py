@@ -92,7 +92,6 @@ class InstanceData(TypedDict, total=False):
     events: List[Optional[EventData]]
     parameters: List[ParameterData]
 
-    # Node-only fields
     package: str
     parameter_files_all: List[ParameterFileData]
     launcher: LauncherData
