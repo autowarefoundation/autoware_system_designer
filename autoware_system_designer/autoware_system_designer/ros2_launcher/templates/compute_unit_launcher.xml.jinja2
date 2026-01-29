@@ -9,8 +9,6 @@
 {% for namespace_info in namespaces %}
   <!-- Include {{ namespace_info.namespace }} namespace -->
   <include file="$(var root_dir)/{{ namespace_info.namespace }}/{{ namespace_info.namespace }}.launch.xml">
-    <!-- Namespace: {{ namespace_info.namespace }} -->
-    <!-- Components: {{ namespace_info.component_count }} -->
 {% for arg in namespace_info.args %}
     <arg name="{{ arg.name }}" value="{{ arg.value }}"/>
 {% endfor %}

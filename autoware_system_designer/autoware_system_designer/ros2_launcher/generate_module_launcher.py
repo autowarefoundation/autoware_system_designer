@@ -213,7 +213,7 @@ def _generate_compute_unit_launcher(compute_unit: str, components: list, output_
 
     namespaces_data = []
     for component in sorted(components, key=lambda c: c.name):
-        namespaces_data.append({"namespace": component.name, "component_count": 1, "args": []})
+        namespaces_data.append({"namespace": component.name, "args": []})
 
     template_data = {"compute_unit": compute_unit, "namespaces": namespaces_data}
     _render_template_to_file("compute_unit_launcher.xml.jinja2", launcher_file, template_data)
@@ -292,7 +292,7 @@ def _generate_compute_unit_launcher_from_data(compute_unit: str, components: lis
 
     namespaces_data = []
     for component in sorted(components, key=lambda c: c.get("name", "")):
-        namespaces_data.append({"namespace": component.get("name", ""), "component_count": 1, "args": []})
+        namespaces_data.append({"namespace": component.get("name", ""), "args": []})
 
     template_data = {"compute_unit": compute_unit, "namespaces": namespaces_data}
     _render_template_to_file("compute_unit_launcher.xml.jinja2", launcher_file, template_data)
