@@ -22,7 +22,7 @@ from .deployment_config import DeploymentConfig
 from .builder.config.config_registry import ConfigRegistry
 from .builder.deployment_instance import DeploymentInstance
 from .ros2_launcher.generator import generate_module_launch_file
-from .builder.parameters.parameter_template_generator import ParameterTemplateGenerator
+from .template.parameter_template_generator import ParameterTemplateGenerator
 from .models.parsing.data_validator import entity_name_decode
 from .models.parsing.yaml_parser import yaml_parser
 from .exceptions import ValidationError, DeploymentError
