@@ -156,6 +156,11 @@ class SystemVariantResolver(VariantResolver):
         Apply variant rules from config_yaml to system_config.
         Modifies system_config in-place.
         """
+        # Apply removals if 'remove' section exists
+        remove_config = config_yaml.get('remove', {})
+        if remove_config:
+            self._apply_removals(system_config, remove_config)
+
         override_config = config_yaml.get('override', {})
         merge_specs = [
             {'field': 'variables', 'key_field': 'name'},
@@ -180,10 +185,6 @@ class SystemVariantResolver(VariantResolver):
                     # Overwrite/Update mode config from override
                     system_config.mode_configs[mode_name] = override_config[mode_name]
 
-        # Apply removals if 'remove' section exists
-        remove_config = config_yaml.get('remove', {})
-        if remove_config:
-            self._apply_removals(system_config, remove_config)
 
     def _apply_removals(self, system_config: SystemConfig, remove_config: Dict[str, Any]):
         if 'components' in remove_config:
