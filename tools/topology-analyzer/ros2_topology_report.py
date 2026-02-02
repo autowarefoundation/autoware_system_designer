@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Set, Tuple
 import itertools
 
-from ros2_topology_common import (
+from functions.ros2_topology_common import (
     Signature as NodeSignature,
     freeze_map,
     jaccard,
