@@ -1,81 +1,26 @@
 #!/usr/bin/env python3
 
 import argparse
-import hashlib
 import json
 import os
-from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
+from ros2_topology_common import (
+    Signature,
+    iter_signature_items,
+    jaccard,
+    signature_from_node,
+    signature_id,
+)
 
-@dataclass(frozen=True)
-class Sig:
-    pubs: Tuple[Tuple[str, Tuple[str, ...]], ...]
-    subs: Tuple[Tuple[str, Tuple[str, ...]], ...]
-    srvs: Tuple[Tuple[str, Tuple[str, ...]], ...]
-    clis: Tuple[Tuple[str, Tuple[str, ...]], ...]
-
-
-def _freeze_map(m: Dict[str, List[str]]) -> Tuple[Tuple[str, Tuple[str, ...]], ...]:
-    items: List[Tuple[str, Tuple[str, ...]]] = []
-    for k, v in (m or {}).items():
-        items.append((k, tuple(sorted(v or []))))
-    items.sort(key=lambda x: x[0])
-    return tuple(items)
-
-
-def _sig(node: Dict) -> Sig:
-    return Sig(
-        pubs=_freeze_map(node.get("publishers", {})),
-        subs=_freeze_map(node.get("subscribers", {})),
-        srvs=_freeze_map(node.get("services", {})),
-        clis=_freeze_map(node.get("clients", {})),
-    )
-
-
-def _sid(sig: Sig) -> str:
-    b = json.dumps(
-        {"pubs": sig.pubs, "subs": sig.subs, "srvs": sig.srvs, "clis": sig.clis},
-        separators=(",", ":"),
-        ensure_ascii=False,
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(b).hexdigest()[:12]
-
-
-def _iter_items(sig: Sig, include_types: bool) -> Iterable[str]:
-    def emit(prefix: str, items: Sequence[Tuple[str, Tuple[str, ...]]]):
-        for name, types in items:
-            if include_types:
-                t = ",".join(types) if types else "<unknown>"
-                yield f"{prefix}|{name}|{t}"
-            else:
-                yield f"{prefix}|{name}"
-
-    yield from emit("P", sig.pubs)
-    yield from emit("S", sig.subs)
-    yield from emit("SV", sig.srvs)
-    yield from emit("C", sig.clis)
-
-
-def _jaccard(a: Set[str], b: Set[str]) -> float:
-    if not a and not b:
-        return 1.0
-    if not a or not b:
-        return 0.0
-    inter = len(a & b)
-    union = len(a | b)
-    return inter / union if union else 1.0
-
-
-def _build_groups(graph: Dict) -> Tuple[Dict[str, int], Dict[str, List[str]], Dict[str, Sig]]:
+def _build_groups(graph: Dict) -> Tuple[Dict[str, int], Dict[str, List[str]], Dict[str, Signature]]:
     nodes: List[Dict] = graph.get("nodes", [])
     counts: Dict[str, int] = {}
     examples: Dict[str, List[str]] = {}
-    sigs: Dict[str, Sig] = {}
+    sigs: Dict[str, Signature] = {}
     for n in nodes:
-        s = _sig(n)
-        sid = _sid(s)
+        s = signature_from_node(n)
+        sid = signature_id(s)
         counts[sid] = counts.get(sid, 0) + 1
         sigs.setdefault(sid, s)
         ex = examples.setdefault(sid, [])
@@ -140,10 +85,10 @@ def main() -> int:
     new_counts, new_examples, new_sigs = _build_groups(new)
 
     old_item_sets: Dict[str, Set[str]] = {
-        sid: set(_iter_items(sig, include_types=args.include_types)) for sid, sig in old_sigs.items()
+        sid: set(iter_signature_items(sig, include_types=args.include_types)) for sid, sig in old_sigs.items()
     }
     new_item_sets: Dict[str, Set[str]] = {
-        sid: set(_iter_items(sig, include_types=args.include_types)) for sid, sig in new_sigs.items()
+        sid: set(iter_signature_items(sig, include_types=args.include_types)) for sid, sig in new_sigs.items()
     }
 
     def best_match(source_sid: str, source_items: Set[str], target_item_sets: Dict[str, Set[str]]):
@@ -151,7 +96,7 @@ def main() -> int:
         for tid, titems in target_item_sets.items():
             if tid == source_sid:
                 continue
-            sim = _jaccard(source_items, titems)
+            sim = jaccard(source_items, titems)
             if best is None or sim > best[1]:
                 best = (tid, sim)
         return best

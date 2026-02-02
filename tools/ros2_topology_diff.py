@@ -1,47 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
-import hashlib
 import json
 import os
 import re
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-
-@dataclass(frozen=True)
-class Sig:
-    pubs: Tuple[Tuple[str, Tuple[str, ...]], ...]
-    subs: Tuple[Tuple[str, Tuple[str, ...]], ...]
-    srvs: Tuple[Tuple[str, Tuple[str, ...]], ...]
-    clis: Tuple[Tuple[str, Tuple[str, ...]], ...]
-
-
-def _freeze_map(m: Dict[str, List[str]]) -> Tuple[Tuple[str, Tuple[str, ...]], ...]:
-    items: List[Tuple[str, Tuple[str, ...]]] = []
-    for k, v in (m or {}).items():
-        items.append((k, tuple(sorted(v or []))))
-    items.sort(key=lambda x: x[0])
-    return tuple(items)
-
-
-def _sig(node: Dict) -> Sig:
-    return Sig(
-        pubs=_freeze_map(node.get("publishers", {})),
-        subs=_freeze_map(node.get("subscribers", {})),
-        srvs=_freeze_map(node.get("services", {})),
-        clis=_freeze_map(node.get("clients", {})),
-    )
-
-
-def _sig_id(sig: Sig) -> str:
-    b = json.dumps(
-        {"pubs": sig.pubs, "subs": sig.subs, "srvs": sig.srvs, "clis": sig.clis},
-        separators=(",", ":"),
-        ensure_ascii=False,
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(b).hexdigest()[:12]
+from ros2_topology_common import Signature, signature_from_node, signature_id
 
 
 def _topic_counts(nodes: List[Dict]) -> Dict[str, Tuple[int, int]]:
@@ -107,10 +72,10 @@ def main() -> int:
     def build(nodes: List[Dict]):
         counts: Dict[str, int] = {}
         examples: Dict[str, List[str]] = {}
-        sigs: Dict[str, Sig] = {}
+        sigs: Dict[str, Signature] = {}
         for n in nodes:
-            s = _sig(n)
-            sid = _sig_id(s)
+            s = signature_from_node(n)
+            sid = signature_id(s)
             counts[sid] = counts.get(sid, 0) + 1
             sigs.setdefault(sid, s)
             ex = examples.setdefault(sid, [])

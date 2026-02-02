@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 
 import argparse
-import hashlib
 import json
 import os
-from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Set, Tuple
 import itertools
+
+from ros2_topology_common import (
+    Signature as NodeSignature,
+    freeze_map,
+    jaccard,
+    signature_from_node,
+    signature_id,
+)
 
 
 _IGNORED_TOPICS: Set[str] = set()
@@ -39,45 +45,13 @@ def _name_similarity(a: str, b: str) -> float:
     )
 
 
-@dataclass(frozen=True)
-class NodeSignature:
-    pubs: Tuple[Tuple[str, Tuple[str, ...]], ...]
-    subs: Tuple[Tuple[str, Tuple[str, ...]], ...]
-    srvs: Tuple[Tuple[str, Tuple[str, ...]], ...]
-    clis: Tuple[Tuple[str, Tuple[str, ...]], ...]
-
-
-def _freeze_map(m: Dict[str, List[str]]) -> Tuple[Tuple[str, Tuple[str, ...]], ...]:
-    items: List[Tuple[str, Tuple[str, ...]]] = []
-    for k, v in (m or {}).items():
-        items.append((k, tuple(sorted(v or []))))
-    items.sort(key=lambda x: x[0])
-    return tuple(items)
-
-
 def _signature(node: Dict) -> NodeSignature:
-    return NodeSignature(
-        pubs=_freeze_map(node.get("publishers", {})),
-        subs=_freeze_map(node.get("subscribers", {})),
-        srvs=_freeze_map(node.get("services", {})),
-        clis=_freeze_map(node.get("clients", {})),
-    )
+    return signature_from_node(node)
 
 
 def _sig_id(sig: NodeSignature) -> str:
     # Stable hash for grouping; short for readability.
-    b = json.dumps(
-        {
-            "pubs": sig.pubs,
-            "subs": sig.subs,
-            "srvs": sig.srvs,
-            "clis": sig.clis,
-        },
-        separators=(",", ":"),
-        ensure_ascii=False,
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(b).hexdigest()[:12]
+    return signature_id(sig)
 
 
 def _topic_index(nodes: List[Dict]) -> Dict[str, Dict[str, List[str]]]:
@@ -152,10 +126,10 @@ def _normalized_signature(node: Dict) -> NodeSignature:
         return out
 
     return NodeSignature(
-        pubs=_freeze_map(norm_map(node.get("publishers", {}))),
-        subs=_freeze_map(norm_map(node.get("subscribers", {}))),
-        srvs=_freeze_map(norm_map(node.get("services", {}))),
-        clis=_freeze_map(norm_map(node.get("clients", {}))),
+        pubs=freeze_map(norm_map(node.get("publishers", {}))),
+        subs=freeze_map(norm_map(node.get("subscribers", {}))),
+        srvs=freeze_map(norm_map(node.get("services", {}))),
+        clis=freeze_map(norm_map(node.get("clients", {}))),
     )
 
 
@@ -212,16 +186,6 @@ def _param_value_info(param_values: Dict[str, Dict[str, str]], fq: str) -> Tuple
     return vals, None
 
 
-def _jaccard(a: Set[str], b: Set[str]) -> float:
-    if not a and not b:
-        return 1.0
-    if not a or not b:
-        return 0.0
-    inter = len(a & b)
-    union = len(a | b)
-    return inter / union if union else 0.0
-
-
 def _match_score(
     old_fq: str,
     new_fq: str,
@@ -233,10 +197,10 @@ def _match_score(
     old_param: Set[str],
     new_param: Set[str],
 ) -> float:
-    type_sim = _jaccard(old_type, new_type)
-    end_sim = _jaccard(old_end, new_end)
+    type_sim = jaccard(old_type, new_type)
+    end_sim = jaccard(old_end, new_end)
     name_sim = _name_similarity(old_fq, new_fq)
-    param_sim = _jaccard(old_param, new_param) if (old_param or new_param) else 0.0
+    param_sim = jaccard(old_param, new_param) if (old_param or new_param) else 0.0
 
     # Weighted blend: keep topology dominant, but allow name/params to disambiguate.
     w_type = 0.50
@@ -333,7 +297,7 @@ def _match_nodes(
                 continue
             mapping[ofq] = nfq
             matched_new.add(nfq)
-            evidence.append((ofq, nfq, _jaccard(_node_endpoints(old_by_fq[ofq]), _node_endpoints(new_by_fq[nfq]))))
+            evidence.append((ofq, nfq, jaccard(_node_endpoints(old_by_fq[ofq]), _node_endpoints(new_by_fq[nfq]))))
 
     rem_old = [fq for fq in old_by_fq.keys() if fq not in mapping]
     rem_new = [fq for fq in new_by_fq.keys() if fq not in matched_new]
