@@ -5,10 +5,14 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Set, Tuple
+import itertools
 
 
 _IGNORED_TOPICS: Set[str] = set()
+_RENAME_SIM_THRESHOLD = 0.70
+_RENAME_SIM_MARGIN = 0.12
 
 
 def _basename(name: str) -> str:
@@ -22,6 +26,17 @@ def _basename(name: str) -> str:
     if "/" not in s:
         return s
     return s.rsplit("/", 1)[-1]
+
+
+def _name_similarity(a: str, b: str) -> float:
+    if not a or not b:
+        return 0.0
+    a_base = _basename(a)
+    b_base = _basename(b)
+    return max(
+        SequenceMatcher(None, a, b).ratio(),
+        SequenceMatcher(None, a_base, b_base).ratio(),
+    )
 
 
 @dataclass(frozen=True)
@@ -166,6 +181,37 @@ def _node_type_tokens(node: Dict) -> Set[str]:
     return tokens
 
 
+def _param_info(param_map: Dict[str, List[str]], fq: str) -> Tuple[Set[str], Optional[str]]:
+    if not param_map:
+        return set(), None
+    vals = param_map.get(fq)
+    if vals is None:
+        return set(), "no param entry"
+    if vals and vals[0].startswith("<"):
+        return set(), vals[0]
+    return set(vals), None
+
+
+def _param_tokens(param_map: Dict[str, List[str]], fq: str) -> Set[str]:
+    names, status = _param_info(param_map, fq)
+    if status:
+        return set()
+    return {f"PRM:{n}" for n in names}
+
+
+def _param_value_info(param_values: Dict[str, Dict[str, str]], fq: str) -> Tuple[Dict[str, str], Optional[str]]:
+    if not param_values:
+        return {}, None
+    vals = param_values.get(fq)
+    if vals is None:
+        return {}, "no param values entry"
+    if vals:
+        for k in vals.keys():
+            if k.startswith("<"):
+                return {}, k
+    return vals, None
+
+
 def _jaccard(a: Set[str], b: Set[str]) -> float:
     if not a and not b:
         return 1.0
@@ -174,6 +220,33 @@ def _jaccard(a: Set[str], b: Set[str]) -> float:
     inter = len(a & b)
     union = len(a | b)
     return inter / union if union else 0.0
+
+
+def _match_score(
+    old_fq: str,
+    new_fq: str,
+    *,
+    old_type: Set[str],
+    new_type: Set[str],
+    old_end: Set[str],
+    new_end: Set[str],
+    old_param: Set[str],
+    new_param: Set[str],
+) -> float:
+    type_sim = _jaccard(old_type, new_type)
+    end_sim = _jaccard(old_end, new_end)
+    name_sim = _name_similarity(old_fq, new_fq)
+    param_sim = _jaccard(old_param, new_param) if (old_param or new_param) else 0.0
+
+    # Weighted blend: keep topology dominant, but allow name/params to disambiguate.
+    w_type = 0.50
+    w_end = 0.30
+    w_name = 0.15
+    w_param = 0.05 if (old_param or new_param) else 0.0
+    w_sum = w_type + w_end + w_name + w_param
+    if w_sum == 0:
+        return 0.0
+    return (w_type * type_sim + w_end * end_sim + w_name * name_sim + w_param * param_sim) / w_sum
 
 
 def _load_graph(path: str) -> Tuple[Dict, List[Dict]]:
@@ -188,6 +261,8 @@ def _match_nodes(
     *,
     min_similarity: float,
     min_margin: float,
+    old_params: Dict[str, List[str]],
+    new_params: Dict[str, List[str]],
 ) -> Tuple[Dict[str, str], List[Tuple[str, str, float]]]:
     """Return mapping old_fq_name -> new_fq_name.
 
@@ -219,8 +294,22 @@ def _match_nodes(
     for fq in sorted(set(old_by_fq.keys()) & set(new_by_fq.keys())):
         mapping[fq] = fq
         matched_new.add(fq)
-        # Use type tokens for a stable similarity score even if topic names changed.
-        evidence.append((fq, fq, _jaccard(_node_type_tokens(old_by_fq[fq]), _node_type_tokens(new_by_fq[fq]))))
+        evidence.append(
+            (
+                fq,
+                fq,
+                _match_score(
+                    fq,
+                    fq,
+                    old_type=_node_type_tokens(old_by_fq[fq]),
+                    new_type=_node_type_tokens(new_by_fq[fq]),
+                    old_end=_node_endpoints(old_by_fq[fq]),
+                    new_end=_node_endpoints(new_by_fq[fq]),
+                    old_param=_param_tokens(old_params, fq),
+                    new_param=_param_tokens(new_params, fq),
+                ),
+            )
+        )
 
     # 1) Exact signature pairing where unambiguous.
     for sid, olds in sid_to_old.items():
@@ -249,9 +338,13 @@ def _match_nodes(
     rem_old = [fq for fq in old_by_fq.keys() if fq not in mapping]
     rem_new = [fq for fq in new_by_fq.keys() if fq not in matched_new]
 
-    # Fuzzy matching uses type-based interface similarity (topic-name agnostic).
-    old_tokens = {fq: _node_type_tokens(old_by_fq[fq]) for fq in rem_old}
-    new_tokens = {fq: _node_type_tokens(new_by_fq[fq]) for fq in rem_new}
+    # Fuzzy matching uses blended similarity (types, endpoints, name, parameters).
+    old_type = {fq: _node_type_tokens(old_by_fq[fq]) for fq in rem_old}
+    new_type = {fq: _node_type_tokens(new_by_fq[fq]) for fq in rem_new}
+    old_end = {fq: _node_endpoints(old_by_fq[fq]) for fq in rem_old}
+    new_end = {fq: _node_endpoints(new_by_fq[fq]) for fq in rem_new}
+    old_param = {fq: _param_tokens(old_params, fq) for fq in rem_old}
+    new_param = {fq: _param_tokens(new_params, fq) for fq in rem_new}
 
     # 2) Similarity-based mutual best matching.
     old_best: Dict[str, Tuple[Optional[str], float, float]] = {}
@@ -259,9 +352,18 @@ def _match_nodes(
         best_n: Optional[str] = None
         best_s = -1.0
         second_s = -1.0
-        ot = old_tokens[ofq]
+        ot = old_type[ofq]
         for nfq in rem_new:
-            s = _jaccard(ot, new_tokens[nfq])
+            s = _match_score(
+                ofq,
+                nfq,
+                old_type=ot,
+                new_type=new_type[nfq],
+                old_end=old_end[ofq],
+                new_end=new_end[nfq],
+                old_param=old_param[ofq],
+                new_param=new_param[nfq],
+            )
             if s > best_s:
                 second_s = best_s
                 best_s = s
@@ -274,9 +376,18 @@ def _match_nodes(
     for nfq in rem_new:
         best_o: Optional[str] = None
         best_s = -1.0
-        nt = new_tokens[nfq]
+        nt = new_type[nfq]
         for ofq in rem_old:
-            s = _jaccard(old_tokens[ofq], nt)
+            s = _match_score(
+                ofq,
+                nfq,
+                old_type=old_type[ofq],
+                new_type=nt,
+                old_end=old_end[ofq],
+                new_end=new_end[nfq],
+                old_param=old_param[ofq],
+                new_param=new_param[nfq],
+            )
             if s > best_s:
                 best_s = s
                 best_o = ofq
@@ -310,7 +421,10 @@ def _match_nodes(
     return mapping, evidence
 
 
-def _diff_maps(a: Dict[str, List[str]], b: Dict[str, List[str]]) -> Tuple[Set[str], Set[str], Set[str]]:
+def _diff_maps(
+    a: Dict[str, List[str]],
+    b: Dict[str, List[str]],
+) -> Tuple[Set[str], Set[str], Set[str], List[Tuple[str, str]]]:
     # Compare by basename+type-set first to suppress pure namespace/path renames.
     a_map = {k: (a or {}).get(k) or [] for k in ((a or {}).keys()) if k not in _IGNORED_TOPICS}
     b_map = {k: (b or {}).get(k) or [] for k in ((b or {}).keys()) if k not in _IGNORED_TOPICS}
@@ -351,7 +465,120 @@ def _diff_maps(a: Dict[str, List[str]], b: Dict[str, List[str]]) -> Tuple[Set[st
         if a_by_base[base] != b_by_base[base]:
             changed.add(base)
 
-    return removed, added, changed
+    # Rename detection for same type-set and similar name, with mutual-best + margin.
+    renames: List[Tuple[str, str]] = []
+    a_by_type: Dict[Tuple[str, ...], List[str]] = {}
+    b_by_type: Dict[Tuple[str, ...], List[str]] = {}
+    for full, types in a_map.items():
+        a_by_type.setdefault(tuple(sorted(types or [])), []).append(full)
+    for full, types in b_map.items():
+        b_by_type.setdefault(tuple(sorted(types or [])), []).append(full)
+
+    for tys in set(a_by_type.keys()) & set(b_by_type.keys()):
+        a_items = a_by_type[tys]
+        b_items = b_by_type[tys]
+        # If the same full names exist on both sides, they are not renames.
+        a_only = [n for n in a_items if n not in b_items]
+        b_only = [n for n in b_items if n not in a_items]
+        if not a_only or not b_only:
+            continue
+        if not a_items or not b_items:
+            continue
+
+        # For small sets, compute the best total pairing to avoid swap artifacts.
+        if len(a_only) <= 6 and len(b_only) <= 6:
+            best_pairs: List[Tuple[str, str]] = []
+            best_score = -1.0
+            if len(a_only) <= len(b_only):
+                for subset in itertools.permutations(b_only, len(a_only)):
+                    score = 0.0
+                    pairs: List[Tuple[str, str]] = []
+                    ok = True
+                    for old_name, new_name in zip(a_only, subset):
+                        sim = _name_similarity(old_name, new_name)
+                        if sim < _RENAME_SIM_THRESHOLD:
+                            ok = False
+                            break
+                        score += sim
+                        pairs.append((old_name, new_name))
+                    if ok and score > best_score:
+                        best_score = score
+                        best_pairs = pairs
+            else:
+                for subset in itertools.permutations(a_only, len(b_only)):
+                    score = 0.0
+                    pairs = []
+                    ok = True
+                    for old_name, new_name in zip(subset, b_only):
+                        sim = _name_similarity(old_name, new_name)
+                        if sim < _RENAME_SIM_THRESHOLD:
+                            ok = False
+                            break
+                        score += sim
+                        pairs.append((old_name, new_name))
+                    if ok and score > best_score:
+                        best_score = score
+                        best_pairs = pairs
+            renames.extend(best_pairs)
+            continue
+
+        best_for_old: Dict[str, Tuple[Optional[str], float, float]] = {}
+        for old_name in a_only:
+            best_new: Optional[str] = None
+            best_s = -1.0
+            second_s = -1.0
+            for new_name in b_only:
+                sim = _name_similarity(old_name, new_name)
+                if sim > best_s:
+                    second_s = best_s
+                    best_s = sim
+                    best_new = new_name
+                elif sim > second_s:
+                    second_s = sim
+            best_for_old[old_name] = (best_new, best_s, second_s)
+
+        best_for_new: Dict[str, Tuple[Optional[str], float]] = {}
+        for new_name in b_only:
+            best_old: Optional[str] = None
+            best_s = -1.0
+            for old_name in a_only:
+                sim = _name_similarity(old_name, new_name)
+                if sim > best_s:
+                    best_s = sim
+                    best_old = old_name
+            best_for_new[new_name] = (best_old, best_s)
+
+        candidates: List[Tuple[float, str, str]] = []
+        for old_name, (new_name, best_s, second_s) in best_for_old.items():
+            if not new_name:
+                continue
+            if best_s < _RENAME_SIM_THRESHOLD:
+                continue
+            second = second_s if second_s >= 0 else 0.0
+            if (best_s - second) < _RENAME_SIM_MARGIN:
+                continue
+            bo, _ = best_for_new.get(new_name, (None, -1.0))
+            if bo != old_name:
+                continue
+            candidates.append((best_s, old_name, new_name))
+
+        candidates.sort(reverse=True, key=lambda x: x[0])
+        used_old: Set[str] = set()
+        used_new: Set[str] = set()
+        for sim, old_name, new_name in candidates:
+            if old_name in used_old or new_name in used_new:
+                continue
+            renames.append((old_name, new_name))
+            used_old.add(old_name)
+            used_new.add(new_name)
+
+    # Remove renamed items from added/removed.
+    renamed_old = {o for o, _ in renames}
+    renamed_new = {n for _, n in renames}
+    removed -= renamed_old
+    added -= renamed_new
+
+    return removed, added, changed, renames
 
 
 def _edge_set(nodes: List[Dict]) -> Set[Tuple[str, str, str]]:
@@ -555,11 +782,21 @@ def main() -> int:
     old_nodes = _filter_transform_listener(old_nodes, include=args.include_transform_listener)
     new_nodes = _filter_transform_listener(new_nodes, include=args.include_transform_listener)
 
+    old_params = old_data.get("param_names", {}) or {}
+    new_params = new_data.get("param_names", {}) or {}
+    old_param_values = old_data.get("param_values", {}) or {}
+    new_param_values = new_data.get("param_values", {}) or {}
+
+    param_enabled = bool(old_params or new_params)
+    param_values_enabled = bool(old_param_values or new_param_values)
+
     mapping, evidence = _match_nodes(
         old_nodes,
         new_nodes,
         min_similarity=args.min_similarity,
         min_margin=args.min_margin,
+        old_params=old_params,
+        new_params=new_params,
     )
 
     old_by_fq = {n.get("fq_name", ""): n for n in old_nodes}
@@ -569,7 +806,7 @@ def main() -> int:
     removed_nodes = sorted(set(old_by_fq.keys()) - matched_old)
     added_nodes = sorted(set(new_by_fq.keys()) - matched_new)
 
-    changed_nodes: List[Tuple[str, str, Dict[str, Tuple[Set[str], Set[str], Set[str]]]]] = []
+    changed_nodes: List[Tuple[str, str, Dict[str, object]]] = []
     for ofq, nfq in mapping.items():
         o = old_by_fq.get(ofq, {})
         n = new_by_fq.get(nfq, {})
@@ -577,7 +814,61 @@ def main() -> int:
         subs = _diff_maps(o.get("subscribers", {}), n.get("subscribers", {}))
         srvs = _diff_maps(o.get("services", {}), n.get("services", {}))
         clis = _diff_maps(o.get("clients", {}), n.get("clients", {}))
-        if (pubs[0] or pubs[1] or pubs[2] or subs[0] or subs[1] or subs[2] or srvs[0] or srvs[1] or srvs[2] or clis[0] or clis[1] or clis[2]):
+
+        param_diff = None
+        if param_enabled:
+            o_params, o_param_status = _param_info(old_params, ofq)
+            n_params, n_param_status = _param_info(new_params, nfq)
+            if not o_param_status and not n_param_status:
+                p_removed = sorted(o_params - n_params)
+                p_added = sorted(n_params - o_params)
+            else:
+                p_removed = []
+                p_added = []
+            param_diff = {
+                "removed": p_removed,
+                "added": p_added,
+                "old_status": o_param_status,
+                "new_status": n_param_status,
+            }
+
+        value_diff = None
+        if param_values_enabled:
+            o_vals, o_val_status = _param_value_info(old_param_values, ofq)
+            n_vals, n_val_status = _param_value_info(new_param_values, nfq)
+            if not o_val_status and not n_val_status:
+                changed = []
+                for k in sorted(set(o_vals.keys()) | set(n_vals.keys())):
+                    if o_vals.get(k) != n_vals.get(k):
+                        changed.append((k, o_vals.get(k), n_vals.get(k)))
+            else:
+                changed = []
+            value_diff = {
+                "changed": changed,
+                "old_status": o_val_status,
+                "new_status": n_val_status,
+            }
+
+        if (
+            pubs[0]
+            or pubs[1]
+            or pubs[2]
+            or pubs[3]
+            or subs[0]
+            or subs[1]
+            or subs[2]
+            or subs[3]
+            or srvs[0]
+            or srvs[1]
+            or srvs[2]
+            or srvs[3]
+            or clis[0]
+            or clis[1]
+            or clis[2]
+            or clis[3]
+            or (param_diff and (param_diff["removed"] or param_diff["added"] or param_diff["old_status"] or param_diff["new_status"]))
+            or (value_diff and (value_diff["changed"] or value_diff["old_status"] or value_diff["new_status"]))
+        ):
             changed_nodes.append(
                 (
                     ofq,
@@ -587,6 +878,8 @@ def main() -> int:
                         "subscribers": subs,
                         "services": srvs,
                         "clients": clis,
+                        "parameters": param_diff,
+                        "parameter_values": value_diff,
                     },
                 )
             )
@@ -612,6 +905,10 @@ def main() -> int:
         lines.append("- Filter: ignored nodes containing 'transform_listener'")
     if not args.include_parameter_events:
         lines.append("- Filter: ignored topic '/parameter_events'")
+    if param_enabled:
+        lines.append("- Parameters: compared by name (param_names)")
+    if param_values_enabled:
+        lines.append("- Parameters: compared by value (param_values)")
     lines.append(f"- Matched node pairs: {len(mapping)}")
     lines.append(f"- Added nodes (unmatched): {len(added_nodes)}")
     lines.append(f"- Removed nodes (unmatched): {len(removed_nodes)}")
@@ -647,8 +944,8 @@ def main() -> int:
         for ofq, nfq, diffs in sorted(changed_nodes, key=lambda x: x[0])[:80]:
             lines.append(f"### {ofq} -> {nfq}")
             for kind in ("publishers", "subscribers", "services", "clients"):
-                removed, added, changed = diffs[kind]
-                if not (removed or added or changed):
+                removed, added, changed, renamed = diffs[kind]
+                if not (removed or added or changed or renamed):
                     continue
                 lines.append(f"- {kind}:")
                 for t in sorted(removed):
@@ -657,6 +954,30 @@ def main() -> int:
                     lines.append(f"  - added: {t}")
                 for t in sorted(changed):
                     lines.append(f"  - type-changed: {t}")
+                for old_name, new_name in sorted(renamed):
+                    lines.append(f"  - renamed: {old_name} -> {new_name}")
+            param_diff = diffs.get("parameters") if isinstance(diffs, dict) else None
+            if param_diff:
+                lines.append("- parameters:")
+                if param_diff.get("old_status"):
+                    lines.append(f"  - old: {param_diff['old_status']}")
+                if param_diff.get("new_status"):
+                    lines.append(f"  - new: {param_diff['new_status']}")
+                for p in param_diff.get("removed", [])[:30]:
+                    lines.append(f"  - removed: {p}")
+                for p in param_diff.get("added", [])[:30]:
+                    lines.append(f"  - added: {p}")
+            value_diff = diffs.get("parameter_values") if isinstance(diffs, dict) else None
+            if value_diff:
+                lines.append("- parameter values:")
+                if value_diff.get("old_status"):
+                    lines.append(f"  - old: {value_diff['old_status']}")
+                if value_diff.get("new_status"):
+                    lines.append(f"  - new: {value_diff['new_status']}")
+                for k, ov, nv in value_diff.get("changed", [])[:30]:
+                    o_str = "<unset>" if ov is None else ov
+                    n_str = "<unset>" if nv is None else nv
+                    lines.append(f"  - changed: {k} :: {o_str} -> {n_str}")
             lines.append("")
         if len(changed_nodes) > 80:
             lines.append(f"- ... {len(changed_nodes) - 80} more changed matched nodes")
