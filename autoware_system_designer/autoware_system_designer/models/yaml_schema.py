@@ -284,10 +284,20 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
             },
             allow_extra=True,
         )
+        module_instance_spec = ListSpec(
+            ObjectSpec(
+                fields={
+                    "name": FieldSpec(_STR, required=True),
+                    "entity": FieldSpec(_STR, required=True),
+                    "launch": FieldSpec(_OBJ, required=False),
+                },
+                allow_extra=True,
+            )
+        )
         root = ObjectSpec(
             fields={
                 **common_root_fields,
-                "instances": FieldSpec(_list_of_objects(required_keys=("name", "entity")), required=False),
+                "instances": FieldSpec(module_instance_spec, required=False),
                 "external_interfaces": FieldSpec(UnionSpec((ext_interfaces, TypeSpec((list,)))), required=False),
                 "connections": FieldSpec(_list_of_objects(required_keys=("from", "to")), required=False),
             },

@@ -14,7 +14,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def set_instances(instance: "Instance", entity_id: str, config_registry: "ConfigRegistry") -> None:
+def set_instances(
+    instance: "Instance",
+    entity_id: str,
+    config_registry: "ConfigRegistry",
+    launch_override: dict | None = None,
+) -> None:
     try:
         entity_name, entity_type = entity_name_decode(entity_id)
         if entity_type == "system":
@@ -22,7 +27,7 @@ def set_instances(instance: "Instance", entity_id: str, config_registry: "Config
         elif entity_type == "module":
             set_module_instances(instance, entity_id, entity_name, config_registry)
         elif entity_type == "node":
-            set_node_instances(instance, entity_id, entity_name, config_registry)
+            set_node_instances(instance, entity_id, entity_name, config_registry, launch_override)
     except Exception:
         raise ValidationError(
             f"Error setting instances for {entity_id}, at {instance.configuration.file_path}"
@@ -126,10 +131,15 @@ def set_node_instances(
     entity_id: str,
     entity_name: str,
     config_registry: "ConfigRegistry",
+    launch_override: dict | None = None,
 ) -> None:
     """Set instances for node entity type."""
     logger.info(f"Setting node entity {entity_id} for instance {instance.namespace_str}")
     instance.configuration = config_registry.get_node(entity_name)
+    if launch_override:
+        if instance.configuration.launch is None:
+            instance.configuration.launch = {}
+        instance.configuration.launch.update(launch_override)
     instance.entity_type = "node"
 
     # run the node configuration
@@ -142,7 +152,7 @@ def set_node_instances(
 def create_module_children(instance: "Instance", config_registry: "ConfigRegistry") -> None:
     """Create child instances for module entities."""
     cfg_node_list = instance.configuration.instances
-    for cfg_node in cfg_node_list:
+    for idx, cfg_node in enumerate(cfg_node_list):
         # check if cfg_node has 'name' and 'entity'
         if "name" not in cfg_node or "entity" not in cfg_node:
             raise ValidationError(
@@ -150,6 +160,16 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
             )
 
         child_name = cfg_node.get("name")
+        launch_override = cfg_node.get("launch")
+        if launch_override:
+            _, entity_type = entity_name_decode(cfg_node.get("entity"))
+            if entity_type != "node":
+                cfg_src = source_from_config(
+                    instance.configuration, f"/instances/{idx}/launch"
+                )
+                raise ValidationError(
+                    f"Launch override is only supported for node instances (got '{entity_type}'){format_source(cfg_src)}"
+                )
         child_instance = _create_child_instance(
             child_name, instance.compute_unit, instance.namespace + [child_name], instance, layer_delta=1
         )
@@ -157,7 +177,12 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
 
         # recursive call of set_instances
         try:
-            set_instances(child_instance, cfg_node.get("entity"), config_registry)
+            set_instances(
+                child_instance,
+                cfg_node.get("entity"),
+                config_registry,
+                launch_override=launch_override,
+            )
         except Exception as e:
             # add the instance to the children dict for debugging
             instance.children[child_instance.name] = child_instance
