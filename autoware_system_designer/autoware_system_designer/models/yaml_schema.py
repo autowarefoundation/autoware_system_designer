@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
+from ..utils.parameter_types import normalize_type_name, is_supported_parameter_type
+
 
 JsonPointer = str
 
@@ -180,26 +182,76 @@ def _list_of_objects(required_keys: Sequence[str] = ()) -> ListSpec:
 def _node_semantics(config: Dict[str, Any]) -> Iterable[SchemaIssue]:
     launch = config.get("launch")
     if launch is None or not isinstance(launch, dict):
+        launch = None
+
+    issues: List[SchemaIssue] = []
+
+    if launch is not None:
+        has_plugin = "plugin" in launch
+        has_executable = "executable" in launch
+        has_ros2_launch_file = "ros2_launch_file" in launch
+
+        if not (has_plugin or has_executable or has_ros2_launch_file):
+            issues.append(
+                SchemaIssue(
+                    message="Launch config must have at least one of: 'plugin', 'executable', or 'ros2_launch_file'",
+                    yaml_path="/launch",
+                )
+            )
+
+        if "package" not in launch:
+            issues.append(SchemaIssue(message="Launch config must have 'package' field", yaml_path="/launch"))
+
+        if launch.get("use_container") is True and "container_name" not in launch:
+            issues.append(
+                SchemaIssue(
+                    message="Launch config must have 'container_name' when 'use_container' is true",
+                    yaml_path="/launch/use_container",
+                )
+            )
+
+    issues.extend(_parameter_type_semantics(config.get("parameters"), base_path="/parameters"))
+    return issues
+
+
+def _parameter_set_semantics(config: Dict[str, Any]) -> Iterable[SchemaIssue]:
+    issues: List[SchemaIssue] = []
+    parameters = config.get("parameters")
+    if not isinstance(parameters, list):
+        return issues
+
+    for idx, node_entry in enumerate(parameters):
+        if not isinstance(node_entry, dict):
+            continue
+        issues.extend(
+            _parameter_type_semantics(
+                node_entry.get("parameters"),
+                base_path=f"/parameters/{idx}/parameters",
+            )
+        )
+    return issues
+
+
+def _parameter_type_semantics(parameters: Any, *, base_path: str) -> Iterable[SchemaIssue]:
+    if not isinstance(parameters, list):
         return []
 
-    has_plugin = "plugin" in launch
-    has_executable = "executable" in launch
-    has_ros2_launch_file = "ros2_launch_file" in launch
-
-    if not (has_plugin or has_executable or has_ros2_launch_file):
-        yield SchemaIssue(
-            message="Launch config must have at least one of: 'plugin', 'executable', or 'ros2_launch_file'",
-            yaml_path="/launch",
-        )
-
-    if "package" not in launch:
-        yield SchemaIssue(message="Launch config must have 'package' field", yaml_path="/launch")
-
-    if launch.get("use_container") is True and "container_name" not in launch:
-        yield SchemaIssue(
-            message="Launch config must have 'container_name' when 'use_container' is true",
-            yaml_path="/launch/use_container",
-        )
+    issues: List[SchemaIssue] = []
+    for idx, param in enumerate(parameters):
+        if not isinstance(param, dict):
+            continue
+        raw_type = param.get("type")
+        if raw_type is None:
+            continue
+        type_name = normalize_type_name(raw_type)
+        if not is_supported_parameter_type(type_name):
+            issues.append(
+                SchemaIssue(
+                    message=f"Unsupported parameter type '{raw_type}'",
+                    yaml_path=f"{base_path}/{idx}/type",
+                )
+            )
+    return issues
 
 
 def _variant_forbidden_root_fields_semantics(
@@ -339,6 +391,9 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
             entity_type=entity_type,
             required_fields=("name", "parameters"),
             root=root,
+            semantic_checks=(
+                _parameter_set_semantics,
+            ),
         )
 
     if entity_type == "system":

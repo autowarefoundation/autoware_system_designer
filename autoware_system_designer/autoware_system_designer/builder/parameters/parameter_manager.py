@@ -22,6 +22,7 @@ from ..runtime.parameters import ParameterList, ParameterFileList, Parameter, Pa
 from ...models.parsing.yaml_parser import yaml_parser
 from ...exceptions import ParameterConfigurationError, ValidationError
 from ...file_io.source_location import SourceLocation, source_from_config, format_source
+from ...utils.parameter_types import normalize_type_name, coerce_numeric_value
 
 if TYPE_CHECKING:
     from ..instances.instances import Instance
@@ -232,6 +233,20 @@ class ParameterManager:
             launch_config = self.instance.configuration.launch
             return launch_config.get("package")
         return None
+
+    def _normalize_parameter_value(
+        self,
+        param_value: Any,
+        param_type: Any,
+        source: Optional[SourceLocation],
+    ) -> Any:
+        type_name = normalize_type_name(param_type)
+        if not type_name:
+            return param_value
+        try:
+            return coerce_numeric_value(param_value, type_name)
+        except ValueError as exc:
+            raise ParameterConfigurationError(f"{exc}{format_source(source)}") from exc
 
     # =========================================================================
     # Parameter Path Resolution
@@ -449,6 +464,8 @@ class ParameterManager:
                 if self.parameter_resolver:
                     param_value = self.parameter_resolver.resolve_parameter_value(param_value, source=p_source)
 
+                param_value = self._normalize_parameter_value(param_value, param_type, p_source)
+
                 target_instance.parameter_manager.parameters.set_parameter(
                     param_name,
                     param_value,
@@ -557,6 +574,8 @@ class ParameterManager:
                 # Resolve parameter value if resolver is available
                 if self.parameter_resolver:
                     param_value = self.parameter_resolver.resolve_parameter_value(param_value, source=cfg_source)
+
+                param_value = self._normalize_parameter_value(param_value, param_type, cfg_source)
 
                 # Only set if a default value is provided
                 if param_value is not None:
