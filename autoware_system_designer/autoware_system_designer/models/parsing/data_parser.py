@@ -21,8 +21,67 @@ from .data_validator import ValidatorFactory, entity_name_decode
 from ..config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigType, ConfigSubType
 from ...exceptions import ValidationError
 from ...file_io.source_location import SourceLocation, lookup_source, format_source
+from ...utils.parameter_types import normalize_type_name, coerce_numeric_value
 
 logger = logging.getLogger(__name__)
+
+def _build_source_location(
+    file_path: Path,
+    source_map: Dict[str, Dict[str, int]] | None,
+    yaml_path: str,
+) -> SourceLocation:
+    loc = lookup_source(source_map, yaml_path)
+    return SourceLocation(
+        file_path=file_path,
+        yaml_path=loc.yaml_path,
+        line=loc.line,
+        column=loc.column,
+    )
+
+
+def _coerce_param_value(
+    value: Any,
+    *,
+    param_type: Any,
+    file_path: Path,
+    source_map: Dict[str, Dict[str, int]] | None,
+    yaml_path: str,
+) -> Any:
+    type_name = normalize_type_name(param_type)
+    if not type_name:
+        return value
+    try:
+        return coerce_numeric_value(value, type_name)
+    except ValueError as exc:
+        src = _build_source_location(file_path, source_map, yaml_path)
+        raise ValidationError(f"{exc}{format_source(src)}") from exc
+
+
+def _normalize_param_list(
+    parameters: Any,
+    *,
+    file_path: Path,
+    source_map: Dict[str, Dict[str, int]] | None,
+    base_path: str,
+) -> None:
+    if not isinstance(parameters, list):
+        return
+
+    for idx, param in enumerate(parameters):
+        if not isinstance(param, dict):
+            continue
+        param_type = param.get("type")
+        if param_type is None:
+            continue
+        for key in ("default", "value"):
+            if key in param:
+                param[key] = _coerce_param_value(
+                    param[key],
+                    param_type=param_type,
+                    file_path=file_path,
+                    source_map=source_map,
+                    yaml_path=f"{base_path}/{idx}/{key}",
+                )
 
 class ConfigParser:
     """Parser for entity configuration files."""
@@ -156,6 +215,13 @@ class ConfigParser:
                     if 'default' in param and 'value' not in param:
                         param['value'] = param['default']
 
+            _normalize_param_list(
+                parameters,
+                file_path=file_path,
+                source_map=source_map,
+                base_path="/parameters",
+            )
+
             sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
             return NodeConfig(
                 **base_data,
@@ -177,9 +243,20 @@ class ConfigParser:
                 connections=config.get('connections')
             )
         elif entity_type == ConfigType.PARAMETER_SET:
+            parameters = config.get('parameters')
+            if isinstance(parameters, list):
+                for idx, node_entry in enumerate(parameters):
+                    if not isinstance(node_entry, dict):
+                        continue
+                    _normalize_param_list(
+                        node_entry.get("parameters"),
+                        file_path=file_path,
+                        source_map=source_map,
+                        base_path=f"/parameters/{idx}/parameters",
+                    )
             return ParameterSetConfig(
                 **base_data,
-                parameters=config.get('parameters'),
+                parameters=parameters,
                 local_variables=config.get('local_variables')
             )
         elif entity_type == ConfigType.SYSTEM:
