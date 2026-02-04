@@ -88,8 +88,20 @@ def collect_launcher_data(instance: "Instance") -> Dict[str, Any]:
 
     # Collect ports with resolved topics
     ports = []
+    inputs_cfg = instance.configuration.inputs or []
+    outputs_cfg = instance.configuration.outputs or []
+    remap_inputs_explicit = {
+        cfg.get("name")
+        for cfg in inputs_cfg
+        if "remap_target" in cfg and cfg.get("remap_target") not in (None, "")
+    }
+    remap_outputs_explicit = {
+        cfg.get("name")
+        for cfg in outputs_cfg
+        if "remap_target" in cfg and cfg.get("remap_target") not in (None, "")
+    }
     for port in instance.link_manager.get_all_in_ports():
-        if port.is_global:
+        if port.is_global and port.name not in remap_inputs_explicit:
             continue
         topic = port.get_topic()
         if not topic:
@@ -103,7 +115,7 @@ def collect_launcher_data(instance: "Instance") -> Dict[str, Any]:
             }
         )
     for port in instance.link_manager.get_all_out_ports():
-        if port.is_global:
+        if port.is_global and port.name not in remap_outputs_explicit:
             continue
         topic = port.get_topic()
         if not topic:

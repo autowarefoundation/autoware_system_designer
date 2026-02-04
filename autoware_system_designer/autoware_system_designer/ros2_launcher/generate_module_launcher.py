@@ -119,8 +119,20 @@ def _extract_node_data(node_instance: Instance, module_path: List[str]) -> Dict[
         node_data["container"] = launch_config.get("container_name", "perception_container")
 
     ports = []
+    inputs_cfg = node_instance.configuration.inputs or []
+    outputs_cfg = node_instance.configuration.outputs or []
+    remap_inputs_explicit = {
+        cfg.get("name")
+        for cfg in inputs_cfg
+        if "remap_target" in cfg and cfg.get("remap_target") not in (None, "")
+    }
+    remap_outputs_explicit = {
+        cfg.get("name")
+        for cfg in outputs_cfg
+        if "remap_target" in cfg and cfg.get("remap_target") not in (None, "")
+    }
     for port in node_instance.link_manager.get_all_in_ports():
-        if port.is_global:
+        if port.is_global and port.name not in remap_inputs_explicit:
             continue
         topic = port.get_topic()
         if topic == "":
@@ -134,7 +146,7 @@ def _extract_node_data(node_instance: Instance, module_path: List[str]) -> Dict[
             }
         )
     for port in node_instance.link_manager.get_all_out_ports():
-        if port.is_global:
+        if port.is_global and port.name not in remap_outputs_explicit:
             continue
         topic = port.get_topic()
         if topic == "":
