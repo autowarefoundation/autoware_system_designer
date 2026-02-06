@@ -11,8 +11,18 @@
 
 ## 外部仕様
 
-| Item   | Type | Descrption |
-| ------ | ---- | ---------- |
-| launch |      |            |
+| Item            | Type | Descrption |
+| --------------- | ---- | ---------- |
+| launch          |      |            |
+| inputs          |      |            |
+| outputs         |      |            |
+| parameter_files |      |            |
+| parameters      |      |            |
 
 ## 内部構造
+
+## 解析仕様
+
+| Item      | Type | Descrption |
+| --------- | ---- | ---------- |
+| processes |      |            |
