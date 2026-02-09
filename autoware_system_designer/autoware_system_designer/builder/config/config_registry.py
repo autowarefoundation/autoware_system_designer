@@ -24,8 +24,28 @@ from ..resolution.variant_resolver import SystemVariantResolver, NodeVariantReso
 
 from ...models.parsing.data_validator import entity_name_decode
 from ...file_io.source_location import SourceLocation, format_source
+from ...utils.format_version import check_format_version
+from ...exceptions import FormatVersionError
 
 logger = logging.getLogger(__name__)
+
+
+def _format_mismatch_hint(mismatch_files: list) -> str:
+    """Build a human-readable hint listing files with version mismatches.
+
+    Each entry in *mismatch_files* is ``(file_path, file_version, supported_version)``.
+    """
+    lines = []
+    for entry in mismatch_files:
+        fpath, file_ver, supported_ver = entry
+        lines.append(f"  {fpath}  (file: {file_ver}, supported: {supported_ver})")
+    file_list = "\n".join(lines)
+    return (
+        f"Note: the following design files use a newer minor format version "
+        f"than this tool supports.  This may have contributed to the error:\n"
+        f"{file_list}"
+    )
+
 
 class ConfigRegistry:
     """Collection for managing multiple entity data structures with efficient lookup methods."""
@@ -45,15 +65,48 @@ class ConfigRegistry:
         # Name of the package currently being built/exported (deployment package).
         # When set, build-time source fallbacks should be restricted to this package only.
         self.deployment_package_name: Optional[str] = None
-        
+
+        # Track files whose minor format version is newer than the tool supports.
+        # Each entry is (file_path, file_version_str, supported_version_str).
+        # Populated during _load_entities; surfaced to the user when the build fails.
+        self.minor_version_mismatch_files: List[tuple] = []
+
         self.parser = ConfigParser()
         self._load_entities(config_yaml_file_paths)
     
     def _load_entities(self, config_yaml_file_paths: List[str]) -> None:
         """Load entities from configuration files."""
+        from ...models.parsing.yaml_parser import yaml_parser as _yaml_parser
+
         for file_path in config_yaml_file_paths:
             logger.debug(f"Loading entity from: {file_path}")
-            
+
+            # ── format-version gate ──────────────────────────────────
+            try:
+                raw_config = _yaml_parser.load_config(file_path)
+            except Exception:
+                raw_config = None  # let parse_entity_file report the real error
+
+            if isinstance(raw_config, dict):
+                raw_ver = raw_config.get("autoware_system_design_format")
+                ver_result = check_format_version(raw_ver)
+                if not ver_result.compatible:
+                    # Major version mismatch → stop immediately
+                    src = SourceLocation(file_path=Path(file_path))
+                    raise FormatVersionError(
+                        f"{ver_result.message}{format_source(src)}"
+                    )
+                if ver_result.minor_newer:
+                    # Minor version newer than tool → warn and track
+                    src = SourceLocation(file_path=Path(file_path))
+                    logger.warning(
+                        f"{ver_result.message}{format_source(src)}"
+                    )
+                    self.minor_version_mismatch_files.append(
+                        (file_path, str(ver_result.file_version), str(ver_result.supported_version))
+                    )
+            # ─────────────────────────────────────────────────────────
+
             try:
                 entity_data = self.parser.parse_entity_file(file_path)
 
@@ -77,6 +130,13 @@ class ConfigRegistry:
             except Exception as e:
                 src = SourceLocation(file_path=Path(file_path))
                 logger.error(f"Failed to load entity from {file_path}: {e}{format_source(src)}")
+
+                # If any files loaded so far had a newer minor format
+                # version, surface that alongside the real error so the
+                # user knows it may be related.
+                if self.minor_version_mismatch_files:
+                    hint = _format_mismatch_hint(self.minor_version_mismatch_files)
+                    raise type(e)(f"{e}\n{hint}") from e
                 raise
     
     def get(self, name: str, default=None) -> Optional[Config]:

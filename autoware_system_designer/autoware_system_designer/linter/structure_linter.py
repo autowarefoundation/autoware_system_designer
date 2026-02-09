@@ -62,7 +62,7 @@ class StructureLinter:
                 yaml_path=ver_loc.yaml_path,
             )
         elif not ver_result.compatible:
-            # Incompatible version → error
+            # Major version mismatch → error (must stop)
             src = SourceLocation(
                 file_path=file_path,
                 yaml_path=ver_loc.yaml_path,
@@ -70,6 +70,20 @@ class StructureLinter:
                 column=ver_loc.column,
             )
             result.add_error(
+                f"{ver_result.message}{format_source(src)}",
+                line=ver_loc.line,
+                column=ver_loc.column,
+                yaml_path=ver_loc.yaml_path,
+            )
+        elif ver_result.minor_newer:
+            # File minor version is newer than tool → warning
+            src = SourceLocation(
+                file_path=file_path,
+                yaml_path=ver_loc.yaml_path,
+                line=ver_loc.line,
+                column=ver_loc.column,
+            )
+            result.add_warning(
                 f"{ver_result.message}{format_source(src)}",
                 line=ver_loc.line,
                 column=ver_loc.column,
