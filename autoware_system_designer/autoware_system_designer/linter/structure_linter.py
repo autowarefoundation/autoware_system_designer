@@ -25,6 +25,7 @@ from ..models.parsing.yaml_parser import yaml_parser
 from ..models.parsing.data_validator import entity_name_decode
 from ..file_io.source_location import SourceLocation, lookup_source, format_source
 from ..models.yaml_schema import get_entity_schema, validate_against_schema
+from ..utils.format_version import check_format_version
 from .report import LintResult
 
 
@@ -47,7 +48,34 @@ class StructureLinter:
         except Exception as e:
             result.add_error(f"Failed to load YAML file: {str(e)}")
             return
-        
+
+        # Check format version compatibility
+        raw_version = config.get("autoware_system_design_format") if isinstance(config, dict) else None
+        ver_result = check_format_version(raw_version)
+        ver_loc = lookup_source(source_map, "/autoware_system_design_format")
+        if raw_version is None:
+            # Missing version → warning
+            result.add_warning(
+                ver_result.message,
+                line=ver_loc.line,
+                column=ver_loc.column,
+                yaml_path=ver_loc.yaml_path,
+            )
+        elif not ver_result.compatible:
+            # Incompatible version → error
+            src = SourceLocation(
+                file_path=file_path,
+                yaml_path=ver_loc.yaml_path,
+                line=ver_loc.line,
+                column=ver_loc.column,
+            )
+            result.add_error(
+                f"{ver_result.message}{format_source(src)}",
+                line=ver_loc.line,
+                column=ver_loc.column,
+                yaml_path=ver_loc.yaml_path,
+            )
+
         # Determine entity type from filename
         file_stem = file_path.stem  # filename without .yaml extension
         try:
@@ -100,6 +128,10 @@ class StructureLinter:
 
             issues = validate_against_schema(config, schema=schema)
             for issue in issues:
+                # Skip format-version issues here; already reported above
+                # with proper warning/error distinction.
+                if issue.yaml_path == "/autoware_system_design_format":
+                    continue
                 loc = lookup_source(source_map, issue.yaml_path)
                 src = SourceLocation(file_path=file_path, yaml_path=loc.yaml_path, line=loc.line, column=loc.column)
                 suffix = format_source(src)
