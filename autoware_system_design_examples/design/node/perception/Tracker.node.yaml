@@ -1,9 +1,12 @@
-autoware_system_design_format: v0.1.0
+autoware_system_design_format: v0.2.0
 
 name: Tracker.node
 
+package:
+  name: autoware_perception_dummy_nodes
+  provider: dummy
+
 launch:
-  package: autoware_perception_dummy_nodes
   plugin: autoware::perception_dummy_nodes::Tracker
   executable: tracker_node
 

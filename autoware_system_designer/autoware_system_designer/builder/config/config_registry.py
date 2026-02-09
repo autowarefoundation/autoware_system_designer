@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class ConfigRegistry:
     """Collection for managing multiple entity data structures with efficient lookup methods."""
     
-    def __init__(self, config_yaml_file_paths: List[str], package_paths: Dict[str, str] = None, file_package_map: Dict[str, str] = None):
+    def __init__(self, config_yaml_file_paths: List[str], package_paths: Dict[str, str] = None, file_package_map: Dict[str, str] = None, workspace_config: List[Dict[str, Any]] = None):
         # Replace list with dict as primary storage
         self.entities: Dict[str, Config] = {}  # full_name → Config
         self._type_map: Dict[str, Dict[str, Config]] = {
@@ -45,6 +45,13 @@ class ConfigRegistry:
         # Name of the package currently being built/exported (deployment package).
         # When set, build-time source fallbacks should be restricted to this package only.
         self.deployment_package_name: Optional[str] = None
+
+        # Workspace provider resolution map: provider -> "source" | "installed"
+        self._provider_resolution_map: Dict[str, str] = {}
+        if workspace_config:
+            for entry in workspace_config:
+                if isinstance(entry, dict) and "provider" in entry and "resolution" in entry:
+                    self._provider_resolution_map[entry["provider"]] = entry["resolution"]
         
         self.parser = ConfigParser()
         self._load_entities(config_yaml_file_paths)
@@ -60,6 +67,12 @@ class ConfigRegistry:
                 # Set package name if available
                 if entity_data.file_path and str(entity_data.file_path) in self.file_package_map:
                     entity_data.package = self.file_package_map[str(entity_data.file_path)]
+
+                # For node entities, resolve the provider against the workspace config
+                if isinstance(entity_data, NodeConfig) and entity_data.package_provider:
+                    resolution = self._provider_resolution_map.get(entity_data.package_provider)
+                    if resolution:
+                        entity_data.package_resolution = resolution
                 
                 # Check for duplicates
                 if entity_data.full_name in self.entities:
@@ -228,3 +241,16 @@ class ConfigRegistry:
         # Cache negative result to avoid repeated scans.
         self._package_source_paths[package_name] = None
         return None
+
+    def get_provider_resolution(self, provider: str) -> Optional[str]:
+        """Get the resolution type for a given provider.
+
+        Args:
+            provider: The provider identifier (e.g., 'autoware', 'ros', 'dummy').
+
+        Returns:
+            'source' if the provider's packages are built from source in the workspace,
+            'installed' if they are pre-built library packages,
+            or None if the provider is not in the workspace config.
+        """
+        return self._provider_resolution_map.get(provider)

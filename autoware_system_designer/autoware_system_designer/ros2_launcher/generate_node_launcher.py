@@ -87,7 +87,7 @@ def create_node_launcher_xml(node_config: NodeConfig) -> str:
 
     launch_config = node_config.launch or {}
 
-    package_name = launch_config.get("package")
+    package_name = node_config.package_name
     template_data["package_name"] = package_name
     template_data["ros2_launch_file"] = launch_config.get("ros2_launch_file", None)
     template_data["is_ros2_file_launch"] = template_data["ros2_launch_file"] is not None

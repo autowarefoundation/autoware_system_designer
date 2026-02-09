@@ -1,9 +1,12 @@
-autoware_system_design_format: v0.1.0
+autoware_system_design_format: v0.2.0
 
 name: DetectedObjectMergerDummy6.node
 
+package:
+  name: autoware_system_dummy_modules
+  provider: dummy
+
 launch:
-  package: autoware_system_dummy_modules
   executable: simple_detected_object_merger_node
   node_output: screen
 

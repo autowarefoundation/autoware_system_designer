@@ -1,9 +1,12 @@
-autoware_system_design_format: v0.1.0
+autoware_system_design_format: v0.2.0
 
 name: LidarDummyDriver.node
 
+package:
+  name: autoware_system_dummy_modules
+  provider: dummy
+
 launch:
-  package: autoware_system_dummy_modules
   plugin: autoware::system_dummy_modules::LidarDummyDriver
 
 # interfaces

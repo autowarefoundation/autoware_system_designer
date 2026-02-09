@@ -199,9 +199,6 @@ def _node_semantics(config: Dict[str, Any]) -> Iterable[SchemaIssue]:
                 )
             )
 
-        if "package" not in launch:
-            issues.append(SchemaIssue(message="Launch config must have 'package' field", yaml_path="/launch"))
-
         if launch.get("use_container") is True and "container_name" not in launch:
             issues.append(
                 SchemaIssue(
@@ -293,9 +290,17 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
     }
 
     if entity_type == "node":
+        package_spec = ObjectSpec(
+            fields={
+                "name": FieldSpec(_STR, required=True),
+                "provider": FieldSpec(_STR, required=True),
+            },
+            allow_extra=True,
+        )
         root = ObjectSpec(
             fields={
                 **common_root_fields,
+                "package": FieldSpec(package_spec, required=False),
                 "launch": FieldSpec(_OBJ, required=False),
                 "inputs": FieldSpec(_list_of_objects(required_keys=("name", "message_type")), required=False),
                 "outputs": FieldSpec(_list_of_objects(required_keys=("name", "message_type")), required=False),
@@ -311,6 +316,7 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
             entity_type=entity_type,
             required_fields=("name",),
             required_fields_when_no_base=(
+                "package",
                 "launch",
                 "inputs",
                 "outputs",
@@ -322,7 +328,7 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
             semantic_checks=(
                 _node_semantics,
                 _variant_forbidden_root_fields_semantics(
-                    forbidden_fields=("launch", "inputs", "outputs", "parameter_files", "parameters", "processes"),
+                    forbidden_fields=("package", "launch", "inputs", "outputs", "parameter_files", "parameters", "processes"),
                     message_prefix="Variant rule",
                 ),
             ),
