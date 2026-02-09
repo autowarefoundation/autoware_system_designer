@@ -29,6 +29,24 @@ from ...exceptions import FormatVersionError
 
 logger = logging.getLogger(__name__)
 
+
+def _format_mismatch_hint(mismatch_files: list) -> str:
+    """Build a human-readable hint listing files with version mismatches.
+
+    Each entry in *mismatch_files* is ``(file_path, file_version, supported_version)``.
+    """
+    lines = []
+    for entry in mismatch_files:
+        fpath, file_ver, supported_ver = entry
+        lines.append(f"  {fpath}  (file: {file_ver}, supported: {supported_ver})")
+    file_list = "\n".join(lines)
+    return (
+        f"Note: the following design files use a newer minor format version "
+        f"than this tool supports.  This may have contributed to the error:\n"
+        f"{file_list}"
+    )
+
+
 class ConfigRegistry:
     """Collection for managing multiple entity data structures with efficient lookup methods."""
     
@@ -90,7 +108,9 @@ class ConfigRegistry:
                     logger.warning(
                         f"{ver_result.message}{format_source(src)}"
                     )
-                    self.minor_version_mismatch_files.append(file_path)
+                    self.minor_version_mismatch_files.append(
+                        (file_path, str(ver_result.file_version), str(ver_result.supported_version))
+                    )
             # ─────────────────────────────────────────────────────────
 
             try:
@@ -122,6 +142,13 @@ class ConfigRegistry:
             except Exception as e:
                 src = SourceLocation(file_path=Path(file_path))
                 logger.error(f"Failed to load entity from {file_path}: {e}{format_source(src)}")
+
+                # If any files loaded so far had a newer minor format
+                # version, surface that alongside the real error so the
+                # user knows it may be related.
+                if self.minor_version_mismatch_files:
+                    hint = _format_mismatch_hint(self.minor_version_mismatch_files)
+                    raise type(e)(f"{e}\n{hint}") from e
                 raise
     
     def get(self, name: str, default=None) -> Optional[Config]:

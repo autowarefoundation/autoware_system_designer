@@ -290,12 +290,8 @@ class Deployment:
                 # surface this so the user knows it may be related.
                 mismatch_files = getattr(self.config_registry, "minor_version_mismatch_files", [])
                 if mismatch_files:
-                    file_list = "\n  ".join(mismatch_files)
-                    hint += (
-                        f"\nNote: the following design files use a newer minor "
-                        f"format version than this tool supports.  This may "
-                        f"have contributed to the error:\n  {file_list}"
-                    )
+                    from .builder.config.config_registry import _format_mismatch_hint
+                    hint += "\n" + _format_mismatch_hint(mismatch_files)
 
                 raise DeploymentError(
                     f"Error while building deploy for mode '{mode_key}'{details_str}: {e}\n{hint}"
