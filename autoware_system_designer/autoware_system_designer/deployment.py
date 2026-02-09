@@ -35,7 +35,7 @@ from .file_io.system_structure_json import (
 )
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
-from .models.config import SystemConfig
+from .models.config import SystemConfig, NodeConfig
 from .file_io.source_location import SourceLocation, source_from_config, format_source
 from .builder.resolution.variant_resolver import SystemVariantResolver
 
@@ -97,7 +97,12 @@ class Deployment:
     def __init__(self, deploy_config: DeploymentConfig ):
         # entity collection
         system_yaml_list, package_paths, file_package_map = self._get_system_list(deploy_config)
-        self.config_registry = ConfigRegistry(system_yaml_list, package_paths, file_package_map)
+        self.config_registry = ConfigRegistry(
+            system_yaml_list,
+            package_paths,
+            file_package_map,
+            workspace_config=deploy_config.workspace_config,
+        )
         deployment_file_abs = str(Path(deploy_config.deployment_file).resolve())
         self.config_registry.deployment_package_name = file_package_map.get(deployment_file_abs)
 
@@ -348,12 +353,33 @@ class Deployment:
             data, _ = extract_system_structure_data(payload)
             deploy_data[mode_key] = data
 
+        package_resolution_by_name: Dict[str, str | None] = {}
+        packages_without_provider: set[str] = set()
+        for entity in self.config_registry.entities.values():
+            if not isinstance(entity, NodeConfig):
+                continue
+            pkg_name = entity.package_name
+            if not pkg_name:
+                continue
+            if not entity.package_provider:
+                packages_without_provider.add(pkg_name)
+                continue
+            resolution = entity.package_resolution
+            if resolution is None:
+                package_resolution_by_name.setdefault(pkg_name, None)
+                continue
+            existing = package_resolution_by_name.get(pkg_name)
+            if existing != "source":
+                package_resolution_by_name[pkg_name] = resolution
+
         generate_build_scripts(
             deploy_data,
             self.output_root_dir,
             self.name,
             self.config_yaml_dir,
-            self.config_registry.file_package_map
+            self.config_registry.file_package_map,
+            package_resolution_by_name=package_resolution_by_name,
+            packages_without_provider=packages_without_provider,
         )
 
 

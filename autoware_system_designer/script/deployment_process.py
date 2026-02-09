@@ -14,6 +14,8 @@
 
 import sys
 import logging
+from pathlib import Path
+import yaml
 from autoware_system_designer.deployment import Deployment
 from autoware_system_designer.deployment_config import DeploymentConfig
 from autoware_system_designer.visualization.visualization_index import update_index
@@ -23,7 +25,24 @@ _logger = logging.getLogger(__name__)
 
 # build the deployment
 # search and connect the connections between the nodes
-def build(deployment_file: str, manifest_dir: str, output_root_dir: str):
+def _load_workspace_config(workspace_yaml: str | None):
+    if not workspace_yaml:
+        return None
+    path = Path(workspace_yaml)
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        _logger.warning("Failed to read workspace.yaml '%s': %s", workspace_yaml, exc)
+        return None
+    workspace_list = data.get("workspace")
+    if not isinstance(workspace_list, list):
+        return None
+    return workspace_list
+
+
+def build(deployment_file: str, manifest_dir: str, output_root_dir: str, workspace_yaml: str | None = None):
     # Inputs:
     #   deployment_file: YAML deployment configuration
     #   manifest_dir: directory containing per-package manifest YAML files (each lists deploy_config_files)
@@ -36,6 +55,7 @@ def build(deployment_file: str, manifest_dir: str, output_root_dir: str):
     deploy_config.deployment_file = deployment_file
     deploy_config.manifest_dir = manifest_dir
     deploy_config.output_root_dir = output_root_dir
+    deploy_config.workspace_config = _load_workspace_config(workspace_yaml)
 
     logger = deploy_config.set_logging()
 
@@ -95,11 +115,14 @@ def _emit_minor_version_hint(deployment):
 
 
 if __name__ == "__main__":
-    # Usage: deployment_process.py <deployment_file> <manifest_dir> <output_root_dir>
+    # Usage: deployment_process.py <deployment_file> <manifest_dir> <output_root_dir> [workspace_yaml]
     if len(sys.argv) < 4:
-        raise SystemExit("Usage: deployment_process.py <deployment_file> <manifest_dir> <output_root_dir>")
+        raise SystemExit(
+            "Usage: deployment_process.py <deployment_file> <manifest_dir> <output_root_dir> [workspace_yaml]"
+        )
     deployment_file = sys.argv[1]
     manifest_dir = sys.argv[2]
     output_root_dir = sys.argv[3]
+    workspace_yaml = sys.argv[4] if len(sys.argv) > 4 else None
 
-    build(deployment_file, manifest_dir, output_root_dir)
+    build(deployment_file, manifest_dir, output_root_dir, workspace_yaml)
