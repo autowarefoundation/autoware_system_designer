@@ -24,6 +24,8 @@ from ..resolution.variant_resolver import SystemVariantResolver, NodeVariantReso
 
 from ...models.parsing.data_validator import entity_name_decode
 from ...file_io.source_location import SourceLocation, format_source
+from ...utils.format_version import check_format_version
+from ...exceptions import FormatVersionError
 
 logger = logging.getLogger(__name__)
 
@@ -52,15 +54,45 @@ class ConfigRegistry:
             for entry in workspace_config:
                 if isinstance(entry, dict) and "provider" in entry and "resolution" in entry:
                     self._provider_resolution_map[entry["provider"]] = entry["resolution"]
-        
+
+        # Track files whose minor format version is newer than the tool supports.
+        # Populated during _load_entities; surfaced to the user when the build fails.
+        self.minor_version_mismatch_files: List[str] = []
+
         self.parser = ConfigParser()
         self._load_entities(config_yaml_file_paths)
     
     def _load_entities(self, config_yaml_file_paths: List[str]) -> None:
         """Load entities from configuration files."""
+        from ...models.parsing.yaml_parser import yaml_parser as _yaml_parser
+
         for file_path in config_yaml_file_paths:
             logger.debug(f"Loading entity from: {file_path}")
-            
+
+            # ── format-version gate ──────────────────────────────────
+            try:
+                raw_config = _yaml_parser.load_config(file_path)
+            except Exception:
+                raw_config = None  # let parse_entity_file report the real error
+
+            if isinstance(raw_config, dict):
+                raw_ver = raw_config.get("autoware_system_design_format")
+                ver_result = check_format_version(raw_ver)
+                if not ver_result.compatible:
+                    # Major version mismatch → stop immediately
+                    src = SourceLocation(file_path=Path(file_path))
+                    raise FormatVersionError(
+                        f"{ver_result.message}{format_source(src)}"
+                    )
+                if ver_result.minor_newer:
+                    # Minor version newer than tool → warn and track
+                    src = SourceLocation(file_path=Path(file_path))
+                    logger.warning(
+                        f"{ver_result.message}{format_source(src)}"
+                    )
+                    self.minor_version_mismatch_files.append(file_path)
+            # ─────────────────────────────────────────────────────────
+
             try:
                 entity_data = self.parser.parse_entity_file(file_path)
 

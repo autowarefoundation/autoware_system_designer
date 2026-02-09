@@ -18,8 +18,8 @@ The ``autoware_system_design_format`` field in YAML design files declares
 which schema version the file conforms to (e.g. ``v0.2.0``).
 
 Compatibility rule (semver-like):
-  * **Major** must match exactly.
-  * **Minor** of the file must be ≤ the tool's supported minor version.
+  * **Major** must match exactly - a mismatch is an error that stops processing.
+  * **Minor** of the file newer than the tool → warning.
   * **Patch** is ignored for compatibility purposes.
 """
 
@@ -97,6 +97,7 @@ class VersionCheckResult:
     message: str
     file_version: Optional[SemanticVersion] = None
     supported_version: Optional[SemanticVersion] = None
+    minor_newer: bool = False
 
 
 def check_format_version(raw_version: Optional[str]) -> VersionCheckResult:
@@ -105,8 +106,11 @@ def check_format_version(raw_version: Optional[str]) -> VersionCheckResult:
     Compatibility rules:
     * Missing version → warning (compatible=True, message describes the issue).
     * Same major & file minor ≤ tool minor → fully compatible.
-    * Major mismatch → incompatible.
-    * File minor > tool minor → incompatible (file uses newer features).
+    * Major mismatch → incompatible (error, must stop).
+    * File minor > tool minor → compatible with warning
+      (``minor_newer=True``).  The file may use features unknown to this
+      tool version; the build proceeds but the mismatch is tracked so
+      that it can be surfaced if the build fails for another reason.
 
     Returns:
         A :class:`VersionCheckResult`.
@@ -146,11 +150,13 @@ def check_format_version(raw_version: Optional[str]) -> VersionCheckResult:
 
     if file_ver.minor > supported.minor:
         return VersionCheckResult(
-            compatible=False,
+            compatible=True,
+            minor_newer=True,
             message=(
-                f"Incompatible format version: file declares {file_ver} "
-                f"which is newer than the supported {supported}. "
-                f"Please upgrade autoware_system_designer."
+                f"Format version {file_ver} has a newer minor version than "
+                f"the supported {supported}. "
+                f"Some features may not be fully supported. "
+                f"Consider upgrading autoware_system_designer."
             ),
             file_version=file_ver,
             supported_version=supported,

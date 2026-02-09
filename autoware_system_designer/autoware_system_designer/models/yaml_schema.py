@@ -264,10 +264,14 @@ def _format_version_semantics(config: Dict[str, Any]) -> Iterable[SchemaIssue]:
             yaml_path="/autoware_system_design_format",
         )
     elif not result.compatible:
+        # Major version mismatch → error (must stop).
         yield SchemaIssue(
             message=result.message,
             yaml_path="/autoware_system_design_format",
         )
+    # minor_newer is intentionally not emitted here; SchemaIssues are
+    # treated as hard errors by validate_all().  The minor-version
+    # warning is handled at the config_registry and linter layers.
 
 
 def _variant_forbidden_root_fields_semantics(
