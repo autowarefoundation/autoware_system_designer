@@ -43,3 +43,8 @@ class DeploymentError(SystemDesignerError):
 class ValidationError(SystemDesignerError):
     """Exception raised for validation errors."""
     pass
+
+
+class FormatVersionError(ValidationError):
+    """Exception raised when a design file's format version is incompatible."""
+    pass

@@ -16,6 +16,13 @@
 
 __version__ = "1.0.0"
 
+# The autoware_system_design_format version supported by this tool.
+# YAML design files declare their format version via the
+# ``autoware_system_design_format`` field (e.g. ``v0.2.0``).
+# The tool accepts files whose *major* version matches and whose
+# *minor* version is less-than-or-equal-to the version below.
+DESIGN_FORMAT_VERSION = "0.1.0"
+
 __all__ = [
     "config",
     "builders",
@@ -23,5 +30,6 @@ __all__ = [
     "exceptions",
     "models",
     "instance",
-    "utils"
+    "utils",
+    "DESIGN_FORMAT_VERSION",
 ]
