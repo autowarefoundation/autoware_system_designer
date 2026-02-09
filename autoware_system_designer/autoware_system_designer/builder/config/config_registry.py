@@ -24,13 +24,33 @@ from ..resolution.variant_resolver import SystemVariantResolver, NodeVariantReso
 
 from ...models.parsing.data_validator import entity_name_decode
 from ...file_io.source_location import SourceLocation, format_source
+from ...utils.format_version import check_format_version
+from ...exceptions import FormatVersionError
 
 logger = logging.getLogger(__name__)
+
+
+def _format_mismatch_hint(mismatch_files: list) -> str:
+    """Build a human-readable hint listing files with version mismatches.
+
+    Each entry in *mismatch_files* is ``(file_path, file_version, supported_version)``.
+    """
+    lines = []
+    for entry in mismatch_files:
+        fpath, file_ver, supported_ver = entry
+        lines.append(f"  {fpath}  (file: {file_ver}, supported: {supported_ver})")
+    file_list = "\n".join(lines)
+    return (
+        f"Note: the following design files use a newer minor format version "
+        f"than this tool supports.  This may have contributed to the error:\n"
+        f"{file_list}"
+    )
+
 
 class ConfigRegistry:
     """Collection for managing multiple entity data structures with efficient lookup methods."""
     
-    def __init__(self, config_yaml_file_paths: List[str], package_paths: Dict[str, str] = None, file_package_map: Dict[str, str] = None):
+    def __init__(self, config_yaml_file_paths: List[str], package_paths: Dict[str, str] = None, file_package_map: Dict[str, str] = None, workspace_config: List[Dict[str, Any]] = None):
         # Replace list with dict as primary storage
         self.entities: Dict[str, Config] = {}  # full_name → Config
         self._type_map: Dict[str, Dict[str, Config]] = {
@@ -45,21 +65,66 @@ class ConfigRegistry:
         # Name of the package currently being built/exported (deployment package).
         # When set, build-time source fallbacks should be restricted to this package only.
         self.deployment_package_name: Optional[str] = None
-        
+
+        # Workspace provider resolution map: provider -> "source" | "installed"
+        self._provider_resolution_map: Dict[str, str] = {}
+        if workspace_config:
+            for entry in workspace_config:
+                if isinstance(entry, dict) and "provider" in entry and "resolution" in entry:
+                    self._provider_resolution_map[entry["provider"]] = entry["resolution"]
+
+        # Track files whose minor format version is newer than the tool supports.
+        # Populated during _load_entities; surfaced to the user when the build fails.
+        self.minor_version_mismatch_files: List[str] = []
+
         self.parser = ConfigParser()
         self._load_entities(config_yaml_file_paths)
     
     def _load_entities(self, config_yaml_file_paths: List[str]) -> None:
         """Load entities from configuration files."""
+        from ...models.parsing.yaml_parser import yaml_parser as _yaml_parser
+
         for file_path in config_yaml_file_paths:
             logger.debug(f"Loading entity from: {file_path}")
-            
+
+            # ── format-version gate ──────────────────────────────────
+            try:
+                raw_config = _yaml_parser.load_config(file_path)
+            except Exception:
+                raw_config = None  # let parse_entity_file report the real error
+
+            if isinstance(raw_config, dict):
+                raw_ver = raw_config.get("autoware_system_design_format")
+                ver_result = check_format_version(raw_ver)
+                if not ver_result.compatible:
+                    # Major version mismatch → stop immediately
+                    src = SourceLocation(file_path=Path(file_path))
+                    raise FormatVersionError(
+                        f"{ver_result.message}{format_source(src)}"
+                    )
+                if ver_result.minor_newer:
+                    # Minor version newer than tool → warn and track
+                    src = SourceLocation(file_path=Path(file_path))
+                    logger.warning(
+                        f"{ver_result.message}{format_source(src)}"
+                    )
+                    self.minor_version_mismatch_files.append(
+                        (file_path, str(ver_result.file_version), str(ver_result.supported_version))
+                    )
+            # ─────────────────────────────────────────────────────────
+
             try:
                 entity_data = self.parser.parse_entity_file(file_path)
 
                 # Set package name if available
                 if entity_data.file_path and str(entity_data.file_path) in self.file_package_map:
                     entity_data.package = self.file_package_map[str(entity_data.file_path)]
+
+                # For node entities, resolve the provider against the workspace config
+                if isinstance(entity_data, NodeConfig) and entity_data.package_provider:
+                    resolution = self._provider_resolution_map.get(entity_data.package_provider)
+                    if resolution:
+                        entity_data.package_resolution = resolution
                 
                 # Check for duplicates
                 if entity_data.full_name in self.entities:
@@ -77,6 +142,13 @@ class ConfigRegistry:
             except Exception as e:
                 src = SourceLocation(file_path=Path(file_path))
                 logger.error(f"Failed to load entity from {file_path}: {e}{format_source(src)}")
+
+                # If any files loaded so far had a newer minor format
+                # version, surface that alongside the real error so the
+                # user knows it may be related.
+                if self.minor_version_mismatch_files:
+                    hint = _format_mismatch_hint(self.minor_version_mismatch_files)
+                    raise type(e)(f"{e}\n{hint}") from e
                 raise
     
     def get(self, name: str, default=None) -> Optional[Config]:
@@ -228,3 +300,16 @@ class ConfigRegistry:
         # Cache negative result to avoid repeated scans.
         self._package_source_paths[package_name] = None
         return None
+
+    def get_provider_resolution(self, provider: str) -> Optional[str]:
+        """Get the resolution type for a given provider.
+
+        Args:
+            provider: The provider identifier (e.g., 'autoware', 'ros', 'dummy').
+
+        Returns:
+            'source' if the provider's packages are built from source in the workspace,
+            'installed' if they are pre-built library packages,
+            or None if the provider is not in the workspace config.
+        """
+        return self._provider_resolution_map.get(provider)

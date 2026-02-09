@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from ..utils.parameter_types import normalize_type_name, is_supported_parameter_type
+from ..utils.format_version import check_format_version
 
 
 JsonPointer = str
@@ -199,9 +200,6 @@ def _node_semantics(config: Dict[str, Any]) -> Iterable[SchemaIssue]:
                 )
             )
 
-        if "package" not in launch:
-            issues.append(SchemaIssue(message="Launch config must have 'package' field", yaml_path="/launch"))
-
         if launch.get("use_container") is True and "container_name" not in launch:
             issues.append(
                 SchemaIssue(
@@ -254,6 +252,28 @@ def _parameter_type_semantics(parameters: Any, *, base_path: str) -> Iterable[Sc
     return issues
 
 
+def _format_version_semantics(config: Dict[str, Any]) -> Iterable[SchemaIssue]:
+    """Check the ``autoware_system_design_format`` field for compatibility."""
+    raw = config.get("autoware_system_design_format")
+    result = check_format_version(raw)
+
+    if raw is None:
+        # Missing version → emit a warning-level issue.
+        yield SchemaIssue(
+            message=result.message,
+            yaml_path="/autoware_system_design_format",
+        )
+    elif not result.compatible:
+        # Major version mismatch → error (must stop).
+        yield SchemaIssue(
+            message=result.message,
+            yaml_path="/autoware_system_design_format",
+        )
+    # minor_newer is intentionally not emitted here; SchemaIssues are
+    # treated as hard errors by validate_all().  The minor-version
+    # warning is handled at the config_registry and linter layers.
+
+
 def _variant_forbidden_root_fields_semantics(
     *,
     forbidden_fields: Sequence[str],
@@ -293,9 +313,17 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
     }
 
     if entity_type == "node":
+        package_spec = ObjectSpec(
+            fields={
+                "name": FieldSpec(_STR, required=True),
+                "provider": FieldSpec(_STR, required=True),
+            },
+            allow_extra=True,
+        )
         root = ObjectSpec(
             fields={
                 **common_root_fields,
+                "package": FieldSpec(package_spec, required=False),
                 "launch": FieldSpec(_OBJ, required=False),
                 "inputs": FieldSpec(_list_of_objects(required_keys=("name", "message_type")), required=False),
                 "outputs": FieldSpec(_list_of_objects(required_keys=("name", "message_type")), required=False),
@@ -311,6 +339,7 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
             entity_type=entity_type,
             required_fields=("name",),
             required_fields_when_no_base=(
+                "package",
                 "launch",
                 "inputs",
                 "outputs",
@@ -320,9 +349,10 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
             ),
             root=root,
             semantic_checks=(
+                _format_version_semantics,
                 _node_semantics,
                 _variant_forbidden_root_fields_semantics(
-                    forbidden_fields=("launch", "inputs", "outputs", "parameter_files", "parameters", "processes"),
+                    forbidden_fields=("package", "launch", "inputs", "outputs", "parameter_files", "parameters", "processes"),
                     message_prefix="Variant rule",
                 ),
             ),
@@ -361,6 +391,7 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
             required_fields_when_no_base=("instances", "external_interfaces", "connections"),
             root=root,
             semantic_checks=(
+                _format_version_semantics,
                 _variant_forbidden_root_fields_semantics(
                     forbidden_fields=("instances", "external_interfaces", "connections"),
                     message_prefix="Variant rule",
@@ -392,6 +423,7 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
             required_fields=("name", "parameters"),
             root=root,
             semantic_checks=(
+                _format_version_semantics,
                 _parameter_set_semantics,
             ),
         )
@@ -415,6 +447,7 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
             required_fields_when_no_base=("components", "connections"),
             root=root,
             semantic_checks=(
+                _format_version_semantics,
                 _variant_forbidden_root_fields_semantics(
                     forbidden_fields=(
                         "modes",

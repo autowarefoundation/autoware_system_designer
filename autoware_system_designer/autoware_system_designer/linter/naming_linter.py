@@ -83,6 +83,24 @@ class NamingLinter:
                             f"(e.g., 'node_detector', 'pointcloud_input')"
                         )
         
+        # Check package field naming (for nodes)
+        if 'package' in config and isinstance(config['package'], dict):
+            pkg = config['package']
+            if 'name' in pkg:
+                pkg_name = pkg['name']
+                if not self._is_snake_case(pkg_name):
+                    result.add_error(
+                        f"Package name '{pkg_name}' should be in snake_case format "
+                        f"(e.g., 'autoware_system_dummy_modules', 'robot_state_publisher')"
+                    )
+            if 'provider' in pkg:
+                pkg_provider = pkg['provider']
+                if not self._is_provider_identifier(pkg_provider):
+                    result.add_error(
+                        f"Package provider '{pkg_provider}' should be a lowercase identifier "
+                        f"(e.g., 'autoware', 'ros', 'pilot-auto', 'dummy')"
+                    )
+
         # Check variant override/remove names
         self._lint_variant_names(config, result)
 
@@ -189,6 +207,25 @@ class NamingLinter:
         
         # Allow slash-delimited snake_case segments
         pattern = r'^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$'
+        return bool(re.match(pattern, name))
+
+    @staticmethod
+    def _is_provider_identifier(name: str) -> bool:
+        """Check if a string is a valid provider identifier.
+        
+        Provider identifiers are lowercase, may contain letters, digits,
+        hyphens, and underscores. Must start with a letter.
+        Examples: autoware, ros, ros2, pilot-auto, nebula, dummy
+        
+        Args:
+            name: String to check
+            
+        Returns:
+            True if string is a valid provider identifier
+        """
+        if not name:
+            return False
+        pattern = r'^[a-z][a-z0-9_-]*$'
         return bool(re.match(pattern, name))
 
     def _is_allowed_variant_name(self, name: str, base_ref: str) -> bool:

@@ -1,9 +1,12 @@
-autoware_system_design_format: v0.1.0
+autoware_system_design_format: v0.2.0
 
 name: ConcatenatePointcloudDummy.node
 
+package:
+  name: autoware_pointcloud_preprocessor
+  provider: dummy
+
 launch:
-  package: autoware_pointcloud_preprocessor
   plugin: autoware::pointcloud_preprocessor::ConcatenatePointcloudComponent
   executable: concatenate_pointcloud_node
   node_output: screen

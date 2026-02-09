@@ -66,7 +66,7 @@ def collect_launcher_data(instance: "Instance") -> Dict[str, Any]:
 
     launch_config = instance.configuration.launch or {}
     launcher_data: Dict[str, Any] = {
-        "package": launch_config.get("package", ""),
+        "package": instance.configuration.package_name or "",
         "ros2_launch_file": launch_config.get("ros2_launch_file", None),
         "node_output": launch_config.get("node_output", "screen"),
     }
@@ -198,7 +198,7 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
 
     if instance.entity_type == "node":
         launch_config = instance.configuration.launch or {}
-        data["package"] = launch_config.get("package", "")
+        data["package"] = instance.configuration.package_name or ""
         data["parameter_files_all"] = [
             {
                 "name": pf.name,

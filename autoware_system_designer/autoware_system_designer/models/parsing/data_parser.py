@@ -222,10 +222,20 @@ class ConfigParser:
                 base_path="/parameters",
             )
 
+            # Extract top-level package info (name and provider)
+            pkg_info = config.get('package')
+            pkg_name = None
+            pkg_provider = None
+            if isinstance(pkg_info, dict):
+                pkg_name = pkg_info.get('name')
+                pkg_provider = pkg_info.get('provider')
+
             sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
             return NodeConfig(
                 **base_data,
                 sub_type=sub_type,
+                package_name=pkg_name,
+                package_provider=pkg_provider,
                 launch=config.get('launch'),
                 inputs=config.get('inputs'),
                 outputs=config.get('outputs'),

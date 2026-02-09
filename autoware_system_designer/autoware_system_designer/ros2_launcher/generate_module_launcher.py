@@ -103,7 +103,7 @@ def _extract_node_data(node_instance: Instance, module_path: List[str]) -> Dict[
     node_data["full_namespace_path"] = "/".join(module_path) if module_path else ""
 
     launch_config = node_instance.configuration.launch
-    node_data["package"] = launch_config.get("package", "")
+    node_data["package"] = node_instance.configuration.package_name
     node_data["ros2_launch_file"] = launch_config.get("ros2_launch_file", None)
     is_ros2_file_launch = True if node_data["ros2_launch_file"] is not None else False
     node_data["is_ros2_file_launch"] = is_ros2_file_launch

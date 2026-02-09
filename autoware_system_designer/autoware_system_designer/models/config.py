@@ -58,6 +58,9 @@ class Config:
 @dataclass
 class NodeConfig(Config):
     """Data structure for node entities."""
+    package_name: Optional[str] = None
+    package_provider: Optional[str] = None
+    package_resolution: Optional[str] = None  # "source" or "installed", set from workspace.yaml
     launch: Dict[str, Any] = None
     inputs: List[Dict[str, Any]] = None
     outputs: List[Dict[str, Any]] = None
