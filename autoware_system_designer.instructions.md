@@ -87,6 +87,11 @@ Represents a composite component containing nodes or other modules.
   - `from`: Source port path. Supports wildcards (e.g., `input.*` or `node.output.*`).
   - `to`: Destination port path.
 
+**Connection Syntax:**
+- **External Input to Internal Input**: `from: input.<external_input_port>` -> `to: <instance>.input.<port>`
+- **Internal Output to Internal Input**: `from: <instance_a>.output.<port>` -> `to: <instance_b>.input.<port>`
+- **Internal Output to External Output**: `from: <instance>.output.<port>` -> `to: output.<external_output_port>`
+
 ### 4.3. System Configuration (`.system.yaml`)
 Top-level entry point defining the complete system.
 **Required Fields:**
