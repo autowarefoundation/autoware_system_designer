@@ -18,11 +18,9 @@ import logging
 from pathlib import Path
 from typing import Dict, Tuple, List, Any, Optional
 from .deployment.deployment_config import DeploymentConfig
-from .deployment._deploy_variant_launchers import _generate_deploy_variant_launchers
-from .deployment._input_resolution import _resolve_input_target
-from .deployment._mode_selection import _select_modes
-from .deployment._modes import _apply_mode_configuration
-from .deployment._system_structure import _iter_mode_payload_and_data
+from .deployment.deploy_launchers import generate_deploy_launchers
+from .deployment.modes import apply_mode_configuration, select_modes
+from .deployment.parser import iter_mode_payload_and_data, resolve_input_target
 from .builder.config.config_registry import ConfigRegistry
 from .builder.deployment_instance import DeploymentInstance
 from .ros2_launcher.generate_module_launcher import generate_module_launch_file
@@ -63,7 +61,7 @@ class Deployment:
         self.deployment_table_path: Optional[str] = None
         self.system_argument_variables: List[str] = []
 
-        system_config, self.deploy_variants, self.deployment_table_path = _resolve_input_target(
+        system_config, self.deploy_variants, self.deployment_table_path = resolve_input_target(
             input_path, self.config_registry
         )
         if not system_config:
@@ -227,7 +225,7 @@ class Deployment:
         return mode_key, snapshot_store
 
     def _build(self, system_config, package_paths):
-        mode_names, default_mode = _select_modes(system_config)
+        mode_names, default_mode = select_modes(system_config)
         if system_config.modes:
             logger.info(
                 f"Building deployment for {len(mode_names)} modes: {mode_names}, default: {default_mode}"
@@ -242,7 +240,7 @@ class Deployment:
             snapshot_store: Dict[str, Any] = {}
             try:
                 # Apply mode configuration on top of base system
-                mode_system_config = _apply_mode_configuration(system_config, mode_name)
+                mode_system_config = apply_mode_configuration(system_config, mode_name)
 
                 mode_key, snapshot_store = self._build_mode_instance(
                     mode_name, mode_system_config, package_paths, default_mode
@@ -283,7 +281,7 @@ class Deployment:
         # Collect data from all deployment instances
         deploy_data = {
             mode_key: data
-            for mode_key, _payload, data in _iter_mode_payload_and_data(
+            for mode_key, _payload, data in iter_mode_payload_and_data(
                 self.mode_keys, self.system_structure_dir
             )
         }
@@ -309,7 +307,7 @@ class Deployment:
         topics_template_path = os.path.join(template_dir, "sys_monitor_topics.yaml.jinja2")
 
         # Generate system monitor for each mode
-        for mode_key, _payload, data in _iter_mode_payload_and_data(
+        for mode_key, _payload, data in iter_mode_payload_and_data(
             self.mode_keys, self.system_structure_dir
         ):
             # Create mode-specific output directory
@@ -323,7 +321,7 @@ class Deployment:
         """Generate shell scripts to build necessary packages for each ECU."""
         deploy_data = {
             mode_key: data
-            for mode_key, _payload, data in _iter_mode_payload_and_data(
+            for mode_key, _payload, data in iter_mode_payload_and_data(
                 self.mode_keys, self.system_structure_dir
             )
         }
@@ -361,7 +359,7 @@ class Deployment:
     def generate_launcher(self):
         deploy_variable_names = self._collect_deploy_variable_names()
         # Generate launcher files for each mode
-        for mode_key, payload, _data in _iter_mode_payload_and_data(
+        for mode_key, payload, _data in iter_mode_payload_and_data(
             self.mode_keys, self.system_structure_dir
         ):
             # Create mode-specific launcher directory
@@ -377,7 +375,7 @@ class Deployment:
             logger.info(f"Generated launcher for mode: {mode_key}")
 
         if self.deploy_variants:
-            _generate_deploy_variant_launchers(
+            generate_deploy_launchers(
                 mode_keys=self.mode_keys,
                 system_structure_dir=self.system_structure_dir,
                 launcher_dir=self.launcher_dir,
@@ -393,7 +391,7 @@ class Deployment:
         
         # Generate parameter set template for each mode
         output_paths = {}
-        for mode_key, _payload, data in _iter_mode_payload_and_data(
+        for mode_key, _payload, data in iter_mode_payload_and_data(
             self.mode_keys, self.system_structure_dir
         ):
             # Create mode-specific output directory

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import logging
+from typing import List, Tuple
 
 from ..builder.resolution.variant_resolver import SystemVariantResolver
 from ..file_io.source_location import format_source, source_from_config
@@ -24,7 +25,7 @@ from ..models.config import SystemConfig
 logger = logging.getLogger(__name__)
 
 
-def _apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -> SystemConfig:
+def apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -> SystemConfig:
     """Create a copy of base system and apply mode-specific overrides/removals."""
 
     modified_config = copy.deepcopy(base_system_config)
@@ -67,3 +68,19 @@ def _apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) 
     )
 
     return modified_config
+
+
+def select_modes(system_config: SystemConfig) -> Tuple[List[str], str]:
+    """Return (mode_names, default_mode) for a SystemConfig."""
+
+    modes_config = system_config.modes or []
+
+    if modes_config:
+        mode_names = [m.get("name") for m in modes_config]
+        default_mode = next(
+            (m.get("name") for m in modes_config if m.get("default")),
+            mode_names[0],
+        )
+        return mode_names, default_mode
+
+    return ["default"], "default"

@@ -16,15 +16,29 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from ..exceptions import ValidationError
+from ..file_io.system_structure_json import extract_system_structure_data, load_system_structure
 from ..models.config import SystemConfig
 from ..models.parsing.data_validator import entity_name_decode
 from ..models.parsing.yaml_parser import yaml_parser
 
 
-def _normalize_system_name(system_ref: str) -> str:
+def iter_mode_payload_and_data(
+    mode_keys: List[str],
+    system_structure_dir: str,
+) -> Iterator[Tuple[str, Dict[str, Any], Dict[str, Any]]]:
+    """Yield (mode_key, payload, extracted_data) for each mode."""
+
+    for mode_key in mode_keys:
+        structure_path = os.path.join(system_structure_dir, f"{mode_key}.json")
+        payload = load_system_structure(structure_path)
+        data, _ = extract_system_structure_data(payload)
+        yield mode_key, payload, data
+
+
+def normalize_system_name(system_ref: str) -> str:
     system_name = os.path.basename(system_ref)
     if system_name.endswith(".yaml"):
         system_name = system_name[:-5]
@@ -34,7 +48,7 @@ def _normalize_system_name(system_ref: str) -> str:
     return system_name
 
 
-def _resolve_deployments_path(input_path: str) -> str:
+def resolve_deployments_path(input_path: str) -> str:
     candidate = Path(input_path)
     if candidate.suffix != ".yaml":
         candidate = Path(f"{input_path}.yaml")
@@ -48,7 +62,7 @@ def _resolve_deployments_path(input_path: str) -> str:
     )
 
 
-def _parse_deployments_table(deployments_path: str) -> Tuple[str, List[Dict[str, Any]]]:
+def parse_deployments_table(deployments_path: str) -> Tuple[str, List[Dict[str, Any]]]:
     config_yaml = yaml_parser.load_config(deployments_path)
     if not isinstance(config_yaml, dict):
         raise ValidationError(f"Invalid deployments table format: {deployments_path}")
@@ -88,7 +102,7 @@ def _parse_deployments_table(deployments_path: str) -> Tuple[str, List[Dict[str,
     return base, deploy_list
 
 
-def _resolve_input_target(
+def resolve_input_target(
     input_path: str,
     config_registry: Any,
 ) -> Tuple[SystemConfig, List[Dict[str, Any]], Optional[str]]:
@@ -100,12 +114,12 @@ def _resolve_input_target(
     """
 
     if input_path.endswith(".deployments") or input_path.endswith(".deployments.yaml"):
-        table_path = _resolve_deployments_path(input_path)
-        base_name, deploy_list = _parse_deployments_table(table_path)
-        system_name = _normalize_system_name(base_name)
+        table_path = resolve_deployments_path(input_path)
+        base_name, deploy_list = parse_deployments_table(table_path)
+        system_name = normalize_system_name(base_name)
         system_config = config_registry.get_system(system_name)
         return system_config, deploy_list, table_path
 
-    system_name = _normalize_system_name(input_path)
+    system_name = normalize_system_name(input_path)
     system_config = config_registry.get_system(system_name)
     return system_config, [], None

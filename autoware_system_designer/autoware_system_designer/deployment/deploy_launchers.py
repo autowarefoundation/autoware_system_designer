@@ -24,7 +24,7 @@ from ..file_io.template_renderer import TemplateRenderer
 logger = logging.getLogger(__name__)
 
 
-def _generate_deploy_variant_launchers(
+def generate_deploy_launchers(
     *,
     mode_keys: List[str],
     system_structure_dir: str,
@@ -33,6 +33,8 @@ def _generate_deploy_variant_launchers(
     system_name: str,
     deploy_variants: List[Dict[str, Any]],
 ) -> None:
+    """Generate wrapper launch files for each deploy-variant (per mode and compute unit)."""
+
     renderer = TemplateRenderer()
 
     for mode_key in mode_keys:
@@ -84,7 +86,7 @@ def _generate_deploy_variant_launchers(
                 )
 
             logger.info(
-                "Generated deployment variant launchers for deploy='%s', mode='%s'",
+                "Generated deploy launchers for deploy='%s', mode='%s'",
                 deploy_name,
                 mode_key,
             )
