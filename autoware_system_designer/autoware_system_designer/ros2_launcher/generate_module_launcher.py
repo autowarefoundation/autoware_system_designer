@@ -220,7 +220,7 @@ def _generate_compute_unit_launcher(
     components: list,
     output_dir: str,
     forward_args: List[str] | None = None,
-    namespace_forward_args: Dict[str, List[str]] | None = None,
+    component_forward_args: Dict[str, List[str]] | None = None,
 ):
     """Generate compute unit launcher file."""
 
@@ -230,14 +230,14 @@ def _generate_compute_unit_launcher(
     launcher_file = os.path.join(compute_unit_dir, f"{compute_unit.lower()}.launch.xml")
     logger.debug(f"Creating compute unit launcher: {launcher_file}")
 
-    namespaces_data = []
+    components_data = []
     for component in sorted(components, key=lambda c: c.name):
-        component_args = (namespace_forward_args or {}).get(component.name, [])
-        namespaces_data.append({"namespace": component.name, "args": component_args})
+        args_for_component = (component_forward_args or {}).get(component.name, [])
+        components_data.append({"component": component.name, "args": args_for_component})
 
     template_data = {
         "compute_unit": compute_unit,
-        "namespaces": namespaces_data,
+        "components": components_data,
         "forward_args": forward_args or [],
     }
     _render_template_to_file("compute_unit_launcher.xml.jinja2", launcher_file, template_data)
@@ -330,7 +330,7 @@ def _generate_compute_unit_launcher_from_data(
     components: list,
     output_dir: str,
     forward_args: List[str] | None = None,
-    namespace_forward_args: Dict[str, List[str]] | None = None,
+    component_forward_args: Dict[str, List[str]] | None = None,
 ):
     """Generate compute unit launcher from serialized system structure."""
 
@@ -340,15 +340,15 @@ def _generate_compute_unit_launcher_from_data(
     launcher_file = os.path.join(compute_unit_dir, f"{compute_unit.lower()}.launch.xml")
     logger.debug(f"Creating compute unit launcher: {launcher_file}")
 
-    namespaces_data = []
+    components_data = []
     for component in sorted(components, key=lambda c: c.get("name", "")):
         component_name = component.get("name", "")
-        component_args = (namespace_forward_args or {}).get(component_name, [])
-        namespaces_data.append({"namespace": component_name, "args": component_args})
+        args_for_component = (component_forward_args or {}).get(component_name, [])
+        components_data.append({"component": component_name, "args": args_for_component})
 
     template_data = {
         "compute_unit": compute_unit,
-        "namespaces": namespaces_data,
+        "components": components_data,
         "forward_args": forward_args or [],
     }
     _render_template_to_file("compute_unit_launcher.xml.jinja2", launcher_file, template_data)
@@ -366,22 +366,22 @@ def generate_module_launch_file(
 
         if instance.entity_type == "system":
             compute_unit_map: Dict[str, list] = {}
-            namespace_args_map: Dict[tuple, List[str]] = {}
+            component_args_by_id: Dict[tuple, List[str]] = {}
             for child in instance.children.values():
                 compute_unit_map.setdefault(child.compute_unit, []).append(child)
                 nodes = _collect_all_nodes_recursively(child)
-                namespace_args_map[
+                component_args_by_id[
                     (child.compute_unit, child.name)
                 ] = ParameterManager.collect_component_required_system_args(nodes, forward_args)
 
-            namespace_map = {}
+            component_map = {}
             for child in instance.children.values():
                 key = (child.compute_unit, child.name)
-                namespace_map[key] = [child]
+                component_map[key] = [child]
 
             for compute_unit, components in compute_unit_map.items():
                 component_args_map = {
-                    component.name: namespace_args_map.get((compute_unit, component.name), [])
+                    component.name: component_args_by_id.get((compute_unit, component.name), [])
                     for component in components
                 }
                 _generate_compute_unit_launcher(
@@ -389,13 +389,13 @@ def generate_module_launch_file(
                     components,
                     output_dir,
                     forward_args=forward_args,
-                    namespace_forward_args=component_args_map,
+                    component_forward_args=component_args_map,
                 )
 
-            for (compute_unit, namespace), components in namespace_map.items():
+            for (compute_unit, component_name), components in component_map.items():
                 _generate_component_launcher(
                     compute_unit,
-                    namespace,
+                    component_name,
                     components,
                     output_dir,
                     forward_args=forward_args,
@@ -416,21 +416,23 @@ def generate_module_launch_file(
         return
 
     compute_unit_map = {}
-    namespace_map = {}
-    namespace_args_map: Dict[tuple, List[str]] = {}
+    component_map = {}
+    component_args_by_id: Dict[tuple, List[str]] = {}
     for child in instance_data.get("children", []):
         compute_unit = child.get("compute_unit", "")
         compute_unit_map.setdefault(compute_unit, []).append(child)
         key = (compute_unit, child.get("name", ""))
-        namespace_map[key] = [child]
+        component_map[key] = [child]
         nodes = _collect_all_nodes_recursively_data(child)
-        namespace_args_map[key] = ParameterManager.collect_component_required_system_args(
+        component_args_by_id[key] = ParameterManager.collect_component_required_system_args(
             nodes, forward_args
         )
 
     for compute_unit, components in compute_unit_map.items():
         component_args_map = {
-            component.get("name", ""): namespace_args_map.get((compute_unit, component.get("name", "")), [])
+            component.get("name", ""): component_args_by_id.get(
+                (compute_unit, component.get("name", "")), []
+            )
             for component in components
         }
         _generate_compute_unit_launcher_from_data(
@@ -438,13 +440,13 @@ def generate_module_launch_file(
             components,
             output_dir,
             forward_args=forward_args,
-            namespace_forward_args=component_args_map,
+            component_forward_args=component_args_map,
         )
 
-    for (compute_unit, namespace), components in namespace_map.items():
+    for (compute_unit, component_name), components in component_map.items():
         _generate_component_launcher_from_data(
             compute_unit,
-            namespace,
+            component_name,
             components,
             output_dir,
             forward_args=forward_args,
