@@ -93,13 +93,7 @@ class NamingLinter:
                         f"Package name '{pkg_name}' should be in snake_case format "
                         f"(e.g., 'autoware_system_dummy_modules', 'robot_state_publisher')"
                     )
-            if 'provider' in pkg:
-                pkg_provider = pkg['provider']
-                if not self._is_provider_identifier(pkg_provider):
-                    result.add_error(
-                        f"Package provider '{pkg_provider}' should be a lowercase identifier "
-                        f"(e.g., 'autoware', 'ros', 'pilot-auto', 'dummy')"
-                    )
+            # provider field can be any type
 
         # Check variant override/remove names
         self._lint_variant_names(config, result)
