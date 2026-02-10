@@ -17,6 +17,7 @@
 import os
 import logging
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from autoware_system_designer.utils.logging_utils import configure_split_stream_logging
 
@@ -34,6 +35,7 @@ class DeploymentConfig:
     deployment_file: str = ""
     manifest_dir: str = ""
     output_root_dir: str = "build"
+    workspace_config: Optional[List[Dict[str, Any]]] = None
 
     @classmethod
     def from_env(cls) -> 'DeploymentConfig':
