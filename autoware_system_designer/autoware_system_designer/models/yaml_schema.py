@@ -432,6 +432,7 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
         root = ObjectSpec(
             fields={
                 **common_root_fields,
+                "arguments": FieldSpec(_list_of_objects(required_keys=("name",)), required=False),
                 "variables": FieldSpec(_list_of_objects(required_keys=("name",)), required=False),
                 "variable_files": FieldSpec(ListSpec(ObjectSpec(fields={}, allow_extra=True)), required=False),
                 "modes": FieldSpec(_list_of_objects(required_keys=("name",)), required=False),
@@ -454,6 +455,7 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
                         "parameter_sets",
                         "components",
                         "connections",
+                        "arguments",
                         "variables",
                         "variable_files",
                     ),

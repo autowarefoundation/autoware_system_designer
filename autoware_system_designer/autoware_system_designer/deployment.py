@@ -127,7 +127,8 @@ class Deployment:
         logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
                 
         self.name = system_config.name
-        self.system_argument_variables = self._collect_system_unset_variable_names(system_config)
+        self.system_argument_variables = self._collect_system_argument_names(system_config)
+        self.deployment_package_path = str(Path(deploy_config.output_root_dir).resolve())
 
         # mode identifiers
         self.mode_keys: List[str] = []
@@ -208,14 +209,14 @@ class Deployment:
                 raise ValidationError(
                     f"deploy_list[{idx}] requires non-empty 'name' in deployments table: {deployments_path}"
                 )
-            variables = item.get("variables", [])
-            if variables is None:
-                variables = []
-            if not isinstance(variables, list):
+            arguments = item.get("arguments", item.get("variables", []))
+            if arguments is None:
+                arguments = []
+            if not isinstance(arguments, list):
                 raise ValidationError(
-                    f"deploy_list[{idx}].variables must be a list in deployments table: {deployments_path}"
+                    f"deploy_list[{idx}].arguments must be a list in deployments table: {deployments_path}"
                 )
-            deploy_list.append({"name": name, "variables": variables})
+            deploy_list.append({"name": name, "arguments": arguments})
 
         return base, deploy_list
 
@@ -223,7 +224,7 @@ class Deployment:
         variable_names: List[str] = []
         seen = set()
 
-        # 1) System variables without value are treated as required launch arguments.
+        # 1) System arguments are treated as required launch arguments.
         for name in self.system_argument_variables:
             if name not in seen:
                 seen.add(name)
@@ -231,25 +232,24 @@ class Deployment:
 
         # 2) Deploy-list variables are also forwarded.
         for deploy_item in self.deploy_variants:
-            for variable in deploy_item.get("variables", []):
-                if not isinstance(variable, dict):
+            for argument in deploy_item.get("arguments", deploy_item.get("variables", [])):
+                if not isinstance(argument, dict):
                     continue
-                name = variable.get("name")
+                name = argument.get("name")
                 if not isinstance(name, str) or not name or name in seen:
                     continue
                 seen.add(name)
                 variable_names.append(name)
         return variable_names
 
-    def _collect_system_unset_variable_names(self, system_config: SystemConfig) -> List[str]:
+    def _collect_system_argument_names(self, system_config: SystemConfig) -> List[str]:
         result: List[str] = []
         seen = set()
-        for variable in system_config.variables or []:
-            if not isinstance(variable, dict):
+        for argument in system_config.arguments or []:
+            if not isinstance(argument, dict):
                 continue
-            name = variable.get("name")
-            has_value = "value" in variable and variable.get("value") not in (None, "")
-            if not isinstance(name, str) or not name or has_value:
+            name = argument.get("name")
+            if not isinstance(name, str) or not name:
                 continue
             if name not in seen:
                 seen.add(name)
@@ -272,7 +272,7 @@ class Deployment:
 
             for deploy_item in self.deploy_variants:
                 deploy_name = deploy_item.get("name")
-                variables = deploy_item.get("variables", [])
+                arguments = deploy_item.get("arguments", deploy_item.get("variables", []))
                 if not deploy_name:
                     continue
                 for compute_unit in compute_units:
@@ -285,10 +285,10 @@ class Deployment:
                     )
                     output_filename = f"{compute_unit.lower()}.launch.xml"
                     base_launcher_path = os.path.join(
-                        "..",
-                        "..",
-                        "..",
-                        "..",
+                        self.deployment_package_path,
+                        "exports",
+                        self.name,
+                        "launcher",
                         mode_key,
                         compute_unit,
                         output_filename,
@@ -299,7 +299,7 @@ class Deployment:
                         deploy_name=deploy_name,
                         mode_key=mode_key,
                         compute_unit=compute_unit,
-                        variables=variables,
+                        arguments=arguments,
                         base_launcher_path=base_launcher_path,
                     )
                 logger.info(

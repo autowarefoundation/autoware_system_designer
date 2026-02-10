@@ -14,8 +14,9 @@
 
 import logging
 import os
+import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 
 from ..builder.instances.instances import Instance
 from ..file_io.source_location import SourceLocation, format_source
@@ -23,6 +24,7 @@ from ..file_io.system_structure_json import extract_system_structure_data
 from ..file_io.template_renderer import TemplateRenderer
 
 logger = logging.getLogger(__name__)
+_VAR_PATTERN = re.compile(r"\$\(var\s+([^)]+)\)")
 
 
 def _ensure_directory(directory_path: str) -> None:
@@ -46,6 +48,51 @@ def _render_template_to_file(template_name: str, output_file_path: str, template
         src = SourceLocation(file_path=Path(output_file_path))
         logger.error(f"Failed to generate launcher {output_file_path}: {e}{format_source(src)}")
         raise
+
+
+def _extract_used_args_from_text(value: Any, available_args: Set[str]) -> Set[str]:
+    if not isinstance(value, str):
+        return set()
+    used_args = set()
+    for arg_name in _VAR_PATTERN.findall(value):
+        if arg_name in available_args:
+            used_args.add(arg_name)
+    return used_args
+
+
+def _collect_component_required_args(
+    nodes: List[Dict[str, Any]], system_args: List[str] | None
+) -> List[str]:
+    if not system_args:
+        return []
+
+    available_args = set(system_args)
+    required = set()
+    launch_param_types = {"DEFAULT", "DEFAULT_FILE", "MODE", "OVERRIDE"}
+
+    for node in nodes:
+        required |= _extract_used_args_from_text(node.get("args"), available_args)
+
+        for param_file in node.get("parameter_files", []):
+            required |= _extract_used_args_from_text(param_file.get("path"), available_args)
+
+        for param in node.get("parameters", []):
+            param_type = param.get("parameter_type", {})
+            param_type_name = (
+                param_type.get("name") if isinstance(param_type, dict) else str(param_type)
+            )
+            param_name = param.get("name")
+            if (
+                node.get("is_ros2_file_launch")
+                and param_type_name in launch_param_types
+                and isinstance(param_name, str)
+                and param_name in available_args
+            ):
+                required.add(param_name)
+
+            required |= _extract_used_args_from_text(param.get("value"), available_args)
+
+    return [arg for arg in system_args if arg in required]
 
 
 def _collect_all_nodes_recursively(instance: Instance) -> List[Dict[str, Any]]:
@@ -215,7 +262,11 @@ def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: Lis
 
 
 def _generate_compute_unit_launcher(
-    compute_unit: str, components: list, output_dir: str, forward_args: List[str] | None = None
+    compute_unit: str,
+    components: list,
+    output_dir: str,
+    forward_args: List[str] | None = None,
+    namespace_forward_args: Dict[str, List[str]] | None = None,
 ):
     """Generate compute unit launcher file."""
 
@@ -227,7 +278,8 @@ def _generate_compute_unit_launcher(
 
     namespaces_data = []
     for component in sorted(components, key=lambda c: c.name):
-        namespaces_data.append({"namespace": component.name, "args": []})
+        component_args = (namespace_forward_args or {}).get(component.name, [])
+        namespaces_data.append({"namespace": component.name, "args": component_args})
 
     template_data = {
         "compute_unit": compute_unit,
@@ -265,12 +317,13 @@ def _generate_component_launcher(
         full_ns_list = component_full_namespace + node["namespace_groups"]
         node["full_namespace"] = "/".join(full_ns_list)
 
+    component_forward_args = _collect_component_required_args(all_nodes, forward_args)
     template_data = {
         "compute_unit": compute_unit,
         "namespace": namespace,
         "component_full_namespace": component_full_namespace,
         "nodes": all_nodes,
-        "forward_args": forward_args or [],
+        "forward_args": component_forward_args,
     }
     _render_template_to_file("component_launcher.xml.jinja2", launcher_file, template_data)
 
@@ -303,18 +356,23 @@ def _generate_component_launcher_from_data(
         full_ns_list = component_full_namespace + node["namespace_groups"]
         node["full_namespace"] = "/".join(full_ns_list)
 
+    component_forward_args = _collect_component_required_args(all_nodes, forward_args)
     template_data = {
         "compute_unit": compute_unit,
         "namespace": namespace,
         "component_full_namespace": component_full_namespace,
         "nodes": all_nodes,
-        "forward_args": forward_args or [],
+        "forward_args": component_forward_args,
     }
     _render_template_to_file("component_launcher.xml.jinja2", launcher_file, template_data)
 
 
 def _generate_compute_unit_launcher_from_data(
-    compute_unit: str, components: list, output_dir: str, forward_args: List[str] | None = None
+    compute_unit: str,
+    components: list,
+    output_dir: str,
+    forward_args: List[str] | None = None,
+    namespace_forward_args: Dict[str, List[str]] | None = None,
 ):
     """Generate compute unit launcher from serialized system structure."""
 
@@ -326,7 +384,9 @@ def _generate_compute_unit_launcher_from_data(
 
     namespaces_data = []
     for component in sorted(components, key=lambda c: c.get("name", "")):
-        namespaces_data.append({"namespace": component.get("name", ""), "args": []})
+        component_name = component.get("name", "")
+        component_args = (namespace_forward_args or {}).get(component_name, [])
+        namespaces_data.append({"namespace": component_name, "args": component_args})
 
     template_data = {
         "compute_unit": compute_unit,
@@ -348,8 +408,13 @@ def generate_module_launch_file(
 
         if instance.entity_type == "system":
             compute_unit_map: Dict[str, list] = {}
+            namespace_args_map: Dict[tuple, List[str]] = {}
             for child in instance.children.values():
                 compute_unit_map.setdefault(child.compute_unit, []).append(child)
+                nodes = _collect_all_nodes_recursively(child)
+                namespace_args_map[(child.compute_unit, child.name)] = _collect_component_required_args(
+                    nodes, forward_args
+                )
 
             namespace_map = {}
             for child in instance.children.values():
@@ -357,8 +422,16 @@ def generate_module_launch_file(
                 namespace_map[key] = [child]
 
             for compute_unit, components in compute_unit_map.items():
+                component_args_map = {
+                    component.name: namespace_args_map.get((compute_unit, component.name), [])
+                    for component in components
+                }
                 _generate_compute_unit_launcher(
-                    compute_unit, components, output_dir, forward_args=forward_args
+                    compute_unit,
+                    components,
+                    output_dir,
+                    forward_args=forward_args,
+                    namespace_forward_args=component_args_map,
                 )
 
             for (compute_unit, namespace), components in namespace_map.items():
@@ -386,15 +459,26 @@ def generate_module_launch_file(
 
     compute_unit_map = {}
     namespace_map = {}
+    namespace_args_map: Dict[tuple, List[str]] = {}
     for child in instance_data.get("children", []):
         compute_unit = child.get("compute_unit", "")
         compute_unit_map.setdefault(compute_unit, []).append(child)
         key = (compute_unit, child.get("name", ""))
         namespace_map[key] = [child]
+        nodes = _collect_all_nodes_recursively_data(child)
+        namespace_args_map[key] = _collect_component_required_args(nodes, forward_args)
 
     for compute_unit, components in compute_unit_map.items():
+        component_args_map = {
+            component.get("name", ""): namespace_args_map.get((compute_unit, component.get("name", "")), [])
+            for component in components
+        }
         _generate_compute_unit_launcher_from_data(
-            compute_unit, components, output_dir, forward_args=forward_args
+            compute_unit,
+            components,
+            output_dir,
+            forward_args=forward_args,
+            namespace_forward_args=component_args_map,
         )
 
     for (compute_unit, namespace), components in namespace_map.items():

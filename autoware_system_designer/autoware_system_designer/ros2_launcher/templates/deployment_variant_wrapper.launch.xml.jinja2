@@ -4,13 +4,13 @@
   <!-- Deployment variant wrapper -->
   <!-- Deploy: {{ deploy_name }} / Mode: {{ mode_key }} / Compute Unit: {{ compute_unit }} -->
 
-{% for variable in variables %}
-  <arg name="{{ variable.name }}" default="{{ variable.value }}"/>
+{% for argument in arguments %}
+  <arg name="{{ argument.name }}" default="{{ argument.value }}"/>
 {% endfor %}
 
-  <include file="$(dirname)/{{ base_launcher_path }}">
-{% for variable in variables %}
-    <arg name="{{ variable.name }}" value="$(var {{ variable.name }})"/>
+  <include file="{{ base_launcher_path }}">
+{% for argument in arguments %}
+    <arg name="{{ argument.name }}" value="$(var {{ argument.name }})"/>
 {% endfor %}
   </include>
 </launch>

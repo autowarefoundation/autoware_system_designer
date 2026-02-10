@@ -13,11 +13,8 @@
 {% for namespace_info in namespaces %}
   <!-- Include {{ namespace_info.namespace }} namespace -->
   <include file="$(var root_dir)/{{ namespace_info.namespace }}/{{ namespace_info.namespace }}.launch.xml">
-{% for arg_name in forward_args %}
+{% for arg_name in namespace_info.args %}
     <arg name="{{ arg_name }}" value="$(var {{ arg_name }})"/>
-{% endfor %}
-{% for arg in namespace_info.args %}
-    <arg name="{{ arg.name }}" value="{{ arg.value }}"/>
 {% endfor %}
   </include>
 

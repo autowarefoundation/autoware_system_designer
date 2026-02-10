@@ -288,6 +288,7 @@ class ConfigParser:
             return SystemConfig(
                 **base_data,
                 sub_type=sub_type,
+                arguments=config.get('arguments'),
                 modes=config.get('modes'),
                 mode_configs=mode_configs if mode_configs else None,
                 parameter_sets=config.get('parameter_sets'),
