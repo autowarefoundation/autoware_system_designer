@@ -112,6 +112,7 @@ class Deployment:
         input_path = deploy_config.deployment_file
         self.deploy_variants: List[Dict[str, Any]] = []
         self.deployment_table_path: Optional[str] = None
+        self.system_argument_variables: List[str] = []
 
         system_config, self.deploy_variants, self.deployment_table_path = self._resolve_input_target(input_path)
         if not system_config:
@@ -126,6 +127,7 @@ class Deployment:
         logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
                 
         self.name = system_config.name
+        self.system_argument_variables = self._collect_system_unset_variable_names(system_config)
 
         # mode identifiers
         self.mode_keys: List[str] = []
@@ -218,10 +220,16 @@ class Deployment:
         return base, deploy_list
 
     def _collect_deploy_variable_names(self) -> List[str]:
-        if not self.deploy_variants:
-            return []
         variable_names: List[str] = []
         seen = set()
+
+        # 1) System variables without value are treated as required launch arguments.
+        for name in self.system_argument_variables:
+            if name not in seen:
+                seen.add(name)
+                variable_names.append(name)
+
+        # 2) Deploy-list variables are also forwarded.
         for deploy_item in self.deploy_variants:
             for variable in deploy_item.get("variables", []):
                 if not isinstance(variable, dict):
@@ -232,6 +240,21 @@ class Deployment:
                 seen.add(name)
                 variable_names.append(name)
         return variable_names
+
+    def _collect_system_unset_variable_names(self, system_config: SystemConfig) -> List[str]:
+        result: List[str] = []
+        seen = set()
+        for variable in system_config.variables or []:
+            if not isinstance(variable, dict):
+                continue
+            name = variable.get("name")
+            has_value = "value" in variable and variable.get("value") not in (None, "")
+            if not isinstance(name, str) or not name or has_value:
+                continue
+            if name not in seen:
+                seen.add(name)
+                result.append(name)
+        return result
 
     def _generate_deploy_variant_launchers(self):
         renderer = TemplateRenderer()

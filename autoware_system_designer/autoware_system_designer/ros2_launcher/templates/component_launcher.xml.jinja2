@@ -59,17 +59,29 @@
 {% endfor %}
 {% for param in node.parameters %}
 {% if param.parameter_type.name == 'DEFAULT' or param.parameter_type.name == 'DEFAULT_FILE' %}
+{% if param.name in forward_args %}
+    <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% else %}
     <arg name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
 {% endif %}
 {% endfor %}
 {% for param in node.parameters %}
 {% if param.parameter_type.name == 'MODE' %}
+{% if param.name in forward_args %}
+    <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% else %}
     <arg name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
 {% endif %}
 {% endfor %}
 {% for param in node.parameters %}
 {% if param.parameter_type.name == 'OVERRIDE' %}
+{% if param.name in forward_args %}
+    <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% else %}
     <arg name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
 {% endif %}
 {% endfor %}
   </include>
