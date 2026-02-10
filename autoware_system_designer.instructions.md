@@ -37,10 +37,16 @@ Represents a single ROS 2 node.
 - `inputs`: List of input ports (subscribers).
   - `name`: Port name. Can include slashes (e.g., `perception/objects`).
   - `message_type`: Full ROS message type (e.g., `sensor_msgs/msg/PointCloud2`).
+  - `remap_target`: (Optional) The internal ROS 2 topic name used by the node. 
+    - **Default**: If not provided, it defaults to `~/input/<name>`.
+    - **Required when**: The node implementation uses a specific topic name that does not follow the `~/input/` convention (e.g., legacy code or global topics like `/tf`).
 - `outputs`: List of output ports (publishers).
   - `name`: Port name. Can include slashes.
   - `message_type`: Full ROS message type.
   - `qos`: (Optional) QoS settings (`reliability`, `durability`, etc.).
+  - `remap_target`: (Optional) The internal ROS 2 topic name used by the node.
+    - **Default**: If not provided, it defaults to `~/output/<name>`.
+    - **Required when**: The node implementation uses a specific topic name that does not follow the `~/output/` convention.
 - `parameters`: Individual default parameters.
   - `name`: Parameter name.
   - `type`: `bool`, `int`, `double`, `string`.
