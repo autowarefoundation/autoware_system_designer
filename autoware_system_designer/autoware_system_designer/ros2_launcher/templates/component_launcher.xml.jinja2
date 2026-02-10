@@ -4,6 +4,10 @@
   <!-- Component Launcher: {{ namespace }} -->
   <!-- Compute Unit: {{ compute_unit }} -->
   <!-- This launcher starts all nodes in component: {{ namespace }} -->
+
+{% for arg_name in forward_args %}
+  <arg name="{{ arg_name }}"/>
+{% endfor %}
 {% macro node_configuration(node) %}
 <!-- Remap input and output topics -->
 {% for port in node.ports %}
@@ -47,7 +51,7 @@
 {% endmacro %}
 
 {% for node in nodes %}
-  <!-- Node: {{ node.full_namespace }}/{{ node.name }} -->
+  <!-- Node: {{ node.full_namespace_path }}/{{ node.name }} -->
 {% if node.is_ros2_file_launch %}
   <include file="$(find-pkg-share {{node.package}})/launch/{{node.ros2_launch_file}}">
 {% for param_file in node.parameter_files %}
@@ -55,28 +59,40 @@
 {% endfor %}
 {% for param in node.parameters %}
 {% if param.parameter_type.name == 'DEFAULT' or param.parameter_type.name == 'DEFAULT_FILE' %}
+{% if param.name in forward_args %}
+    <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% else %}
     <arg name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
 {% endif %}
 {% endfor %}
 {% for param in node.parameters %}
 {% if param.parameter_type.name == 'MODE' %}
+{% if param.name in forward_args %}
+    <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% else %}
     <arg name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
 {% endif %}
 {% endfor %}
 {% for param in node.parameters %}
 {% if param.parameter_type.name == 'OVERRIDE' %}
+{% if param.name in forward_args %}
+    <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% else %}
     <arg name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
 {% endif %}
 {% endfor %}
   </include>
 {% elif node.use_container %}
   <load_composable_node target="{{ node.container }}">
-    <composable_node pkg="{{ node.package }}" plugin="{{ node.plugin }}" name="{{ node.name }}" namespace="{{ node.full_namespace }}">
+    <composable_node pkg="{{ node.package }}" plugin="{{ node.plugin }}" name="{{ node.name }}" namespace="{{ node.full_namespace_path }}">
       {{ node_configuration(node)|indent(6) }}
     </composable_node>
   </load_composable_node>
 {% else %}
-  <node pkg="{{ node.package }}" exec="{{ node.executable }}" name="{{ node.name }}" namespace="{{ node.full_namespace }}" output="{{ node.node_output }}"{% if node.args %} args="{{ node.args }}"{% endif %}>
+  <node pkg="{{ node.package }}" exec="{{ node.executable }}" name="{{ node.name }}" namespace="{{ node.full_namespace_path }}" output="{{ node.node_output }}"{% if node.args %} args="{{ node.args }}"{% endif %}>
     {{ node_configuration(node)|indent(4) }}
   </node>
 {% endif %}

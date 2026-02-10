@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from autoware_system_designer.utils.logging_utils import configure_split_stream_logging
+from ..utils.logging_utils import configure_split_stream_logging
 
 
 @dataclass

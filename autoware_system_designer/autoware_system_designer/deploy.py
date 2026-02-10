@@ -15,83 +15,30 @@
 
 import os
 import logging
-import copy
 from pathlib import Path
-from typing import Dict, Tuple, List, Any
-from .deployment_config import DeploymentConfig
+from typing import Dict, Tuple, List, Any, Optional
+from .deployment.deployment_config import DeploymentConfig
+from .deployment.deploy_launchers import generate_deploy_launchers
+from .deployment.modes import apply_mode_configuration, select_modes
+from .deployment.parser import iter_mode_payload_and_data, resolve_input_target
 from .builder.config.config_registry import ConfigRegistry
 from .builder.deployment_instance import DeploymentInstance
 from .ros2_launcher.generate_module_launcher import generate_module_launch_file
 from .template.parameter_template_generator import ParameterTemplateGenerator
-from .models.parsing.data_validator import entity_name_decode
 from .models.parsing.yaml_parser import yaml_parser
 from .exceptions import ValidationError, DeploymentError
 from .file_io.template_renderer import TemplateRenderer
 from .file_io.system_structure_json import (
     save_system_structure,
     save_system_structure_snapshot,
-    load_system_structure,
-    extract_system_structure_data,
 )
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig, NodeConfig
-from .file_io.source_location import SourceLocation, source_from_config, format_source
-from .builder.resolution.variant_resolver import SystemVariantResolver
+from .file_io.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
-
-def apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -> SystemConfig:
-    """
-    Create a copy of base system and apply mode-specific overrides/removals.
-    
-    Args:
-        base_system_config: The base system configuration
-        mode_name: Name of the mode to apply (or "default" for base)
-    
-    Returns:
-        Modified system configuration with mode applied
-    """
-    # Create a deep copy to avoid modifying original
-    modified_config = copy.deepcopy(base_system_config)
-    
-    # Filter out components with explicit 'mode' fields from base (deprecated old format)
-    # These components should be defined in mode-specific sections instead
-    if modified_config.components:
-        filtered_components = []
-        for comp in modified_config.components:
-            if 'mode' in comp:
-                logger.debug(f"Filtering out component '{comp.get('name')}' with deprecated 'mode' field from base")
-            else:
-                filtered_components.append(comp)
-        modified_config.components = filtered_components
-    
-    # If mode is "default" or no mode configs exist, return the filtered base
-    if mode_name == "default" or not base_system_config.mode_configs:
-        return modified_config
-    
-    mode_config = base_system_config.mode_configs.get(mode_name)
-    if not mode_config:
-        # Mode not found, return base configuration
-        src = source_from_config(base_system_config, "/modes")
-        logger.warning(
-            f"Mode '{mode_name}' not found in mode_configs, using base configuration{format_source(src)}"
-        )
-        return modified_config
-    
-    logger.info(f"Applying mode configuration for mode '{mode_name}'")
-
-    resolver = SystemVariantResolver()
-    resolver.resolve(
-        modified_config,
-        {
-            'override': mode_config.get('override', {}),
-            'remove': mode_config.get('remove', {}),
-        },
-    )
-    
-    return modified_config
 
 class Deployment:
     def __init__(self, deploy_config: DeploymentConfig ):
@@ -110,27 +57,27 @@ class Deployment:
         logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)
         
         input_path = deploy_config.deployment_file
-        system_name = None
-        
-        # System by name
-        system_name = os.path.basename(input_path)
-        # Remove extension if present, though entity_name_decode handles check
-        if system_name.endswith('.yaml'):
-            system_name = system_name[:-5]
-            
-        # If name is full name (name.system), decode it
-        if "." in system_name:
-                system_name, _ = entity_name_decode(system_name)
+        self.deploy_variants: List[Dict[str, Any]] = []
+        self.deployment_table_path: Optional[str] = None
+        self.system_argument_variables: List[str] = []
 
-        # Get system from registry (this handles base/variant resolution)
-        system_config = self.config_registry.get_system(system_name)
+        system_config, self.deploy_variants, self.deployment_table_path = resolve_input_target(
+            input_path, self.config_registry
+        )
         if not system_config:
-            raise ValidationError(f"System not found: {system_name}")
+            raise ValidationError(f"System not found from input: {input_path}")
+
+        # Fallback for deployments-table mode where deployment_file itself is not an entity file.
+        if self.config_registry.deployment_package_name is None:
+            system_file_abs = str(Path(system_config.file_path).resolve())
+            self.config_registry.deployment_package_name = file_package_map.get(system_file_abs)
         
         self.config_yaml_dir = str(system_config.file_path)
         logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
                 
         self.name = system_config.name
+        self.system_argument_variables = self._collect_system_argument_names(system_config)
+        self.deployment_package_path = str(Path(deploy_config.output_root_dir).resolve())
 
         # mode identifiers
         self.mode_keys: List[str] = []
@@ -146,6 +93,42 @@ class Deployment:
 
         # build the deployment
         self._build(system_config, package_paths)
+
+    def _collect_deploy_variable_names(self) -> List[str]:
+        variable_names: List[str] = []
+        seen = set()
+
+        # 1) System arguments are treated as required launch arguments.
+        for name in self.system_argument_variables:
+            if name not in seen:
+                seen.add(name)
+                variable_names.append(name)
+
+        # 2) Deploy-list variables are also forwarded.
+        for deploy_item in self.deploy_variants:
+            for argument in deploy_item.get("arguments", deploy_item.get("variables", [])):
+                if not isinstance(argument, dict):
+                    continue
+                name = argument.get("name")
+                if not isinstance(name, str) or not name or name in seen:
+                    continue
+                seen.add(name)
+                variable_names.append(name)
+        return variable_names
+
+    def _collect_system_argument_names(self, system_config: SystemConfig) -> List[str]:
+        result: List[str] = []
+        seen = set()
+        for argument in system_config.arguments or []:
+            if not isinstance(argument, dict):
+                continue
+            name = argument.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            if name not in seen:
+                seen.add(name)
+                result.append(name)
+        return result
 
     def _get_system_list(self, deploy_config: DeploymentConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
         system_list: list[str] = []
@@ -242,21 +225,13 @@ class Deployment:
         return mode_key, snapshot_store
 
     def _build(self, system_config, package_paths):
-        # Determine modes to build
-        modes_config = system_config.modes or []
-        
-        if modes_config:
-            # Use defined modes
-            mode_names = [m.get('name') for m in modes_config]
-            
-            # If a mode has default=true, use that as default, otherwise use first mode
-            default_mode = next((m.get('name') for m in modes_config if m.get('default')), mode_names[0])
-            logger.info(f"Building deployment for {len(mode_names)} modes: {mode_names}, default: {default_mode}")
+        mode_names, default_mode = select_modes(system_config)
+        if system_config.modes:
+            logger.info(
+                f"Building deployment for {len(mode_names)} modes: {mode_names}, default: {default_mode}"
+            )
         else:
-            # No modes defined - use "default" as the mode name
-            mode_names = ["default"]
-            default_mode = "default"
-            logger.info(f"Building deployment with single 'default' mode")
+            logger.info("Building deployment with single 'default' mode")
 
         # Create deployment instance for each mode
         self.mode_keys = []
@@ -304,12 +279,12 @@ class Deployment:
 
     def visualize(self):
         # Collect data from all deployment instances
-        deploy_data = {}
-        for mode_key in self.mode_keys:
-            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
-            payload = load_system_structure(structure_path)
-            data, _ = extract_system_structure_data(payload)
-            deploy_data[mode_key] = data
+        deploy_data = {
+            mode_key: data
+            for mode_key, _payload, data in iter_mode_payload_and_data(
+                self.mode_keys, self.system_structure_dir
+            )
+        }
 
         visualize_deployment(deploy_data, self.name, self.visualization_dir)
 
@@ -332,11 +307,9 @@ class Deployment:
         topics_template_path = os.path.join(template_dir, "sys_monitor_topics.yaml.jinja2")
 
         # Generate system monitor for each mode
-        for mode_key in self.mode_keys:
-            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
-            payload = load_system_structure(structure_path)
-            data, _ = extract_system_structure_data(payload)
-            
+        for mode_key, _payload, data in iter_mode_payload_and_data(
+            self.mode_keys, self.system_structure_dir
+        ):
             # Create mode-specific output directory
             mode_monitor_dir = os.path.join(self.system_monitor_dir, mode_key, "component_state_monitor")
             self.generate_by_template(data, topics_template_path, mode_monitor_dir, "topics.yaml")
@@ -346,12 +319,12 @@ class Deployment:
 
     def generate_build_scripts(self):
         """Generate shell scripts to build necessary packages for each ECU."""
-        deploy_data = {}
-        for mode_key in self.mode_keys:
-            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
-            payload = load_system_structure(structure_path)
-            data, _ = extract_system_structure_data(payload)
-            deploy_data[mode_key] = data
+        deploy_data = {
+            mode_key: data
+            for mode_key, _payload, data in iter_mode_payload_and_data(
+                self.mode_keys, self.system_structure_dir
+            )
+        }
 
         package_resolution_by_name: Dict[str, str | None] = {}
         packages_without_provider: set[str] = set()
@@ -384,17 +357,32 @@ class Deployment:
 
 
     def generate_launcher(self):
+        deploy_variable_names = self._collect_deploy_variable_names()
         # Generate launcher files for each mode
-        for mode_key in self.mode_keys:
+        for mode_key, payload, _data in iter_mode_payload_and_data(
+            self.mode_keys, self.system_structure_dir
+        ):
             # Create mode-specific launcher directory
             mode_launcher_dir = os.path.join(self.launcher_dir, mode_key)
             
             # Generate module launch files from JSON structure
-            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
-            payload = load_system_structure(structure_path)
-            generate_module_launch_file(payload, mode_launcher_dir)
+            generate_module_launch_file(
+                payload,
+                mode_launcher_dir,
+                forward_args=deploy_variable_names,
+            )
             
             logger.info(f"Generated launcher for mode: {mode_key}")
+
+        if self.deploy_variants:
+            generate_deploy_launchers(
+                mode_keys=self.mode_keys,
+                system_structure_dir=self.system_structure_dir,
+                launcher_dir=self.launcher_dir,
+                deployment_package_path=self.deployment_package_path,
+                system_name=self.name,
+                deploy_variants=self.deploy_variants,
+            )
 
     def generate_parameter_set_template(self):
         """Generate parameter set template using ParameterTemplateGenerator."""
@@ -403,7 +391,9 @@ class Deployment:
         
         # Generate parameter set template for each mode
         output_paths = {}
-        for mode_key in self.mode_keys:
+        for mode_key, _payload, data in iter_mode_payload_and_data(
+            self.mode_keys, self.system_structure_dir
+        ):
             # Create mode-specific output directory
             mode_parameter_dir = os.path.join(self.parameter_set_dir, mode_key)
             os.makedirs(mode_parameter_dir, exist_ok=True)
@@ -412,9 +402,6 @@ class Deployment:
             renderer = TemplateRenderer()
             
             # Create parameter template generator and generate the template
-            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
-            payload = load_system_structure(structure_path)
-            data, _ = extract_system_structure_data(payload)
             template_name = f"{self.name}_{mode_key}" if mode_key != "default" else self.name
             output_path_list = ParameterTemplateGenerator.generate_parameter_set_template_from_data(
                 data,
