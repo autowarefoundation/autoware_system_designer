@@ -26,7 +26,7 @@ DESIGN_FORMAT_VERSION = "0.2.1"
 __all__ = [
     "config",
     "builders",
-    "deploy",
+    "deployment",
     "parsers",
     "exceptions",
     "models",

@@ -15,7 +15,7 @@
 from typing import List, Dict
 
 from ...models.config import NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
-from ...deploy.deployment_config import deploy_config
+from ...deployment.deployment_config import deploy_config
 from ...exceptions import ValidationError
 from ...utils.naming import generate_unique_id
 from ...visualization.visualization_guide import get_component_color, get_component_position
