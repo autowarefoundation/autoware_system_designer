@@ -38,7 +38,7 @@ def iter_mode_payload_and_data(
         yield mode_key, payload, data
 
 
-def normalize_system_name(system_ref: str) -> str:
+def _normalize_system_name(system_ref: str) -> str:
     system_name = os.path.basename(system_ref)
     if system_name.endswith(".yaml"):
         system_name = system_name[:-5]
@@ -48,7 +48,7 @@ def normalize_system_name(system_ref: str) -> str:
     return system_name
 
 
-def resolve_deployments_path(input_path: str) -> str:
+def _resolve_deployments_path(input_path: str) -> str:
     candidate = Path(input_path)
     if candidate.suffix != ".yaml":
         candidate = Path(f"{input_path}.yaml")
@@ -62,7 +62,7 @@ def resolve_deployments_path(input_path: str) -> str:
     )
 
 
-def parse_deployments_table(deployments_path: str) -> Tuple[str, List[Dict[str, Any]]]:
+def _parse_deployments_list(deployments_path: str) -> Tuple[str, List[Dict[str, Any]]]:
     config_yaml = yaml_parser.load_config(deployments_path)
     if not isinstance(config_yaml, dict):
         raise ValidationError(f"Invalid deployments table format: {deployments_path}")
@@ -114,12 +114,12 @@ def resolve_input_target(
     """
 
     if input_path.endswith(".deployments") or input_path.endswith(".deployments.yaml"):
-        table_path = resolve_deployments_path(input_path)
-        base_name, deploy_list = parse_deployments_table(table_path)
-        system_name = normalize_system_name(base_name)
+        table_path = _resolve_deployments_path(input_path)
+        base_name, deploy_list = _parse_deployments_list(table_path)
+        system_name = _normalize_system_name(base_name)
         system_config = config_registry.get_system(system_name)
         return system_config, deploy_list, table_path
 
-    system_name = normalize_system_name(input_path)
+    system_name = _normalize_system_name(input_path)
     system_config = config_registry.get_system(system_name)
     return system_config, [], None
