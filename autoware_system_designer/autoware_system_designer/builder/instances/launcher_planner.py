@@ -15,23 +15,26 @@
 from typing import Any, Dict, List, Tuple
 
 from ..parameters.parameter_manager import ParameterManager
+from .instance_serializer import collect_launcher_data
 
 
 def collect_component_nodes(component_instance) -> List[Dict[str, Any]]:
     """Collect launcher node payloads from a runtime component instance."""
     nodes: List[Dict[str, Any]] = []
 
-    def traverse(current_instance, module_path: List[str]):
+    base_namespace = (getattr(component_instance, "namespace", None) or []).copy()
+
+    def traverse(current_instance, full_namespace_path: List[str]):
         for child_name, child_instance in current_instance.children.items():
             if child_instance.entity_type == "node":
-                nodes.append(_extract_node_data(child_instance, module_path))
+                nodes.append(_extract_node_data(child_instance, full_namespace_path))
             elif child_instance.entity_type == "module":
-                traverse(child_instance, module_path + [child_name])
+                traverse(child_instance, full_namespace_path + [child_name])
 
     if component_instance.entity_type == "module":
-        traverse(component_instance, [])
+        traverse(component_instance, base_namespace)
     elif component_instance.entity_type == "node":
-        nodes.append(_extract_node_data(component_instance, []))
+        nodes.append(_extract_node_data(component_instance, base_namespace))
 
     return nodes
 
@@ -40,28 +43,25 @@ def collect_component_nodes_from_data(component_data: Dict[str, Any]) -> List[Di
     """Collect launcher node payloads from serialized component data."""
     nodes: List[Dict[str, Any]] = []
 
-    def traverse(current_data: Dict[str, Any], module_path: List[str]):
+    base_namespace = component_data.get("namespace", []) or []
+    if isinstance(base_namespace, str):
+        base_namespace = [base_namespace]
+    elif not isinstance(base_namespace, list):
+        base_namespace = []
+
+    def traverse(current_data: Dict[str, Any], full_namespace_path: List[str]):
         for child in current_data.get("children", []):
             if child.get("entity_type") == "node":
-                nodes.append(_extract_node_data_from_dict(child, module_path))
+                nodes.append(_extract_node_data_from_dict(child, full_namespace_path))
             elif child.get("entity_type") == "module":
-                traverse(child, module_path + [child.get("name")])
+                traverse(child, full_namespace_path + [child.get("name")])
 
     if component_data.get("entity_type") == "module":
-        traverse(component_data, [])
+        traverse(component_data, base_namespace)
     elif component_data.get("entity_type") == "node":
-        nodes.append(_extract_node_data_from_dict(component_data, []))
+        nodes.append(_extract_node_data_from_dict(component_data, base_namespace))
 
     return nodes
-
-
-def attach_component_namespace(
-    nodes: List[Dict[str, Any]], component_full_namespace: List[str]
-) -> None:
-    """Attach absolute namespace for each node under a component."""
-    for node in nodes:
-        full_ns_list = component_full_namespace + node["namespace_groups"]
-        node["full_namespace"] = "/".join(full_ns_list)
 
 
 def build_runtime_system_component_maps(
@@ -111,83 +111,15 @@ def build_serialized_system_component_maps(
 
 def _extract_node_data(node_instance, module_path: List[str]) -> Dict[str, Any]:
     """Extract node launcher data from runtime instance."""
-    node_data: Dict[str, Any] = {
-        "name": node_instance.name,
-        "namespace_groups": module_path.copy(),
-        "full_namespace_path": "/".join(module_path) if module_path else "",
-    }
-
-    launch_config = node_instance.configuration.launch
-    node_data["package"] = node_instance.configuration.package_name
-    node_data["ros2_launch_file"] = launch_config.get("ros2_launch_file", None)
-    node_data["is_ros2_file_launch"] = node_data["ros2_launch_file"] is not None
-    node_data["node_output"] = launch_config.get("node_output", "screen")
-    node_data["args"] = node_instance.parameter_manager.resolve_substitutions(
-        launch_config.get("args", "")
-    )
-
-    if not node_data["is_ros2_file_launch"]:
-        node_data["plugin"] = launch_config.get("plugin", "")
-        node_data["executable"] = launch_config.get("executable", "")
-        node_data["use_container"] = launch_config.get("use_container", False)
-        node_data["container"] = launch_config.get("container_name", "perception_container")
-
-    ports = []
-    inputs_cfg = node_instance.configuration.inputs or []
-    outputs_cfg = node_instance.configuration.outputs or []
-    remap_inputs_explicit = {
-        cfg.get("name")
-        for cfg in inputs_cfg
-        if "remap_target" in cfg and cfg.get("remap_target") not in (None, "")
-    }
-    remap_outputs_explicit = {
-        cfg.get("name")
-        for cfg in outputs_cfg
-        if "remap_target" in cfg and cfg.get("remap_target") not in (None, "")
-    }
-
-    for port in node_instance.link_manager.get_all_in_ports():
-        if port.is_global and port.name not in remap_inputs_explicit:
-            continue
-        topic = port.get_topic()
-        if topic == "":
-            continue
-        ports.append(
-            {
-                "direction": "input",
-                "name": port.name,
-                "topic": topic,
-                "remap_target": port.remap_target,
-            }
-        )
-    for port in node_instance.link_manager.get_all_out_ports():
-        if port.is_global and port.name not in remap_outputs_explicit:
-            continue
-        topic = port.get_topic()
-        if topic == "":
-            continue
-        ports.append(
-            {
-                "direction": "output",
-                "name": port.name,
-                "topic": topic,
-                "remap_target": port.remap_target,
-            }
-        )
-    node_data["ports"] = ports
-
-    node_data["parameters"] = node_instance.parameter_manager.get_parameters_for_launch()
-    node_data["parameter_files"] = node_instance.parameter_manager.get_parameter_files_for_launch()
+    node_data = collect_launcher_data(node_instance)
+    node_data["name"] = node_instance.name
+    node_data["full_namespace_path"] = "/".join(module_path) if module_path else ""
     return node_data
 
 
 def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: List[str]) -> Dict[str, Any]:
     """Extract node launcher data from serialized node dictionary."""
-    node_data = {
-        "name": node_instance.get("name", ""),
-        "namespace_groups": module_path.copy(),
-        "full_namespace_path": "/".join(module_path) if module_path else "",
-    }
+    node_data = {"name": node_instance.get("name", "")}
 
     launch_data = node_instance.get("launcher", {})
     node_data["package"] = launch_data.get("package", "")
@@ -210,6 +142,7 @@ def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: Lis
         return {"name": str(param_type)}
 
     node_data["ports"] = launch_data.get("ports", [])
+    node_data["full_namespace_path"] = "/".join(module_path) if module_path else ""
     node_data["parameters"] = []
     for param in launch_data.get("parameters", []):
         param_copy = dict(param)

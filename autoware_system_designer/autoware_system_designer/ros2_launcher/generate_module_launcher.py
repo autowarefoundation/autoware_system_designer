@@ -19,7 +19,6 @@ from typing import Dict, List
 
 from ..builder.instances.instances import Instance
 from ..builder.instances.launcher_planner import (
-    attach_component_namespace,
     build_runtime_system_component_maps,
     build_serialized_system_component_maps,
     collect_component_nodes,
@@ -100,14 +99,8 @@ def _generate_component_launcher(
     logger.debug(f"Creating component launcher: {launcher_file}")
 
     all_nodes = []
-    component_full_namespace = []
     for component in components:
-        nodes = collect_component_nodes(component)
-        all_nodes.extend(nodes)
-        if not component_full_namespace and hasattr(component, "namespace"):
-            component_full_namespace = component.namespace.copy()
-
-    attach_component_namespace(all_nodes, component_full_namespace)
+        all_nodes.extend(collect_component_nodes(component))
 
     template_data = {
         "compute_unit": compute_unit,
@@ -135,14 +128,8 @@ def _generate_component_launcher_from_data(
     logger.debug(f"Creating component launcher: {launcher_file}")
 
     all_nodes = []
-    component_full_namespace = []
     for component in components:
-        nodes = collect_component_nodes_from_data(component)
-        all_nodes.extend(nodes)
-        if not component_full_namespace:
-            component_full_namespace = component.get("namespace", [])
-
-    attach_component_namespace(all_nodes, component_full_namespace)
+        all_nodes.extend(collect_component_nodes_from_data(component))
 
     template_data = {
         "compute_unit": compute_unit,
