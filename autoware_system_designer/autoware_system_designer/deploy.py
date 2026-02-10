@@ -19,20 +19,15 @@ import copy
 from pathlib import Path
 from typing import Dict, Tuple, List, Any, Optional
 from .deployment.deployment_config import DeploymentConfig
+from .deployment import deployment_modes
 from .builder.config.config_registry import ConfigRegistry
-from .builder.deployment_instance import DeploymentInstance
 from .ros2_launcher.generate_module_launcher import generate_module_launch_file
 from .template.parameter_template_generator import ParameterTemplateGenerator
 from .models.parsing.data_validator import entity_name_decode
 from .models.parsing.yaml_parser import yaml_parser
 from .exceptions import ValidationError, DeploymentError
 from .file_io.template_renderer import TemplateRenderer
-from .file_io.system_structure_json import (
-    save_system_structure,
-    save_system_structure_snapshot,
-    load_system_structure,
-    extract_system_structure_data,
-)
+from .file_io.system_structure_json import load_system_structure, extract_system_structure_data
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
 from .models.config import SystemConfig, NodeConfig
@@ -41,57 +36,6 @@ from .builder.resolution.variant_resolver import SystemVariantResolver
 
 logger = logging.getLogger(__name__)
 
-
-def apply_mode_configuration(base_system_config: SystemConfig, mode_name: str) -> SystemConfig:
-    """
-    Create a copy of base system and apply mode-specific overrides/removals.
-    
-    Args:
-        base_system_config: The base system configuration
-        mode_name: Name of the mode to apply (or "default" for base)
-    
-    Returns:
-        Modified system configuration with mode applied
-    """
-    # Create a deep copy to avoid modifying original
-    modified_config = copy.deepcopy(base_system_config)
-    
-    # Filter out components with explicit 'mode' fields from base (deprecated old format)
-    # These components should be defined in mode-specific sections instead
-    if modified_config.components:
-        filtered_components = []
-        for comp in modified_config.components:
-            if 'mode' in comp:
-                logger.debug(f"Filtering out component '{comp.get('name')}' with deprecated 'mode' field from base")
-            else:
-                filtered_components.append(comp)
-        modified_config.components = filtered_components
-    
-    # If mode is "default" or no mode configs exist, return the filtered base
-    if mode_name == "default" or not base_system_config.mode_configs:
-        return modified_config
-    
-    mode_config = base_system_config.mode_configs.get(mode_name)
-    if not mode_config:
-        # Mode not found, return base configuration
-        src = source_from_config(base_system_config, "/modes")
-        logger.warning(
-            f"Mode '{mode_name}' not found in mode_configs, using base configuration{format_source(src)}"
-        )
-        return modified_config
-    
-    logger.info(f"Applying mode configuration for mode '{mode_name}'")
-
-    resolver = SystemVariantResolver()
-    resolver.resolve(
-        modified_config,
-        {
-            'override': mode_config.get('override', {}),
-            'remove': mode_config.get('remove', {}),
-        },
-    )
-    
-    return modified_config
 
 class Deployment:
     def __init__(self, deploy_config: DeploymentConfig ):
@@ -353,113 +297,8 @@ class Deployment:
             raise ValidationError(f"No system design configuration files collected.")
         return system_list, package_paths, file_package_map
 
-    def _create_snapshot_callback(
-        self,
-        mode_key: str,
-        deploy_instance: DeploymentInstance,
-        snapshot_store: Dict[str, Any],
-    ):
-        def snapshot_callback(step: str, error: Exception | None = None) -> None:
-            snapshot_path = os.path.join(self.system_structure_dir, f"{mode_key}_{step}.json")
-            payload = save_system_structure_snapshot(
-                snapshot_path, deploy_instance, self.name, mode_key, step, error
-            )
-            snapshot_store[step] = payload
-
-        return snapshot_callback
-
-    def _build_mode_instance(
-        self,
-        mode_name: str,
-        mode_system_config: SystemConfig,
-        package_paths: Dict[str, str],
-        default_mode: str,
-    ) -> Tuple[str, Dict[str, Any]]:
-        mode_suffix = f"_{mode_name}" if mode_name else ""
-        instance_name = f"{self.name}{mode_suffix}"
-        deploy_instance = DeploymentInstance(instance_name)
-
-        snapshot_store: Dict[str, Any] = {}
-        mode_key = mode_name if mode_name else default_mode
-
-        snapshot_callback = self._create_snapshot_callback(
-            mode_key, deploy_instance, snapshot_store
-        )
-
-        deploy_instance.set_system(
-            mode_system_config,
-            self.config_registry,
-            package_paths=package_paths,
-            snapshot_callback=snapshot_callback,
-        )
-
-        # Save system structure JSON for downstream consumers
-        structure_payload = deploy_instance.collect_system_structure(self.name, mode_key)
-        structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
-        save_system_structure(structure_path, structure_payload)
-
-        return mode_key, snapshot_store
-
     def _build(self, system_config, package_paths):
-        # Determine modes to build
-        modes_config = system_config.modes or []
-        
-        if modes_config:
-            # Use defined modes
-            mode_names = [m.get('name') for m in modes_config]
-            
-            # If a mode has default=true, use that as default, otherwise use first mode
-            default_mode = next((m.get('name') for m in modes_config if m.get('default')), mode_names[0])
-            logger.info(f"Building deployment for {len(mode_names)} modes: {mode_names}, default: {default_mode}")
-        else:
-            # No modes defined - use "default" as the mode name
-            mode_names = ["default"]
-            default_mode = "default"
-            logger.info(f"Building deployment with single 'default' mode")
-
-        # Create deployment instance for each mode
-        self.mode_keys = []
-        for mode_name in mode_names:
-            mode_key = mode_name if mode_name else default_mode
-            snapshot_store: Dict[str, Any] = {}
-            try:
-                # Apply mode configuration on top of base system
-                mode_system_config = apply_mode_configuration(system_config, mode_name)
-
-                mode_key, snapshot_store = self._build_mode_instance(
-                    mode_name, mode_system_config, package_paths, default_mode
-                )
-                self.mode_keys.append(mode_key)
-                logger.info(f"Successfully built deployment instance for mode: {mode_key}")
-
-                self.system_structure_snapshots[mode_key] = snapshot_store
-            except Exception as e:
-                self.system_structure_snapshots[mode_key] = snapshot_store
-                # try to visualize the system to show error status
-                self.visualize()
-                details = []
-                if mode_key == default_mode:
-                    details.append("default")
-                system_path = getattr(system_config, "file_path", None)
-                if system_path:
-                    details.append(f"system= {system_path} ")
-                details_str = f" ({', '.join(details)})" if details else ""
-
-                hint = (
-                    "Hint: top-level 'connections' apply to all modes; "
-                    "use '<Mode>.override.connections' or '<Mode>.remove.connections' for mode-specific wiring."
-                )
-
-                # If any design files had a newer minor format version,
-                # surface this so the user knows it may be related.
-                mismatch_files = getattr(self.config_registry, "minor_version_mismatch_files", [])
-                if mismatch_files:
-                    from .builder.config.config_registry import _format_mismatch_hint
-                    hint += "\n" + _format_mismatch_hint(mismatch_files)
-
-                raise DeploymentError(
-                    f"Error while building deploy for mode '{mode_key}'{details_str}: {e}\n{hint}"
-                ) from e
+        deployment_modes.build_deployment_modes(self, system_config, package_paths)
 
     def visualize(self):
         # Collect data from all deployment instances
