@@ -3,7 +3,13 @@
 ## 1. Role & Objective
 You are an AI coding assistant tasked with creating and managing Autoware System Designer (written in autoware_system_design_format). Your goal is to generate valid, modular, and consistent YAML configuration files that define the software architecture of an Autoware system.
 
-## 2. File System Organization
+## 2. File Format Version
+All YAML files MUST start with the following line to specify the format version:
+```yaml
+autoware_system_design_format: v0.2.0
+```
+
+## 3. File System Organization
 Follow this directory structure for consistency (not mandatory).
 - **Root**: `src/<package_name>/design/`
 - **Nodes**: `src/<package_name>/design/node/` (suffix: `.node.yaml`)
@@ -11,35 +17,40 @@ Follow this directory structure for consistency (not mandatory).
 - **Systems**: `src/<package_name>/design/system/` (suffix: `.system.yaml`)
 - **Parameter Sets**: `src/<package_name>/design/parameter_set/` (suffix: `.parameter_set.yaml`)
 
-## 3. Configuration Entities & Schemas
+## 4. Configuration Entities & Schemas
 
-### 3.1. Node Configuration (`.node.yaml`)
+### 4.1. Node Configuration (`.node.yaml`)
 Represents a single ROS 2 node.
 **Required Fields:**
+- `autoware_system_design_format`: Must be `v0.2.0`.
 - `name`: Must match filename (e.g., `MyNode.node`).
+- `package`: Dictionary defining the ROS 2 package information.
+  - `name`: ROS 2 package name.
+  - `provider`: Provider of the package (e.g., `dummy`, `tier4`, `autoware`).
 - `launch`: Dictionary defining execution details.
-  - `package`: ROS 2 package name.
   - `plugin`: C++ class name (component) or script entry point.
-  - `executable`: Name of the executable.
-  - `ros2_launch_file`: (Required if `executable` is not set) Alternative setting used for normal ros2 launcher wrapper.
+  - `executable`: (Optional) Name of the executable.
+  - `ros2_launch_file`: (Required if `executable` and `plugin` are not set) Alternative setting used for normal ros2 launcher wrapper.
   - `node_output`: (Optional) `screen`, `log`, etc.
   - `use_container`: (Optional) `true`/`false`.
   - `container_name`: (Required if `use_container: true`) Name of the component container.
 - `inputs`: List of input ports (subscribers).
-  - `name`: Port name.
+  - `name`: Port name. Can include slashes (e.g., `perception/objects`).
   - `message_type`: Full ROS message type (e.g., `sensor_msgs/msg/PointCloud2`).
 - `outputs`: List of output ports (publishers).
-  - `name`: Port name.
+  - `name`: Port name. Can include slashes.
   - `message_type`: Full ROS message type.
   - `qos`: (Optional) QoS settings (`reliability`, `durability`, etc.).
 - `parameters`: Individual default parameters.
   - `name`: Parameter name.
   - `type`: `bool`, `int`, `double`, `string`.
   - `default`: Default value.
+  - `description`: (Optional) Brief explanation of the parameter.
 - `parameter_files`: Reference to parameter files.
   - `name`: Identifier for the file reference.
   - `default`: Path to file (use `$(find-pkg-share pkg)/path` or relative path).
   - `schema`: (Optional) Path to JSON schema.
+  - `allow_substs`: (Optional) `true`/`false` to allow substitution in parameter files.
 - `processes`: Execution logic / Event chains.
   - `name`: Name of the process/callback.
   - `trigger_conditions`: Logic to start process. Can be nested with `or`/`and`.
@@ -53,30 +64,29 @@ Represents a single ROS 2 node.
     - `to_trigger`: Triggers another process (`to_trigger: process_name`).
     - `terminal`: Ends the chain (`terminal: null`).
 
-### 3.2. Module Configuration (`.module.yaml`)
+### 4.2. Module Configuration (`.module.yaml`)
 Represents a composite component containing nodes or other modules.
 **Required Fields:**
+- `autoware_system_design_format`: Must be `v0.2.0`.
 - `name`: Must match filename (e.g., `MyModule.module`).
 - `instances`: List of internal entities.
-  - `instance`: Local name for the instance (e.g., `lidar_driver`).
+  - `name`: Local name for the instance (e.g., `lidar_driver`).
   - `entity`: Reference to the entity definition (e.g., `LidarDriver.node`).
+  - `launch`: (Optional) Override launch configurations for this instance.
 - `external_interfaces`: Defines the module's boundary.
   - `input`: List of externally accessible input ports.
   - `output`: List of externally accessible output ports.
   - `parameter`: List of exposed parameter namespaces.
 - `connections`: Internal wiring.
-  - `from`: Source port path.
+  - `from`: Source port path. Supports wildcards (e.g., `input.*` or `node.output.*`).
   - `to`: Destination port path.
 
-**Connection Syntax:**
-- **External Input to Internal Input**: `from: input.<ext_port>` -> `to: <instance>.input.<int_port>`
-- **Internal Output to Internal Input**: `from: <instance_a>.output.<port>` -> `to: <instance_b>.input.<port>`
-- **Internal Output to External Output**: `from: <instance>.output.<int_port>` -> `to: output.<ext_port>`
-
-### 3.3. System Configuration (`.system.yaml`)
+### 4.3. System Configuration (`.system.yaml`)
 Top-level entry point defining the complete system.
 **Required Fields:**
+- `autoware_system_design_format`: Must be `v0.2.0`.
 - `name`: Must match filename (e.g., `MyCar.system`).
+- `variables`: List of system variables.
 - `modes`: List of operation modes (e.g., `default`, `simulation`).
 - `components`: Top-level instances.
   - `name`: Name of the component instance.
@@ -84,18 +94,20 @@ Top-level entry point defining the complete system.
   - `namespace`: ROS namespace prefix.
   - `compute_unit`: Hardware resource identifier (e.g., `ecu_1`).
   - `parameter_set`: List of parameter set files to apply.
-  - `mode`: (Optional) List of modes where this component is active. When it is empty, applied for all existing modes.
+  - `mode`: (Optional) List of modes where this component is active.
 - `connections`: Top-level wiring between components.
 
-### 3.4. Parameter Set Configuration (`.parameter_set.yaml`)
+### 4.4. Parameter Set Configuration (`.parameter_set.yaml`)
 Overrides parameters for specific nodes within the system hierarchy.
 **Fields:**
+- `autoware_system_design_format`: Must be `v0.2.0`.
+- `name`: Must match filename.
 - `parameters`: List of overrides.
   - `node`: Full hierarchical path to the node instance (e.g., `/sensing/lidar/driver`).
   - `parameter_files`: Dict mapping file keys to new paths.
   - `parameters`: List of individual value overrides.
 
-## 4. Constraints & Validation Rules
+## 5. Constraints & Validation Rules
 1.  **Type Safety**: Connected ports MUST have identical `message_type`.
 2.  **Single Publisher**: An `input` port can have multiple sources, but an `output` port (publisher) generally drives the topic. In AWArch, one topic is published by one node/port.
 3.  **Naming Convention**:
@@ -105,13 +117,16 @@ Overrides parameters for specific nodes within the system hierarchy.
     -   Use `$(find-pkg-share <package_name>)` for absolute ROS paths.
     -   Relative paths are resolved relative to the package defining them.
 
-## 5. Examples
+## 6. Examples
 
-### Node Example
+### Node Example (v0.2.0)
 ```yaml
+autoware_system_design_format: v0.2.0
 name: Detector.node
+package:
+  name: my_perception
+  provider: tier4
 launch:
-  package: my_perception
   plugin: my_perception::Detector
   executable: detector_node
   node_output: screen
@@ -124,13 +139,15 @@ outputs:
 processes:
   - name: detect
     trigger_conditions:
-      - on_input: image
+      - or:
+          - on_input: image
     outcomes:
       - to_output: objects
 ```
 
-### Module Example
+### Module Example (v0.2.0)
 ```yaml
+autoware_system_design_format: v0.2.0
 name: Perception.module
 instances:
   - name: detector
@@ -147,7 +164,7 @@ connections:
     to: output.objects
 ```
 
-## 6. Build System Functions
+## 7. Build System Functions
 The `autoware_system_designer` package provides CMake macros to automate the build and deployment process.
 
 ### `autoware_system_designer_build_deploy`
