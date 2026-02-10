@@ -18,7 +18,7 @@ import logging
 import copy
 from pathlib import Path
 from typing import Dict, Tuple, List, Any, Optional
-from .deployment_config import DeploymentConfig
+from .deploy.deployment_config import DeploymentConfig
 from .builder.config.config_registry import ConfigRegistry
 from .builder.deployment_instance import DeploymentInstance
 from .ros2_launcher.generate_module_launcher import generate_module_launch_file

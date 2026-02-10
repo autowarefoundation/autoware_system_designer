@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 import yaml
 from autoware_system_designer.deployment import Deployment
-from autoware_system_designer.deployment_config import DeploymentConfig
+from autoware_system_designer.deploy.deployment_config import DeploymentConfig
 from autoware_system_designer.visualization.visualization_index import update_index
 
 _logger = logging.getLogger(__name__)

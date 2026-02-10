@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Dict, Any, Union, Optional, Tuple
 from functools import lru_cache
 
-from ...deployment_config import deploy_config
+from ...deploy.deployment_config import deploy_config
 from ...exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
