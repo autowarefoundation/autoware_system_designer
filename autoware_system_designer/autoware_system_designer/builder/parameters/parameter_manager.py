@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from ..config.config_registry import ConfigRegistry
 
 logger = logging.getLogger(__name__)
+_SYSTEM_ARG_PATTERN = re.compile(r"\$\(var\s+([^)]+)\)")
 
 
 class ParameterManager:
@@ -96,6 +97,63 @@ class ParameterManager:
     def get_all_parameter_files(self):
         """Get all parameter files."""
         return self.parameter_files.list
+
+    @staticmethod
+    def _extract_used_system_args(value: Any, available_args: set[str]) -> set[str]:
+        if not isinstance(value, str):
+            return set()
+
+        used_args = set()
+        for arg_name in _SYSTEM_ARG_PATTERN.findall(value):
+            if arg_name in available_args:
+                used_args.add(arg_name)
+        return used_args
+
+    @classmethod
+    def collect_component_required_system_args(
+        cls, nodes: List[Dict[str, Any]], system_args: Optional[List[str]]
+    ) -> List[str]:
+        """Collect system args actually consumed by the component's launch payload.
+
+        Args:
+            nodes: Launcher node dictionaries (serialized or runtime-extracted).
+            system_args: Full list of available system/deployment argument names.
+
+        Returns:
+            Ordered subset of `system_args` required by this component.
+        """
+        if not system_args:
+            return []
+
+        available_args = set(system_args)
+        required = set()
+        launch_param_types = {"DEFAULT", "DEFAULT_FILE", "MODE", "OVERRIDE"}
+
+        for node in nodes:
+            required |= cls._extract_used_system_args(node.get("args"), available_args)
+
+            for param_file in node.get("parameter_files", []):
+                required |= cls._extract_used_system_args(
+                    param_file.get("path"), available_args
+                )
+
+            for param in node.get("parameters", []):
+                param_type = param.get("parameter_type", {})
+                param_type_name = (
+                    param_type.get("name") if isinstance(param_type, dict) else str(param_type)
+                )
+                param_name = param.get("name")
+                if (
+                    node.get("is_ros2_file_launch")
+                    and param_type_name in launch_param_types
+                    and isinstance(param_name, str)
+                    and param_name in available_args
+                ):
+                    required.add(param_name)
+
+                required |= cls._extract_used_system_args(param.get("value"), available_args)
+
+        return [arg for arg in system_args if arg in required]
     
     def get_parameters_for_launch(self) -> List[Dict[str, Any]]:
         """Get all parameters for launcher generation.

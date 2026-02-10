@@ -14,17 +14,16 @@
 
 import logging
 import os
-import re
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List
 
 from ..builder.instances.instances import Instance
+from ..builder.parameters.parameter_manager import ParameterManager
 from ..file_io.source_location import SourceLocation, format_source
 from ..file_io.system_structure_json import extract_system_structure_data
 from ..file_io.template_renderer import TemplateRenderer
 
 logger = logging.getLogger(__name__)
-_VAR_PATTERN = re.compile(r"\$\(var\s+([^)]+)\)")
 
 
 def _ensure_directory(directory_path: str) -> None:
@@ -48,51 +47,6 @@ def _render_template_to_file(template_name: str, output_file_path: str, template
         src = SourceLocation(file_path=Path(output_file_path))
         logger.error(f"Failed to generate launcher {output_file_path}: {e}{format_source(src)}")
         raise
-
-
-def _extract_used_args_from_text(value: Any, available_args: Set[str]) -> Set[str]:
-    if not isinstance(value, str):
-        return set()
-    used_args = set()
-    for arg_name in _VAR_PATTERN.findall(value):
-        if arg_name in available_args:
-            used_args.add(arg_name)
-    return used_args
-
-
-def _collect_component_required_args(
-    nodes: List[Dict[str, Any]], system_args: List[str] | None
-) -> List[str]:
-    if not system_args:
-        return []
-
-    available_args = set(system_args)
-    required = set()
-    launch_param_types = {"DEFAULT", "DEFAULT_FILE", "MODE", "OVERRIDE"}
-
-    for node in nodes:
-        required |= _extract_used_args_from_text(node.get("args"), available_args)
-
-        for param_file in node.get("parameter_files", []):
-            required |= _extract_used_args_from_text(param_file.get("path"), available_args)
-
-        for param in node.get("parameters", []):
-            param_type = param.get("parameter_type", {})
-            param_type_name = (
-                param_type.get("name") if isinstance(param_type, dict) else str(param_type)
-            )
-            param_name = param.get("name")
-            if (
-                node.get("is_ros2_file_launch")
-                and param_type_name in launch_param_types
-                and isinstance(param_name, str)
-                and param_name in available_args
-            ):
-                required.add(param_name)
-
-            required |= _extract_used_args_from_text(param.get("value"), available_args)
-
-    return [arg for arg in system_args if arg in required]
 
 
 def _collect_all_nodes_recursively(instance: Instance) -> List[Dict[str, Any]]:
@@ -317,7 +271,9 @@ def _generate_component_launcher(
         full_ns_list = component_full_namespace + node["namespace_groups"]
         node["full_namespace"] = "/".join(full_ns_list)
 
-    component_forward_args = _collect_component_required_args(all_nodes, forward_args)
+    component_forward_args = ParameterManager.collect_component_required_system_args(
+        all_nodes, forward_args
+    )
     template_data = {
         "compute_unit": compute_unit,
         "namespace": namespace,
@@ -356,7 +312,9 @@ def _generate_component_launcher_from_data(
         full_ns_list = component_full_namespace + node["namespace_groups"]
         node["full_namespace"] = "/".join(full_ns_list)
 
-    component_forward_args = _collect_component_required_args(all_nodes, forward_args)
+    component_forward_args = ParameterManager.collect_component_required_system_args(
+        all_nodes, forward_args
+    )
     template_data = {
         "compute_unit": compute_unit,
         "namespace": namespace,
@@ -412,9 +370,9 @@ def generate_module_launch_file(
             for child in instance.children.values():
                 compute_unit_map.setdefault(child.compute_unit, []).append(child)
                 nodes = _collect_all_nodes_recursively(child)
-                namespace_args_map[(child.compute_unit, child.name)] = _collect_component_required_args(
-                    nodes, forward_args
-                )
+                namespace_args_map[
+                    (child.compute_unit, child.name)
+                ] = ParameterManager.collect_component_required_system_args(nodes, forward_args)
 
             namespace_map = {}
             for child in instance.children.values():
@@ -466,7 +424,9 @@ def generate_module_launch_file(
         key = (compute_unit, child.get("name", ""))
         namespace_map[key] = [child]
         nodes = _collect_all_nodes_recursively_data(child)
-        namespace_args_map[key] = _collect_component_required_args(nodes, forward_args)
+        namespace_args_map[key] = ParameterManager.collect_component_required_system_args(
+            nodes, forward_args
+        )
 
     for compute_unit, components in compute_unit_map.items():
         component_args_map = {
