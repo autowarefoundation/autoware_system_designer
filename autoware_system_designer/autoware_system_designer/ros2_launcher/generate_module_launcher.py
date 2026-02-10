@@ -214,7 +214,9 @@ def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: Lis
     return node_data
 
 
-def _generate_compute_unit_launcher(compute_unit: str, components: list, output_dir: str):
+def _generate_compute_unit_launcher(
+    compute_unit: str, components: list, output_dir: str, forward_args: List[str] | None = None
+):
     """Generate compute unit launcher file."""
 
     compute_unit_dir = os.path.join(output_dir, compute_unit)
@@ -227,11 +229,21 @@ def _generate_compute_unit_launcher(compute_unit: str, components: list, output_
     for component in sorted(components, key=lambda c: c.name):
         namespaces_data.append({"namespace": component.name, "args": []})
 
-    template_data = {"compute_unit": compute_unit, "namespaces": namespaces_data}
+    template_data = {
+        "compute_unit": compute_unit,
+        "namespaces": namespaces_data,
+        "forward_args": forward_args or [],
+    }
     _render_template_to_file("compute_unit_launcher.xml.jinja2", launcher_file, template_data)
 
 
-def _generate_component_launcher(compute_unit: str, namespace: str, components: list, output_dir: str):
+def _generate_component_launcher(
+    compute_unit: str,
+    namespace: str,
+    components: list,
+    output_dir: str,
+    forward_args: List[str] | None = None,
+):
     """Generate component launcher file that directly launches all nodes in the component."""
 
     component_dir = os.path.join(output_dir, compute_unit, namespace)
@@ -258,11 +270,18 @@ def _generate_component_launcher(compute_unit: str, namespace: str, components: 
         "namespace": namespace,
         "component_full_namespace": component_full_namespace,
         "nodes": all_nodes,
+        "forward_args": forward_args or [],
     }
     _render_template_to_file("component_launcher.xml.jinja2", launcher_file, template_data)
 
 
-def _generate_component_launcher_from_data(compute_unit: str, namespace: str, components: list, output_dir: str):
+def _generate_component_launcher_from_data(
+    compute_unit: str,
+    namespace: str,
+    components: list,
+    output_dir: str,
+    forward_args: List[str] | None = None,
+):
     """Generate component launcher file from serialized system structure."""
 
     component_dir = os.path.join(output_dir, compute_unit, namespace)
@@ -289,11 +308,14 @@ def _generate_component_launcher_from_data(compute_unit: str, namespace: str, co
         "namespace": namespace,
         "component_full_namespace": component_full_namespace,
         "nodes": all_nodes,
+        "forward_args": forward_args or [],
     }
     _render_template_to_file("component_launcher.xml.jinja2", launcher_file, template_data)
 
 
-def _generate_compute_unit_launcher_from_data(compute_unit: str, components: list, output_dir: str):
+def _generate_compute_unit_launcher_from_data(
+    compute_unit: str, components: list, output_dir: str, forward_args: List[str] | None = None
+):
     """Generate compute unit launcher from serialized system structure."""
 
     compute_unit_dir = os.path.join(output_dir, compute_unit)
@@ -306,11 +328,17 @@ def _generate_compute_unit_launcher_from_data(compute_unit: str, components: lis
     for component in sorted(components, key=lambda c: c.get("name", "")):
         namespaces_data.append({"namespace": component.get("name", ""), "args": []})
 
-    template_data = {"compute_unit": compute_unit, "namespaces": namespaces_data}
+    template_data = {
+        "compute_unit": compute_unit,
+        "namespaces": namespaces_data,
+        "forward_args": forward_args or [],
+    }
     _render_template_to_file("compute_unit_launcher.xml.jinja2", launcher_file, template_data)
 
 
-def generate_module_launch_file(instance: Instance, output_dir: str):
+def generate_module_launch_file(
+    instance: Instance, output_dir: str, forward_args: List[str] | None = None
+):
     """Main entry point for launcher generation."""
 
     if isinstance(instance, Instance):
@@ -329,10 +357,18 @@ def generate_module_launch_file(instance: Instance, output_dir: str):
                 namespace_map[key] = [child]
 
             for compute_unit, components in compute_unit_map.items():
-                _generate_compute_unit_launcher(compute_unit, components, output_dir)
+                _generate_compute_unit_launcher(
+                    compute_unit, components, output_dir, forward_args=forward_args
+                )
 
             for (compute_unit, namespace), components in namespace_map.items():
-                _generate_component_launcher(compute_unit, namespace, components, output_dir)
+                _generate_component_launcher(
+                    compute_unit,
+                    namespace,
+                    components,
+                    output_dir,
+                    forward_args=forward_args,
+                )
 
         elif instance.entity_type in ("module", "node"):
             logger.debug(
@@ -357,7 +393,15 @@ def generate_module_launch_file(instance: Instance, output_dir: str):
         namespace_map[key] = [child]
 
     for compute_unit, components in compute_unit_map.items():
-        _generate_compute_unit_launcher_from_data(compute_unit, components, output_dir)
+        _generate_compute_unit_launcher_from_data(
+            compute_unit, components, output_dir, forward_args=forward_args
+        )
 
     for (compute_unit, namespace), components in namespace_map.items():
-        _generate_component_launcher_from_data(compute_unit, namespace, components, output_dir)
+        _generate_component_launcher_from_data(
+            compute_unit,
+            namespace,
+            components,
+            output_dir,
+            forward_args=forward_args,
+        )

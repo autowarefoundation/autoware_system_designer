@@ -4,6 +4,10 @@
   <!-- Component Launcher: {{ namespace }} -->
   <!-- Compute Unit: {{ compute_unit }} -->
   <!-- This launcher starts all nodes in component: {{ namespace }} -->
+
+{% for arg_name in forward_args %}
+  <arg name="{{ arg_name }}"/>
+{% endfor %}
 {% macro node_configuration(node) %}
 <!-- Remap input and output topics -->
 {% for port in node.ports %}

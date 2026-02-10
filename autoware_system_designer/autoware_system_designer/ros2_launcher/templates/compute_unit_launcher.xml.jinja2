@@ -4,11 +4,18 @@
   <!-- Compute Unit Launcher: {{ compute_unit }} -->
   <!-- This launcher starts all namespaces assigned to compute unit: {{ compute_unit }} -->
 
+{% for arg_name in forward_args %}
+  <arg name="{{ arg_name }}"/>
+{% endfor %}
+
   <let name="root_dir" value="$(dirname)"/>
 
 {% for namespace_info in namespaces %}
   <!-- Include {{ namespace_info.namespace }} namespace -->
   <include file="$(var root_dir)/{{ namespace_info.namespace }}/{{ namespace_info.namespace }}.launch.xml">
+{% for arg_name in forward_args %}
+    <arg name="{{ arg_name }}" value="$(var {{ arg_name }})"/>
+{% endfor %}
 {% for arg in namespace_info.args %}
     <arg name="{{ arg.name }}" value="{{ arg.value }}"/>
 {% endfor %}

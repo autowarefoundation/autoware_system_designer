@@ -17,7 +17,7 @@ import os
 import logging
 import copy
 from pathlib import Path
-from typing import Dict, Tuple, List, Any
+from typing import Dict, Tuple, List, Any, Optional
 from .deployment_config import DeploymentConfig
 from .builder.config.config_registry import ConfigRegistry
 from .builder.deployment_instance import DeploymentInstance
@@ -110,22 +110,17 @@ class Deployment:
         logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)
         
         input_path = deploy_config.deployment_file
-        system_name = None
-        
-        # System by name
-        system_name = os.path.basename(input_path)
-        # Remove extension if present, though entity_name_decode handles check
-        if system_name.endswith('.yaml'):
-            system_name = system_name[:-5]
-            
-        # If name is full name (name.system), decode it
-        if "." in system_name:
-                system_name, _ = entity_name_decode(system_name)
+        self.deploy_variants: List[Dict[str, Any]] = []
+        self.deployment_table_path: Optional[str] = None
 
-        # Get system from registry (this handles base/variant resolution)
-        system_config = self.config_registry.get_system(system_name)
+        system_config, self.deploy_variants, self.deployment_table_path = self._resolve_input_target(input_path)
         if not system_config:
-            raise ValidationError(f"System not found: {system_name}")
+            raise ValidationError(f"System not found from input: {input_path}")
+
+        # Fallback for deployments-table mode where deployment_file itself is not an entity file.
+        if self.config_registry.deployment_package_name is None:
+            system_file_abs = str(Path(system_config.file_path).resolve())
+            self.config_registry.deployment_package_name = file_package_map.get(system_file_abs)
         
         self.config_yaml_dir = str(system_config.file_path)
         logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
@@ -146,6 +141,147 @@ class Deployment:
 
         # build the deployment
         self._build(system_config, package_paths)
+
+    def _resolve_input_target(
+        self, input_path: str
+    ) -> Tuple[SystemConfig, List[Dict[str, Any]], Optional[str]]:
+        # Deployments table path: parse table, then build base system once.
+        if input_path.endswith(".deployments") or input_path.endswith(".deployments.yaml"):
+            table_path = self._resolve_deployments_path(input_path)
+            base_name, deploy_list = self._parse_deployments_table(table_path)
+            system_name = self._normalize_system_name(base_name)
+            system_config = self.config_registry.get_system(system_name)
+            return system_config, deploy_list, table_path
+
+        # Legacy behavior: input identifies one system target.
+        system_name = self._normalize_system_name(input_path)
+        system_config = self.config_registry.get_system(system_name)
+        return system_config, [], None
+
+    def _normalize_system_name(self, system_ref: str) -> str:
+        system_name = os.path.basename(system_ref)
+        if system_name.endswith(".yaml"):
+            system_name = system_name[:-5]
+        if "." in system_name:
+            decoded_name, _ = entity_name_decode(system_name)
+            return decoded_name
+        return system_name
+
+    def _resolve_deployments_path(self, input_path: str) -> str:
+        candidate = Path(input_path)
+        if candidate.suffix != ".yaml":
+            candidate = Path(f"{input_path}.yaml")
+
+        if candidate.exists() and candidate.is_file():
+            return str(candidate.resolve())
+
+        raise ValidationError(
+            f"Deployments table file not found: {candidate}. "
+            f"Pass an existing '*.deployments.yaml' path to the build target."
+        )
+
+    def _parse_deployments_table(self, deployments_path: str) -> Tuple[str, List[Dict[str, Any]]]:
+        config_yaml = yaml_parser.load_config(deployments_path)
+        if not isinstance(config_yaml, dict):
+            raise ValidationError(f"Invalid deployments table format: {deployments_path}")
+
+        base = config_yaml.get("base")
+        if not isinstance(base, str) or not base:
+            raise ValidationError(
+                f"Deployments table must define non-empty 'base' (string): {deployments_path}"
+            )
+
+        raw_deploy_list = config_yaml.get("deploy_list", [])
+        if not isinstance(raw_deploy_list, list):
+            raise ValidationError(f"'deploy_list' must be a list in deployments table: {deployments_path}")
+
+        deploy_list: List[Dict[str, Any]] = []
+        for idx, item in enumerate(raw_deploy_list):
+            if not isinstance(item, dict):
+                raise ValidationError(
+                    f"deploy_list[{idx}] must be an object in deployments table: {deployments_path}"
+                )
+            name = item.get("name")
+            if not isinstance(name, str) or not name:
+                raise ValidationError(
+                    f"deploy_list[{idx}] requires non-empty 'name' in deployments table: {deployments_path}"
+                )
+            variables = item.get("variables", [])
+            if variables is None:
+                variables = []
+            if not isinstance(variables, list):
+                raise ValidationError(
+                    f"deploy_list[{idx}].variables must be a list in deployments table: {deployments_path}"
+                )
+            deploy_list.append({"name": name, "variables": variables})
+
+        return base, deploy_list
+
+    def _collect_deploy_variable_names(self) -> List[str]:
+        if not self.deploy_variants:
+            return []
+        variable_names: List[str] = []
+        seen = set()
+        for deploy_item in self.deploy_variants:
+            for variable in deploy_item.get("variables", []):
+                if not isinstance(variable, dict):
+                    continue
+                name = variable.get("name")
+                if not isinstance(name, str) or not name or name in seen:
+                    continue
+                seen.add(name)
+                variable_names.append(name)
+        return variable_names
+
+    def _generate_deploy_variant_launchers(self):
+        renderer = TemplateRenderer()
+        for mode_key in self.mode_keys:
+            structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
+            payload = load_system_structure(structure_path)
+            data, _ = extract_system_structure_data(payload)
+            compute_units = sorted(
+                {
+                    child.get("compute_unit")
+                    for child in data.get("children", [])
+                    if child.get("compute_unit")
+                }
+            )
+
+            for deploy_item in self.deploy_variants:
+                deploy_name = deploy_item.get("name")
+                variables = deploy_item.get("variables", [])
+                if not deploy_name:
+                    continue
+                for compute_unit in compute_units:
+                    output_dir = os.path.join(
+                        self.launcher_dir,
+                        "deployments",
+                        deploy_name,
+                        mode_key,
+                        compute_unit,
+                    )
+                    output_filename = f"{compute_unit.lower()}.launch.xml"
+                    base_launcher_path = os.path.join(
+                        "..",
+                        "..",
+                        "..",
+                        "..",
+                        mode_key,
+                        compute_unit,
+                        output_filename,
+                    ).replace("\\", "/")
+                    renderer.render_template_to_file(
+                        "deployment_variant_wrapper.launch.xml.jinja2",
+                        os.path.join(output_dir, output_filename),
+                        deploy_name=deploy_name,
+                        mode_key=mode_key,
+                        compute_unit=compute_unit,
+                        variables=variables,
+                        base_launcher_path=base_launcher_path,
+                    )
+                logger.info(
+                    f"Generated deployment variant launchers for deploy='{deploy_name}', mode='{mode_key}'"
+                )
 
     def _get_system_list(self, deploy_config: DeploymentConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
         system_list: list[str] = []
@@ -384,6 +520,7 @@ class Deployment:
 
 
     def generate_launcher(self):
+        deploy_variable_names = self._collect_deploy_variable_names()
         # Generate launcher files for each mode
         for mode_key in self.mode_keys:
             # Create mode-specific launcher directory
@@ -392,9 +529,16 @@ class Deployment:
             # Generate module launch files from JSON structure
             structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
             payload = load_system_structure(structure_path)
-            generate_module_launch_file(payload, mode_launcher_dir)
+            generate_module_launch_file(
+                payload,
+                mode_launcher_dir,
+                forward_args=deploy_variable_names,
+            )
             
             logger.info(f"Generated launcher for mode: {mode_key}")
+
+        if self.deploy_variants:
+            self._generate_deploy_variant_launchers()
 
     def generate_parameter_set_template(self):
         """Generate parameter set template using ParameterTemplateGenerator."""

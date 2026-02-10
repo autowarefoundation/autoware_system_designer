@@ -56,7 +56,15 @@ macro(autoware_system_designer_build_deploy project_name)
     list(APPEND _WORKSPACE_ARGS "${CMAKE_SOURCE_DIR}/workspace.yaml")
   endif()
 
-  if(_INPUT_NAME MATCHES ".*\\.system$")
+  if(_INPUT_NAME MATCHES ".*\\.deployments\\.yaml$")
+    # Deployments table file path was provided directly.
+    set(_DEPLOYMENT_FILE "${_INPUT_NAME}")
+    set(_LOG_DESC "(deployments_table=${_INPUT_NAME})")
+  elseif(_INPUT_NAME MATCHES ".*\\.deployments$")
+    # Deployments table name (without .yaml): resolve under this package's deployment directory.
+    set(_DEPLOYMENT_FILE "${CMAKE_SOURCE_DIR}/deployment/${_INPUT_NAME}.yaml")
+    set(_LOG_DESC "(deployments_table=${_INPUT_NAME})")
+  elseif(_INPUT_NAME MATCHES ".*\\.system$")
     # If the input is an design file, use it directly.
     set(_DEPLOYMENT_FILE "${_INPUT_NAME}")
     set(_LOG_DESC "(design=${_INPUT_NAME})")
