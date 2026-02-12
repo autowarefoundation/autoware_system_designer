@@ -6,9 +6,11 @@ find_package(autoware_system_designer REQUIRED)
 
 autoware_package()
 
-autoware_system_designer_generate_launcher()
+autoware_ament_auto_package()
 
 # Add a dummy library to make a target
 add_library(${PROJECT_NAME} SHARED src/empty.cpp)
+
+autoware_system_designer_generate_launcher()
 
 autoware_system_designer_build_deploy(${PROJECT_NAME} vehicle_x.system PRINT_LEVEL=WARNING)
