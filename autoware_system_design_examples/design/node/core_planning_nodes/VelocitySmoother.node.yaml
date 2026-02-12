@@ -1,0 +1,49 @@
+autoware_system_design_format: v0.2.0
+name: VelocitySmoother.node
+package:
+  name: autoware_velocity_smoother
+  provider: autoware
+launch:
+  plugin: autoware::velocity_smoother::VelocitySmootherNode
+  executable: velocity_smoother_node
+inputs:
+  - name: trajectory
+    message_type: autoware_planning_msgs/msg/Trajectory
+    remap_target: ~/input/trajectory
+  - name: odometry
+    message_type: nav_msgs/msg/Odometry
+    remap_target: /localization/kinematic_state
+  - name: acceleration
+    message_type: geometry_msgs/msg/AccelWithCovarianceStamped
+    remap_target: ~/input/acceleration
+  - name: external_velocity_limit_mps
+    message_type: autoware_internal_planning_msgs/msg/VelocityLimit
+    remap_target: ~/input/external_velocity_limit_mps
+  - name: operation_mode_state
+    message_type: autoware_adapi_v1_msgs/msg/OperationModeState
+    remap_target: ~/input/operation_mode_state
+outputs:
+  - name: trajectory
+    message_type: autoware_planning_msgs/msg/Trajectory
+    remap_target: ~/output/trajectory
+  - name: virtual_wall
+    message_type: visualization_msgs/msg/MarkerArray
+    remap_target: ~/virtual_wall
+  - name: current_velocity_limit_mps
+    message_type: autoware_internal_planning_msgs/msg/VelocityLimit
+    remap_target: ~/output/current_velocity_limit_mps
+  - name: distance_to_stopline
+    message_type: autoware_internal_debug_msgs/msg/Float32Stamped
+    remap_target: ~/distance_to_stopline
+  - name: debug/processing_time_ms
+    message_type: autoware_internal_debug_msgs/msg/Float64Stamped
+    remap_target: ~/debug/processing_time_ms
+processes:
+  - name: on_trajectory
+    trigger_conditions:
+      - on_input: trajectory
+    outcomes:
+      - to_output: trajectory
+      - to_output: virtual_wall
+      - to_output: current_velocity_limit_mps
+      - to_output: distance_to_stopline

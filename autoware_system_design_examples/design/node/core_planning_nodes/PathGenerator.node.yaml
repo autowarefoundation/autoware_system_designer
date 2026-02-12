@@ -1,0 +1,39 @@
+autoware_system_design_format: v0.2.0
+name: PathGenerator.node
+package:
+  name: autoware_path_generator
+  provider: autoware
+launch:
+  plugin: autoware::path_generator::PathGenerator
+  executable: path_generator_node
+inputs:
+  - name: route
+    message_type: autoware_planning_msgs/msg/LaneletRoute
+    remap_target: ~/input/route
+  - name: vector_map
+    message_type: autoware_map_msgs/msg/LaneletMapBin
+    remap_target: ~/input/vector_map
+  - name: odometry
+    message_type: nav_msgs/msg/Odometry
+    remap_target: ~/input/odometry
+outputs:
+  - name: path
+    message_type: autoware_internal_planning_msgs/msg/PathWithLaneId
+    remap_target: ~/output/path
+  - name: turn_indicators_cmd
+    message_type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
+    remap_target: ~/output/turn_indicators_cmd
+  - name: hazard_lights_cmd
+    message_type: autoware_vehicle_msgs/msg/HazardLightsCommand
+    remap_target: ~/output/hazard_lights_cmd
+  - name: debug/processing_time_ms
+    message_type: autoware_internal_debug_msgs/msg/Float64Stamped
+    remap_target: ~/debug/processing_time_ms
+processes:
+  - name: run
+    trigger_conditions:
+      - periodic: 10.0
+    outcomes:
+      - to_output: path
+      - to_output: turn_indicators_cmd
+      - to_output: hazard_lights_cmd

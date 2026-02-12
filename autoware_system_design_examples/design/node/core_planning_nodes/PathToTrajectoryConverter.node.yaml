@@ -1,0 +1,27 @@
+autoware_system_design_format: v0.2.0
+name: PathToTrajectoryConverter.node
+package:
+  name: autoware_planning_topic_converter
+  provider: autoware
+launch:
+  plugin: autoware::planning_topic_converter::PathToTrajectory
+  executable: path_to_trajectory_converter
+inputs:
+  - name: input
+    message_type: autoware_planning_msgs/msg/Path
+outputs:
+  - name: output
+    message_type: autoware_planning_msgs/msg/Trajectory
+parameters:
+  - name: input_topic
+    type: string
+    default: input
+  - name: output_topic
+    type: string
+    default: output
+processes:
+  - name: process
+    trigger_conditions:
+      - on_input: input
+    outcomes:
+      - to_output: output

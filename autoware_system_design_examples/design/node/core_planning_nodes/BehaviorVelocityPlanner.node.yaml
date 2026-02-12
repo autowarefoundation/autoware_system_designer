@@ -1,0 +1,53 @@
+autoware_system_design_format: v0.2.0
+name: BehaviorVelocityPlanner.node
+package:
+  name: autoware_behavior_velocity_planner
+  provider: autoware
+launch:
+  plugin: autoware::behavior_velocity_planner::BehaviorVelocityPlannerNode
+  executable: autoware_behavior_velocity_planner_node
+inputs:
+  - name: path_with_lane_id
+    message_type: autoware_internal_planning_msgs/msg/PathWithLaneId
+    remap_target: ~/input/path_with_lane_id
+  - name: dynamic_objects
+    message_type: autoware_perception_msgs/msg/PredictedObjects
+    remap_target: ~/input/dynamic_objects
+  - name: no_ground_pointcloud
+    message_type: sensor_msgs/msg/PointCloud2
+    remap_target: ~/input/no_ground_pointcloud
+  - name: vehicle_odometry
+    message_type: nav_msgs/msg/Odometry
+    remap_target: ~/input/vehicle_odometry
+  - name: accel
+    message_type: geometry_msgs/msg/AccelWithCovarianceStamped
+    remap_target: ~/input/accel
+  - name: traffic_signals
+    message_type: autoware_perception_msgs/msg/TrafficLightGroupArray
+    remap_target: ~/input/traffic_signals
+  - name: occupancy_grid
+    message_type: nav_msgs/msg/OccupancyGrid
+    remap_target: ~/input/occupancy_grid
+  - name: vector_map
+    message_type: autoware_map_msgs/msg/LaneletMapBin
+    remap_target: ~/input/vector_map
+  - name: external_velocity_limit_mps
+    message_type: autoware_internal_planning_msgs/msg/VelocityLimit
+    remap_target: ~/input/external_velocity_limit_mps
+outputs:
+  - name: path
+    message_type: autoware_planning_msgs/msg/Path
+    remap_target: ~/output/path
+  - name: debug/path
+    message_type: visualization_msgs/msg/MarkerArray
+    remap_target: ~/debug/path
+  - name: debug/processing_time_ms
+    message_type: autoware_internal_debug_msgs/msg/Float64Stamped
+    remap_target: ~/debug/processing_time_ms
+processes:
+  - name: on_trigger
+    trigger_conditions:
+      - on_input: path_with_lane_id
+    outcomes:
+      - to_output: path
+      - to_output: debug/path

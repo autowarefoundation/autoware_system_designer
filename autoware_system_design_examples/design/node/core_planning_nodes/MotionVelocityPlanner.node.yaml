@@ -1,0 +1,61 @@
+autoware_system_design_format: v0.2.0
+name: MotionVelocityPlanner.node
+package:
+  name: autoware_motion_velocity_planner
+  provider: autoware
+launch:
+  plugin: autoware::motion_velocity_planner::MotionVelocityPlannerNode
+  executable: autoware_motion_velocity_planner_node
+inputs:
+  - name: trajectory
+    message_type: autoware_planning_msgs/msg/Trajectory
+    remap_target: ~/input/trajectory
+  - name: vector_map
+    message_type: autoware_map_msgs/msg/LaneletMapBin
+    remap_target: ~/input/vector_map
+  - name: dynamic_objects
+    message_type: autoware_perception_msgs/msg/PredictedObjects
+    remap_target: ~/input/dynamic_objects
+  - name: no_ground_pointcloud
+    message_type: sensor_msgs/msg/PointCloud2
+    remap_target: ~/input/no_ground_pointcloud
+  - name: vehicle_odometry
+    message_type: nav_msgs/msg/Odometry
+    remap_target: ~/input/vehicle_odometry
+  - name: accel
+    message_type: geometry_msgs/msg/AccelWithCovarianceStamped
+    remap_target: ~/input/accel
+  - name: occupancy_grid
+    message_type: nav_msgs/msg/OccupancyGrid
+    remap_target: ~/input/occupancy_grid
+  - name: traffic_signals
+    message_type: autoware_perception_msgs/msg/TrafficLightGroupArray
+    remap_target: ~/input/traffic_signals
+outputs:
+  - name: trajectory
+    message_type: autoware_planning_msgs/msg/Trajectory
+    remap_target: ~/output/trajectory
+  - name: velocity_limit
+    message_type: autoware_internal_planning_msgs/msg/VelocityLimit
+    remap_target: ~/output/velocity_limit
+  - name: clear_velocity_limit
+    message_type: autoware_internal_planning_msgs/msg/VelocityLimitClearCommand
+    remap_target: ~/output/clear_velocity_limit
+  - name: debug/markers
+    message_type: visualization_msgs/msg/MarkerArray
+    remap_target: ~/debug/markers
+  - name: debug/processed_pointcloud
+    message_type: sensor_msgs/msg/PointCloud2
+    remap_target: ~/debug/processed_pointcloud
+  - name: debug/processing_time_ms
+    message_type: autoware_internal_debug_msgs/msg/Float64Stamped
+    remap_target: ~/debug/processing_time_ms
+processes:
+  - name: on_trajectory
+    trigger_conditions:
+      - on_input: trajectory
+    outcomes:
+      - to_output: trajectory
+      - to_output: velocity_limit
+      - to_output: clear_velocity_limit
+      - to_output: debug/markers
