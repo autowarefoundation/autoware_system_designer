@@ -15,7 +15,7 @@
 """Format version utilities for autoware_system_design_format files.
 
 The ``autoware_system_design_format`` field in YAML design files declares
-which schema version the file conforms to (e.g. ``v0.2.0``).
+which schema version the file conforms to (e.g. ``0.2.0``).
 
 Compatibility rule (semver-like):
   * **Major** must match exactly - a mismatch is an error that stops processing.
@@ -47,11 +47,11 @@ class SemanticVersion:
     patch: int
 
     def __str__(self) -> str:
-        return f"v{self.major}.{self.minor}.{self.patch}"
+        return f"{self.major}.{self.minor}.{self.patch}"
 
 
 def parse_format_version(raw: str) -> SemanticVersion:
-    """Parse a version string like ``v0.2.0`` or ``0.2.0``.
+    """Parse a version string like ``0.2.0`` (with or without 'v' prefix).
 
     Returns:
         A :class:`SemanticVersion` instance.
@@ -68,7 +68,7 @@ def parse_format_version(raw: str) -> SemanticVersion:
     if m is None:
         raise FormatVersionError(
             f"Invalid format version string: '{raw}'. "
-            "Expected 'vMAJOR.MINOR.PATCH' (e.g. 'v0.2.0')."
+            "Expected 'MAJOR.MINOR.PATCH' (e.g. '0.2.0')."
         )
     return SemanticVersion(int(m.group(1)), int(m.group(2)), int(m.group(3)))
 
