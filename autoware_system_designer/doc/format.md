@@ -4,25 +4,34 @@
 
 ### autoware_system_design_format
 
-| Item                          | Type | Descrption                                                                       |
-| ----------------------------- | ---- | -------------------------------------------------------------------------------- |
-| autoware_system_design_format | str  | フォーマットファイルバージョンを指定する。現在は `v0.1.0` がサポートされている。 |
-| name                          | str  | モジュールを区別する任意の文字列を設定する。                                     |
+| Item                          | Type                                      | Required | Descrption |
+| ----------------------------- | ----------------------------------------- | -------- | ---------- |
+| autoware_system_design_format | [FormatVersion](./types.md#formatversion) |          |            |
+| name                          | ModuleNameDefinition                      |          |            |
+| base                          |                                           |          |            |
+| override                      |                                           |          |            |
+| remove                        |                                           |          |            |
 
 ## 外部仕様
 
-| Item            | Type | Descrption |
-| --------------- | ---- | ---------- |
-| launch          |      |            |
-| inputs          |      |            |
-| outputs         |      |            |
-| parameter_files |      |            |
-| parameters      |      |            |
+| Item            | Type | Required | Descrption |
+| --------------- | ---- | -------- | ---------- |
+| launch          |      |          |            |
+| inputs          |      |          |            |
+| outputs         |      |          |            |
+| parameter_files |      |          |            |
+| parameters      |      |          |            |
 
 ## 内部構造
 
+| Item                | Type               | Required | Descrption |
+| ------------------- | ------------------ | -------- | ---------- |
+| instances           | List of Instance   |          |            |
+| external_interfaces | ExternalInterfaces |          |            |
+| connections         | List of Connection |          |            |
+
 ## 解析仕様
 
-| Item      | Type | Descrption |
-| --------- | ---- | ---------- |
-| processes |      |            |
+| Item      | Type | Required | Descrption |
+| --------- | ---- | -------- | ---------- |
+| processes |      |          |            |
