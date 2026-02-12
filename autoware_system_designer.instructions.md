@@ -6,7 +6,7 @@ You are an AI coding assistant tasked with creating and managing Autoware System
 ## 2. File Format Version
 All YAML files MUST start with the following line to specify the format version:
 ```yaml
-autoware_system_design_format: v0.2.0
+autoware_system_design_format: 0.2.0
 ```
 
 ## 3. File System Organization
@@ -22,7 +22,7 @@ Follow this directory structure for consistency (not mandatory).
 ### 4.1. Node Configuration (`.node.yaml`)
 Represents a single ROS 2 node.
 **Required Fields:**
-- `autoware_system_design_format`: Must be `v0.2.0`.
+- `autoware_system_design_format`: Must be `0.2.0`.
 - `name`: Must match filename (e.g., `MyNode.node`).
 - `package`: Dictionary defining the ROS 2 package information.
   - `name`: ROS 2 package name.
@@ -73,7 +73,7 @@ Represents a single ROS 2 node.
 ### 4.2. Module Configuration (`.module.yaml`)
 Represents a composite component containing nodes or other modules.
 **Required Fields:**
-- `autoware_system_design_format`: Must be `v0.2.0`.
+- `autoware_system_design_format`: Must be `0.2.0`.
 - `name`: Must match filename (e.g., `MyModule.module`).
 - `instances`: List of internal entities.
   - `name`: Local name for the instance (e.g., `lidar_driver`).
@@ -95,7 +95,7 @@ Represents a composite component containing nodes or other modules.
 ### 4.3. System Configuration (`.system.yaml`)
 Top-level entry point defining the complete system.
 **Required Fields:**
-- `autoware_system_design_format`: Must be `v0.2.0`.
+- `autoware_system_design_format`: Must be `0.2.0`.
 - `name`: Must match filename (e.g., `MyCar.system`).
 - `variables`: List of system variables.
 - `modes`: List of operation modes (e.g., `default`, `simulation`).
@@ -111,7 +111,7 @@ Top-level entry point defining the complete system.
 ### 4.4. Parameter Set Configuration (`.parameter_set.yaml`)
 Overrides parameters for specific nodes within the system hierarchy.
 **Fields:**
-- `autoware_system_design_format`: Must be `v0.2.0`.
+- `autoware_system_design_format`: Must be `0.2.0`.
 - `name`: Must match filename.
 - `parameters`: List of overrides.
   - `node`: Full hierarchical path to the node instance (e.g., `/sensing/lidar/driver`).
@@ -130,9 +130,9 @@ Overrides parameters for specific nodes within the system hierarchy.
 
 ## 6. Examples
 
-### Node Example (v0.2.0)
+### Node Example (0.2.0)
 ```yaml
-autoware_system_design_format: v0.2.0
+autoware_system_design_format: 0.2.0
 name: Detector.node
 package:
   name: my_perception
@@ -156,9 +156,9 @@ processes:
       - to_output: objects
 ```
 
-### Module Example (v0.2.0)
+### Module Example (0.2.0)
 ```yaml
-autoware_system_design_format: v0.2.0
+autoware_system_design_format: 0.2.0
 name: Perception.module
 instances:
   - name: detector
