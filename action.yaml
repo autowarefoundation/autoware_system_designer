@@ -49,7 +49,7 @@ runs:
       if: steps.find-files.outputs.files > 0
       run: |
         cd ${{ github.workspace }}
-        python3 -m autoware_system_designer.linter.run_lint \
+        autoware-system-designer-lint \
           --format github-actions \
           $(cat /tmp/design_files.txt | sed 's|^\./||' | tr '\n' ' ')
       shell: bash
