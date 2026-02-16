@@ -1,0 +1,39 @@
+# Pre-commit configuration for autoware_system_designer
+# Unified linting configuration that handles:
+# - System design format linting (custom linter for *.node.yaml, *.module.yaml, *.system.yaml, *.parameter_set.yaml)
+# - YAML linting (for all *.yaml and *.yml files)
+# - Markdown linting (for all *.md files)
+#
+# Dependencies are automatically installed by pre-commit in isolated environments
+
+repos:
+  # YAML linting - automatically installs yamllint
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.1
+    hooks:
+      - id: yamllint
+        name: YAML Lint
+        args: [-c, .yamllint.yaml]
+        files: \.ya?ml$
+        exclude: \.(node|module|system|parameter_set)\.yaml$|\.param\.yaml$
+
+  # Markdown linting - automatically installs markdownlint-cli
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.47.0
+    hooks:
+      - id: markdownlint
+        name: Markdown Lint
+        args: [-c, .markdownlint.yaml, --fix]
+        files: \.md$
+
+  # System design format linting (local hook)
+  - repo: local
+    hooks:
+      - id: lint-system-designs
+        name: Lint System Design Files
+        description: Lint autoware_system_design_format YAML files
+        entry: bash .pre-commit-lint-wrapper.sh
+        language: system
+        files: \.(node|module|system|parameter_set)\.yaml$
+        pass_filenames: true
+        require_serial: false
