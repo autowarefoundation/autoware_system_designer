@@ -24,21 +24,22 @@ The system is built upon four main entity types:
 
 ### 1. Node (`*.node.yaml`)
 Represents a single ROS 2 node. It defines:
-*   **Launch info**: Package, plugin, and execution details.
-*   **Interfaces**: Input and Output ports (Topics).
-*   **Parameters**: Configuration variables.
-*   **Processes**: Internal logic flow (e.g., "when input A arrives, trigger process B").
+*   **Package**: Package name and provider information.
+*   **Launch**: Node execution configuration (plugin, executable, container settings, etc.).
+*   **Inputs/Outputs**: Ports (topics) with message types, QoS settings, and remap targets.
+*   **Parameters**: Configuration variables (inline or via parameter files).
+*   **Processes**: Internal logic flow with trigger conditions and outcomes.
 
 ### 2. Module (`*.module.yaml`)
 A container for grouping nodes and other sub-modules. It defines:
-*   **Instances**: Which nodes/modules are inside.
-*   **Connections**: How internal components are wired together.
+*   **Instances**: Nodes/modules contained within.
+*   **Connections**: Wiring between internal components.
 *   **External Interfaces**: Ports exposed to the outside world.
 
 ### 3. System (`*.system.yaml`)
 The top-level description of a complete autonomous driving system. It defines:
 *   **Components**: Top-level modules (e.g., Sensing, Perception, Planning).
-*   **Hardware Mapping**: Which ECU runs which component.
+*   **Hardware Mapping**: ECU assignment for each component.
 *   **Modes**: Operation modes (e.g., Default, Simulation).
 
 ### 4. Parameter Set (`*.parameter_set.yaml`)
