@@ -1,6 +1,7 @@
 # Autoware System Designer Instruction Manifest
 
 ## 1. Role & Objective
+
 You are an AI coding assistant tasked with creating and managing Autoware System Designer (written in autoware_system_design_format). Your goal is to generate valid, modular, and consistent YAML configuration files that define the software architecture of an Autoware system.
 
 ## 2. File Format Version
@@ -9,7 +10,9 @@ All YAML files MUST start with the format version specification. The tool suppor
 **Note**: The supported format version is defined in `autoware_system_designer/__init__.py` as `DESIGN_FORMAT_VERSION`.
 
 ## 3. File System Organization
+
 Follow this directory structure for consistency (not mandatory).
+
 - **Root**: `src/<package_name>/design/`
 - **Nodes**: `src/<package_name>/design/node/` (suffix: `.node.yaml`)
 - **Modules**: `src/<package_name>/design/module/` (suffix: `.module.yaml`)
@@ -19,6 +22,7 @@ Follow this directory structure for consistency (not mandatory).
 ## 4. Configuration Entities & Schemas
 
 ### 4.1. Node Configuration (`.node.yaml`)
+
 Represents a single ROS 2 node.
 **Required Fields:**
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
@@ -36,7 +40,7 @@ Represents a single ROS 2 node.
 - `inputs`: List of input ports (subscribers).
   - `name`: Port name. Can include slashes (e.g., `perception/objects`).
   - `message_type`: Full ROS message type (e.g., `sensor_msgs/msg/PointCloud2`).
-  - `remap_target`: (Optional) The internal ROS 2 topic name used by the node. 
+  - `remap_target`: (Optional) The internal ROS 2 topic name used by the node.
     - **Default**: If not provided, it defaults to `~/input/<name>`.
     - **Required when**: The node implementation uses a specific topic name that does not follow the `~/input/` convention (e.g., legacy code or global topics like `/tf`).
   - `global`: (Optional) If set, the input topic subscribes to a global topic name (e.g., `/tf`).
@@ -72,6 +76,7 @@ Represents a single ROS 2 node.
     - `terminal`: Ends the chain (`terminal: null`).
 
 ### 4.2. Module Configuration (`.module.yaml`)
+
 Represents a composite component containing nodes or other modules.
 **Required Fields:**
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
@@ -89,11 +94,13 @@ Represents a composite component containing nodes or other modules.
   - `to`: Destination port path.
 
 **Connection Syntax:**
+
 - **External Input to Internal Input**: `from: input.<external_input_port>` -> `to: <instance>.input.<port>`
 - **Internal Output to Internal Input**: `from: <instance_a>.output.<port>` -> `to: <instance_b>.input.<port>`
 - **Internal Output to External Output**: `from: <instance>.output.<port>` -> `to: output.<external_output_port>`
 
 ### 4.3. System Configuration (`.system.yaml`)
+
 Top-level entry point defining the complete system.
 **Required Fields:**
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
@@ -125,6 +132,7 @@ Each mode can define overrides using the mode name as a key:
 - `remove`: Dictionary specifying what to remove in this mode. All system configuration fields can be removed (e.g., `modes`, `parameter_sets`, `components`, `variables`, `connections`). The variant resolver applies the appropriate removal strategy (key-based removal for fields with identifiers, full match for lists without keys). When components are removed, connections involving them are automatically filtered out.
 
 ### 4.4. Parameter Set Configuration (`.parameter_set.yaml`)
+
 Overrides parameters for specific nodes within the system hierarchy.
 **Fields:**
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
@@ -213,6 +221,7 @@ remove:
 ## 7. Examples
 
 ### Node Example (0.2.0)
+
 ```yaml
 autoware_system_design_format: 0.2.0
 name: Detector.node
@@ -331,7 +340,9 @@ parameters:
 The `autoware_system_designer` package provides CMake macros to automate the build and deployment process.
 
 ### `autoware_system_designer_build_deploy`
+
 Builds the entire system deployment.
+
 ```cmake
 autoware_system_designer_build_deploy(
   <project_name>
@@ -340,13 +351,17 @@ autoware_system_designer_build_deploy(
 ```
 
 ### `autoware_system_designer_generate_launcher`
+
 Generates individual node launchers from node configurations.
+
 ```cmake
 autoware_system_designer_generate_launcher()
 ```
 
 ### `autoware_system_designer_parameter`
+
 Generates parameter files from JSON schemas.
+
 ```cmake
 autoware_system_designer_parameter()
 ```
