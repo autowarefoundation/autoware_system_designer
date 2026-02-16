@@ -1,0 +1,75 @@
+name: Lint System Designs
+
+on:
+  pull_request:
+    paths:
+      - '**/*.node.yaml'
+      - '**/*.module.yaml'
+      - '**/*.system.yaml'
+      - '**/*.parameter_set.yaml'
+      - 'autoware_system_designer/**/*.py'
+      - 'autoware_system_designer/schema/**/*.json'
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.node.yaml'
+      - '**/*.module.yaml'
+      - '**/*.system.yaml'
+      - '**/*.parameter_set.yaml'
+      - 'autoware_system_designer/**/*.py'
+      - 'autoware_system_designer/schema/**/*.json'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          cd autoware_system_designer
+          pip install -r requirements.txt
+          pip install -e .
+      
+      - name: Find design files
+        id: find-files
+        run: |
+          cd ${{ github.workspace }}
+          find . -type f \( \
+            -name "*.node.yaml" \
+            -o -name "*.module.yaml" \
+            -o -name "*.system.yaml" \
+            -o -name "*.parameter_set.yaml" \
+          \) -not -path "./.git/*" -not -path "./build/*" -not -path "./install/*" > /tmp/design_files.txt || true
+          file_count=$(cat /tmp/design_files.txt | wc -l)
+          echo "files=$file_count" >> $GITHUB_OUTPUT
+          if [ "$file_count" -gt 0 ]; then
+            echo "Found $file_count design files to lint:"
+            cat /tmp/design_files.txt
+          else
+            echo "No design files found to lint"
+          fi
+      
+      - name: Run linter
+        id: lint
+        if: steps.find-files.outputs.files > 0
+        run: |
+          cd ${{ github.workspace }}/autoware_system_designer
+          python3 -m autoware_system_designer.linter.run_lint \
+            --format github-actions \
+            $(cat /tmp/design_files.txt | sed 's|^\./||' | tr '\n' ' ')
+        continue-on-error: true
+      
+      - name: Check lint results
+        if: steps.lint.outcome == 'failure'
+        run: |
+          echo "Linting failed. Please check the errors above."
+          exit 1
