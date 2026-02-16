@@ -1,0 +1,63 @@
+name: Lint Autoware System Design Format
+description: Lint autoware system design format YAML files (.node.yaml, .module.yaml, .system.yaml, .parameter_set.yaml)
+inputs:
+  design_files_path:
+    description: Path to directory containing design files to lint (relative to workspace root)
+    required: false
+    default: .
+  python_version:
+    description: Python version to use
+    required: false
+    default: "3.10"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install autoware_system_designer dependencies
+      run: |
+        pip install -r ${{ github.action_path }}/autoware_system_designer/requirements.txt
+        pip install -e ${{ github.action_path }}/autoware_system_designer
+      shell: bash
+
+    - name: Find design files
+      id: find-files
+      run: |
+        cd ${{ github.workspace }}
+        find ${{ inputs.design_files_path }} -type f \( \
+          -name "*.node.yaml" \
+          -o -name "*.module.yaml" \
+          -o -name "*.system.yaml" \
+          -o -name "*.parameter_set.yaml" \
+        \) -not -path "*/.git/*" -not -path "*/build/*" -not -path "*/install/*" > /tmp/design_files.txt || true
+        file_count=$(cat /tmp/design_files.txt | wc -l)
+        echo "files=$file_count" >> $GITHUB_OUTPUT
+        if [ "$file_count" -gt 0 ]; then
+          echo "Found $file_count design files to lint:"
+          cat /tmp/design_files.txt
+        else
+          echo "No design files found to lint"
+        fi
+      shell: bash
+
+    - name: Run linter
+      id: lint
+      if: steps.find-files.outputs.files > 0
+      run: |
+        cd ${{ github.workspace }}
+        python3 -m autoware_system_designer.linter.run_lint \
+          --format github-actions \
+          $(cat /tmp/design_files.txt | sed 's|^\./||' | tr '\n' ' ')
+      shell: bash
+      continue-on-error: true
+
+    - name: Check lint results
+      if: steps.lint.outcome == 'failure'
+      run: |
+        echo "Linting failed. Please check the errors above."
+        exit 1
+      shell: bash
