@@ -6,6 +6,8 @@
 
 Traditional ROS 2 launch files can become complex and hard to manage as a system grows. Autoware System Designer solves this by introducing a higher-level abstraction layer that separates **system design** from **deployment details**.
 
+![System Architecture Example](autoware_system_designer/doc/images/node_diagram.png)
+
 ### Key Features
 
 *   **Modular Architecture**: Define systems using reusable **Nodes** and **Modules**.
@@ -17,6 +19,8 @@ Traditional ROS 2 launch files can become complex and hard to manage as a system
 ## Core Concepts
 
 The system is built upon four main entity types:
+
+![Configuration Structure](autoware_system_designer/doc/images/configuration_structure.png)
 
 ### 1. Node (`*.node.yaml`)
 Represents a single ROS 2 node. It defines:
