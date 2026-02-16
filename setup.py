@@ -6,4 +6,6 @@ setup(
     description="Dummy package to satisfy pre-commit pip install .",
     packages=[],  # Explicitly empty to avoid auto-discovery errors
     py_modules=[], # Explicitly empty
+    package_data={"autoware_system_designer": ["schema/*.json"]},
+    include_package_data=True,
 )
