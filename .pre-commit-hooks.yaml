@@ -3,5 +3,4 @@
   description: Lint autoware system design format YAML files (.node.yaml, .module.yaml, .system.yaml, .parameter_set.yaml)
   entry: autoware-system-designer-lint
   language: python
-  additional_dependencies: [./autoware_system_designer, jsonschema]
   files: \.(node|module|system|parameter_set)\.yaml$
