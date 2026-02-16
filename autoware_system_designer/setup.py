@@ -62,7 +62,7 @@ setup(
         "console_scripts": [
             "autoware-system-designer-build=autoware_system_designer.cli.build:main",
             "autoware-system-designer-generate=autoware_system_designer.cli.generate:main",
-            "autoware-system-designer-lint=autoware_system_designer.cli.lint:main",
+            "autoware-system-designer-lint=autoware_system_designer.linter.run_lint:main",
         ],
     },
     classifiers=[
