@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: DetectorA.node
 
@@ -6,12 +6,12 @@ package:
   name: autoware_perception_dummy_nodes
   provider: dummy
 
-# launch:
-#   plugin: autoware::perception_dummy_nodes::DetectorA
-#   executable: detector_a_node
-#   node_output: screen
-#   use_container: true
-#   container_name: pointcloud_container
+launch:
+  plugin: autoware::perception_dummy_nodes::DetectorA
+  executable: detector_a_node
+  node_output: screen
+  use_container: true
+  container_name: pointcloud_container
 
 # interfaces
 inputs:
