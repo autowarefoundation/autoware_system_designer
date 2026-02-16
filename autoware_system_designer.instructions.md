@@ -1,15 +1,19 @@
 # Autoware System Designer Instruction Manifest
 
 ## 1. Role & Objective
+
 You are an AI coding assistant tasked with creating and managing Autoware System Designer (written in autoware_system_design_format). Your goal is to generate valid, modular, and consistent YAML configuration files that define the software architecture of an Autoware system.
 
 ## 2. File Format Version
+
 All YAML files MUST start with the format version specification. The tool supports files whose *major* version matches and whose *minor* version is less-than-or-equal-to `DESIGN_FORMAT_VERSION`. All entity types (Nodes, Modules, Systems, Parameter Sets) must use a version up to `DESIGN_FORMAT_VERSION`.
 
 **Note**: The supported format version is defined in `autoware_system_designer/__init__.py` as `DESIGN_FORMAT_VERSION`.
 
 ## 3. File System Organization
+
 Follow this directory structure for consistency (not mandatory).
+
 - **Root**: `src/<package_name>/design/`
 - **Nodes**: `src/<package_name>/design/node/` (suffix: `.node.yaml`)
 - **Modules**: `src/<package_name>/design/module/` (suffix: `.module.yaml`)
@@ -19,8 +23,10 @@ Follow this directory structure for consistency (not mandatory).
 ## 4. Configuration Entities & Schemas
 
 ### 4.1. Node Configuration (`.node.yaml`)
+
 Represents a single ROS 2 node.
 **Required Fields:**
+
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
 - `name`: Must match filename (e.g., `MyNode.node`).
 - `package`: Dictionary defining the ROS 2 package information.
@@ -36,7 +42,7 @@ Represents a single ROS 2 node.
 - `inputs`: List of input ports (subscribers).
   - `name`: Port name. Can include slashes (e.g., `perception/objects`).
   - `message_type`: Full ROS message type (e.g., `sensor_msgs/msg/PointCloud2`).
-  - `remap_target`: (Optional) The internal ROS 2 topic name used by the node. 
+  - `remap_target`: (Optional) The internal ROS 2 topic name used by the node.
     - **Default**: If not provided, it defaults to `~/input/<name>`.
     - **Required when**: The node implementation uses a specific topic name that does not follow the `~/input/` convention (e.g., legacy code or global topics like `/tf`).
   - `global`: (Optional) If set, the input topic subscribes to a global topic name (e.g., `/tf`).
@@ -72,8 +78,10 @@ Represents a single ROS 2 node.
     - `terminal`: Ends the chain (`terminal: null`).
 
 ### 4.2. Module Configuration (`.module.yaml`)
+
 Represents a composite component containing nodes or other modules.
 **Required Fields:**
+
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
 - `name`: Must match filename (e.g., `MyModule.module`).
 - `instances`: List of internal entities.
@@ -89,13 +97,16 @@ Represents a composite component containing nodes or other modules.
   - `to`: Destination port path.
 
 **Connection Syntax:**
+
 - **External Input to Internal Input**: `from: input.<external_input_port>` -> `to: <instance>.input.<port>`
 - **Internal Output to Internal Input**: `from: <instance_a>.output.<port>` -> `to: <instance_b>.input.<port>`
 - **Internal Output to External Output**: `from: <instance>.output.<port>` -> `to: output.<external_output_port>`
 
 ### 4.3. System Configuration (`.system.yaml`)
+
 Top-level entry point defining the complete system.
 **Required Fields:**
+
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
 - `name`: Must match filename (e.g., `MyCar.system`).
 - `variables`: List of system variables.
@@ -121,12 +132,15 @@ Top-level entry point defining the complete system.
 
 **Mode-Specific Overrides:**
 Each mode can define overrides using the mode name as a key:
+
 - `override`: Dictionary containing mode-specific overrides. All system configuration fields can be overridden (e.g., `variables`, `variable_files`, `modes`, `parameter_sets`, `components`, `connections`). The variant resolver applies the appropriate merge strategy for each field type (key-based replacement for fields with identifiers, append for lists without keys, dictionary merge for dictionaries).
 - `remove`: Dictionary specifying what to remove in this mode. All system configuration fields can be removed (e.g., `modes`, `parameter_sets`, `components`, `variables`, `connections`). The variant resolver applies the appropriate removal strategy (key-based removal for fields with identifiers, full match for lists without keys). When components are removed, connections involving them are automatically filtered out.
 
 ### 4.4. Parameter Set Configuration (`.parameter_set.yaml`)
+
 Overrides parameters for specific nodes within the system hierarchy.
 **Fields:**
+
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
 - `name`: Must match filename.
 - `parameters`: List of overrides.
@@ -144,12 +158,14 @@ The Autoware System Designer supports a base-variant pattern that allows you to 
 
 **Override Mechanism:**
 The `override` section merges items into the base configuration. Merge behavior depends on field type:
+
 - **Key-based merging** (lists with identifiable keys like `name`): Items with matching keys replace existing items; new keys are appended. Examples: `variables`, `modes`, `components`, `instances`, `inputs`, `outputs`, `parameters`, `processes`.
 - **Append-only merging** (lists without keys): All override items are appended. Examples: `connections`, `variable_files`, `parameter_sets`.
 - **Dictionary merging**: Fields are merged recursively (e.g., `launch` configuration in nodes).
 
 **Remove Mechanism:**
 The `remove` section removes specific items from the base configuration:
+
 - **Key-based removal**: Items are removed where `item[key_field]` matches `spec[key_field]`. For components/instances, connections involving removed entities are automatically filtered out.
 - **Full match removal** (lists without keys): Items are removed if they match all properties in the spec (e.g., `connections` require both `from` and `to`).
 
@@ -158,6 +174,7 @@ The `remove` section removes specific items from the base configuration:
 ### Examples
 
 **System-Level Variants** (mode-specific):
+
 ```yaml
 LoggingSimulation:
   override:
@@ -173,6 +190,7 @@ LoggingSimulation:
 ```
 
 **Node-Level Variants** (instance-level overrides):
+
 ```yaml
 instances:
   - name: detector
@@ -187,6 +205,7 @@ instances:
 ```
 
 **Module-Level Variants:**
+
 ```yaml
 override:
   instances:
@@ -201,18 +220,20 @@ remove:
 ```
 
 ## 6. Constraints & Validation Rules
-1.  **Type Safety**: Connected ports MUST have identical `message_type`.
-2.  **Single Publisher**: An `input` port can have multiple sources, but an `output` port (publisher) generally drives the topic. In AWArch, one topic is published by one node/port.
-3.  **Naming Convention**:
-    -   Files: `PascalCase.type.yaml` (e.g., `LidarDriver.node.yaml`).
-    -   Instance/Port Names: `snake_case` (e.g., `pointcloud_input`).
-4.  **Path Resolution**:
-    -   Use `$(find-pkg-share <package_name>)` for absolute ROS paths.
-    -   Relative paths are resolved relative to the package defining them.
+
+1. **Type Safety**: Connected ports MUST have identical `message_type`.
+2. **Single Publisher**: An `input` port can have multiple sources, but an `output` port (publisher) generally drives the topic. In AWArch, one topic is published by one node/port.
+3. **Naming Convention**:
+    - Files: `PascalCase.type.yaml` (e.g., `LidarDriver.node.yaml`).
+    - Instance/Port Names: `snake_case` (e.g., `pointcloud_input`).
+4. **Path Resolution**:
+    - Use `$(find-pkg-share <package_name>)` for absolute ROS paths.
+    - Relative paths are resolved relative to the package defining them.
 
 ## 7. Examples
 
 ### Node Example (0.2.0)
+
 ```yaml
 autoware_system_design_format: 0.2.0
 name: Detector.node
@@ -250,6 +271,7 @@ processes:
 ```
 
 ### Module Example (0.1.0)
+
 ```yaml
 autoware_system_design_format: 0.1.0
 name: DetectorA.module
@@ -276,6 +298,7 @@ connections:
 ```
 
 ### System Example (0.1.0)
+
 ```yaml
 autoware_system_design_format: 0.1.0
 name: AutowareSample.system
@@ -313,6 +336,7 @@ LoggingSimulation:
 ```
 
 ### Parameter Set Example (0.1.0)
+
 ```yaml
 autoware_system_design_format: 0.1.0
 name: PerceptionModuleA.parameter_set
@@ -328,10 +352,13 @@ parameters:
 ```
 
 ## 8. Build System Functions
+
 The `autoware_system_designer` package provides CMake macros to automate the build and deployment process.
 
 ### `autoware_system_designer_build_deploy`
+
 Builds the entire system deployment.
+
 ```cmake
 autoware_system_designer_build_deploy(
   <project_name>
@@ -340,13 +367,17 @@ autoware_system_designer_build_deploy(
 ```
 
 ### `autoware_system_designer_generate_launcher`
+
 Generates individual node launchers from node configurations.
+
 ```cmake
 autoware_system_designer_generate_launcher()
 ```
 
 ### `autoware_system_designer_parameter`
+
 Generates parameter files from JSON schemas.
+
 ```cmake
 autoware_system_designer_parameter()
 ```

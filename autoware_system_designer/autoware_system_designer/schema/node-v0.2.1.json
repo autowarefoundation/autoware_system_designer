@@ -1,0 +1,153 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Node Entity Schema v0.2.1",
+  "description": "Schema for autoware_system_design_format node entities",
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "autoware_system_design_format": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "base": {
+      "type": "string"
+    },
+    "override": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "remove": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "package": {
+      "type": "object",
+      "required": ["name", "provider"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "launch": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "inputs": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "message_type"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "message_type": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      ]
+    },
+    "outputs": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "message_type"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "message_type": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      ]
+    },
+    "parameter_files": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      ]
+    },
+    "parameters": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      ]
+    },
+    "processes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "trigger_conditions", "outcomes"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "trigger_conditions": {
+            "type": "array"
+          },
+          "outcomes": {
+            "type": "array"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true,
+  "if": {
+    "not": {
+      "required": ["base"]
+    }
+  },
+  "then": {
+    "required": ["package", "launch", "inputs", "outputs", "parameter_files", "parameters", "processes"]
+  }
+}

@@ -5,26 +5,31 @@ A VSCode extension that provides language server support for Autoware System Des
 ## Features
 
 ### Connection Validation
+
 - **Real-time validation** of connection references across files
 - **Message type compatibility** checking between ports
 - **Cross-file validation** ensures connections are valid
 
 ### Auto-completion
+
 - **Entity references** - Complete entity names when referencing nodes, modules, etc.
 - **Connection references** - Auto-complete port references (e.g., `instance.input.port_name`)
 - **Message types** - Common ROS 2 message types
 - **Parameter names** - Common parameter naming patterns
 
 ### Go-to-Definition
+
 - Jump to entity definitions from references
 - Navigate to port definitions in connected entities
 
 ### Hover Documentation
+
 - **Entity information** - Type, file location, and summary
 - **Port details** - Message types, QoS settings
 - **Connection context** - Instance/component relationships
 
 ### Diagnostics
+
 - **Error highlighting** for invalid connections
 - **Warning messages** for type mismatches
 - **Validation feedback** in real-time
@@ -113,7 +118,7 @@ The VSCode client (`src/extension.ts`) registers the language server and handles
 
 ### Project Structure
 
-```
+```text
 vscode-autoware-system-designer/
 ├── src/                    # TypeScript source files
 │   └── extension.ts       # Main extension entry point
@@ -152,4 +157,3 @@ npm run lint
 ## License
 
 Licensed under the Apache License, Version 2.0.
-

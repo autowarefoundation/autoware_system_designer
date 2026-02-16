@@ -3,8 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
+import jsonschema
+from jsonschema.exceptions import ValidationError
+
 from ..utils.parameter_types import normalize_type_name, is_supported_parameter_type
 from ..utils.format_version import check_format_version
+from .json_schema_loader import load_schema
 
 
 JsonPointer = str
@@ -80,36 +84,84 @@ def _type_name(types: Tuple[type, ...]) -> str:
 def validate_against_schema(
     data: Any,
     *,
-    schema: EntitySchema,
+    schema: EntitySchema = None,
+    entity_type: str = None,
+    format_version: str = None,
+    json_schema_dict: dict = None,
 ) -> List[SchemaIssue]:
+    """Validate data against schema.
+    
+    This function now supports both the legacy EntitySchema approach and
+    the new JSON Schema approach. If json_schema_dict is provided, it uses
+    JSON Schema validation. Otherwise, it falls back to the legacy approach.
+    
+    Args:
+        data: Data to validate
+        schema: Legacy EntitySchema (deprecated, use json_schema_dict instead)
+        entity_type: Entity type for JSON Schema loading
+        format_version: Format version for JSON Schema loading
+        json_schema_dict: JSON Schema dictionary to validate against
+        
+    Returns:
+        List of SchemaIssue objects
+    """
     issues: List[SchemaIssue] = []
 
     if not isinstance(data, dict):
         return [SchemaIssue(message="Root must be a mapping/object", yaml_path="")]
 
-    # Base required field checks
-    for key in schema.required_fields:
-        if key not in data:
-            issues.append(SchemaIssue(message=f"Missing required field '{key}'", yaml_path=_join_path("", key)))
-
-    if "base" not in data:
-        for key in schema.required_fields_when_no_base:
-            if key not in data:
-                issues.append(
-                    SchemaIssue(
-                        message=f"Missing required field '{key}' in base config (no 'base')",
-                        yaml_path=_join_path("", key),
-                    )
-                )
-
-    issues.extend(_validate_spec(schema.root, data, path=""))
-
-    # Semantic checks
-    for check in schema.semantic_checks:
+    # Use JSON Schema validation if provided
+    if json_schema_dict is not None:
         try:
-            issues.extend(list(check(data)))
-        except Exception as exc:
-            issues.append(SchemaIssue(message=f"Internal semantic check error: {exc}", yaml_path=""))
+            jsonschema.validate(instance=data, schema=json_schema_dict)
+        except ValidationError as e:
+            # Convert JSON Schema validation errors to SchemaIssue format
+            path = "/" + "/".join(str(p) for p in e.absolute_path) if e.absolute_path else ""
+            issues.append(SchemaIssue(message=e.message, yaml_path=path))
+        except Exception as e:
+            issues.append(SchemaIssue(message=f"JSON Schema validation error: {str(e)}", yaml_path=""))
+    elif entity_type is not None and format_version is not None:
+        # Load JSON Schema and validate
+        try:
+            json_schema = load_schema(entity_type, format_version)
+            try:
+                jsonschema.validate(instance=data, schema=json_schema)
+            except ValidationError as e:
+                path = "/" + "/".join(str(p) for p in e.absolute_path) if e.absolute_path else ""
+                issues.append(SchemaIssue(message=e.message, yaml_path=path))
+            except Exception as e:
+                issues.append(SchemaIssue(message=f"JSON Schema validation error: {str(e)}", yaml_path=""))
+        except FileNotFoundError as e:
+            issues.append(SchemaIssue(message=str(e), yaml_path=""))
+        except Exception as e:
+            issues.append(SchemaIssue(message=f"Failed to load JSON Schema: {str(e)}", yaml_path=""))
+    elif schema is not None:
+        # Legacy EntitySchema validation (deprecated)
+        # Base required field checks
+        for key in schema.required_fields:
+            if key not in data:
+                issues.append(SchemaIssue(message=f"Missing required field '{key}'", yaml_path=_join_path("", key)))
+
+        if "base" not in data:
+            for key in schema.required_fields_when_no_base:
+                if key not in data:
+                    issues.append(
+                        SchemaIssue(
+                            message=f"Missing required field '{key}' in base config (no 'base')",
+                            yaml_path=_join_path("", key),
+                        )
+                    )
+
+        issues.extend(_validate_spec(schema.root, data, path=""))
+
+        # Semantic checks
+        for check in schema.semantic_checks:
+            try:
+                issues.extend(list(check(data)))
+            except Exception as exc:
+                issues.append(SchemaIssue(message=f"Internal semantic check error: {exc}", yaml_path=""))
+    else:
+        issues.append(SchemaIssue(message="No schema provided for validation", yaml_path=""))
 
     return issues
 
@@ -465,3 +517,57 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
         )
 
     raise ValueError(f"Unknown entity type: {entity_type}")
+
+
+def get_semantic_checks(entity_type: str) -> Tuple[Callable[[Dict[str, Any]], Iterable[SchemaIssue]], ...]:
+    """Get semantic check functions for an entity type.
+    
+    Semantic checks are cross-field validation rules that cannot be
+    expressed in JSON Schema (e.g., "at least one of X, Y, or Z").
+    
+    Args:
+        entity_type: Entity type (node, module, system, parameter_set)
+        
+    Returns:
+        Tuple of semantic check functions
+    """
+    if entity_type == "node":
+        return (
+            _format_version_semantics,
+            _node_semantics,
+            _variant_forbidden_root_fields_semantics(
+                forbidden_fields=("package", "launch", "inputs", "outputs", "parameter_files", "parameters", "processes"),
+                message_prefix="Variant rule",
+            ),
+        )
+    elif entity_type == "module":
+        return (
+            _format_version_semantics,
+            _variant_forbidden_root_fields_semantics(
+                forbidden_fields=("instances", "external_interfaces", "connections"),
+                message_prefix="Variant rule",
+            ),
+        )
+    elif entity_type == "parameter_set":
+        return (
+            _format_version_semantics,
+            _parameter_set_semantics,
+        )
+    elif entity_type == "system":
+        return (
+            _format_version_semantics,
+            _variant_forbidden_root_fields_semantics(
+                forbidden_fields=(
+                    "modes",
+                    "parameter_sets",
+                    "components",
+                    "connections",
+                    "arguments",
+                    "variables",
+                    "variable_files",
+                ),
+                message_prefix="Variant rule",
+            ),
+        )
+    else:
+        return (_format_version_semantics,)

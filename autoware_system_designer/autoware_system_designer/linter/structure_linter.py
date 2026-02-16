@@ -24,7 +24,8 @@ from typing import Any, Dict
 from ..models.parsing.yaml_parser import yaml_parser
 from ..models.parsing.data_validator import entity_name_decode
 from ..file_io.source_location import SourceLocation, lookup_source, format_source
-from ..models.yaml_schema import get_entity_schema, validate_against_schema
+from ..models.yaml_schema import validate_against_schema, get_semantic_checks
+from ..models.json_schema_loader import load_schema
 from ..utils.format_version import check_format_version
 from .report import LintResult
 
@@ -133,14 +134,37 @@ class StructureLinter:
                     yaml_path=name_loc.yaml_path,
                 )
 
-            # Schema-driven validation (single source of truth)
+            # Schema-driven validation using JSON Schema (single source of truth)
+            format_version = raw_version or "0.2.0"  # Default to 0.2.0 if not specified
+            
+            # Load JSON Schema
             try:
-                schema = get_entity_schema(entity_type)
+                json_schema = load_schema(entity_type, format_version)
+            except FileNotFoundError as e:
+                result.add_error(f"Schema file not found: {str(e)}")
+                return
             except Exception as e:
-                result.add_error(f"Unknown entity type '{entity_type}': {e}")
+                result.add_error(f"Failed to load schema: {str(e)}")
                 return
 
-            issues = validate_against_schema(config, schema=schema)
+            # Validate against JSON Schema
+            issues = validate_against_schema(
+                config,
+                entity_type=entity_type,
+                format_version=format_version,
+                json_schema_dict=json_schema,
+            )
+            
+            # Run semantic checks (cross-field validation that JSON Schema can't express)
+            semantic_checks = get_semantic_checks(entity_type)
+            for check in semantic_checks:
+                try:
+                    semantic_issues = list(check(config))
+                    issues.extend(semantic_issues)
+                except Exception as exc:
+                    result.add_error(f"Semantic check error: {str(exc)}")
+            
+            # Report issues
             for issue in issues:
                 # Skip format-version issues here; already reported above
                 # with proper warning/error distinction.
