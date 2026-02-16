@@ -1,4 +1,4 @@
-name: Lint System Designs
+name: Lint Autoware System Design Format
 
 on:
   pull_request:
