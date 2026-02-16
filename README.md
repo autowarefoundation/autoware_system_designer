@@ -38,9 +38,10 @@ A container for grouping nodes and other sub-modules. It defines:
 
 ### 3. System (`*.system.yaml`)
 The top-level description of a complete autonomous driving system. It defines:
-*   **Components**: Top-level modules (e.g., Sensing, Perception, Planning).
-*   **Hardware Mapping**: ECU assignment for each component.
-*   **Modes**: Operation modes (e.g., Default, Simulation).
+*   **Variables**: System-wide configuration variables and variable files.
+*   **Components**: Top-level nodes/modules with compute unit assignment, namespaces, and parameter sets.
+*   **Connections**: Data flow between components.
+*   **Modes**: Operation modes (e.g., Runtime, Simulation) with mode-specific overrides.
 
 ### 4. Parameter Set (`*.parameter_set.yaml`)
 A collection of parameter overrides that can be applied to specific nodes in a system, allowing for flexible configuration management without modifying the core node definitions.
