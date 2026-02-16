@@ -42,6 +42,7 @@ setup(
     ],
     package_data={
         "autoware_system_designer": [
+            "schema/*.json",
             "template/**/*",
             "ros2_launcher/templates/**/*",
             "visualization/templates/**/*",
