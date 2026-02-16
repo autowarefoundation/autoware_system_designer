@@ -1,8 +1,7 @@
-- id: lint-system-designs
-  name: Lint System Design Files
-  description: Lint autoware_system_design_format YAML files
+- id: lint-system-design-format
+  name: Lint Autoware System Design Format
+  description: Lint autoware system design format YAML files (.node.yaml, .module.yaml, .system.yaml, .parameter_set.yaml)
   entry: autoware-system-designer-lint
   language: python
-  types: [yaml]
+  additional_dependencies: [./autoware_system_designer, jsonschema]
   files: \.(node|module|system|parameter_set)\.yaml$
-  require_serial: false
