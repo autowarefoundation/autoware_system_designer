@@ -95,6 +95,29 @@ autoware_system_designer_build_deploy(
 )
 ```
 
+
+## Use as an independent workspace
+
+```sh
+# make workspace and git clone
+cd ~/workspace
+git clone git@github.com:autowarefoundation/autoware_system_designer.git autoware_system_designer/src
+cd autoware_system_designer
+
+# set dependency
+source /opt/ros/$ROS_DISTRO/setup.bash
+rosdep update
+rosdep install -y --from-paths src --ignore-src --rosdistro $ROS_DISTRO
+
+# build
+colcon build
+
+# open visualization page (use your web browser)
+firefox install/systems.html
+google-chrome install/systems.html
+```
+
+
 ## Glossary
 
 ### Entity Definitions
