@@ -25,7 +25,6 @@ outputs:
       reliability: reliable
       durability: transient_local
 
-# parameters
 parameter_files:
   - name: model_param_path
     default: path/to/model_param.yaml

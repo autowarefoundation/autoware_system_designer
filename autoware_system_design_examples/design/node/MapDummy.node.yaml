@@ -28,7 +28,6 @@ outputs:
   - name: get_partial_pointcloud_map
     message_type: autoware_map_msgs/srv/GetPartialPointCloudMap
 
-# parameters
 parameter_files: []
 
 parameters: []

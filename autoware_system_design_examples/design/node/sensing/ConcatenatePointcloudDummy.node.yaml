@@ -35,7 +35,6 @@ outputs:
   - name: output
     message_type: sensor_msgs/msg/PointCloud2
 
-# parameters
 parameter_files:
   - name: param_file
     default: config/concatenate_pointclouds.param.yaml

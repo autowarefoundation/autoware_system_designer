@@ -268,10 +268,10 @@ processes:
       - to_output: objects
 ```
 
-### Module Example (0.1.0)
+### Module Example (0.3.0)
 
 ```yaml
-autoware_system_design_format: 0.1.0
+autoware_system_design_format: 0.3.0
 name: DetectorA.module
 instances:
   - name: node_detector
@@ -279,10 +279,10 @@ instances:
   - name: node_filter
     entity: FilterA.node
 inputs:
-    - name: pointcloud
-    - name: vector_map
-  outputs:
-    - name: objects
+  - name: pointcloud
+  - name: vector_map
+outputs:
+  - name: objects
 connections:
   - from: input.pointcloud
     to: node_detector.input.pointcloud

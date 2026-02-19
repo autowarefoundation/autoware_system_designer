@@ -28,7 +28,6 @@ outputs:
       reliability: reliable
       durability: transient_local
 
-# parameters
 parameter_files:
   - name: filtering_range_param
     default: path/to/filtering_range_param.yaml

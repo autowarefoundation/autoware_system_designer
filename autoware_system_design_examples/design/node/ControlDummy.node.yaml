@@ -29,7 +29,6 @@ outputs:
   - name: command/turn_indicators_cmd
     message_type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
 
-# parameters
 parameter_files: []
 parameters: []
 
