@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "System Entity Schema v0.2.1",
+  "title": "System Entity Schema 0.2.1",
   "description": "Schema for autoware_system_design_format system entities",
   "type": "object",
   "required": ["name"],

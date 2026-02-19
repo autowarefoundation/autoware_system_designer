@@ -99,7 +99,18 @@ def resolve_schema_version(entity_type: str, version: str) -> str:
         best_version = max(same_minor_versions, key=lambda v: v.patch)
         return str(best_version)
 
-    # Use the largest available version (highest minor, then highest patch)
+    # If no same minor version, look for larger minor versions (closest larger)
+    larger_minor_versions = [v for v in available_versions if v.minor > parsed_version.minor]
+    if larger_minor_versions:
+        # Find the smallest minor version among the larger ones
+        min_larger_minor = min(v.minor for v in larger_minor_versions)
+        # Get all versions with that minor
+        closest_minor_versions = [v for v in larger_minor_versions if v.minor == min_larger_minor]
+        # Use largest patch within that minor
+        best_version = max(closest_minor_versions, key=lambda v: v.patch)
+        return str(best_version)
+
+    # Fallback: Use the largest available version (highest minor, then highest patch)
     largest_version = max(available_versions, key=lambda v: (v.minor, v.patch))
     return str(largest_version)
 
