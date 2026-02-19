@@ -14,7 +14,7 @@
 
 """Autoware System Designer Package."""
 
-__version__ = "1.0.0"
+__version__ = "0.3.0"
 
 # The autoware_system_design_format version supported by this tool.
 # YAML design files declare their format version via the
