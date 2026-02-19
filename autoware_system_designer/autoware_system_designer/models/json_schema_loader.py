@@ -37,7 +37,7 @@ def get_schema_path(entity_type: str, version: str) -> Path:
     """
     # Get the directory containing this module
     schema_dir = Path(__file__).parent.parent / "schema"
-    return schema_dir / f"{entity_type}-v{version}.json"
+    return schema_dir / version / f"{entity_type}.json"
 
 
 def resolve_schema_version(entity_type: str, version: str) -> str:
@@ -72,24 +72,33 @@ def resolve_schema_version(entity_type: str, version: str) -> str:
     schema_dir = Path(__file__).parent.parent / "schema"
     available_versions = []
     
-    # Look for all schema files matching the pattern
-    pattern = f"{entity_type}-v{parsed_version.major}.*.json"
-    for schema_file in schema_dir.glob(pattern):
-        # Extract version from filename: entity_type-vX.Y.Z.json
+    # Look for all version directories
+    for version_dir in schema_dir.iterdir():
+        if not version_dir.is_dir():
+            continue
+            
         try:
-            version_part = schema_file.stem.replace(f"{entity_type}-v", "")
-            file_version = parse_format_version(version_part)
+            dir_version = parse_format_version(version_dir.name)
             # Only consider versions with matching major version
-            if file_version.major == parsed_version.major:
-                available_versions.append(file_version)
+            if dir_version.major == parsed_version.major:
+                # Check if the entity schema exists in this version
+                if (version_dir / f"{entity_type}.json").exists():
+                    available_versions.append(dir_version)
         except Exception:
-            # Skip files that don't match the version pattern
+            # Skip directories that don't match the version pattern
             continue
     
     if not available_versions:
         # No schemas found for this major version, return original (will cause error)
         return version
     
+    # Prefer same minor version
+    same_minor_versions = [v for v in available_versions if v.minor == parsed_version.minor]
+    if same_minor_versions:
+        # Use largest patch within same minor
+        best_version = max(same_minor_versions, key=lambda v: v.patch)
+        return str(best_version)
+
     # Use the largest available version (highest minor, then highest patch)
     largest_version = max(available_versions, key=lambda v: (v.minor, v.patch))
     return str(largest_version)
