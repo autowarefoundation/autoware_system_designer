@@ -42,7 +42,6 @@ parameters:
     type: array
     default: "[${input object1}, ${input object2}, ${input object3}, ${input object4}, ${input object5}, ${input object6}]"
 
-
 # processes
 processes:
   - name: merger

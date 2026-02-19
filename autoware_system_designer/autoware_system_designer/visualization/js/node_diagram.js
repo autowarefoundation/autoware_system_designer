@@ -2,301 +2,334 @@
 // This module provides functionality to render node diagrams in a given container
 
 class NodeDiagramModule extends DiagramBase {
-    constructor(container, options = {}) {
-        super(container, options);
+  constructor(container, options = {}) {
+    super(container, options);
 
-        this.currentGraph = null;
-        this.transform = { x: 0, y: 0, k: 1 };
-        this.isDragging = false;
-        this.startPoint = { x: 0, y: 0 };
-        this.elementData = new Map();
-        this.portToEdges = new Map();
+    this.currentGraph = null;
+    this.transform = { x: 0, y: 0, k: 1 };
+    this.isDragging = false;
+    this.startPoint = { x: 0, y: 0 };
+    this.elementData = new Map();
+    this.portToEdges = new Map();
 
-        // Color presets will be initialized in renderNodeDiagram when computedStyle is available
-        this.colorPresets = null;
+    // Color presets will be initialized in renderNodeDiagram when computedStyle is available
+    this.colorPresets = null;
 
-        this.init();
+    this.init();
+  }
+
+  async init() {
+    // Load required libraries if not already loaded
+    if (typeof ELK === "undefined") {
+      console.log("Loading ELK.js library...");
+      await this.loadScript("https://unpkg.com/elkjs@0.8.2/lib/elk.bundled.js");
+
+      // Wait a bit for the script to be fully parsed
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify ELK is now available
+      if (typeof ELK === "undefined") {
+        throw new Error(
+          "ELK library failed to load - ELK is still undefined after script load",
+        );
+      }
     }
 
-    async init() {
-        // Load required libraries if not already loaded
-        if (typeof ELK === 'undefined') {
-            console.log('Loading ELK.js library...');
-            await this.loadScript('https://unpkg.com/elkjs@0.8.2/lib/elk.bundled.js');
-
-            // Wait a bit for the script to be fully parsed
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            // Verify ELK is now available
-            if (typeof ELK === 'undefined') {
-                throw new Error('ELK library failed to load - ELK is still undefined after script load');
-            }
-        }
-
-        // Initialize ELK - handle different export patterns
-        let elkConstructor = null;
-        if (typeof ELK === 'function') {
-            elkConstructor = ELK;
-        } else if (typeof ELK !== 'undefined' && ELK.default) {
-            elkConstructor = ELK.default;
-        } else if (typeof ELK !== 'undefined') {
-            // Try to find constructor in ELK object
-            elkConstructor = ELK.ELK || ELK.Elk || ELK;
-        }
-
-        if (!elkConstructor) {
-            console.error('ELK object:', ELK);
-            console.error('typeof ELK:', typeof ELK);
-            throw new Error('ELK library loaded but constructor not found');
-        }
-
-        try {
-            this.elk = new elkConstructor();
-            console.log('ELK initialized successfully');
-        } catch (e) {
-            console.error('Failed to create ELK instance:', e);
-            throw new Error('Failed to create ELK instance: ' + e.message);
-        }
-
-        // Load and render the diagram
-        await this.loadAndRender();
+    // Initialize ELK - handle different export patterns
+    let elkConstructor = null;
+    if (typeof ELK === "function") {
+      elkConstructor = ELK;
+    } else if (typeof ELK !== "undefined" && ELK.default) {
+      elkConstructor = ELK.default;
+    } else if (typeof ELK !== "undefined") {
+      // Try to find constructor in ELK object
+      elkConstructor = ELK.ELK || ELK.Elk || ELK;
     }
 
-    async loadAndRender() {
-        try {
-            // Load data if not already loaded
-            if (!window.systemDesignData || !window.systemDesignData[this.options.mode]) {
-                await this.loadDataScript(this.options.mode, 'node_diagram');
-            }
-
-            if (!window.systemDesignData || !window.systemDesignData[this.options.mode]) {
-                throw new Error(`No data available for mode: ${this.options.mode}`);
-            }
-
-            // Transform and render
-            const elkGraph = this.transformDataToElk(window.systemDesignData[this.options.mode]);
-            await this.layoutAndRenderNodeDiagram(elkGraph);
-
-        } catch (error) {
-            console.error('Error loading node diagram:', error);
-            this.showError(`Error loading node diagram: ${error.message}`);
-        }
+    if (!elkConstructor) {
+      console.error("ELK object:", ELK);
+      console.error("typeof ELK:", typeof ELK);
+      throw new Error("ELK library loaded but constructor not found");
     }
 
-    transformDataToElk(root) {
-        this.elementData.clear();
-        this.portToEdges.clear();
-
-        function convertNode(instance) {
-            if (!instance || !instance.unique_id) return null;
-
-            const nodeId = String(instance.unique_id);
-            this.elementData.set(nodeId, instance);
-
-            const inPortsCount = (instance.in_ports || []).length;
-            const outPortsCount = (instance.out_ports || []).length;
-            const maxPorts = Math.max(inPortsCount, outPortsCount);
-            const nodeHeight = Math.max(100, 80 + maxPorts * 25);
-
-            const node = {
-                id: nodeId,
-                labels: [
-                    { text: (instance.namespace && instance.namespace.join('/')) || "" },
-                    { text: instance.name || nodeId || "Unnamed" }
-                ],
-                width: 300,
-                height: nodeHeight,
-                children: [],
-                ports: [],
-                properties: {
-                    'org.eclipse.elk.portConstraints': 'FIXED_SIDE',
-                    'org.eclipse.elk.nodeLabels.placement': 'H_CENTER V_TOP',
-                    'org.eclipse.elk.portLabels.placement': 'INSIDE',
-                    'org.eclipse.elk.portAlignment.default': 'CENTER',
-                    'org.eclipse.elk.spacing.portPort': '15'
-                }
-            };
-
-            // Add ports
-            (instance.in_ports || []).forEach(port => {
-                if (!port.unique_id) return;
-                const portId = String(port.unique_id);
-                this.elementData.set(portId, port);
-                node.ports.push({
-                    id: portId,
-                    width: 10,
-                    height: 10,
-                    properties: { 'org.eclipse.elk.port.side': 'WEST' },
-                    labels: [{ text: port.name || "Port", width: ((port.name && port.name.length) || 4) * 6, height: 10 }]
-                });
-            });
-
-            (instance.out_ports || []).forEach(port => {
-                if (!port.unique_id) return;
-                const portId = String(port.unique_id);
-                this.elementData.set(portId, port);
-                node.ports.push({
-                    id: portId,
-                    width: 10,
-                    height: 10,
-                    properties: { 'org.eclipse.elk.port.side': 'EAST' },
-                    labels: [{ text: port.name || "Port", width: ((port.name && port.name.length) || 4) * 6, height: 10 }]
-                });
-            });
-
-            // Add children
-            if (instance.children && instance.children.length > 0) {
-                node.children = instance.children.map(convertNode.bind(this)).filter(n => n);
-                if (node.children.length > 0) {
-                    delete node.width;
-                    delete node.height;
-                }
-            }
-
-            // Add links
-            if (instance.links) {
-                node.edges = instance.links.map((link, index) => {
-                    if (!link.from_port || !link.to_port) return null;
-                    const edgeId = link.unique_id;
-                    this.elementData.set(edgeId, link);
-
-                    // Index edges for connectivity highlighting
-                    const fromId = String(link.from_port.unique_id);
-                    const toId = String(link.to_port.unique_id);
-                    
-                    if (!this.portToEdges.has(fromId)) this.portToEdges.set(fromId, []);
-                    this.portToEdges.get(fromId).push(edgeId);
-                    
-                    if (!this.portToEdges.has(toId)) this.portToEdges.set(toId, []);
-                    this.portToEdges.get(toId).push(edgeId);
-
-                    return {
-                        id: edgeId,
-                        sources: [fromId],
-                        targets: [toId],
-                        properties: {}
-                    };
-                }).filter(e => e);
-            }
-
-            return node;
-        }
-
-        const rootNode = convertNode.call(this, root);
-        if (rootNode) {
-            delete rootNode.width;
-            delete rootNode.height;
-            if (!rootNode.id) rootNode.id = 'root';
-        }
-
-        return rootNode;
+    try {
+      this.elk = new elkConstructor();
+      console.log("ELK initialized successfully");
+    } catch (e) {
+      console.error("Failed to create ELK instance:", e);
+      throw new Error("Failed to create ELK instance: " + e.message);
     }
 
-    async layoutAndRenderNodeDiagram(graphData) {
-        if (!this.elk) {
-            throw new Error('ELK instance not initialized');
-        }
+    // Load and render the diagram
+    await this.loadAndRender();
+  }
 
-        const graph = await this.elk.layout(graphData, {
-            layoutOptions: {
-                'algorithm': 'layered',
-                'org.eclipse.elk.direction': 'RIGHT',
-                'org.eclipse.elk.spacing.nodeNode': '60',
-                'org.eclipse.elk.spacing.edgeNode': '30',
-                'org.eclipse.elk.edgeRouting': 'ORTHOGONAL',
-                'org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers': '30',
-                'org.eclipse.elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-                'org.eclipse.elk.layered.layering.strategy': 'INTERACTIVE',
-                'org.eclipse.elk.padding': '[top=50,left=50,bottom=50,right=50]'
-            }
+  async loadAndRender() {
+    try {
+      // Load data if not already loaded
+      if (
+        !window.systemDesignData ||
+        !window.systemDesignData[this.options.mode]
+      ) {
+        await this.loadDataScript(this.options.mode, "node_diagram");
+      }
+
+      if (
+        !window.systemDesignData ||
+        !window.systemDesignData[this.options.mode]
+      ) {
+        throw new Error(`No data available for mode: ${this.options.mode}`);
+      }
+
+      // Transform and render
+      const elkGraph = this.transformDataToElk(
+        window.systemDesignData[this.options.mode],
+      );
+      await this.layoutAndRenderNodeDiagram(elkGraph);
+    } catch (error) {
+      console.error("Error loading node diagram:", error);
+      this.showError(`Error loading node diagram: ${error.message}`);
+    }
+  }
+
+  transformDataToElk(root) {
+    this.elementData.clear();
+    this.portToEdges.clear();
+
+    function convertNode(instance) {
+      if (!instance || !instance.unique_id) return null;
+
+      const nodeId = String(instance.unique_id);
+      this.elementData.set(nodeId, instance);
+
+      const inPortsCount = (instance.in_ports || []).length;
+      const outPortsCount = (instance.out_ports || []).length;
+      const maxPorts = Math.max(inPortsCount, outPortsCount);
+      const nodeHeight = Math.max(100, 80 + maxPorts * 25);
+
+      const node = {
+        id: nodeId,
+        labels: [
+          { text: (instance.namespace && instance.namespace.join("/")) || "" },
+          { text: instance.name || nodeId || "Unnamed" },
+        ],
+        width: 300,
+        height: nodeHeight,
+        children: [],
+        ports: [],
+        properties: {
+          "org.eclipse.elk.portConstraints": "FIXED_SIDE",
+          "org.eclipse.elk.nodeLabels.placement": "H_CENTER V_TOP",
+          "org.eclipse.elk.portLabels.placement": "INSIDE",
+          "org.eclipse.elk.portAlignment.default": "CENTER",
+          "org.eclipse.elk.spacing.portPort": "15",
+        },
+      };
+
+      // Add ports
+      (instance.in_ports || []).forEach((port) => {
+        if (!port.unique_id) return;
+        const portId = String(port.unique_id);
+        this.elementData.set(portId, port);
+        node.ports.push({
+          id: portId,
+          width: 10,
+          height: 10,
+          properties: { "org.eclipse.elk.port.side": "WEST" },
+          labels: [
+            {
+              text: port.name || "Port",
+              width: ((port.name && port.name.length) || 4) * 6,
+              height: 10,
+            },
+          ],
         });
+      });
 
-        this.renderNodeDiagram(graph);
-        this.fitToScreen();
+      (instance.out_ports || []).forEach((port) => {
+        if (!port.unique_id) return;
+        const portId = String(port.unique_id);
+        this.elementData.set(portId, port);
+        node.ports.push({
+          id: portId,
+          width: 10,
+          height: 10,
+          properties: { "org.eclipse.elk.port.side": "EAST" },
+          labels: [
+            {
+              text: port.name || "Port",
+              width: ((port.name && port.name.length) || 4) * 6,
+              height: 10,
+            },
+          ],
+        });
+      });
+
+      // Add children
+      if (instance.children && instance.children.length > 0) {
+        node.children = instance.children
+          .map(convertNode.bind(this))
+          .filter((n) => n);
+        if (node.children.length > 0) {
+          delete node.width;
+          delete node.height;
+        }
+      }
+
+      // Add links
+      if (instance.links) {
+        node.edges = instance.links
+          .map((link, index) => {
+            if (!link.from_port || !link.to_port) return null;
+            const edgeId = link.unique_id;
+            this.elementData.set(edgeId, link);
+
+            // Index edges for connectivity highlighting
+            const fromId = String(link.from_port.unique_id);
+            const toId = String(link.to_port.unique_id);
+
+            if (!this.portToEdges.has(fromId)) this.portToEdges.set(fromId, []);
+            this.portToEdges.get(fromId).push(edgeId);
+
+            if (!this.portToEdges.has(toId)) this.portToEdges.set(toId, []);
+            this.portToEdges.get(toId).push(edgeId);
+
+            return {
+              id: edgeId,
+              sources: [fromId],
+              targets: [toId],
+              properties: {},
+            };
+          })
+          .filter((e) => e);
+      }
+
+      return node;
     }
 
-    renderNodeDiagram(graph) {
-        this.container.innerHTML = '';
+    const rootNode = convertNode.call(this, root);
+    if (rootNode) {
+      delete rootNode.width;
+      delete rootNode.height;
+      if (!rootNode.id) rootNode.id = "root";
+    }
 
-        // Create SVG root
-        const svgRoot = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svgRoot.setAttribute("width", "100%");
-        svgRoot.setAttribute("height", "100%");
-        svgRoot.style.width = "100%";
-        svgRoot.style.height = "100%";
-        svgRoot.style.cursor = "grab";
+    return rootNode;
+  }
 
-        const svg = document.createElementNS("http://www.w3.org/2000/svg", "g");
-        svg.id = 'zoom-layer';
-        svgRoot.appendChild(svg);
-        this.container.appendChild(svgRoot);
+  async layoutAndRenderNodeDiagram(graphData) {
+    if (!this.elk) {
+      throw new Error("ELK instance not initialized");
+    }
 
-        // Add zoom/pan functionality
-        this.setupZoomPan(svgRoot, svg);
+    const graph = await this.elk.layout(graphData, {
+      layoutOptions: {
+        algorithm: "layered",
+        "org.eclipse.elk.direction": "RIGHT",
+        "org.eclipse.elk.spacing.nodeNode": "60",
+        "org.eclipse.elk.spacing.edgeNode": "30",
+        "org.eclipse.elk.edgeRouting": "ORTHOGONAL",
+        "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": "30",
+        "org.eclipse.elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+        "org.eclipse.elk.layered.layering.strategy": "INTERACTIVE",
+        "org.eclipse.elk.padding": "[top=50,left=50,bottom=50,right=50]",
+      },
+    });
 
-        // Add arrow marker
-        const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    this.renderNodeDiagram(graph);
+    this.fitToScreen();
+  }
 
-        const computedStyle = getComputedStyle(document.documentElement);
+  renderNodeDiagram(graph) {
+    this.container.innerHTML = "";
 
-        // Initialize color presets using computed style
-        this.colorPresets = {
-            default: {
-                name: 'default',
-                edge: computedStyle.getPropertyValue('--highlight').trim() || "#0d6efd",
-                port: computedStyle.getPropertyValue('--highlight').trim() || "#0d6efd"
-            },
-            red: {
-                name: 'red',
-                edge: "#dc3545",
-                port: "#dc3545"
-            },
-            green: {
-                name: 'green',
-                edge: "#28a745",
-                port: "#28a745"
-            },
-            orange: {
-                name: 'orange',
-                edge: "#fd7e14",
-                port: "#fd7e14"
-            },
-            purple: {
-                name: 'purple',
-                edge: "#6f42c1",
-                port: "#6f42c1"
-            },
-            teal: {
-                name: 'teal',
-                edge: "#20c997",
-                port: "#20c997"
-            }
-        };
-        
-        // Cache style defaults for renderNode
-        this.styleDefaults = {
-            dark: {
-                bg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#2d2d2d",
-                nodeBg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#2d2d2d", // Fallback for node
-                stroke: computedStyle.getPropertyValue('--text-muted').trim() || "#666",
-                text: computedStyle.getPropertyValue('--text-primary').trim() || "#e9ecef",
-                rootBg: "#1e1e1e" // Distinct background for root node in dark mode
-            },
-            light: {
-                bg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#ffffff",
-                nodeBg: computedStyle.getPropertyValue('--bg-secondary').trim() || "#ffffff",
-                stroke: "#333", // Usually darker than text-primary
-                text: computedStyle.getPropertyValue('--text-primary').trim() || "#333",
-                rootBg: "#f5f5f5"
-            }
-        };
+    // Create SVG root
+    const svgRoot = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "svg",
+    );
+    svgRoot.setAttribute("width", "100%");
+    svgRoot.setAttribute("height", "100%");
+    svgRoot.style.width = "100%";
+    svgRoot.style.height = "100%";
+    svgRoot.style.cursor = "grab";
 
-        const arrowColor = this.isDarkMode() ?
-            (computedStyle.getPropertyValue('--text-muted').trim() || "#6c757d") :
-            (computedStyle.getPropertyValue('--border-hover').trim() || "#adb5bd");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    svg.id = "zoom-layer";
+    svgRoot.appendChild(svg);
+    this.container.appendChild(svgRoot);
 
-        // Create markers for default and all color presets
-        let markersHtml = `
+    // Add zoom/pan functionality
+    this.setupZoomPan(svgRoot, svg);
+
+    // Add arrow marker
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+
+    const computedStyle = getComputedStyle(document.documentElement);
+
+    // Initialize color presets using computed style
+    this.colorPresets = {
+      default: {
+        name: "default",
+        edge: computedStyle.getPropertyValue("--highlight").trim() || "#0d6efd",
+        port: computedStyle.getPropertyValue("--highlight").trim() || "#0d6efd",
+      },
+      red: {
+        name: "red",
+        edge: "#dc3545",
+        port: "#dc3545",
+      },
+      green: {
+        name: "green",
+        edge: "#28a745",
+        port: "#28a745",
+      },
+      orange: {
+        name: "orange",
+        edge: "#fd7e14",
+        port: "#fd7e14",
+      },
+      purple: {
+        name: "purple",
+        edge: "#6f42c1",
+        port: "#6f42c1",
+      },
+      teal: {
+        name: "teal",
+        edge: "#20c997",
+        port: "#20c997",
+      },
+    };
+
+    // Cache style defaults for renderNode
+    this.styleDefaults = {
+      dark: {
+        bg:
+          computedStyle.getPropertyValue("--bg-secondary").trim() || "#2d2d2d",
+        nodeBg:
+          computedStyle.getPropertyValue("--bg-secondary").trim() || "#2d2d2d", // Fallback for node
+        stroke: computedStyle.getPropertyValue("--text-muted").trim() || "#666",
+        text:
+          computedStyle.getPropertyValue("--text-primary").trim() || "#e9ecef",
+        rootBg: "#1e1e1e", // Distinct background for root node in dark mode
+      },
+      light: {
+        bg:
+          computedStyle.getPropertyValue("--bg-secondary").trim() || "#ffffff",
+        nodeBg:
+          computedStyle.getPropertyValue("--bg-secondary").trim() || "#ffffff",
+        stroke: "#333", // Usually darker than text-primary
+        text: computedStyle.getPropertyValue("--text-primary").trim() || "#333",
+        rootBg: "#f5f5f5",
+      },
+    };
+
+    const arrowColor = this.isDarkMode()
+      ? computedStyle.getPropertyValue("--text-muted").trim() || "#6c757d"
+      : computedStyle.getPropertyValue("--border-hover").trim() || "#adb5bd";
+
+    // Create markers for default and all color presets
+    let markersHtml = `
             <marker id="arrowhead" markerWidth="10" markerHeight="7"
             refX="10" refY="3.5" orient="auto">
               <polygon points="0 0, 10 3.5, 0 7" fill="${arrowColor}" />
@@ -307,469 +340,546 @@ class NodeDiagramModule extends DiagramBase {
             </marker>
         `;
 
-        // Add markers for other color presets
-        Object.keys(this.colorPresets).forEach(preset => {
-            if (preset !== 'default') {
-                markersHtml += `
+    // Add markers for other color presets
+    Object.keys(this.colorPresets).forEach((preset) => {
+      if (preset !== "default") {
+        markersHtml += `
             <marker id="arrowhead-highlighted-${preset}" markerWidth="10" markerHeight="7"
             refX="10" refY="3.5" orient="auto">
               <polygon points="0 0, 10 3.5, 0 7" fill="${this.colorPresets[preset].edge}" />
             </marker>
         `;
-            }
-        });
+      }
+    });
 
-        defs.innerHTML = markersHtml;
-        svgRoot.insertBefore(defs, svg);
+    defs.innerHTML = markersHtml;
+    svgRoot.insertBefore(defs, svg);
 
-        this.renderNode(graph, svg);
-        this.currentGraph = graph;
-        this.currentSvg = svg;
-        this.currentSvgRoot = svgRoot;
+    this.renderNode(graph, svg);
+    this.currentGraph = graph;
+    this.currentSvg = svg;
+    this.currentSvgRoot = svgRoot;
+  }
+
+  setupZoomPan(svgRoot, svg) {
+    svgRoot.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const zoomIntensity = 0.1;
+      const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
+      const oldScale = this.transform.k;
+      const proposedScale = oldScale * (1 + delta);
+      const newScale = Math.min(Math.max(proposedScale, 0.03), 5);
+      const scaleRatio = newScale / oldScale;
+
+      const rect = svgRoot.getBoundingClientRect();
+      // Zoom relative to the center of the viewport to keep the center stable
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+
+      this.transform.x = centerX - (centerX - this.transform.x) * scaleRatio;
+      this.transform.y = centerY - (centerY - this.transform.y) * scaleRatio;
+      this.transform.k = newScale;
+      this.updateTransform(svg);
+    });
+
+    svgRoot.addEventListener("mousedown", (e) => {
+      this.isDragging = true;
+      this.hasDragged = false;
+      this.dragStartRaw = { x: e.clientX, y: e.clientY };
+      svgRoot.style.cursor = "grabbing";
+      this.startPoint = {
+        x: e.clientX - this.transform.x,
+        y: e.clientY - this.transform.y,
+      };
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!this.isDragging) return;
+      e.preventDefault();
+
+      const dx = e.clientX - this.dragStartRaw.x;
+      const dy = e.clientY - this.dragStartRaw.y;
+      if (dx * dx + dy * dy > 25) {
+        this.hasDragged = true;
+      }
+
+      this.transform.x = e.clientX - this.startPoint.x;
+      this.transform.y = e.clientY - this.startPoint.y;
+      this.updateTransform(svg);
+    });
+
+    window.addEventListener("mouseup", () => {
+      this.isDragging = false;
+      svgRoot.style.cursor = "grab";
+    });
+  }
+
+  updateTransform(svg) {
+    svg.setAttribute(
+      "transform",
+      `translate(${this.transform.x},${this.transform.y}) scale(${this.transform.k})`,
+    );
+  }
+
+  renderNode(node, parentGroup, depth = 0) {
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.setAttribute("transform", `translate(${node.x},${node.y})`);
+    g.setAttribute("id", node.id);
+    g.classList.add("node-group");
+
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("width", node.width);
+    rect.setAttribute("height", node.height);
+    rect.setAttribute("rx", 4);
+    rect.classList.add("node-rect");
+
+    const userData = this.elementData.get(node.id) || {};
+    const visGuide = userData.vis_guide || {};
+    let fillColor, strokeColor;
+
+    // Ensure styleDefaults is initialized (fallback if renderNode called outside renderNodeDiagram flow)
+    const defaults = this.styleDefaults || {
+      dark: {
+        bg: "#2d2d2d",
+        nodeBg: "#2d2d2d",
+        stroke: "#666",
+        rootBg: "#1e1e1e",
+      },
+      light: {
+        bg: "#ffffff",
+        nodeBg: "#ffffff",
+        stroke: "#333",
+        rootBg: "#f5f5f5",
+      },
+    };
+
+    if (this.isDarkMode()) {
+      // Use dark mode colors
+      fillColor =
+        visGuide.dark_background_color ||
+        visGuide.background_color ||
+        defaults.dark.bg;
+      if (userData.entity_type === "node") {
+        fillColor =
+          visGuide.dark_medium_color ||
+          visGuide.medium_color ||
+          defaults.dark.nodeBg;
+      }
+      strokeColor =
+        visGuide.dark_color || visGuide.color || defaults.dark.stroke;
+
+      // For depth 0 nodes, make background darker in dark mode
+      if (depth === 0) {
+        fillColor = defaults.dark.rootBg;
+      }
+    } else {
+      // Use light mode colors
+      fillColor = visGuide.background_color || defaults.light.bg;
+      if (userData.entity_type === "node") {
+        fillColor = visGuide.medium_color || defaults.light.nodeBg;
+      }
+      strokeColor = visGuide.color || defaults.light.stroke;
+
+      // For depth 0 nodes, make background brighter in light mode
+      if (depth === 0) {
+        fillColor = defaults.light.rootBg;
+      }
     }
 
-    setupZoomPan(svgRoot, svg) {
-        svgRoot.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            const zoomIntensity = 0.1;
-            const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
-            const oldScale = this.transform.k;
-            const proposedScale = oldScale * (1 + delta);
-            const newScale = Math.min(Math.max(proposedScale, 0.03), 5);
-            const scaleRatio = newScale / oldScale;
+    rect.setAttribute("fill", fillColor);
+    rect.setAttribute("stroke", strokeColor);
 
-            const rect = svgRoot.getBoundingClientRect();
-            // Zoom relative to the center of the viewport to keep the center stable
-            const centerX = rect.width / 2;
-            const centerY = rect.height / 2;
+    rect.onclick = (e) => {
+      if (this.hasDragged) return;
+      e.stopPropagation();
+      this.updateInfoPanel(userData, "Node");
 
-            this.transform.x = centerX - (centerX - this.transform.x) * scaleRatio;
-            this.transform.y = centerY - (centerY - this.transform.y) * scaleRatio;
-            this.transform.k = newScale;
-            this.updateTransform(svg);
+      // Clear all highlights
+      document.querySelectorAll(".highlighted").forEach((el) => {
+        el.classList.remove("highlighted");
+        if (el.tagName === "path") {
+          el.setAttribute("marker-end", "url(#arrowhead)");
+          el.style.stroke = ""; // Clear any inline stroke color
+          el.style.strokeWidth = ""; // Clear any inline stroke width
+        }
+      });
+      document
+        .querySelectorAll(".module-highlighted")
+        .forEach((el) => el.classList.remove("module-highlighted"));
+      document
+        .querySelectorAll(".child-highlighted")
+        .forEach((el) => el.classList.remove("child-highlighted"));
+      document.querySelectorAll(".port-highlighted").forEach((el) => {
+        el.classList.remove("port-highlighted");
+        el.style.fill = ""; // Clear any inline fill color
+        el.style.stroke = ""; // Clear any inline stroke color
+      });
+
+      // Check if this is a module (has children)
+      if (node.children && node.children.length > 0) {
+        this.highlightModule(node, g);
+      } else {
+        // Regular node highlighting
+        g.classList.add("highlighted");
+      }
+
+      // Highlight in-ports and out-ports with different colors
+      const inPortIds = [];
+      const outPortIds = [];
+
+      if (userData.in_ports) {
+        userData.in_ports.forEach((port) => {
+          if (port.unique_id) {
+            inPortIds.push(String(port.unique_id));
+          }
         });
-
-        svgRoot.addEventListener('mousedown', (e) => {
-            this.isDragging = true;
-            this.hasDragged = false;
-            this.dragStartRaw = { x: e.clientX, y: e.clientY };
-            svgRoot.style.cursor = "grabbing";
-            this.startPoint = { x: e.clientX - this.transform.x, y: e.clientY - this.transform.y };
+      }
+      if (userData.out_ports) {
+        userData.out_ports.forEach((port) => {
+          if (port.unique_id) {
+            outPortIds.push(String(port.unique_id));
+          }
         });
+      }
 
-        window.addEventListener('mousemove', (e) => {
-            if (!this.isDragging) return;
-            e.preventDefault();
+      // Highlight in-ports with green color
+      if (inPortIds.length > 0) {
+        this.highlightConnected(inPortIds, "Port", false, "green");
+      }
 
-            const dx = e.clientX - this.dragStartRaw.x;
-            const dy = e.clientY - this.dragStartRaw.y;
-            if (dx * dx + dy * dy > 25) {
-                this.hasDragged = true;
-            }
+      // Highlight out-ports with orange color
+      if (outPortIds.length > 0) {
+        this.highlightConnected(outPortIds, "Port", false, "orange");
+      }
+    };
 
-            this.transform.x = e.clientX - this.startPoint.x;
-            this.transform.y = e.clientY - this.startPoint.y;
-            this.updateTransform(svg);
-        });
+    g.appendChild(rect);
 
-        window.addEventListener('mouseup', () => {
-            this.isDragging = false;
-            svgRoot.style.cursor = "grab";
-        });
+    if (node.labels && node.labels.length > 0) {
+      const fontSize = Math.max(12, 36 - depth * 5);
+      let yOffset = 10;
+
+      if (node.labels.length > 1 && node.labels[0].text) {
+        const nsText = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "text",
+        );
+        nsText.setAttribute("x", node.width / 2);
+        nsText.setAttribute("y", yOffset);
+        nsText.textContent = "/" + node.labels[0].text + "/";
+        nsText.classList.add("node-label");
+        nsText.style.fontSize = "5px";
+        nsText.style.fill = this.isDarkMode()
+          ? visGuide.dark_text_color || "#adb5bd"
+          : visGuide.text_color || "#6c757d";
+        g.appendChild(nsText);
+        yOffset += 8;
+      }
+
+      const nameText = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "text",
+      );
+      nameText.setAttribute("x", node.width / 2);
+      nameText.setAttribute("y", yOffset + fontSize / 2);
+      nameText.textContent = node.labels[node.labels.length - 1].text;
+      nameText.classList.add("node-label");
+      nameText.style.fontSize = `${fontSize}px`;
+      nameText.style.fill = this.isDarkMode()
+        ? visGuide.dark_text_color || "#e9ecef"
+        : visGuide.text_color || "#333";
+      if (depth <= 1) nameText.style.fontWeight = "bold";
+      g.appendChild(nameText);
     }
 
-    updateTransform(svg) {
-        svg.setAttribute("transform", `translate(${this.transform.x},${this.transform.y}) scale(${this.transform.k})`);
+    if (node.ports) {
+      node.ports.forEach((port) => {
+        const pg = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        pg.setAttribute("id", port.id);
+        pg.setAttribute("transform", `translate(${port.x},${port.y})`);
+
+        const prect = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "rect",
+        );
+        prect.setAttribute("width", port.width);
+        prect.setAttribute("height", port.height);
+        prect.classList.add("port-rect");
+
+        const title = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "title",
+        );
+        const portData = this.elementData.get(port.id) || {};
+        title.textContent = portData.name || "Port";
+        prect.appendChild(title);
+
+        pg.onclick = (e) => {
+          if (this.hasDragged) return;
+          e.stopPropagation();
+          this.updateInfoPanel(portData, "Port");
+          this.highlightConnected(port.id, "Port");
+        };
+        pg.style.cursor = "pointer";
+
+        pg.appendChild(prect);
+
+        if (port.labels) {
+          port.labels.forEach((label) => {
+            const text = document.createElementNS(
+              "http://www.w3.org/2000/svg",
+              "text",
+            );
+            text.setAttribute("x", (label.x || 0) + (label.width || 0) / 2);
+            text.setAttribute("y", (label.y || 0) + (label.height || 0) / 2);
+            text.textContent = label.text;
+            text.classList.add("port-label");
+            text.style.fill = this.isDarkMode()
+              ? visGuide.dark_text_color || "#e9ecef"
+              : visGuide.text_color || "#333";
+            pg.appendChild(text);
+          });
+        }
+
+        g.appendChild(pg);
+      });
     }
 
-    renderNode(node, parentGroup, depth = 0) {
-        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-        g.setAttribute("transform", `translate(${node.x},${node.y})`);
-        g.setAttribute("id", node.id);
-        g.classList.add("node-group");
+    if (node.children) {
+      node.children.forEach((child) => this.renderNode(child, g, depth + 1));
+    }
 
-        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        rect.setAttribute("width", node.width);
-        rect.setAttribute("height", node.height);
-        rect.setAttribute("rx", 4);
-        rect.classList.add("node-rect");
+    if (node.edges) {
+      node.edges.forEach((edge) => {
+        if (!edge.sections) return;
+        const path = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "path",
+        );
+        path.setAttribute("id", edge.id);
+        let d = "";
+        edge.sections.forEach((section) => {
+          d += `M ${section.startPoint.x} ${section.startPoint.y} `;
+          if (section.bendPoints) {
+            section.bendPoints.forEach((bp) => (d += `L ${bp.x} ${bp.y} `));
+          }
+          d += `L ${section.endPoint.x} ${section.endPoint.y} `;
+        });
+        path.setAttribute("d", d);
+        path.classList.add("edge-path");
+        path.setAttribute("marker-end", "url(#arrowhead)");
 
-        const userData = this.elementData.get(node.id) || {};
-        const visGuide = userData.vis_guide || {};
-        let fillColor, strokeColor;
-        
-        // Ensure styleDefaults is initialized (fallback if renderNode called outside renderNodeDiagram flow)
-        const defaults = this.styleDefaults || {
-            dark: { bg: "#2d2d2d", nodeBg: "#2d2d2d", stroke: "#666", rootBg: "#1e1e1e" },
-            light: { bg: "#ffffff", nodeBg: "#ffffff", stroke: "#333", rootBg: "#f5f5f5" }
+        const userData = this.elementData.get(edge.id) || {};
+        path.onclick = (e) => {
+          if (this.hasDragged) return;
+          e.stopPropagation();
+          this.updateInfoPanel(userData, "Link");
+          this.highlightConnected(edge.id, "Link");
         };
 
-        if (this.isDarkMode()) {
-            // Use dark mode colors
-            fillColor = visGuide.dark_background_color || visGuide.background_color || defaults.dark.bg;
-            if (userData.entity_type === "node") {
-                fillColor = visGuide.dark_medium_color || visGuide.medium_color || defaults.dark.nodeBg;
-            }
-            strokeColor = visGuide.dark_color || visGuide.color || defaults.dark.stroke;
+        g.appendChild(path);
+      });
+    }
 
-            // For depth 0 nodes, make background darker in dark mode
-            if (depth === 0) {
-                fillColor = defaults.dark.rootBg;
-            }
+    parentGroup.appendChild(g);
+  }
+
+  highlightModule(node, moduleGroup) {
+    // 1. Highlight the module's own box
+    moduleGroup.classList.add("module-highlighted");
+
+    // 2. Highlight the module's lines (direct edges only)
+    const edgePaths = Array.from(moduleGroup.children).filter(
+      (child) =>
+        child.tagName === "path" && child.classList.contains("edge-path"),
+    );
+    edgePaths.forEach((path) => {
+      path.classList.add("highlighted");
+    });
+
+    // 3. Highlight direct child module boxes only (not grandchildren)
+    if (node.children && node.children.length > 0) {
+      node.children.forEach((childNode) => {
+        // Find the SVG group for this direct child node by ID
+        const childGroup = Array.from(moduleGroup.children).find((child) => {
+          return (
+            child.tagName === "g" &&
+            child.classList.contains("node-group") &&
+            child.id === childNode.id
+          );
+        });
+
+        if (childGroup) {
+          // Add highlight to the direct child module boundary only
+          const childRect = childGroup.querySelector("rect");
+          if (childRect) {
+            childRect.classList.add("child-highlighted");
+          }
+        }
+      });
+    }
+  }
+
+  /**
+   * Highlights connected elements starting from the given IDs
+   * @param {string|string[]} startIds - IDs to start highlighting from
+   * @param {string} type - Type of element ('Port', 'Link', etc.)
+   * @param {boolean} clearExisting - Whether to clear existing highlights (default: true)
+   * @param {string} colorPreset - Color preset to use ('default', 'red', 'green', 'orange', 'purple', 'teal')
+   */
+  highlightConnected(
+    startIds,
+    type,
+    clearExisting = true,
+    colorPreset = "default",
+  ) {
+    // Validate colorPreset
+    if (!this.colorPresets[colorPreset]) {
+      console.warn(`Invalid color preset "${colorPreset}", using default`);
+      colorPreset = "default";
+    }
+
+    // Ensure startIds is an array
+    if (!Array.isArray(startIds)) {
+      startIds = [startIds];
+    }
+
+    // Clear all highlights if requested
+    if (clearExisting) {
+      document.querySelectorAll(".highlighted").forEach((el) => {
+        el.classList.remove("highlighted");
+        if (el.tagName === "path") {
+          el.setAttribute("marker-end", "url(#arrowhead)");
+          el.style.stroke = ""; // Clear any inline stroke color
+          el.style.strokeWidth = ""; // Clear any inline stroke width
+        }
+      });
+      document
+        .querySelectorAll(".module-highlighted")
+        .forEach((el) => el.classList.remove("module-highlighted"));
+      document
+        .querySelectorAll(".child-highlighted")
+        .forEach((el) => el.classList.remove("child-highlighted"));
+      document.querySelectorAll(".port-highlighted").forEach((el) => {
+        el.classList.remove("port-highlighted");
+        el.style.fill = ""; // Clear any inline fill color
+        el.style.stroke = ""; // Clear any inline stroke color
+      });
+    }
+
+    const queue = [...startIds];
+    const visited = new Set();
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+
+      const data = this.elementData.get(currentId);
+      if (!data) continue;
+
+      // Port Logic
+      if (data.msg_type && !data.from_port) {
+        const portGroup = document.getElementById(currentId);
+        if (portGroup) {
+          const rect = portGroup.querySelector(".port-rect");
+          if (rect) {
+            rect.classList.add("port-highlighted");
+            // Apply color preset styling
+            rect.style.fill = this.colorPresets[colorPreset].port;
+            rect.style.stroke = this.colorPresets[colorPreset].port;
+          }
+        }
+
+        // 1. Visible Edges
+        const visibleEdges = this.portToEdges.get(currentId) || [];
+        visibleEdges.forEach((edgeId) => {
+          if (!visited.has(edgeId)) queue.push(edgeId);
+        });
+
+        // 2. Logical Connections
+        if (data.connected_ids) {
+          data.connected_ids.forEach((connectedId) => {
+            if (!visited.has(connectedId)) queue.push(connectedId);
+          });
+        }
+      }
+      // Link Logic
+      else if (data.from_port && data.to_port) {
+        const edgePath =
+          document.getElementById(currentId) ||
+          (this.container
+            ? this.container.querySelector(`path[id="${currentId}"]`)
+            : null);
+
+        if (edgePath) {
+          edgePath.classList.add("highlighted");
+          edgePath.setAttribute(
+            "marker-end",
+            `url(#arrowhead-highlighted-${colorPreset})`,
+          );
+
+          // Apply color to the edge path itself
+          edgePath.style.stroke = this.colorPresets[colorPreset].edge;
+          edgePath.style.strokeWidth = "3px"; // Make highlighted edges thicker
+
+          // Bring to front to ensure visibility
+          if (edgePath.parentNode) {
+            edgePath.parentNode.appendChild(edgePath);
+          }
         } else {
-            // Use light mode colors
-            fillColor = visGuide.background_color || defaults.light.bg;
-            if (userData.entity_type === "node") {
-                fillColor = visGuide.medium_color || defaults.light.nodeBg;
-            }
-            strokeColor = visGuide.color || defaults.light.stroke;
-
-            // For depth 0 nodes, make background brighter in light mode
-            if (depth === 0) {
-                fillColor = defaults.light.rootBg;
-            }
+          console.warn(`Edge path not found for ID: ${currentId}`);
         }
 
-        rect.setAttribute("fill", fillColor);
-        rect.setAttribute("stroke", strokeColor);
-
-        rect.onclick = (e) => {
-            if (this.hasDragged) return;
-            e.stopPropagation();
-            this.updateInfoPanel(userData, 'Node');
-
-            // Clear all highlights
-            document.querySelectorAll('.highlighted').forEach(el => {
-                el.classList.remove('highlighted');
-                if (el.tagName === 'path') {
-                    el.setAttribute("marker-end", "url(#arrowhead)");
-                    el.style.stroke = ''; // Clear any inline stroke color
-                    el.style.strokeWidth = ''; // Clear any inline stroke width
-                }
-            });
-            document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
-            document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
-            document.querySelectorAll('.port-highlighted').forEach(el => {
-                el.classList.remove('port-highlighted');
-                el.style.fill = ''; // Clear any inline fill color
-                el.style.stroke = ''; // Clear any inline stroke color
-            });
-
-            // Check if this is a module (has children)
-            if (node.children && node.children.length > 0) {
-                this.highlightModule(node, g);
-            } else {
-                // Regular node highlighting
-                g.classList.add('highlighted');
-            }
-
-            // Highlight in-ports and out-ports with different colors
-            const inPortIds = [];
-            const outPortIds = [];
-
-            if (userData.in_ports) {
-                userData.in_ports.forEach(port => {
-                    if (port.unique_id) {
-                        inPortIds.push(String(port.unique_id));
-                    }
-                });
-            }
-            if (userData.out_ports) {
-                userData.out_ports.forEach(port => {
-                    if (port.unique_id) {
-                        outPortIds.push(String(port.unique_id));
-                    }
-                });
-            }
-
-            // Highlight in-ports with green color
-            if (inPortIds.length > 0) {
-                this.highlightConnected(inPortIds, 'Port', false, 'green');
-            }
-
-            // Highlight out-ports with orange color
-            if (outPortIds.length > 0) {
-                this.highlightConnected(outPortIds, 'Port', false, 'orange');
-            }
-        };
-
-        g.appendChild(rect);
-
-        if (node.labels && node.labels.length > 0) {
-            const fontSize = Math.max(12, 36 - (depth * 5));
-            let yOffset = 10;
-
-            if (node.labels.length > 1 && node.labels[0].text) {
-                const nsText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                nsText.setAttribute("x", node.width / 2);
-                nsText.setAttribute("y", yOffset);
-                nsText.textContent = "/" + node.labels[0].text + "/";
-                nsText.classList.add("node-label");
-                nsText.style.fontSize = "5px";
-                nsText.style.fill = this.isDarkMode() ? (visGuide.dark_text_color || "#adb5bd") : (visGuide.text_color || "#6c757d");
-                g.appendChild(nsText);
-                yOffset += 8;
-            }
-
-            const nameText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-            nameText.setAttribute("x", node.width / 2);
-            nameText.setAttribute("y", yOffset + fontSize / 2);
-            nameText.textContent = node.labels[node.labels.length - 1].text;
-            nameText.classList.add("node-label");
-            nameText.style.fontSize = `${fontSize}px`;
-            nameText.style.fill = this.isDarkMode() ? (visGuide.dark_text_color || "#e9ecef") : (visGuide.text_color || "#333");
-            if (depth <= 1) nameText.style.fontWeight = "bold";
-            g.appendChild(nameText);
+        // Add connected ports
+        if (data.from_port) {
+          const fromId =
+            data.from_port.unique_id ||
+            (typeof data.from_port === "string" ? data.from_port : null);
+          if (fromId) queue.push(String(fromId));
         }
-
-        if (node.ports) {
-            node.ports.forEach(port => {
-                const pg = document.createElementNS("http://www.w3.org/2000/svg", "g");
-                pg.setAttribute("id", port.id);
-                pg.setAttribute("transform", `translate(${port.x},${port.y})`);
-
-                const prect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                prect.setAttribute("width", port.width);
-                prect.setAttribute("height", port.height);
-                prect.classList.add("port-rect");
-
-                const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-                const portData = this.elementData.get(port.id) || {};
-                title.textContent = portData.name || "Port";
-                prect.appendChild(title);
-
-                pg.onclick = (e) => {
-                    if (this.hasDragged) return;
-                    e.stopPropagation();
-                    this.updateInfoPanel(portData, 'Port');
-                    this.highlightConnected(port.id, 'Port');
-                };
-                pg.style.cursor = 'pointer';
-
-                pg.appendChild(prect);
-
-                if (port.labels) {
-                    port.labels.forEach(label => {
-                        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                        text.setAttribute("x", (label.x || 0) + (label.width || 0) / 2);
-                        text.setAttribute("y", (label.y || 0) + (label.height || 0) / 2);
-                        text.textContent = label.text;
-                        text.classList.add("port-label");
-                        text.style.fill = this.isDarkMode() ? (visGuide.dark_text_color || "#e9ecef") : (visGuide.text_color || "#333");
-                        pg.appendChild(text);
-                    });
-                }
-
-                g.appendChild(pg);
-            });
+        if (data.to_port) {
+          const toId =
+            data.to_port.unique_id ||
+            (typeof data.to_port === "string" ? data.to_port : null);
+          if (toId) queue.push(String(toId));
         }
-
-        if (node.children) {
-            node.children.forEach(child => this.renderNode(child, g, depth + 1));
-        }
-
-        if (node.edges) {
-            node.edges.forEach(edge => {
-                if (!edge.sections) return;
-                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                path.setAttribute("id", edge.id);
-                let d = "";
-                edge.sections.forEach(section => {
-                    d += `M ${section.startPoint.x} ${section.startPoint.y} `;
-                    if (section.bendPoints) {
-                        section.bendPoints.forEach(bp => d += `L ${bp.x} ${bp.y} `);
-                    }
-                    d += `L ${section.endPoint.x} ${section.endPoint.y} `;
-                });
-                path.setAttribute("d", d);
-                path.classList.add("edge-path");
-                path.setAttribute("marker-end", "url(#arrowhead)");
-
-                const userData = this.elementData.get(edge.id) || {};
-                path.onclick = (e) => {
-                    if (this.hasDragged) return;
-                    e.stopPropagation();
-                    this.updateInfoPanel(userData, 'Link');
-                    this.highlightConnected(edge.id, 'Link');
-                };
-
-                g.appendChild(path);
-            });
-        }
-
-        parentGroup.appendChild(g);
+      }
     }
+  }
 
-    highlightModule(node, moduleGroup) {
-        // 1. Highlight the module's own box
-        moduleGroup.classList.add('module-highlighted');
+  fitToScreen() {
+    const svg = this.container.querySelector("#zoom-layer");
+    if (!svg) return;
 
-        // 2. Highlight the module's lines (direct edges only)
-        const edgePaths = Array.from(moduleGroup.children).filter(child =>
-            child.tagName === 'path' && child.classList.contains('edge-path')
-        );
-        edgePaths.forEach(path => {
-            path.classList.add('highlighted');
-        });
+    const bbox = svg.getBBox();
 
-        // 3. Highlight direct child module boxes only (not grandchildren)
-        if (node.children && node.children.length > 0) {
-            node.children.forEach(childNode => {
-                // Find the SVG group for this direct child node by ID
-                const childGroup = Array.from(moduleGroup.children).find(child => {
-                    return child.tagName === 'g' &&
-                           child.classList.contains('node-group') &&
-                           child.id === childNode.id;
-                });
+    if (bbox.width === 0 || bbox.height === 0) return;
 
-                if (childGroup) {
-                    // Add highlight to the direct child module boundary only
-                    const childRect = childGroup.querySelector('rect');
-                    if (childRect) {
-                        childRect.classList.add('child-highlighted');
-                    }
-                }
-            });
-        }
+    const containerRect = this.container.getBoundingClientRect();
+
+    const scale = Math.min(
+      (containerRect.width - 40) / bbox.width,
+      (containerRect.height - 40) / bbox.height,
+    );
+
+    this.transform.k = Math.min(scale, 1);
+    this.transform.x =
+      (containerRect.width - bbox.width * this.transform.k) / 2 -
+      bbox.x * this.transform.k;
+    this.transform.y =
+      (containerRect.height - bbox.height * this.transform.k) / 2 -
+      bbox.y * this.transform.k;
+
+    this.updateTransform(svg);
+  }
+
+  updateTheme() {
+    // Re-render the diagram with new theme colors
+    if (this.currentGraph && this.currentSvgRoot) {
+      this.renderNodeDiagram(this.currentGraph);
     }
-
-    /**
-     * Highlights connected elements starting from the given IDs
-     * @param {string|string[]} startIds - IDs to start highlighting from
-     * @param {string} type - Type of element ('Port', 'Link', etc.)
-     * @param {boolean} clearExisting - Whether to clear existing highlights (default: true)
-     * @param {string} colorPreset - Color preset to use ('default', 'red', 'green', 'orange', 'purple', 'teal')
-     */
-    highlightConnected(startIds, type, clearExisting = true, colorPreset = 'default') {
-        // Validate colorPreset
-        if (!this.colorPresets[colorPreset]) {
-            console.warn(`Invalid color preset "${colorPreset}", using default`);
-            colorPreset = 'default';
-        }
-
-        // Ensure startIds is an array
-        if (!Array.isArray(startIds)) {
-            startIds = [startIds];
-        }
-
-        // Clear all highlights if requested
-        if (clearExisting) {
-            document.querySelectorAll('.highlighted').forEach(el => {
-                el.classList.remove('highlighted');
-                if (el.tagName === 'path') {
-                    el.setAttribute("marker-end", "url(#arrowhead)");
-                    el.style.stroke = ''; // Clear any inline stroke color
-                    el.style.strokeWidth = ''; // Clear any inline stroke width
-                }
-            });
-            document.querySelectorAll('.module-highlighted').forEach(el => el.classList.remove('module-highlighted'));
-            document.querySelectorAll('.child-highlighted').forEach(el => el.classList.remove('child-highlighted'));
-            document.querySelectorAll('.port-highlighted').forEach(el => {
-                el.classList.remove('port-highlighted');
-                el.style.fill = ''; // Clear any inline fill color
-                el.style.stroke = ''; // Clear any inline stroke color
-            });
-        }
-
-        const queue = [...startIds];
-        const visited = new Set();
-
-        while (queue.length > 0) {
-            const currentId = queue.shift();
-            if (visited.has(currentId)) continue;
-            visited.add(currentId);
-
-            const data = this.elementData.get(currentId);
-            if (!data) continue;
-
-            // Port Logic
-            if (data.msg_type && !data.from_port) {
-                const portGroup = document.getElementById(currentId);
-                if (portGroup) {
-                    const rect = portGroup.querySelector('.port-rect');
-                    if (rect) {
-                        rect.classList.add('port-highlighted');
-                        // Apply color preset styling
-                        rect.style.fill = this.colorPresets[colorPreset].port;
-                        rect.style.stroke = this.colorPresets[colorPreset].port;
-                    }
-                }
-
-                // 1. Visible Edges
-                const visibleEdges = this.portToEdges.get(currentId) || [];
-                visibleEdges.forEach(edgeId => {
-                    if (!visited.has(edgeId)) queue.push(edgeId);
-                });
-
-                // 2. Logical Connections
-                if (data.connected_ids) {
-                    data.connected_ids.forEach(connectedId => {
-                        if (!visited.has(connectedId)) queue.push(connectedId);
-                    });
-                }
-            } 
-            // Link Logic
-            else if (data.from_port && data.to_port) {
-                const edgePath = document.getElementById(currentId) || 
-                               (this.container ? this.container.querySelector(`path[id="${currentId}"]`) : null);
-
-                if (edgePath) {
-                    edgePath.classList.add('highlighted');
-                    edgePath.setAttribute("marker-end", `url(#arrowhead-highlighted-${colorPreset})`);
-
-                    // Apply color to the edge path itself
-                    edgePath.style.stroke = this.colorPresets[colorPreset].edge;
-                    edgePath.style.strokeWidth = '3px'; // Make highlighted edges thicker
-
-                    // Bring to front to ensure visibility
-                    if (edgePath.parentNode) {
-                        edgePath.parentNode.appendChild(edgePath);
-                    }
-                } else {
-                    console.warn(`Edge path not found for ID: ${currentId}`);
-                }
-
-                // Add connected ports
-                if (data.from_port) {
-                    const fromId = data.from_port.unique_id || (typeof data.from_port === 'string' ? data.from_port : null);
-                    if (fromId) queue.push(String(fromId));
-                }
-                if (data.to_port) {
-                    const toId = data.to_port.unique_id || (typeof data.to_port === 'string' ? data.to_port : null);
-                    if (toId) queue.push(String(toId));
-                }
-            }
-        }
-    }
-
-    fitToScreen() {
-        const svg = this.container.querySelector('#zoom-layer');
-        if (!svg) return;
-
-        const bbox = svg.getBBox();
-
-        if (bbox.width === 0 || bbox.height === 0) return;
-
-        const containerRect = this.container.getBoundingClientRect();
-
-        const scale = Math.min(
-            (containerRect.width - 40) / bbox.width,
-            (containerRect.height - 40) / bbox.height
-        );
-
-        this.transform.k = Math.min(scale, 1);
-        this.transform.x = (containerRect.width - bbox.width * this.transform.k) / 2 - bbox.x * this.transform.k;
-        this.transform.y = (containerRect.height - bbox.height * this.transform.k) / 2 - bbox.y * this.transform.k;
-
-        this.updateTransform(svg);
-    }
-    
-    updateTheme() {
-        // Re-render the diagram with new theme colors
-        if (this.currentGraph && this.currentSvgRoot) {
-            this.renderNodeDiagram(this.currentGraph);
-        }
-    }
+  }
 }
 
 // Export for use in the overview page

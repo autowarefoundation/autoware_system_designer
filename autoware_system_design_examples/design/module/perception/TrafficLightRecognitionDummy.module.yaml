@@ -6,7 +6,6 @@ instances:
   - name: classification
     entity: TrafficLightRecognitionDummy.node
 
-
 inputs: []
 outputs:
   - name: classification/car/traffic_signals
@@ -20,4 +19,3 @@ connections:
     to: output.classification/pedestrian/traffic_signals
   - from: classification.output.traffic_signal_rois
     to: output.detection/rois
-

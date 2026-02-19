@@ -6,7 +6,7 @@ You are an AI coding assistant tasked with creating and managing Autoware System
 
 ## 2. File Format Version
 
-All YAML files MUST start with the format version specification. The tool supports files whose *major* version matches and whose *minor* version is less-than-or-equal-to `DESIGN_FORMAT_VERSION`. All entity types (Nodes, Modules, Systems, Parameter Sets) must use a version up to `DESIGN_FORMAT_VERSION`.
+All YAML files MUST start with the format version specification. The tool supports files whose _major_ version matches and whose _minor_ version is less-than-or-equal-to `DESIGN_FORMAT_VERSION`. All entity types (Nodes, Modules, Systems, Parameter Sets) must use a version up to `DESIGN_FORMAT_VERSION`.
 
 **Note**: The supported format version is defined in `autoware_system_designer/__init__.py` as `DESIGN_FORMAT_VERSION`.
 
@@ -222,11 +222,11 @@ remove:
 1. **Type Safety**: Connected ports MUST have identical `message_type`.
 2. **Single Publisher**: An `input` port can have multiple sources, but an `output` port (publisher) generally drives the topic. In AWArch, one topic is published by one node/port.
 3. **Naming Convention**:
-    - Files: `PascalCase.type.yaml` (e.g., `LidarDriver.node.yaml`).
-    - Instance/Port Names: `snake_case` (e.g., `pointcloud_input`).
+   - Files: `PascalCase.type.yaml` (e.g., `LidarDriver.node.yaml`).
+   - Instance/Port Names: `snake_case` (e.g., `pointcloud_input`).
 4. **Path Resolution**:
-    - Use `$(find-pkg-share <package_name>)` for absolute ROS paths.
-    - Relative paths are resolved relative to the package defining them.
+   - Use `$(find-pkg-share <package_name>)` for absolute ROS paths.
+   - Relative paths are resolved relative to the package defining them.
 
 ## 7. Examples
 

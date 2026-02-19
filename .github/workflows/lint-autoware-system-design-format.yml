@@ -4,10 +4,10 @@ on:
   pull_request:
     paths:
       - action.yaml
-      - '**/*.node.yaml'
-      - '**/*.module.yaml'
-      - '**/*.system.yaml'
-      - '**/*.parameter_set.yaml'
+      - "**/*.node.yaml"
+      - "**/*.module.yaml"
+      - "**/*.system.yaml"
+      - "**/*.parameter_set.yaml"
       - autoware_system_designer/**/*.py
       - autoware_system_designer/schema/**/*.json
   push:
@@ -15,10 +15,10 @@ on:
       - main
     paths:
       - action.yaml
-      - '**/*.node.yaml'
-      - '**/*.module.yaml'
-      - '**/*.system.yaml'
-      - '**/*.parameter_set.yaml'
+      - "**/*.node.yaml"
+      - "**/*.module.yaml"
+      - "**/*.system.yaml"
+      - "**/*.parameter_set.yaml"
       - autoware_system_designer/**/*.py
       - autoware_system_designer/schema/**/*.json
 

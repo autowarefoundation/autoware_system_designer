@@ -148,6 +148,14 @@
     }
   },
   "then": {
-    "required": ["package", "launch", "inputs", "outputs", "parameter_files", "parameters", "processes"]
+    "required": [
+      "package",
+      "launch",
+      "inputs",
+      "outputs",
+      "parameter_files",
+      "parameters",
+      "processes"
+    ]
   }
 }
