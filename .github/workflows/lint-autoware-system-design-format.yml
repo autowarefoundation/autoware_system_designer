@@ -2,33 +2,26 @@ name: Lint Autoware System Design Format
 
 on:
   pull_request:
-    paths:
-      - action.yaml
-      - "**/*.node.yaml"
-      - "**/*.module.yaml"
-      - "**/*.system.yaml"
-      - "**/*.parameter_set.yaml"
-      - autoware_system_designer/**/*.py
-      - autoware_system_designer/schema/**/*.json
   push:
     branches:
       - main
-    paths:
-      - action.yaml
-      - "**/*.node.yaml"
-      - "**/*.module.yaml"
-      - "**/*.system.yaml"
-      - "**/*.parameter_set.yaml"
-      - autoware_system_designer/**/*.py
-      - autoware_system_designer/schema/**/*.json
 
 jobs:
   lint:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Lint Autoware System Design Format
-        uses: ./
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install -r autoware_system_designer/requirements.txt
+          pip install -e autoware_system_designer
+
+      - name: Run pre-commit
+        uses: pre-commit/action@v3.0.1
