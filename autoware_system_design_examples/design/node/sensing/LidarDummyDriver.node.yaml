@@ -19,7 +19,6 @@ outputs:
       reliability: best_effort
       durability: volatile
 
-# parameters
 parameter_files: []
 
 parameters:

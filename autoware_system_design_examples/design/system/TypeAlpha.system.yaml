@@ -34,9 +34,7 @@ components:
     entity: PerceptionA.module
     namespace: perception/object_recognition
     compute_unit: main_ecu
-    parameter_set: [
-      PerceptionModuleA.parameter_set
-    ]
+    parameter_set: [PerceptionModuleA.parameter_set]
   - name: planner
     entity: PlanningDummy.node
     namespace: planning
@@ -59,10 +57,8 @@ connections:
 simulation:
   override:
     components:
-    - name: object_recognition
-      entity: PerceptionB.module
-      namespace: perception/object_recognition
-      compute_unit: main_ecu
-      parameter_set: [
-        PerceptionModuleABuild.parameter_set
-      ]
+      - name: object_recognition
+        entity: PerceptionB.module
+        namespace: perception/object_recognition
+        compute_unit: main_ecu
+        parameter_set: [PerceptionModuleABuild.parameter_set]

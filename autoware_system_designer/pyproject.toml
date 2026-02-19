@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autoware_system_designer"
-version = "0.2.1"
+version = "0.3.0"
 description = "Autoware System Designer Package for building and deploying Autoware systems."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -51,7 +51,7 @@ include = ["autoware_system_designer*"]
 
 [tool.setuptools.package-data]
 autoware_system_designer = [
-    "schema/*.json",
+    "schema/**/*.json",
     "template/**/*",
     "ros2_launcher/templates/**/*",
     "visualization/templates/**/*",

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>autoware_system_designer</name>
-  <version>0.2.1</version>
+  <version>0.3.0</version>
   <description>The autoware_system_designer package</description>
 
   <maintainer email="taekjin.lee@tier4.jp">Taekjin Lee</maintainer>

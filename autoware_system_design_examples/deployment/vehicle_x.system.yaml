@@ -6,12 +6,11 @@ base: TypeAlpha.system
 
 override:
   variables:
-  - name: vehicle_id
-    value: vehicle_x
-  - name: data_path
-    value: $(env HOME)/autoware_data
-  - name: lanelet2_map_file
-    value: lanelet2_map.osm
-  - name: pointcloud_map_file
-    value: pointcloud_map.pcd
-
+    - name: vehicle_id
+      value: vehicle_x
+    - name: data_path
+      value: $(env HOME)/autoware_data
+    - name: lanelet2_map_file
+      value: lanelet2_map.osm
+    - name: pointcloud_map_file
+      value: pointcloud_map.pcd

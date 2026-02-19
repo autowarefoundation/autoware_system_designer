@@ -100,7 +100,13 @@ class BaseValidator(ABC):
 
         # Schema-driven structural + semantic validation
         schema = get_entity_schema(entity_type)
-        issues = validate_against_schema(config, schema=schema)
+        format_version = config.get("autoware_system_design_format")
+        issues = validate_against_schema(
+            config, 
+            schema=schema, 
+            entity_type=entity_type, 
+            format_version=format_version
+        )
         if issues:
             details = self._format_schema_issues(issues)
             raise ValidationError(f"Schema validation failed for {file_path}:\n{details}")

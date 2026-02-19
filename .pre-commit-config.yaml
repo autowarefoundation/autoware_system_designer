@@ -1,8 +1,9 @@
 # Pre-commit configuration for autoware_system_designer
 # Unified linting configuration that handles:
-# - System design format linting (custom linter for *.node.yaml, *.module.yaml, *.system.yaml, *.parameter_set.yaml)
 # - YAML linting (for all *.yaml and *.yml files)
 # - Markdown linting (for all *.md files)
+# - Prettier formatting (for all supported files)
+# - System design format linting (custom linter for *.node.yaml, *.module.yaml, *.system.yaml, *.parameter_set.yaml)
 #
 # Dependencies are automatically installed by pre-commit in isolated environments
 
@@ -25,6 +26,14 @@ repos:
         name: Markdown Lint
         args: [-c, .markdownlint.yaml, --fix]
         files: \.md$
+
+  # Prettier - opinionated code formatter
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        args: [--no-error-on-unmatched-pattern]
+        exclude: \.param\.yaml$
 
   # System design format linting (local hook)
   - repo: local

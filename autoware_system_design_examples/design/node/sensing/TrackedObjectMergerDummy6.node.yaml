@@ -35,7 +35,6 @@ outputs:
       reliability: reliable
       durability: transient_local
 
-# parameters
 parameter_files: []
 
 parameters:

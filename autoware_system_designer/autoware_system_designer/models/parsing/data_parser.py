@@ -170,7 +170,6 @@ class ConfigParser:
                 logger.warning(msg)
         
         # Validate configuration
-        # For in-memory validation, we might want to skip deep validation if basic structure is invalid
         if full_name:
             validator = self.validator_factory.get_validator(entity_type)
             # Use the file path for reference even if content is from memory
@@ -249,7 +248,8 @@ class ConfigParser:
                 **base_data,
                 sub_type=sub_type,
                 instances=config.get('instances'),
-                external_interfaces=config.get('external_interfaces'),
+                inputs=config.get('inputs'),
+                outputs=config.get('outputs'),
                 connections=config.get('connections')
             )
         elif entity_type == ConfigType.PARAMETER_SET:

@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.1.0
+autoware_system_design_format: 0.3.0
 
 name: LidarDummy.module
 
@@ -14,14 +14,13 @@ instances:
   - name: lidar_concatenate
     entity: ConcatenatePointcloudDummy.node
 
-external_interfaces:
-  input: []
-  output:
-    - name: top/pointcloud
-    - name: left/pointcloud
-    - name: right/pointcloud
-    - name: rear/pointcloud
-    - name: concatenated/pointcloud
+inputs: []
+outputs:
+  - name: top/pointcloud
+  - name: left/pointcloud
+  - name: right/pointcloud
+  - name: rear/pointcloud
+  - name: concatenated/pointcloud
 
 connections:
   # individual lidar outputs

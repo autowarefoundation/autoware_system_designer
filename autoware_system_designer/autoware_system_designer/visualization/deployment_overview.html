@@ -1,515 +1,561 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Autoware System Designer</title>
     <script src="config.js"></script>
     <script src="diagram_base.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
-    <link rel="stylesheet" href="css/styles.css">
-</head>
-<body>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
     <div id="loading">
-        <div class="spinner"></div>
-        <div id="loading-text">Loading...</div>
+      <div class="spinner"></div>
+      <div id="loading-text">Loading...</div>
     </div>
 
     <!-- Sidebar -->
     <div id="sidebar">
-        <div id="sidebar-header">
-            <a href="#" class="home-link">&larr; Back to Systems</a>
-            <h1></h1>
-            <div class="package-info"></div>
-            <div class="dark-mode-toggle">
-                <label for="dark-mode-switch">Dark Mode</label>
-                <div class="toggle-switch" id="dark-mode-switch"></div>
-            </div>
+      <div id="sidebar-header">
+        <a href="#" class="home-link">&larr; Back to Systems</a>
+        <h1></h1>
+        <div class="package-info"></div>
+        <div class="dark-mode-toggle">
+          <label for="dark-mode-switch">Dark Mode</label>
+          <div class="toggle-switch" id="dark-mode-switch"></div>
         </div>
+      </div>
 
-        <div id="mode-selector-section">
-            <label for="mode-selector">View Mode:</label>
-            <select id="mode-selector">
-                <!-- Populated by JS -->
-            </select>
-        </div>
+      <div id="mode-selector-section">
+        <label for="mode-selector">View Mode:</label>
+        <select id="mode-selector">
+          <!-- Populated by JS -->
+        </select>
+      </div>
 
-        <div id="diagram-list">
-            <div class="section-title">Diagram Types</div>
-            <!-- Populated by JS -->
-        </div>
+      <div id="diagram-list">
+        <div class="section-title">Diagram Types</div>
+        <!-- Populated by JS -->
+      </div>
 
-        <div id="info-panel">
-            <!-- Node details will be populated here -->
-        </div>
+      <div id="info-panel">
+        <!-- Node details will be populated here -->
+      </div>
     </div>
-    
+
     <div id="sidebar-resizer"></div>
 
     <!-- Canvas Container -->
     <div id="canvas-container">
-        <div id="diagram-container" style="width: 100%; height: 100%; position: relative;"></div>
+      <div
+        id="diagram-container"
+        style="width: 100%; height: 100%; position: relative"
+      ></div>
     </div>
 
     <script>
-        // Check if config exists
-        if (typeof deploymentConfig === 'undefined') {
-            console.error('deploymentConfig is not defined. Make sure config.js is loaded.');
-            alert('Error: Configuration not loaded.');
+      // Check if config exists
+      if (typeof deploymentConfig === "undefined") {
+        console.error(
+          "deploymentConfig is not defined. Make sure config.js is loaded.",
+        );
+        alert("Error: Configuration not loaded.");
+      }
+
+      const {
+        deploymentName,
+        availableDiagramTypes,
+        availableModes,
+        defaultDiagramType,
+        defaultMode,
+        packageName,
+        systemsIndexPath,
+      } = deploymentConfig;
+
+      // Dark mode functionality
+      function getSystemThemePreference() {
+        return window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+      }
+
+      function getSavedThemePreference() {
+        return localStorage.getItem("theme");
+      }
+
+      function saveThemePreference(theme) {
+        localStorage.setItem("theme", theme);
+      }
+
+      function applyTheme(theme) {
+        document.documentElement.setAttribute("data-theme", theme);
+        const toggle = document.getElementById("dark-mode-switch");
+        if (toggle) {
+          toggle.classList.toggle("active", theme === "dark");
         }
+      }
 
-        const { 
-            deploymentName, 
-            availableDiagramTypes, 
-            availableModes, 
-            defaultDiagramType, 
-            defaultMode,
-            packageName,
-            systemsIndexPath
-        } = deploymentConfig;
+      function toggleDarkMode() {
+        const currentTheme =
+          document.documentElement.getAttribute("data-theme") || "light";
+        const newTheme = currentTheme === "dark" ? "light" : "dark";
+        applyTheme(newTheme);
+        saveThemePreference(newTheme);
 
-        // Dark mode functionality
-        function getSystemThemePreference() {
-            return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        // Update current diagram module if it has dark mode support
+        if (
+          currentDiagramModule &&
+          typeof currentDiagramModule.updateTheme === "function"
+        ) {
+          currentDiagramModule.updateTheme();
         }
+      }
 
-        function getSavedThemePreference() {
-            return localStorage.getItem('theme');
-        }
+      // Initialize theme
+      function initializeTheme() {
+        const savedTheme = getSavedThemePreference();
+        const systemTheme = getSystemThemePreference();
+        const theme = savedTheme || systemTheme;
+        applyTheme(theme);
+      }
 
-        function saveThemePreference(theme) {
-            localStorage.setItem('theme', theme);
-        }
+      // Parse URL parameters
+      function getUrlParameter(name) {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(name);
+      }
 
-        function applyTheme(theme) {
-            document.documentElement.setAttribute('data-theme', theme);
-            const toggle = document.getElementById('dark-mode-switch');
-            if (toggle) {
-                toggle.classList.toggle('active', theme === 'dark');
-            }
-        }
+      // State
+      let currentDiagramType = getUrlParameter("diagram") || defaultDiagramType;
+      let currentMode = defaultMode;
+      let currentDiagramData = null;
+      let nodeDiagramInstance = null;
+      let sequenceDiagramInstance = null;
 
-        function toggleDarkMode() {
-            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            applyTheme(newTheme);
-            saveThemePreference(newTheme);
+      // Data store for interactions (decoupled from ELK graph)
+      let elementData = new Map();
 
-            // Update current diagram module if it has dark mode support
-            if (currentDiagramModule && typeof currentDiagramModule.updateTheme === 'function') {
-                currentDiagramModule.updateTheme();
-            }
-        }
+      // DOM elements
+      const modeSelect = document.getElementById("mode-selector");
+      const diagramContainer = document.getElementById("diagram-container");
+      const loading = document.getElementById("loading");
+      const infoPanel = document.getElementById("info-panel");
+      const darkModeToggle = document.getElementById("dark-mode-switch");
 
-        // Initialize theme
-        function initializeTheme() {
-            const savedTheme = getSavedThemePreference();
-            const systemTheme = getSystemThemePreference();
-            const theme = savedTheme || systemTheme;
-            applyTheme(theme);
-        }
+      // Current diagram module instance
+      let currentDiagramModule = null;
 
-        // Parse URL parameters
-        function getUrlParameter(name) {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get(name);
-        }
+      // DOM element for diagram content
+      const diagramContent = document.getElementById("diagram-content");
 
-        // State
-        let currentDiagramType = getUrlParameter('diagram') || defaultDiagramType;
-        let currentMode = defaultMode;
-        let currentDiagramData = null;
-        let nodeDiagramInstance = null;
-        let sequenceDiagramInstance = null;
+      function showLoading(show, text = "Loading...") {
+        loading.style.display = show ? "flex" : "none";
+        document.getElementById("loading-text").textContent = text;
+      }
 
-        // Data store for interactions (decoupled from ELK graph)
-        let elementData = new Map();
+      function updateInfoPanel(data, type) {
+        // Helper to check if empty
+        const isEmpty = (val) =>
+          !val ||
+          (Array.isArray(val) && val.length === 0) ||
+          (typeof val === "object" && Object.keys(val).length === 0);
 
-        // DOM elements
-        const modeSelect = document.getElementById('mode-selector');
-        const diagramContainer = document.getElementById('diagram-container');
-        const loading = document.getElementById('loading');
-        const infoPanel = document.getElementById('info-panel');
-        const darkModeToggle = document.getElementById('dark-mode-switch');
+        let html = "";
 
-        // Current diagram module instance
-        let currentDiagramModule = null;
+        // --- Topic Block ---
+        if (data.topic) {
+          let displayValue = data.topic;
+          if (Array.isArray(data.topic)) {
+            displayValue = "/" + data.topic.join("/");
+          }
 
-        // DOM element for diagram content
-        const diagramContent = document.getElementById('diagram-content');
-
-        function showLoading(show, text = "Loading...") {
-            loading.style.display = show ? 'flex' : 'none';
-            document.getElementById('loading-text').textContent = text;
-        }
-
-        function updateInfoPanel(data, type) {
-            // Helper to check if empty
-            const isEmpty = (val) => !val || (Array.isArray(val) && val.length === 0) || (typeof val === 'object' && Object.keys(val).length === 0);
-            
-            let html = '';
-
-            // --- Topic Block ---
-            if (data.topic) {
-                let displayValue = data.topic;
-                if (Array.isArray(data.topic)) {
-                    displayValue = '/' + data.topic.join('/');
-                }
-                
-                html += `<div class="info-card">
+          html += `<div class="info-card">
                     <div class="info-title">Topic</div>
                     <div class="info-row">
                         <span class="info-value" style="width: 100%; word-break: break-all;">${displayValue}</span>
                     </div>
                 </div>`;
-            }
+        }
 
-            // --- 1. Info Block ---
-            let infoHtml = '';
-            // Fields explicitly excluded from Info block or handled in other blocks
-            const ignoredKeys = ['id', 'children', 'edges', 'ports', 'layoutOptions', 'width', 'height', 'x', 'y', 'source', 'target', 'sections', 'vis_guide', 'in_ports', 'out_ports', 'parameters', 'topic'];
-            
-            let hasInfo = false;
-            for (const [key, value] of Object.entries(data)) {
-                if (ignoredKeys.includes(key)) continue;
-                
-                let displayValue = value;
-                
-                if (key === 'namespace' && Array.isArray(value)) {
-                    displayValue = '/' + value.join('/');
-                } else if (typeof value === 'object' && value !== null) {
-                    if (Array.isArray(value)) displayValue = '[' + value.length + ']';
-                    else displayValue = '{...}';
-                }
-                
-                infoHtml += `<div class="info-row">
+        // --- 1. Info Block ---
+        let infoHtml = "";
+        // Fields explicitly excluded from Info block or handled in other blocks
+        const ignoredKeys = [
+          "id",
+          "children",
+          "edges",
+          "ports",
+          "layoutOptions",
+          "width",
+          "height",
+          "x",
+          "y",
+          "source",
+          "target",
+          "sections",
+          "vis_guide",
+          "in_ports",
+          "out_ports",
+          "parameters",
+          "topic",
+        ];
+
+        let hasInfo = false;
+        for (const [key, value] of Object.entries(data)) {
+          if (ignoredKeys.includes(key)) continue;
+
+          let displayValue = value;
+
+          if (key === "namespace" && Array.isArray(value)) {
+            displayValue = "/" + value.join("/");
+          } else if (typeof value === "object" && value !== null) {
+            if (Array.isArray(value)) displayValue = "[" + value.length + "]";
+            else displayValue = "{...}";
+          }
+
+          infoHtml += `<div class="info-row">
                     <span class="info-label">${key}:</span>
                     <span class="info-value">${displayValue}</span>
                 </div>`;
-                hasInfo = true;
-            }
+          hasInfo = true;
+        }
 
-            if (hasInfo) {
-                html += `<div class="info-card">
+        if (hasInfo) {
+          html += `<div class="info-card">
                     <div class="info-title">Info</div>
                     ${infoHtml}
                 </div>`;
-            }
+        }
 
-            // --- 2. Interface Block ---
-            const inPorts = data.in_ports || [];
-            const outPorts = data.out_ports || [];
-            
-            if (inPorts.length > 0 || outPorts.length > 0) {
-                let interfaceHtml = '';
-                
-                if (inPorts.length > 0) {
-                     interfaceHtml += `<div style="margin-bottom: 15px;">
+        // --- 2. Interface Block ---
+        const inPorts = data.in_ports || [];
+        const outPorts = data.out_ports || [];
+
+        if (inPorts.length > 0 || outPorts.length > 0) {
+          let interfaceHtml = "";
+
+          if (inPorts.length > 0) {
+            interfaceHtml += `<div style="margin-bottom: 15px;">
                         <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); padding-bottom: 4px; margin-bottom: 8px;">Input Ports</div>`;
-                     inPorts.forEach(port => {
-                        const name = port.name || 'Unnamed';
-                        const type = port.msg_type || port.type || '';
-                        interfaceHtml += `<div style="margin-bottom: 8px; font-size: 13px;">
+            inPorts.forEach((port) => {
+              const name = port.name || "Unnamed";
+              const type = port.msg_type || port.type || "";
+              interfaceHtml += `<div style="margin-bottom: 8px; font-size: 13px;">
                             <div style="font-weight: 500; color: var(--text-primary);">${name}</div>
-                            ${type ? `<div style="color: var(--text-muted); font-size: 11px; font-family: 'Consolas', monospace; margin-top: 1px;">${type}</div>` : ''}
+                            ${type ? `<div style="color: var(--text-muted); font-size: 11px; font-family: 'Consolas', monospace; margin-top: 1px;">${type}</div>` : ""}
                         </div>`;
-                     });
-                     interfaceHtml += `</div>`;
-                }
-                
-                if (outPorts.length > 0) {
-                     interfaceHtml += `<div>
-                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); padding-bottom: 4px; margin-bottom: 8px;">Output Ports</div>`;
-                     outPorts.forEach(port => {
-                        const name = port.name || 'Unnamed';
-                        const type = port.msg_type || port.type || '';
-                        interfaceHtml += `<div style="margin-bottom: 8px; font-size: 13px;">
-                            <div style="font-weight: 500; color: var(--text-primary);">${name}</div>
-                            ${type ? `<div style="color: var(--text-muted); font-size: 11px; font-family: 'Consolas', monospace; margin-top: 1px;">${type}</div>` : ''}
-                        </div>`;
-                     });
-                     interfaceHtml += `</div>`;
-                }
+            });
+            interfaceHtml += `</div>`;
+          }
 
-                html += `<div class="info-card">
+          if (outPorts.length > 0) {
+            interfaceHtml += `<div>
+                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); padding-bottom: 4px; margin-bottom: 8px;">Output Ports</div>`;
+            outPorts.forEach((port) => {
+              const name = port.name || "Unnamed";
+              const type = port.msg_type || port.type || "";
+              interfaceHtml += `<div style="margin-bottom: 8px; font-size: 13px;">
+                            <div style="font-weight: 500; color: var(--text-primary);">${name}</div>
+                            ${type ? `<div style="color: var(--text-muted); font-size: 11px; font-family: 'Consolas', monospace; margin-top: 1px;">${type}</div>` : ""}
+                        </div>`;
+            });
+            interfaceHtml += `</div>`;
+          }
+
+          html += `<div class="info-card">
                     <div class="info-title">Interface</div>
                     ${interfaceHtml}
                 </div>`;
-            }
+        }
 
-            // --- 3. Parameter Block ---
-            const params = data.parameters;
-            if (!isEmpty(params)) {
-                 let parameterHtml = `<div>`;
-                 
-                 if (typeof params === 'object' && !Array.isArray(params)) {
-                    for (const [pName, pVal] of Object.entries(params)) {
-                        let displayVal = pVal;
-                        if (typeof pVal === 'object') displayVal = JSON.stringify(pVal);
-                        parameterHtml += `<div style="padding: 6px 0; border-bottom: 1px solid var(--border-color);">
+        // --- 3. Parameter Block ---
+        const params = data.parameters;
+        if (!isEmpty(params)) {
+          let parameterHtml = `<div>`;
+
+          if (typeof params === "object" && !Array.isArray(params)) {
+            for (const [pName, pVal] of Object.entries(params)) {
+              let displayVal = pVal;
+              if (typeof pVal === "object") displayVal = JSON.stringify(pVal);
+              parameterHtml += `<div style="padding: 6px 0; border-bottom: 1px solid var(--border-color);">
                             <div style="font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 2px; word-break: break-all;">${pName}</div>
                             <div style="font-family: 'Consolas', monospace; font-size: 12px; color: var(--text-primary); word-break: break-all; padding-left: 8px;">${displayVal}</div>
                         </div>`;
-                    }
-                 } else if (Array.isArray(params)) {
-                     params.forEach(p => {
-                          let displayVal = p.value;
-                          if (typeof displayVal === 'object') displayVal = JSON.stringify(displayVal);
-                          
-                          parameterHtml += `<div style="padding: 6px 0; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: flex-start;">
+            }
+          } else if (Array.isArray(params)) {
+            params.forEach((p) => {
+              let displayVal = p.value;
+              if (typeof displayVal === "object")
+                displayVal = JSON.stringify(displayVal);
+
+              parameterHtml += `<div style="padding: 6px 0; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: flex-start;">
                               <div style="font-size: 12px; font-weight: 500; color: var(--text-secondary); word-break: break-all; margin-right: 10px; flex: 1;">${p.name}</div>
                               <div style="font-family: 'Consolas', monospace; font-size: 12px; color: var(--text-primary); word-break: break-all; text-align: right; flex: 1;">${displayVal}</div>
                           </div>`;
-                     });
-                 }
-                parameterHtml += `</div>`;
+            });
+          }
+          parameterHtml += `</div>`;
 
-                html += `<div class="info-card">
+          html += `<div class="info-card">
                     <div class="info-title">Parameter</div>
                     ${parameterHtml}
                 </div>`;
-            }
-            
-            // Fallback
-            if (!html) {
-                 html = `<div class="info-card"><div class="info-title">${type} Details</div><div class="info-row">No details available</div></div>`;
-            }
-
-            infoPanel.innerHTML = html;
         }
 
-        function updateDiagramTypeSelection() {
-            // Update active state of diagram type items
-            document.querySelectorAll('.diagram-type-item').forEach(item => {
-                if (item.getAttribute('data-type') === currentDiagramType) {
-                    item.classList.add('active');
-                } else {
-                    item.classList.remove('active');
-                }
-            });
+        // Fallback
+        if (!html) {
+          html = `<div class="info-card"><div class="info-title">${type} Details</div><div class="info-row">No details available</div></div>`;
         }
 
-        async function loadDiagramModule(diagramType, mode) {
-            // Destroy current diagram module if it exists
-            if (currentDiagramModule) {
-                currentDiagramModule.destroy();
-                currentDiagramModule = null;
-            }
+        infoPanel.innerHTML = html;
+      }
 
-            // Clear container and remove any diagram-specific styles/classes
-            diagramContainer.innerHTML = '';
-            diagramContainer.className = ''; // Clear any classes applied to the container
-
-            // Remove any diagram-specific styles from document head
-            const styleIdsToRemove = [
-                'logic-diagram-interaction-styles',
-                'sequence-diagram-interaction-styles',
-                'node-diagram-interaction-styles'
-            ];
-            styleIdsToRemove.forEach(styleId => {
-                const styleElement = document.getElementById(styleId);
-                if (styleElement) {
-                    styleElement.remove();
-                }
-            });
-
-            // Clear any global highlight classes that might persist
-            document.querySelectorAll('.highlighted').forEach(el => {
-                el.classList.remove('highlighted');
-            });
-            document.querySelectorAll('.port-highlighted').forEach(el => {
-                el.classList.remove('port-highlighted');
-            });
-            document.querySelectorAll('.line-highlight').forEach(el => {
-                el.classList.remove('line-highlight');
-            });
-            document.querySelectorAll('.line-hover').forEach(el => {
-                el.classList.remove('line-hover');
-            });
-
-            try {
-                // Load the appropriate module script if not already loaded
-                const moduleUrl = `${diagramType}.js`;
-                await loadScript(moduleUrl);
-
-                // Create module instance
-                const ModuleClass = diagramType === 'node_diagram' ? window.NodeDiagramModule :
-                                  diagramType === 'sequence_diagram' ? window.SequenceDiagramModule :
-                                  diagramType === 'logic_diagram' ? window.LogicDiagramModule : null;
-
-                if (!ModuleClass) {
-                    throw new Error(`Module class not found for diagram type: ${diagramType}. Make sure ${moduleUrl} is properly generated.`);
-                }
-
-                currentDiagramModule = new ModuleClass(diagramContainer, {
-                    mode: mode,
-                    deployment: deploymentName,
-                    onInfoUpdate: (data, type) => {
-                        updateInfoPanel(data, type);
-                    }
-                });
-
-                // Show info panel for node diagrams, hide for sequence diagrams
-                infoPanel.style.display = diagramType === 'node_diagram' ? 'block' : 'none';
-
-            } catch (error) {
-                console.error('Error loading diagram module:', error);
-                const errorMessage = error.message || 'Unknown error occurred';
-                diagramContainer.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: var(--error-color); font-family: Arial, sans-serif;">Error loading diagram: ${errorMessage}</div>`;
-            }
-        }
-
-        async function loadDiagram(diagramType, mode) {
-            showLoading(true, `Loading ${diagramType.replace('_', ' ')}...`);
-
-            try {
-                await loadDiagramModule(diagramType, mode);
-            } catch (error) {
-                console.error('Error loading diagram:', error);
-                alert(`Error loading diagram: ${error.message}`);
-            } finally {
-                showLoading(false);
-            }
-        }
-
-
-        function loadScript(src) {
-            return new Promise((resolve, reject) => {
-                // Check if script is already loaded
-                const existingScript = document.querySelector(`script[src="${src}"]`);
-                if (existingScript) {
-                    resolve();
-                    return;
-                }
-
-                const script = document.createElement('script');
-                script.src = src;
-                script.onload = () => {
-                    console.log('Script loaded successfully:', src);
-                    resolve();
-                };
-                script.onerror = (error) => {
-                    console.error('Failed to load script:', src, error);
-                    reject(error);
-                };
-                document.head.appendChild(script);
-            });
-        }
-        
-        function initializeUI() {
-            document.title = `Autoware System Designer - ${deploymentName}`;
-            
-            const backLink = document.querySelector('.home-link');
-            if (backLink) backLink.href = systemsIndexPath;
-            
-            const headerTitle = document.querySelector('#sidebar-header h1');
-            if (headerTitle) headerTitle.textContent = deploymentName;
-            
-            const packageInfoDiv = document.querySelector('.package-info');
-            if (packageInfoDiv) packageInfoDiv.textContent = `Package: ${packageName}`;
-            
-            // Populate mode selector
-            modeSelect.innerHTML = '';
-            availableModes.forEach(mode => {
-                const option = document.createElement('option');
-                option.value = mode;
-                option.textContent = mode;
-                if (mode === defaultMode) option.selected = true;
-                modeSelect.appendChild(option);
-            });
-            
-            // Populate diagram types
-            const diagramList = document.getElementById('diagram-list');
-            diagramList.innerHTML = '<div class="section-title">Diagram Types</div>';
-            availableDiagramTypes.forEach(type => {
-                const a = document.createElement('a');
-                a.className = `diagram-type-item ${type === defaultDiagramType ? 'active' : ''}`;
-                a.href = '#';
-                a.dataset.type = type;
-                // format title: replace _ with space and title case
-                const title = type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                a.textContent = title;
-                diagramList.appendChild(a);
-            });
-            
-            // Bind event listeners for diagram types
-            document.querySelectorAll('.diagram-type-item').forEach(item => {
-                item.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    currentDiagramType = item.getAttribute('data-type');
-                    updateDiagramTypeSelection();
-                    loadDiagram(currentDiagramType, currentMode);
-                });
-            });
-            
-            // Mode selector event listener
-            modeSelect.addEventListener('change', (e) => {
-                currentMode = e.target.value;
-                loadDiagram(currentDiagramType, currentMode);
-            });
-        }
-
-        // Dark mode listener
-        darkModeToggle.addEventListener('click', toggleDarkMode);
-
-        // Resizer functionality
-        function initializeResizer() {
-            const sidebar = document.getElementById('sidebar');
-            const resizer = document.getElementById('sidebar-resizer');
-            let isResizing = false;
-
-            resizer.addEventListener('mousedown', (e) => {
-                isResizing = true;
-                resizer.classList.add('resizing');
-                document.body.style.cursor = 'col-resize';
-                document.body.style.userSelect = 'none';
-            });
-
-            document.addEventListener('mousemove', (e) => {
-                if (!isResizing) return;
-                
-                // Calculate new width (constrain between 150px and 700px)
-                const newWidth = Math.min(Math.max(e.clientX, 150), 700);
-                sidebar.style.width = `${newWidth}px`;
-                
-                // Resize diagram if needed (trigger resize event)
-                if (currentDiagramModule && typeof currentDiagramModule.fitToScreen === 'function') {
-                    // Optional: re-fit or update layout
-                }
-            });
-
-            document.addEventListener('mouseup', () => {
-                if (isResizing) {
-                    isResizing = false;
-                    resizer.classList.remove('resizing');
-                    document.body.style.cursor = '';
-                    document.body.style.userSelect = '';
-                    
-                    // Trigger window resize event to update diagram size/layout
-                    window.dispatchEvent(new Event('resize'));
-                }
-            });
-        }
-
-        // Initialize
-        window.addEventListener('load', () => {
-            // Initialize UI from config
-            initializeUI();
-
-            // Initialize theme
-            initializeTheme();
-            
-            // Initialize resizer
-            initializeResizer();
-
-            // Wait a bit more to ensure all scripts are fully loaded
-            setTimeout(() => {
-                updateDiagramTypeSelection();
-                loadDiagram(currentDiagramType, currentMode);
-            }, 100);
+      function updateDiagramTypeSelection() {
+        // Update active state of diagram type items
+        document.querySelectorAll(".diagram-type-item").forEach((item) => {
+          if (item.getAttribute("data-type") === currentDiagramType) {
+            item.classList.add("active");
+          } else {
+            item.classList.remove("active");
+          }
         });
-    </script>
-</body>
-</html>
+      }
 
+      async function loadDiagramModule(diagramType, mode) {
+        // Destroy current diagram module if it exists
+        if (currentDiagramModule) {
+          currentDiagramModule.destroy();
+          currentDiagramModule = null;
+        }
+
+        // Clear container and remove any diagram-specific styles/classes
+        diagramContainer.innerHTML = "";
+        diagramContainer.className = ""; // Clear any classes applied to the container
+
+        // Remove any diagram-specific styles from document head
+        const styleIdsToRemove = [
+          "logic-diagram-interaction-styles",
+          "sequence-diagram-interaction-styles",
+          "node-diagram-interaction-styles",
+        ];
+        styleIdsToRemove.forEach((styleId) => {
+          const styleElement = document.getElementById(styleId);
+          if (styleElement) {
+            styleElement.remove();
+          }
+        });
+
+        // Clear any global highlight classes that might persist
+        document.querySelectorAll(".highlighted").forEach((el) => {
+          el.classList.remove("highlighted");
+        });
+        document.querySelectorAll(".port-highlighted").forEach((el) => {
+          el.classList.remove("port-highlighted");
+        });
+        document.querySelectorAll(".line-highlight").forEach((el) => {
+          el.classList.remove("line-highlight");
+        });
+        document.querySelectorAll(".line-hover").forEach((el) => {
+          el.classList.remove("line-hover");
+        });
+
+        try {
+          // Load the appropriate module script if not already loaded
+          const moduleUrl = `${diagramType}.js`;
+          await loadScript(moduleUrl);
+
+          // Create module instance
+          const ModuleClass =
+            diagramType === "node_diagram"
+              ? window.NodeDiagramModule
+              : diagramType === "sequence_diagram"
+                ? window.SequenceDiagramModule
+                : diagramType === "logic_diagram"
+                  ? window.LogicDiagramModule
+                  : null;
+
+          if (!ModuleClass) {
+            throw new Error(
+              `Module class not found for diagram type: ${diagramType}. Make sure ${moduleUrl} is properly generated.`,
+            );
+          }
+
+          currentDiagramModule = new ModuleClass(diagramContainer, {
+            mode: mode,
+            deployment: deploymentName,
+            onInfoUpdate: (data, type) => {
+              updateInfoPanel(data, type);
+            },
+          });
+
+          // Show info panel for node diagrams, hide for sequence diagrams
+          infoPanel.style.display =
+            diagramType === "node_diagram" ? "block" : "none";
+        } catch (error) {
+          console.error("Error loading diagram module:", error);
+          const errorMessage = error.message || "Unknown error occurred";
+          diagramContainer.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: var(--error-color); font-family: Arial, sans-serif;">Error loading diagram: ${errorMessage}</div>`;
+        }
+      }
+
+      async function loadDiagram(diagramType, mode) {
+        showLoading(true, `Loading ${diagramType.replace("_", " ")}...`);
+
+        try {
+          await loadDiagramModule(diagramType, mode);
+        } catch (error) {
+          console.error("Error loading diagram:", error);
+          alert(`Error loading diagram: ${error.message}`);
+        } finally {
+          showLoading(false);
+        }
+      }
+
+      function loadScript(src) {
+        return new Promise((resolve, reject) => {
+          // Check if script is already loaded
+          const existingScript = document.querySelector(`script[src="${src}"]`);
+          if (existingScript) {
+            resolve();
+            return;
+          }
+
+          const script = document.createElement("script");
+          script.src = src;
+          script.onload = () => {
+            console.log("Script loaded successfully:", src);
+            resolve();
+          };
+          script.onerror = (error) => {
+            console.error("Failed to load script:", src, error);
+            reject(error);
+          };
+          document.head.appendChild(script);
+        });
+      }
+
+      function initializeUI() {
+        document.title = `Autoware System Designer - ${deploymentName}`;
+
+        const backLink = document.querySelector(".home-link");
+        if (backLink) backLink.href = systemsIndexPath;
+
+        const headerTitle = document.querySelector("#sidebar-header h1");
+        if (headerTitle) headerTitle.textContent = deploymentName;
+
+        const packageInfoDiv = document.querySelector(".package-info");
+        if (packageInfoDiv)
+          packageInfoDiv.textContent = `Package: ${packageName}`;
+
+        // Populate mode selector
+        modeSelect.innerHTML = "";
+        availableModes.forEach((mode) => {
+          const option = document.createElement("option");
+          option.value = mode;
+          option.textContent = mode;
+          if (mode === defaultMode) option.selected = true;
+          modeSelect.appendChild(option);
+        });
+
+        // Populate diagram types
+        const diagramList = document.getElementById("diagram-list");
+        diagramList.innerHTML =
+          '<div class="section-title">Diagram Types</div>';
+        availableDiagramTypes.forEach((type) => {
+          const a = document.createElement("a");
+          a.className = `diagram-type-item ${type === defaultDiagramType ? "active" : ""}`;
+          a.href = "#";
+          a.dataset.type = type;
+          // format title: replace _ with space and title case
+          const title = type
+            .replace(/_/g, " ")
+            .replace(/\b\w/g, (l) => l.toUpperCase());
+          a.textContent = title;
+          diagramList.appendChild(a);
+        });
+
+        // Bind event listeners for diagram types
+        document.querySelectorAll(".diagram-type-item").forEach((item) => {
+          item.addEventListener("click", (e) => {
+            e.preventDefault();
+            currentDiagramType = item.getAttribute("data-type");
+            updateDiagramTypeSelection();
+            loadDiagram(currentDiagramType, currentMode);
+          });
+        });
+
+        // Mode selector event listener
+        modeSelect.addEventListener("change", (e) => {
+          currentMode = e.target.value;
+          loadDiagram(currentDiagramType, currentMode);
+        });
+      }
+
+      // Dark mode listener
+      darkModeToggle.addEventListener("click", toggleDarkMode);
+
+      // Resizer functionality
+      function initializeResizer() {
+        const sidebar = document.getElementById("sidebar");
+        const resizer = document.getElementById("sidebar-resizer");
+        let isResizing = false;
+
+        resizer.addEventListener("mousedown", (e) => {
+          isResizing = true;
+          resizer.classList.add("resizing");
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+        });
+
+        document.addEventListener("mousemove", (e) => {
+          if (!isResizing) return;
+
+          // Calculate new width (constrain between 150px and 700px)
+          const newWidth = Math.min(Math.max(e.clientX, 150), 700);
+          sidebar.style.width = `${newWidth}px`;
+
+          // Resize diagram if needed (trigger resize event)
+          if (
+            currentDiagramModule &&
+            typeof currentDiagramModule.fitToScreen === "function"
+          ) {
+            // Optional: re-fit or update layout
+          }
+        });
+
+        document.addEventListener("mouseup", () => {
+          if (isResizing) {
+            isResizing = false;
+            resizer.classList.remove("resizing");
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+
+            // Trigger window resize event to update diagram size/layout
+            window.dispatchEvent(new Event("resize"));
+          }
+        });
+      }
+
+      // Initialize
+      window.addEventListener("load", () => {
+        // Initialize UI from config
+        initializeUI();
+
+        // Initialize theme
+        initializeTheme();
+
+        // Initialize resizer
+        initializeResizer();
+
+        // Wait a bit more to ensure all scripts are fully loaded
+        setTimeout(() => {
+          updateDiagramTypeSelection();
+          loadDiagram(currentDiagramType, currentMode);
+        }, 100);
+      });
+    </script>
+  </body>
+</html>

@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.1.0
+autoware_system_design_format: 0.3.0
 
 name: RadarDummy.module
 
@@ -21,11 +21,10 @@ instances:
   - name: simple_tracked_object_merger
     entity: TrackedObjectMergerDummy6.node
 
-external_interfaces:
-  input: []
-  output:
-    - name: detected_objects
-    - name: tracked_objects
+inputs: []
+outputs:
+  - name: detected_objects
+  - name: tracked_objects
 
 connections:
   - from: radar_front_center.output.detected_objects
