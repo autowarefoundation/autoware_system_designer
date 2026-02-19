@@ -27,7 +27,7 @@ parameters:
   - node: /perception/object_recognition/detector_a2/node_filter
     param_files:
       - filtering_range_param: perception/object_recognition/detector_a2/node_filter/filtering_range_param.param.yaml
-    param_values: []
+    parameter_values: []
   - node: /perception/object_recognition/node_tracker
     param_files:
       - tracker_setting_path: perception/object_recognition/node_tracker/tracker_setting_path.param.yaml
