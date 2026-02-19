@@ -38,9 +38,9 @@ repos:
   # System design format linting (local hook)
   - repo: local
     hooks:
-      - id: lint-system-designs
-        name: Lint System Design Files
-        description: Lint autoware_system_design_format YAML files
+      - id: lint-system-design-format
+        name: Lint System Design Format
+        description: Lint Autoware System Design Format YAML files
         entry: python3 autoware_system_designer/autoware_system_designer/linter/run_lint.py
         language: system
         files: \.(node|module|system|parameter_set)\.yaml$
