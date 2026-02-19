@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  lint:
+  lint-system-designs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -25,3 +25,5 @@ jobs:
 
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: lint-system-designs --all-files
