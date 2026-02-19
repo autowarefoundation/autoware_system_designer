@@ -29,8 +29,8 @@ outputs:
       reliability: reliable
       durability: transient_local
 
-param_files: []
-param_values: []
+parameter_files: []
+parameter_values: []
 
 # processes
 processes:
