@@ -118,40 +118,6 @@ class NamingLinter:
                             f"Output port name '{port_name}' should be in snake_case format "
                             f"(e.g., 'objects', 'detected_objects')"
                         )
-        
-        # Check external interface names (for modules)
-        if 'external_interfaces' in config:
-            ext_interfaces = config['external_interfaces']
-            if isinstance(ext_interfaces, dict):
-                # Check input ports
-                if 'input' in ext_interfaces and isinstance(ext_interfaces['input'], list):
-                    for ext_input in ext_interfaces['input']:
-                        if isinstance(ext_input, dict) and 'name' in ext_input:
-                            port_name = ext_input['name']
-                            if not self._is_snake_case(port_name):
-                                result.add_error(
-                                    f"External input port name '{port_name}' should be in snake_case format"
-                                )
-                
-                # Check output ports
-                if 'output' in ext_interfaces and isinstance(ext_interfaces['output'], list):
-                    for ext_output in ext_interfaces['output']:
-                        if isinstance(ext_output, dict) and 'name' in ext_output:
-                            port_name = ext_output['name']
-                            if not self._is_snake_case(port_name):
-                                result.add_error(
-                                    f"External output port name '{port_name}' should be in snake_case format"
-                                )
-                
-                # Check parameter namespaces
-                if 'parameter' in ext_interfaces and isinstance(ext_interfaces['parameter'], list):
-                    for ext_param in ext_interfaces['parameter']:
-                        if isinstance(ext_param, dict) and 'name' in ext_param:
-                            param_name = ext_param['name']
-                            if not self._is_snake_case(param_name):
-                                result.add_error(
-                                    f"External parameter name '{param_name}' should be in snake_case format"
-                                )
     
     @staticmethod
     def _is_pascal_case(name: str) -> bool:
@@ -266,7 +232,8 @@ class NamingLinter:
             self._lint_named_list(override.get('variables'), result, "Override variable")
             self._lint_named_list(override.get('variable_files'), result, "Override variable file")
             self._lint_named_list(override.get('components'), result, "Override component", key="component")
-            self._lint_external_interfaces(override.get('external_interfaces'), result, "Override")
+            self._lint_named_list(override.get('inputs'), result, "Override input", key="name")
+            self._lint_named_list(override.get('outputs'), result, "Override output", key="name")
 
         remove = config.get('remove')
         if isinstance(remove, dict):
@@ -278,7 +245,8 @@ class NamingLinter:
             self._lint_named_list(remove.get('instances'), result, "Remove instance", key="name")
             self._lint_named_list(remove.get('variables'), result, "Remove variable")
             self._lint_named_list(remove.get('components'), result, "Remove component", key="component")
-            self._lint_external_interfaces(remove.get('external_interfaces'), result, "Remove")
+            self._lint_named_list(remove.get('inputs'), result, "Remove input", key="name")
+            self._lint_named_list(remove.get('outputs'), result, "Remove output", key="name")
 
     def _lint_named_list(
         self,
@@ -298,19 +266,3 @@ class NamingLinter:
                     result.add_error(
                         f"{label} name '{name_value}' should be in snake_case format"
                     )
-
-    def _lint_external_interfaces(self, external_interfaces: Any, result: LintResult, label: str):
-        """Lint external interface names in variant blocks."""
-        if not isinstance(external_interfaces, dict):
-            return
-
-        for interface_type in ['input', 'output', 'parameter']:
-            if interface_type in external_interfaces and isinstance(external_interfaces[interface_type], list):
-                for entry in external_interfaces[interface_type]:
-                    if isinstance(entry, dict) and 'name' in entry:
-                        port_name = entry['name']
-                        if not self._is_snake_case(port_name):
-                            result.add_error(
-                                f"{label} external {interface_type} name '{port_name}' should be in snake_case format"
-                            )
-

@@ -88,10 +88,8 @@ Represents a composite component containing nodes or other modules.
   - `name`: Local name for the instance (e.g., `lidar_driver`).
   - `entity`: Reference to the entity definition (e.g., `LidarDriver.node`).
   - `launch`: (Optional) Override launch configurations for this instance.
-- `external_interfaces`: Defines the module's boundary.
-  - `input`: List of externally accessible input ports.
-  - `output`: List of externally accessible output ports.
-  - `parameter`: List of exposed parameter namespaces.
+- `inputs`: List of externally accessible input ports.
+- `outputs`: List of externally accessible output ports.
 - `connections`: Internal wiring.
   - `from`: Source port path. Supports wildcards (e.g., `input.*` or `node.output.*`).
   - `to`: Destination port path.
@@ -280,11 +278,10 @@ instances:
     entity: DetectorA.node
   - name: node_filter
     entity: FilterA.node
-external_interfaces:
-  input:
+inputs:
     - name: pointcloud
     - name: vector_map
-  output:
+  outputs:
     - name: objects
 connections:
   - from: input.pointcloud

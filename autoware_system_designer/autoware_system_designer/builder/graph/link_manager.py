@@ -269,13 +269,15 @@ class LinkManager:
 
         kind: 'input' or 'output'.
         """
-        external_interfaces = getattr(self.instance.configuration, "external_interfaces", None)
-        if not isinstance(external_interfaces, dict):
-            # Systems do not define external_interfaces by design.
-            if self.instance.entity_type == "system":
-                return
-            external_interfaces = {}
-        cfg_list = external_interfaces.get(kind, [])
+        # Systems do not define external ports by design.
+        if self.instance.entity_type == "system":
+            return
+            
+        if kind == "input":
+            cfg_list = getattr(self.instance.configuration, "inputs", []) or []
+        else:
+            cfg_list = getattr(self.instance.configuration, "outputs", []) or []
+            
         declared_names = {item.get("name") for item in cfg_list}
         if port_obj.name not in declared_names:
             raise ValidationError(self._err_external_decl(kind, port_obj.name, sorted(declared_names)))
@@ -472,16 +474,17 @@ class LinkManager:
                 idx = f"{child_instance.name}.{port_name}"
                 port_list_from[idx] = {"instance": child_instance, "port_name": port_name, "port": port}
         # ports from external interfaces
-        external_interfaces = getattr(self.instance.configuration, "external_interfaces", None)
-        if isinstance(external_interfaces, dict):
-            for ext_input in external_interfaces.get("input", []):
-                port_name = ext_input.get("name")
-                idx = f".{port_name}"
-                port_list_from[idx] = {"instance": None, "port_name": port_name, "port": None}
-            for ext_output in external_interfaces.get("output", []):
-                port_name = ext_output.get("name")
-                idx = f".{port_name}"
-                port_list_to[idx] = {"instance": None, "port_name": port_name, "port": None}
+        inputs = getattr(self.instance.configuration, "inputs", []) or []
+        for ext_input in inputs:
+            port_name = ext_input.get("name")
+            idx = f".{port_name}"
+            port_list_from[idx] = {"instance": None, "port_name": port_name, "port": None}
+            
+        outputs = getattr(self.instance.configuration, "outputs", []) or []
+        for ext_output in outputs:
+            port_name = ext_output.get("name")
+            idx = f".{port_name}"
+            port_list_to[idx] = {"instance": None, "port_name": port_name, "port": None}
 
         # Establish links based on connection type
         for connection in connection_list:

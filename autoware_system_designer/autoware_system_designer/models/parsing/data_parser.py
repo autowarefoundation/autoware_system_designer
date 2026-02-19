@@ -249,7 +249,8 @@ class ConfigParser:
                 **base_data,
                 sub_type=sub_type,
                 instances=config.get('instances'),
-                external_interfaces=config.get('external_interfaces'),
+                inputs=config.get('inputs'),
+                outputs=config.get('outputs'),
                 connections=config.get('connections')
             )
         elif entity_type == ConfigType.PARAMETER_SET:

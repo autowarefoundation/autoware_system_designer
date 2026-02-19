@@ -266,30 +266,11 @@ class ModuleVariantResolver(VariantResolver):
         
         merge_specs = [
             {'field': 'instances', 'key_field': 'name'},
+            {'field': 'inputs', 'key_field': 'name'},
+            {'field': 'outputs', 'key_field': 'name'},
             {'field': 'connections', 'key_field': None},
         ]
         self._resolve_merges(module_config, config_yaml, merge_specs)
-
-        # Merge external_interfaces
-        if 'external_interfaces' in override_config:
-            self._resolve_external_interfaces(module_config, override_config['external_interfaces'])
-
-    def _resolve_external_interfaces(self, module_config: ModuleConfig, overrides: Dict[str, Any]):
-        # Ensure base is initialized
-        if not module_config.external_interfaces:
-            module_config.external_interfaces = {}
-        
-        # We expect external_interfaces to be a dict with 'input' and 'output' lists
-        if not isinstance(module_config.external_interfaces, dict):
-            module_config.external_interfaces = {}
-
-        for interface_type in ['input', 'output']:
-            if interface_type in overrides:
-                base_list = module_config.external_interfaces.get(interface_type, [])
-                override_list = overrides[interface_type]
-                # Merge lists using 'name' as key
-                merged = self._merge_list(base_list, override_list, key_field='name')
-                module_config.external_interfaces[interface_type] = merged
 
     def _apply_removals(self, module_config: ModuleConfig, remove_config: Dict[str, Any]):
         if 'instances' in remove_config:
@@ -305,21 +286,8 @@ class ModuleVariantResolver(VariantResolver):
 
         remove_specs = [
             {'field': 'instances', 'key_field': 'name'},
+            {'field': 'inputs', 'key_field': 'name'},
+            {'field': 'outputs', 'key_field': 'name'},
             {'field': 'connections', 'key_field': None},
         ]
         self._resolve_removals(module_config, remove_config, remove_specs)
-
-        if 'external_interfaces' in remove_config:
-            self._remove_external_interfaces(module_config, remove_config['external_interfaces'])
-
-    def _remove_external_interfaces(self, module_config: ModuleConfig, remove_specs: Dict[str, Any]):
-        if not module_config.external_interfaces or not isinstance(module_config.external_interfaces, dict):
-            return
-
-        for interface_type in ['input', 'output']:
-            if interface_type in remove_specs:
-                target_list = module_config.external_interfaces.get(interface_type, [])
-                specs = remove_specs[interface_type]
-                # Remove items using 'name' as key
-                result = self._remove_list(target_list, specs, key_field='name')
-                module_config.external_interfaces[interface_type] = result

@@ -21,7 +21,7 @@ __version__ = "1.0.0"
 # ``autoware_system_design_format`` field (e.g. ``0.2.0``).
 # The tool accepts files whose *major* version matches and whose
 # *minor* version is less-than-or-equal-to the version below.
-DESIGN_FORMAT_VERSION = "0.2.1"
+DESIGN_FORMAT_VERSION = "0.3.0"
 
 __all__ = [
     "config",

@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.1.0
+autoware_system_design_format: 0.3.0
 
 name: CameraDummy.module
 
@@ -20,25 +20,24 @@ instances:
   - name: camera_7
     entity: CameraDummyDriver.node
 
-external_interfaces:
-  input: []
-  output:
-    - name: camera0/image
-    - name: camera0/camera_info
-    - name: camera1/image
-    - name: camera1/camera_info
-    - name: camera2/image
-    - name: camera2/camera_info
-    - name: camera3/image
-    - name: camera3/camera_info
-    - name: camera4/image
-    - name: camera4/camera_info
-    - name: camera5/image
-    - name: camera5/camera_info
-    - name: camera6/image
-    - name: camera6/camera_info
-    - name: camera7/image
-    - name: camera7/camera_info
+inputs: []
+outputs:
+  - name: camera0/image
+  - name: camera0/camera_info
+  - name: camera1/image
+  - name: camera1/camera_info
+  - name: camera2/image
+  - name: camera2/camera_info
+  - name: camera3/image
+  - name: camera3/camera_info
+  - name: camera4/image
+  - name: camera4/camera_info
+  - name: camera5/image
+  - name: camera5/camera_info
+  - name: camera6/image
+  - name: camera6/camera_info
+  - name: camera7/image
+  - name: camera7/camera_info
 
 connections:
   - from: camera_0.output.image

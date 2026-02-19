@@ -72,7 +72,8 @@ class NodeConfig(Config):
 class ModuleConfig(Config):
     """Data structure for module entities."""
     instances: List[Dict[str, Any]] = None
-    external_interfaces: Any = None  # Can be dict or list
+    inputs: List[Dict[str, Any]] = None
+    outputs: List[Dict[str, Any]] = None
     connections: List[Dict[str, Any]] = None
 
 @dataclass

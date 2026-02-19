@@ -411,13 +411,6 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
         )
 
     if entity_type == "module":
-        ext_interfaces = ObjectSpec(
-            fields={
-                "input": FieldSpec(_list_of_objects(required_keys=("name",)), required=False),
-                "output": FieldSpec(_list_of_objects(required_keys=("name",)), required=False),
-            },
-            allow_extra=True,
-        )
         module_instance_spec = ListSpec(
             ObjectSpec(
                 fields={
@@ -432,7 +425,8 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
             fields={
                 **common_root_fields,
                 "instances": FieldSpec(module_instance_spec, required=False),
-                "external_interfaces": FieldSpec(UnionSpec((ext_interfaces, TypeSpec((list,)))), required=False),
+                "inputs": FieldSpec(_list_of_objects(required_keys=("name",)), required=False),
+                "outputs": FieldSpec(_list_of_objects(required_keys=("name",)), required=False),
                 "connections": FieldSpec(_list_of_objects(required_keys=("from", "to")), required=False),
             },
             allow_extra=True,
@@ -440,12 +434,12 @@ def get_entity_schema(entity_type: str) -> EntitySchema:
         return EntitySchema(
             entity_type=entity_type,
             required_fields=("name",),
-            required_fields_when_no_base=("instances", "external_interfaces", "connections"),
+            required_fields_when_no_base=("instances", "inputs", "outputs", "connections"),
             root=root,
             semantic_checks=(
                 _format_version_semantics,
                 _variant_forbidden_root_fields_semantics(
-                    forbidden_fields=("instances", "external_interfaces", "connections"),
+                    forbidden_fields=("instances", "inputs", "outputs", "connections"),
                     message_prefix="Variant rule",
                 ),
             ),
@@ -544,7 +538,7 @@ def get_semantic_checks(entity_type: str) -> Tuple[Callable[[Dict[str, Any]], It
         return (
             _format_version_semantics,
             _variant_forbidden_root_fields_semantics(
-                forbidden_fields=("instances", "external_interfaces", "connections"),
+                forbidden_fields=("instances", "inputs", "outputs", "connections"),
                 message_prefix="Variant rule",
             ),
         )

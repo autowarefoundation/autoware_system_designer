@@ -45,7 +45,7 @@ macro(autoware_system_designer_build_deploy project_name)
 
   set(BUILD_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/deployment_process.py")
   set(TEE_RUN_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/tee_run.py")
-  set(SYSTEM_DESIGNER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../design/autoware_system_designer")
+  set(SYSTEM_DESIGNER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../autoware_system_designer")
   set(SYSTEM_DESIGNER_RESOURCE_DIR "${CMAKE_BINARY_DIR}/../autoware_system_designer/resource")
   set(OUTPUT_ROOT_DIR "${CMAKE_INSTALL_PREFIX}/share/${CMAKE_PROJECT_NAME}/")
   get_filename_component(WORKSPACE_ROOT "${CMAKE_BINARY_DIR}/../.." ABSOLUTE)

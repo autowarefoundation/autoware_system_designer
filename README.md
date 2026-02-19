@@ -95,7 +95,6 @@ autoware_system_designer_build_deploy(
 )
 ```
 
-
 ## Use as an independent workspace
 
 ```sh
@@ -116,7 +115,6 @@ colcon build
 firefox install/systems.html
 google-chrome install/systems.html
 ```
-
 
 ## Glossary
 

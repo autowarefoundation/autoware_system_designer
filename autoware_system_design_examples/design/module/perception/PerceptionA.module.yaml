@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.1.0
+autoware_system_design_format: 0.3.0
 
 name: PerceptionA.module
 
@@ -12,12 +12,11 @@ instances:
   - name: node_predictor
     entity: Predictor.node
 
-external_interfaces:
-  input:
-    - name: vector_map
-    - name: pointcloud
-  output:
-    - name: objects
+inputs:
+  - name: vector_map
+  - name: pointcloud
+outputs:
+  - name: objects
 
 connections:
   - from: input.pointcloud
