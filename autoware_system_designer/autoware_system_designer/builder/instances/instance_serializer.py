@@ -185,14 +185,14 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
             else []
         ),
         "events": [serialize_event(e) for e in instance.event_manager.get_all_events()],
-        "param_values": [
+        "parameters": [
             {
                 "name": p.name,
                 "value": p.value,
                 "type": p.data_type,
                 "parameter_type": serialize_parameter_type(p.parameter_type),
             }
-            for p in instance.parameter_manager.get_all_param_values()
+            for p in instance.parameter_manager.get_all_parameters()
         ],
     }
 

@@ -15,7 +15,7 @@
     "children": {{ children | tojson }},
     "links": {{ links | tojson }},
     "events": {{ events | tojson }},
-    "param_values": {{ param_values | tojson }}
+    "parameters": {{ parameters | tojson }}
     {% if mode is defined %}
     , "mode": {{ mode | tojson }}
     {% endif %}

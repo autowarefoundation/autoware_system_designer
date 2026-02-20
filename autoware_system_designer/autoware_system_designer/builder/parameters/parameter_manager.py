@@ -90,7 +90,7 @@ class ParameterManager:
         finally:
             self._substitution_source_context = prev_ctx
 
-    def get_all_param_values(self):
+    def get_all_parameters(self):
         """Get all parameters."""
         return self.parameters.list
 
