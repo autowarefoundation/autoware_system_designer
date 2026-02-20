@@ -213,6 +213,10 @@ class ConfigParser:
             # Map param_values
             param_values = config.get('param_values')
 
+            # requires at least one of param_files or param_values to be present. empty list is valid.
+            if param_files is None and param_values is None:
+                raise ValidationError(f"Either param_files or param_values must be present at {file_path}")
+
             # Initialize parameter values from defaults
             if param_values:
                 for param in param_values:
