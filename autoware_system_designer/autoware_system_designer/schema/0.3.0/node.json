@@ -100,27 +100,6 @@
         }
       ]
     },
-    "parameter_files": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": true
-        },
-        {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["name"],
-            "properties": {
-              "name": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          }
-        }
-      ]
-    },
     "param_values": {
       "oneOf": [
         {

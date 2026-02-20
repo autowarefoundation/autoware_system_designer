@@ -38,13 +38,6 @@
               "additionalProperties": true
             }
           },
-          "parameter_files": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": true
-            }
-          },
           "param_values": {
             "type": "array",
             "items": {

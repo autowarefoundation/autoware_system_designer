@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Tuple
 from abc import ABC, abstractmethod
 
 from ..config import ConfigType
-from ..yaml_schema import get_entity_schema, validate_against_schema
+from ..yaml_schema import validate_against_schema, get_semantic_checks
 from ...exceptions import ValidationError
 
 
@@ -99,14 +99,23 @@ class BaseValidator(ABC):
         self.validate_entity_type(entity_type, expected_type, file_path)
 
         # Schema-driven structural + semantic validation
-        schema = get_entity_schema(entity_type)
         format_version = config.get("autoware_system_design_format")
         issues = validate_against_schema(
             config, 
-            schema=schema, 
             entity_type=entity_type, 
             format_version=format_version
         )
+        
+        # Run semantic checks
+        semantic_checks = get_semantic_checks(entity_type)
+        for check in semantic_checks:
+            try:
+                semantic_issues = list(check(config))
+                issues.extend(semantic_issues)
+            except Exception as exc:
+                # We can't import SchemaIssue here easily to create a new one, so wrap in ValidationError
+                raise ValidationError(f"Semantic check error: {str(exc)}")
+
         if issues:
             details = self._format_schema_issues(issues)
             raise ValidationError(f"Schema validation failed for {file_path}:\n{details}")

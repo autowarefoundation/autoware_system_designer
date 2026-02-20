@@ -65,8 +65,8 @@ class LauncherData(TypedDict, total=False):
     use_container: bool
     container: str
     ports: List[LauncherPortData]
-    parameters: List[Dict[str, Any]]
-    parameter_files: List[Dict[str, Any]]
+    param_values: List[Dict[str, Any]]
+    param_files: List[Dict[str, Any]]
 
 
 class LinkData(TypedDict, total=False):
