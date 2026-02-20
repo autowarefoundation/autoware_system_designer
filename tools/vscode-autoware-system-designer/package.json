@@ -31,6 +31,9 @@
       }
     }
   },
+  "overrides": {
+    "minimatch": "^10.2.1"
+  },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
