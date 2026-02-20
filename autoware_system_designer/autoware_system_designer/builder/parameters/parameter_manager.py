@@ -94,7 +94,7 @@ class ParameterManager:
         """Get all parameters."""
         return self.parameters.list
 
-    def get_all_param_files(self):
+    def get_all_parameter_files(self):
         """Get all parameter files."""
         return self.parameter_files.list
 

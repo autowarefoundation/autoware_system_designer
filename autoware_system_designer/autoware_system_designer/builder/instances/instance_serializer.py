@@ -207,7 +207,7 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
                 "is_override": pf.is_override,
                 "parameter_type": serialize_parameter_type(pf.parameter_type),
             }
-            for pf in instance.parameter_manager.get_all_param_files()
+            for pf in instance.parameter_manager.get_all_parameter_files()
         ]
         data["launcher"] = collect_launcher_data(instance)
 

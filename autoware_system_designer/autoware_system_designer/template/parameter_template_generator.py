@@ -238,7 +238,7 @@ class ParameterTemplateGenerator:
         parameter_files: List[Dict[str, Any]] = []
         parameters: List[Dict[str, Any]] = []
 
-        all_parameter_files = node_instance.parameter_manager.get_all_param_files()
+        all_parameter_files = node_instance.parameter_manager.get_all_parameter_files()
         all_parameters = node_instance.parameter_manager.get_all_parameters()
 
         base_path = node_instance.namespace_str

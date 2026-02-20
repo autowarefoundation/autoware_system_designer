@@ -209,13 +209,9 @@ class ConfigParser:
         if entity_type == ConfigType.NODE:            
             # Map param_files
             param_files = config.get('param_files')
-            if param_files is None:
-                param_files = config.get('parameter_files') # Alias
             
             # Map param_values
             param_values = config.get('param_values')
-            if param_values is None:
-                param_values = config.get('parameter_values') # Alias
 
             # Initialize parameter values from defaults
             if param_values:
@@ -267,14 +263,6 @@ class ConfigParser:
                 for idx, node_entry in enumerate(parameters):
                     if not isinstance(node_entry, dict):
                         continue                    
-                    # Map param_files
-                    if 'param_files' not in node_entry and 'parameter_files' in node_entry:
-                        node_entry['param_files'] = node_entry['parameter_files']
-                        
-                    # Map param_values
-                    if 'param_values' not in node_entry and 'parameter_values' in node_entry:
-                        node_entry['param_values'] = node_entry['parameter_values']
-                    
                     _normalize_param_list(
                         node_entry.get("param_values"),
                         file_path=file_path,
