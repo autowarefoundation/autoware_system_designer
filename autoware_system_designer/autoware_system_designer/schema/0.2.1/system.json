@@ -75,10 +75,17 @@
       }
     },
     "parameter_sets": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "components": {
       "type": "array",
@@ -97,6 +104,19 @@
           },
           "namespace": {
             "type": "string"
+          },
+          "parameter_set": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
           }
         },
         "additionalProperties": false
