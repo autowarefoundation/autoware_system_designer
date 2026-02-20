@@ -95,8 +95,8 @@ def apply_parameter_set(
                         continue
 
                     # Support both new and old keys
-                    param_files_raw = param_config.get("param_files") or param_config.get("parameter_files") or []
-                    param_values_raw = param_config.get("param_values") or param_config.get("parameters") or []
+                    param_files_raw = param_config.get("param_files") or []
+                    param_values_raw = param_config.get("param_values") or []
 
                     # Resolve + validate parameter_files with per-entry source context
                     param_files = []
