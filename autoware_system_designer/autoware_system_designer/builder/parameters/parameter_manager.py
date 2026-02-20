@@ -132,12 +132,12 @@ class ParameterManager:
         for node in nodes:
             required |= cls._extract_used_system_args(node.get("args"), available_args)
 
-            for param_file in node.get("parameter_files", []):
+            for param_file in node.get("param_files", []):
                 required |= cls._extract_used_system_args(
                     param_file.get("path"), available_args
                 )
 
-            for param in node.get("parameters", []):
+            for param in node.get("param_values", []):
                 param_type = param.get("parameter_type", {})
                 param_type_name = (
                     param_type.get("name") if isinstance(param_type, dict) else str(param_type)
@@ -387,8 +387,8 @@ class ParameterManager:
     def apply_node_parameters(
         self,
         node_namespace: str,
-        parameter_files: list,
-        parameters: list,
+        param_files: list,
+        param_values: list,
         config_registry: Optional['ConfigRegistry'] = None,
         file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
         direct_parameter_type: ParameterType = ParameterType.OVERRIDE,
@@ -398,15 +398,15 @@ class ParameterManager:
     ):
         """Apply parameters directly to a target node using new parameter set format.
         
-        This method finds a node by its absolute namespace and applies both parameter_files 
-        and parameters directly to it. Parameters will override parameter_files.
+        This method finds a node by its absolute namespace and applies both param_files 
+        and param_values directly to it. Parameters will override param_files.
         
         Args:
             node_namespace: Absolute namespace path to the target node 
                            (e.g., "/perception/object_recognition/node_tracker")
-            parameter_files: List of parameter file mappings 
+            param_files: List of parameter file mappings 
                             (e.g., [{"model_param_path": "path/to/file.yaml"}])
-            parameters: List of direct parameters
+            param_values: List of direct parameters
                            (e.g., [{"name": "build_only", "type": "bool", "value": false}])
             config_registry: Registry for resolving paths
             file_parameter_type: ParameterType for parameters loaded from files
@@ -414,7 +414,7 @@ class ParameterManager:
         """
         # Handle global parameters (root node)
         if node_namespace == '/':
-            self.apply_parameters_to_all_nodes(parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+            self.apply_parameters_to_all_nodes(param_files, param_values, config_registry, file_parameter_type, direct_parameter_type)
             return
 
         target_instances = self.find_matching_nodes(node_namespace)
@@ -426,8 +426,8 @@ class ParameterManager:
             logger.info(f"Applying parameters to node: {node_namespace} (instance: {target_instance.name})")
             self._apply_parameters_to_instance(
                 target_instance,
-                parameter_files,
-                parameters,
+                param_files,
+                param_values,
                 config_registry,
                 file_parameter_type,
                 direct_parameter_type,
@@ -435,14 +435,14 @@ class ParameterManager:
                 parameter_sources=parameter_sources,
             )
 
-    def apply_parameters_to_all_nodes(self, parameter_files: list, parameters: list, config_registry: Optional['ConfigRegistry'] = None,
+    def apply_parameters_to_all_nodes(self, param_files: list, param_values: list, config_registry: Optional['ConfigRegistry'] = None,
                                       file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
                                       direct_parameter_type: ParameterType = ParameterType.OVERRIDE):
         """Apply parameters to all nodes in the instance tree.
         
         Args:
-            parameter_files: List of parameter file mappings
-            parameters: List of direct parameters
+            param_files: List of parameter file mappings
+            param_values: List of direct parameters
             config_registry: Registry for resolving paths
             file_parameter_type: ParameterType for parameters loaded from files
             direct_parameter_type: ParameterType for directly specified parameters
@@ -454,21 +454,21 @@ class ParameterManager:
         while root_instance.parent is not None:
             root_instance = root_instance.parent
             
-        self._apply_parameters_recursive(root_instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+        self._apply_parameters_recursive(root_instance, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type)
 
-    def _apply_parameters_recursive(self, instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type):
+    def _apply_parameters_recursive(self, instance, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type):
         """Recursively apply parameters to instance tree."""
         if instance.entity_type == "node":
-             self._apply_parameters_to_instance(instance, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+             self._apply_parameters_to_instance(instance, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type)
         
         for child in instance.children.values():
-            self._apply_parameters_recursive(child, parameter_files, parameters, config_registry, file_parameter_type, direct_parameter_type)
+            self._apply_parameters_recursive(child, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type)
 
     def _apply_parameters_to_instance(
         self,
         target_instance,
-        parameter_files: list,
-        parameters: list,
+        param_files: list,
+        param_values: list,
         config_registry: Optional['ConfigRegistry'] = None,
         file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
         direct_parameter_type: ParameterType = ParameterType.OVERRIDE,
@@ -479,8 +479,8 @@ class ParameterManager:
         """Apply parameters directly to a target instance object."""
             
         # Apply parameter files first (as overrides, not defaults)
-        if parameter_files:
-            for idx, param_file_mapping in enumerate(parameter_files):
+        if param_files:
+            for idx, param_file_mapping in enumerate(param_files):
                 pf_source = None
                 if parameter_file_sources and idx < len(parameter_file_sources):
                     pf_source = parameter_file_sources[idx]
@@ -508,8 +508,8 @@ class ParameterManager:
                     )
         
         # Apply parameters (these override parameter files)
-        if parameters:
-            for idx, param in enumerate(parameters):
+        if param_values:
+            for idx, param in enumerate(param_values):
                 p_source = None
                 if parameter_sources and idx < len(parameter_sources):
                     p_source = parameter_sources[idx]
@@ -582,16 +582,17 @@ class ParameterManager:
             package_name = self.instance.configuration.package_name
         
         # 1. Set default parameter_files from node configuration
-        if hasattr(self.instance.configuration, 'parameter_files') and self.instance.configuration.parameter_files:
-            for idx, cfg_param in enumerate(self.instance.configuration.parameter_files):
+        # Use new param_files field, fallback to parameter_files is handled in parser
+        if hasattr(self.instance.configuration, 'param_files') and self.instance.configuration.param_files:
+            for idx, cfg_param in enumerate(self.instance.configuration.param_files):
                 param_name = cfg_param.get("name")
                 param_value = cfg_param.get("value", cfg_param.get("default"))
                 # param_schema = cfg_param.get("schema")
 
-                cfg_source = source_from_config(self.instance.configuration, f"/parameter_files/{idx}")
+                cfg_source = source_from_config(self.instance.configuration, f"/param_files/{idx}")
 
                 if param_name is None or param_value is None:
-                    raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, parameter_files: {self.instance.configuration.parameter_files}")
+                    raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, param_files: {self.instance.configuration.param_files}")
 
                 # Resolve parameter file path if resolver is available
                 if self.parameter_resolver:
@@ -617,16 +618,17 @@ class ParameterManager:
                 )
         
         # 2. Set default parameters from node parameters
-        if hasattr(self.instance.configuration, 'parameters') and self.instance.configuration.parameters:
-            for idx, cfg_param in enumerate(self.instance.configuration.parameters):
+        # Use new param_values field, fallback to parameters is handled in parser
+        if hasattr(self.instance.configuration, 'param_values') and self.instance.configuration.param_values:
+            for idx, cfg_param in enumerate(self.instance.configuration.param_values):
                 param_name = cfg_param.get("name")
                 param_value = cfg_param.get("value", cfg_param.get("default"))
                 param_type = cfg_param.get("type", "string")
 
-                cfg_source = source_from_config(self.instance.configuration, f"/parameters/{idx}")
+                cfg_source = source_from_config(self.instance.configuration, f"/param_values/{idx}")
 
                 if param_name is None or param_value is None:
-                    raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, parameter_files: {self.instance.configuration.parameter_files}")
+                    raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, param_values: {self.instance.configuration.param_values}")
 
                 # Resolve parameter value if resolver is available
                 if self.parameter_resolver:

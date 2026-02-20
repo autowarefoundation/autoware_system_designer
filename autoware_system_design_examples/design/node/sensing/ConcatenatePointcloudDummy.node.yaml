@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: ConcatenatePointcloudDummy.node
 
@@ -35,11 +35,11 @@ outputs:
   - name: output
     message_type: sensor_msgs/msg/PointCloud2
 
-parameter_files:
+param_files:
   - name: param_file
     default: config/concatenate_pointclouds.param.yaml
 
-parameters:
+param_values:
   - name: input_frame
     type: string
     default: base_link

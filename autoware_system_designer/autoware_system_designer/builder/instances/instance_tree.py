@@ -75,9 +75,15 @@ def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry"
     # Apply system-level parameter sets
     if hasattr(instance.configuration, "parameter_sets") and instance.configuration.parameter_sets:
         parameter_sets_to_apply = instance.configuration.parameter_sets
-        logger.info(f"Applying {len(parameter_sets_to_apply)} system-level parameter set(s)")
+        # parameter_sets can be a string or a list of strings
+        # apply_parameter_set expects the value under "parameter_set" key, which can be either
+        count = 1 if isinstance(parameter_sets_to_apply, str) else len(parameter_sets_to_apply)
+        logger.info(f"Applying {count} system-level parameter set(s)")
+        
         # Create a dummy component config to reuse apply_parameter_set
+        # Note: apply_parameter_set looks for "parameter_set" key (singular), not "parameter_sets"
         dummy_component_config = {"parameter_set": parameter_sets_to_apply}
+        
         # Apply to self (root), disabling namespace check to allow global parameters
         apply_parameter_set(
             instance,

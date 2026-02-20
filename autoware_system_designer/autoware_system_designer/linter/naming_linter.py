@@ -225,8 +225,8 @@ class NamingLinter:
         if isinstance(override, dict):
             self._lint_named_list(override.get('inputs'), result, "Override input")
             self._lint_named_list(override.get('outputs'), result, "Override output")
-            self._lint_named_list(override.get('parameters'), result, "Override parameter")
-            self._lint_named_list(override.get('parameter_files'), result, "Override parameter file")
+            self._lint_named_list(override.get('param_values'), result, "Override parameter")
+            self._lint_named_list(override.get('param_files'), result, "Override parameter file")
             self._lint_named_list(override.get('processes'), result, "Override process")
             self._lint_named_list(override.get('instances'), result, "Override instance", key="name")
             self._lint_named_list(override.get('variables'), result, "Override variable")
@@ -239,8 +239,8 @@ class NamingLinter:
         if isinstance(remove, dict):
             self._lint_named_list(remove.get('inputs'), result, "Remove input")
             self._lint_named_list(remove.get('outputs'), result, "Remove output")
-            self._lint_named_list(remove.get('parameters'), result, "Remove parameter")
-            self._lint_named_list(remove.get('parameter_files'), result, "Remove parameter file")
+            self._lint_named_list(remove.get('param_values'), result, "Remove parameter")
+            self._lint_named_list(remove.get('param_files'), result, "Remove parameter file")
             self._lint_named_list(remove.get('processes'), result, "Remove process")
             self._lint_named_list(remove.get('instances'), result, "Remove instance", key="name")
             self._lint_named_list(remove.get('variables'), result, "Remove variable")

@@ -143,18 +143,18 @@ def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: Lis
 
     node_data["ports"] = launch_data.get("ports", [])
     node_data["full_namespace_path"] = "/".join(module_path) if module_path else ""
-    node_data["parameters"] = []
-    for param in launch_data.get("parameters", []):
+    node_data["param_values"] = []
+    for param in launch_data.get("param_values", []):
         param_copy = dict(param)
         param_copy["parameter_type"] = normalize_parameter_type(param.get("parameter_type"))
-        node_data["parameters"].append(param_copy)
+        node_data["param_values"].append(param_copy)
 
-    node_data["parameter_files"] = []
-    for param_file in launch_data.get("parameter_files", []):
+    node_data["param_files"] = []
+    for param_file in launch_data.get("param_files", []):
         param_file_copy = dict(param_file)
         param_file_copy["parameter_type"] = normalize_parameter_type(
             param_file.get("parameter_type")
         )
-        node_data["parameter_files"].append(param_file_copy)
+        node_data["param_files"].append(param_file_copy)
 
     return node_data

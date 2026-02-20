@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: TrafficLightRecognitionDummy.node
 
@@ -29,8 +29,8 @@ outputs:
       reliability: reliable
       durability: transient_local
 
-parameter_files: []
-parameters: []
+param_files: []
+param_values: []
 
 # processes
 processes:

@@ -206,19 +206,28 @@ class ConfigParser:
             'source_map': source_map,
         }
         
-        if entity_type == ConfigType.NODE:
+        if entity_type == ConfigType.NODE:            
+            # Map param_files
+            param_files = config.get('param_files')
+            
+            # Map param_values
+            param_values = config.get('param_values')
+
+            # requires at least one of param_files or param_values to be present. empty list is valid.
+            if "base" not in config and param_files is None and param_values is None:
+                raise ValidationError(f"Either param_files or param_values must be present at {file_path}")
+
             # Initialize parameter values from defaults
-            parameters = config.get('parameters', [])
-            if parameters:
-                for param in parameters:
+            if param_values:
+                for param in param_values:
                     if 'default' in param and 'value' not in param:
                         param['value'] = param['default']
 
             _normalize_param_list(
-                parameters,
+                param_values,
                 file_path=file_path,
                 source_map=source_map,
-                base_path="/parameters",
+                base_path="/param_values" if config.get('param_values') else "/parameters",
             )
 
             # Extract top-level package info (name and provider)
@@ -238,8 +247,8 @@ class ConfigParser:
                 launch=config.get('launch'),
                 inputs=config.get('inputs'),
                 outputs=config.get('outputs'),
-                parameter_files=config.get('parameter_files'),
-                parameters=parameters,
+                param_files=param_files,
+                param_values=param_values,
                 processes=config.get('processes')
             )
         elif entity_type == ConfigType.MODULE:
@@ -257,12 +266,12 @@ class ConfigParser:
             if isinstance(parameters, list):
                 for idx, node_entry in enumerate(parameters):
                     if not isinstance(node_entry, dict):
-                        continue
+                        continue                    
                     _normalize_param_list(
-                        node_entry.get("parameters"),
+                        node_entry.get("param_values"),
                         file_path=file_path,
                         source_map=source_map,
-                        base_path=f"/parameters/{idx}/parameters",
+                        base_path=f"/parameters/{idx}/param_values" if node_entry.get("param_values") else f"/parameters/{idx}/parameters",
                     )
             return ParameterSetConfig(
                 **base_data,

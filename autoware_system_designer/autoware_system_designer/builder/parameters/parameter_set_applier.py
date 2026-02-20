@@ -94,20 +94,21 @@ def apply_parameter_set(
                         )
                         continue
 
-                    parameter_files_raw = param_config.get("parameter_files", [])
-                    parameters = param_config.get("parameters", [])
+                    # Support both new and old keys
+                    param_files_raw = param_config.get("param_files") or []
+                    param_values_raw = param_config.get("param_values") or []
 
                     # Resolve + validate parameter_files with per-entry source context
-                    parameter_files = []
+                    param_files = []
                     parameter_file_sources = []
-                    if parameter_files_raw:
-                        for pf_idx, pf in enumerate(parameter_files_raw):
+                    if param_files_raw:
+                        for pf_idx, pf in enumerate(param_files_raw):
                             if not isinstance(pf, dict):
                                 logger.warning(
-                                    f"Invalid parameter_files format in parameter set '{param_set_name}': {pf}{format_source(node_source)}"
+                                    f"Invalid param_files format in parameter set '{param_set_name}': {pf}{format_source(node_source)}"
                                 )
                                 continue
-                            pf_source = source_from_config(cfg_param_set, f"/parameters/{node_idx}/parameter_files/{pf_idx}")
+                            pf_source = source_from_config(cfg_param_set, f"/parameters/{node_idx}/param_files/{pf_idx}")
                             resolved_mapping = {}
                             for param_name, file_path in pf.items():
                                 if resolver_to_use:
@@ -116,17 +117,17 @@ def apply_parameter_set(
                                     )
                                 else:
                                     resolved_mapping[param_name] = file_path
-                            parameter_files.append(resolved_mapping)
+                            param_files.append(resolved_mapping)
                             parameter_file_sources.append(pf_source)
 
                     # Resolve parameters with per-entry source context
-                    resolved_parameters = []
+                    param_values = []
                     parameter_sources = []
-                    if parameters:
-                        for p_idx, p in enumerate(parameters):
+                    if param_values_raw:
+                        for p_idx, p in enumerate(param_values_raw):
                             if not isinstance(p, dict):
                                 continue
-                            p_source = source_from_config(cfg_param_set, f"/parameters/{node_idx}/parameters/{p_idx}")
+                            p_source = source_from_config(cfg_param_set, f"/parameters/{node_idx}/param_values/{p_idx}")
                             resolved_p = p.copy()
                             if resolver_to_use and 'value' in resolved_p:
                                 resolved_p['value'] = resolver_to_use.resolve_parameter_value(
@@ -134,14 +135,14 @@ def apply_parameter_set(
                                 )
                             if resolver_to_use and 'name' in resolved_p and 'value' in resolved_p:
                                 resolver_to_use.variable_map[resolved_p['name']] = str(resolved_p['value'])
-                            resolved_parameters.append(resolved_p)
+                            param_values.append(resolved_p)
                             parameter_sources.append(p_source)
 
                     # Apply parameters directly to the target node
                     target_instance.parameter_manager.apply_node_parameters(
                         node_namespace,
-                        parameter_files,
-                        resolved_parameters,
+                        param_files,
+                        param_values,
                         config_registry,
                         file_parameter_type=file_parameter_type,
                         direct_parameter_type=direct_parameter_type,
@@ -150,7 +151,7 @@ def apply_parameter_set(
                         parameter_sources=parameter_sources,
                     )
                     logger.debug(
-                        f"Applied parameters to node '{node_namespace}' from set '{param_set_name}' files={len(parameter_files)} configs={len(parameters)}"
+                        f"Applied parameters to node '{node_namespace}' from set '{param_set_name}' files={len(param_files)} configs={len(param_values)}"
                     )
         except Exception as e:
             raise ValidationError(

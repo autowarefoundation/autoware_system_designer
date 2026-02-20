@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Node Entity Schema 0.2.1",
+  "title": "Node Entity Schema 0.3.0",
   "description": "Schema for autoware_system_design_format node entities",
   "type": "object",
   "required": ["name"],
@@ -99,7 +99,7 @@
         }
       ]
     },
-    "parameter_files": {
+    "param_files": {
       "oneOf": [
         {
           "type": "object",
@@ -136,7 +136,7 @@
         }
       ]
     },
-    "parameters": {
+    "param_values": {
       "oneOf": [
         {
           "type": "object",
@@ -205,8 +205,8 @@
       "launch",
       "inputs",
       "outputs",
-      "parameter_files",
-      "parameters",
+      "param_files",
+      "param_values",
       "processes"
     ]
   }

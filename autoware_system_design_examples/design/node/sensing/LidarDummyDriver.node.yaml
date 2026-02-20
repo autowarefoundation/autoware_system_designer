@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: LidarDummyDriver.node
 
@@ -19,9 +19,9 @@ outputs:
       reliability: best_effort
       durability: volatile
 
-parameter_files: []
+param_files: []
 
-parameters:
+param_values:
   - name: composable_node
     type: bool
     default: false

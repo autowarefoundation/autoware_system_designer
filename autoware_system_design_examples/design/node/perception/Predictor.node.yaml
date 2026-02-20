@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: Predictor.node
 
@@ -24,9 +24,9 @@ outputs:
       reliability: reliable
       durability: transient_local
 
-parameter_files: []
+param_files: []
 
-parameters: []
+param_values: []
 
 # processes
 processes:

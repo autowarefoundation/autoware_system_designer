@@ -6,21 +6,21 @@ parameters:
 {% for node in parameters %}
   - node: {{ node.node }}
 {% if node.parameter_files %}
-    parameter_files:
+    parame_files:
 {% for param_name, param_path in node.parameter_files.items() %}
       - {{ param_name }}: {{ param_path }}
 {% endfor %}
 {% else %}
-    parameter_files: []
+    param_files: []
 {% endif %}
 {% if node.parameters %}
-    parameters:
+    param_values:
 {% for config in node.parameters %}
       - name: {{ config.name }}
         value: {{ config.value }}
 {% endfor %}
 {% else %}
-    parameters: []
+    param_values: []
 {% endif %}
 {% endfor %}
 {% else %}

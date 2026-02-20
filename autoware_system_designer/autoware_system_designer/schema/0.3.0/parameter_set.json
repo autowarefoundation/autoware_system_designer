@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Parameter Set Entity Schema 0.2.1",
+  "title": "Parameter Set Entity Schema 0.3.0",
   "description": "Schema for autoware_system_design_format parameter_set entities",
   "type": "object",
   "required": ["name", "parameters"],
@@ -31,14 +31,14 @@
           "node": {
             "type": "string"
           },
-          "parameter_files": {
+          "param_files": {
             "type": "array",
             "items": {
               "type": "object",
               "additionalProperties": true
             }
           },
-          "parameters": {
+          "param_values": {
             "type": "array",
             "items": {
               "type": "object",

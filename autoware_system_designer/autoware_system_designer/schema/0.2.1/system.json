@@ -32,7 +32,7 @@
             "type": "string"
           }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       }
     },
     "variables": {
@@ -43,9 +43,12 @@
         "properties": {
           "name": {
             "type": "string"
+          },
+          "value": {
+            "type": ["string", "number", "boolean", "array"]
           }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       }
     },
     "variable_files": {
@@ -63,9 +66,15 @@
         "properties": {
           "name": {
             "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "default": {
+            "type": "boolean"
           }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       }
     },
     "parameter_sets": {
@@ -85,9 +94,28 @@
           },
           "entity": {
             "type": "string"
+          },
+          "compute_unit": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "parameter_set": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
           }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       }
     },
     "connections": {
@@ -103,7 +131,7 @@
             "type": "string"
           }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       }
     }
   },

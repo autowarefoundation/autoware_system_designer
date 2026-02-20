@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: PlanningDummy.node
 
@@ -26,8 +26,8 @@ outputs:
   - name: mission_planning/route
     message_type: autoware_planning_msgs/msg/LaneletRoute
 
-parameter_files: []
-parameters: []
+param_files: []
+param_values: []
 
 # processes
 processes:

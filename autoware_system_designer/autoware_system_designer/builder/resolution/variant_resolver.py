@@ -232,8 +232,8 @@ class NodeVariantResolver(VariantResolver):
         merge_specs = [
             {'field': 'inputs', 'key_field': 'name'},
             {'field': 'outputs', 'key_field': 'name'},
-            {'field': 'parameter_files', 'key_field': 'name'},
-            {'field': 'parameters', 'key_field': 'name'},
+            {'field': 'param_files', 'key_field': 'name'},
+            {'field': 'param_values', 'key_field': 'name'},
             {'field': 'processes', 'key_field': 'name'},
         ]
         self._resolve_merges(node_config, config_yaml, merge_specs)
@@ -242,8 +242,8 @@ class NodeVariantResolver(VariantResolver):
         remove_specs = [
             {'field': 'inputs', 'key_field': 'name'},
             {'field': 'outputs', 'key_field': 'name'},
-            {'field': 'parameter_files', 'key_field': 'name'},
-            {'field': 'parameters', 'key_field': 'name'},
+            {'field': 'param_files', 'key_field': 'name'},
+            {'field': 'param_values', 'key_field': 'name'},
             {'field': 'processes', 'key_field': 'name'},
         ]
         self._resolve_removals(node_config, remove_config, remove_specs)

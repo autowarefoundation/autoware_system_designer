@@ -130,24 +130,24 @@ def collect_launcher_data(instance: "Instance") -> Dict[str, Any]:
         )
     launcher_data["ports"] = ports
 
-    # Parameters and parameter files for launch
-    parameters = []
+    # param_values and param_files for launch
+    param_values = []
     for param in instance.parameter_manager.get_parameters_for_launch():
         param_copy = dict(param)
         param_copy["parameter_type"] = serialize_parameter_type(
             param.get("parameter_type")
         )
-        parameters.append(param_copy)
-    launcher_data["parameters"] = parameters
+        param_values.append(param_copy)
+    launcher_data["param_values"] = param_values
 
-    parameter_files = []
+    param_files = []
     for param_file in instance.parameter_manager.get_parameter_files_for_launch():
         param_file_copy = dict(param_file)
         param_file_copy["parameter_type"] = serialize_parameter_type(
             param_file.get("parameter_type")
         )
-        parameter_files.append(param_file_copy)
-    launcher_data["parameter_files"] = parameter_files
+        param_files.append(param_file_copy)
+    launcher_data["param_files"] = param_files
 
     return launcher_data
 
@@ -199,7 +199,7 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
     if instance.entity_type == "node":
         launch_config = instance.configuration.launch or {}
         data["package"] = instance.configuration.package_name or ""
-        data["parameter_files_all"] = [
+        data["param_files_all"] = [
             {
                 "name": pf.name,
                 "path": pf.path,
