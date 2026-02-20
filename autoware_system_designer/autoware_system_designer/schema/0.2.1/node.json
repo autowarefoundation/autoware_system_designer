@@ -59,6 +59,9 @@
               "qos": {
                 "type": "object",
                 "additionalProperties": true
+              },
+              "remap_target": {
+                "type": "string"
               }
             },
             "additionalProperties": false
@@ -86,6 +89,9 @@
               "qos": {
                 "type": "object",
                 "additionalProperties": true
+              },
+              "remap_target": {
+                "type": "string"
               }
             },
             "additionalProperties": false

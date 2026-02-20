@@ -43,6 +43,14 @@
         "properties": {
           "name": {
             "type": "string"
+          },
+          "value": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "array"
+            ]
           }
         },
         "additionalProperties": false
@@ -75,17 +83,10 @@
       }
     },
     "parameter_sets": {
-      "oneOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      ]
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
     "components": {
       "type": "array",
