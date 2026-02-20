@@ -45,12 +45,7 @@
             "type": "string"
           },
           "value": {
-            "type": [
-              "string",
-              "number",
-              "boolean",
-              "array"
-            ]
+            "type": ["string", "number", "boolean", "array"]
           }
         },
         "additionalProperties": false
