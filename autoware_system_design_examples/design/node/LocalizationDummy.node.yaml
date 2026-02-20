@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: LocalizationDummy.node
 
@@ -49,9 +49,9 @@ outputs:
   - name: pose_estimator/pose_with_covariance
     message_type: geometry_msgs/msg/PoseWithCovarianceStamped
 
-parameter_files: []
+param_files: []
 
-parameters: []
+param_values: []
 
 # processes
 processes:

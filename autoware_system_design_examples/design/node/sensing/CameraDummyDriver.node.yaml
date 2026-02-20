@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: CameraDummyDriver.node
 
@@ -22,9 +22,9 @@ outputs:
   - name: camera_info
     message_type: sensor_msgs/msg/CameraInfo
 
-parameter_files: []
+param_files: []
 
-parameters:
+param_values:
   - name: composable_node
     type: bool
     default: false

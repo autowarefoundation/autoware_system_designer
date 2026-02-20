@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: DetectorA.node
 
@@ -25,7 +25,7 @@ outputs:
       reliability: reliable
       durability: transient_local
 
-parameter_files:
+param_files:
   - name: model_param_path
     default: path/to/model_param.yaml
     schema: path/to/model_param.schema.json
@@ -37,7 +37,7 @@ parameter_files:
   - name: class_remapper_param_path
     default: path/to/class_remapper_param.yaml
 
-parameters:
+param_values:
   - name: build_only
     type: bool
     default: false

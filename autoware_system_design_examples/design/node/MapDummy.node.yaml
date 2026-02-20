@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: MapDummy.node
 
@@ -28,9 +28,9 @@ outputs:
   - name: get_partial_pointcloud_map
     message_type: autoware_map_msgs/srv/GetPartialPointCloudMap
 
-parameter_files: []
+param_files: []
 
-parameters: []
+param_values: []
 
 # processes
 processes:

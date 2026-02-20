@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: ControlDummy.node
 
@@ -29,8 +29,8 @@ outputs:
   - name: command/turn_indicators_cmd
     message_type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
 
-parameter_files: []
-parameters: []
+param_files: []
+param_values: []
 
 # processes
 processes:

@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: Tracker.node
 
@@ -26,7 +26,7 @@ outputs:
       reliability: reliable
       durability: transient_local
 
-parameter_files:
+param_files:
   - name: tracker_setting_path
     default: path/to/tracker_setting_path.yaml
   - name: data_association_matrix_path
@@ -34,7 +34,7 @@ parameter_files:
   - name: input_channels_path
     default: path/to/input_channels_path.yaml
 
-parameters: []
+param_values: []
 
 # processes
 processes:

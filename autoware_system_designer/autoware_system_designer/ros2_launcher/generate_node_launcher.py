@@ -102,8 +102,8 @@ def create_node_launcher_xml(node_config: NodeConfig) -> str:
     template_data["inputs"] = node_config.inputs or []
     template_data["outputs"] = node_config.outputs or []
 
-    param_path_list = _normalize_parameter_files(node_config.parameter_files)
-    template_data["parameter_files"] = [
+    param_path_list = _normalize_parameter_files(node_config.param_files)
+    template_data["param_files"] = [
         {
             "name": param_file.get("name"),
             "default": _process_parameter_path(param_file.get("default"), package_name),
@@ -112,8 +112,8 @@ def create_node_launcher_xml(node_config: NodeConfig) -> str:
         for param_file in param_path_list
     ]
 
-    parameter_list = _normalize_parameters(node_config.parameters)
-    template_data["parameters"] = [
+    parameter_list = _normalize_parameters(node_config.param_values)
+    template_data["param_values"] = [
         {
             "name": param.get("name"),
             "default_value": (

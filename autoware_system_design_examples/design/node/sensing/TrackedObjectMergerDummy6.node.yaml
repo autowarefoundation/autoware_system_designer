@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 
 name: TrackedObjectMergerDummy6.node
 
@@ -35,9 +35,9 @@ outputs:
       reliability: reliable
       durability: transient_local
 
-parameter_files: []
+param_files: []
 
-parameters:
+param_values:
   - name: input_topics
     type: array
     default: "[${input object1}, ${input object2}, ${input object3}, ${input object4}, ${input object5}, ${input object6}]"

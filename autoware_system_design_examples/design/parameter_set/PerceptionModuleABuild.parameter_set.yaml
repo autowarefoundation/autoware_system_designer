@@ -1,9 +1,9 @@
-autoware_system_design_format: 0.1.0
+autoware_system_design_format: 0.3.0
 
 name: PerceptionModuleABuild.parameter_set
 parameters:
   - node: /perception/object_recognition/detector_a1/node_detector
-    parameters:
+    param_values:
       - name: build_only
         type: bool
         value: true

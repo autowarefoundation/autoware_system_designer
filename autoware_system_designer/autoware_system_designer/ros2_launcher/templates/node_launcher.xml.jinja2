@@ -13,12 +13,12 @@
 {% endfor %}
 
   <!-- Parameter file paths -->
-{% for param_file in parameter_files %}
+{% for param_file in param_files %}
   <arg name="{{ param_file.name }}" default="{{ param_file.default }}"/>
 {% endfor %}
 
   <!-- Parameters -->
-{% for param in parameters %}
+{% for param in param_values %}
   <arg name="{{ param.name }}" default="{{ param.default_value }}"/>
 {% endfor %}
 
@@ -30,10 +30,10 @@
 {% for output in outputs %}
     <arg name="output/{{ output.name }}" value="$(var output/{{ output.name }})"/>
 {% endfor %}
-{% for param in parameters %}
+{% for param in param_values %}
     <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
 {% endfor %}
-{% for param_file in parameter_files %}
+{% for param_file in param_files %}
     <arg name="{{param_file.name}}" value="$(var {{ param_file.name }})"/>
 {% endfor %}
   </include>
@@ -54,7 +54,7 @@
 {% endfor %}
 
       <!-- Parameters -->
-{% for param in parameters %}
+{% for param in param_values %}
       <param name="{{ param.name }}" value="$(var {{ param.name }})"/>
 {% endfor %}
     </composable_node>
@@ -75,7 +75,7 @@
 {% endfor %}
 
     <!-- Parameters -->
-{% for param in parameters %}
+{% for param in param_values %}
     <param name="{{ param.name }}" value="$(var {{ param.name }})"/>
 {% endfor %}
   </node>

@@ -206,19 +206,28 @@ class ConfigParser:
             'source_map': source_map,
         }
         
-        if entity_type == ConfigType.NODE:
+        if entity_type == ConfigType.NODE:            
+            # Map param_files
+            param_files = config.get('param_files')
+            if param_files is None:
+                param_files = config.get('parameter_files') # Alias
+            
+            # Map param_values
+            param_values = config.get('param_values')
+            if param_values is None:
+                param_values = config.get('parameter_values') # Alias
+
             # Initialize parameter values from defaults
-            parameters = config.get('parameters', [])
-            if parameters:
-                for param in parameters:
+            if param_values:
+                for param in param_values:
                     if 'default' in param and 'value' not in param:
                         param['value'] = param['default']
 
             _normalize_param_list(
-                parameters,
+                param_values,
                 file_path=file_path,
                 source_map=source_map,
-                base_path="/parameters",
+                base_path="/param_values" if config.get('param_values') else "/parameters",
             )
 
             # Extract top-level package info (name and provider)
@@ -238,8 +247,8 @@ class ConfigParser:
                 launch=config.get('launch'),
                 inputs=config.get('inputs'),
                 outputs=config.get('outputs'),
-                parameter_files=config.get('parameter_files'),
-                parameters=parameters,
+                param_files=param_files,
+                param_values=param_values,
                 processes=config.get('processes')
             )
         elif entity_type == ConfigType.MODULE:
@@ -257,12 +266,20 @@ class ConfigParser:
             if isinstance(parameters, list):
                 for idx, node_entry in enumerate(parameters):
                     if not isinstance(node_entry, dict):
-                        continue
+                        continue                    
+                    # Map param_files
+                    if 'param_files' not in node_entry and 'parameter_files' in node_entry:
+                        node_entry['param_files'] = node_entry['parameter_files']
+                        
+                    # Map param_values
+                    if 'param_values' not in node_entry and 'parameter_values' in node_entry:
+                        node_entry['param_values'] = node_entry['parameter_values']
+                    
                     _normalize_param_list(
-                        node_entry.get("parameters"),
+                        node_entry.get("param_values"),
                         file_path=file_path,
                         source_map=source_map,
-                        base_path=f"/parameters/{idx}/parameters",
+                        base_path=f"/parameters/{idx}/param_values" if node_entry.get("param_values") else f"/parameters/{idx}/parameters",
                     )
             return ParameterSetConfig(
                 **base_data,
