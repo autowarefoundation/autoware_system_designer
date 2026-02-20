@@ -52,7 +52,7 @@
             }
           }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       }
     },
     "local_variables": {
@@ -63,5 +63,5 @@
       }
     }
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }

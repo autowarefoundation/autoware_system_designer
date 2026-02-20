@@ -18,7 +18,6 @@ inputs:
     message_type: autoware_perception_msgs/msg/DetectedObjects
   - name: objects3
     message_type: autoware_perception_msgs/msg/DetectedObjects
-    required: false
 outputs:
   - name: objects
     message_type: autoware_perception_msgs/msg/TrackedObjects
