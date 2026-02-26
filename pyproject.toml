@@ -1,49 +1,21 @@
+# This pyproject.toml is a wrapper for the linter.
+# The main project configuration is located in autoware_system_designer/pyproject.toml.
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "autoware_system_designer"
-version = "0.3.0"
-description = "Autoware System Designer Package for building and deploying Autoware systems."
-readme = "README.md"
+dynamic = ["version", "dependencies"]
 requires-python = ">=3.8"
-license = {text = "Apache License 2.0"}
-authors = [
-    {name = "Taekjin Lee", email = "taekjin.lee@tier4.jp"}
-]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: System :: Distributed Computing",
-]
-dependencies = [
-    "PyYAML>=5.4.0",
-    "Jinja2>=3.0.0",
-    "pathlib",
-    "jsonschema>=4.0.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=6.0",
-    "pytest-cov",
-    "black",
-    "flake8",
-]
 
 [project.scripts]
-autoware-system-designer-build = "autoware_system_designer.cli.build:main"
-autoware-system-designer-generate = "autoware_system_designer.cli.generate:main"
 autoware-system-designer-lint = "autoware_system_designer.linter.run_lint:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "autoware_system_designer.__version__"}
+dependencies = {file = ["autoware_system_designer/requirements.txt"]}
 
 [tool.setuptools.packages.find]
 where = ["autoware_system_designer"]
@@ -51,11 +23,5 @@ include = ["autoware_system_designer*"]
 
 [tool.setuptools.package-data]
 autoware_system_designer = [
-    "schema/*.json",
-    "template/**/*",
-    "ros2_launcher/templates/**/*",
-    "visualization/templates/**/*",
-    "visualization/*.html",
-    "visualization/js/*.js",
-    "visualization/css/*.css",
+    "schema/**/*.json",
 ]
