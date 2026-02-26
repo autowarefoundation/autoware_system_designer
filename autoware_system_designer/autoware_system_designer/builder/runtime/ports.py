@@ -46,12 +46,14 @@ class Port:
         self.name = name
         self.msg_type = msg_type
         
-        if "/srv/" in msg_type:
+        if "/msg/" in msg_type:
+            self.interface_type = "message"
+        elif "/srv/" in msg_type:
             self.interface_type = "service"
         elif "/action/" in msg_type:
             self.interface_type = "action"
         else:
-            # Default to topic (includes /msg/ and others)
+            # Default to topic
             self.interface_type = "topic"
 
         self.namespace = namespace

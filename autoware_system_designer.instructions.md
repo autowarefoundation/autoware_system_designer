@@ -25,8 +25,8 @@ Follow this directory structure for consistency (not mandatory).
 ### 4.1. Node Configuration (`.node.yaml`)
 
 Represents a single ROS 2 node.
-**Required Fields:**
 
+**Required Fields:**
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
 - `name`: Must match filename (e.g., `MyNode.node`).
 - `package`: Dictionary defining the ROS 2 package information.
