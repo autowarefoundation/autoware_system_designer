@@ -51,7 +51,7 @@ outputs:
 
 param_files: []
 
-param_values: []
+parameter_values: []
 
 # processes
 processes:
