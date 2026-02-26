@@ -27,6 +27,7 @@ Follow this directory structure for consistency (not mandatory).
 Represents a single ROS 2 node.
 
 **Required Fields:**
+
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
 - `name`: Must match filename (e.g., `MyNode.node`).
 - `package`: Dictionary defining the ROS 2 package information.
@@ -156,11 +157,11 @@ The design format abstracts ROS 2 interfaces into `inputs` and `outputs`. The cl
 
 **Mapping:**
 
-| Interface Type | Input Port | Output Port |
-| :--- | :--- | :--- |
-| **Topic** | Subscriber | Publisher |
-| **Service** | Client | Server |
-| **Action** | Action Client | Action Server |
+| Interface Type | Input Port    | Output Port   |
+| :------------- | :------------ | :------------ |
+| **Topic**      | Subscriber    | Publisher     |
+| **Service**    | Client        | Server        |
+| **Action**     | Action Client | Action Server |
 
 **Communication Patterns:**
 
