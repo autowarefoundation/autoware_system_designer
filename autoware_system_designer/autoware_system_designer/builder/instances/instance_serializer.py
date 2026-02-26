@@ -35,6 +35,7 @@ def serialize_port(port) -> PortData:
         "unique_id": port.unique_id,
         "name": port.name,
         "msg_type": port.msg_type,
+        "interface_type": getattr(port, "interface_type", "topic"),
         "namespace": port.namespace,
         "topic": port.topic,
         "is_global": port.is_global,

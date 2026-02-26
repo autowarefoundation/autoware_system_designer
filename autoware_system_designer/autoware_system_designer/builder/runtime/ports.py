@@ -45,6 +45,15 @@ class Port:
     def __init__(self, name: str, msg_type: str, namespace: List[str] = [], remap_target: str = None):
         self.name = name
         self.msg_type = msg_type
+        
+        if "/srv/" in msg_type:
+            self.interface_type = "service"
+        elif "/action/" in msg_type:
+            self.interface_type = "action"
+        else:
+            # Default to topic (includes /msg/ and others)
+            self.interface_type = "topic"
+
         self.namespace = namespace
         # Reference list: ports that this port points to (for hierarchical port connections).
         # OutPort (publisher) can have at most 1 reference (one topic published by one node).
