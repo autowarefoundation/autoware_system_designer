@@ -54,12 +54,12 @@ Represents a single ROS 2 node.
     - **Default**: If not provided, it defaults to `~/output/<name>`.
     - **Required when**: The node implementation uses a specific topic name that does not follow the `~/output/` convention.
   - `global`: (Optional) If set, the output topic is published to a global topic name (e.g., `/tf`).
-- `parameter_files`: List of parameter file references. Can be an empty list `[]`.
+- `param_files`: List of parameter file references. Can be an empty list `[]`.
   - `name`: Identifier for the file reference.
   - `default`: Path to file (use `$(find-pkg-share pkg)/path` or relative path).
   - `schema`: (Optional) Path to JSON schema.
   - `allow_substs`: (Optional) `true`/`false` to allow substitution in parameter files.
-- `parameters`: List of individual default parameters. Can be an empty list `[]`.
+- `param_values`: List of individual default parameters. Can be an empty list `[]`.
   - `name`: Parameter name.
   - `type`: Parameter type (`bool`, `int`, `double`, `string`, `array`, etc.).
   - `default`: Default value.
@@ -143,9 +143,9 @@ Overrides parameters for specific nodes within the system hierarchy.
 - `name`: Must match filename.
 - `parameters`: List of overrides.
   - `node`: Full hierarchical path to the node instance (e.g., `/perception/object_recognition/detector_a1/node_detector`).
-  - `parameter_files`: List of dictionaries mapping parameter file keys to new paths.
+  - `param_files`: List of dictionaries mapping parameter file keys to new paths.
     - Format: `- <key>: <path>` (e.g., `- model_param_path: path/to/file.yaml`).
-  - `parameters`: List of individual parameter value overrides.
+  - `param_values`: List of individual parameter value overrides.
     - `name`: Parameter name.
     - `type`: Parameter type (`bool`, `int`, `double`, `string`, etc.).
     - `value`: Override value (not `default`).
@@ -157,7 +157,7 @@ The Autoware System Designer supports a base-variant pattern that allows you to 
 **Override Mechanism:**
 The `override` section merges items into the base configuration. Merge behavior depends on field type:
 
-- **Key-based merging** (lists with identifiable keys like `name`): Items with matching keys replace existing items; new keys are appended. Examples: `variables`, `modes`, `components`, `instances`, `inputs`, `outputs`, `parameters`, `processes`.
+- **Key-based merging** (lists with identifiable keys like `name`): Items with matching keys replace existing items; new keys are appended. Examples: `variables`, `modes`, `components`, `instances`, `inputs`, `outputs`, `param_values`, `processes`.
 - **Append-only merging** (lists without keys): All override items are appended. Examples: `connections`, `variable_files`, `parameter_sets`.
 - **Dictionary merging**: Fields are merged recursively (e.g., `launch` configuration in nodes).
 
@@ -230,10 +230,10 @@ remove:
 
 ## 7. Examples
 
-### Node Example (0.2.0)
+### Node Example (0.3.0)
 
 ```yaml
-autoware_system_design_format: 0.2.0
+autoware_system_design_format: 0.3.0
 name: Detector.node
 package:
   name: my_perception
@@ -256,8 +256,8 @@ outputs:
     qos:
       reliability: reliable
       durability: transient_local
-parameter_files: []
-parameters: []
+param_files: []
+param_values: []
 processes:
   - name: detect
     trigger_conditions:
@@ -294,10 +294,10 @@ connections:
     to: output.*
 ```
 
-### System Example (0.1.0)
+### System Example (0.3.0)
 
 ```yaml
-autoware_system_design_format: 0.1.0
+autoware_system_design_format: 0.3.0
 name: AutowareSample.system
 variables:
   - name: config_path
@@ -332,17 +332,17 @@ LoggingSimulation:
         compute_unit: main_ecu
 ```
 
-### Parameter Set Example (0.1.0)
+### Parameter Set Example (0.3.0)
 
 ```yaml
-autoware_system_design_format: 0.1.0
+autoware_system_design_format: 0.3.0
 name: PerceptionModuleA.parameter_set
 parameters:
   - node: /perception/object_recognition/detector_a1/node_detector
-    parameter_files:
+    param_files:
       - model_param_path: perception/object_recognition/detector_a1/node_detector/model_param_path.param.yaml
       - ml_package_param_path: perception/object_recognition/detector_a1/node_detector/ml_package_param_path.param.yaml
-    parameters:
+    param_values:
       - name: build_only
         type: bool
         value: false
