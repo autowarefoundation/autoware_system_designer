@@ -150,6 +150,26 @@ Overrides parameters for specific nodes within the system hierarchy.
     - `type`: Parameter type (`bool`, `int`, `double`, `string`, etc.).
     - `value`: Override value (not `default`).
 
+### 4.5. Interface Types & Communication (ROS 2)
+
+The design format abstracts ROS 2 interfaces into `inputs` and `outputs`. The classification depends on the role (Initiator vs. Handler) rather than strictly on data direction.
+
+**Mapping:**
+
+| Interface Type | Input Port | Output Port |
+| :--- | :--- | :--- |
+| **Topic** | Subscriber | Publisher |
+| **Service** | Client | Server |
+| **Action** | Action Client | Action Server |
+
+**Communication Patterns:**
+
+1. **Naming Authority**: In the default one-to-many pattern, the **Output Port** (Publisher/Server) determines the topic/service name. Input ports simply connect to it.
+2. **One-to-Many**: This is the standard flow. One node publishes/provides, and multiple nodes subscribe/request.
+3. **Many-to-Many**: ROS 2 supports multiple publishers on the same topic. To represent this (e.g., `/tf` or shared status topics), use a **Global Topic**.
+   - Set the `global` property on the port (e.g., `global: /tf`).
+   - This bypasses the strict "output decides name" rule and allows multiple outputs to write to the same global namespace.
+
 ## 5. Base-Variant Pattern (Override and Remove)
 
 The Autoware System Designer supports a base-variant pattern that allows you to define a base configuration and then create variants with overrides and removals. This is particularly useful for creating mode-specific configurations (e.g., Runtime vs. Simulation) or vehicle-specific variants.
