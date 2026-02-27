@@ -24,6 +24,7 @@ class PortData(TypedDict, total=False):
     unique_id: str
     name: str
     msg_type: str
+    interface_type: str
     namespace: List[str]
     topic: List[str]
     is_global: bool
