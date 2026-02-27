@@ -25,8 +25,10 @@ outputs:
       durability: transient_local
   - name: get_differential_pointcloud_map
     message_type: autoware_map_msgs/srv/GetDifferentialPointCloudMap
+    interface_type: service
   - name: get_partial_pointcloud_map
     message_type: autoware_map_msgs/srv/GetPartialPointCloudMap
+    interface_type: service
 
 param_files: []
 
