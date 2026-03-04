@@ -32,15 +32,15 @@ def validate_against_schema(
     json_schema_dict: dict = None,
 ) -> List[SchemaIssue]:
     """Validate data against schema.
-    
+
     This function uses JSON Schema validation and semantic checks.
-    
+
     Args:
         data: Data to validate
         entity_type: Entity type for JSON Schema loading
         format_version: Format version for JSON Schema loading
         json_schema_dict: JSON Schema dictionary to validate against
-        
+
     Returns:
         List of SchemaIssue objects
     """
@@ -208,13 +208,13 @@ def _variant_forbidden_root_fields_semantics(
 
 def get_semantic_checks(entity_type: str) -> Tuple[Callable[[Dict[str, Any]], Iterable[SchemaIssue]], ...]:
     """Get semantic check functions for an entity type.
-    
+
     Semantic checks are cross-field validation rules that cannot be
     expressed in JSON Schema (e.g., "at least one of X, Y, or Z").
-    
+
     Args:
         entity_type: Entity type (node, module, system, parameter_set)
-        
+
     Returns:
         Tuple of semantic check functions
     """

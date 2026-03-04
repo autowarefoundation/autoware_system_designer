@@ -20,16 +20,16 @@ import hashlib
 
 def pascal_to_snake(name: str) -> str:
     """Convert PascalCase to snake_case.
-    
+
     Args:
         name: String in PascalCase format
-        
+
     Returns:
         String in snake_case format
     """
     if not name:
         return ""
-    
+
     # Insert underscore before uppercase letters that follow lowercase letters
     s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
     # Insert underscore before uppercase letters that follow lowercase letters or digits
@@ -37,16 +37,16 @@ def pascal_to_snake(name: str) -> str:
 
 def snake_to_pascal(name: str) -> str:
     """Convert snake_case to PascalCase.
-    
+
     Args:
         name: String in snake_case format
-        
+
     Returns:
         String in PascalCase format
     """
     if not name:
         return ""
-    
+
     components = name.split('_')
     return ''.join(word.capitalize() for word in components)
 
@@ -69,13 +69,13 @@ def generate_unique_id(namespace: list[str], *components: str) -> str:
     for comp in components:
         if comp:
             parts.append(str(comp))
-    
+
     # Create a stable string representation
     raw = "/".join(parts)
-    
+
     # Compute SHA256 hash
     hash_object = hashlib.sha256(raw.encode('utf-8'))
     hex_dig = hash_object.hexdigest()
-    
+
     # Return id_ + first 16 characters
     return f"id_{hex_dig[:16]}"

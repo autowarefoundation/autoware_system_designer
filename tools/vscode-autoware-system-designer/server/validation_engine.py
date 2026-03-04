@@ -63,13 +63,13 @@ class ValidationEngine:
         try:
             # Extract the name from document content (to catch unsaved changes)
             name_from_content = self._extract_name_from_content(document_content)
-            
+
             # Safely get filename stem
             file_path = config.file_path
             if isinstance(file_path, str):
                 from pathlib import Path
                 file_path = Path(file_path)
-                
+
             actual_filename = file_path.stem  # filename without extension
 
             # Compare the name from content with the filename
@@ -102,22 +102,22 @@ class ValidationEngine:
     def validate_filename_matching_from_content(self, document_content: str, file_path: str) -> List[lsp.Diagnostic]:
         """Validate filename matching from content and file path without requiring a config object."""
         diagnostics = []
-        
+
         if not document_content:
             return diagnostics
 
         from pathlib import Path
         file_path_obj = Path(file_path)
         actual_filename = file_path_obj.stem  # filename without extension
-        
+
         # Extract the name from document content
         name_from_content = self._extract_name_from_content(document_content)
-        
+
         # Compare the name from content with the filename
         if name_from_content and name_from_content != actual_filename:
             # Find the name field range to underline it
             name_range = self._find_name_field_range(document_content)
-            
+
             message = f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'"
 
             if name_range:
@@ -142,7 +142,7 @@ class ValidationEngine:
     def validate_yaml_format(self, document_content: str) -> List[lsp.Diagnostic]:
         """Validate YAML format and syntax."""
         diagnostics = []
-        
+
         try:
             yaml.safe_load(document_content)
         except yaml.YAMLError as e:
@@ -157,7 +157,7 @@ class ValidationEngine:
                 match = re.search(r'line\s+(\d+)', error_msg, re.IGNORECASE)
                 if match:
                     line_num = int(match.group(1)) - 1  # Convert to 0-based
-            
+
             lines = document_content.split('\n')
             if line_num < len(lines):
                 line = lines[line_num]
@@ -179,7 +179,7 @@ class ValidationEngine:
                     message=f"YAML syntax error: {error_msg}",
                     severity=lsp.DiagnosticSeverity.Error
                 ))
-        
+
         return diagnostics
 
     def validate_connections(self, config: Config, document_content: str = None) -> List[lsp.Diagnostic]:
@@ -260,24 +260,24 @@ class ValidationEngine:
         """Get input ports from a config, handling both Node and Module types."""
         if hasattr(config, 'inputs') and config.inputs:
             return config.inputs
-        
+
         if hasattr(config, 'external_interfaces'):
             ext = config.external_interfaces or {}
             if isinstance(ext, dict):
                 return ext.get('input', [])
-        
+
         return []
 
     def _get_entity_outputs(self, config: Config) -> List[dict]:
         """Get output ports from a config, handling both Node and Module types."""
         if hasattr(config, 'outputs') and config.outputs:
             return config.outputs
-        
+
         if hasattr(config, 'external_interfaces'):
             ext = config.external_interfaces or {}
             if isinstance(ext, dict):
                 return ext.get('output', [])
-        
+
         return []
 
     def _validate_connection_reference(self, ref: str, config: Config) -> Tuple[bool, str]:
@@ -440,10 +440,10 @@ class ValidationEngine:
                 instance_name = parts[0]
                 port_type = parts[1]
                 port_name = parts[2] if len(parts) > 2 else None
-                
+
                 if not port_name:
                     return None
-                    
+
                 target_entity_config = self.resolution_service.get_instance_entity(config, instance_name)
                 if not target_entity_config:
                     return None
@@ -453,14 +453,14 @@ class ValidationEngine:
             component_name = parts[0]
             port_type = parts[1]
             port_name = parts[2] if len(parts) > 2 else None
-            
+
             if not port_name:
                 return None
-                
+
             target_entity_config = self.resolution_service.get_instance_entity(config, component_name)
             if not target_entity_config:
                 return None
-                
+
         if target_entity_config and port_type and port_name:
             return self.resolution_service.resolve_port_type(target_entity_config, port_type, port_name)
 
@@ -473,32 +473,32 @@ class ValidationEngine:
             lines = document_content.split('\n')
             connections_found = 0
             in_connections_section = False
-            
+
             for line_num, line in enumerate(lines):
                 stripped = line.strip()
-                
+
                 # Check if we're entering the connections section
                 if stripped == 'connections:' or stripped.startswith('connections:'):
                     in_connections_section = True
                     continue
-                
+
                 # Check if we're leaving the connections section (new top-level key)
                 if in_connections_section and stripped and not line[0].isspace() and not stripped.startswith('-'):
                     in_connections_section = False
                     continue
-                
+
                 # Look for connection items (lines starting with '-')
                 if in_connections_section and stripped.startswith('-'):
                     # This might be the start of a new connection
                     # Look ahead to find 'from:' or 'to:' fields
                     connection_start_line = line_num
                     found_field = False
-                    
+
                     # Look ahead in the same connection block
                     for next_line_num in range(line_num, min(line_num + 10, len(lines))):
                         next_line = lines[next_line_num]
                         next_stripped = next_line.strip()
-                        
+
                         # Check if this line contains our field
                         if f'{field}:' in next_stripped:
                             if connections_found == connection_index:
@@ -515,16 +515,16 @@ class ValidationEngine:
                                     )
                             found_field = True
                             break
-                        
+
                         # If we hit another connection item or top-level key, stop
                         if next_line_num > line_num:
                             if (next_stripped.startswith('-') and next_line_num != line_num) or \
                                (next_stripped and not next_line[0].isspace() and not next_stripped.startswith('-')):
                                 break
-                    
+
                     if found_field:
                         connections_found += 1
-        
+
         # Fallback: approximate line number
         line = 20 + connection_index * 5
         return lsp.Range(
@@ -537,7 +537,7 @@ class ValidationEngine:
         # Use regex to find "name: value" at the start of a line
         # Handles optional quotes and comments
         pattern = r'^name:\s*(?P<quote>[\'"]?)(?P<name>.*?)(?P=quote)\s*(?:#.*)?$'
-        
+
         lines = document_content.splitlines()
         for line in lines:
             match = re.match(pattern, line)
@@ -555,13 +555,13 @@ class ValidationEngine:
                 # Get the value range
                 value_start = match.start('name')
                 value_end = match.end('name')
-                
+
                 # Include quotes if present
                 quote = match.group('quote')
                 if quote:
                     value_start -= len(quote)
                     value_end += len(quote)
-                
+
                 return lsp.Range(
                     start=lsp.Position(line=line_num, character=value_start),
                     end=lsp.Position(line=line_num, character=value_end)

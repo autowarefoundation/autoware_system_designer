@@ -26,10 +26,10 @@ logger = logging.getLogger(__name__)
 
 class EventManager:
     """Manages event and process operations for Instance objects."""
-    
+
     def __init__(self, instance: 'Instance'):
         self.instance = instance
-        
+
         # processes
         self.processes: List[Process] = []
         self.event_list: List[Event] = []
@@ -38,7 +38,7 @@ class EventManager:
         """Initialize processes for node entity during node configuration."""
         if self.instance.entity_type != "node":
             return
-            
+
         # connect port events and the process events
         on_input_events = self.instance.link_manager.get_input_events()
         to_output_events = self.instance.link_manager.get_output_events()

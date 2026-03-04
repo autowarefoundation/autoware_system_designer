@@ -15,31 +15,31 @@
 macro(autoware_system_designer_parameter)
   # Check if schema directory exists
   set(SCHEMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/schema")
-  
+
   if(EXISTS ${SCHEMA_DIR})
     # Set up paths - use absolute path to the script
     set(PARAMETER_PROCESS_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/parameter_process.py")
     set(TEE_RUN_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/tee_run.py")
     set(CONFIG_OUTPUT_DIR "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/config")
-    
+
     # Set up logging
     get_filename_component(WORKSPACE_ROOT "${CMAKE_BINARY_DIR}/../.." ABSOLUTE)
     set(LOG_DIR "${WORKSPACE_ROOT}/log/latest_build/${PROJECT_NAME}")
     set(LOG_FILE "${LOG_DIR}/parameter_generation.log")
-    
+
     # Find all schema files
     file(GLOB SCHEMA_FILES "${SCHEMA_DIR}/*.schema.json")
-    
+
     if(SCHEMA_FILES)
       message(STATUS "Found schema files in ${PROJECT_NAME}: ${SCHEMA_FILES}")
-      
+
       # Create output files list for dependencies
       set(CONFIG_FILES "")
       foreach(SCHEMA_FILE ${SCHEMA_FILES})
         get_filename_component(SCHEMA_NAME ${SCHEMA_FILE} NAME_WE)
         list(APPEND CONFIG_FILES "${CONFIG_OUTPUT_DIR}/${SCHEMA_NAME}.param.yaml")
       endforeach()
-      
+
       # Create custom command for parameter generation
       add_custom_command(
         OUTPUT ${CONFIG_FILES}
@@ -50,29 +50,29 @@ macro(autoware_system_designer_parameter)
         COMMENT "Generating parameter files for ${PROJECT_NAME} from schema files. Terminal shows warnings/errors; full log: ${LOG_FILE}"
         VERBATIM
       )
-      
+
       # Create custom target for parameter generation
       add_custom_target(${PROJECT_NAME}_generate_parameters ALL
         DEPENDS ${CONFIG_FILES}
       )
-      
+
       # Make sure the parameter generation runs before the main project target
       if(TARGET ${PROJECT_NAME})
         add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_generate_parameters)
       endif()
-      
+
       # Install generated config files
       install(DIRECTORY ${CONFIG_OUTPUT_DIR}/
         DESTINATION share/${PROJECT_NAME}/config
         FILES_MATCHING PATTERN "*.param.yaml"
       )
-      
+
     else()
       message(STATUS "No schema files found in ${SCHEMA_DIR}")
     endif()
-    
+
   else()
     message(STATUS "No schema directory found at ${SCHEMA_DIR}")
   endif()
-  
+
 endmacro()

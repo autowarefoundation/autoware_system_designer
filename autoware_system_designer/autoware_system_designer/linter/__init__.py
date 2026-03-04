@@ -27,22 +27,22 @@ __all__ = ['lint_files', 'LintResult']
 
 def lint_files(file_paths: List[Path]) -> List[LintResult]:
     """Lint a list of YAML files.
-    
+
     Args:
         file_paths: List of file paths to lint
-        
+
     Returns:
         List of LintResult objects, one per file
     """
     results = []
-    
+
     structure_linter = StructureLinter()
     naming_linter = NamingLinter()
     file_linter = FileLinter()
-    
+
     for file_path in file_paths:
         result = LintResult(file_path)
-        
+
         # Run all linters
         try:
             file_linter.lint(file_path, result)
@@ -50,8 +50,7 @@ def lint_files(file_paths: List[Path]) -> List[LintResult]:
             naming_linter.lint(file_path, result)
         except Exception as e:
             result.add_error(f"Unexpected error during linting: {str(e)}")
-        
-        results.append(result)
-    
-    return results
 
+        results.append(result)
+
+    return results

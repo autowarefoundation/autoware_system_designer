@@ -75,17 +75,17 @@ class SchemaToRosParamConverter:
                 # Handle references to external files
                 if isinstance(ref_path, str) and not ref_path.startswith("#"):
                     file_path, _, def_path = ref_path.partition("#")
-                    
+
                     # Resolve external file path relative to current schema location
                     external_file_path = self.schema_path.parent / file_path
                     if not external_file_path.exists():
                         self.logger.warning(f"Referenced file not found: {external_file_path}")
                         return schema_data
-                        
+
                     try:
                         with open(external_file_path, "r") as f:
                             external_schema = json.load(f)
-                            
+
                         # If there's a definition path (after #), resolve it
                         if def_path:
                             if def_path.startswith("/definitions/"):
@@ -205,7 +205,7 @@ class SchemaToRosParamConverter:
         # Remove .schema from the filename if present (e.g. name.schema -> name)
         if schema_filename.endswith(".schema"):
             schema_filename = schema_filename[:-7]
-            
+
         output_filename = f"{schema_filename}.param.yaml"
         output_path = self.output_dir / output_filename
 
@@ -228,7 +228,7 @@ def main() -> None:
         level=logging.INFO,
         formatter=logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"),
     )
-    
+
     parser = argparse.ArgumentParser(
         description="Generate config files from JSON schema files"
     )

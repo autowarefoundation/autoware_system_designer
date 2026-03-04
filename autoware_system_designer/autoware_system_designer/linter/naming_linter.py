@@ -26,10 +26,10 @@ from .report import LintResult
 
 class NamingLinter:
     """Linter for naming conventions."""
-    
+
     def lint(self, file_path: Path, result: LintResult):
         """Lint naming conventions in the YAML file.
-        
+
         Args:
             file_path: Path to the file to lint
             result: LintResult to add errors/warnings to
@@ -39,7 +39,7 @@ class NamingLinter:
         except Exception as e:
             result.add_error(f"Failed to load YAML file: {str(e)}")
             return
-        
+
         # Skip name format checks for parameter_set files
         if file_path.name.endswith(".parameter_set.yaml"):
             return
@@ -71,7 +71,7 @@ class NamingLinter:
                         )
             except Exception as e:
                 result.add_error(f"Invalid entity name format: {str(e)}")
-        
+
         # Check instance names (for modules)
         if 'instances' in config and isinstance(config['instances'], list):
             for idx, instance in enumerate(config['instances']):
@@ -82,7 +82,7 @@ class NamingLinter:
                             f"Instance name '{instance_name}' should be in snake_case format "
                             f"(e.g., 'node_detector', 'pointcloud_input')"
                         )
-        
+
         # Check package field naming (for nodes)
         if 'package' in config and isinstance(config['package'], dict):
             pkg = config['package']
@@ -108,7 +108,7 @@ class NamingLinter:
                             f"Input port name '{port_name}' should be in snake_case format "
                             f"(e.g., 'pointcloud', 'vector_map')"
                         )
-        
+
         if 'outputs' in config and isinstance(config['outputs'], list):
             for idx, output_port in enumerate(config['outputs']):
                 if isinstance(output_port, dict) and 'name' in output_port:
@@ -118,53 +118,53 @@ class NamingLinter:
                             f"Output port name '{port_name}' should be in snake_case format "
                             f"(e.g., 'objects', 'detected_objects')"
                         )
-    
+
     @staticmethod
     def _is_pascal_case(name: str) -> bool:
         """Check if a string is in PascalCase format.
-        
+
         PascalCase: Starts with uppercase letter, followed by alphanumeric characters.
         Examples: DetectorA, MyModule, Node123
-        
+
         Args:
             name: String to check
-            
+
         Returns:
             True if string is in PascalCase format
         """
         if not name:
             return False
-        
+
         # Must start with uppercase letter
         if not name[0].isupper():
             return False
-        
+
         # Rest should be alphanumeric (no underscores, spaces, or special chars)
         pattern = r'^[A-Z][a-zA-Z0-9]*$'
         return bool(re.match(pattern, name))
-    
+
     @staticmethod
     def _is_snake_case(name: str) -> bool:
         """Check if a string is in snake_case format.
-        
+
         snake_case: Lowercase letters, numbers, and underscores. Must start with a letter.
         Examples: pointcloud_input, node_detector, my_port_123
         Also allows slash-delimited segments with snake_case each:
         Examples: lidar/front_lower/pointcloud, camera/camera0/image_raw
-        
+
         Args:
             name: String to check
-            
+
         Returns:
             True if string is in snake_case format
         """
         if not name:
             return False
-        
+
         # Must start with lowercase letter
         if not name[0].islower():
             return False
-        
+
         # Allow slash-delimited snake_case segments
         pattern = r'^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$'
         return bool(re.match(pattern, name))
@@ -172,14 +172,14 @@ class NamingLinter:
     @staticmethod
     def _is_provider_identifier(name: str) -> bool:
         """Check if a string is a valid provider identifier.
-        
+
         Provider identifiers are lowercase, may contain letters, digits,
         hyphens, and underscores. Must start with a letter.
         Examples: autoware, ros, ros2, pilot-auto, nebula, dummy
-        
+
         Args:
             name: String to check
-            
+
         Returns:
             True if string is a valid provider identifier
         """

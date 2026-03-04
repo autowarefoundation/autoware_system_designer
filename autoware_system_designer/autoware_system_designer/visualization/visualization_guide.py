@@ -66,14 +66,14 @@ def calculate_color_variant(base_color: str, variant: str) -> str:
             int(b * 0.2 + 255 * 0.8)
         )
     elif variant == "fade":
-        # Fade: blend 70% base 
+        # Fade: blend 70% base
         return rgb_to_hex(
             int(r * 0.7),
             int(g * 0.7),
             int(b * 0.7)
         )
     elif variant == "darkish":
-        # Darkish: blend 35% base 
+        # Darkish: blend 35% base
         return rgb_to_hex(
             int(r * 0.39),
             int(g * 0.39),
@@ -87,7 +87,7 @@ def calculate_color_variant(base_color: str, variant: str) -> str:
             int(b * 0.26)
         )
     elif variant == "darkest":
-        # Darkest: blend 90% base 
+        # Darkest: blend 90% base
         return rgb_to_hex(
             int(r * 0.1),
             int(g * 0.1),

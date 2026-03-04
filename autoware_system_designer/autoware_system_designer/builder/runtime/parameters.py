@@ -24,7 +24,7 @@ class ParameterType(Enum):
     """
     GLOBAL = 0           # Global parameter (lowest priority)
     DEFAULT_FILE = 1     # Parameter loaded from default parameter file
-    DEFAULT = 2          # Default parameter 
+    DEFAULT = 2          # Default parameter
     OVERRIDE_FILE = 3    # Parameter loaded from override parameter file
     OVERRIDE = 4         # Directly set override parameter
     MODE_FILE = 5        # Parameter loaded from mode parameter file
@@ -158,4 +158,3 @@ class ParameterFileList:
             source,
         )
         self.list.append(new_param_file)
-

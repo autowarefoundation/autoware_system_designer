@@ -32,14 +32,14 @@ from .report import LintResult
 
 class StructureLinter:
     """Linter for structure and schema validation."""
-    
+
     def __init__(self):
         """Initialize the structure linter."""
         pass
-    
+
     def lint(self, file_path: Path, result: LintResult):
         """Lint structure and schema of the YAML file.
-        
+
         Args:
             file_path: Path to the file to lint
             result: LintResult to add errors/warnings to
@@ -98,7 +98,7 @@ class StructureLinter:
         except Exception as e:
             result.add_error(f"Invalid file name format: {str(e)}")
             return
-        
+
         # Validate entity name matches filename
         if 'name' not in config:
             name_loc = lookup_source(source_map, "/name")
@@ -109,11 +109,11 @@ class StructureLinter:
                 yaml_path=name_loc.yaml_path,
             )
             return
-        
+
         try:
             entity_name, entity_type = entity_name_decode(config['name'])
             name_loc = lookup_source(source_map, "/name")
-            
+
             # Check entity name matches filename
             if entity_name != file_entity_name:
                 src = SourceLocation(file_path=file_path, yaml_path=name_loc.yaml_path, line=name_loc.line, column=name_loc.column)
@@ -123,7 +123,7 @@ class StructureLinter:
                     column=name_loc.column,
                     yaml_path=name_loc.yaml_path,
                 )
-            
+
             # Check entity type matches file extension
             if entity_type != file_entity_type:
                 src = SourceLocation(file_path=file_path, yaml_path=name_loc.yaml_path, line=name_loc.line, column=name_loc.column)
@@ -136,7 +136,7 @@ class StructureLinter:
 
             # Schema-driven validation using JSON Schema (single source of truth)
             format_version = raw_version or "0.2.0"  # Default to 0.2.0 if not specified
-            
+
             # Load JSON Schema
             try:
                 json_schema = load_schema(entity_type, format_version)
@@ -154,7 +154,7 @@ class StructureLinter:
                 format_version=format_version,
                 json_schema_dict=json_schema,
             )
-            
+
             # Run semantic checks (cross-field validation that JSON Schema can't express)
             semantic_checks = get_semantic_checks(entity_type)
             for check in semantic_checks:
@@ -163,7 +163,7 @@ class StructureLinter:
                     issues.extend(semantic_issues)
                 except Exception as exc:
                     result.add_error(f"Semantic check error: {str(exc)}")
-            
+
             # Report issues
             for issue in issues:
                 # Skip format-version issues here; already reported above
@@ -179,7 +179,6 @@ class StructureLinter:
                     column=loc.column,
                     yaml_path=loc.yaml_path,
                 )
-            
+
         except Exception as e:
             result.add_error(f"Error validating entity name: {str(e)}")
-

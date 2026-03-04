@@ -44,7 +44,7 @@ def match_and_pair_wildcard_ports(
     """
     def _match(pattern: str, keys: List[str]) -> List[str]:
         """Match keys against a pattern that may contain wildcards (*, ^, +).
-        
+
         This treats * ^ + as distinct wildcards, but functionally they all match
         sequences of characters. Using different wildcards allows for specific
         multi-capture matching in the substitution phase.
@@ -52,9 +52,9 @@ def match_and_pair_wildcard_ports(
         # Create regex where each wildcard type captures a group
         regex_pattern = re.escape(pattern)
         regex_pattern = regex_pattern.replace(r"\*", "(.*?)")
-        regex_pattern = regex_pattern.replace(r"\^", "(.*?)") 
+        regex_pattern = regex_pattern.replace(r"\^", "(.*?)")
         regex_pattern = regex_pattern.replace(r"\+", "(.*?)")
-        
+
         matches = []
         for key in keys:
             if re.match(f"^{regex_pattern}$", key):
@@ -69,7 +69,7 @@ def match_and_pair_wildcard_ports(
     # Check for wildcard presence
     src_wc = any(c in source_pattern for c in "*^+")
     tgt_wc = any(c in target_pattern for c in "*^+")
-    
+
     # Simple case: both patterns are purely just one wildcard character (e.g. both "*")
     if source_pattern in ["*", "^", "+"] and target_pattern in ["*", "^", "+"]:
         common = sorted(set(src_matches) & set(tgt_matches))
@@ -100,12 +100,12 @@ def match_and_pair_wildcard_ports(
 
 def _apply_wildcard_substitution(source_pattern: str, target_pattern: str, matched_name: str) -> str:
     """Substitute wildcard captures from a matched source key into target pattern.
-    
-    Wildcards (*, ^, +) are treated as distinct placeholders. Captures from 
-    wildcards in the source pattern are mapped to the corresponding wildcard 
+
+    Wildcards (*, ^, +) are treated as distinct placeholders. Captures from
+    wildcards in the source pattern are mapped to the corresponding wildcard
     type in the target pattern.
-    
-    Example 1: 
+
+    Example 1:
       source: "input.*_^" matched against "input.foo_bar"
       target: "^.input.*"
       result: "bar.input.foo"
@@ -118,11 +118,11 @@ def _apply_wildcard_substitution(source_pattern: str, target_pattern: str, match
     # 1. Extract captures from source pattern
     # Convert wildcards to named groups to track which type matched what
     # We use a simple sequential extraction since regex groups are ordered
-    
+
     # Build source regex
     source_regex_parts = []
     wildcard_order = [] # stores type of wildcard encountered: '*', '^', or '+'
-    
+
     last_idx = 0
     # Iterate through pattern to find wildcards
     # Using a simple parser loop because we need to preserve order and type
@@ -139,13 +139,13 @@ def _apply_wildcard_substitution(source_pattern: str, target_pattern: str, match
         i += 1
     if last_idx < len(source_pattern):
         source_regex_parts.append(re.escape(source_pattern[last_idx:]))
-        
+
     source_regex = "^" + "".join(source_regex_parts) + "$"
     match = re.match(source_regex, matched_name)
-    
+
     if not match:
         return matched_name
-        
+
     captures = match.groups()
     if len(captures) != len(wildcard_order):
         return matched_name # Should match if regex worked
@@ -164,33 +164,33 @@ def _apply_wildcard_substitution(source_pattern: str, target_pattern: str, match
     result_parts = []
     last_idx = 0
     i = 0
-    
+
     # We need to track index for each wildcard type in target to consume correct capture
     wc_indices = {'*': 0, '^': 0, '+': 0}
-    
+
     while i < len(target_pattern):
         char = target_pattern[i]
         if char in "*^+":
             # Add preceding literal text
             if i > last_idx:
                 result_parts.append(target_pattern[last_idx:i])
-            
+
             # Find substitution value
             if wc_indices[char] < len(wildcard_captures[char]):
                 result_parts.append(wildcard_captures[char][wc_indices[char]])
                 wc_indices[char] += 1
             else:
                 # If target has more wildcards of a type than source, leave it as is?
-                # Or simplistic behavior: reuse last or empty? 
+                # Or simplistic behavior: reuse last or empty?
                 # Standard behavior: leave the wildcard char if no capture available (unlikely if patterns align)
                 result_parts.append(char)
-            
+
             last_idx = i + 1
         i += 1
-        
+
     if last_idx < len(target_pattern):
         result_parts.append(target_pattern[last_idx:])
-        
+
     return "".join(result_parts)
 
 
@@ -272,12 +272,12 @@ class LinkManager:
         # Systems do not define external ports by design.
         if self.instance.entity_type == "system":
             return
-            
+
         if kind == "input":
             cfg_list = getattr(self.instance.configuration, "inputs", []) or []
         else:
             cfg_list = getattr(self.instance.configuration, "outputs", []) or []
-            
+
         declared_names = {item.get("name") for item in cfg_list}
         if port_obj.name not in declared_names:
             raise ValidationError(self._err_external_decl(kind, port_obj.name, sorted(declared_names)))
@@ -298,7 +298,7 @@ class LinkManager:
 
     def _create_link_from_ports(self, from_port, to_port, connection_type: ConnectionType):
         """Create and append a link between two ports.
-        
+
         Args:
             from_port: Source port (InPort or OutPort)
             to_port: Destination port (InPort or OutPort)
@@ -343,7 +343,7 @@ class LinkManager:
                 )
             port_name = (to_info or {}).get("port_name", connection.to_port_name)
             to_port = OutPort(port_name, from_port.msg_type, self.instance.namespace)
-            
+
         if from_info is not None:
             from_info["port"] = from_port
         if to_info is not None:
@@ -358,7 +358,7 @@ class LinkManager:
         port_list_to: Dict[str, Dict[str, Any]],
     ):
         """Create links for wildcard connections.
-        
+
         Args:
             connection: Connection configuration
             port_list_from: Mapping of source port keys to metadata dictionaries
@@ -375,7 +375,7 @@ class LinkManager:
             port_list_from,
             port_list_to,
         )
-        
+
         # Validate matched ports
         if not port_pairs:
             msg = self._err_wildcard_no_matches(connection)
@@ -400,13 +400,13 @@ class LinkManager:
 
     def _check_and_deduplicate_connections(self, connection_list: List[Connection]) -> List[Connection]:
         """Check for duplicate connections and deduplicate if identical, error if conflicting.
-        
+
         Args:
             connection_list: List of Connection objects to check
-            
+
         Returns:
             Deduplicated list of Connection objects
-            
+
         Raises:
             ValidationError: If duplicate connections are found that differ in some way
         """
@@ -416,21 +416,21 @@ class LinkManager:
                 from_str = f"input.{conn.from_port_name}"
             else:
                 from_str = f"{conn.from_instance}.output.{conn.from_port_name}"
-            
+
             if conn.to_instance == "":
                 to_str = f"output.{conn.to_port_name}"
             else:
                 to_str = f"{conn.to_instance}.input.{conn.to_port_name}"
-            
+
             return f"{from_str} -> {to_str}"
-        
+
         seen_connections: Dict[str, Connection] = {}  # key: connection signature, value: first occurrence
         duplicate_indices: List[int] = []  # indices of duplicates to remove
-        
+
         for idx, conn in enumerate(connection_list):
             # Create a signature for the connection (endpoints only)
             conn_signature = f"{conn.from_instance}.{conn.from_port_name} -> {conn.to_instance}.{conn.to_port_name}"
-            
+
             if conn_signature in seen_connections:
                 conn_str = _format_connection_string(conn)
                 file_path = getattr(self.instance.configuration, 'file_path', 'unknown')
@@ -440,7 +440,7 @@ class LinkManager:
                 )
             else:
                 seen_connections[conn_signature] = conn
-        
+
         # Return deduplicated list (keep first occurrence, remove duplicates)
         return [conn for idx, conn in enumerate(connection_list) if idx not in duplicate_indices]
 
@@ -457,7 +457,7 @@ class LinkManager:
                 f"Module '{self.instance.name}' has no connections configured{format_source(cfg_src)}"
             )
             return
-        
+
         # Check for and deduplicate duplicate connections
         connection_list = self._check_and_deduplicate_connections(connection_list)
 
@@ -479,7 +479,7 @@ class LinkManager:
             port_name = ext_input.get("name")
             idx = f".{port_name}"
             port_list_from[idx] = {"instance": None, "port_name": port_name, "port": None}
-            
+
         outputs = getattr(self.instance.configuration, "outputs", []) or []
         for ext_output in outputs:
             port_name = ext_output.get("name")
@@ -567,7 +567,7 @@ class LinkManager:
         """Initialize ports for node entity during node configuration."""
         if self.instance.entity_type != "node":
             return
-            
+
         # set in_ports
         for cfg_in_port in self.instance.configuration.inputs:
             in_port_name = cfg_in_port.get("name")

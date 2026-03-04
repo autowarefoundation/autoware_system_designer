@@ -34,14 +34,14 @@ _SYSTEM_ARG_PATTERN = re.compile(r"\$\(var\s+([^)]+)\)")
 
 class ParameterManager:
     """Manages parameter operations for Instance objects.
-    
+
     This class handles:
     1. Applying parameters from parameter sets to target instances
     2. Initializing node parameters from configuration
     3. Managing parameter values and parameters
     4. Resolving parameter file paths with package prefixes
     """
-    
+
     def __init__(self, instance: 'Instance', parameter_resolver = None):
         self.instance = instance
         self.parameter_resolver = parameter_resolver
@@ -58,7 +58,7 @@ class ParameterManager:
 
     def resolve_substitutions(self, input_string: str, source: Optional[SourceLocation] = None) -> str:
         """Resolve all substitutions in a string.
-        
+
         Handles:
         1. ${input topic_name}
         2. ${output topic_name}
@@ -154,7 +154,7 @@ class ParameterManager:
                 required |= cls._extract_used_system_args(param.get("value"), available_args)
 
         return [arg for arg in system_args if arg in required]
-    
+
     def get_parameters_for_launch(self) -> List[Dict[str, Any]]:
         """Get all parameters for launcher generation.
 
@@ -216,7 +216,7 @@ class ParameterManager:
         for param_file in self.parameter_files.list:
             if param_file.path and isinstance(param_file.path, str):
                 resolved_path = self.resolve_substitutions(param_file.path, source=getattr(param_file, "source", None))
-                
+
                 if resolved_path != param_file.path:
                     param_file.path = resolved_path
 
@@ -276,7 +276,7 @@ class ParameterManager:
         # Look up parameter in self.parameters
         # We need to get the effective value of the parameter
         param_value = self.parameters.get_parameter(param_name)
-        
+
         if param_value is not None:
             return str(param_value)
         else:
@@ -308,7 +308,7 @@ class ParameterManager:
     # =========================================================================
     # Parameter Path Resolution
     # =========================================================================
-    
+
     def _resolve_parameter_file_path(self, path: str, package_name: Optional[str] = None,
                                      is_override: bool = False, config_registry: Optional['ConfigRegistry'] = None) -> str:
         """Resolve parameter file path with package prefix if needed.
@@ -361,7 +361,7 @@ class ParameterManager:
                             workspace_root = current_dir
                             break
                         current_dir = os.path.dirname(current_dir)
-                    
+
                     if workspace_root:
                         # Construct install path: install/<package>/share/<package>/<path>
                         install_path = os.path.join(workspace_root, 'install', package_name, 'share', package_name, path)
@@ -383,7 +383,7 @@ class ParameterManager:
     # =========================================================================
     # Parameter Application (from parameter sets)
     # =========================================================================
-    
+
     def apply_node_parameters(
         self,
         node_namespace: str,
@@ -397,14 +397,14 @@ class ParameterManager:
         parameter_sources: Optional[List[SourceLocation]] = None,
     ):
         """Apply parameters directly to a target node using new parameter set format.
-        
-        This method finds a node by its absolute namespace and applies both param_files 
+
+        This method finds a node by its absolute namespace and applies both param_files
         and param_values directly to it. Parameters will override param_files.
-        
+
         Args:
-            node_namespace: Absolute namespace path to the target node 
+            node_namespace: Absolute namespace path to the target node
                            (e.g., "/perception/object_recognition/node_tracker")
-            param_files: List of parameter file mappings 
+            param_files: List of parameter file mappings
                             (e.g., [{"model_param_path": "path/to/file.yaml"}])
             param_values: List of direct parameters
                            (e.g., [{"name": "build_only", "type": "bool", "value": false}])
@@ -421,7 +421,7 @@ class ParameterManager:
         if not target_instances:
             logger.warning(f"Target node not found: {node_namespace}{format_source(source)}")
             return
-            
+
         for target_instance in target_instances:
             logger.info(f"Applying parameters to node: {node_namespace} (instance: {target_instance.name})")
             self._apply_parameters_to_instance(
@@ -439,7 +439,7 @@ class ParameterManager:
                                       file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
                                       direct_parameter_type: ParameterType = ParameterType.OVERRIDE):
         """Apply parameters to all nodes in the instance tree.
-        
+
         Args:
             param_files: List of parameter file mappings
             param_values: List of direct parameters
@@ -448,19 +448,19 @@ class ParameterManager:
             direct_parameter_type: ParameterType for directly specified parameters
         """
         logger.info(f"Applying parameters to all nodes (global scope)")
-        
+
         # Start from the root deployment instance
         root_instance = self.instance
         while root_instance.parent is not None:
             root_instance = root_instance.parent
-            
+
         self._apply_parameters_recursive(root_instance, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type)
 
     def _apply_parameters_recursive(self, instance, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type):
         """Recursively apply parameters to instance tree."""
         if instance.entity_type == "node":
              self._apply_parameters_to_instance(instance, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type)
-        
+
         for child in instance.children.values():
             self._apply_parameters_recursive(child, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type)
 
@@ -477,7 +477,7 @@ class ParameterManager:
         parameter_sources: Optional[List[SourceLocation]] = None,
     ):
         """Apply parameters directly to a target instance object."""
-            
+
         # Apply parameter files first (as overrides, not defaults)
         if param_files:
             for idx, param_file_mapping in enumerate(param_files):
@@ -506,7 +506,7 @@ class ParameterManager:
                         parameter_type=file_parameter_type,
                         source=pf_source,
                     )
-        
+
         # Apply parameters (these override parameter files)
         if param_values:
             for idx, param in enumerate(param_values):
@@ -535,40 +535,40 @@ class ParameterManager:
     # =========================================================================
     # Node Finding (helper methods for parameter application)
     # =========================================================================
-    
+
     def find_matching_nodes(self, target_namespace: str) -> List['Instance']:
         """Find all nodes matching the absolute namespace path in the current instance's subtree.
-        
+
         Args:
             target_namespace: Absolute namespace path (e.g., "/perception/object_recognition/node_tracker")
-            
+
         Returns:
             List of matching Instance objects (nodes)
         """
         matches = []
-        
+
         # Helper for recursive search
         def _search(inst):
             # Check if current instance matches
             if inst.entity_type == "node" and inst.namespace_str == target_namespace:
                 matches.append(inst)
-            
+
             # Optimization: only traverse if target could be deeper
             # i.e., target_namespace starts with current namespace
             # OR current namespace is root "/"
             # OR current namespace is a prefix of target
-            
+
             if inst.namespace_str == "/" or target_namespace.startswith(inst.namespace_str + "/") or inst.namespace_str == target_namespace:
                 for child in inst.children.values():
                     _search(child)
-                    
+
         _search(self.instance)
         return matches
 
     # =========================================================================
     # Node Parameter Initialization
     # =========================================================================
-    
+
     def initialize_node_parameters(self, config_registry: Optional['ConfigRegistry'] = None):
         """Initialize parameters for node entity during node configuration.
         This method initializes both default parameter_files and default parameters
@@ -576,11 +576,11 @@ class ParameterManager:
         """
         if self.instance.entity_type != "node":
             return
-            
+
         package_name = None
         if self.instance.configuration and hasattr(self.instance.configuration, 'package_name'):
             package_name = self.instance.configuration.package_name
-        
+
         # 1. Set default parameter_files from node configuration
         # Use new param_files field, fallback to parameter_files is handled in parser
         if hasattr(self.instance.configuration, 'param_files') and self.instance.configuration.param_files:
@@ -616,7 +616,7 @@ class ParameterManager:
                     config_registry=config_registry,
                     source=cfg_source,
                 )
-        
+
         # 2. Set default parameters from node parameters
         # Use new param_values field, fallback to parameters is handled in parser
         if hasattr(self.instance.configuration, 'param_values') and self.instance.configuration.param_values:
@@ -649,19 +649,19 @@ class ParameterManager:
 
     def _flatten_parameters(self, params: Dict[str, Any], parent_key: str = "", separator: str = ".") -> Dict[str, Any]:
         """Flatten nested dictionary into dot-separated keys.
-        
+
         Args:
             params: The dictionary to flatten
             parent_key: Key prefix for recursion
             separator: Separator for keys
-            
+
         Returns:
             Dict with flattened keys
         """
         items = {}
         for k, v in params.items():
             new_key = f"{parent_key}{separator}{k}" if parent_key else k
-            
+
             if isinstance(v, dict):
                 items.update(self._flatten_parameters(v, new_key, separator))
             else:

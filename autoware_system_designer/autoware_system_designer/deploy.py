@@ -55,7 +55,7 @@ class Deployment:
 
         # detect mode of input file (deployment vs system only)
         logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)
-        
+
         input_path = deploy_config.deployment_file
         self.deploy_variants: List[Dict[str, Any]] = []
         self.deployment_table_path: Optional[str] = None
@@ -71,10 +71,10 @@ class Deployment:
         if self.config_registry.deployment_package_name is None:
             system_file_abs = str(Path(system_config.file_path).resolve())
             self.config_registry.deployment_package_name = file_package_map.get(system_file_abs)
-        
+
         self.config_yaml_dir = str(system_config.file_path)
         logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
-                
+
         self.name = system_config.name
         self.system_argument_variables = self._collect_system_argument_names(system_config)
         self.deployment_package_path = str(Path(deploy_config.output_root_dir).resolve())
@@ -144,7 +144,7 @@ class Deployment:
             manifest_file = os.path.join(manifest_dir, entry)
             try:
                 manifest_yaml = yaml_parser.load_config(manifest_file)
-                
+
                 # Load package map if available
                 if 'package_map' in manifest_yaml:
                     package_paths.update(manifest_yaml['package_map'])
@@ -166,7 +166,7 @@ class Deployment:
                     file_path = f.get('path') if isinstance(f, dict) else None
                     if file_path and file_path not in system_list:
                         system_list.append(file_path)
-                    
+
                     if file_path and 'package_name' in manifest_yaml:
                         file_package_map[file_path] = manifest_yaml['package_name']
 
@@ -292,10 +292,10 @@ class Deployment:
         """Generate file from template using the unified template renderer."""
         # Initialize template renderer
         renderer = TemplateRenderer()
-        
+
         # Get template name from path
         template_name = os.path.basename(template_path)
-        
+
         # Render template and save to file
         output_path = os.path.join(output_dir, output_filename)
         renderer.render_template_to_file(template_name, output_path, **data)
@@ -313,7 +313,7 @@ class Deployment:
             # Create mode-specific output directory
             mode_monitor_dir = os.path.join(self.system_monitor_dir, mode_key, "component_state_monitor")
             self.generate_by_template(data, topics_template_path, mode_monitor_dir, "topics.yaml")
-            
+
             logger.info(f"Generated system monitor for mode: {mode_key}")
 
 
@@ -364,14 +364,14 @@ class Deployment:
         ):
             # Create mode-specific launcher directory
             mode_launcher_dir = os.path.join(self.launcher_dir, mode_key)
-            
+
             # Generate module launch files from JSON structure
             generate_module_launch_file(
                 payload,
                 mode_launcher_dir,
                 forward_args=deploy_variable_names,
             )
-            
+
             logger.info(f"Generated launcher for mode: {mode_key}")
 
         if self.deploy_variants:
@@ -388,7 +388,7 @@ class Deployment:
         """Generate parameter set template using ParameterTemplateGenerator."""
         if not self.mode_keys:
             raise DeploymentError("Deployment instances are not initialized")
-        
+
         # Generate parameter set template for each mode
         output_paths = {}
         for mode_key, _payload, data in iter_mode_payload_and_data(
@@ -397,10 +397,10 @@ class Deployment:
             # Create mode-specific output directory
             mode_parameter_dir = os.path.join(self.parameter_set_dir, mode_key)
             os.makedirs(mode_parameter_dir, exist_ok=True)
-            
+
             # Initialize template renderer
             renderer = TemplateRenderer()
-            
+
             # Create parameter template generator and generate the template
             template_name = f"{self.name}_{mode_key}" if mode_key != "default" else self.name
             output_path_list = ParameterTemplateGenerator.generate_parameter_set_template_from_data(
@@ -412,5 +412,5 @@ class Deployment:
 
             output_paths[mode_key] = output_path_list
             logger.info(f"Generated {len(output_path_list)} parameter set templates for mode: {mode_key}")
-        
+
         return output_paths

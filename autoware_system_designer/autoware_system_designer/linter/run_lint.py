@@ -36,14 +36,14 @@ def find_yaml_files(paths: List[str]) -> List[Path]:
     """Find all autoware_system_design_format YAML files in given paths."""
     yaml_files = []
     entity_extensions = ['.node.yaml', '.module.yaml', '.system.yaml', '.parameter_set.yaml']
-    
+
     for path_str in paths:
         path = Path(path_str)
-        
+
         if not path.exists():
             print(f"Warning: Path does not exist: {path}", file=sys.stderr)
             continue
-        
+
         if path.is_file():
             # Check if it's a valid entity file
             if any(path.name.endswith(ext) for ext in entity_extensions):
@@ -56,7 +56,7 @@ def find_yaml_files(paths: List[str]) -> List[Path]:
                 yaml_files.extend(path.rglob(f'*{ext}'))
         else:
             print(f"Warning: Path is neither file nor directory: {path}", file=sys.stderr)
-    
+
     return sorted(set(yaml_files))
 
 
@@ -78,22 +78,22 @@ def main(argv: List[str] | None = None) -> None:
         default='human',
         help='Output format (default: human)',
     )
-    
+
     args = parser.parse_args(argv)
 
     if not args.paths:
         args.paths = ['.']
-    
+
     # Find all YAML files
     yaml_files = find_yaml_files(args.paths)
-    
+
     if not yaml_files:
         print("No autoware_system_design_format files found.", file=sys.stderr)
         sys.exit(1)
-    
+
     # Lint all files
     results = lint_files(yaml_files)
-    
+
     # Print results in requested format
     if args.format == 'json':
         import json
@@ -127,7 +127,7 @@ def main(argv: List[str] | None = None) -> None:
                 for warning in result.warnings:
                     line_info = f":{warning.get('line', '?')}" if 'line' in warning else ""
                     print(f"  WARNING{line_info}: {warning['message']}")
-    
+
     # Exit with error code if any errors found
     total_errors = sum(len(r.errors) for r in results)
     if total_errors > 0:
@@ -139,4 +139,3 @@ def main(argv: List[str] | None = None) -> None:
 
 if __name__ == '__main__':
     main()
-

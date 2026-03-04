@@ -225,4 +225,3 @@ def collect_system_structure(instance: "Instance", system_name: str, mode: str) 
         },
         "data": collect_instance_data(instance),
     }
-

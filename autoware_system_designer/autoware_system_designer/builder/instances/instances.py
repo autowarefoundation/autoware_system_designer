@@ -29,11 +29,11 @@ from .instance_serializer import (
 
 class Instance:
     """Base class for all instances in the system hierarchy.
-    
+
     Represents a node in the instance tree, which can be a system, module, or node.
     Manages configuration, topology, interfaces, parameters, and events.
     """
-    
+
     def __init__(
         self, name: str, compute_unit: str = "", namespace: list[str] = [], layer: int = 0
     ):
@@ -84,7 +84,7 @@ class Instance:
     @property
     def unique_id(self):
         return generate_unique_id(self.namespace, "instance", self.compute_unit, self.layer, self.name)
-    
+
     @property
     def vis_guide(self) -> dict:
         """Get visualization guide including colors."""
@@ -96,7 +96,7 @@ class Instance:
             "dark_color": get_component_color(self.namespace, variant="fade"),
             "dark_medium_color": get_component_color(self.namespace, variant="darkish"),  # Integrated dark+text variant for nodes
             "dark_background_color": get_component_color(self.namespace, variant="dark"),  # Pure dark variant for modules
-            "dark_text_color": get_component_color(self.namespace, variant="bright"), 
+            "dark_text_color": get_component_color(self.namespace, variant="bright"),
             "position": get_component_position(self.namespace),
         }
 

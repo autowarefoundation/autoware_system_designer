@@ -64,7 +64,7 @@ def find_source_root(start_path):
     2. Look for sibling 'build'/'install' directories.
     """
     path = Path(start_path).resolve()
-    
+
     # 1. Look for 'src' in the path components
     # We want the directory containing 'src' (workspace root) or the 'src' directory itself?
     # The previous logic used 'src' as the root to scan.
@@ -106,11 +106,11 @@ def main():
 
     # Identify the current package name to detect install layout (isolated vs merged)
     current_pkg_name = get_package_name(args.start_path)
-        
+
     is_isolated = False
     install_base = args.install_prefix
     clean_prefix = args.install_prefix.rstrip(os.path.sep)
-    
+
     if os.path.basename(clean_prefix) == current_pkg_name:
         is_isolated = True
         install_base = os.path.dirname(clean_prefix)
@@ -123,7 +123,7 @@ def main():
     # Glob all yaml files
     # Using recursive glob
     yaml_files = glob.glob(os.path.join(workspace_root, '**', '*.yaml'), recursive=True)
-    
+
     yaml_parse_errors = []
 
     for yf in yaml_files:
@@ -140,11 +140,11 @@ def main():
             continue
         if not content:
             continue
-            
+
         # Find which package it belongs to
         parent = os.path.dirname(yf_abs)
         found_pkg = None
-        
+
         # Traverse up
         curr = parent
         while curr.startswith(workspace_root):
@@ -154,17 +154,17 @@ def main():
             if curr == workspace_root:
                 break
             curr = os.path.dirname(curr)
-        
+
         # Determine target package
         target_pkg = found_pkg
-        
+
         # If it's a node design file, check if it specifies a package
         if 'launch' in content and 'package' in content['launch']:
             target_pkg = content['launch']['package']
 
         if not target_pkg:
             continue
-            
+
         if target_pkg not in pkg_files:
             pkg_files[target_pkg] = []
         pkg_files[target_pkg].append(yf_abs)
@@ -190,7 +190,7 @@ def main():
             # merged: install_prefix/share/pkg_name
             p = os.path.join(args.install_prefix, 'share', pkg_name)
         package_map[pkg_name] = p
-    
+
     package_map_path = os.path.join(output_dir, "_package_map.yaml")
     with open(package_map_path, 'w') as f:
         yaml.dump({'package_map': package_map}, f)
@@ -199,18 +199,18 @@ def main():
     # 2. Generate individual manifests for packages with design files
     for pkg, files in pkg_files.items():
         manifest_path = os.path.join(output_dir, f"{pkg}.yaml")
-        
+
         if is_isolated:
             pkg_install_path = os.path.join(install_base, pkg, 'share', pkg)
         else:
             # Assuming shared install: install_prefix/share/pkg_name
             pkg_install_path = os.path.join(args.install_prefix, 'share', pkg)
-        
+
         data = {
             'package_name': pkg,
             'deploy_config_files': []
         }
-        
+
         for f in files:
             t = infer_type(os.path.basename(f))
             if t == 'unknown':
@@ -219,7 +219,7 @@ def main():
                 'path': f,
                 'type': t
             })
-            
+
         with open(manifest_path, 'w') as f:
             yaml.dump(data, f)
             print(f"Generated {manifest_path}")

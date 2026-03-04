@@ -49,7 +49,7 @@ class Config:
     source_map: Optional[Dict[str, Dict[str, int]]] = None
     package: Optional[str] = None
     sub_type: Optional[str] = None
-    
+
     def __post_init__(self):
         """Ensure file_path is a Path object."""
         if isinstance(self.file_path, str):

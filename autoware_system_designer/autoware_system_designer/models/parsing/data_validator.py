@@ -28,7 +28,7 @@ def entity_name_decode(entity_name: str) -> Tuple[str, str]:
 
     if not entity_name or not isinstance(entity_name, str):
         raise ValidationError(f"Config name must be a non-empty string, got: {entity_name}")
-    
+
     if "." not in entity_name:
         raise ValidationError(f"Invalid entity name format: '{entity_name}'. Expected format: 'name.type'")
 
@@ -37,10 +37,10 @@ def entity_name_decode(entity_name: str) -> Tuple[str, str]:
         raise ValidationError(f"Invalid entity name format: '{entity_name}'. Expected exactly one dot separator")
 
     name, entity_type = parts
-    
+
     if not name.strip():
         raise ValidationError(f"Config name cannot be empty in: '{entity_name}'")
-    
+
     if not entity_type.strip():
         raise ValidationError(f"Config type cannot be empty in: '{entity_name}'")
 
@@ -61,12 +61,12 @@ class BaseValidator(ABC):
         if not isinstance(entity_type, str) or not entity_type:
             raise NotImplementedError("Validator must define ENTITY_TYPE")
         return entity_type
-    
+
     def validate_basic_structure(self, config: Dict[str, Any], file_path: str) -> None:
         """Validate basic structure requirements."""
         if not config:
             raise ValidationError(f"Empty configuration file: {file_path}")
-        
+
         if "name" not in config:
             raise ValidationError(f"Field 'name' is required in entity configuration. File: {file_path}")
 
@@ -101,11 +101,11 @@ class BaseValidator(ABC):
         # Schema-driven structural + semantic validation
         format_version = config.get("autoware_system_design_format")
         issues = validate_against_schema(
-            config, 
-            entity_type=entity_type, 
+            config,
+            entity_type=entity_type,
             format_version=format_version
         )
-        
+
         # Run semantic checks
         semantic_checks = get_semantic_checks(entity_type)
         for check in semantic_checks:
@@ -142,14 +142,14 @@ class SystemValidator(BaseValidator):
 
 class ValidatorFactory:
     """Factory for creating validators."""
-    
+
     _validators = {
         ConfigType.NODE: NodeValidator,
         ConfigType.MODULE: ModuleValidator,
         ConfigType.PARAMETER_SET: ParameterSetValidator,
         ConfigType.SYSTEM: SystemValidator,
     }
-    
+
     @classmethod
     def get_validator(cls, entity_type: str) -> BaseValidator:
         """Get validator for entity type."""
