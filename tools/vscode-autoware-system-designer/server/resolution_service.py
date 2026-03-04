@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import logging
-from typing import Optional, List, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
-from autoware_system_designer.models.config import Config, ConfigType
 from registry_manager import RegistryManager
 
+from autoware_system_designer.models.config import Config, ConfigType
+
 logger = logging.getLogger(__name__)
+
 
 class ResolutionService:
     """Service for resolving entity connections and types recursively."""
@@ -49,14 +51,14 @@ class ResolutionService:
     def _get_node_port_type(self, config: Config, port_type: str, port_name: str) -> Optional[str]:
         """Get type directly from node definition."""
         ports = []
-        if port_type == 'input':
+        if port_type == "input":
             ports = config.inputs or []
-        elif port_type == 'output':
+        elif port_type == "output":
             ports = config.outputs or []
 
         for port in ports:
-            if port.get('name') == port_name:
-                return port.get('message_type')
+            if port.get("name") == port_name:
+                return port.get("message_type")
         return None
 
     def _resolve_composite_port_type(self, config: Config, port_type: str, port_name: str) -> Optional[str]:
@@ -76,22 +78,22 @@ class ResolutionService:
 
         candidate_types = set()
 
-        if port_type == 'input':
+        if port_type == "input":
             # Find connections starting from "input.port_name"
             source_ref = f"input.{port_name}"
             for conn in connections:
-                if conn.get('from') == source_ref:
-                    to_ref = conn.get('to')
+                if conn.get("from") == source_ref:
+                    to_ref = conn.get("to")
                     resolved_type = self._resolve_target_ref_type(config, to_ref)
                     if resolved_type:
                         candidate_types.add(resolved_type)
 
-        elif port_type == 'output':
+        elif port_type == "output":
             # Find connections ending at "output.port_name"
             target_ref = f"output.{port_name}"
             for conn in connections:
-                if conn.get('to') == target_ref:
-                    from_ref = conn.get('from')
+                if conn.get("to") == target_ref:
+                    from_ref = conn.get("from")
                     resolved_type = self._resolve_source_ref_type(config, from_ref)
                     if resolved_type:
                         candidate_types.add(resolved_type)
@@ -108,7 +110,7 @@ class ResolutionService:
         if not ref:
             return None
 
-        parts = ref.split('.')
+        parts = ref.split(".")
         # Expecting: instance_name.input.port_name
         if len(parts) < 3:
             return None
@@ -116,15 +118,15 @@ class ResolutionService:
         # Handle wildcard? skip for now
 
         instance_name = parts[0]
-        direction = parts[1] # should be 'input'
+        direction = parts[1]  # should be 'input'
         port_name = parts[2]
 
-        if direction != 'input':
-            return None # Can only connect to inputs
+        if direction != "input":
+            return None  # Can only connect to inputs
 
         entity_config = self.get_instance_entity(current_config, instance_name)
         if entity_config:
-            return self._resolve_type_recursive(entity_config, 'input', port_name)
+            return self._resolve_type_recursive(entity_config, "input", port_name)
 
         return None
 
@@ -133,21 +135,21 @@ class ResolutionService:
         if not ref:
             return None
 
-        parts = ref.split('.')
+        parts = ref.split(".")
         # Expecting: instance_name.output.port_name
         if len(parts) < 3:
             return None
 
         instance_name = parts[0]
-        direction = parts[1] # should be 'output'
+        direction = parts[1]  # should be 'output'
         port_name = parts[2]
 
-        if direction != 'output':
+        if direction != "output":
             return None
 
         entity_config = self.get_instance_entity(current_config, instance_name)
         if entity_config:
-            return self._resolve_type_recursive(entity_config, 'output', port_name)
+            return self._resolve_type_recursive(entity_config, "output", port_name)
 
         return None
 
@@ -158,14 +160,14 @@ class ResolutionService:
         if config.entity_type == ConfigType.MODULE:
             instances = config.instances or []
             for inst in instances:
-                if inst.get('instance') == instance_name:
-                    entity_name = inst.get('entity')
+                if inst.get("instance") == instance_name:
+                    entity_name = inst.get("entity")
                     break
         elif config.entity_type == ConfigType.SYSTEM:
             components = config.components or []
             for comp in components:
-                if comp.get('component') == instance_name:
-                    entity_name = comp.get('entity')
+                if comp.get("component") == instance_name:
+                    entity_name = comp.get("entity")
                     break
 
         if entity_name:

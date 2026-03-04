@@ -15,11 +15,9 @@
 from typing import Callable, Dict
 
 from ..models.config import SystemConfig
+from .instances.instance_pipeline import check_duplicate_node_namespaces as check_duplicate_node_namespaces_impl
+from .instances.instance_pipeline import set_system as set_system_impl
 from .instances.instances import Instance
-from .instances.instance_pipeline import (
-    set_system as set_system_impl,
-    check_duplicate_node_namespaces as check_duplicate_node_namespaces_impl,
-)
 
 
 class DeploymentInstance(Instance):

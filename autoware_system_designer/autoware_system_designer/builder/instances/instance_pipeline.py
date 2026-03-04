@@ -16,15 +16,14 @@ def set_system(
     snapshot_callback: Callable[[str, Exception | None], None] | None = None,
 ) -> None:
     """Set system for a deployment instance."""
+
     def _snapshot(step: str, error: Exception | None = None) -> None:
         if snapshot_callback:
             snapshot_callback(step, error)
 
     current_step = "parse"
     try:
-        instance.parameter_resolver = ParameterResolver(
-            variables=[], package_paths=package_paths
-        )
+        instance.parameter_resolver = ParameterResolver(variables=[], package_paths=package_paths)
         logger.info(f"Setting system {system_config.full_name} for instance {instance.name}")
         instance.configuration = system_config
         instance.entity_type = "system"
@@ -35,9 +34,7 @@ def set_system(
                 instance.parameter_resolver.load_system_variables(system_config.variables)
 
             if hasattr(system_config, "variable_files") and system_config.variable_files:
-                instance.parameter_resolver.load_system_variable_files(
-                    system_config.variable_files
-                )
+                instance.parameter_resolver.load_system_variable_files(system_config.variable_files)
 
         # 1. set component instances
         logger.info(f"Instance '{instance.name}': setting component instances")

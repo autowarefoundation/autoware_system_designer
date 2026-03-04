@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
 
 import logging
-import sys
 import os
+import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
-from pygls.server import LanguageServer
 from lsprotocol import types as lsp
+from pygls.server import LanguageServer
 
 # Import from the autoware_system_designer package
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'autoware_system_designer'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "autoware_system_designer"))
 
-from autoware_system_designer.models.parsing.data_parser import ConfigParser
-from autoware_system_designer.models.config import Config
-
-from registry_manager import RegistryManager
 from document_processor import DocumentProcessor
-from validation_engine import ValidationEngine
 from providers.completion_provider import CompletionProvider
 from providers.definition_provider import DefinitionProvider
 from providers.hover_provider import HoverProvider
 from providers.inlay_hint_provider import InlayHintProvider
+from registry_manager import RegistryManager
+from validation_engine import ValidationEngine
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+from autoware_system_designer.models.config import Config
+from autoware_system_designer.models.parsing.data_parser import ConfigParser
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -106,7 +106,7 @@ class AutowareSystemDesignerLanguageServer:
             text_document_sync=lsp.TextDocumentSyncOptions(
                 open_close=True,
                 change=lsp.TextDocumentSyncKind.Full,
-                save=lsp.SaveOptions(include_text=True)
+                save=lsp.SaveOptions(include_text=True),
             ),
             # Completion provider disabled - using diagnostics instead
             # completion_provider=lsp.CompletionOptions(
@@ -114,7 +114,7 @@ class AutowareSystemDesignerLanguageServer:
             # ),
             definition_provider=True,
             hover_provider=True,
-            inlay_hint_provider=True
+            inlay_hint_provider=True,
         )
 
         return lsp.InitializeResult(capabilities=capabilities)
@@ -122,7 +122,9 @@ class AutowareSystemDesignerLanguageServer:
     def _on_text_document_did_open(self, ls, params: lsp.DidOpenTextDocumentParams):
         """Handle document open event."""
         # Don't update registry on open (assume already in registry or will be handled by save/watcher)
-        self.document_processor.process_document(params.text_document.uri, params.text_document.text, self.server, update_registry=False)
+        self.document_processor.process_document(
+            params.text_document.uri, params.text_document.text, self.server, update_registry=False
+        )
 
     def _on_text_document_did_change(self, ls, params: lsp.DidChangeTextDocumentParams):
         """Handle document change event."""
@@ -136,7 +138,8 @@ class AutowareSystemDesignerLanguageServer:
         for change in params.changes:
             uri = change.uri
             # Simple conversion since we don't have easy access to helper here without importing
-            from urllib.parse import urlparse, unquote
+            from urllib.parse import unquote, urlparse
+
             parsed = urlparse(uri)
             file_path = unquote(parsed.path)
 
@@ -168,7 +171,9 @@ class AutowareSystemDesignerLanguageServer:
         """Handle document save event."""
         if params.text:
             # Update registry on save
-            self.document_processor.process_document(params.text_document.uri, params.text, self.server, update_registry=True)
+            self.document_processor.process_document(
+                params.text_document.uri, params.text, self.server, update_registry=True
+            )
             # Re-validate other open documents since registry changed
             self._revalidate_open_documents(exclude_uri=params.text_document.uri)
 
@@ -186,7 +191,6 @@ class AutowareSystemDesignerLanguageServer:
                 self.document_processor.process_document(uri, document.source, self.server, update_registry=False)
         except Exception as e:
             logger.error(f"Failed to revalidate open documents: {e}")
-
 
     def _on_text_document_did_close(self, ls, params: lsp.DidCloseTextDocumentParams):
         """Handle document close event."""

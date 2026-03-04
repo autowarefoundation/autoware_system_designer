@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 
 class ConfigType:
     """Constants for entity types."""
+
     NODE = "node"
     MODULE = "module"
     PARAMETER_SET = "parameter_set"
@@ -28,8 +30,10 @@ class ConfigType:
         """Get all valid entity types."""
         return [cls.NODE, cls.MODULE, cls.PARAMETER_SET, cls.SYSTEM]
 
+
 class ConfigSubType:
     """Constants for entity sub-types."""
+
     # For SYSTEM
     BASE = "base"
     VARIANT = "variant"
@@ -38,9 +42,11 @@ class ConfigSubType:
     def get_all_sub_types(cls) -> List[str]:
         return [cls.BASE, cls.VARIANT]
 
+
 @dataclass
 class Config:
     """Pure data structure for entity configuration."""
+
     name: str
     full_name: str
     entity_type: str
@@ -55,9 +61,11 @@ class Config:
         if isinstance(self.file_path, str):
             self.file_path = Path(self.file_path)
 
+
 @dataclass
 class NodeConfig(Config):
     """Data structure for node entities."""
+
     package_name: Optional[str] = None
     package_provider: Optional[str] = None
     package_resolution: Optional[str] = None  # "source" or "installed", set from workspace.yaml
@@ -68,23 +76,29 @@ class NodeConfig(Config):
     param_values: Any = None  # Can be dict or list
     processes: List[Dict[str, Any]] = None
 
+
 @dataclass
 class ModuleConfig(Config):
     """Data structure for module entities."""
+
     instances: List[Dict[str, Any]] = None
     inputs: List[Dict[str, Any]] = None
     outputs: List[Dict[str, Any]] = None
     connections: List[Dict[str, Any]] = None
 
+
 @dataclass
 class ParameterSetConfig(Config):
     """Data structure for parameter set entities."""
+
     parameters: Any = None  # Can be dict or list
     local_variables: List[Dict[str, Any]] = None
+
 
 @dataclass
 class SystemConfig(Config):
     """Data structure for system entities."""
+
     arguments: List[Dict[str, Any]] = None
     modes: List[Dict[str, Any]] = None
     mode_configs: Dict[str, Dict[str, Any]] = None  # Mode-specific overrides/removals

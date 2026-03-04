@@ -169,19 +169,15 @@ def _generate_compute_unit_launcher_from_data(
     _render_template_to_file("compute_unit_launcher.xml.jinja2", launcher_file, template_data)
 
 
-def generate_module_launch_file(
-    instance: Instance, output_dir: str, forward_args: List[str] | None = None
-):
+def generate_module_launch_file(instance: Instance, output_dir: str, forward_args: List[str] | None = None):
     """Main entry point for launcher generation."""
 
     if isinstance(instance, Instance):
-        logger.debug(
-            f"Generating launcher for {instance.name} (type: {instance.entity_type}) in {output_dir}"
-        )
+        logger.debug(f"Generating launcher for {instance.name} (type: {instance.entity_type}) in {output_dir}")
 
         if instance.entity_type == "system":
-            compute_unit_map, component_args_by_id, component_map = (
-                build_runtime_system_component_maps(instance, forward_args)
+            compute_unit_map, component_args_by_id, component_map = build_runtime_system_component_maps(
+                instance, forward_args
             )
 
             for compute_unit, components in compute_unit_map.items():
@@ -203,15 +199,11 @@ def generate_module_launch_file(
                     component_name,
                     components,
                     output_dir,
-                    component_forward_args=component_args_by_id.get(
-                        (compute_unit, component_name), []
-                    ),
+                    component_forward_args=component_args_by_id.get((compute_unit, component_name), []),
                 )
 
         elif instance.entity_type in ("module", "node"):
-            logger.debug(
-                f"Skipping launcher for {instance.name} (type: {instance.entity_type}) - handled upstream"
-            )
+            logger.debug(f"Skipping launcher for {instance.name} (type: {instance.entity_type}) - handled upstream")
             return
         return
 
@@ -228,9 +220,7 @@ def generate_module_launch_file(
 
     for compute_unit, components in compute_unit_map.items():
         component_args_map = {
-            component.get("name", ""): component_args_by_id.get(
-                (compute_unit, component.get("name", "")), []
-            )
+            component.get("name", ""): component_args_by_id.get((compute_unit, component.get("name", "")), [])
             for component in components
         }
         _generate_compute_unit_launcher_from_data(

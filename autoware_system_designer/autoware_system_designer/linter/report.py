@@ -15,7 +15,7 @@
 """Error reporting for the linter."""
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 
 class LintResult:
@@ -44,13 +44,13 @@ class LintResult:
             message: Error message
             line: Optional line number where error occurred
         """
-        error = {'message': message}
+        error = {"message": message}
         if line is not None:
-            error['line'] = line
+            error["line"] = line
         if column is not None:
-            error['column'] = column
+            error["column"] = column
         if yaml_path is not None:
-            error['yaml_path'] = yaml_path
+            error["yaml_path"] = yaml_path
         self.errors.append(error)
 
     def add_warning(
@@ -66,11 +66,11 @@ class LintResult:
             message: Warning message
             line: Optional line number where warning occurred
         """
-        warning = {'message': message}
+        warning = {"message": message}
         if line is not None:
-            warning['line'] = line
+            warning["line"] = line
         if column is not None:
-            warning['column'] = column
+            warning["column"] = column
         if yaml_path is not None:
-            warning['yaml_path'] = yaml_path
+            warning["yaml_path"] = yaml_path
         self.warnings.append(warning)

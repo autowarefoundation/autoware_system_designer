@@ -12,18 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List
 import logging
-from .events import Event
-from ...utils.naming import generate_unique_id
+from typing import List
+
 from ...exceptions import ValidationError
+from ...utils.naming import generate_unique_id
+from .events import Event
 
 logger = logging.getLogger(__name__)
+
 
 def generate_port_path(namespace: List[str], name: str) -> str:
     if namespace:
         return "/" + "/".join(namespace) + "/" + name
     return "/" + name
+
 
 class PortEvent(Event):
     def __init__(self, name: str, namespace: List[str], direction: str, port_name: str):
@@ -91,6 +94,7 @@ class Port:
             return ""
         return "/" + "/".join(self.topic)
 
+
 class InPort(Port):
     def __init__(self, name, msg_type, namespace: List[str] = [], remap_target: str = None):
         super().__init__(name, msg_type, namespace, remap_target)
@@ -132,7 +136,6 @@ class InPort(Port):
             return
         for ref_port in self.reference:
             ref_port.set_topic(topic_namespace, topic_name)
-
 
 
 class OutPort(Port):

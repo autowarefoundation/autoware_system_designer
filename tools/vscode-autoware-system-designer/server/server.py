@@ -2,8 +2,8 @@
 
 """Entry point for the Autoware System Designer Language Server."""
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add the server directory to the path so imports work when run directly
@@ -13,7 +13,6 @@ if str(server_dir) not in sys.path:
 
 from base_server import AutowareSystemDesignerLanguageServer
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     server = AutowareSystemDesignerLanguageServer()
     server.start()

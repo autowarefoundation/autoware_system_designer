@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
 from typing import Optional
+
 from lsprotocol import types as lsp
-
-from autoware_system_designer.models.config import Config, ConfigType
-
 from registry_manager import RegistryManager
 from utils.text_utils import get_word_at_position
-from utils.uri_utils import uri_to_path, path_to_uri
+from utils.uri_utils import path_to_uri, uri_to_path
+
+from autoware_system_designer.models.config import Config, ConfigType
 
 
 class DefinitionProvider:
@@ -33,8 +33,8 @@ class DefinitionProvider:
                 uri=path_to_uri(str(config.file_path)),
                 range=lsp.Range(
                     start=lsp.Position(line=1, character=0),  # Skip the format header
-                    end=lsp.Position(line=2, character=0)
-                )
+                    end=lsp.Position(line=2, character=0),
+                ),
             )
 
         # Check if it's a connection reference that points to another entity
@@ -51,12 +51,12 @@ class DefinitionProvider:
     def _find_definition_in_connection(self, word: str, config: Config) -> Optional[lsp.Location]:
         """Find definition for connection references."""
         # Parse the word as a potential connection reference
-        parts = word.split('.')
+        parts = word.split(".")
 
         if len(parts) >= 3:
             if config.entity_type == ConfigType.MODULE:
                 # Handle module connections: instance.port_type.port_name
-                if len(parts) >= 3 and parts[1] in ['input', 'output']:
+                if len(parts) >= 3 and parts[1] in ["input", "output"]:
                     instance_name = parts[0]
                     port_type = parts[1]
                     port_name = parts[2]
@@ -64,8 +64,8 @@ class DefinitionProvider:
                     # Find the instance
                     instances = config.instances or []
                     for instance in instances:
-                        if instance.get('name') == instance_name:
-                            entity_name = instance.get('entity')
+                        if instance.get("name") == instance_name:
+                            entity_name = instance.get("entity")
                             if entity_name in self.registry_manager.entity_registry:
                                 entity_config = self.registry_manager.entity_registry[entity_name]
                                 # Return location in the entity file at the port definition
@@ -73,13 +73,13 @@ class DefinitionProvider:
                                     uri=path_to_uri(str(entity_config.file_path)),
                                     range=lsp.Range(
                                         start=lsp.Position(line=10, character=0),  # Approximate location
-                                        end=lsp.Position(line=11, character=0)
-                                    )
+                                        end=lsp.Position(line=11, character=0),
+                                    ),
                                 )
 
             elif config.entity_type == ConfigType.SYSTEM:
                 # Handle system connections: component.port_type.port_name
-                if len(parts) >= 3 and parts[1] in ['input', 'output']:
+                if len(parts) >= 3 and parts[1] in ["input", "output"]:
                     component_name = parts[0]
                     port_type = parts[1]
                     port_name = parts[2]
@@ -87,8 +87,8 @@ class DefinitionProvider:
                     # Find the component
                     components = config.components or []
                     for component in components:
-                        if component.get('name') == component_name:
-                            component_entity = component.get('entity')
+                        if component.get("name") == component_name:
+                            component_entity = component.get("entity")
                             if component_entity in self.registry_manager.entity_registry:
                                 entity_config = self.registry_manager.entity_registry[component_entity]
                                 # Return location in the entity file at the port definition
@@ -96,8 +96,8 @@ class DefinitionProvider:
                                     uri=path_to_uri(str(entity_config.file_path)),
                                     range=lsp.Range(
                                         start=lsp.Position(line=10, character=0),  # Approximate location
-                                        end=lsp.Position(line=11, character=0)
-                                    )
+                                        end=lsp.Position(line=11, character=0),
+                                    ),
                                 )
 
         return None

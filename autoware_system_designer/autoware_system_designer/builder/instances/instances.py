@@ -12,20 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Dict
+from typing import Dict, List
 
-from ...models.config import NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig
 from ...deployment.deployment_config import deploy_config
 from ...exceptions import ValidationError
+from ...models.config import ModuleConfig, NodeConfig, ParameterSetConfig, SystemConfig
 from ...utils.naming import generate_unique_id
 from ...visualization.visualization_guide import get_component_color, get_component_position
-from ..parameters.parameter_manager import ParameterManager
-from ..graph.link_manager import LinkManager
 from ..graph.event_manager import EventManager
+from ..graph.link_manager import LinkManager
+from ..parameters.parameter_manager import ParameterManager
 from .instance_serializer import (
     collect_instance_data,
     collect_system_structure,
 )
+
 
 class Instance:
     """Base class for all instances in the system hierarchy.
@@ -34,9 +35,7 @@ class Instance:
     Manages configuration, topology, interfaces, parameters, and events.
     """
 
-    def __init__(
-        self, name: str, compute_unit: str = "", namespace: list[str] = [], layer: int = 0
-    ):
+    def __init__(self, name: str, compute_unit: str = "", namespace: list[str] = [], layer: int = 0):
         self.name: str = name
         self.namespace: List[str] = namespace.copy()
         # add the instance name to the namespace
@@ -94,13 +93,15 @@ class Instance:
             "background_color": get_component_color(self.namespace, variant="bright"),
             "text_color": get_component_color(self.namespace, variant="darkest"),
             "dark_color": get_component_color(self.namespace, variant="fade"),
-            "dark_medium_color": get_component_color(self.namespace, variant="darkish"),  # Integrated dark+text variant for nodes
-            "dark_background_color": get_component_color(self.namespace, variant="dark"),  # Pure dark variant for modules
+            "dark_medium_color": get_component_color(
+                self.namespace, variant="darkish"
+            ),  # Integrated dark+text variant for nodes
+            "dark_background_color": get_component_color(
+                self.namespace, variant="dark"
+            ),  # Pure dark variant for modules
             "dark_text_color": get_component_color(self.namespace, variant="bright"),
             "position": get_component_position(self.namespace),
         }
-
-
 
     def get_child(self, name: str):
         if name in self.children:

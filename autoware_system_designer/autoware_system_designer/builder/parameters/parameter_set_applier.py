@@ -2,9 +2,9 @@ import logging
 from typing import TYPE_CHECKING
 
 from ...exceptions import ValidationError
-from ..runtime.parameters import ParameterType
+from ...file_io.source_location import format_source, source_from_config
 from ...models.parsing.data_validator import entity_name_decode
-from ...file_io.source_location import source_from_config, format_source
+from ..runtime.parameters import ParameterType
 
 if TYPE_CHECKING:
     from ..config.config_registry import ConfigRegistry
@@ -48,9 +48,7 @@ def apply_parameter_set(
 
             cfg_param_set = config_registry.get_parameter_set(param_set_name)
             node_params = cfg_param_set.parameters
-            logger.info(
-                f"Applying parameter set '{param_set_name}' to component '{target_instance.name}'"
-            )
+            logger.info(f"Applying parameter set '{param_set_name}' to component '{target_instance.name}'")
 
             # Determine which resolver to use
             resolver_to_use = owner_instance.parameter_resolver
@@ -65,12 +63,12 @@ def apply_parameter_set(
                         continue
                     resolved_lv = lv.copy()
                     lv_source = source_from_config(cfg_param_set, f"/local_variables/{lv_idx}")
-                    if 'value' in resolved_lv:
-                        resolved_lv['value'] = resolver_to_use.resolve_parameter_value(
-                            resolved_lv['value'], source=lv_source
+                    if "value" in resolved_lv:
+                        resolved_lv["value"] = resolver_to_use.resolve_parameter_value(
+                            resolved_lv["value"], source=lv_source
                         )
-                        if 'name' in resolved_lv:
-                            resolver_to_use.variable_map[resolved_lv['name']] = str(resolved_lv['value'])
+                        if "name" in resolved_lv:
+                            resolver_to_use.variable_map[resolved_lv["name"]] = str(resolved_lv["value"])
                     resolved_local_vars.append(resolved_lv)
                 # Keep for any downstream logic expecting resolved list
                 cfg_param_set.local_variables = resolved_local_vars
@@ -108,7 +106,9 @@ def apply_parameter_set(
                                     f"Invalid param_files format in parameter set '{param_set_name}': {pf}{format_source(node_source)}"
                                 )
                                 continue
-                            pf_source = source_from_config(cfg_param_set, f"/parameters/{node_idx}/param_files/{pf_idx}")
+                            pf_source = source_from_config(
+                                cfg_param_set, f"/parameters/{node_idx}/param_files/{pf_idx}"
+                            )
                             resolved_mapping = {}
                             for param_name, file_path in pf.items():
                                 if resolver_to_use:
@@ -129,12 +129,12 @@ def apply_parameter_set(
                                 continue
                             p_source = source_from_config(cfg_param_set, f"/parameters/{node_idx}/param_values/{p_idx}")
                             resolved_p = p.copy()
-                            if resolver_to_use and 'value' in resolved_p:
-                                resolved_p['value'] = resolver_to_use.resolve_parameter_value(
-                                    resolved_p['value'], source=p_source
+                            if resolver_to_use and "value" in resolved_p:
+                                resolved_p["value"] = resolver_to_use.resolve_parameter_value(
+                                    resolved_p["value"], source=p_source
                                 )
-                            if resolver_to_use and 'name' in resolved_p and 'value' in resolved_p:
-                                resolver_to_use.variable_map[resolved_p['name']] = str(resolved_p['value'])
+                            if resolver_to_use and "name" in resolved_p and "value" in resolved_p:
+                                resolver_to_use.variable_map[resolved_p["name"]] = str(resolved_p["value"])
                             param_values.append(resolved_p)
                             parameter_sources.append(p_source)
 

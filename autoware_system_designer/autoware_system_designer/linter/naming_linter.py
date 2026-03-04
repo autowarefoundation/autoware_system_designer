@@ -16,11 +16,11 @@
 
 import re
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
-from ..models.parsing.yaml_parser import yaml_parser
-from ..models.parsing.data_validator import entity_name_decode
 from ..models.config import ConfigType
+from ..models.parsing.data_validator import entity_name_decode
+from ..models.parsing.yaml_parser import yaml_parser
 from .report import LintResult
 
 
@@ -45,11 +45,11 @@ class NamingLinter:
             return
 
         # Check entity name format
-        if 'name' in config:
-            entity_name = config['name']
+        if "name" in config:
+            entity_name = config["name"]
             try:
                 name_part, type_part = entity_name_decode(entity_name)
-                base_ref = config.get('base')
+                base_ref = config.get("base")
 
                 if type_part == ConfigType.PARAMETER_SET:
                     return
@@ -73,10 +73,10 @@ class NamingLinter:
                 result.add_error(f"Invalid entity name format: {str(e)}")
 
         # Check instance names (for modules)
-        if 'instances' in config and isinstance(config['instances'], list):
-            for idx, instance in enumerate(config['instances']):
-                if isinstance(instance, dict) and 'name' in instance:
-                    instance_name = instance['name']
+        if "instances" in config and isinstance(config["instances"], list):
+            for idx, instance in enumerate(config["instances"]):
+                if isinstance(instance, dict) and "name" in instance:
+                    instance_name = instance["name"]
                     if not self._is_snake_case(instance_name):
                         result.add_error(
                             f"Instance name '{instance_name}' should be in snake_case format "
@@ -84,10 +84,10 @@ class NamingLinter:
                         )
 
         # Check package field naming (for nodes)
-        if 'package' in config and isinstance(config['package'], dict):
-            pkg = config['package']
-            if 'name' in pkg:
-                pkg_name = pkg['name']
+        if "package" in config and isinstance(config["package"], dict):
+            pkg = config["package"]
+            if "name" in pkg:
+                pkg_name = pkg["name"]
                 if not self._is_snake_case(pkg_name):
                     result.add_error(
                         f"Package name '{pkg_name}' should be in snake_case format "
@@ -99,20 +99,20 @@ class NamingLinter:
         self._lint_variant_names(config, result)
 
         # Check port names (for nodes)
-        if 'inputs' in config and isinstance(config['inputs'], list):
-            for idx, input_port in enumerate(config['inputs']):
-                if isinstance(input_port, dict) and 'name' in input_port:
-                    port_name = input_port['name']
+        if "inputs" in config and isinstance(config["inputs"], list):
+            for idx, input_port in enumerate(config["inputs"]):
+                if isinstance(input_port, dict) and "name" in input_port:
+                    port_name = input_port["name"]
                     if not self._is_snake_case(port_name):
                         result.add_error(
                             f"Input port name '{port_name}' should be in snake_case format "
                             f"(e.g., 'pointcloud', 'vector_map')"
                         )
 
-        if 'outputs' in config and isinstance(config['outputs'], list):
-            for idx, output_port in enumerate(config['outputs']):
-                if isinstance(output_port, dict) and 'name' in output_port:
-                    port_name = output_port['name']
+        if "outputs" in config and isinstance(config["outputs"], list):
+            for idx, output_port in enumerate(config["outputs"]):
+                if isinstance(output_port, dict) and "name" in output_port:
+                    port_name = output_port["name"]
                     if not self._is_snake_case(port_name):
                         result.add_error(
                             f"Output port name '{port_name}' should be in snake_case format "
@@ -140,7 +140,7 @@ class NamingLinter:
             return False
 
         # Rest should be alphanumeric (no underscores, spaces, or special chars)
-        pattern = r'^[A-Z][a-zA-Z0-9]*$'
+        pattern = r"^[A-Z][a-zA-Z0-9]*$"
         return bool(re.match(pattern, name))
 
     @staticmethod
@@ -166,7 +166,7 @@ class NamingLinter:
             return False
 
         # Allow slash-delimited snake_case segments
-        pattern = r'^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$'
+        pattern = r"^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$"
         return bool(re.match(pattern, name))
 
     @staticmethod
@@ -185,7 +185,7 @@ class NamingLinter:
         """
         if not name:
             return False
-        pattern = r'^[a-z][a-z0-9_-]*$'
+        pattern = r"^[a-z][a-z0-9_-]*$"
         return bool(re.match(pattern, name))
 
     def _is_allowed_variant_name(self, name: str, base_ref: str) -> bool:
@@ -200,13 +200,13 @@ class NamingLinter:
         if not name.startswith(f"{base_name}_"):
             return False
 
-        suffix = name[len(base_name) + 1:]
+        suffix = name[len(base_name) + 1 :]
         return bool(suffix) and self._is_snake_suffix(suffix)
 
     @staticmethod
     def _is_snake_suffix(name: str) -> bool:
         """Allow lowercase/digits/underscores, leading digit OK."""
-        return bool(re.match(r'^[a-z0-9][a-z0-9_]*$', name))
+        return bool(re.match(r"^[a-z0-9][a-z0-9_]*$", name))
 
     @staticmethod
     def _get_base_name(base_ref: Any) -> str:
@@ -221,32 +221,32 @@ class NamingLinter:
 
     def _lint_variant_names(self, config: Dict[str, Any], result: LintResult):
         """Lint naming conventions in variant override/remove blocks."""
-        override = config.get('override')
+        override = config.get("override")
         if isinstance(override, dict):
-            self._lint_named_list(override.get('inputs'), result, "Override input")
-            self._lint_named_list(override.get('outputs'), result, "Override output")
-            self._lint_named_list(override.get('param_values'), result, "Override parameter")
-            self._lint_named_list(override.get('param_files'), result, "Override parameter file")
-            self._lint_named_list(override.get('processes'), result, "Override process")
-            self._lint_named_list(override.get('instances'), result, "Override instance", key="name")
-            self._lint_named_list(override.get('variables'), result, "Override variable")
-            self._lint_named_list(override.get('variable_files'), result, "Override variable file")
-            self._lint_named_list(override.get('components'), result, "Override component", key="component")
-            self._lint_named_list(override.get('inputs'), result, "Override input", key="name")
-            self._lint_named_list(override.get('outputs'), result, "Override output", key="name")
+            self._lint_named_list(override.get("inputs"), result, "Override input")
+            self._lint_named_list(override.get("outputs"), result, "Override output")
+            self._lint_named_list(override.get("param_values"), result, "Override parameter")
+            self._lint_named_list(override.get("param_files"), result, "Override parameter file")
+            self._lint_named_list(override.get("processes"), result, "Override process")
+            self._lint_named_list(override.get("instances"), result, "Override instance", key="name")
+            self._lint_named_list(override.get("variables"), result, "Override variable")
+            self._lint_named_list(override.get("variable_files"), result, "Override variable file")
+            self._lint_named_list(override.get("components"), result, "Override component", key="component")
+            self._lint_named_list(override.get("inputs"), result, "Override input", key="name")
+            self._lint_named_list(override.get("outputs"), result, "Override output", key="name")
 
-        remove = config.get('remove')
+        remove = config.get("remove")
         if isinstance(remove, dict):
-            self._lint_named_list(remove.get('inputs'), result, "Remove input")
-            self._lint_named_list(remove.get('outputs'), result, "Remove output")
-            self._lint_named_list(remove.get('param_values'), result, "Remove parameter")
-            self._lint_named_list(remove.get('param_files'), result, "Remove parameter file")
-            self._lint_named_list(remove.get('processes'), result, "Remove process")
-            self._lint_named_list(remove.get('instances'), result, "Remove instance", key="name")
-            self._lint_named_list(remove.get('variables'), result, "Remove variable")
-            self._lint_named_list(remove.get('components'), result, "Remove component", key="component")
-            self._lint_named_list(remove.get('inputs'), result, "Remove input", key="name")
-            self._lint_named_list(remove.get('outputs'), result, "Remove output", key="name")
+            self._lint_named_list(remove.get("inputs"), result, "Remove input")
+            self._lint_named_list(remove.get("outputs"), result, "Remove output")
+            self._lint_named_list(remove.get("param_values"), result, "Remove parameter")
+            self._lint_named_list(remove.get("param_files"), result, "Remove parameter file")
+            self._lint_named_list(remove.get("processes"), result, "Remove process")
+            self._lint_named_list(remove.get("instances"), result, "Remove instance", key="name")
+            self._lint_named_list(remove.get("variables"), result, "Remove variable")
+            self._lint_named_list(remove.get("components"), result, "Remove component", key="component")
+            self._lint_named_list(remove.get("inputs"), result, "Remove input", key="name")
+            self._lint_named_list(remove.get("outputs"), result, "Remove output", key="name")
 
     def _lint_named_list(
         self,
@@ -263,6 +263,4 @@ class NamingLinter:
             if isinstance(item, dict) and key in item:
                 name_value = item[key]
                 if not self._is_snake_case(name_value):
-                    result.add_error(
-                        f"{label} name '{name_value}' should be in snake_case format"
-                    )
+                    result.add_error(f"{label} name '{name_value}' should be in snake_case format")

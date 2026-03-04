@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import List
 
 try:
-    from . import lint_files, LintResult
+    from . import LintResult, lint_files
 except ImportError:  # pragma: no cover
     # Allow direct execution: `python path/to/run_lint.py ...`
     SCRIPT_DIR = Path(__file__).resolve().parent
@@ -29,13 +29,13 @@ except ImportError:  # pragma: no cover
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
-    from autoware_system_designer.linter import lint_files, LintResult
+    from autoware_system_designer.linter import LintResult, lint_files
 
 
 def find_yaml_files(paths: List[str]) -> List[Path]:
     """Find all autoware_system_design_format YAML files in given paths."""
     yaml_files = []
-    entity_extensions = ['.node.yaml', '.module.yaml', '.system.yaml', '.parameter_set.yaml']
+    entity_extensions = [".node.yaml", ".module.yaml", ".system.yaml", ".parameter_set.yaml"]
 
     for path_str in paths:
         path = Path(path_str)
@@ -53,7 +53,7 @@ def find_yaml_files(paths: List[str]) -> List[Path]:
         elif path.is_dir():
             # Recursively find all entity YAML files
             for ext in entity_extensions:
-                yaml_files.extend(path.rglob(f'*{ext}'))
+                yaml_files.extend(path.rglob(f"*{ext}"))
         else:
             print(f"Warning: Path is neither file nor directory: {path}", file=sys.stderr)
 
@@ -63,26 +63,26 @@ def find_yaml_files(paths: List[str]) -> List[Path]:
 def main(argv: List[str] | None = None) -> None:
     """Main entry point for the linter CLI."""
     parser = argparse.ArgumentParser(
-        description='Lint autoware_system_design_format YAML files',
+        description="Lint autoware_system_design_format YAML files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        'paths',
-        nargs='*',
+        "paths",
+        nargs="*",
         default=None,
-        help='File paths or directories to lint (default: current directory)',
+        help="File paths or directories to lint (default: current directory)",
     )
     parser.add_argument(
-        '--format',
-        choices=['human', 'json', 'github-actions'],
-        default='human',
-        help='Output format (default: human)',
+        "--format",
+        choices=["human", "json", "github-actions"],
+        default="human",
+        help="Output format (default: human)",
     )
 
     args = parser.parse_args(argv)
 
     if not args.paths:
-        args.paths = ['.']
+        args.paths = ["."]
 
     # Find all YAML files
     yaml_files = find_yaml_files(args.paths)
@@ -95,23 +95,24 @@ def main(argv: List[str] | None = None) -> None:
     results = lint_files(yaml_files)
 
     # Print results in requested format
-    if args.format == 'json':
+    if args.format == "json":
         import json
+
         output = {
-            'files': len(results),
-            'errors': sum(len(r.errors) for r in results),
-            'warnings': sum(len(r.warnings) for r in results),
-            'results': [
+            "files": len(results),
+            "errors": sum(len(r.errors) for r in results),
+            "warnings": sum(len(r.warnings) for r in results),
+            "results": [
                 {
-                    'file': str(r.file_path),
-                    'errors': r.errors,
-                    'warnings': r.warnings,
+                    "file": str(r.file_path),
+                    "errors": r.errors,
+                    "warnings": r.warnings,
                 }
                 for r in results
-            ]
+            ],
         }
         print(json.dumps(output, indent=2))
-    elif args.format == 'github-actions':
+    elif args.format == "github-actions":
         for result in results:
             for error in result.errors:
                 print(f"::error file={result.file_path},line={error.get('line', 1)}::{error['message']}")
@@ -122,20 +123,20 @@ def main(argv: List[str] | None = None) -> None:
             if result.errors or result.warnings:
                 print(f"\n{result.file_path}:")
                 for error in result.errors:
-                    line_info = f":{error.get('line', '?')}" if 'line' in error else ""
+                    line_info = f":{error.get('line', '?')}" if "line" in error else ""
                     print(f"  ERROR{line_info}: {error['message']}")
                 for warning in result.warnings:
-                    line_info = f":{warning.get('line', '?')}" if 'line' in warning else ""
+                    line_info = f":{warning.get('line', '?')}" if "line" in warning else ""
                     print(f"  WARNING{line_info}: {warning['message']}")
 
     # Exit with error code if any errors found
     total_errors = sum(len(r.errors) for r in results)
     if total_errors > 0:
         sys.exit(1)
-    if args.format == 'human':
+    if args.format == "human":
         print("Lint succeeded with no errors.")
     sys.exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

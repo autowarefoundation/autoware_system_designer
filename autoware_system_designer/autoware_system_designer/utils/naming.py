@@ -14,8 +14,8 @@
 
 """Naming utilities for the Autoware System Designer system."""
 
-import re
 import hashlib
+import re
 
 
 def pascal_to_snake(name: str) -> str:
@@ -35,6 +35,7 @@ def pascal_to_snake(name: str) -> str:
     # Insert underscore before uppercase letters that follow lowercase letters or digits
     return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
 
+
 def snake_to_pascal(name: str) -> str:
     """Convert snake_case to PascalCase.
 
@@ -47,8 +48,9 @@ def snake_to_pascal(name: str) -> str:
     if not name:
         return ""
 
-    components = name.split('_')
-    return ''.join(word.capitalize() for word in components)
+    components = name.split("_")
+    return "".join(word.capitalize() for word in components)
+
 
 def generate_unique_id(namespace: list[str], *components: str) -> str:
     """Generate a unique identifier string from a namespace and optional suffix components.
@@ -74,7 +76,7 @@ def generate_unique_id(namespace: list[str], *components: str) -> str:
     raw = "/".join(parts)
 
     # Compute SHA256 hash
-    hash_object = hashlib.sha256(raw.encode('utf-8'))
+    hash_object = hashlib.sha256(raw.encode("utf-8"))
     hex_dig = hash_object.hexdigest()
 
     # Return id_ + first 16 characters

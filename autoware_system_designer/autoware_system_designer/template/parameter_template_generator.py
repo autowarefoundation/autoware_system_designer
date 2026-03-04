@@ -44,9 +44,7 @@ class ParameterTemplateGenerator:
         """
         self.root_instance = root_instance
 
-    def generate_parameter_set_template(
-        self, deployment_name: str, template_renderer, output_dir: str
-    ) -> List[str]:
+    def generate_parameter_set_template(self, deployment_name: str, template_renderer, output_dir: str) -> List[str]:
         """Generate per-component parameter set templates.
 
         Instead of one aggregated template, create a separate parameter_set
@@ -82,9 +80,7 @@ class ParameterTemplateGenerator:
                 name=output_file_name,
                 parameters=nodes,
             )
-            logger.info(
-                f"Generated component parameter set template: {output_path} (shared root: {system_root})"
-            )
+            logger.info(f"Generated component parameter set template: {output_path} (shared root: {system_root})")
             generated.append(output_path)
         return generated
 
@@ -164,9 +160,7 @@ class ParameterTemplateGenerator:
                 name=output_file_name,
                 parameters=nodes,
             )
-            logger.info(
-                f"Generated component parameter set template: {output_path} (shared root: {system_root})"
-            )
+            logger.info(f"Generated component parameter set template: {output_path} (shared root: {system_root})")
             generated.append(output_path)
         return generated
 
@@ -269,9 +263,7 @@ class ParameterTemplateGenerator:
 
         return parameter_files, parameters
 
-    def _create_namespace_structure_and_copy_configs(
-        self, node_data: Dict[str, Any], parameter_set_root: str
-    ) -> None:
+    def _create_namespace_structure_and_copy_configs(self, node_data: Dict[str, Any], parameter_set_root: str) -> None:
         node_path = node_data["node"]
         parameter_files = node_data["parameter_files"]
 
@@ -293,12 +285,7 @@ class ParameterTemplateGenerator:
 
     def _create_empty_config_file(self, dest_path: str, param_name: str) -> None:
         try:
-            empty_config_content = (
-                "/**:\n"
-                "  ros__parameters:\n"
-                "    []\n"
-                f"    # Add parameters for {param_name}\n"
-            )
+            empty_config_content = "/**:\n" "  ros__parameters:\n" "    []\n" f"    # Add parameters for {param_name}\n"
 
             with open(dest_path, "w") as f:
                 f.write(empty_config_content)

@@ -21,11 +21,11 @@ and reports errors with YAML locations when available.
 from pathlib import Path
 from typing import Any, Dict
 
-from ..models.parsing.yaml_parser import yaml_parser
-from ..models.parsing.data_validator import entity_name_decode
-from ..file_io.source_location import SourceLocation, lookup_source, format_source
-from ..models.yaml_schema import validate_against_schema, get_semantic_checks
+from ..file_io.source_location import SourceLocation, format_source, lookup_source
 from ..models.json_schema_loader import load_schema
+from ..models.parsing.data_validator import entity_name_decode
+from ..models.parsing.yaml_parser import yaml_parser
+from ..models.yaml_schema import get_semantic_checks, validate_against_schema
 from ..utils.format_version import check_format_version
 from .report import LintResult
 
@@ -100,7 +100,7 @@ class StructureLinter:
             return
 
         # Validate entity name matches filename
-        if 'name' not in config:
+        if "name" not in config:
             name_loc = lookup_source(source_map, "/name")
             result.add_error(
                 "Missing required field 'name'",
@@ -111,12 +111,17 @@ class StructureLinter:
             return
 
         try:
-            entity_name, entity_type = entity_name_decode(config['name'])
+            entity_name, entity_type = entity_name_decode(config["name"])
             name_loc = lookup_source(source_map, "/name")
 
             # Check entity name matches filename
             if entity_name != file_entity_name:
-                src = SourceLocation(file_path=file_path, yaml_path=name_loc.yaml_path, line=name_loc.line, column=name_loc.column)
+                src = SourceLocation(
+                    file_path=file_path,
+                    yaml_path=name_loc.yaml_path,
+                    line=name_loc.line,
+                    column=name_loc.column,
+                )
                 result.add_error(
                     f"Entity name '{entity_name}' does not match file name '{file_entity_name}'.{format_source(src)}",
                     line=name_loc.line,
@@ -126,7 +131,12 @@ class StructureLinter:
 
             # Check entity type matches file extension
             if entity_type != file_entity_type:
-                src = SourceLocation(file_path=file_path, yaml_path=name_loc.yaml_path, line=name_loc.line, column=name_loc.column)
+                src = SourceLocation(
+                    file_path=file_path,
+                    yaml_path=name_loc.yaml_path,
+                    line=name_loc.line,
+                    column=name_loc.column,
+                )
                 result.add_error(
                     f"Entity type '{entity_type}' does not match file extension type '{file_entity_type}'.{format_source(src)}",
                     line=name_loc.line,

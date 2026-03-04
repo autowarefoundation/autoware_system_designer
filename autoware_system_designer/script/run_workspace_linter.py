@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 from typing import List
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 PACKAGE_ROOT = SCRIPT_DIR.parent
 if str(PACKAGE_ROOT) not in sys.path:

@@ -1,11 +1,13 @@
 import fcntl
+import logging
 import os
 from pathlib import Path
-import logging
-from ..file_io.template_renderer import TemplateRenderer
+
 from ..file_io.source_location import SourceLocation, format_source
+from ..file_io.template_renderer import TemplateRenderer
 
 logger = logging.getLogger(__name__)
+
 
 def get_install_root(path: Path) -> Path:
     """
@@ -25,7 +27,7 @@ def get_install_root(path: Path) -> Path:
     # but strictly speaking, we just need *a* common root to place the index.
 
     # Simple heuristic: search for 'install'
-    if 'install' in parts:
+    if "install" in parts:
         # Find the index of 'install'
         # If there are multiple, we probably want the one that is part of the current build workspace
         # usually the last one?
@@ -34,12 +36,13 @@ def get_install_root(path: Path) -> Path:
 
         try:
             # finding the last occurrence of 'install'
-            idx = len(parts) - 1 - parts[::-1].index('install')
-            return Path(*parts[:idx+1])
+            idx = len(parts) - 1 - parts[::-1].index("install")
+            return Path(*parts[: idx + 1])
         except ValueError:
             pass
 
     return None
+
 
 def update_index(output_root_dir: str):
     """
@@ -61,7 +64,7 @@ def update_index(output_root_dir: str):
 
     # Ensure we can write to lock file
     try:
-        with open(lock_file, 'w') as lock:
+        with open(lock_file, "w") as lock:
             try:
                 # Acquire exclusive lock
                 fcntl.flock(lock, fcntl.LOCK_EX)
@@ -93,7 +96,7 @@ def _generate_index_file(install_root: Path, output_file: Path):
             if len(visualization_dir.parts) < 5:
                 continue
 
-            if visualization_dir.parts[-3] == 'exports':
+            if visualization_dir.parts[-3] == "exports":
                 deployment_dir_name = visualization_dir.parts[-2]
                 package_name = visualization_dir.parts[-4]  # .../share/<pkg>/exports/...
 
@@ -114,11 +117,11 @@ def _generate_index_file(install_root: Path, output_file: Path):
                 # Discover diagram types dynamically by looking for data files
                 # Pattern: <mode>_<diagram_type>.js
                 for data_file in data_dir.glob("*.js"):
-                    if data_file.name.endswith('.js'):
+                    if data_file.name.endswith(".js"):
                         # Extract diagram type from filename (remove mode prefix and .js extension)
-                        parts = data_file.stem.split('_')
+                        parts = data_file.stem.split("_")
                         if len(parts) >= 2:
-                            diagram_type = '_'.join(parts[1:])  # Everything after the first underscore
+                            diagram_type = "_".join(parts[1:])  # Everything after the first underscore
                             diagram_types.add(diagram_type)
 
                 # If no diagram types found, skip this deployment
@@ -130,10 +133,10 @@ def _generate_index_file(install_root: Path, output_file: Path):
                 rel_path = web_dir.relative_to(install_root)
 
                 deployment_map[deployment_key] = {
-                    'name': deployment_dir_name,
-                    'package': package_name,
-                    'path': rel_path,
-                    'diagram_types': sorted(list(diagram_types))
+                    "name": deployment_dir_name,
+                    "package": package_name,
+                    "path": rel_path,
+                    "diagram_types": sorted(list(diagram_types)),
                 }
         except (IndexError, ValueError):
             continue
@@ -142,40 +145,34 @@ def _generate_index_file(install_root: Path, output_file: Path):
     deployments.extend(deployment_map.values())
 
     # Sort by package then system name
-    deployments.sort(key=lambda x: (x['package'], x['name']))
+    deployments.sort(key=lambda x: (x["package"], x["name"]))
 
     # Prepare data for template
     view_deployments = []
     for dep in deployments:
-        web_path = dep['path']
+        web_path = dep["path"]
         deployment_overview_path = web_path / f"{dep['name']}_overview.html"
 
         main_link = f"{deployment_overview_path}?diagram={dep['diagram_types'][0]}"
 
         diagrams = []
-        for diagram_type in dep['diagram_types']:
-            diagram_label = diagram_type.replace('_', ' ').title()
+        for diagram_type in dep["diagram_types"]:
+            diagram_label = diagram_type.replace("_", " ").title()
             diagram_link = f"{deployment_overview_path}?diagram={diagram_type}"
-            diagrams.append({
-                'label': diagram_label,
-                'link': diagram_link,
-                'type': diagram_type
-            })
+            diagrams.append({"label": diagram_label, "link": diagram_link, "type": diagram_type})
 
-        view_deployments.append({
-            'name': dep['name'],
-            'package': dep['package'],
-            'main_link': main_link,
-            'diagrams': diagrams
-        })
+        view_deployments.append(
+            {
+                "name": dep["name"],
+                "package": dep["package"],
+                "main_link": main_link,
+                "diagrams": diagrams,
+            }
+        )
 
     # Render template
     try:
         renderer = TemplateRenderer()
-        renderer.render_template_to_file(
-            "systems_index.html.jinja2",
-            str(output_file),
-            deployments=view_deployments
-        )
+        renderer.render_template_to_file("systems_index.html.jinja2", str(output_file), deployments=view_deployments)
     except Exception as e:
         logger.error(f"Failed to render visualization index template: {e}")

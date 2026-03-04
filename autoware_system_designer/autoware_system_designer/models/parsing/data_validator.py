@@ -14,12 +14,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
 from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Tuple
 
-from ..config import ConfigType
-from ..yaml_schema import validate_against_schema, get_semantic_checks
 from ...exceptions import ValidationError
+from ..config import ConfigType
+from ..yaml_schema import get_semantic_checks, validate_against_schema
 
 
 def entity_name_decode(entity_name: str) -> Tuple[str, str]:
@@ -49,6 +49,7 @@ def entity_name_decode(entity_name: str) -> Tuple[str, str]:
 
     return name.strip(), entity_type.strip()
 
+
 class BaseValidator(ABC):
     """Abstract base validator."""
 
@@ -73,9 +74,7 @@ class BaseValidator(ABC):
     def validate_entity_type(self, entity_type: str, expected_type: str, file_path: str) -> None:
         """Validate that the entity type matches expected type."""
         if entity_type != expected_type:
-            raise ValidationError(
-                f"Invalid entity type '{entity_type}'. Expected '{expected_type}'. File: {file_path}"
-            )
+            raise ValidationError(f"Invalid entity type '{entity_type}'. Expected '{expected_type}'. File: {file_path}")
 
     def validate_validator_type(self, entity_type: str, file_path: str) -> None:
         """Ensure the validator used matches the entity_type being validated."""
@@ -100,11 +99,7 @@ class BaseValidator(ABC):
 
         # Schema-driven structural + semantic validation
         format_version = config.get("autoware_system_design_format")
-        issues = validate_against_schema(
-            config,
-            entity_type=entity_type,
-            format_version=format_version
-        )
+        issues = validate_against_schema(config, entity_type=entity_type, format_version=format_version)
 
         # Run semantic checks
         semantic_checks = get_semantic_checks(entity_type)
@@ -120,25 +115,30 @@ class BaseValidator(ABC):
             details = self._format_schema_issues(issues)
             raise ValidationError(f"Schema validation failed for {file_path}:\n{details}")
 
+
 class NodeValidator(BaseValidator):
     """Validator for node entities."""
 
     ENTITY_TYPE = ConfigType.NODE
+
 
 class ModuleValidator(BaseValidator):
     """Validator for module entities."""
 
     ENTITY_TYPE = ConfigType.MODULE
 
+
 class ParameterSetValidator(BaseValidator):
     """Validator for parameter set entities."""
 
     ENTITY_TYPE = ConfigType.PARAMETER_SET
 
+
 class SystemValidator(BaseValidator):
     """Validator for system entities."""
 
     ENTITY_TYPE = ConfigType.SYSTEM
+
 
 class ValidatorFactory:
     """Factory for creating validators."""

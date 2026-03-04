@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
 import logging
+import sys
 from pathlib import Path
+
 import yaml
+
 from autoware_system_designer.deploy import Deployment
 from autoware_system_designer.deployment.deployment_config import DeploymentConfig
 from autoware_system_designer.visualization.visualization_index import update_index
@@ -111,6 +113,7 @@ def _emit_minor_version_hint(deployment):
     if not files:
         return
     from autoware_system_designer.builder.config.config_registry import _format_mismatch_hint
+
     _logger.warning(_format_mismatch_hint(files))
 
 

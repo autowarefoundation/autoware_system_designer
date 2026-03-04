@@ -17,12 +17,12 @@
 from pathlib import Path
 from typing import List
 
+from .file_linter import FileLinter
+from .naming_linter import NamingLinter
 from .report import LintResult
 from .structure_linter import StructureLinter
-from .naming_linter import NamingLinter
-from .file_linter import FileLinter
 
-__all__ = ['lint_files', 'LintResult']
+__all__ = ["lint_files", "LintResult"]
 
 
 def lint_files(file_paths: List[Path]) -> List[LintResult]:

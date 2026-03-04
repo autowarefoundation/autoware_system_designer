@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional, Dict, Any
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 from ...file_io.source_location import SourceLocation
 
@@ -22,20 +22,29 @@ class ParameterType(Enum):
     """Parameter type with priority ordering (lower value = lower priority).
     Used only for individual parameters, not parameter files.
     """
-    GLOBAL = 0           # Global parameter (lowest priority)
-    DEFAULT_FILE = 1     # Parameter loaded from default parameter file
-    DEFAULT = 2          # Default parameter
-    OVERRIDE_FILE = 3    # Parameter loaded from override parameter file
-    OVERRIDE = 4         # Directly set override parameter
-    MODE_FILE = 5        # Parameter loaded from mode parameter file
-    MODE = 6             # Mode specific parameter (highest priority)
+
+    GLOBAL = 0  # Global parameter (lowest priority)
+    DEFAULT_FILE = 1  # Parameter loaded from default parameter file
+    DEFAULT = 2  # Default parameter
+    OVERRIDE_FILE = 3  # Parameter loaded from override parameter file
+    OVERRIDE = 4  # Directly set override parameter
+    MODE_FILE = 5  # Parameter loaded from mode parameter file
+    MODE = 6  # Mode specific parameter (highest priority)
+
 
 class Parameter:
     """Represents a single parameter with its value and metadata."""
-    def __init__(self, name: str, value: Any, data_type: str = "string",
-                 schema_path: Optional[str] = None, allow_substs: bool = True,
-                 parameter_type: ParameterType = ParameterType.DEFAULT,
-                 source: Optional[SourceLocation] = None):
+
+    def __init__(
+        self,
+        name: str,
+        value: Any,
+        data_type: str = "string",
+        schema_path: Optional[str] = None,
+        allow_substs: bool = True,
+        parameter_type: ParameterType = ParameterType.DEFAULT,
+        source: Optional[SourceLocation] = None,
+    ):
         self.name = name
         self.value = value
         self.data_type = data_type  # string, bool, int, float, etc.
@@ -43,6 +52,7 @@ class Parameter:
         self.allow_substs = allow_substs  # whether to allow substitutions in ROS launch
         self.parameter_type = parameter_type  # Parameter type with priority
         self.source = source
+
 
 class ParameterList:
     """Manages a list of parameters with priority-based resolution.
@@ -59,15 +69,23 @@ class ParameterList:
         highest_priority_param = None
         for parameter in self.list:
             if parameter.name == parameter_name:
-                if (highest_priority_param is None or
-                    parameter.parameter_type.value > highest_priority_param.parameter_type.value):
+                if (
+                    highest_priority_param is None
+                    or parameter.parameter_type.value > highest_priority_param.parameter_type.value
+                ):
                     highest_priority_param = parameter
         return highest_priority_param.value if highest_priority_param else None
 
-    def set_parameter(self, parameter_name, parameter_value, data_type: str = "string",
-                     schema_path: Optional[str] = None, allow_substs: bool = True,
-                     parameter_type: ParameterType = ParameterType.DEFAULT,
-                     source: Optional[SourceLocation] = None):
+    def set_parameter(
+        self,
+        parameter_name,
+        parameter_value,
+        data_type: str = "string",
+        schema_path: Optional[str] = None,
+        allow_substs: bool = True,
+        parameter_type: ParameterType = ParameterType.DEFAULT,
+        source: Optional[SourceLocation] = None,
+    ):
         """Set a parameter value.
 
         Higher priority parameters override lower priority ones.
@@ -97,15 +115,32 @@ class ParameterList:
                 return
 
         # Not found, add new parameter
-        self.list.append(Parameter(parameter_name, parameter_value, data_type,
-                                 schema_path, allow_substs, parameter_type, source))
+        self.list.append(
+            Parameter(
+                parameter_name,
+                parameter_value,
+                data_type,
+                schema_path,
+                allow_substs,
+                parameter_type,
+                source,
+            )
+        )
+
 
 class ParameterFile:
     """Represents a parameter file reference."""
-    def __init__(self, name: str, path: str, schema_path: Optional[str] = None,
-                 allow_substs: bool = True, is_override: bool = False,
-                 parameter_type: ParameterType = ParameterType.DEFAULT_FILE,
-                 source: Optional[SourceLocation] = None):
+
+    def __init__(
+        self,
+        name: str,
+        path: str,
+        schema_path: Optional[str] = None,
+        allow_substs: bool = True,
+        is_override: bool = False,
+        parameter_type: ParameterType = ParameterType.DEFAULT_FILE,
+        source: Optional[SourceLocation] = None,
+    ):
         self.name = name
         self.path = path
         self.schema_path = schema_path  # path to the schema file if available
@@ -113,6 +148,7 @@ class ParameterFile:
         self.is_override = is_override  # True for override parameter files, False for default
         self.parameter_type = parameter_type
         self.source = source
+
 
 class ParameterFileList:
     """Manages a list of parameter files.
@@ -131,10 +167,16 @@ class ParameterFileList:
         # not found, return None
         return None
 
-    def add_parameter_file(self, parameter_name, parameter_path, schema_path: Optional[str] = None,
-                          allow_substs: bool = True, is_override: bool = False,
-                          parameter_type: ParameterType = ParameterType.DEFAULT_FILE,
-                          source: Optional[SourceLocation] = None):
+    def add_parameter_file(
+        self,
+        parameter_name,
+        parameter_path,
+        schema_path: Optional[str] = None,
+        allow_substs: bool = True,
+        is_override: bool = False,
+        parameter_type: ParameterType = ParameterType.DEFAULT_FILE,
+        source: Optional[SourceLocation] = None,
+    ):
         """Add a parameter file.
 
         Parameter files are accumulated in the order they are added.

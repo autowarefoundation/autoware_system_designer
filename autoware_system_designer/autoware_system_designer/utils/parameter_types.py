@@ -3,7 +3,6 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
-
 STRING_TYPES = {"string", "str"}
 BOOL_TYPES = {"bool", "boolean"}
 INTEGER_TYPES = {
@@ -24,9 +23,7 @@ FLOAT_TYPES = {"float", "double", "float32", "float64"}
 ARRAY_TYPES = {"array", "string_array", "bool_array", "int_array", "double_array"}
 PATH_TYPES = {"directory"}
 
-ALLOWED_PARAMETER_TYPES = (
-    STRING_TYPES | BOOL_TYPES | INTEGER_TYPES | FLOAT_TYPES | ARRAY_TYPES | PATH_TYPES
-)
+ALLOWED_PARAMETER_TYPES = STRING_TYPES | BOOL_TYPES | INTEGER_TYPES | FLOAT_TYPES | ARRAY_TYPES | PATH_TYPES
 NUMERIC_TYPES = INTEGER_TYPES | FLOAT_TYPES
 
 

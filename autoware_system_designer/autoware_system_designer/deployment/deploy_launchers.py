@@ -43,11 +43,7 @@ def generate_deploy_launchers(
         data, _ = extract_system_structure_data(payload)
 
         compute_units = sorted(
-            {
-                child.get("compute_unit")
-                for child in data.get("children", [])
-                if child.get("compute_unit")
-            }
+            {child.get("compute_unit") for child in data.get("children", []) if child.get("compute_unit")}
         )
 
         for deploy_item in deploy_variants:

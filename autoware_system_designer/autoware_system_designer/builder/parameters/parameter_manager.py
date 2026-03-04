@@ -13,20 +13,26 @@
 # limitations under the License.
 
 import logging
-from typing import TYPE_CHECKING, List, Dict, Any, Optional
 import os
-import shutil
 import re
+import shutil
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from ..runtime.parameters import ParameterList, ParameterFileList, Parameter, ParameterFile, ParameterType
-from ...models.parsing.yaml_parser import yaml_parser
 from ...exceptions import ParameterConfigurationError, ValidationError
-from ...file_io.source_location import SourceLocation, source_from_config, format_source
-from ...utils.parameter_types import normalize_type_name, coerce_numeric_value
+from ...file_io.source_location import SourceLocation, format_source, source_from_config
+from ...models.parsing.yaml_parser import yaml_parser
+from ...utils.parameter_types import coerce_numeric_value, normalize_type_name
+from ..runtime.parameters import (
+    Parameter,
+    ParameterFile,
+    ParameterFileList,
+    ParameterList,
+    ParameterType,
+)
 
 if TYPE_CHECKING:
-    from ..instances.instances import Instance
     from ..config.config_registry import ConfigRegistry
+    from ..instances.instances import Instance
 
 logger = logging.getLogger(__name__)
 _SYSTEM_ARG_PATTERN = re.compile(r"\$\(var\s+([^)]+)\)")
@@ -42,14 +48,14 @@ class ParameterManager:
     4. Resolving parameter file paths with package prefixes
     """
 
-    def __init__(self, instance: 'Instance', parameter_resolver = None):
+    def __init__(self, instance: "Instance", parameter_resolver=None):
         self.instance = instance
         self.parameter_resolver = parameter_resolver
         self.parameters: ParameterList = ParameterList()
         self.parameter_files: ParameterFileList = ParameterFileList()
-        self.input_topic_pattern = re.compile(r'\$\{input\s+([^}]+)\}')
-        self.output_topic_pattern = re.compile(r'\$\{output\s+([^}]+)\}')
-        self.parameter_pattern = re.compile(r'\$\{parameter\s+([^}]+)\}')
+        self.input_topic_pattern = re.compile(r"\$\{input\s+([^}]+)\}")
+        self.output_topic_pattern = re.compile(r"\$\{output\s+([^}]+)\}")
+        self.parameter_pattern = re.compile(r"\$\{parameter\s+([^}]+)\}")
         self._substitution_source_context: Optional[SourceLocation] = None
 
     # =========================================================================
@@ -133,15 +139,11 @@ class ParameterManager:
             required |= cls._extract_used_system_args(node.get("args"), available_args)
 
             for param_file in node.get("param_files", []):
-                required |= cls._extract_used_system_args(
-                    param_file.get("path"), available_args
-                )
+                required |= cls._extract_used_system_args(param_file.get("path"), available_args)
 
             for param in node.get("param_values", []):
                 param_type = param.get("parameter_type", {})
-                param_type_name = (
-                    param_type.get("name") if isinstance(param_type, dict) else str(param_type)
-                )
+                param_type_name = param_type.get("name") if isinstance(param_type, dict) else str(param_type)
                 param_name = param.get("name")
                 if (
                     node.get("is_ros2_file_launch")
@@ -172,12 +174,14 @@ class ParameterManager:
         # Add regular parameters
         for param in self.parameters.list:
             if param.value is not None:
-                result.append({
-                    "type": "param",
-                    "name": param.name,
-                    "value": param.value,
-                    "parameter_type": param.parameter_type
-                })
+                result.append(
+                    {
+                        "type": "param",
+                        "name": param.name,
+                        "value": param.value,
+                        "parameter_type": param.parameter_type,
+                    }
+                )
 
         return result
 
@@ -193,14 +197,18 @@ class ParameterManager:
             if param_file.parameter_type == ParameterType.DEFAULT_FILE:
                 continue
 
-            resolved_path = self._resolve_parameter_file_path(param_file.path, self._get_package_name(), param_file.is_override)
-            result.append({
-                "type": "param_file",
-                "name": param_file.name,
-                "path": resolved_path,
-                "allow_substs": param_file.allow_substs,
-                "parameter_type": param_file.parameter_type
-            })
+            resolved_path = self._resolve_parameter_file_path(
+                param_file.path, self._get_package_name(), param_file.is_override
+            )
+            result.append(
+                {
+                    "type": "param_file",
+                    "name": param_file.name,
+                    "path": resolved_path,
+                    "allow_substs": param_file.allow_substs,
+                    "parameter_type": param_file.parameter_type,
+                }
+            )
         return result
 
     def resolve_all_parameters(self):
@@ -309,8 +317,13 @@ class ParameterManager:
     # Parameter Path Resolution
     # =========================================================================
 
-    def _resolve_parameter_file_path(self, path: str, package_name: Optional[str] = None,
-                                     is_override: bool = False, config_registry: Optional['ConfigRegistry'] = None) -> str:
+    def _resolve_parameter_file_path(
+        self,
+        path: str,
+        package_name: Optional[str] = None,
+        is_override: bool = False,
+        config_registry: Optional["ConfigRegistry"] = None,
+    ) -> str:
         """Resolve parameter file path with package prefix if needed.
 
         Args:
@@ -324,18 +337,20 @@ class ParameterManager:
         """
 
         if path is None:
-            raise ParameterConfigurationError(f"path is None. package_name: {package_name}, node_namespace: {self.instance.namespace_str}, path: {path}")
+            raise ParameterConfigurationError(
+                f"path is None. package_name: {package_name}, node_namespace: {self.instance.namespace_str}, path: {path}"
+            )
 
         # Resolve any substitutions in the path first
         if self.parameter_resolver:
             path = self.parameter_resolver.resolve_string(path)
 
         # If path is now absolute, return it
-        if path.startswith('/'):
+        if path.startswith("/"):
             return path
 
         # if path starts with $(find-pkg-share, it's not resolved package path, so return it as is
-        if path.startswith('$(find-pkg-share'):
+        if path.startswith("$(find-pkg-share"):
             return path
 
         # Check if this is a default parameter file (not override)
@@ -357,14 +372,18 @@ class ParameterManager:
                     current_dir = pkg_path
                     workspace_root = None
                     while len(current_dir) > 1:
-                        if os.path.exists(os.path.join(current_dir, 'src')) and os.path.exists(os.path.join(current_dir, 'install')):
+                        if os.path.exists(os.path.join(current_dir, "src")) and os.path.exists(
+                            os.path.join(current_dir, "install")
+                        ):
                             workspace_root = current_dir
                             break
                         current_dir = os.path.dirname(current_dir)
 
                     if workspace_root:
                         # Construct install path: install/<package>/share/<package>/<path>
-                        install_path = os.path.join(workspace_root, 'install', package_name, 'share', package_name, path)
+                        install_path = os.path.join(
+                            workspace_root, "install", package_name, "share", package_name, path
+                        )
                         if os.path.exists(install_path):
                             logger.debug(f"Resolved generated parameter file in install: {install_path}")
                             return install_path
@@ -389,7 +408,7 @@ class ParameterManager:
         node_namespace: str,
         param_files: list,
         param_values: list,
-        config_registry: Optional['ConfigRegistry'] = None,
+        config_registry: Optional["ConfigRegistry"] = None,
         file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
         direct_parameter_type: ParameterType = ParameterType.OVERRIDE,
         source: Optional[SourceLocation] = None,
@@ -413,8 +432,14 @@ class ParameterManager:
             direct_parameter_type: ParameterType for directly specified parameters
         """
         # Handle global parameters (root node)
-        if node_namespace == '/':
-            self.apply_parameters_to_all_nodes(param_files, param_values, config_registry, file_parameter_type, direct_parameter_type)
+        if node_namespace == "/":
+            self.apply_parameters_to_all_nodes(
+                param_files,
+                param_values,
+                config_registry,
+                file_parameter_type,
+                direct_parameter_type,
+            )
             return
 
         target_instances = self.find_matching_nodes(node_namespace)
@@ -435,9 +460,14 @@ class ParameterManager:
                 parameter_sources=parameter_sources,
             )
 
-    def apply_parameters_to_all_nodes(self, param_files: list, param_values: list, config_registry: Optional['ConfigRegistry'] = None,
-                                      file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
-                                      direct_parameter_type: ParameterType = ParameterType.OVERRIDE):
+    def apply_parameters_to_all_nodes(
+        self,
+        param_files: list,
+        param_values: list,
+        config_registry: Optional["ConfigRegistry"] = None,
+        file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
+        direct_parameter_type: ParameterType = ParameterType.OVERRIDE,
+    ):
         """Apply parameters to all nodes in the instance tree.
 
         Args:
@@ -454,22 +484,51 @@ class ParameterManager:
         while root_instance.parent is not None:
             root_instance = root_instance.parent
 
-        self._apply_parameters_recursive(root_instance, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type)
+        self._apply_parameters_recursive(
+            root_instance,
+            param_files,
+            param_values,
+            config_registry,
+            file_parameter_type,
+            direct_parameter_type,
+        )
 
-    def _apply_parameters_recursive(self, instance, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type):
+    def _apply_parameters_recursive(
+        self,
+        instance,
+        param_files,
+        param_values,
+        config_registry,
+        file_parameter_type,
+        direct_parameter_type,
+    ):
         """Recursively apply parameters to instance tree."""
         if instance.entity_type == "node":
-             self._apply_parameters_to_instance(instance, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type)
+            self._apply_parameters_to_instance(
+                instance,
+                param_files,
+                param_values,
+                config_registry,
+                file_parameter_type,
+                direct_parameter_type,
+            )
 
         for child in instance.children.values():
-            self._apply_parameters_recursive(child, param_files, param_values, config_registry, file_parameter_type, direct_parameter_type)
+            self._apply_parameters_recursive(
+                child,
+                param_files,
+                param_values,
+                config_registry,
+                file_parameter_type,
+                direct_parameter_type,
+            )
 
     def _apply_parameters_to_instance(
         self,
         target_instance,
         param_files: list,
         param_values: list,
-        config_registry: Optional['ConfigRegistry'] = None,
+        config_registry: Optional["ConfigRegistry"] = None,
         file_parameter_type: ParameterType = ParameterType.OVERRIDE_FILE,
         direct_parameter_type: ParameterType = ParameterType.OVERRIDE,
         *,
@@ -536,7 +595,7 @@ class ParameterManager:
     # Node Finding (helper methods for parameter application)
     # =========================================================================
 
-    def find_matching_nodes(self, target_namespace: str) -> List['Instance']:
+    def find_matching_nodes(self, target_namespace: str) -> List["Instance"]:
         """Find all nodes matching the absolute namespace path in the current instance's subtree.
 
         Args:
@@ -558,7 +617,11 @@ class ParameterManager:
             # OR current namespace is root "/"
             # OR current namespace is a prefix of target
 
-            if inst.namespace_str == "/" or target_namespace.startswith(inst.namespace_str + "/") or inst.namespace_str == target_namespace:
+            if (
+                inst.namespace_str == "/"
+                or target_namespace.startswith(inst.namespace_str + "/")
+                or inst.namespace_str == target_namespace
+            ):
                 for child in inst.children.values():
                     _search(child)
 
@@ -569,7 +632,7 @@ class ParameterManager:
     # Node Parameter Initialization
     # =========================================================================
 
-    def initialize_node_parameters(self, config_registry: Optional['ConfigRegistry'] = None):
+    def initialize_node_parameters(self, config_registry: Optional["ConfigRegistry"] = None):
         """Initialize parameters for node entity during node configuration.
         This method initializes both default parameter_files and default parameters
         from the node's configuration file.
@@ -578,12 +641,12 @@ class ParameterManager:
             return
 
         package_name = None
-        if self.instance.configuration and hasattr(self.instance.configuration, 'package_name'):
+        if self.instance.configuration and hasattr(self.instance.configuration, "package_name"):
             package_name = self.instance.configuration.package_name
 
         # 1. Set default parameter_files from node configuration
         # Use new param_files field, fallback to parameter_files is handled in parser
-        if hasattr(self.instance.configuration, 'param_files') and self.instance.configuration.param_files:
+        if hasattr(self.instance.configuration, "param_files") and self.instance.configuration.param_files:
             for idx, cfg_param in enumerate(self.instance.configuration.param_files):
                 param_name = cfg_param.get("name")
                 param_value = cfg_param.get("value", cfg_param.get("default"))
@@ -592,7 +655,9 @@ class ParameterManager:
                 cfg_source = source_from_config(self.instance.configuration, f"/param_files/{idx}")
 
                 if param_name is None or param_value is None:
-                    raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, param_files: {self.instance.configuration.param_files}")
+                    raise ParameterConfigurationError(
+                        f"param_name or param_value is None. namespace: {self.instance.namespace_str}, param_files: {self.instance.configuration.param_files}"
+                    )
 
                 # Resolve parameter file path if resolver is available
                 if self.parameter_resolver:
@@ -619,7 +684,7 @@ class ParameterManager:
 
         # 2. Set default parameters from node parameters
         # Use new param_values field, fallback to parameters is handled in parser
-        if hasattr(self.instance.configuration, 'param_values') and self.instance.configuration.param_values:
+        if hasattr(self.instance.configuration, "param_values") and self.instance.configuration.param_values:
             for idx, cfg_param in enumerate(self.instance.configuration.param_values):
                 param_name = cfg_param.get("name")
                 param_value = cfg_param.get("value", cfg_param.get("default"))
@@ -628,7 +693,9 @@ class ParameterManager:
                 cfg_source = source_from_config(self.instance.configuration, f"/param_values/{idx}")
 
                 if param_name is None or param_value is None:
-                    raise ParameterConfigurationError(f"param_name or param_value is None. namespace: {self.instance.namespace_str}, param_values: {self.instance.configuration.param_values}")
+                    raise ParameterConfigurationError(
+                        f"param_name or param_value is None. namespace: {self.instance.namespace_str}, param_values: {self.instance.configuration.param_values}"
+                    )
 
                 # Resolve parameter value if resolver is available
                 if self.parameter_resolver:
@@ -685,7 +752,7 @@ class ParameterManager:
         file_path: str,
         package_name: Optional[str],
         is_override: bool,
-        config_registry: 'ConfigRegistry',
+        config_registry: "ConfigRegistry",
         source: Optional[SourceLocation],
     ) -> Optional[str]:
         """Resolve a parameter file path to an existing absolute path (for visualization/template generation).
@@ -757,7 +824,7 @@ class ParameterManager:
         file_path: str,
         package_name: Optional[str] = None,
         is_override: bool = True,
-        config_registry: Optional['ConfigRegistry'] = None,
+        config_registry: Optional["ConfigRegistry"] = None,
         parameter_type: Optional[ParameterType] = None,
         source: Optional[SourceLocation] = None,
     ):
@@ -806,6 +873,4 @@ class ParameterManager:
                         source=source,
                     )
         except Exception as e:
-            logger.warning(
-                f"Failed to load parameters from file {file_path}: {e}{format_source(source)}"
-            )
+            logger.warning(f"Failed to load parameters from file {file_path}: {e}{format_source(source)}")

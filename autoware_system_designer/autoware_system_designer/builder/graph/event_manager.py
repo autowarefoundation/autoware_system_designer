@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import logging
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
+from ...file_io.source_location import format_source, source_from_config
 from ..runtime.events import Event, Process
-from ...file_io.source_location import source_from_config, format_source
 
 if TYPE_CHECKING:
     from ..instances.instances import Instance
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 class EventManager:
     """Manages event and process operations for Instance objects."""
 
-    def __init__(self, instance: 'Instance'):
+    def __init__(self, instance: "Instance"):
         self.instance = instance
 
         # processes

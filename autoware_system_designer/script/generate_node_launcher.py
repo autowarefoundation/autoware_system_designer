@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 PACKAGE_ROOT = SCRIPT_DIR.parent
 if str(PACKAGE_ROOT) not in sys.path:
@@ -29,11 +28,15 @@ from autoware_system_designer.exceptions import ValidationError  # noqa: E402
 from autoware_system_designer.ros2_launcher.generate_node_launcher import (  # noqa: E402
     generate_node_launcher,
 )
-from autoware_system_designer.utils.logging_utils import configure_split_stream_logging  # noqa: E402
+from autoware_system_designer.utils.logging_utils import (  # noqa: E402
+    configure_split_stream_logging,
+)
+
+
 def run(node_yaml_path: str, launch_file_dir: str) -> int:
     configure_split_stream_logging(
         level=logging.INFO,
-        formatter=logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'),
+        formatter=logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"),
     )
     logger = logging.getLogger(__name__)
 

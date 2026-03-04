@@ -11,10 +11,10 @@ from ..models.system_structure import (
     SystemStructureMetadata,
     SystemStructurePayload,
 )
-
 from .source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
+
 
 def build_system_structure(instance, system_name: str, mode: str) -> SystemStructurePayload:
     """Build a schema-versioned system structure payload from an Instance."""
@@ -71,9 +71,7 @@ def save_system_structure(output_path: str, payload: Dict[str, Any]) -> None:
         logger.info(f"Saved system structure JSON: {output_path}")
     except Exception as e:
         src = SourceLocation(file_path=Path(output_path))
-        logger.error(
-            f"Failed to save system structure JSON: {output_path}: {e}{format_source(src)}"
-        )
+        logger.error(f"Failed to save system structure JSON: {output_path}: {e}{format_source(src)}")
         raise
 
 
@@ -85,13 +83,13 @@ def load_system_structure(input_path: str) -> Dict[str, Any]:
             return json.load(f)
     except Exception as e:
         src = SourceLocation(file_path=Path(input_path))
-        logger.error(
-            f"Failed to load system structure JSON: {input_path}: {e}{format_source(src)}"
-        )
+        logger.error(f"Failed to load system structure JSON: {input_path}: {e}{format_source(src)}")
         raise
 
 
-def extract_system_structure_data(payload: Dict[str, Any]) -> Tuple[InstanceData, SystemStructureMetadata]:
+def extract_system_structure_data(
+    payload: Dict[str, Any],
+) -> Tuple[InstanceData, SystemStructureMetadata]:
     """Return (data, metadata) from payload or raw data if unversioned."""
 
     if isinstance(payload, dict) and "schema_version" in payload and "data" in payload:

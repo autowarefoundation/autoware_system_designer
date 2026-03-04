@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 from typing import Optional
+
 from lsprotocol import types as lsp
-
-from autoware_system_designer.models.config import Config, ConfigType
-
 from registry_manager import RegistryManager
 from utils.text_utils import get_word_at_position
+
+from autoware_system_designer.models.config import Config, ConfigType
 
 
 class HoverProvider:
@@ -41,8 +41,8 @@ class HoverProvider:
         if config.entity_type == ConfigType.NODE:
             hover_text += "### Launch Configuration\n"
             if config.launch:
-                package = config.launch.get('package', 'unknown')
-                plugin = config.launch.get('plugin') or config.launch.get('executable', 'unknown')
+                package = config.launch.get("package", "unknown")
+                plugin = config.launch.get("plugin") or config.launch.get("executable", "unknown")
                 hover_text += f"- **Package:** {package}\n"
                 hover_text += f"- **Plugin/Executable:** {plugin}\n"
             else:
@@ -51,15 +51,15 @@ class HoverProvider:
             if config.inputs:
                 hover_text += "\n### Inputs\n"
                 for port in config.inputs:
-                    name = port.get('name', 'unknown')
-                    msg_type = port.get('message_type', 'unknown')
+                    name = port.get("name", "unknown")
+                    msg_type = port.get("message_type", "unknown")
                     hover_text += f"- `{name}`: {msg_type}\n"
 
             if config.outputs:
                 hover_text += "\n### Outputs\n"
                 for port in config.outputs:
-                    name = port.get('name', 'unknown')
-                    msg_type = port.get('message_type', 'unknown')
+                    name = port.get("name", "unknown")
+                    msg_type = port.get("message_type", "unknown")
                     hover_text += f"- `{name}`: {msg_type}\n"
 
             if config.parameters:
@@ -70,16 +70,16 @@ class HoverProvider:
             hover_text += f"**Instances:** {len(instances)}\n"
 
             external_interfaces = config.external_interfaces or {}
-            inputs = external_interfaces.get('input', [])
-            outputs = external_interfaces.get('output', [])
+            inputs = external_interfaces.get("input", [])
+            outputs = external_interfaces.get("output", [])
             hover_text += f"**External Inputs:** {len(inputs)}\n"
             hover_text += f"**External Outputs:** {len(outputs)}\n"
 
             if instances:
                 hover_text += "\n### Instances\n"
                 for instance in instances[:5]:  # Show first 5
-                    inst_name = instance.get('name', 'unknown')
-                    entity = instance.get('entity', 'unknown')
+                    inst_name = instance.get("name", "unknown")
+                    entity = instance.get("entity", "unknown")
                     hover_text += f"- `{inst_name}`: {entity}\n"
                 if len(instances) > 5:
                     hover_text += f"_... and {len(instances) - 5} more_\n"
@@ -93,8 +93,8 @@ class HoverProvider:
             if components:
                 hover_text += "\n### Components\n"
                 for component in components[:5]:  # Show first 5
-                    comp_name = component.get('name', 'unknown')
-                    entity = component.get('entity', 'unknown')
+                    comp_name = component.get("name", "unknown")
+                    entity = component.get("entity", "unknown")
                     hover_text += f"- `{comp_name}`: {entity}\n"
                 if len(components) > 5:
                     hover_text += f"_... and {len(components) - 5} more_\n"
@@ -103,9 +103,4 @@ class HoverProvider:
             parameters = config.parameters or []
             hover_text += f"**Parameters:** {len(parameters)}\n"
 
-        return lsp.Hover(
-            contents=lsp.MarkupContent(
-                kind=lsp.MarkupKind.Markdown,
-                value=hover_text
-            )
-        )
+        return lsp.Hover(contents=lsp.MarkupContent(kind=lsp.MarkupKind.Markdown, value=hover_text))

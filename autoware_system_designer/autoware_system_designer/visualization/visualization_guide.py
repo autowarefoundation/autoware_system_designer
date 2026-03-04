@@ -1,17 +1,18 @@
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Base color mapping for component types
 # All color variants (matte, medium, bright, text) are calculated from these base colors
 BASE_COLOR_MAP = {
-    "sensing": "#cc6666",      # red
-    "localization": "#cc8855", # orange
-    "map": "#6699aa",          # cyan/teal
-    "perception": "#ccaa55",   # yellow
-    "planning": "#6b9b6b",     # green
-    "control": "#6677bb",      # blue
-    "system": "#9966bb",       # purple
-    "gray": "#888888",         # gray
+    "sensing": "#cc6666",  # red
+    "localization": "#cc8855",  # orange
+    "map": "#6699aa",  # cyan/teal
+    "perception": "#ccaa55",  # yellow
+    "planning": "#6b9b6b",  # green
+    "control": "#6677bb",  # blue
+    "system": "#9966bb",  # purple
+    "gray": "#888888",  # gray
 }
+
 
 def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     """Convert hex color to RGB tuple.
@@ -22,8 +23,9 @@ def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     Returns:
         Tuple of (r, g, b) values (0-255)
     """
-    hex_color = hex_color.lstrip('#')
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    hex_color = hex_color.lstrip("#")
+    return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+
 
 def rgb_to_hex(r: int, g: int, b: int) -> str:
     """Convert RGB values to hex color string.
@@ -35,6 +37,7 @@ def rgb_to_hex(r: int, g: int, b: int) -> str:
         Hex color string (e.g., "#cc6666")
     """
     return f"#{r:02x}{g:02x}{b:02x}"
+
 
 def calculate_color_variant(base_color: str, variant: str) -> str:
     """Calculate a color variant from a base color.
@@ -53,48 +56,25 @@ def calculate_color_variant(base_color: str, variant: str) -> str:
         return base_color
     elif variant == "medium":
         # Medium: blend 50% base + 50% white for lighter background
-        return rgb_to_hex(
-            int(r * 0.5 + 255 * 0.5),
-            int(g * 0.5 + 255 * 0.5),
-            int(b * 0.5 + 255 * 0.5)
-        )
+        return rgb_to_hex(int(r * 0.5 + 255 * 0.5), int(g * 0.5 + 255 * 0.5), int(b * 0.5 + 255 * 0.5))
     elif variant == "bright":
         # Bright: blend 20% base + 80% white for pastel background
-        return rgb_to_hex(
-            int(r * 0.2 + 255 * 0.8),
-            int(g * 0.2 + 255 * 0.8),
-            int(b * 0.2 + 255 * 0.8)
-        )
+        return rgb_to_hex(int(r * 0.2 + 255 * 0.8), int(g * 0.2 + 255 * 0.8), int(b * 0.2 + 255 * 0.8))
     elif variant == "fade":
         # Fade: blend 70% base
-        return rgb_to_hex(
-            int(r * 0.7),
-            int(g * 0.7),
-            int(b * 0.7)
-        )
+        return rgb_to_hex(int(r * 0.7), int(g * 0.7), int(b * 0.7))
     elif variant == "darkish":
         # Darkish: blend 35% base
-        return rgb_to_hex(
-            int(r * 0.39),
-            int(g * 0.39),
-            int(b * 0.39)
-        )
+        return rgb_to_hex(int(r * 0.39), int(g * 0.39), int(b * 0.39))
     elif variant == "dark":
         # Dark: darken for dark mode backgrounds (darker than text variant)
-        return rgb_to_hex(
-            int(r * 0.26),
-            int(g * 0.26),
-            int(b * 0.26)
-        )
+        return rgb_to_hex(int(r * 0.26), int(g * 0.26), int(b * 0.26))
     elif variant == "darkest":
         # Darkest: blend 90% base
-        return rgb_to_hex(
-            int(r * 0.1),
-            int(g * 0.1),
-            int(b * 0.1)
-        )
+        return rgb_to_hex(int(r * 0.1), int(g * 0.1), int(b * 0.1))
     else:
         return base_color
+
 
 def get_component_color(namespace: List[str], variant: str = "matte") -> str:
     """Get color for a component based on its top-level namespace.
@@ -119,28 +99,29 @@ def get_component_color(namespace: List[str], variant: str = "matte") -> str:
     # Calculate and return the requested variant
     return calculate_color_variant(base_color, variant)
 
+
 # Position map for visualization
 # left to right, top to bottom
 # each element is a tuple of (x, y)
 POSITION_MAP = {
-  "map": [0, 0],
-  "sensing": {
-    "lidar": [0, 1],
-    "camera": [0, 2],
-    "radar": [0, 3],
-  },
-  "localization": [1, 0],
-  "perception":
-  {
-    "obstacle_segmentation": [2, 1],
-    "occupancy_grid_map": [3, 1],
-    "object_recognition": [4, 2],
-    "traffic_light_recognition": [3, 1],
-  },
-  "planning": [5, 2],
-  "control": [6, 2],
-  "system": [7, 5]
+    "map": [0, 0],
+    "sensing": {
+        "lidar": [0, 1],
+        "camera": [0, 2],
+        "radar": [0, 3],
+    },
+    "localization": [1, 0],
+    "perception": {
+        "obstacle_segmentation": [2, 1],
+        "occupancy_grid_map": [3, 1],
+        "object_recognition": [4, 2],
+        "traffic_light_recognition": [3, 1],
+    },
+    "planning": [5, 2],
+    "control": [6, 2],
+    "system": [7, 5],
 }
+
 
 def get_component_position(namespace: List[str]) -> Optional[List[int]]:
     """Get position [x, y] for a component based on its namespace.

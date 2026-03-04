@@ -4,4 +4,4 @@
 
 from .base_server import AutowareSystemDesignerLanguageServer
 
-__all__ = ['AutowareSystemDesignerLanguageServer']
+__all__ = ["AutowareSystemDesignerLanguageServer"]

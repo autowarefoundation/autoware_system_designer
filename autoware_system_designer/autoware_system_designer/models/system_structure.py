@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, TypedDict, Literal
-
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 # Version for the on-disk system structure JSON payload.
 SCHEMA_VERSION = "1.0"

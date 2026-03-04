@@ -1,26 +1,29 @@
-import os
 import argparse
 import glob
-import yaml
+import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import yaml
+
+
 def get_package_name(path):
-    xml_path = os.path.join(path, 'package.xml')
+    xml_path = os.path.join(path, "package.xml")
     if not os.path.exists(xml_path):
         return None
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        name = root.find('name').text
+        name = root.find("name").text
         return name
     except:
         return None
 
+
 def find_packages(root_dir):
     packages = {}
     for dirpath, dirnames, filenames in os.walk(root_dir):
-        if 'package.xml' in filenames:
+        if "package.xml" in filenames:
             name = get_package_name(dirpath)
             if name:
                 packages[os.path.abspath(dirpath)] = name
@@ -29,32 +32,36 @@ def find_packages(root_dir):
             # But let's be safe and traverse.
     return packages
 
+
 def parse_design_file(filepath):
     try:
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             content = yaml.safe_load(f)
     except (yaml.YAMLError, UnicodeDecodeError) as exc:
         raise ValueError(f"Failed to parse YAML file: {filepath}") from exc
     except OSError as exc:
         raise ValueError(f"Failed to read YAML file: {filepath}") from exc
 
-    if content and isinstance(content, dict) and 'autoware_system_design_format' in content:
+    if content and isinstance(content, dict) and "autoware_system_design_format" in content:
         return content
     return None
 
+
 def infer_type(filename):
-    if filename.endswith('.node.yaml'):
-        return 'node'
-    elif filename.endswith('.module.yaml'):
-        return 'module'
-    elif filename.endswith('system.yaml'):
-        return 'system'
-    elif filename.endswith('parameter_set.yaml'):
-        return 'parameter_set'
-    return 'unknown'
+    if filename.endswith(".node.yaml"):
+        return "node"
+    elif filename.endswith(".module.yaml"):
+        return "module"
+    elif filename.endswith("system.yaml"):
+        return "system"
+    elif filename.endswith("parameter_set.yaml"):
+        return "parameter_set"
+    return "unknown"
+
 
 def is_target_design_file(filename):
-    return infer_type(filename) != 'unknown'
+    return infer_type(filename) != "unknown"
+
 
 def find_source_root(start_path):
     """
@@ -69,31 +76,35 @@ def find_source_root(start_path):
     # We want the directory containing 'src' (workspace root) or the 'src' directory itself?
     # The previous logic used 'src' as the root to scan.
     # Usually we want to scan the 'src' directory.
-    if 'src' in path.parts:
+    if "src" in path.parts:
         # Return the path ending with 'src'
         # Example: /home/user/ws/src/pkg -> /home/user/ws/src
-        idx = path.parts.index('src')
-        return str(Path(*path.parts[:idx+1]))
+        idx = path.parts.index("src")
+        return str(Path(*path.parts[: idx + 1]))
 
     # 2. Fallback: traverse up and look for sibling 'build'/'install' directories
     # If we find them, return the 'src' directory inside that root if it exists.
     # Or just return the root.
     curr = path
-    while len(curr.parts) > 1: # Don't go to root /
+    while len(curr.parts) > 1:  # Don't go to root /
         if (curr / "build").exists() and (curr / "install").exists():
-             if (curr / "src").exists():
-                 return str(curr / "src")
-             return str(curr)
+            if (curr / "src").exists():
+                return str(curr / "src")
+            return str(curr)
         curr = curr.parent
 
     # 3. Last resort: return start_path
     return str(path)
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('start_path', help='Path to start searching for workspace root (usually current package dir)')
-    parser.add_argument('output_dir', help='Directory to save manifests')
-    parser.add_argument('install_prefix', help='CMAKE_INSTALL_PREFIX')
+    parser.add_argument(
+        "start_path",
+        help="Path to start searching for workspace root (usually current package dir)",
+    )
+    parser.add_argument("output_dir", help="Directory to save manifests")
+    parser.add_argument("install_prefix", help="CMAKE_INSTALL_PREFIX")
     args = parser.parse_args()
 
     # Find workspace root
@@ -122,7 +133,7 @@ def main():
 
     # Glob all yaml files
     # Using recursive glob
-    yaml_files = glob.glob(os.path.join(workspace_root, '**', '*.yaml'), recursive=True)
+    yaml_files = glob.glob(os.path.join(workspace_root, "**", "*.yaml"), recursive=True)
 
     yaml_parse_errors = []
 
@@ -159,8 +170,8 @@ def main():
         target_pkg = found_pkg
 
         # If it's a node design file, check if it specifies a package
-        if 'launch' in content and 'package' in content['launch']:
-            target_pkg = content['launch']['package']
+        if "launch" in content and "package" in content["launch"]:
+            target_pkg = content["launch"]["package"]
 
         if not target_pkg:
             continue
@@ -185,15 +196,15 @@ def main():
     for pkg_src_path, pkg_name in pkg_paths.items():
         if is_isolated:
             # isolated: install_base/pkg_name/share/pkg_name
-            p = os.path.join(install_base, pkg_name, 'share', pkg_name)
+            p = os.path.join(install_base, pkg_name, "share", pkg_name)
         else:
             # merged: install_prefix/share/pkg_name
-            p = os.path.join(args.install_prefix, 'share', pkg_name)
+            p = os.path.join(args.install_prefix, "share", pkg_name)
         package_map[pkg_name] = p
 
     package_map_path = os.path.join(output_dir, "_package_map.yaml")
-    with open(package_map_path, 'w') as f:
-        yaml.dump({'package_map': package_map}, f)
+    with open(package_map_path, "w") as f:
+        yaml.dump({"package_map": package_map}, f)
         print(f"Generated {package_map_path} with {len(package_map)} packages")
 
     # 2. Generate individual manifests for packages with design files
@@ -201,28 +212,23 @@ def main():
         manifest_path = os.path.join(output_dir, f"{pkg}.yaml")
 
         if is_isolated:
-            pkg_install_path = os.path.join(install_base, pkg, 'share', pkg)
+            pkg_install_path = os.path.join(install_base, pkg, "share", pkg)
         else:
             # Assuming shared install: install_prefix/share/pkg_name
-            pkg_install_path = os.path.join(args.install_prefix, 'share', pkg)
+            pkg_install_path = os.path.join(args.install_prefix, "share", pkg)
 
-        data = {
-            'package_name': pkg,
-            'deploy_config_files': []
-        }
+        data = {"package_name": pkg, "deploy_config_files": []}
 
         for f in files:
             t = infer_type(os.path.basename(f))
-            if t == 'unknown':
+            if t == "unknown":
                 continue
-            data['deploy_config_files'].append({
-                'path': f,
-                'type': t
-            })
+            data["deploy_config_files"].append({"path": f, "type": t})
 
-        with open(manifest_path, 'w') as f:
+        with open(manifest_path, "w") as f:
             yaml.dump(data, f)
             print(f"Generated {manifest_path}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

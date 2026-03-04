@@ -13,35 +13,36 @@
 # limitations under the License.
 
 
-import os
 import logging
+import os
 from pathlib import Path
-from typing import Dict, Tuple, List, Any, Optional
-from .deployment.deployment_config import DeploymentConfig
-from .deployment.deploy_launchers import generate_deploy_launchers
-from .deployment.modes import apply_mode_configuration, select_modes
-from .deployment.parser import iter_mode_payload_and_data, resolve_input_target
+from typing import Any, Dict, List, Optional, Tuple
+
 from .builder.config.config_registry import ConfigRegistry
 from .builder.deployment_instance import DeploymentInstance
-from .ros2_launcher.generate_module_launcher import generate_module_launch_file
-from .template.parameter_template_generator import ParameterTemplateGenerator
-from .models.parsing.yaml_parser import yaml_parser
-from .exceptions import ValidationError, DeploymentError
-from .file_io.template_renderer import TemplateRenderer
+from .deployment.deploy_launchers import generate_deploy_launchers
+from .deployment.deployment_config import DeploymentConfig
+from .deployment.modes import apply_mode_configuration, select_modes
+from .deployment.parser import iter_mode_payload_and_data, resolve_input_target
+from .exceptions import DeploymentError, ValidationError
+from .file_io.source_location import SourceLocation, format_source
 from .file_io.system_structure_json import (
     save_system_structure,
     save_system_structure_snapshot,
 )
+from .file_io.template_renderer import TemplateRenderer
+from .models.config import NodeConfig, SystemConfig
+from .models.parsing.yaml_parser import yaml_parser
+from .ros2_launcher.generate_module_launcher import generate_module_launch_file
+from .template.parameter_template_generator import ParameterTemplateGenerator
 from .utils import generate_build_scripts
 from .visualization.visualize_deployment import visualize_deployment
-from .models.config import SystemConfig, NodeConfig
-from .file_io.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 
 
 class Deployment:
-    def __init__(self, deploy_config: DeploymentConfig ):
+    def __init__(self, deploy_config: DeploymentConfig):
         # entity collection
         system_yaml_list, package_paths, file_package_map = self._get_system_list(deploy_config)
         self.config_registry = ConfigRegistry(
@@ -86,8 +87,8 @@ class Deployment:
         self.output_root_dir = deploy_config.output_root_dir
         self.launcher_dir = os.path.join(self.output_root_dir, "exports", self.name, "launcher/")
         self.system_monitor_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_monitor/")
-        self.visualization_dir = os.path.join(self.output_root_dir, "exports", self.name,"visualization/")
-        self.parameter_set_dir = os.path.join(self.output_root_dir, "exports", self.name,"parameter_set/")
+        self.visualization_dir = os.path.join(self.output_root_dir, "exports", self.name, "visualization/")
+        self.parameter_set_dir = os.path.join(self.output_root_dir, "exports", self.name, "parameter_set/")
         self.system_structure_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_structure/")
         self.system_structure_snapshots: Dict[str, Dict[str, Any]] = {}
 
@@ -139,22 +140,20 @@ class Deployment:
             raise ValidationError(f"System design manifest directory not found or not a directory: {manifest_dir}")
 
         for entry in sorted(os.listdir(manifest_dir)):
-            if not entry.endswith('.yaml'):
+            if not entry.endswith(".yaml"):
                 continue
             manifest_file = os.path.join(manifest_dir, entry)
             try:
                 manifest_yaml = yaml_parser.load_config(manifest_file)
 
                 # Load package map if available
-                if 'package_map' in manifest_yaml:
-                    package_paths.update(manifest_yaml['package_map'])
+                if "package_map" in manifest_yaml:
+                    package_paths.update(manifest_yaml["package_map"])
 
-                files = manifest_yaml.get('deploy_config_files')
+                files = manifest_yaml.get("deploy_config_files")
                 # Allow the field to be empty or null without raising an error
                 if files in (None, []):
-                    logger.debug(
-                        f"Manifest '{entry}' has empty deploy_config_files; skipping."
-                    )
+                    logger.debug(f"Manifest '{entry}' has empty deploy_config_files; skipping.")
                     continue
                 if not isinstance(files, list):
                     manifest_src = SourceLocation(file_path=Path(manifest_file))
@@ -163,12 +162,12 @@ class Deployment:
                     )
                     continue
                 for f in files:
-                    file_path = f.get('path') if isinstance(f, dict) else None
+                    file_path = f.get("path") if isinstance(f, dict) else None
                     if file_path and file_path not in system_list:
                         system_list.append(file_path)
 
-                    if file_path and 'package_name' in manifest_yaml:
-                        file_package_map[file_path] = manifest_yaml['package_name']
+                    if file_path and "package_name" in manifest_yaml:
+                        file_package_map[file_path] = manifest_yaml["package_name"]
 
             except Exception as e:
                 manifest_src = SourceLocation(file_path=Path(manifest_file))
@@ -185,9 +184,7 @@ class Deployment:
     ):
         def snapshot_callback(step: str, error: Exception | None = None) -> None:
             snapshot_path = os.path.join(self.system_structure_dir, f"{mode_key}_{step}.json")
-            payload = save_system_structure_snapshot(
-                snapshot_path, deploy_instance, self.name, mode_key, step, error
-            )
+            payload = save_system_structure_snapshot(snapshot_path, deploy_instance, self.name, mode_key, step, error)
             snapshot_store[step] = payload
 
         return snapshot_callback
@@ -206,9 +203,7 @@ class Deployment:
         snapshot_store: Dict[str, Any] = {}
         mode_key = mode_name if mode_name else default_mode
 
-        snapshot_callback = self._create_snapshot_callback(
-            mode_key, deploy_instance, snapshot_store
-        )
+        snapshot_callback = self._create_snapshot_callback(mode_key, deploy_instance, snapshot_store)
 
         deploy_instance.set_system(
             mode_system_config,
@@ -227,9 +222,7 @@ class Deployment:
     def _build(self, system_config, package_paths):
         mode_names, default_mode = select_modes(system_config)
         if system_config.modes:
-            logger.info(
-                f"Building deployment for {len(mode_names)} modes: {mode_names}, default: {default_mode}"
-            )
+            logger.info(f"Building deployment for {len(mode_names)} modes: {mode_names}, default: {default_mode}")
         else:
             logger.info("Building deployment with single 'default' mode")
 
@@ -271,6 +264,7 @@ class Deployment:
                 mismatch_files = getattr(self.config_registry, "minor_version_mismatch_files", [])
                 if mismatch_files:
                     from .builder.config.config_registry import _format_mismatch_hint
+
                     hint += "\n" + _format_mismatch_hint(mismatch_files)
 
                 raise DeploymentError(
@@ -281,9 +275,7 @@ class Deployment:
         # Collect data from all deployment instances
         deploy_data = {
             mode_key: data
-            for mode_key, _payload, data in iter_mode_payload_and_data(
-                self.mode_keys, self.system_structure_dir
-            )
+            for mode_key, _payload, data in iter_mode_payload_and_data(self.mode_keys, self.system_structure_dir)
         }
 
         visualize_deployment(deploy_data, self.name, self.visualization_dir)
@@ -300,30 +292,24 @@ class Deployment:
         output_path = os.path.join(output_dir, output_filename)
         renderer.render_template_to_file(template_name, output_path, **data)
 
-
     def generate_system_monitor(self):
         # load the template file
         template_dir = os.path.join(os.path.dirname(__file__), "template")
         topics_template_path = os.path.join(template_dir, "sys_monitor_topics.yaml.jinja2")
 
         # Generate system monitor for each mode
-        for mode_key, _payload, data in iter_mode_payload_and_data(
-            self.mode_keys, self.system_structure_dir
-        ):
+        for mode_key, _payload, data in iter_mode_payload_and_data(self.mode_keys, self.system_structure_dir):
             # Create mode-specific output directory
             mode_monitor_dir = os.path.join(self.system_monitor_dir, mode_key, "component_state_monitor")
             self.generate_by_template(data, topics_template_path, mode_monitor_dir, "topics.yaml")
 
             logger.info(f"Generated system monitor for mode: {mode_key}")
 
-
     def generate_build_scripts(self):
         """Generate shell scripts to build necessary packages for each ECU."""
         deploy_data = {
             mode_key: data
-            for mode_key, _payload, data in iter_mode_payload_and_data(
-                self.mode_keys, self.system_structure_dir
-            )
+            for mode_key, _payload, data in iter_mode_payload_and_data(self.mode_keys, self.system_structure_dir)
         }
 
         package_resolution_by_name: Dict[str, str | None] = {}
@@ -355,13 +341,10 @@ class Deployment:
             packages_without_provider=packages_without_provider,
         )
 
-
     def generate_launcher(self):
         deploy_variable_names = self._collect_deploy_variable_names()
         # Generate launcher files for each mode
-        for mode_key, payload, _data in iter_mode_payload_and_data(
-            self.mode_keys, self.system_structure_dir
-        ):
+        for mode_key, payload, _data in iter_mode_payload_and_data(self.mode_keys, self.system_structure_dir):
             # Create mode-specific launcher directory
             mode_launcher_dir = os.path.join(self.launcher_dir, mode_key)
 
@@ -391,9 +374,7 @@ class Deployment:
 
         # Generate parameter set template for each mode
         output_paths = {}
-        for mode_key, _payload, data in iter_mode_payload_and_data(
-            self.mode_keys, self.system_structure_dir
-        ):
+        for mode_key, _payload, data in iter_mode_payload_and_data(self.mode_keys, self.system_structure_dir):
             # Create mode-specific output directory
             mode_parameter_dir = os.path.join(self.parameter_set_dir, mode_key)
             os.makedirs(mode_parameter_dir, exist_ok=True)
@@ -404,10 +385,7 @@ class Deployment:
             # Create parameter template generator and generate the template
             template_name = f"{self.name}_{mode_key}" if mode_key != "default" else self.name
             output_path_list = ParameterTemplateGenerator.generate_parameter_set_template_from_data(
-                data,
-                template_name,
-                renderer,
-                mode_parameter_dir
+                data, template_name, renderer, mode_parameter_dir
             )
 
             output_paths[mode_key] = output_path_list
