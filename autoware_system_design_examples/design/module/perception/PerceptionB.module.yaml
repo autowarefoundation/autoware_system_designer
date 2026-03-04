@@ -13,7 +13,7 @@ instances:
 subscribers:
   - name: vector_map
   - name: pointcloud
-outputs:
+publishers:
   - name: objects
 
 connections:

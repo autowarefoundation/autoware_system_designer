@@ -55,7 +55,7 @@
         "additionalProperties": false
       }
     },
-    "outputs": {
+    "publishers": {
       "type": "array",
       "items": {
         "type": "object",
@@ -92,6 +92,6 @@
     }
   },
   "then": {
-    "required": ["instances", "subscribers", "outputs", "connections"]
+    "required": ["instances", "subscribers", "publishers", "connections"]
   }
 }

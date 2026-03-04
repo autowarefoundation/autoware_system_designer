@@ -22,7 +22,7 @@ instances:
     entity: TrackedObjectMergerDummy6.node
 
 subscribers: []
-outputs:
+publishers:
   - name: detected_objects
   - name: tracked_objects
 

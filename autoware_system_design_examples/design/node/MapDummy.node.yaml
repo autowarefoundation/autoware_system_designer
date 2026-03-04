@@ -12,7 +12,7 @@ launch:
 # interfaces
 subscribers: []
 
-outputs:
+publishers:
   - name: vector_map
     message_type: autoware_map_msgs/msg/LaneletMapBin
     qos:

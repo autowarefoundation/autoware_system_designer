@@ -22,7 +22,7 @@ subscribers:
   - name: obstacle_pointcloud
     message_type: sensor_msgs/msg/PointCloud2
 
-outputs:
+publishers:
   - name: mission_planning/route
     message_type: autoware_planning_msgs/msg/LaneletRoute
 

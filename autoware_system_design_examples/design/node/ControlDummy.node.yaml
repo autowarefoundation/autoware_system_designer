@@ -19,7 +19,7 @@ subscribers:
   - name: emergency_control_cmd
     message_type: autoware_control_msgs/msg/EmergencyControlCmd
 
-outputs:
+publishers:
   - name: command/control_cmd
     message_type: autoware_control_msgs/msg/Control
   - name: command/gear_cmd

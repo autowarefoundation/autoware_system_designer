@@ -12,7 +12,7 @@ launch:
 # interfaces
 subscribers: []
 
-outputs:
+publishers:
   - name: traffic_signal_car
     message_type: tier4_perception_msgs/msg/TrafficLightArray
     qos:

@@ -28,7 +28,7 @@ subscribers:
   - name: sub_gnss_nav_sat_fix
     message_type: sensor_msgs/msg/NavSatFix
 
-outputs:
+publishers:
   - name: ros_transform
     message_type: tf2_msgs/msg/TFMessage
     global: /tf

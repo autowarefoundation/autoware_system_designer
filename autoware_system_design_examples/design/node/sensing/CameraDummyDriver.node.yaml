@@ -11,7 +11,7 @@ launch:
 
 # interfaces
 subscribers: []
-outputs:
+publishers:
   - name: image
     message_type: sensor_msgs/msg/Image
     qos:

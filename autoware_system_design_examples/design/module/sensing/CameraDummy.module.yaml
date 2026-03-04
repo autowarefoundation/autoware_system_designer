@@ -21,7 +21,7 @@ instances:
     entity: CameraDummyDriver.node
 
 subscribers: []
-outputs:
+publishers:
   - name: camera0/image
   - name: camera0/camera_info
   - name: camera1/image

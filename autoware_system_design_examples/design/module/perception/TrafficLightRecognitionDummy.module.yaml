@@ -7,7 +7,7 @@ instances:
     entity: TrafficLightRecognitionDummy.node
 
 subscribers: []
-outputs:
+publishers:
   - name: classification/car/traffic_signals
   - name: classification/pedestrian/traffic_signals
   - name: detection/rois

@@ -69,7 +69,7 @@
         }
       ]
     },
-    "outputs": {
+    "publishers": {
       "oneOf": [
         {
           "type": "array",
@@ -204,7 +204,7 @@
       "package",
       "launch",
       "subscribers",
-      "outputs",
+      "publishers",
       "param_files",
       "param_values",
       "processes"

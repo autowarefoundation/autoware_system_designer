@@ -70,7 +70,7 @@ class NodeConfig(Config):
     package_provider: Optional[str] = None
     package_resolution: Optional[str] = None  # "source" or "installed", set from workspace.yaml
     launch: Dict[str, Any] = None
-    subscribers: List[Dict[str, Any]] = None
+    inputs: List[Dict[str, Any]] = None
     outputs: List[Dict[str, Any]] = None
     param_files: Any = None  # Can be dict or list
     param_values: Any = None  # Can be dict or list
@@ -82,7 +82,7 @@ class ModuleConfig(Config):
     """Data structure for module entities."""
 
     instances: List[Dict[str, Any]] = None
-    subscribers: List[Dict[str, Any]] = None
+    inputs: List[Dict[str, Any]] = None
     outputs: List[Dict[str, Any]] = None
     connections: List[Dict[str, Any]] = None
 

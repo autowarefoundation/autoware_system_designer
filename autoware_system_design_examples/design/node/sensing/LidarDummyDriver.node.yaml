@@ -12,7 +12,7 @@ launch:
 # interfaces
 subscribers: []
 
-outputs:
+publishers:
   - name: pointcloud
     message_type: sensor_msgs/msg/PointCloud2
     qos:

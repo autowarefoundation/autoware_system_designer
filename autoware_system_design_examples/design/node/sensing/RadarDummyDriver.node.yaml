@@ -12,7 +12,7 @@ launch:
 # interfaces
 subscribers: []
 
-outputs:
+publishers:
   - name: tracked_objects
     message_type: autoware_perception_msgs/msg/TrackedObjects
   - name: detected_objects

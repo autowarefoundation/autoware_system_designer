@@ -15,7 +15,7 @@ instances:
     entity: ConcatenatePointcloudDummy.node
 
 subscribers: []
-outputs:
+publishers:
   - name: top/pointcloud
   - name: left/pointcloud
   - name: right/pointcloud
