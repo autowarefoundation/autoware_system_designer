@@ -13,35 +13,35 @@
 # limitations under the License.
 
 import logging
-import re
-import os
 import math
-from typing import List, Dict, Any, Optional
+import os
+import re
+from typing import Any, Dict, List, Optional
 
-from ...models.parsing.yaml_parser import yaml_parser
 from ...file_io.source_location import SourceLocation, format_source
+from ...models.parsing.yaml_parser import yaml_parser
 
 logger = logging.getLogger(__name__)
 
 
 SAFE_EVAL_SCOPE = {
-    '__builtins__': {},
-    'math': math,
-    'abs': abs,
-    'min': min,
-    'max': max,
-    'pow': pow,
-    'round': round,
-    'int': int,
-    'float': float,
-    'str': str,
+    "__builtins__": {},
+    "math": math,
+    "abs": abs,
+    "min": min,
+    "max": max,
+    "pow": pow,
+    "round": round,
+    "int": int,
+    "float": float,
+    "str": str,
     # Add math constants and functions directly to scope for convenience
-    'pi': math.pi,
-    'sin': math.sin,
-    'cos': math.cos,
-    'tan': math.tan,
-    'sqrt': math.sqrt,
-    'atan2': math.atan2,
+    "pi": math.pi,
+    "sin": math.sin,
+    "cos": math.cos,
+    "tan": math.tan,
+    "sqrt": math.sqrt,
+    "atan2": math.atan2,
 }
 
 
@@ -72,12 +72,12 @@ class ParameterResolver:
         self._source_context: Optional[SourceLocation] = None
 
         # Regex patterns for substitutions
-        self.env_pattern = re.compile(r'\$\(env\s+([^)]+)\)')
-        self.var_pattern = re.compile(r'\$\(var\s+([\w\.]+)\)')
-        self.pkgshare_pattern = re.compile(r'\$\(find-pkg-share\s+([^)]+)\)')
+        self.env_pattern = re.compile(r"\$\(env\s+([^)]+)\)")
+        self.var_pattern = re.compile(r"\$\(var\s+([\w\.]+)\)")
+        self.pkgshare_pattern = re.compile(r"\$\(find-pkg-share\s+([^)]+)\)")
         # eval_pattern removed in favor of manual parsing to support balanced parentheses
 
-    def copy(self) -> 'ParameterResolver':
+    def copy(self) -> "ParameterResolver":
         """Create a shallow copy of the resolver with independent variable map.
 
         Returns:
@@ -106,8 +106,8 @@ class ParameterResolver:
 
         # Add variables
         for param in variables_list:
-            name = param.get('name')
-            value = param.get('value')
+            name = param.get("name")
+            value = param.get("value")
             if name and value is not None:
                 variables[name] = str(value)
 
@@ -172,9 +172,7 @@ class ParameterResolver:
         if env_value is not None:
             return env_value
         else:
-            logger.warning(
-                f"Environment variable not set: $(env {env_var}){format_source(self._source_context)}"
-            )
+            logger.warning(f"Environment variable not set: $(env {env_var}){format_source(self._source_context)}")
             return match.group(0)  # Return original if not found
 
     def _resolve_var_match(self, match) -> str:
@@ -183,9 +181,7 @@ class ParameterResolver:
         if var_name in self.variable_map:
             return self.variable_map[var_name]
         else:
-            logger.warning(
-                f"Undefined variable: $(var {var_name}){format_source(self._source_context)}"
-            )
+            logger.warning(f"Undefined variable: $(var {var_name}){format_source(self._source_context)}")
             return match.group(0)  # Return original if not found
 
     def _resolve_pkgshare_match(self, match) -> str:
@@ -210,14 +206,14 @@ class ParameterResolver:
         Note: Nested eval expressions are not supported (eval inside eval).
         However, $(var ...) and $(env ...) can be inside $(eval ...).
         """
-        if not text or '$(eval ' not in text:
+        if not text or "$(eval " not in text:
             return text
 
         result = []
         current_idx = 0
 
         while True:
-            start_idx = text.find('$(eval ', current_idx)
+            start_idx = text.find("$(eval ", current_idx)
             if start_idx == -1:
                 result.append(text[current_idx:])
                 break
@@ -232,9 +228,9 @@ class ParameterResolver:
 
             while scan_idx < len(text):
                 char = text[scan_idx]
-                if char == '(':
+                if char == "(":
                     balance += 1
-                elif char == ')':
+                elif char == ")":
                     balance -= 1
                     if balance == 0:
                         found_closure = True
@@ -262,8 +258,8 @@ class ParameterResolver:
         """Evaluate a python expression safely."""
         expression = expression.strip()
 
-        if '$' in expression:
-             return f"$(eval {expression})"
+        if "$" in expression:
+            return f"$(eval {expression})"
 
         try:
             result = eval(expression, SAFE_EVAL_SCOPE)
@@ -273,7 +269,6 @@ class ParameterResolver:
                 f"Failed to evaluate expression '$(eval {expression})': {e}{format_source(self._source_context)}"
             )
             return f"$(eval {expression})"
-
 
     def resolve_parameter_file_path(self, file_path: str, source: Optional[SourceLocation] = None) -> str:
         """Resolve substitutions in a parameter file path.
@@ -317,10 +312,10 @@ class ParameterResolver:
         resolved_params = []
         for param in parameters:
             resolved_param = param.copy()
-            if 'value' in resolved_param:
-                resolved_param['value'] = self.resolve_parameter_value(resolved_param['value'])
-                if 'name' in resolved_param:
-                    self.variable_map[resolved_param['name']] = str(resolved_param['value'])
+            if "value" in resolved_param:
+                resolved_param["value"] = self.resolve_parameter_value(resolved_param["value"])
+                if "name" in resolved_param:
+                    self.variable_map[resolved_param["name"]] = str(resolved_param["value"])
             resolved_params.append(resolved_param)
         return resolved_params
 
@@ -367,8 +362,8 @@ class ParameterResolver:
 
         system_variables = {}
         for param in variables:
-            name = param.get('name')
-            value = param.get('value')
+            name = param.get("name")
+            value = param.get("value")
             if name and value is not None:
                 system_variables[name] = str(value)
 
@@ -393,8 +388,8 @@ class ParameterResolver:
         variables_to_add = {}
 
         for file_entry in variable_files:
-            prefix = file_entry.get('name')
-            file_path = file_entry.get('value')
+            prefix = file_entry.get("name")
+            file_path = file_entry.get("value")
 
             if not prefix or not file_path:
                 logger.warning(
@@ -404,16 +399,14 @@ class ParameterResolver:
 
             resolved_path = self.resolve_string(file_path)
 
-            if resolved_path.startswith('$'):
+            if resolved_path.startswith("$"):
                 logger.warning(
                     f"Could not resolve path for system variable file: {file_path}{format_source(self._source_context)}"
                 )
                 continue
 
             if not os.path.exists(resolved_path):
-                logger.warning(
-                    f"System variable file not found: {resolved_path}{format_source(self._source_context)}"
-                )
+                logger.warning(f"System variable file not found: {resolved_path}{format_source(self._source_context)}")
                 continue
 
             try:

@@ -2,10 +2,10 @@ import logging
 from typing import TYPE_CHECKING
 
 from ...exceptions import ValidationError
+from ...file_io.source_location import format_source, source_from_config
 from ...models.parsing.data_validator import entity_name_decode
-from ..runtime.parameters import ParameterType
-from ...file_io.source_location import source_from_config, format_source
 from ..parameters.parameter_set_applier import apply_parameter_set
+from ..runtime.parameters import ParameterType
 
 if TYPE_CHECKING:
     from ..config.config_registry import ConfigRegistry
@@ -29,9 +29,7 @@ def set_instances(
         elif entity_type == "node":
             set_node_instances(instance, entity_id, entity_name, config_registry, launch_override)
     except Exception:
-        raise ValidationError(
-            f"Error setting instances for {entity_id}, at {instance.configuration.file_path}"
-        )
+        raise ValidationError(f"Error setting instances for {entity_id}, at {instance.configuration.file_path}")
 
 
 def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry") -> None:
@@ -54,9 +52,7 @@ def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry"
             namespace = []
 
         # create instance
-        child_instance = _create_child_instance(
-            instance_name, compute_unit_name, namespace, instance
-        )
+        child_instance = _create_child_instance(instance_name, compute_unit_name, namespace, instance)
 
         try:
             set_instances(child_instance, entity_id, config_registry)
@@ -170,14 +166,16 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
         if launch_override:
             _, entity_type = entity_name_decode(cfg_node.get("entity"))
             if entity_type != "node":
-                cfg_src = source_from_config(
-                    instance.configuration, f"/instances/{idx}/launch"
-                )
+                cfg_src = source_from_config(instance.configuration, f"/instances/{idx}/launch")
                 raise ValidationError(
                     f"Launch override is only supported for node instances (got '{entity_type}'){format_source(cfg_src)}"
                 )
         child_instance = _create_child_instance(
-            child_name, instance.compute_unit, instance.namespace + [child_name], instance, layer_delta=1
+            child_name,
+            instance.compute_unit,
+            instance.namespace + [child_name],
+            instance,
+            layer_delta=1,
         )
         child_instance.parent_module_list = instance.parent_module_list.copy()
 
@@ -207,9 +205,7 @@ def run_module_configuration(instance: "Instance") -> None:
     # set connections
     if len(instance.configuration.connections) == 0:
         cfg_src = source_from_config(instance.configuration, "/connections")
-        logger.warning(
-            f"Module '{instance.name}' has no connections configured{format_source(cfg_src)}"
-        )
+        logger.warning(f"Module '{instance.name}' has no connections configured{format_source(cfg_src)}")
         return
 
     # set links first to know topic type for external ports
@@ -244,9 +240,7 @@ def _create_child_instance(
 ) -> "Instance":
     from .instances import Instance
 
-    child_instance = Instance(
-        name, compute_unit, namespace, parent_instance.layer + layer_delta
-    )
+    child_instance = Instance(name, compute_unit, namespace, parent_instance.layer + layer_delta)
     child_instance.parent = parent_instance
     if parent_instance.parameter_resolver:
         child_instance.set_parameter_resolver(parent_instance.parameter_resolver)

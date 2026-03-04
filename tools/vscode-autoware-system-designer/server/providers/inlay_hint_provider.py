@@ -1,10 +1,11 @@
 import re
 from typing import List, Optional, Set
-from lsprotocol import types as lsp
 
-from autoware_system_designer.models.config import Config, ConfigType
+from lsprotocol import types as lsp
 from registry_manager import RegistryManager
 from utils.uri_utils import uri_to_path
+
+from autoware_system_designer.models.config import Config, ConfigType
 
 
 class InlayHintProvider:
@@ -48,11 +49,11 @@ class InlayHintProvider:
             # Check for specific connection patterns in YAML
             # We expect keys like 'from:' or 'to:'
             # Updated regex to include / and - which are common in ROS topic names / port names
-            match = re.search(r'(?:from|to):\s*([\w\.\*/-]+)', line)
+            match = re.search(r"(?:from|to):\s*([\w\.\*/-]+)", line)
             if match:
                 connection_str = match.group(1)
                 # Skip wildcards for now
-                if '*' in connection_str:
+                if "*" in connection_str:
                     continue
 
                 msg_type = self._resolve_type_for_string(connection_str, params.text_document.uri)
@@ -66,7 +67,7 @@ class InlayHintProvider:
                         position=position,
                         label=f": {msg_type}",
                         kind=lsp.InlayHintKind.Type,
-                        padding_left=True
+                        padding_left=True,
                     )
                     hints.append(hint)
 
@@ -84,9 +85,10 @@ class InlayHintProvider:
 
         # Use ResolutionService logic
         from resolution_service import ResolutionService
+
         resolution_service = ResolutionService(self.registry_manager)
 
-        parts = connection_str.split('.')
+        parts = connection_str.split(".")
         if len(parts) == 3:
             # instance.input.port
             instance_name = parts[0]
@@ -99,7 +101,7 @@ class InlayHintProvider:
 
         elif len(parts) == 2:
             # input.port (self)
-            port_type = parts[0] # input or output
+            port_type = parts[0]  # input or output
             port_name = parts[1]
             return resolution_service.resolve_port_type(current_config, port_type, port_name)
 

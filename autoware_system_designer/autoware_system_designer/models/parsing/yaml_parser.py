@@ -14,11 +14,12 @@
 
 """YAML configuration parser with caching support."""
 
-import yaml
 import logging
-from pathlib import Path
-from typing import Dict, Any, Union, Optional, Tuple
 from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, Union
+
+import yaml
 
 from ...deployment.deployment_config import deploy_config
 from ...exceptions import ValidationError
@@ -77,7 +78,11 @@ class YamlParser:
                     key = getattr(key_node, "value", None)
                     if key is None:
                         continue
-                    child_path = f"{path}/{cls._json_pointer_escape(str(key))}" if path else f"/{cls._json_pointer_escape(str(key))}"
+                    child_path = (
+                        f"{path}/{cls._json_pointer_escape(str(key))}"
+                        if path
+                        else f"/{cls._json_pointer_escape(str(key))}"
+                    )
                     _walk(value_node, child_path)
             elif isinstance(node, yaml.nodes.SequenceNode):
                 for idx, item_node in enumerate(node.value):
@@ -90,9 +95,7 @@ class YamlParser:
         _walk(root, "")
         return source_map
 
-    def load_config_with_source(
-        self, file_path: Union[str, Path]
-    ) -> Tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
+    def load_config_with_source(self, file_path: Union[str, Path]) -> Tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
         """Load YAML configuration file and return (data, source_map).
 
         source_map keys are JSON-pointer-like YAML paths (e.g. "/parameters/0/value").
@@ -129,9 +132,7 @@ class YamlParser:
         except Exception as exc:
             raise ValidationError(f"Failed to read configuration file {path}: {exc}")
 
-    def load_config_from_string_with_source(
-        self, content: str
-    ) -> Tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
+    def load_config_from_string_with_source(self, content: str) -> Tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
         """Load YAML configuration from string content and return (data, source_map)."""
         try:
             config_data = yaml.safe_load(content)
@@ -171,7 +172,7 @@ class YamlParser:
 
         try:
             logger.debug(f"Loading configuration file: {path}")
-            with open(path, 'r', encoding='utf-8') as stream:
+            with open(path, "r", encoding="utf-8") as stream:
                 config_data = yaml.safe_load(stream)
 
             if config_data is None:
@@ -231,7 +232,7 @@ class YamlParser:
             raise ValidationError(f"File list not found: {list_path}")
 
         try:
-            with open(list_path, 'r', encoding='utf-8') as file:
+            with open(list_path, "r", encoding="utf-8") as file:
                 file_paths = [line.strip() for line in file.readlines() if line.strip()]
 
             configs = {}

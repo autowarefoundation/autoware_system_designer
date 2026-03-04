@@ -57,16 +57,12 @@ def main() -> int:
     parser.add_argument(
         "--out",
         default=None,
-        help=(
-            "Output JSON file path. Default: ./ros2_graph_snapshots/<timestamp>/graph.json"
-        ),
+        help=("Output JSON file path. Default: ./ros2_graph_snapshots/<timestamp>/graph.json"),
     )
     parser.add_argument(
         "--filter",
         default=None,
-        help=(
-            "Regex to include only matching fully-qualified node names (e.g. '^/planning/')."
-        ),
+        help=("Regex to include only matching fully-qualified node names (e.g. '^/planning/')."),
     )
     parser.add_argument(
         "--max-nodes",

@@ -17,9 +17,9 @@
 import re
 from pathlib import Path
 
-from ..models.parsing.yaml_parser import yaml_parser
-from ..models.parsing.data_validator import entity_name_decode
 from ..models.config import ConfigType
+from ..models.parsing.data_validator import entity_name_decode
+from ..models.parsing.yaml_parser import yaml_parser
 from .report import LintResult
 
 
@@ -28,10 +28,10 @@ class FileLinter:
 
     # Valid entity file extensions
     VALID_EXTENSIONS = {
-        '.node.yaml': ConfigType.NODE,
-        '.module.yaml': ConfigType.MODULE,
-        '.system.yaml': ConfigType.SYSTEM,
-        '.parameter_set.yaml': ConfigType.PARAMETER_SET,
+        ".node.yaml": ConfigType.NODE,
+        ".module.yaml": ConfigType.MODULE,
+        ".system.yaml": ConfigType.SYSTEM,
+        ".parameter_set.yaml": ConfigType.PARAMETER_SET,
     }
 
     def lint(self, file_path: Path, result: LintResult):
@@ -59,7 +59,7 @@ class FileLinter:
             return
 
         # Extract base name (without extension)
-        base_name = file_name[:-len(valid_extension)]
+        base_name = file_name[: -len(valid_extension)]
 
         if expected_type == ConfigType.PARAMETER_SET:
             return
@@ -69,19 +69,18 @@ class FileLinter:
         try:
             config = yaml_parser.load_config(str(file_path))
             if isinstance(config, dict):
-                base_ref = config.get('base')
+                base_ref = config.get("base")
         except Exception:
             base_ref = None
 
         # Check that file name matches expected pattern: Name.type.yaml
-        if '.' in base_name:
-            parts = base_name.split('.')
+        if "." in base_name:
+            parts = base_name.split(".")
             if len(parts) == 2:
                 name_part, type_part = parts
                 if type_part != expected_type:
                     result.add_error(
-                        f"File name type part '{type_part}' does not match "
-                        f"file extension type '{expected_type}'"
+                        f"File name type part '{type_part}' does not match " f"file extension type '{expected_type}'"
                     )
                 if expected_type != ConfigType.PARAMETER_SET:
                     if base_ref:
@@ -142,7 +141,7 @@ class FileLinter:
 
         # Rest should be alphanumeric (no underscores, spaces, or special chars)
         # Allow lowercase letters and numbers after the first character
-        pattern = r'^[A-Z][a-zA-Z0-9]*$'
+        pattern = r"^[A-Z][a-zA-Z0-9]*$"
         return bool(re.match(pattern, name))
 
     @staticmethod
@@ -152,7 +151,7 @@ class FileLinter:
             return False
         if not name[0].islower():
             return False
-        pattern = r'^[a-z][a-z0-9_]*$'
+        pattern = r"^[a-z][a-z0-9_]*$"
         return bool(re.match(pattern, name))
 
     def _is_allowed_variant_name(self, name: str, base_ref: str) -> bool:
@@ -167,13 +166,13 @@ class FileLinter:
         if not name.startswith(f"{base_name}_"):
             return False
 
-        suffix = name[len(base_name) + 1:]
+        suffix = name[len(base_name) + 1 :]
         return bool(suffix) and self._is_snake_suffix(suffix)
 
     @staticmethod
     def _is_snake_suffix(name: str) -> bool:
         """Allow lowercase/digits/underscores, leading digit OK."""
-        return bool(re.match(r'^[a-z0-9][a-z0-9_]*$', name))
+        return bool(re.match(r"^[a-z0-9][a-z0-9_]*$", name))
 
     @staticmethod
     def _get_base_name(base_ref: str) -> str:

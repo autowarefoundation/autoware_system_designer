@@ -32,7 +32,6 @@ from typing import Optional, Tuple
 from .. import DESIGN_FORMAT_VERSION
 from ..exceptions import FormatVersionError
 
-
 # ---- version string → tuple ------------------------------------------------
 
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
@@ -60,15 +59,12 @@ def parse_format_version(raw: str) -> SemanticVersion:
         FormatVersionError: If the string cannot be parsed.
     """
     if not isinstance(raw, str):
-        raise FormatVersionError(
-            f"Format version must be a string, got {type(raw).__name__}: {raw!r}"
-        )
+        raise FormatVersionError(f"Format version must be a string, got {type(raw).__name__}: {raw!r}")
 
     m = _VERSION_RE.match(raw.strip())
     if m is None:
         raise FormatVersionError(
-            f"Invalid format version string: '{raw}'. "
-            "Expected 'MAJOR.MINOR.PATCH' (e.g. '0.2.0')."
+            f"Invalid format version string: '{raw}'. " "Expected 'MAJOR.MINOR.PATCH' (e.g. '0.2.0')."
         )
     return SemanticVersion(int(m.group(1)), int(m.group(2)), int(m.group(3)))
 

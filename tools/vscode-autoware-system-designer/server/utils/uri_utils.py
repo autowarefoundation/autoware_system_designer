@@ -2,7 +2,7 @@
 
 """URI utility functions."""
 
-from urllib.parse import urlparse, unquote
+from urllib.parse import unquote, urlparse
 
 
 def uri_to_path(uri: str) -> str:

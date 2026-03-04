@@ -14,8 +14,8 @@
 
 """Configuration management for the autoware system."""
 
-import os
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -25,6 +25,7 @@ from ..utils.logging_utils import configure_split_stream_logging
 @dataclass
 class DeploymentConfig:
     """Configuration class for the autoware system deployment."""
+
     layer_limit: int = 50
     log_level: str = "INFO"
     print_level: str = "ERROR"
@@ -38,14 +39,14 @@ class DeploymentConfig:
     workspace_config: Optional[List[Dict[str, Any]]] = None
 
     @classmethod
-    def from_env(cls) -> 'DeploymentConfig':
+    def from_env(cls) -> "DeploymentConfig":
         """Create configuration from environment variables."""
         return cls(
-            layer_limit=int(os.getenv('autoware_system_designer_LAYER_LIMIT', '50')),
-            log_level=os.getenv('autoware_system_designer_LOG_LEVEL', 'INFO'),
-            print_level=os.getenv('autoware_system_designer_PRINT_LEVEL', 'ERROR'),
-            cache_enabled=os.getenv('autoware_system_designer_CACHE_ENABLED', 'true').lower() == 'true',
-            max_cache_size=int(os.getenv('autoware_system_designer_MAX_CACHE_SIZE', '128'))
+            layer_limit=int(os.getenv("autoware_system_designer_LAYER_LIMIT", "50")),
+            log_level=os.getenv("autoware_system_designer_LOG_LEVEL", "INFO"),
+            print_level=os.getenv("autoware_system_designer_PRINT_LEVEL", "ERROR"),
+            cache_enabled=os.getenv("autoware_system_designer_CACHE_ENABLED", "true").lower() == "true",
+            max_cache_size=int(os.getenv("autoware_system_designer_MAX_CACHE_SIZE", "128")),
         )
 
     def set_logging(self) -> logging.Logger:
@@ -53,10 +54,10 @@ class DeploymentConfig:
         level = getattr(logging, self.log_level.upper(), logging.INFO)
         stderr_level = getattr(logging, self.print_level.upper(), logging.ERROR)
 
-        formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
         configure_split_stream_logging(level=level, stderr_level=stderr_level, formatter=formatter)
 
-        return logging.getLogger('autoware_system_designer')
+        return logging.getLogger("autoware_system_designer")
 
 
 # Global configuration instance

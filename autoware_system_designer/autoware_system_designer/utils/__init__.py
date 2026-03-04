@@ -14,11 +14,7 @@
 
 """Utilities."""
 
-from .naming import pascal_to_snake, snake_to_pascal
 from .build_script_generator import generate_build_scripts
+from .naming import pascal_to_snake, snake_to_pascal
 
-__all__ = [
-    "pascal_to_snake",
-    "snake_to_pascal",
-    "generate_build_scripts"
-]
+__all__ = ["pascal_to_snake", "snake_to_pascal", "generate_build_scripts"]

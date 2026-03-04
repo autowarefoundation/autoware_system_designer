@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import logging
-from typing import List, Dict, Any, TypeVar, Optional
-from ...models.config import SystemConfig, NodeConfig, ModuleConfig
+from typing import Any, Dict, List, Optional, TypeVar
+
+from ...models.config import ModuleConfig, NodeConfig, SystemConfig
 from .connection_utils import filter_connections_by_removed_entities
 
 logger = logging.getLogger(__name__)
+
 
 class VariantResolver:
     """Base class for resolving variant merging and removals."""
@@ -36,9 +38,7 @@ class VariantResolver:
         if key_field:
             # Create a map for quick lookup and replacement
             base_map = {
-                item[key_field]: i
-                for i, item in enumerate(merged_list)
-                if isinstance(item, dict) and key_field in item
+                item[key_field]: i for i, item in enumerate(merged_list) if isinstance(item, dict) and key_field in item
             }
 
             for item in override_list:
@@ -114,10 +114,10 @@ class VariantResolver:
             {'field': 'connections', 'key_field': None}
         ]
         """
-        override_config = config_yaml.get('override', {})
+        override_config = config_yaml.get("override", {})
         for spec in merge_specs:
-            field = spec['field']
-            key_field = spec['key_field']
+            field = spec["field"]
+            key_field = spec["key_field"]
 
             # Get current list from object
             base_list = getattr(config_object, field)
@@ -137,8 +137,8 @@ class VariantResolver:
         remove_specs format: same as merge_specs
         """
         for spec in remove_specs:
-            field = spec['field']
-            key_field = spec['key_field']
+            field = spec["field"]
+            key_field = spec["key_field"]
 
             if field in remove_config:
                 target_list = getattr(config_object, field)
@@ -157,18 +157,18 @@ class SystemVariantResolver(VariantResolver):
         Modifies system_config in-place.
         """
         # Apply removals if 'remove' section exists
-        remove_config = config_yaml.get('remove', {})
+        remove_config = config_yaml.get("remove", {})
         if remove_config:
             self._apply_removals(system_config, remove_config)
 
-        override_config = config_yaml.get('override', {})
+        override_config = config_yaml.get("override", {})
         merge_specs = [
-            {'field': 'variables', 'key_field': 'name'},
-            {'field': 'variable_files', 'key_field': None},
-            {'field': 'modes', 'key_field': 'name'},
-            {'field': 'parameter_sets', 'key_field': None},  # Parameter sets are appended
-            {'field': 'components', 'key_field': 'name'},
-            {'field': 'connections', 'key_field': None},
+            {"field": "variables", "key_field": "name"},
+            {"field": "variable_files", "key_field": None},
+            {"field": "modes", "key_field": "name"},
+            {"field": "parameter_sets", "key_field": None},  # Parameter sets are appended
+            {"field": "components", "key_field": "name"},
+            {"field": "connections", "key_field": None},
         ]
         self._resolve_merges(system_config, config_yaml, merge_specs)
 
@@ -178,20 +178,19 @@ class SystemVariantResolver(VariantResolver):
                 system_config.mode_configs = {}
 
             # mode names are already merged in system_config.modes
-            mode_names = [m.get('name') for m in system_config.modes if isinstance(m, dict) and 'name' in m]
+            mode_names = [m.get("name") for m in system_config.modes if isinstance(m, dict) and "name" in m]
 
             for mode_name in mode_names:
                 if mode_name in override_config:
                     # Overwrite/Update mode config from override
                     system_config.mode_configs[mode_name] = override_config[mode_name]
 
-
     def _apply_removals(self, system_config: SystemConfig, remove_config: Dict[str, Any]):
-        if 'components' in remove_config:
+        if "components" in remove_config:
             removed_names = [
-                spec if isinstance(spec, str) else spec.get('name')
-                for spec in remove_config.get('components', [])
-                if (isinstance(spec, str) and spec) or (isinstance(spec, dict) and spec.get('name'))
+                spec if isinstance(spec, str) else spec.get("name")
+                for spec in remove_config.get("components", [])
+                if (isinstance(spec, str) and spec) or (isinstance(spec, dict) and spec.get("name"))
             ]
             if removed_names and system_config.connections:
                 system_config.connections = filter_connections_by_removed_entities(
@@ -199,11 +198,11 @@ class SystemVariantResolver(VariantResolver):
                 )
 
         remove_specs = [
-            {'field': 'modes', 'key_field': 'name'},
-            {'field': 'parameter_sets', 'key_field': None},  # Remove parameter sets by value
-            {'field': 'components', 'key_field': 'name'},
-            {'field': 'variables', 'key_field': 'name'},
-            {'field': 'connections', 'key_field': None},
+            {"field": "modes", "key_field": "name"},
+            {"field": "parameter_sets", "key_field": None},  # Remove parameter sets by value
+            {"field": "components", "key_field": "name"},
+            {"field": "variables", "key_field": "name"},
+            {"field": "connections", "key_field": None},
         ]
         self._resolve_removals(system_config, remove_config, remove_specs)
 
@@ -217,34 +216,34 @@ class NodeVariantResolver(VariantResolver):
         Modifies node_config in-place.
         """
         # Apply removals first
-        remove_config = config_yaml.get('remove', {})
+        remove_config = config_yaml.get("remove", {})
         if remove_config:
             self._apply_removals(node_config, remove_config)
 
-        override_config = config_yaml.get('override', {})
+        override_config = config_yaml.get("override", {})
 
         # 1. Launch (dict merge)
-        if 'launch' in override_config:
+        if "launch" in override_config:
             if node_config.launch is None:
                 node_config.launch = {}
-            node_config.launch.update(override_config['launch'])
+            node_config.launch.update(override_config["launch"])
 
         merge_specs = [
-            {'field': 'inputs', 'key_field': 'name'},
-            {'field': 'outputs', 'key_field': 'name'},
-            {'field': 'param_files', 'key_field': 'name'},
-            {'field': 'param_values', 'key_field': 'name'},
-            {'field': 'processes', 'key_field': 'name'},
+            {"field": "inputs", "key_field": "name"},
+            {"field": "outputs", "key_field": "name"},
+            {"field": "param_files", "key_field": "name"},
+            {"field": "param_values", "key_field": "name"},
+            {"field": "processes", "key_field": "name"},
         ]
         self._resolve_merges(node_config, config_yaml, merge_specs)
 
     def _apply_removals(self, node_config: NodeConfig, remove_config: Dict[str, Any]):
         remove_specs = [
-            {'field': 'inputs', 'key_field': 'name'},
-            {'field': 'outputs', 'key_field': 'name'},
-            {'field': 'param_files', 'key_field': 'name'},
-            {'field': 'param_values', 'key_field': 'name'},
-            {'field': 'processes', 'key_field': 'name'},
+            {"field": "inputs", "key_field": "name"},
+            {"field": "outputs", "key_field": "name"},
+            {"field": "param_files", "key_field": "name"},
+            {"field": "param_values", "key_field": "name"},
+            {"field": "processes", "key_field": "name"},
         ]
         self._resolve_removals(node_config, remove_config, remove_specs)
 
@@ -258,26 +257,26 @@ class ModuleVariantResolver(VariantResolver):
         Modifies module_config in-place.
         """
         # Apply removals first
-        remove_config = config_yaml.get('remove', {})
+        remove_config = config_yaml.get("remove", {})
         if remove_config:
             self._apply_removals(module_config, remove_config)
 
-        override_config = config_yaml.get('override', {})
+        override_config = config_yaml.get("override", {})
 
         merge_specs = [
-            {'field': 'instances', 'key_field': 'name'},
-            {'field': 'inputs', 'key_field': 'name'},
-            {'field': 'outputs', 'key_field': 'name'},
-            {'field': 'connections', 'key_field': None},
+            {"field": "instances", "key_field": "name"},
+            {"field": "inputs", "key_field": "name"},
+            {"field": "outputs", "key_field": "name"},
+            {"field": "connections", "key_field": None},
         ]
         self._resolve_merges(module_config, config_yaml, merge_specs)
 
     def _apply_removals(self, module_config: ModuleConfig, remove_config: Dict[str, Any]):
-        if 'instances' in remove_config:
+        if "instances" in remove_config:
             removed_names = [
-                spec.get('name')
-                for spec in remove_config.get('instances', [])
-                if isinstance(spec, dict) and spec.get('name')
+                spec.get("name")
+                for spec in remove_config.get("instances", [])
+                if isinstance(spec, dict) and spec.get("name")
             ]
             if removed_names and module_config.connections:
                 module_config.connections = filter_connections_by_removed_entities(
@@ -285,9 +284,9 @@ class ModuleVariantResolver(VariantResolver):
                 )
 
         remove_specs = [
-            {'field': 'instances', 'key_field': 'name'},
-            {'field': 'inputs', 'key_field': 'name'},
-            {'field': 'outputs', 'key_field': 'name'},
-            {'field': 'connections', 'key_field': None},
+            {"field": "instances", "key_field": "name"},
+            {"field": "inputs", "key_field": "name"},
+            {"field": "outputs", "key_field": "name"},
+            {"field": "connections", "key_field": None},
         ]
         self._resolve_removals(module_config, remove_config, remove_specs)

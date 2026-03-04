@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict
 
 from ...models.system_structure import (
     SCHEMA_VERSION,
@@ -82,23 +82,17 @@ def collect_launcher_data(instance: "Instance") -> Dict[str, Any]:
         launcher_data["plugin"] = launch_config.get("plugin", "")
         launcher_data["executable"] = launch_config.get("executable", "")
         launcher_data["use_container"] = launch_config.get("use_container", False)
-        launcher_data["container"] = launch_config.get(
-            "container_name", "perception_container"
-        )
+        launcher_data["container"] = launch_config.get("container_name", "perception_container")
 
     # Collect ports with resolved topics
     ports = []
     inputs_cfg = instance.configuration.inputs or []
     outputs_cfg = instance.configuration.outputs or []
     remap_inputs_explicit = {
-        cfg.get("name")
-        for cfg in inputs_cfg
-        if "remap_target" in cfg and cfg.get("remap_target") not in (None, "")
+        cfg.get("name") for cfg in inputs_cfg if "remap_target" in cfg and cfg.get("remap_target") not in (None, "")
     }
     remap_outputs_explicit = {
-        cfg.get("name")
-        for cfg in outputs_cfg
-        if "remap_target" in cfg and cfg.get("remap_target") not in (None, "")
+        cfg.get("name") for cfg in outputs_cfg if "remap_target" in cfg and cfg.get("remap_target") not in (None, "")
     }
     for port in instance.link_manager.get_all_in_ports():
         if port.is_global and port.name not in remap_inputs_explicit:
@@ -134,18 +128,14 @@ def collect_launcher_data(instance: "Instance") -> Dict[str, Any]:
     param_values = []
     for param in instance.parameter_manager.get_parameters_for_launch():
         param_copy = dict(param)
-        param_copy["parameter_type"] = serialize_parameter_type(
-            param.get("parameter_type")
-        )
+        param_copy["parameter_type"] = serialize_parameter_type(param.get("parameter_type"))
         param_values.append(param_copy)
     launcher_data["param_values"] = param_values
 
     param_files = []
     for param_file in instance.parameter_manager.get_parameter_files_for_launch():
         param_file_copy = dict(param_file)
-        param_file_copy["parameter_type"] = serialize_parameter_type(
-            param_file.get("parameter_type")
-        )
+        param_file_copy["parameter_type"] = serialize_parameter_type(param_file.get("parameter_type"))
         param_files.append(param_file_copy)
     launcher_data["param_files"] = param_files
 
@@ -162,9 +152,7 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
         "compute_unit": instance.compute_unit,
         "vis_guide": instance.vis_guide,
         "in_ports": [serialize_port(p) for p in instance.link_manager.get_all_in_ports()],
-        "out_ports": [
-            serialize_port(p) for p in instance.link_manager.get_all_out_ports()
-        ],
+        "out_ports": [serialize_port(p) for p in instance.link_manager.get_all_out_ports()],
         "children": (
             [collect_instance_data(child) for child in instance.children.values()]
             if hasattr(instance, "children")

@@ -13,6 +13,7 @@ from ros2_topology_common import (
     signature_id,
 )
 
+
 def _build_groups(graph: Dict) -> Tuple[Dict[str, int], Dict[str, List[str]], Dict[str, Signature]]:
     nodes: List[Dict] = graph.get("nodes", [])
     counts: Dict[str, int] = {}
@@ -103,11 +104,7 @@ def main() -> int:
 
     # Focus on signatures that changed in count or are missing.
     all_sids = set(old_counts) | set(new_counts)
-    changed = [
-        sid
-        for sid in all_sids
-        if old_counts.get(sid, 0) != new_counts.get(sid, 0)
-    ]
+    changed = [sid for sid in all_sids if old_counts.get(sid, 0) != new_counts.get(sid, 0)]
 
     # Old -> New near-matches
     old_pairs = []

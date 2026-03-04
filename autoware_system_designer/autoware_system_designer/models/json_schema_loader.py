@@ -20,7 +20,6 @@ from typing import Dict, Optional
 
 from ..utils.format_version import SemanticVersion, parse_format_version
 
-
 # Schema cache to avoid reloading files
 _SCHEMA_CACHE: Dict[str, dict] = {}
 

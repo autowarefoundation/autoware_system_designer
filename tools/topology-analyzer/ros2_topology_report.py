@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 
 import argparse
+import itertools
 import json
 import os
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Set, Tuple
-import itertools
 
+from functions.ros2_topology_common import Signature as NodeSignature
 from functions.ros2_topology_common import (
-    Signature as NodeSignature,
     freeze_map,
     jaccard,
     signature_from_node,
     signature_id,
 )
-
 
 _IGNORED_TOPICS: Set[str] = set()
 _RENAME_SIM_THRESHOLD = 0.70
@@ -141,16 +140,16 @@ def _node_type_tokens(node: Dict) -> Set[str]:
     """
     tokens: Set[str] = set()
     for _, types in (node.get("publishers") or {}).items():
-        for ty in (types or []):
+        for ty in types or []:
             tokens.add(f"PT:{ty}")
     for _, types in (node.get("subscribers") or {}).items():
-        for ty in (types or []):
+        for ty in types or []:
             tokens.add(f"ST:{ty}")
     for _, types in (node.get("services") or {}).items():
-        for ty in (types or []):
+        for ty in types or []:
             tokens.add(f"SVT:{ty}")
     for _, types in (node.get("clients") or {}).items():
-        for ty in (types or []):
+        for ty in types or []:
             tokens.add(f"CLT:{ty}")
     return tokens
 
@@ -297,7 +296,13 @@ def _match_nodes(
                 continue
             mapping[ofq] = nfq
             matched_new.add(nfq)
-            evidence.append((ofq, nfq, jaccard(_node_endpoints(old_by_fq[ofq]), _node_endpoints(new_by_fq[nfq]))))
+            evidence.append(
+                (
+                    ofq,
+                    nfq,
+                    jaccard(_node_endpoints(old_by_fq[ofq]), _node_endpoints(new_by_fq[nfq])),
+                )
+            )
 
     rem_old = [fq for fq in old_by_fq.keys() if fq not in mapping]
     rem_new = [fq for fq in new_by_fq.keys() if fq not in matched_new]
@@ -419,9 +424,9 @@ def _diff_maps(
     # Type-changed: same basename exists, but type set differs.
     a_by_base: Dict[str, Set[Tuple[str, ...]]] = {}
     b_by_base: Dict[str, Set[Tuple[str, ...]]] = {}
-    for (base, tys) in a_norm.keys():
+    for base, tys in a_norm.keys():
         a_by_base.setdefault(base, set()).add(tys)
-    for (base, tys) in b_norm.keys():
+    for base, tys in b_norm.keys():
         b_by_base.setdefault(base, set()).add(tys)
 
     changed: Set[str] = set()
@@ -830,7 +835,12 @@ def main() -> int:
             or clis[1]
             or clis[2]
             or clis[3]
-            or (param_diff and (param_diff["removed"] or param_diff["added"] or param_diff["old_status"] or param_diff["new_status"]))
+            or (
+                param_diff
+                and (
+                    param_diff["removed"] or param_diff["added"] or param_diff["old_status"] or param_diff["new_status"]
+                )
+            )
             or (value_diff and (value_diff["changed"] or value_diff["old_status"] or value_diff["new_status"]))
         ):
             changed_nodes.append(

@@ -6,10 +6,9 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 import jsonschema
 from jsonschema.exceptions import ValidationError
 
-from ..utils.parameter_types import normalize_type_name, is_supported_parameter_type
 from ..utils.format_version import check_format_version
+from ..utils.parameter_types import is_supported_parameter_type, normalize_type_name
 from .json_schema_loader import load_schema
-
 
 JsonPointer = str
 
@@ -83,6 +82,7 @@ def validate_against_schema(
 # -------------------------
 # Semantic checks
 # -------------------------
+
 
 def _node_semantics(config: Dict[str, Any]) -> Iterable[SchemaIssue]:
     launch = config.get("launch")
@@ -206,7 +206,9 @@ def _variant_forbidden_root_fields_semantics(
     return _check
 
 
-def get_semantic_checks(entity_type: str) -> Tuple[Callable[[Dict[str, Any]], Iterable[SchemaIssue]], ...]:
+def get_semantic_checks(
+    entity_type: str,
+) -> Tuple[Callable[[Dict[str, Any]], Iterable[SchemaIssue]], ...]:
     """Get semantic check functions for an entity type.
 
     Semantic checks are cross-field validation rules that cannot be
@@ -223,7 +225,15 @@ def get_semantic_checks(entity_type: str) -> Tuple[Callable[[Dict[str, Any]], It
             _format_version_semantics,
             _node_semantics,
             _variant_forbidden_root_fields_semantics(
-                forbidden_fields=("package", "launch", "inputs", "outputs", "param_files", "param_values", "processes"),
+                forbidden_fields=(
+                    "package",
+                    "launch",
+                    "inputs",
+                    "outputs",
+                    "param_files",
+                    "param_values",
+                    "processes",
+                ),
                 message_prefix="Variant rule",
             ),
         )

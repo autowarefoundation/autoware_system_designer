@@ -12,18 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Any
-from pathlib import Path
 import logging
+from pathlib import Path
+from typing import Any, Dict
 
-from .yaml_parser import yaml_parser
-from .data_validator import ValidatorFactory, entity_name_decode
-from ..config import Config, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigType, ConfigSubType
 from ...exceptions import ValidationError
-from ...file_io.source_location import SourceLocation, lookup_source, format_source
-from ...utils.parameter_types import normalize_type_name, coerce_numeric_value
+from ...file_io.source_location import SourceLocation, format_source, lookup_source
+from ...utils.parameter_types import coerce_numeric_value, normalize_type_name
+from ..config import (
+    Config,
+    ConfigSubType,
+    ConfigType,
+    ModuleConfig,
+    NodeConfig,
+    ParameterSetConfig,
+    SystemConfig,
+)
+from .data_validator import ValidatorFactory, entity_name_decode
+from .yaml_parser import yaml_parser
 
 logger = logging.getLogger(__name__)
+
 
 def _build_source_location(
     file_path: Path,
@@ -82,6 +91,7 @@ def _normalize_param_list(
                     source_map=source_map,
                     yaml_path=f"{base_path}/{idx}/{key}",
                 )
+
 
 class ConfigParser:
     """Parser for entity configuration files."""
@@ -193,25 +203,31 @@ class ConfigParser:
             logger.error(f"Failed to load config from {file_path}: {e}")
             raise ValidationError(f"Error parsing YAML file {file_path}: {e}")
 
-    def _create_entity_data(self, entity_name: str, full_name: str, entity_type: str,
-                           config: Dict[str, Any], file_path: Path,
-                           source_map: Dict[str, Dict[str, int]] | None = None) -> Config:
+    def _create_entity_data(
+        self,
+        entity_name: str,
+        full_name: str,
+        entity_type: str,
+        config: Dict[str, Any],
+        file_path: Path,
+        source_map: Dict[str, Dict[str, int]] | None = None,
+    ) -> Config:
         """Create appropriate data structure based on entity type."""
         base_data = {
-            'name': entity_name,
-            'full_name': full_name,
-            'entity_type': entity_type,
-            'config': config,
-            'file_path': file_path,
-            'source_map': source_map,
+            "name": entity_name,
+            "full_name": full_name,
+            "entity_type": entity_type,
+            "config": config,
+            "file_path": file_path,
+            "source_map": source_map,
         }
 
         if entity_type == ConfigType.NODE:
             # Map param_files
-            param_files = config.get('param_files')
+            param_files = config.get("param_files")
 
             # Map param_values
-            param_values = config.get('param_values')
+            param_values = config.get("param_values")
 
             # requires at least one of param_files or param_values to be present. empty list is valid.
             if "base" not in config and param_files is None and param_values is None:
@@ -220,23 +236,23 @@ class ConfigParser:
             # Initialize parameter values from defaults
             if param_values:
                 for param in param_values:
-                    if 'default' in param and 'value' not in param:
-                        param['value'] = param['default']
+                    if "default" in param and "value" not in param:
+                        param["value"] = param["default"]
 
             _normalize_param_list(
                 param_values,
                 file_path=file_path,
                 source_map=source_map,
-                base_path="/param_values" if config.get('param_values') else "/parameters",
+                base_path="/param_values" if config.get("param_values") else "/parameters",
             )
 
             # Extract top-level package info (name and provider)
-            pkg_info = config.get('package')
+            pkg_info = config.get("package")
             pkg_name = None
             pkg_provider = None
             if isinstance(pkg_info, dict):
-                pkg_name = pkg_info.get('name')
-                pkg_provider = pkg_info.get('provider')
+                pkg_name = pkg_info.get("name")
+                pkg_provider = pkg_info.get("provider")
 
             sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
             return NodeConfig(
@@ -244,25 +260,25 @@ class ConfigParser:
                 sub_type=sub_type,
                 package_name=pkg_name,
                 package_provider=pkg_provider,
-                launch=config.get('launch'),
-                inputs=config.get('inputs'),
-                outputs=config.get('outputs'),
+                launch=config.get("launch"),
+                inputs=config.get("inputs"),
+                outputs=config.get("outputs"),
                 param_files=param_files,
                 param_values=param_values,
-                processes=config.get('processes')
+                processes=config.get("processes"),
             )
         elif entity_type == ConfigType.MODULE:
             sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
             return ModuleConfig(
                 **base_data,
                 sub_type=sub_type,
-                instances=config.get('instances'),
-                inputs=config.get('inputs'),
-                outputs=config.get('outputs'),
-                connections=config.get('connections')
+                instances=config.get("instances"),
+                inputs=config.get("inputs"),
+                outputs=config.get("outputs"),
+                connections=config.get("connections"),
             )
         elif entity_type == ConfigType.PARAMETER_SET:
-            parameters = config.get('parameters')
+            parameters = config.get("parameters")
             if isinstance(parameters, list):
                 for idx, node_entry in enumerate(parameters):
                     if not isinstance(node_entry, dict):
@@ -271,22 +287,22 @@ class ConfigParser:
                         node_entry.get("param_values"),
                         file_path=file_path,
                         source_map=source_map,
-                        base_path=f"/parameters/{idx}/param_values" if node_entry.get("param_values") else f"/parameters/{idx}/parameters",
+                        base_path=(
+                            f"/parameters/{idx}/param_values"
+                            if node_entry.get("param_values")
+                            else f"/parameters/{idx}/parameters"
+                        ),
                     )
-            return ParameterSetConfig(
-                **base_data,
-                parameters=parameters,
-                local_variables=config.get('local_variables')
-            )
+            return ParameterSetConfig(**base_data, parameters=parameters, local_variables=config.get("local_variables"))
         elif entity_type == ConfigType.SYSTEM:
             sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
 
             # Parse mode-specific configurations
             mode_configs = {}
-            modes = config.get('modes')
+            modes = config.get("modes")
             if modes:
                 # Extract mode names from modes list
-                mode_names = [m.get('name') for m in modes if isinstance(m, dict) and 'name' in m]
+                mode_names = [m.get("name") for m in modes if isinstance(m, dict) and "name" in m]
 
                 # Look for top-level keys matching mode names
                 for mode_name in mode_names:
@@ -297,14 +313,14 @@ class ConfigParser:
             return SystemConfig(
                 **base_data,
                 sub_type=sub_type,
-                arguments=config.get('arguments'),
-                modes=config.get('modes'),
+                arguments=config.get("arguments"),
+                modes=config.get("modes"),
                 mode_configs=mode_configs if mode_configs else None,
-                parameter_sets=config.get('parameter_sets'),
-                components=config.get('components'),
-                connections=config.get('connections'),
-                variables=config.get('variables'),
-                variable_files=config.get('variable_files')
+                parameter_sets=config.get("parameter_sets"),
+                components=config.get("components"),
+                connections=config.get("connections"),
+                variables=config.get("variables"),
+                variable_files=config.get("variable_files"),
             )
         else:
             raise ValidationError(f"Unknown entity type: {entity_type}")

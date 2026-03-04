@@ -15,4 +15,4 @@
 
 from .deployment_config import DeploymentConfig, deploy_config
 
-__all__ = ['DeploymentConfig', 'deploy_config']
+__all__ = ["DeploymentConfig", "deploy_config"]

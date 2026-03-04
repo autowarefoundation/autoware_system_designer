@@ -3,17 +3,16 @@
 import logging
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, unquote
+from urllib.parse import unquote, urlparse
 
-from pygls.server import LanguageServer
 from lsprotocol import types as lsp
-
-from autoware_system_designer.models.parsing.data_parser import ConfigParser
-from autoware_system_designer.models.config import Config
-from autoware_system_designer.exceptions import ValidationError
-
+from pygls.server import LanguageServer
 from registry_manager import RegistryManager
 from validation_engine import ValidationEngine
+
+from autoware_system_designer.exceptions import ValidationError
+from autoware_system_designer.models.config import Config
+from autoware_system_designer.models.parsing.data_parser import ConfigParser
 
 logger = logging.getLogger(__name__)
 

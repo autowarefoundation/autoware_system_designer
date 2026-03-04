@@ -12,16 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-import fnmatch
-import re
 import difflib
-from typing import Any, Dict, List, TYPE_CHECKING
+import fnmatch
+import logging
+import re
+from typing import TYPE_CHECKING, Any, Dict, List
 
-from ..runtime.ports import InPort, OutPort
-from ..runtime.links import Link, Connection, ConnectionType
 from ...exceptions import ValidationError
-from ...file_io.source_location import source_from_config, format_source
+from ...file_io.source_location import format_source, source_from_config
+from ..runtime.links import Connection, ConnectionType, Link
+from ..runtime.ports import InPort, OutPort
 
 if TYPE_CHECKING:
     from ..instances.instances import Instance
@@ -42,6 +42,7 @@ def match_and_pair_wildcard_ports(
     - One side has '*' => cartesian with other side's concrete match(es).
     - Both sides have '*' (not both '*') => substitute source captures into target pattern.
     """
+
     def _match(pattern: str, keys: List[str]) -> List[str]:
         """Match keys against a pattern that may contain wildcards (*, ^, +).
 
@@ -121,7 +122,7 @@ def _apply_wildcard_substitution(source_pattern: str, target_pattern: str, match
 
     # Build source regex
     source_regex_parts = []
-    wildcard_order = [] # stores type of wildcard encountered: '*', '^', or '+'
+    wildcard_order = []  # stores type of wildcard encountered: '*', '^', or '+'
 
     last_idx = 0
     # Iterate through pattern to find wildcards
@@ -148,15 +149,11 @@ def _apply_wildcard_substitution(source_pattern: str, target_pattern: str, match
 
     captures = match.groups()
     if len(captures) != len(wildcard_order):
-        return matched_name # Should match if regex worked
+        return matched_name  # Should match if regex worked
 
     # Map wildcard type to its captured value(s)
     # Since a type can appear multiple times, we use a list/iterator approach
-    wildcard_captures = {
-        '*': [],
-        '^': [],
-        '+': []
-    }
+    wildcard_captures = {"*": [], "^": [], "+": []}
     for wc_type, captured_val in zip(wildcard_order, captures):
         wildcard_captures[wc_type].append(captured_val)
 
@@ -166,7 +163,7 @@ def _apply_wildcard_substitution(source_pattern: str, target_pattern: str, match
     i = 0
 
     # We need to track index for each wildcard type in target to consume correct capture
-    wc_indices = {'*': 0, '^': 0, '+': 0}
+    wc_indices = {"*": 0, "^": 0, "+": 0}
 
     while i < len(target_pattern):
         char = target_pattern[i]
@@ -197,7 +194,7 @@ def _apply_wildcard_substitution(source_pattern: str, target_pattern: str, match
 class LinkManager:
     """Manages port, connection, and link operations for Instance objects."""
 
-    def __init__(self, instance: 'Instance'):
+    def __init__(self, instance: "Instance"):
         self.instance = instance
         self.in_ports: Dict[str, InPort] = {}
         self.out_ports: Dict[str, OutPort] = {}
@@ -241,9 +238,7 @@ class LinkManager:
         )
 
     def _err_type_mismatch(self, port: InPort | OutPort, attempted_type: str):
-        return (
-            f"[E_TYPE_MISMATCH] External port '{port.port_path}' type clash: existing={port.msg_type}, new={attempted_type}"
-        )
+        return f"[E_TYPE_MISMATCH] External port '{port.port_path}' type clash: existing={port.msg_type}, new={attempted_type}"
 
     def _err_wildcard_no_matches(self, connection: Connection):
         return (
@@ -397,7 +392,6 @@ class LinkManager:
 
             self._create_link_from_ports(from_port, to_port, connection.type)
 
-
     def _check_and_deduplicate_connections(self, connection_list: List[Connection]) -> List[Connection]:
         """Check for duplicate connections and deduplicate if identical, error if conflicting.
 
@@ -410,6 +404,7 @@ class LinkManager:
         Raises:
             ValidationError: If duplicate connections are found that differ in some way
         """
+
         def _format_connection_string(conn: Connection) -> str:
             """Format connection for display in error messages."""
             if conn.from_instance == "":
@@ -433,7 +428,7 @@ class LinkManager:
 
             if conn_signature in seen_connections:
                 conn_str = _format_connection_string(conn)
-                file_path = getattr(self.instance.configuration, 'file_path', 'unknown')
+                file_path = getattr(self.instance.configuration, "file_path", "unknown")
                 cfg_src = source_from_config(self.instance.configuration, "/connections")
                 raise ValidationError(
                     f"[E_DUPLICATE_CONNECTION] Duplicate connection found: {conn_str} (type={conn.type.name}). At {file_path}{format_source(cfg_src)}"
@@ -453,9 +448,7 @@ class LinkManager:
             connection_list.append(Connection(cfg, source=src))
         if len(connection_list) == 0:
             cfg_src = source_from_config(self.instance.configuration, "/connections")
-            logger.warning(
-                f"Module '{self.instance.name}' has no connections configured{format_source(cfg_src)}"
-            )
+            logger.warning(f"Module '{self.instance.name}' has no connections configured{format_source(cfg_src)}")
             return
 
         # Check for and deduplicate duplicate connections
@@ -469,10 +462,18 @@ class LinkManager:
         for child_instance in self.instance.children.values():
             for port_name, port in child_instance.link_manager.in_ports.items():
                 idx = f"{child_instance.name}.{port_name}"
-                port_list_to[idx] = {"instance": child_instance, "port_name": port_name, "port": port}
+                port_list_to[idx] = {
+                    "instance": child_instance,
+                    "port_name": port_name,
+                    "port": port,
+                }
             for port_name, port in child_instance.link_manager.out_ports.items():
                 idx = f"{child_instance.name}.{port_name}"
-                port_list_from[idx] = {"instance": child_instance, "port_name": port_name, "port": port}
+                port_list_from[idx] = {
+                    "instance": child_instance,
+                    "port_name": port_name,
+                    "port": port,
+                }
         # ports from external interfaces
         inputs = getattr(self.instance.configuration, "inputs", []) or []
         for ext_input in inputs:
@@ -509,18 +510,20 @@ class LinkManager:
                     # external input case uses empty instance name
                     if connection.type == ConnectionType.EXTERNAL_TO_INTERNAL:
                         missing_name = connection.from_port_name
-                        available = sorted([
-                            k.split(".")[1] for k in port_list_from.keys() if k.startswith(".")
-                        ])
+                        available = sorted([k.split(".")[1] for k in port_list_from.keys() if k.startswith(".")])
                         msg = self._err_missing_external_io("input", missing_name, available)
                     else:
                         # internal output missing
                         instance_name = connection.from_instance or "<root>"
-                        available = sorted([
-                            k.split(".")[1] for k in port_list_from.keys() if k.startswith(f"{instance_name}.")
-                        ])
+                        available = sorted(
+                            [k.split(".")[1] for k in port_list_from.keys() if k.startswith(f"{instance_name}.")]
+                        )
                         msg = self._err_missing_internal("output", instance_name, connection.from_port_name, available)
-                    msg = msg + f"; Connection: '{from_key}' -> '{to_key}'" + format_source(getattr(connection, "source", None))
+                    msg = (
+                        msg
+                        + f"; Connection: '{from_key}' -> '{to_key}'"
+                        + format_source(getattr(connection, "source", None))
+                    )
 
                     if self.instance.entity_type in ("module", "system"):
                         raise ValidationError(msg)
@@ -530,17 +533,19 @@ class LinkManager:
                 if to_info is None:
                     if connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
                         missing_name = connection.to_port_name
-                        available = sorted([
-                            k.split(".")[1] for k in port_list_to.keys() if k.startswith(".")
-                        ])
+                        available = sorted([k.split(".")[1] for k in port_list_to.keys() if k.startswith(".")])
                         msg = self._err_missing_external_io("output", missing_name, available)
                     else:
                         instance_name = connection.to_instance or "<root>"
-                        available = sorted([
-                            k.split(".")[1] for k in port_list_to.keys() if k.startswith(f"{instance_name}.")
-                        ])
+                        available = sorted(
+                            [k.split(".")[1] for k in port_list_to.keys() if k.startswith(f"{instance_name}.")]
+                        )
                         msg = self._err_missing_internal("input", instance_name, connection.to_port_name, available)
-                    msg = msg + f"; Connection: '{from_key}' -> '{to_key}'" + format_source(getattr(connection, "source", None))
+                    msg = (
+                        msg
+                        + f"; Connection: '{from_key}' -> '{to_key}'"
+                        + format_source(getattr(connection, "source", None))
+                    )
 
                     if self.instance.entity_type in ("module", "system"):
                         raise ValidationError(msg)
@@ -572,7 +577,12 @@ class LinkManager:
         for cfg_in_port in self.instance.configuration.inputs:
             in_port_name = cfg_in_port.get("name")
             in_port_msg_type = cfg_in_port.get("message_type")
-            in_port_instance = InPort(in_port_name, in_port_msg_type, self.instance.namespace, remap_target=cfg_in_port.get("remap_target"))
+            in_port_instance = InPort(
+                in_port_name,
+                in_port_msg_type,
+                self.instance.namespace,
+                remap_target=cfg_in_port.get("remap_target"),
+            )
             if "global" in cfg_in_port:
                 in_port_instance.is_global = True
                 topic = cfg_in_port.get("global")
@@ -585,7 +595,12 @@ class LinkManager:
         for cfg_out_port in self.instance.configuration.outputs:
             out_port_name = cfg_out_port.get("name")
             out_port_msg_type = cfg_out_port.get("message_type")
-            out_port_instance = OutPort(out_port_name, out_port_msg_type, self.instance.namespace, remap_target=cfg_out_port.get("remap_target"))
+            out_port_instance = OutPort(
+                out_port_name,
+                out_port_msg_type,
+                self.instance.namespace,
+                remap_target=cfg_out_port.get("remap_target"),
+            )
             if "global" in cfg_out_port:
                 out_port_instance.is_global = True
                 topic = cfg_out_port.get("global")
@@ -635,9 +650,7 @@ class LinkManager:
 
     def log_module_configuration(self):
         """Log module configuration details."""
-        logger.debug(
-            f"Instance '{self.instance.name}' module configuration: {len(self.links)} links established"
-        )
+        logger.debug(f"Instance '{self.instance.name}' module configuration: {len(self.links)} links established")
         for link in self.links:
             logger.debug(f"  Link: {link.from_port.port_path} -> {link.to_port.port_path}")
         # new ports

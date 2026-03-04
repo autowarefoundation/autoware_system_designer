@@ -12,20 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Dict, Optional, Type, Callable, Any
+import copy
 import logging
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Type
 
-import copy
-from ...models.parsing.data_parser import ConfigParser
-from ...models.config import Config, ConfigType, NodeConfig, ModuleConfig, ParameterSetConfig, SystemConfig, ConfigSubType
-from ...exceptions import ValidationError, NodeConfigurationError, ModuleConfigurationError, ParameterConfigurationError
-from ..resolution.variant_resolver import SystemVariantResolver, NodeVariantResolver, ModuleVariantResolver, VariantResolver
-
-from ...models.parsing.data_validator import entity_name_decode
+from ...exceptions import (
+    FormatVersionError,
+    ModuleConfigurationError,
+    NodeConfigurationError,
+    ParameterConfigurationError,
+    ValidationError,
+)
 from ...file_io.source_location import SourceLocation, format_source
+from ...models.config import (
+    Config,
+    ConfigSubType,
+    ConfigType,
+    ModuleConfig,
+    NodeConfig,
+    ParameterSetConfig,
+    SystemConfig,
+)
+from ...models.parsing.data_parser import ConfigParser
+from ...models.parsing.data_validator import entity_name_decode
 from ...utils.format_version import check_format_version
-from ...exceptions import FormatVersionError
+from ..resolution.variant_resolver import (
+    ModuleVariantResolver,
+    NodeVariantResolver,
+    SystemVariantResolver,
+    VariantResolver,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,14 +67,20 @@ def _format_mismatch_hint(mismatch_files: list) -> str:
 class ConfigRegistry:
     """Collection for managing multiple entity data structures with efficient lookup methods."""
 
-    def __init__(self, config_yaml_file_paths: List[str], package_paths: Dict[str, str] = None, file_package_map: Dict[str, str] = None, workspace_config: List[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        config_yaml_file_paths: List[str],
+        package_paths: Dict[str, str] = None,
+        file_package_map: Dict[str, str] = None,
+        workspace_config: List[Dict[str, Any]] = None,
+    ):
         # Replace list with dict as primary storage
         self.entities: Dict[str, Config] = {}  # full_name → Config
         self._type_map: Dict[str, Dict[str, Config]] = {
             ConfigType.NODE: {},
             ConfigType.MODULE: {},
             ConfigType.PARAMETER_SET: {},
-            ConfigType.SYSTEM: {}
+            ConfigType.SYSTEM: {},
         }
         self.package_paths = package_paths or {}
         self.file_package_map = file_package_map or {}
@@ -99,15 +122,11 @@ class ConfigRegistry:
                 if not ver_result.compatible:
                     # Major version mismatch → stop immediately
                     src = SourceLocation(file_path=Path(file_path))
-                    raise FormatVersionError(
-                        f"{ver_result.message}{format_source(src)}"
-                    )
+                    raise FormatVersionError(f"{ver_result.message}{format_source(src)}")
                 if ver_result.minor_newer:
                     # Minor version newer than tool → warn and track
                     src = SourceLocation(file_path=Path(file_path))
-                    logger.warning(
-                        f"{ver_result.message}{format_source(src)}"
-                    )
+                    logger.warning(f"{ver_result.message}{format_source(src)}")
                     self.minor_version_mismatch_files.append(
                         (file_path, str(ver_result.file_version), str(ver_result.supported_version))
                     )
@@ -155,12 +174,14 @@ class ConfigRegistry:
         """Get entity by name with default value."""
         return self.entities.get(name, default)
 
-    def _get_entity_with_base(self,
-                                     name: str,
-                                     config_type: str,
-                                     error_cls: Type[Exception],
-                                     resolver_cls: Optional[Type[VariantResolver]] = None,
-                                     recursive_getter: Optional[Callable[[str], Config]] = None) -> Config:
+    def _get_entity_with_base(
+        self,
+        name: str,
+        config_type: str,
+        error_cls: Type[Exception],
+        resolver_cls: Optional[Type[VariantResolver]] = None,
+        recursive_getter: Optional[Callable[[str], Config]] = None,
+    ) -> Config:
         """
         Generic method to get an entity and resolve base/variant if applicable.
         """
@@ -185,10 +206,10 @@ class ConfigRegistry:
                 return entity
 
             # Get parent name
-            base_target = entity.config.get('base')
+            base_target = entity.config.get("base")
             if not base_target:
-                 # Should have been validated, but fallback
-                 return entity
+                # Should have been validated, but fallback
+                return entity
 
             # Resolve parent (recursive)
             parent = recursive_getter(base_target)
@@ -203,7 +224,7 @@ class ConfigRegistry:
             resolved_entity.file_path = entity.file_path
             resolved_entity.package = entity.package
             resolved_entity.sub_type = entity.sub_type
-            resolved_entity.config = entity.config # Keep original config with overrides
+            resolved_entity.config = entity.config  # Keep original config with overrides
 
             # Apply overrides from this entity's config
             resolver = resolver_cls()
@@ -217,11 +238,7 @@ class ConfigRegistry:
     def get_node(self, name: str) -> NodeConfig:
         """Get a node entity by name."""
         return self._get_entity_with_base(
-            name,
-            ConfigType.NODE,
-            NodeConfigurationError,
-            NodeVariantResolver,
-            self.get_node
+            name, ConfigType.NODE, NodeConfigurationError, NodeVariantResolver, self.get_node
         )
 
     def get_module(self, name: str) -> ModuleConfig:
@@ -231,25 +248,21 @@ class ConfigRegistry:
             ConfigType.MODULE,
             ModuleConfigurationError,
             ModuleVariantResolver,
-            self.get_module
+            self.get_module,
         )
 
     def get_parameter_set(self, name: str) -> ParameterSetConfig:
         """Get a parameter set entity by name."""
-        return self._get_entity_with_base(
-            name,
-            ConfigType.PARAMETER_SET,
-            ParameterConfigurationError
-        )
+        return self._get_entity_with_base(name, ConfigType.PARAMETER_SET, ParameterConfigurationError)
 
     def get_system(self, name: str) -> SystemConfig:
         """Get an system entity by name. Resolves base/variant if applicable."""
         return self._get_entity_with_base(
             name,
             ConfigType.SYSTEM,
-            ValidationError, # System uses ValidationError in original code, keeping it
+            ValidationError,  # System uses ValidationError in original code, keeping it
             SystemVariantResolver,
-            self.get_system
+            self.get_system,
         )
 
     def get_entity_by_type(self, name: str, entity_type: str) -> Config:

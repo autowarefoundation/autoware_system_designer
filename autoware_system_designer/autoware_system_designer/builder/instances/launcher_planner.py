@@ -78,8 +78,8 @@ def build_runtime_system_component_maps(
         component_map[component_key] = [component]
 
         nodes = collect_component_nodes(component)
-        component_required_args_map[component_key] = (
-            ParameterManager.collect_component_required_system_args(nodes, forward_args)
+        component_required_args_map[component_key] = ParameterManager.collect_component_required_system_args(
+            nodes, forward_args
         )
 
     return compute_unit_map, component_required_args_map, component_map
@@ -102,8 +102,8 @@ def build_serialized_system_component_maps(
         component_map[component_key] = [component]
 
         nodes = collect_component_nodes_from_data(component)
-        component_required_args_map[component_key] = (
-            ParameterManager.collect_component_required_system_args(nodes, forward_args)
+        component_required_args_map[component_key] = ParameterManager.collect_component_required_system_args(
+            nodes, forward_args
         )
 
     return compute_unit_map, component_required_args_map, component_map
@@ -152,9 +152,7 @@ def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: Lis
     node_data["param_files"] = []
     for param_file in launch_data.get("param_files", []):
         param_file_copy = dict(param_file)
-        param_file_copy["parameter_type"] = normalize_parameter_type(
-            param_file.get("parameter_type")
-        )
+        param_file_copy["parameter_type"] = normalize_parameter_type(param_file.get("parameter_type"))
         node_data["param_files"].append(param_file_copy)
 
     return node_data

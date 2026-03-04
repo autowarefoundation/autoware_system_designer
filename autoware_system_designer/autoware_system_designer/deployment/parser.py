@@ -69,22 +69,16 @@ def _parse_deployments_list(deployments_path: str) -> Tuple[str, List[Dict[str, 
 
     base = config_yaml.get("base")
     if not isinstance(base, str) or not base:
-        raise ValidationError(
-            f"Deployments table must define non-empty 'base' (string): {deployments_path}"
-        )
+        raise ValidationError(f"Deployments table must define non-empty 'base' (string): {deployments_path}")
 
     raw_deploy_list = config_yaml.get("deploy_list", [])
     if not isinstance(raw_deploy_list, list):
-        raise ValidationError(
-            f"'deploy_list' must be a list in deployments table: {deployments_path}"
-        )
+        raise ValidationError(f"'deploy_list' must be a list in deployments table: {deployments_path}")
 
     deploy_list: List[Dict[str, Any]] = []
     for idx, item in enumerate(raw_deploy_list):
         if not isinstance(item, dict):
-            raise ValidationError(
-                f"deploy_list[{idx}] must be an object in deployments table: {deployments_path}"
-            )
+            raise ValidationError(f"deploy_list[{idx}] must be an object in deployments table: {deployments_path}")
         name = item.get("name")
         if not isinstance(name, str) or not name:
             raise ValidationError(

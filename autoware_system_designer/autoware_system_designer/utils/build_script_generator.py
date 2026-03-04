@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import logging
-from typing import Dict, Any, Optional, Set
+import os
+from typing import Any, Dict, Optional, Set
 
 logger = logging.getLogger(__name__)
+
 
 def _should_include_package(
     package: str,
@@ -127,7 +128,7 @@ def generate_build_scripts(
             sorted_pkgs = sorted(list(pkgs))
             script_path = os.path.join(scripts_dir, f"build_{ecu}.sh")
 
-            with open(script_path, 'w') as f:
+            with open(script_path, "w") as f:
                 f.write("#!/bin/bash\n")
                 f.write("# Auto-generated build script for ECU: " + ecu + "\n")
                 f.write("# Mode: " + mode_key + "\n\n")

@@ -90,10 +90,7 @@ class SchemaToRosParamConverter:
                         if def_path:
                             if def_path.startswith("/definitions/"):
                                 def_name = def_path.replace("/definitions/", "")
-                                if (
-                                    "definitions" in external_schema
-                                    and def_name in external_schema["definitions"]
-                                ):
+                                if "definitions" in external_schema and def_name in external_schema["definitions"]:
                                     resolved = self._resolve_refs(
                                         external_schema["definitions"][def_name], external_schema
                                     )
@@ -109,7 +106,7 @@ class SchemaToRosParamConverter:
                                 pass
                         else:
                             # Use the whole external file
-                             return self._resolve_refs(external_schema, external_schema)
+                            return self._resolve_refs(external_schema, external_schema)
 
                     except Exception as e:
                         self.logger.error(f"Error loading referenced file {external_file_path}: {e}")
@@ -118,13 +115,8 @@ class SchemaToRosParamConverter:
                 # Handle internal references
                 elif isinstance(ref_path, str) and ref_path.startswith("#/definitions/"):
                     def_name = ref_path.replace("#/definitions/", "")
-                    if (
-                        "definitions" in root_schema
-                        and def_name in root_schema["definitions"]
-                    ):
-                        resolved = self._resolve_refs(
-                            root_schema["definitions"][def_name], root_schema
-                        )
+                    if "definitions" in root_schema and def_name in root_schema["definitions"]:
+                        resolved = self._resolve_refs(root_schema["definitions"][def_name], root_schema)
                         # Merge any additional properties (excluding $ref)
                         if isinstance(resolved, dict):
                             resolved = resolved.copy()
@@ -144,28 +136,21 @@ class SchemaToRosParamConverter:
         else:
             return schema_data
 
-    def _extract_defaults_from_resolved_schema(
-        self, resolved_schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _extract_defaults_from_resolved_schema(self, resolved_schema: Dict[str, Any]) -> Dict[str, Any]:
         """Extract default values from a resolved schema."""
         defaults: Dict[str, Any] = {"/**": {"ros__parameters": {}}}
 
         # Navigate to the ros__parameters section
         if "properties" in resolved_schema and "/**" in resolved_schema["properties"]:
             root_props = resolved_schema["properties"]["/**"]
-            if (
-                "properties" in root_props
-                and "ros__parameters" in root_props["properties"]
-            ):
+            if "properties" in root_props and "ros__parameters" in root_props["properties"]:
                 ros_params = root_props["properties"]["ros__parameters"]
                 param_defaults = self._extract_defaults_from_properties(ros_params)
                 defaults["/**"]["ros__parameters"] = param_defaults
 
         return defaults
 
-    def _extract_defaults_from_properties(
-        self, properties_schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _extract_defaults_from_properties(self, properties_schema: Dict[str, Any]) -> Dict[str, Any]:
         """Extract default values from properties schema."""
         defaults = {}
 
@@ -191,10 +176,7 @@ class SchemaToRosParamConverter:
             and self.package_name
             and not value.startswith("/")
             and not value.startswith("$(")
-            and (
-                "/" in value
-                or value.endswith((".yaml", ".json", ".pcd", ".onnx", ".xml"))
-            )
+            and ("/" in value or value.endswith((".yaml", ".json", ".pcd", ".onnx", ".xml")))
         ):
             return f"$(find-pkg-share {self.package_name})/{value}"
         return value
@@ -229,16 +211,10 @@ def main() -> None:
         formatter=logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"),
     )
 
-    parser = argparse.ArgumentParser(
-        description="Generate config files from JSON schema files"
-    )
+    parser = argparse.ArgumentParser(description="Generate config files from JSON schema files")
     parser.add_argument("schema_dir", help="Directory containing schema files")
-    parser.add_argument(
-        "output_dir", help="Output directory for generated config files"
-    )
-    parser.add_argument(
-        "--package-name", help="Package name to prefix relative paths with"
-    )
+    parser.add_argument("output_dir", help="Output directory for generated config files")
+    parser.add_argument("--package-name", help="Package name to prefix relative paths with")
 
     args = parser.parse_args()
 
@@ -263,15 +239,11 @@ def main() -> None:
 
     success_count = 0
     for schema_file in schema_files:
-        converter = SchemaToRosParamConverter(
-            schema_file, output_dir, args.package_name
-        )
+        converter = SchemaToRosParamConverter(schema_file, output_dir, args.package_name)
         if converter.process():
             success_count += 1
 
-    logger.info(
-        f"Successfully processed {success_count}/{len(schema_files)} schema files"
-    )
+    logger.info(f"Successfully processed {success_count}/{len(schema_files)} schema files")
 
     if success_count != len(schema_files):
         sys.exit(1)

@@ -17,34 +17,41 @@
 
 class SystemDesignerError(Exception):
     """Base exception for system-designer related errors."""
+
     pass
 
 
 class NodeConfigurationError(SystemDesignerError):
     """Exception raised for node configuration errors."""
+
     pass
 
 
 class ModuleConfigurationError(SystemDesignerError):
     """Exception raised for module configuration errors."""
+
     pass
 
 
 class ParameterConfigurationError(SystemDesignerError):
     """Exception raised for parameter configuration errors."""
+
     pass
 
 
 class DeploymentError(SystemDesignerError):
     """Exception raised for deployment errors."""
+
     pass
 
 
 class ValidationError(SystemDesignerError):
     """Exception raised for validation errors."""
+
     pass
 
 
 class FormatVersionError(ValidationError):
     """Exception raised when a design file's format version is incompatible."""
+
     pass

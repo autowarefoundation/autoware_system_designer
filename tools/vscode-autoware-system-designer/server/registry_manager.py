@@ -3,10 +3,10 @@
 import logging
 from pathlib import Path
 from typing import Dict, Optional
-from urllib.parse import urlparse, unquote
+from urllib.parse import unquote, urlparse
 
-from autoware_system_designer.models.parsing.data_parser import ConfigParser
 from autoware_system_designer.models.config import Config
+from autoware_system_designer.models.parsing.data_parser import ConfigParser
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +25,10 @@ class RegistryManager:
 
         # Find all entity files
         patterns = [
-            '**/*.node.yaml',
-            '**/*.module.yaml',
-            '**/*.system.yaml',
-            '**/*.parameter_set.yaml'
+            "**/*.node.yaml",
+            "**/*.module.yaml",
+            "**/*.system.yaml",
+            "**/*.parameter_set.yaml",
         ]
 
         # Collect all files first
@@ -39,7 +39,7 @@ class RegistryManager:
         # Sort files to prioritize src over other folders (src files processed last to overwrite duplicates)
         def sort_key(file_path):
             path_str = str(file_path)
-            if '/src/' in path_str:
+            if "/src/" in path_str:
                 return (1, path_str)  # src files come after (higher priority)
             else:
                 return (0, path_str)  # other files come first

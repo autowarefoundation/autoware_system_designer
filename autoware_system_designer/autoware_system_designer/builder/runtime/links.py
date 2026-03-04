@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from enum import Enum
 from typing import List, Optional
 
-from .ports import Port, InPort, OutPort
-from ...exceptions import ValidationError, DeploymentError
-from ...utils.naming import generate_unique_id
+from ...exceptions import DeploymentError, ValidationError
 from ...file_io.source_location import SourceLocation
+from ...utils.naming import generate_unique_id
+from .ports import InPort, OutPort, Port
 
-from enum import Enum
 
 class ConnectionType(int, Enum):
     UNDEFINED = 0
@@ -27,9 +27,17 @@ class ConnectionType(int, Enum):
     INTERNAL_TO_INTERNAL = 2
     INTERNAL_TO_EXTERNAL = 3
 
+
 class Link:
     # Link is a connection between two ports
-    def __init__(self, msg_type: str, from_port: Port, to_port: Port, namespace: List[str] = [], connection_type: ConnectionType = ConnectionType.UNDEFINED):
+    def __init__(
+        self,
+        msg_type: str,
+        from_port: Port,
+        to_port: Port,
+        namespace: List[str] = [],
+        connection_type: ConnectionType = ConnectionType.UNDEFINED,
+    ):
         self.msg_type: str = msg_type
         # from-port and to-port connection
         self.from_port: Port = from_port
@@ -59,7 +67,9 @@ class Link:
     def topic(self):
         """Get the topic name for this link."""
         # Get topic from the from_port's reference port, as that's where topics are typically set
-        from_port_ref = self.from_port.get_reference_list()[0] if self.from_port.get_reference_list() else self.from_port
+        from_port_ref = (
+            self.from_port.get_reference_list()[0] if self.from_port.get_reference_list() else self.from_port
+        )
         return from_port_ref.get_topic()
 
     def _check_connection(self):

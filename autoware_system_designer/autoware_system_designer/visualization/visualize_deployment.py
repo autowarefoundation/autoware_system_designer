@@ -13,16 +13,17 @@
 # limitations under the License.
 
 
-import os
 import logging
+import os
 import shutil
-from typing import Dict, List, Optional
 from pathlib import Path
-from ..file_io.template_renderer import TemplateRenderer
-from .visualization_index import get_install_root
-from ..file_io.system_structure_json import extract_system_structure_data
+from typing import Dict, List, Optional
+
 from ..file_io.source_location import SourceLocation, format_source
+from ..file_io.system_structure_json import extract_system_structure_data
+from ..file_io.template_renderer import TemplateRenderer
 from ..models.system_structure import DeploymentDataByMode
+from .visualization_index import get_install_root
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +62,7 @@ def _copy_static_asset(filename: str, destination_dir: str) -> None:
         logger.error(f"Failed to find static file: {filename}{format_source(src)}")
 
 
-def _generate_js_data(
-    renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str
-) -> None:
+def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str) -> None:
     """Generate JavaScript data files for web visualization."""
     data, _ = extract_system_structure_data(data)
     # Node diagram data
@@ -112,7 +111,6 @@ def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualiza
         _generate_js_data(renderer, mode_key, data, web_data_dir)
         logger.info(f"Generated visualization for mode: {mode_key}")
 
-
     # Generate web visualization files
     if deploy_data:
         modes = list(deploy_data.keys())
@@ -123,7 +121,7 @@ def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualiza
             "js/diagram_base.js",
             "js/node_diagram.js",
             "js/sequence_diagram.js",
-            "js/logic_diagram.js"
+            "js/logic_diagram.js",
         ]
         for module in js_modules:
             _copy_static_asset(module, web_dir)
@@ -143,7 +141,7 @@ def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualiza
             "available_diagram_types": ["node_diagram", "sequence_diagram", "logic_diagram"],
             "default_mode": default_mode,
             "default_diagram_type": "node_diagram",
-            "systems_index_path": systems_index_rel_path
+            "systems_index_path": systems_index_rel_path,
         }
 
         config_output_path = os.path.join(web_dir, "config.js")

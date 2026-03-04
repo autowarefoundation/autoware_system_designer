@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List
 import logging
+from typing import List
+
 from ...utils.naming import generate_unique_id
 
 logger = logging.getLogger(__name__)
+
 
 # classes for deployment
 class Event:
@@ -179,7 +181,9 @@ class Event:
         timeout: float,
     ):
         if self.check_trigger_root_ids(trigger_root_id):
-            logger.debug(f"Event '{self.unique_id}' already processed for root '{trigger_root_id}', skipping propagation")
+            logger.debug(
+                f"Event '{self.unique_id}' already processed for root '{trigger_root_id}', skipping propagation"
+            )
             return
 
         if frequency is not None:
