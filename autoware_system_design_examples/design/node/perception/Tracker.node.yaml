@@ -33,7 +33,7 @@ param_files:
   - name: input_channels_path
     default: path/to/input_channels_path.yaml
 
-param_values: []
+parameter_values: []
 
 # processes
 processes:
