@@ -51,7 +51,8 @@
                 "type": "string"
               },
               "message_type": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[^/]+/msg/[^/]+$"
               },
               "global": {
                 "type": "string"
@@ -81,7 +82,8 @@
                 "type": "string"
               },
               "message_type": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[^/]+/msg/[^/]+$"
               },
               "global": {
                 "type": "string"
@@ -98,6 +100,60 @@
           }
         }
       ]
+    },
+    "servers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "message_type"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "message_type": {
+            "type": "string",
+            "pattern": "^[^/]+/(srv|action)/[^/]+$"
+          },
+          "global": {
+            "type": "string"
+          },
+          "qos": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "remap_target": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "clients": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "message_type"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "message_type": {
+            "type": "string",
+            "pattern": "^[^/]+/(srv|action)/[^/]+$"
+          },
+          "global": {
+            "type": "string"
+          },
+          "qos": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "remap_target": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "param_files": {
       "oneOf": [

@@ -336,6 +336,8 @@ class ConfigParser:
     def _replace_input_output(config: dict) -> dict:
         subs = config.pop("subscribers", [])
         pubs = config.pop("publishers", [])
-        config["inputs"] = subs
-        config["outputs"] = pubs
+        srvs = config.pop("servers", [])
+        clis = config.pop("clients", [])
+        config["inputs"] = subs + clis
+        config["outputs"] = pubs + srvs
         return config
