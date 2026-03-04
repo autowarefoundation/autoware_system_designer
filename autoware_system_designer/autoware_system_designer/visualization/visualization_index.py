@@ -179,4 +179,3 @@ def _generate_index_file(install_root: Path, output_file: Path):
         )
     except Exception as e:
         logger.error(f"Failed to render visualization index template: {e}")
-

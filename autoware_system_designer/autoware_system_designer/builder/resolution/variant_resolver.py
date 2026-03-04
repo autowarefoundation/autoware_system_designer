@@ -40,7 +40,7 @@ class VariantResolver:
                 for i, item in enumerate(merged_list)
                 if isinstance(item, dict) and key_field in item
             }
-            
+
             for item in override_list:
                 if isinstance(item, dict):
                     key = item.get(key_field)
@@ -69,7 +69,7 @@ class VariantResolver:
             return target_list
 
         result_list = []
-        
+
         # Prepare lookup for key-based removal (dict items only)
         remove_keys = set()
         if key_field:
@@ -99,7 +99,7 @@ class VariantResolver:
                         if all(item.get(k) == v for k, v in spec.items()):
                             should_remove = True
                             break
-            
+
             if not should_remove:
                 result_list.append(item)
 
@@ -118,16 +118,16 @@ class VariantResolver:
         for spec in merge_specs:
             field = spec['field']
             key_field = spec['key_field']
-            
+
             # Get current list from object
             base_list = getattr(config_object, field)
-            
+
             # Get override list from yaml
             override_list = override_config.get(field, [])
-            
+
             # Merge
             merged_list = self._merge_list(base_list, override_list, key_field)
-            
+
             # Set back to object
             setattr(config_object, field, merged_list)
 
@@ -139,11 +139,11 @@ class VariantResolver:
         for spec in remove_specs:
             field = spec['field']
             key_field = spec['key_field']
-            
+
             if field in remove_config:
                 target_list = getattr(config_object, field)
                 remove_items = remove_config[field]
-                
+
                 result_list = self._remove_list(target_list, remove_items, key_field)
                 setattr(config_object, field, result_list)
 
@@ -176,10 +176,10 @@ class SystemVariantResolver(VariantResolver):
         if system_config.modes:
             if system_config.mode_configs is None:
                 system_config.mode_configs = {}
-            
+
             # mode names are already merged in system_config.modes
             mode_names = [m.get('name') for m in system_config.modes if isinstance(m, dict) and 'name' in m]
-            
+
             for mode_name in mode_names:
                 if mode_name in override_config:
                     # Overwrite/Update mode config from override
@@ -263,7 +263,7 @@ class ModuleVariantResolver(VariantResolver):
             self._apply_removals(module_config, remove_config)
 
         override_config = config_yaml.get('override', {})
-        
+
         merge_specs = [
             {'field': 'instances', 'key_field': 'name'},
             {'field': 'inputs', 'key_field': 'name'},

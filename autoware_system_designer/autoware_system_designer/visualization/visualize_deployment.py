@@ -35,7 +35,7 @@ def _get_static_file_path(filename: str) -> Optional[str]:
     local_file = os.path.join(current_dir, filename)
     if os.path.exists(local_file):
         return local_file
-    
+
     src = SourceLocation(file_path=Path(local_file))
     logger.warning(f"Static file not found: {filename}{format_source(src)}")
     return None
@@ -43,7 +43,7 @@ def _get_static_file_path(filename: str) -> Optional[str]:
 
 def _copy_static_asset(filename: str, destination_dir: str) -> None:
     """Copy a static asset to the destination directory.
-    
+
     Args:
         filename: Relative path of the static asset (e.g. 'visualization/js/node.js')
         destination_dir: Directory where the file should be copied
@@ -106,7 +106,7 @@ def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualiza
     renderer = TemplateRenderer()
     web_dir = os.path.join(visualization_dir, "web")
     web_data_dir = os.path.join(web_dir, "data")
-    
+
     # Generate visualization for each mode
     for mode_key, data in deploy_data.items():
         _generate_js_data(renderer, mode_key, data, web_data_dir)
@@ -135,7 +135,7 @@ def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualiza
 
         # Generate config.js
         systems_index_rel_path = _calculate_systems_index_path(web_dir)
-        
+
         overview_data = {
             "deployment_name": name,
             "package_name": name,
@@ -145,7 +145,7 @@ def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualiza
             "default_diagram_type": "node_diagram",
             "systems_index_path": systems_index_rel_path
         }
-        
+
         config_output_path = os.path.join(web_dir, "config.js")
         renderer.render_template_to_file("data/deployment_config.js.jinja2", config_output_path, **overview_data)
         logger.info(f"Generated deployment config: config.js")

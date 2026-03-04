@@ -27,11 +27,11 @@ _SCHEMA_CACHE: Dict[str, dict] = {}
 
 def get_schema_path(entity_type: str, version: str) -> Path:
     """Get the path to a JSON Schema file for the given entity type and version.
-    
+
     Args:
         entity_type: Entity type (node, module, system, parameter_set)
         version: Format version string (e.g., "0.2.0")
-        
+
     Returns:
         Path to the schema file
     """
@@ -42,18 +42,18 @@ def get_schema_path(entity_type: str, version: str) -> Path:
 
 def resolve_schema_version(entity_type: str, version: str) -> str:
     """Resolve the schema version, using the largest available schema within the same major version.
-    
+
     Version resolution rules:
     - Major version must match exactly
     - If exact version exists, use it
     - Otherwise, use the largest available minor version within the same major version
       (supports both newer configs checking against older schemas, and older configs
       checking against newer schemas for backward compatibility)
-    
+
     Args:
         entity_type: Entity type (node, module, system, parameter_set)
         version: Format version string (e.g., "0.2.0")
-        
+
     Returns:
         Resolved version string that exists, or the original version if none found
     """
@@ -62,21 +62,21 @@ def resolve_schema_version(entity_type: str, version: str) -> str:
     except Exception:
         # If version parsing fails, return original
         return version
-    
+
     # Try the exact version first
     schema_path = get_schema_path(entity_type, version)
     if schema_path.exists():
         return version
-    
+
     # Find all available schema files for this entity type and major version
     schema_dir = Path(__file__).parent.parent / "schema"
     available_versions = []
-    
+
     # Look for all version directories
     for version_dir in schema_dir.iterdir():
         if not version_dir.is_dir():
             continue
-            
+
         try:
             dir_version = parse_format_version(version_dir.name)
             # Only consider versions with matching major version
@@ -87,11 +87,11 @@ def resolve_schema_version(entity_type: str, version: str) -> str:
         except Exception:
             # Skip directories that don't match the version pattern
             continue
-    
+
     if not available_versions:
         # No schemas found for this major version, return original (will cause error)
         return version
-    
+
     # Prefer same minor version
     same_minor_versions = [v for v in available_versions if v.minor == parsed_version.minor]
     if same_minor_versions:
@@ -117,26 +117,26 @@ def resolve_schema_version(entity_type: str, version: str) -> str:
 
 def load_schema(entity_type: str, version: str) -> dict:
     """Load a JSON Schema file for the given entity type and version.
-    
+
     Args:
         entity_type: Entity type (node, module, system, parameter_set)
         version: Format version string (e.g., "0.2.0")
-        
+
     Returns:
         Schema dictionary
-        
+
     Raises:
         FileNotFoundError: If the schema file doesn't exist
         json.JSONDecodeError: If the schema file is invalid JSON
     """
     # Resolve version (may fall back to earlier minor version)
     resolved_version = resolve_schema_version(entity_type, version)
-    
+
     # Check cache
     cache_key = f"{entity_type}-v{resolved_version}"
     if cache_key in _SCHEMA_CACHE:
         return _SCHEMA_CACHE[cache_key]
-    
+
     # Load schema file
     schema_path = get_schema_path(entity_type, resolved_version)
     if not schema_path.exists():
@@ -144,7 +144,7 @@ def load_schema(entity_type: str, version: str) -> dict:
             f"Schema file not found for {entity_type} version {version} "
             f"(resolved to {resolved_version}): {schema_path}"
         )
-    
+
     try:
         with open(schema_path, "r", encoding="utf-8") as f:
             schema = json.load(f)
@@ -154,10 +154,10 @@ def load_schema(entity_type: str, version: str) -> dict:
             e.doc,
             e.pos,
         ) from e
-    
+
     # Cache the schema
     _SCHEMA_CACHE[cache_key] = schema
-    
+
     return schema
 
 

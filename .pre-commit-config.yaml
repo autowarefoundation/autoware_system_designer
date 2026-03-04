@@ -8,6 +8,19 @@
 # Dependencies are automatically installed by pre-commit in isolated environments
 
 repos:
+  # Common linting
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-xml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+
   # YAML linting - automatically installs yamllint
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.37.1

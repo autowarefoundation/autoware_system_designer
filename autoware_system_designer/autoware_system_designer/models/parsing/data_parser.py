@@ -85,21 +85,21 @@ def _normalize_param_list(
 
 class ConfigParser:
     """Parser for entity configuration files."""
-    
+
     def __init__(self, strict_mode: bool = True):
         self.validator_factory = ValidatorFactory()
         self.strict_mode = strict_mode
-    
+
     def parse_entity_file(self, config_yaml_path: str) -> Config:
         """Parse an entity configuration file."""
         file_path = Path(config_yaml_path)
-        # get entity type from file name 
+        # get entity type from file name
         # file/path/to/<entity_name>.<entity_type>.yaml
         file_entity_name, file_entity_type = entity_name_decode(file_path.stem)
 
         # Load configuration (+ source map for better diagnostics)
         config, source_map = self._load_config_with_source(file_path)
-        
+
         # Parse entity name and type
         full_name = config.get("name")
         entity_name, entity_type = entity_name_decode(full_name)
@@ -120,18 +120,18 @@ class ConfigParser:
                 raise ValidationError(msg)
             else:
                 logger.warning(msg)
-        
+
         # Validate configuration
         validator = self.validator_factory.get_validator(entity_type)
         validator.validate_all(config, entity_type, file_entity_type, str(file_path))
-        
+
         # Create appropriate data structure
         return self._create_entity_data(entity_name, full_name, entity_type, config, file_path, source_map)
-    
+
     def parse_entity_from_content(self, content: str, config_yaml_path: str) -> Config:
         """Parse an entity configuration from string content."""
         file_path = Path(config_yaml_path)
-        # get entity type from file name 
+        # get entity type from file name
         # file/path/to/<entity_name>.<entity_type>.yaml
         file_entity_name, file_entity_type = entity_name_decode(file_path.stem)
 
@@ -141,7 +141,7 @@ class ConfigParser:
         except Exception as e:
             logger.error(f"Failed to parse content for {file_path}: {e}")
             raise ValidationError(f"Error parsing YAML content: {e}")
-        
+
         # Parse entity name and type
         full_name = config.get("name")
         if not full_name:
@@ -168,13 +168,13 @@ class ConfigParser:
                 raise ValidationError(msg)
             else:
                 logger.warning(msg)
-        
+
         # Validate configuration
         if full_name:
             validator = self.validator_factory.get_validator(entity_type)
             # Use the file path for reference even if content is from memory
             validator.validate_all(config, entity_type, file_entity_type, str(file_path))
-        
+
         # Create appropriate data structure
         return self._create_entity_data(
             entity_name,
@@ -184,7 +184,7 @@ class ConfigParser:
             file_path,
             source_map,
         )
-    
+
     def _load_config_with_source(self, file_path: Path) -> tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
         """Load YAML configuration file and return (config, source_map)."""
         try:
@@ -193,7 +193,7 @@ class ConfigParser:
             logger.error(f"Failed to load config from {file_path}: {e}")
             raise ValidationError(f"Error parsing YAML file {file_path}: {e}")
 
-    def _create_entity_data(self, entity_name: str, full_name: str, entity_type: str, 
+    def _create_entity_data(self, entity_name: str, full_name: str, entity_type: str,
                            config: Dict[str, Any], file_path: Path,
                            source_map: Dict[str, Dict[str, int]] | None = None) -> Config:
         """Create appropriate data structure based on entity type."""
@@ -205,11 +205,11 @@ class ConfigParser:
             'file_path': file_path,
             'source_map': source_map,
         }
-        
-        if entity_type == ConfigType.NODE:            
+
+        if entity_type == ConfigType.NODE:
             # Map param_files
             param_files = config.get('param_files')
-            
+
             # Map param_values
             param_values = config.get('param_values')
 
@@ -266,7 +266,7 @@ class ConfigParser:
             if isinstance(parameters, list):
                 for idx, node_entry in enumerate(parameters):
                     if not isinstance(node_entry, dict):
-                        continue                    
+                        continue
                     _normalize_param_list(
                         node_entry.get("param_values"),
                         file_path=file_path,
@@ -280,20 +280,20 @@ class ConfigParser:
             )
         elif entity_type == ConfigType.SYSTEM:
             sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
-            
+
             # Parse mode-specific configurations
             mode_configs = {}
             modes = config.get('modes')
             if modes:
                 # Extract mode names from modes list
                 mode_names = [m.get('name') for m in modes if isinstance(m, dict) and 'name' in m]
-                
+
                 # Look for top-level keys matching mode names
                 for mode_name in mode_names:
                     if mode_name in config:
                         mode_configs[mode_name] = config[mode_name]
                         logger.debug(f"Found mode-specific configuration for mode '{mode_name}'")
-            
+
             return SystemConfig(
                 **base_data,
                 sub_type=sub_type,

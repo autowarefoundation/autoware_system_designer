@@ -1,3 +1,2 @@
 pygls>=1.0.0
 lsprotocol>=2022.0.0
-

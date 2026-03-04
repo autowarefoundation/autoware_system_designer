@@ -34,18 +34,18 @@ class DocumentProcessor:
         # Always validate, even if parsing fails
         diagnostics = []
         config = None
-        
+
         # Try to parse the document
         try:
             # Parse the content from string
             try:
                 # Use the new parse_entity_from_content method
                 config = self.config_parser.parse_entity_from_content(content, file_path)
-                
+
                 # Update registry only if requested (e.g. on save or open)
                 if update_registry and config:
                     self.registry_manager.register_entity(config)
-                    
+
             except (ValidationError, Exception) as parse_error:
                 logger.debug(f"Failed to parse {file_path}: {parse_error}")
                 # Continue with validation even if parsing fails

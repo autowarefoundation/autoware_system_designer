@@ -132,14 +132,14 @@ class AutowareSystemDesignerLanguageServer:
     def _on_workspace_did_change_watched_files(self, ls, params: lsp.DidChangeWatchedFilesParams):
         """Handle watched file changes."""
         registry_updated = False
-        
+
         for change in params.changes:
             uri = change.uri
             # Simple conversion since we don't have easy access to helper here without importing
             from urllib.parse import urlparse, unquote
             parsed = urlparse(uri)
             file_path = unquote(parsed.path)
-            
+
             if change.type == lsp.FileChangeType.Created:
                 try:
                     config = self.config_parser.parse_entity_file(file_path)
@@ -147,7 +147,7 @@ class AutowareSystemDesignerLanguageServer:
                     registry_updated = True
                 except Exception as e:
                     logger.warning(f"Failed to register created file {file_path}: {e}")
-                    
+
             elif change.type == lsp.FileChangeType.Changed:
                 try:
                     config = self.config_parser.parse_entity_file(file_path)
@@ -155,11 +155,11 @@ class AutowareSystemDesignerLanguageServer:
                     registry_updated = True
                 except Exception as e:
                     logger.warning(f"Failed to update changed file {file_path}: {e}")
-                    
+
             elif change.type == lsp.FileChangeType.Deleted:
                 self.registry_manager.unregister_entity(file_path)
                 registry_updated = True
-                
+
         # If registry changed, re-validate all open documents
         if registry_updated:
             self._revalidate_open_documents()
@@ -180,7 +180,7 @@ class AutowareSystemDesignerLanguageServer:
             for uri, document in self.server.workspace.documents.items():
                 if uri == exclude_uri:
                     continue
-                
+
                 # Re-process the document (parse, validate, publish diagnostics)
                 # We don't update registry here, just validate against current registry
                 self.document_processor.process_document(uri, document.source, self.server, update_registry=False)

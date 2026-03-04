@@ -20,17 +20,17 @@ from typing import List, Dict, Any, Optional
 
 class LintResult:
     """Container for linting results for a single file."""
-    
+
     def __init__(self, file_path: Path):
         """Initialize lint result.
-        
+
         Args:
             file_path: Path to the file being linted
         """
         self.file_path = file_path
         self.errors: List[Dict[str, Any]] = []
         self.warnings: List[Dict[str, Any]] = []
-    
+
     def add_error(
         self,
         message: str,
@@ -39,7 +39,7 @@ class LintResult:
         yaml_path: Optional[str] = None,
     ):
         """Add an error message.
-        
+
         Args:
             message: Error message
             line: Optional line number where error occurred
@@ -52,7 +52,7 @@ class LintResult:
         if yaml_path is not None:
             error['yaml_path'] = yaml_path
         self.errors.append(error)
-    
+
     def add_warning(
         self,
         message: str,
@@ -61,7 +61,7 @@ class LintResult:
         yaml_path: Optional[str] = None,
     ):
         """Add a warning message.
-        
+
         Args:
             message: Warning message
             line: Optional line number where warning occurred
@@ -74,4 +74,3 @@ class LintResult:
         if yaml_path is not None:
             warning['yaml_path'] = yaml_path
         self.warnings.append(warning)
-

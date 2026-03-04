@@ -20,11 +20,11 @@ class InlayHintProvider:
             return None
 
         hints = []
-        
+
         # Determine the range to process
         start_line = 0
         end_line = len(document.lines)
-        
+
         if params.range:
             start_line = params.range.start.line
             end_line = min(params.range.end.line + 1, len(document.lines))
@@ -40,13 +40,13 @@ class InlayHintProvider:
             # - instance.output.port
             # - input.port (for external interfaces)
             # - output.port (for external interfaces)
-            
+
             # Simple regex to catch these patterns
             # Matches: word.input.word or word.output.word or input.word or output.word
             # We need to be careful not to match random text, but in YAML 'from:' or 'to:' usually precedes
-            
+
             # Check for specific connection patterns in YAML
-            # We expect keys like 'from:' or 'to:' 
+            # We expect keys like 'from:' or 'to:'
             # Updated regex to include / and - which are common in ROS topic names / port names
             match = re.search(r'(?:from|to):\s*([\w\.\*/-]+)', line)
             if match:
@@ -54,14 +54,14 @@ class InlayHintProvider:
                 # Skip wildcards for now
                 if '*' in connection_str:
                     continue
-                    
+
                 msg_type = self._resolve_type_for_string(connection_str, params.text_document.uri)
                 if msg_type:
                     # Create inlay hint at the end of the line
                     # Position at the end of the connection string
                     char_idx = match.end(1)
                     position = lsp.Position(line=i, character=char_idx)
-                    
+
                     hint = lsp.InlayHint(
                         position=position,
                         label=f": {msg_type}",
@@ -92,7 +92,7 @@ class InlayHintProvider:
             instance_name = parts[0]
             port_type = parts[1]
             port_name = parts[2]
-            
+
             target_entity_config = resolution_service.get_instance_entity(current_config, instance_name)
             if target_entity_config:
                 return resolution_service.resolve_port_type(target_entity_config, port_type, port_name)
@@ -106,4 +106,3 @@ class InlayHintProvider:
         return None
 
     # Remove all the duplicated recursive logic below
-

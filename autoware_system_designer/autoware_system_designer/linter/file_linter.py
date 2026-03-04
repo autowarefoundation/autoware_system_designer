@@ -25,7 +25,7 @@ from .report import LintResult
 
 class FileLinter:
     """Linter for file naming conventions."""
-    
+
     # Valid entity file extensions
     VALID_EXTENSIONS = {
         '.node.yaml': ConfigType.NODE,
@@ -33,16 +33,16 @@ class FileLinter:
         '.system.yaml': ConfigType.SYSTEM,
         '.parameter_set.yaml': ConfigType.PARAMETER_SET,
     }
-    
+
     def lint(self, file_path: Path, result: LintResult):
         """Lint file naming conventions.
-        
+
         Args:
             file_path: Path to the file to lint
             result: LintResult to add errors/warnings to
         """
         file_name = file_path.name
-        
+
         # Check if file has valid extension
         valid_extension = None
         for ext, entity_type in self.VALID_EXTENSIONS.items():
@@ -50,14 +50,14 @@ class FileLinter:
                 valid_extension = ext
                 expected_type = entity_type
                 break
-        
+
         if not valid_extension:
             result.add_error(
                 f"File does not have a valid entity extension. "
                 f"Expected one of: {', '.join(self.VALID_EXTENSIONS.keys())}"
             )
             return
-        
+
         # Extract base name (without extension)
         base_name = file_name[:-len(valid_extension)]
 
@@ -72,7 +72,7 @@ class FileLinter:
                 base_ref = config.get('base')
         except Exception:
             base_ref = None
-        
+
         # Check that file name matches expected pattern: Name.type.yaml
         if '.' in base_name:
             parts = base_name.split('.')
@@ -119,27 +119,27 @@ class FileLinter:
                             f"File name '{base_name}' should be in PascalCase format "
                             f"(e.g., 'DetectorA', 'MyModule')"
                         )
-    
+
     @staticmethod
     def _is_pascal_case(name: str) -> bool:
         """Check if a string is in PascalCase format.
-        
+
         PascalCase: Starts with uppercase letter, followed by alphanumeric characters,
         with no underscores or spaces. Examples: DetectorA, MyModule, Node123
-        
+
         Args:
             name: String to check
-            
+
         Returns:
             True if string is in PascalCase format
         """
         if not name:
             return False
-        
+
         # Must start with uppercase letter
         if not name[0].isupper():
             return False
-        
+
         # Rest should be alphanumeric (no underscores, spaces, or special chars)
         # Allow lowercase letters and numbers after the first character
         pattern = r'^[A-Z][a-zA-Z0-9]*$'
@@ -185,4 +185,3 @@ class FileLinter:
             return base_name
         except Exception:
             return ""
-

@@ -10,7 +10,7 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-# limitations under the License. 
+# limitations under the License.
 
 from typing import List
 import logging
@@ -58,7 +58,7 @@ class Port:
     @property
     def unique_id(self):
         return generate_unique_id(self.namespace, "port", self.name)
-    
+
     @property
     def port_path(self):
         return generate_port_path(self.namespace, self.name)
@@ -85,7 +85,7 @@ class Port:
             return False
         self.topic = new_topic
         return True
-    
+
     def get_topic(self) -> str:
         if self.topic == []:
             return ""
@@ -107,11 +107,11 @@ class InPort(Port):
     @property
     def unique_id(self):
         return generate_unique_id(self.namespace, "port", "input", self.name)
-    
+
     @property
     def port_path(self):
         return generate_port_path(self.namespace, "input/" + self.name)
-    
+
     def set_servers(self, port_list: List[Port]):
         server_name_list = [p.port_path for p in self.servers]
         added = []
@@ -148,7 +148,7 @@ class OutPort(Port):
 
         # set default topic
         self.set_topic(self.namespace, self.name)
-        
+
         if self.remap_target is None:
             self.remap_target = "~/output/" + name
 

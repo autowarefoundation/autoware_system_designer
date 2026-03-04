@@ -28,10 +28,10 @@ logger = logging.getLogger(__name__)
 
 class YamlParser:
     """YAML parser with caching and validation."""
-    
+
     def __init__(self, cache_enabled: bool = None):
         """Initialize YAML parser.
-        
+
         Args:
             cache_enabled: Whether to enable caching. If None, uses global config.
         """
@@ -143,16 +143,16 @@ class YamlParser:
             raise ValidationError(f"Failed to parse YAML content: {exc}")
         except Exception as exc:
             raise ValidationError(f"Failed to process configuration content: {exc}")
-    
+
     def load_config(self, file_path: Union[str, Path]) -> Dict[str, Any]:
         """Load YAML configuration file.
-        
+
         Args:
             file_path: Path to YAML file
-            
+
         Returns:
             Parsed YAML content as dictionary
-            
+
         Raises:
             ValidationError: If file cannot be read or parsed
         """
@@ -187,27 +187,27 @@ class YamlParser:
             raise ValidationError(f"Failed to parse YAML file {path}: {exc}")
         except Exception as exc:
             raise ValidationError(f"Failed to read configuration file {path}: {exc}")
-    
+
     def load_config_from_string(self, content: str) -> Dict[str, Any]:
         """Load YAML configuration from string content.
-        
+
         Args:
             content: YAML string content
-            
+
         Returns:
             Parsed YAML content as dictionary
-            
+
         Raises:
             ValidationError: If content cannot be parsed
         """
         try:
             config_data = yaml.safe_load(content)
-            
+
             if config_data is None:
                 config_data = {}
-                
+
             return config_data
-            
+
         except yaml.YAMLError as exc:
             raise ValidationError(f"Failed to parse YAML content: {exc}")
         except Exception as exc:
@@ -215,52 +215,52 @@ class YamlParser:
 
     def load_config_list(self, file_list_path: Union[str, Path]) -> Dict[str, Any]:
         """Load configuration files from a list file.
-        
+
         Args:
             file_list_path: Path to text file containing list of YAML file paths
-            
+
         Returns:
             Dictionary mapping file paths to their configurations
-            
+
         Raises:
             ValidationError: If list file cannot be read
         """
         list_path = Path(file_list_path)
-        
+
         if not list_path.exists():
             raise ValidationError(f"File list not found: {list_path}")
-        
+
         try:
             with open(list_path, 'r', encoding='utf-8') as file:
                 file_paths = [line.strip() for line in file.readlines() if line.strip()]
-            
+
             configs = {}
             for file_path in file_paths:
                 path = Path(file_path)
                 if not path.is_absolute():
                     # Make path relative to the list file's directory
                     path = list_path.parent / path
-                
+
                 configs[str(path)] = self.load_config(path)
-            
+
             return configs
-            
+
         except Exception as exc:
             raise ValidationError(f"Failed to read file list {list_path}: {exc}")
-    
+
     def clear_cache(self):
         """Clear the configuration cache."""
         self._cache.clear()
         self._source_cache.clear()
         logger.debug("Configuration cache cleared")
-    
+
     @lru_cache(maxsize=None)
     def get_cached_config(self, file_path: str) -> Dict[str, Any]:
         """Get cached configuration using LRU cache.
-        
+
         Args:
             file_path: Path to configuration file
-            
+
         Returns:
             Parsed configuration
         """

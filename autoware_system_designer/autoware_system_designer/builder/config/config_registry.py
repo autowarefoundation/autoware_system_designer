@@ -49,7 +49,7 @@ def _format_mismatch_hint(mismatch_files: list) -> str:
 
 class ConfigRegistry:
     """Collection for managing multiple entity data structures with efficient lookup methods."""
-    
+
     def __init__(self, config_yaml_file_paths: List[str], package_paths: Dict[str, str] = None, file_package_map: Dict[str, str] = None, workspace_config: List[Dict[str, Any]] = None):
         # Replace list with dict as primary storage
         self.entities: Dict[str, Config] = {}  # full_name → Config
@@ -79,7 +79,7 @@ class ConfigRegistry:
 
         self.parser = ConfigParser()
         self._load_entities(config_yaml_file_paths)
-    
+
     def _load_entities(self, config_yaml_file_paths: List[str]) -> None:
         """Load entities from configuration files."""
         from ...models.parsing.yaml_parser import yaml_parser as _yaml_parser
@@ -125,7 +125,7 @@ class ConfigRegistry:
                     resolution = self._provider_resolution_map.get(entity_data.package_provider)
                     if resolution:
                         entity_data.package_resolution = resolution
-                
+
                 # Check for duplicates
                 if entity_data.full_name in self.entities:
                     existing = self.entities[entity_data.full_name]
@@ -134,11 +134,11 @@ class ConfigRegistry:
                         f"  New: {entity_data.file_path}\n"
                         f"  Existing: {existing.file_path}"
                     )
-                
+
                 # Add to collections
                 self.entities[entity_data.full_name] = entity_data
                 self._type_map[entity_data.entity_type][entity_data.name] = entity_data
-                
+
             except Exception as e:
                 src = SourceLocation(file_path=Path(file_path))
                 logger.error(f"Failed to load entity from {file_path}: {e}{format_source(src)}")
@@ -150,14 +150,14 @@ class ConfigRegistry:
                     hint = _format_mismatch_hint(self.minor_version_mismatch_files)
                     raise type(e)(f"{e}\n{hint}") from e
                 raise
-    
+
     def get(self, name: str, default=None) -> Optional[Config]:
         """Get entity by name with default value."""
         return self.entities.get(name, default)
-    
-    def _get_entity_with_base(self, 
-                                     name: str, 
-                                     config_type: str, 
+
+    def _get_entity_with_base(self,
+                                     name: str,
+                                     config_type: str,
                                      error_cls: Type[Exception],
                                      resolver_cls: Optional[Type[VariantResolver]] = None,
                                      recursive_getter: Optional[Callable[[str], Config]] = None) -> Config:
@@ -165,7 +165,7 @@ class ConfigRegistry:
         Generic method to get an entity and resolve base/variant if applicable.
         """
         entity = self._type_map[config_type].get(name)
-        
+
         # If not found, try decoding the name (e.g. MyNode.node -> MyNode)
         if entity is None and "." in name:
             try:
@@ -174,11 +174,11 @@ class ConfigRegistry:
                     entity = self._type_map[config_type].get(decoded_name)
             except ValidationError:
                 pass
-        
+
         if entity is None:
             available = list(self._type_map[config_type].keys())
             raise error_cls(f"{config_type.capitalize()} '{name}' not found. Available {config_type}s: {available}")
-        
+
         if entity.sub_type == ConfigSubType.VARIANT:
             if not resolver_cls or not recursive_getter:
                 # Variant requested but no resolver provided, return as is (or could raise error)
@@ -192,11 +192,11 @@ class ConfigRegistry:
 
             # Resolve parent (recursive)
             parent = recursive_getter(base_target)
-            
+
             # Create a deep copy of the parent to serve as the base for this entity
             # This ensures we don't modify the parent object
             resolved_entity = copy.deepcopy(parent)
-            
+
             # Update the identity of the resolved entity to match the current entity
             resolved_entity.name = entity.name
             resolved_entity.full_name = entity.full_name
@@ -204,11 +204,11 @@ class ConfigRegistry:
             resolved_entity.package = entity.package
             resolved_entity.sub_type = entity.sub_type
             resolved_entity.config = entity.config # Keep original config with overrides
-            
+
             # Apply overrides from this entity's config
             resolver = resolver_cls()
             resolver.resolve(resolved_entity, entity.config)
-            
+
             return resolved_entity
 
         return entity
@@ -217,13 +217,13 @@ class ConfigRegistry:
     def get_node(self, name: str) -> NodeConfig:
         """Get a node entity by name."""
         return self._get_entity_with_base(
-            name, 
-            ConfigType.NODE, 
-            NodeConfigurationError, 
-            NodeVariantResolver, 
+            name,
+            ConfigType.NODE,
+            NodeConfigurationError,
+            NodeVariantResolver,
             self.get_node
         )
-    
+
     def get_module(self, name: str) -> ModuleConfig:
         """Get a module entity by name."""
         return self._get_entity_with_base(
@@ -233,7 +233,7 @@ class ConfigRegistry:
             ModuleVariantResolver,
             self.get_module
         )
-    
+
     def get_parameter_set(self, name: str) -> ParameterSetConfig:
         """Get a parameter set entity by name."""
         return self._get_entity_with_base(
@@ -241,7 +241,7 @@ class ConfigRegistry:
             ConfigType.PARAMETER_SET,
             ParameterConfigurationError
         )
-    
+
     def get_system(self, name: str) -> SystemConfig:
         """Get an system entity by name. Resolves base/variant if applicable."""
         return self._get_entity_with_base(
@@ -251,7 +251,7 @@ class ConfigRegistry:
             SystemVariantResolver,
             self.get_system
         )
-    
+
     def get_entity_by_type(self, name: str, entity_type: str) -> Config:
         """Get an entity by name and type."""
         if entity_type == ConfigType.NODE:
