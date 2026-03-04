@@ -11,7 +11,7 @@ launch:
   executable: tracker_node
 
 # interfaces
-inputs:
+subscribers:
   - name: objects1
     message_type: autoware_perception_msgs/msg/DetectedObjects
   - name: objects2

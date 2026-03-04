@@ -9,7 +9,7 @@ package:
 launch:
   plugin: autoware::system_dummy_modules::Control
 
-inputs:
+subscribers:
   - name: mission_planning/route
     message_type: autoware_planning_msgs/msg/LaneletRoute
   - name: kinematics

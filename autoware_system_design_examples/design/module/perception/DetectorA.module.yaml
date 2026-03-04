@@ -8,7 +8,7 @@ instances:
   - name: node_filter
     entity: FilterA.node
 
-inputs:
+subscribers:
   - name: pointcloud
   - name: vector_map
 outputs:

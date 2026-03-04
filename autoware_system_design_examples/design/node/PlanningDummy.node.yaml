@@ -10,7 +10,7 @@ launch:
   plugin: autoware::system_dummy_modules::Planning
 
 # interfaces
-inputs:
+subscribers:
   - name: lanelet_map
     message_type: autoware_map_msgs/msg/LaneletMapBin
   - name: predicted_objects

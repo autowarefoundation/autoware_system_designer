@@ -42,7 +42,7 @@
         "additionalProperties": false
       }
     },
-    "inputs": {
+    "subscribers": {
       "type": "array",
       "items": {
         "type": "object",
@@ -92,6 +92,6 @@
     }
   },
   "then": {
-    "required": ["instances", "inputs", "outputs", "connections"]
+    "required": ["instances", "subscribers", "outputs", "connections"]
   }
 }

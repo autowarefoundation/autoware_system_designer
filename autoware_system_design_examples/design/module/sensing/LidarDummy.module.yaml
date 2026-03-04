@@ -14,7 +14,7 @@ instances:
   - name: lidar_concatenate
     entity: ConcatenatePointcloudDummy.node
 
-inputs: []
+subscribers: []
 outputs:
   - name: top/pointcloud
   - name: left/pointcloud

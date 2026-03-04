@@ -20,7 +20,7 @@ instances:
   - name: camera_7
     entity: CameraDummyDriver.node
 
-inputs: []
+subscribers: []
 outputs:
   - name: camera0/image
   - name: camera0/camera_info

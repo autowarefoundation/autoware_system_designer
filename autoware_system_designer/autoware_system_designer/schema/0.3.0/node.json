@@ -39,7 +39,7 @@
       "type": "object",
       "additionalProperties": true
     },
-    "inputs": {
+    "subscribers": {
       "oneOf": [
         {
           "type": "array",
@@ -203,7 +203,7 @@
     "required": [
       "package",
       "launch",
-      "inputs",
+      "subscribers",
       "outputs",
       "param_files",
       "param_values",

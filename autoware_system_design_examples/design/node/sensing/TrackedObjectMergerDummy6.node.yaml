@@ -11,7 +11,7 @@ launch:
   node_output: screen
 
 # interfaces
-inputs:
+subscribers:
   - name: ros_transform
     message_type: tf2_msgs/msg/TFMessage
     global: /tf

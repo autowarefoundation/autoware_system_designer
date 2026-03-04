@@ -6,7 +6,7 @@ instances:
   - name: classification
     entity: TrafficLightRecognitionDummy.node
 
-inputs: []
+subscribers: []
 outputs:
   - name: classification/car/traffic_signals
   - name: classification/pedestrian/traffic_signals

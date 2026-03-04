@@ -21,7 +21,7 @@ instances:
   - name: simple_tracked_object_merger
     entity: TrackedObjectMergerDummy6.node
 
-inputs: []
+subscribers: []
 outputs:
   - name: detected_objects
   - name: tracked_objects

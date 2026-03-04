@@ -12,7 +12,7 @@ instances:
   - name: node_predictor
     entity: Predictor.node
 
-inputs:
+subscribers:
   - name: vector_map
   - name: pointcloud
 outputs:

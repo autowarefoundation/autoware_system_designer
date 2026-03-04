@@ -10,7 +10,7 @@ launch:
   plugin: autoware::system_dummy_modules::TrafficLightRecognitionDummy
 
 # interfaces
-inputs: []
+subscribers: []
 
 outputs:
   - name: traffic_signal_car
