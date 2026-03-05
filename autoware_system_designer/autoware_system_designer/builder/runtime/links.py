@@ -182,14 +182,36 @@ class Connection:
         else:
             raise DeploymentError(f"Invalid connection: {connection_dict}")
 
-        self.from_instance: str = src_instance
-        self.from_port_name: str = src_name
-        self.to_instance: str = dst_instance
-        self.to_port_name: str = dst_name
-        self.from_is_external: bool = not src_instance
-        self.to_is_external: bool = not dst_instance
+        # Estimate link direction.
+        reverse = False
+        if self.type == ConnectionType.INTERNAL_TO_INTERNAL:
+            if (src_type, dst_type) == ("subscriber", "publisher"):
+                reverse = True
+            elif (src_type, dst_type) == ("publisher", "subscriber"):
+                reverse = False
+            else:
+                raise DeploymentError(f"Invalid connection: {connection_dict}")
+        else:
+            if src_type != dst_type:
+                raise DeploymentError(f"Invalid connection: {connection_dict}")
 
-    def _parse_port_name(self, port_name: str) -> tuple[str, str, str]:  # (instance_name, port_type, port_name)
+        if not reverse:
+            self.from_instance: str = src_instance
+            self.from_port_name: str = src_name
+            self.from_is_external: bool = not src_instance
+            self.to_instance: str = dst_instance
+            self.to_port_name: str = dst_name
+            self.to_is_external: bool = not dst_instance
+        else:
+            self.to_instance: str = src_instance
+            self.to_port_name: str = src_name
+            self.to_is_external: bool = not src_instance
+            self.from_instance: str = dst_instance
+            self.from_port_name: str = dst_name
+            self.from_is_external: bool = not dst_instance
+
+    @staticmethod
+    def _parse_port_name(port_name: str) -> tuple[str, str, str]:  # (instance_name, port_type, port_name)
         parts = port_name.split(".")
         if len(parts) == 2:
             return "", parts[0], parts[1]

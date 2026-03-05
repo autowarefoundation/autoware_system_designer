@@ -24,13 +24,13 @@ publishers:
 
 connections:
   # individual lidar outputs
-  - [lidar_top.output.pointcloud, output.top/pointcloud]
-  - [lidar_left.output.pointcloud, output.left/pointcloud]
-  - [lidar_right.output.pointcloud, output.right/pointcloud]
-  - [lidar_rear.output.pointcloud, output.rear/pointcloud]
+  - [lidar_top.publisher.pointcloud, publisher.top/pointcloud]
+  - [lidar_left.publisher.pointcloud, publisher.left/pointcloud]
+  - [lidar_right.publisher.pointcloud, publisher.right/pointcloud]
+  - [lidar_rear.publisher.pointcloud, publisher.rear/pointcloud]
   # concatenated lidar output
-  - [lidar_top.output.pointcloud, lidar_concatenate.input.input1]
-  - [lidar_left.output.pointcloud, lidar_concatenate.input.input2]
-  - [lidar_right.output.pointcloud, lidar_concatenate.input.input3]
-  - [lidar_rear.output.pointcloud, lidar_concatenate.input.input4]
-  - [lidar_concatenate.output.output, output.concatenated/pointcloud]
+  - [lidar_top.publisher.pointcloud, lidar_concatenate.subscriber.input1]
+  - [lidar_left.publisher.pointcloud, lidar_concatenate.subscriber.input2]
+  - [lidar_right.publisher.pointcloud, lidar_concatenate.subscriber.input3]
+  - [lidar_rear.publisher.pointcloud, lidar_concatenate.subscriber.input4]
+  - [lidar_concatenate.publisher.output, publisher.concatenated/pointcloud]

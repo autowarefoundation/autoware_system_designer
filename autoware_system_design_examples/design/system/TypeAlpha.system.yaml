@@ -41,12 +41,15 @@ components:
     compute_unit: dummy_ecu_2
 
 connections:
-  - [lidar.output.concatenated/pointcloud, object_recognition.input.pointcloud]
-  - [lidar.output.concatenated/pointcloud, localizer.input.pointcloud]
-  - [map_loader.output.vector_map, localizer.input.lanelet_map]
-  - [map_loader.output.vector_map, object_recognition.input.vector_map]
-  - [map_loader.output.vector_map, planner.input.lanelet_map]
-  - [object_recognition.output.objects, planner.input.predicted_objects]
+  - [
+      lidar.publisher.concatenated/pointcloud,
+      object_recognition.subscriber.pointcloud,
+    ]
+  - [lidar.publisher.concatenated/pointcloud, localizer.subscriber.pointcloud]
+  - [map_loader.publisher.vector_map, localizer.subscriber.lanelet_map]
+  - [map_loader.publisher.vector_map, object_recognition.subscriber.vector_map]
+  - [map_loader.publisher.vector_map, planner.subscriber.lanelet_map]
+  - [object_recognition.publisher.objects, planner.subscriber.predicted_objects]
 
 simulation:
   override:

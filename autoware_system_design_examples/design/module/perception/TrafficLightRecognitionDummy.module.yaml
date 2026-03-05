@@ -14,11 +14,11 @@ publishers:
 
 connections:
   - [
-      classification.output.traffic_signal_car,
-      output.classification/car/traffic_signals,
+      classification.publisher.traffic_signal_car,
+      publisher.classification/car/traffic_signals,
     ]
   - [
-      classification.output.traffic_signal_pedestrian,
-      output.classification/pedestrian/traffic_signals,
+      classification.publisher.traffic_signal_pedestrian,
+      publisher.classification/pedestrian/traffic_signals,
     ]
-  - [classification.output.traffic_signal_rois, output.detection/rois]
+  - [classification.publisher.traffic_signal_rois, publisher.detection/rois]

@@ -17,9 +17,9 @@ publishers:
   - name: objects
 
 connections:
-  - [input.vector_map, node_predictor.input.lanelet_map]
+  - [subscriber.vector_map, node_predictor.subscriber.lanelet_map]
   # wildcard connection
-  - [input.*, detector_a1.input.*]
-  - [detector_a1.output.objects, node_tracker.input.objects1]
-  - [node_tracker.output.objects, node_predictor.input.objects]
-  - [node_predictor.output.objects, output.objects]
+  - [subscriber.*, detector_a1.subscriber.*]
+  - [detector_a1.publisher.objects, node_tracker.subscriber.objects1]
+  - [node_tracker.publisher.objects, node_predictor.subscriber.objects]
+  - [node_predictor.publisher.objects, publisher.objects]

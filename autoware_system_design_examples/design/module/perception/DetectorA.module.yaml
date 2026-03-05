@@ -15,7 +15,7 @@ publishers:
   - name: objects
 
 connections:
-  - [input.pointcloud, node_detector.input.pointcloud]
-  - [node_detector.output.objects, node_filter.input.objects]
-  - [input.vector_map, node_filter.input.vector_map]
-  - [node_filter.output.*, output.*]
+  - [subscriber.pointcloud, node_detector.subscriber.pointcloud]
+  - [node_detector.publisher.objects, node_filter.subscriber.objects]
+  - [subscriber.vector_map, node_filter.subscriber.vector_map]
+  - [node_filter.publisher.*, publisher.*]
