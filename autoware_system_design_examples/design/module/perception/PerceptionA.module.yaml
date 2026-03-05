@@ -19,20 +19,12 @@ publishers:
   - name: objects
 
 connections:
-  - from: input.pointcloud
-    to: detector_a2.input.pointcloud
-  - from: input.vector_map
-    to: detector_a2.input.vector_map
-  - from: input.vector_map
-    to: node_predictor.input.lanelet_map
+  - [input.pointcloud, detector_a2.input.pointcloud]
+  - [input.vector_map, detector_a2.input.vector_map]
+  - [input.vector_map, node_predictor.input.lanelet_map]
   # wildcard connection
-  - from: input.*
-    to: detector_a1.input.*
-  - from: detector_a1.output.objects
-    to: node_tracker.input.objects1
-  - from: detector_a2.output.objects
-    to: node_tracker.input.objects2
-  - from: node_tracker.output.objects
-    to: node_predictor.input.objects
-  - from: node_predictor.output.objects
-    to: output.objects
+  - [input.*, detector_a1.input.*]
+  - [detector_a1.output.objects, node_tracker.input.objects1]
+  - [detector_a2.output.objects, node_tracker.input.objects2]
+  - [node_tracker.output.objects, node_predictor.input.objects]
+  - [node_predictor.output.objects, output.objects]

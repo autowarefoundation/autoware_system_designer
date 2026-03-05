@@ -78,7 +78,9 @@ class VariantResolver:
                     remove_keys.add(spec[key_field])
 
         # Prepare lookup for scalar removals
-        scalar_remove_values = {spec for spec in remove_specs if not isinstance(spec, dict)}
+        scalar_remove_values = {
+            frozenset(spec) if isinstance(spec, list) else spec for spec in remove_specs if not isinstance(spec, dict)
+        }
 
         for item in target_list:
             should_remove = False
@@ -89,7 +91,8 @@ class VariantResolver:
                     should_remove = True
             else:
                 if not isinstance(item, dict):
-                    if item in scalar_remove_values:
+                    temp = frozenset(item) if isinstance(item, list) else item
+                    if temp in scalar_remove_values:
                         should_remove = True
                 else:
                     # Subset match: checks if any dict spec matches the item

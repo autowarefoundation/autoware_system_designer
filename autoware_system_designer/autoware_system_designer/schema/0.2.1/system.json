@@ -118,20 +118,13 @@
         "additionalProperties": false
       }
     },
+
     "connections": {
       "type": "array",
       "items": {
-        "type": "object",
-        "required": ["from", "to"],
-        "properties": {
-          "from": {
-            "type": "string"
-          },
-          "to": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 2
       }
     }
   },

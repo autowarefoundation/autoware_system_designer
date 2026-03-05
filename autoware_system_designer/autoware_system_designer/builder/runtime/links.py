@@ -164,45 +164,35 @@ class Connection:
         # connection type
         self.type: ConnectionType = ConnectionType.UNDEFINED
 
-        connection_from = connection_dict.get("from")
-        if connection_from is None:
-            raise DeploymentError(f"Connection couldn't found : {connection_dict}")
-        connection_to = connection_dict.get("to")
-        if connection_to is None:
-            raise DeploymentError(f"Connection couldn't found : {connection_dict}")
+        if type(connection_dict) is not list:
+            raise DeploymentError(f"Connection must be an array of size 2 : {connection_dict}")
+        if len(connection_dict) != 2:
+            raise DeploymentError(f"Connection must be an array of size 2 : {connection_dict}")
 
-        from_instance, from_port_name, from_is_external = self.parse_port_name(connection_from)
-        to_instance, to_port_name, to_is_external = self.parse_port_name(connection_to)
+        src_instance, src_type, src_name = self._parse_port_name(connection_dict[0])
+        dst_instance, dst_type, dst_name = self._parse_port_name(connection_dict[1])
 
-        if from_is_external and to_is_external:
-            raise DeploymentError(f"Invalid connection: {connection_dict}")
-        elif from_is_external and not to_is_external:
-            self.type = ConnectionType.EXTERNAL_TO_INTERNAL
-        elif not from_is_external and to_is_external:
-            self.type = ConnectionType.INTERNAL_TO_EXTERNAL
-        elif not from_is_external and not to_is_external:
+        # It is internal if the instance is specified.
+        if src_instance and dst_instance:
             self.type = ConnectionType.INTERNAL_TO_INTERNAL
-
-        self.from_instance: str = from_instance
-        self.from_port_name: str = from_port_name
-        self.to_instance: str = to_instance
-        self.to_port_name: str = to_port_name
-        self.from_is_external: bool = from_is_external
-        self.to_is_external: bool = to_is_external
-
-    def parse_port_name(self, port_name: str) -> tuple[str, str, bool]:  # (instance_name, port_name, is_external)
-        name_splitted = port_name.split(".")
-        if len(name_splitted) == 2:
-            if name_splitted[0] == "input":
-                return "", name_splitted[1], True  # external input
-            if name_splitted[0] == "output":
-                return "", name_splitted[1], True  # external output
-            raise DeploymentError(f"Invalid port name: {port_name}")
-        elif len(name_splitted) == 3:
-            if name_splitted[1] == "input":
-                return name_splitted[0], name_splitted[2], False  # internal input
-            if name_splitted[1] == "output":
-                return name_splitted[0], name_splitted[2], False  # internal output
-            raise DeploymentError(f"Invalid port name: {port_name}")
+        elif src_instance:
+            self.type = ConnectionType.INTERNAL_TO_EXTERNAL
+        elif dst_instance:
+            self.type = ConnectionType.EXTERNAL_TO_INTERNAL
         else:
-            raise DeploymentError(f"Invalid port name: {port_name}")
+            raise DeploymentError(f"Invalid connection: {connection_dict}")
+
+        self.from_instance: str = src_instance
+        self.from_port_name: str = src_name
+        self.to_instance: str = dst_instance
+        self.to_port_name: str = dst_name
+        self.from_is_external: bool = not src_instance
+        self.to_is_external: bool = not dst_instance
+
+    def _parse_port_name(self, port_name: str) -> tuple[str, str, str]:  # (instance_name, port_type, port_name)
+        parts = port_name.split(".")
+        if len(parts) == 2:
+            return "", parts[0], parts[1]
+        if len(parts) == 3:
+            return parts[0], parts[1], parts[2]
+        raise DeploymentError(f"Invalid port name: {port_name}")
