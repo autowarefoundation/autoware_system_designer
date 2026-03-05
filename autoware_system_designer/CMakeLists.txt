@@ -21,6 +21,8 @@ install(
 # Scans the workspace source directory
 # and generates resource manifests in the build directory.
 add_custom_target(collect_system_design_manifests ALL
+  COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_BINARY_DIR}/resource
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/resource
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/script/collect_system_design_manifests.py
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_BINARY_DIR}/resource
