@@ -180,7 +180,7 @@ class Connection:
         elif dst_instance:
             self.type = ConnectionType.EXTERNAL_TO_INTERNAL
         else:
-            raise DeploymentError(f"Invalid connection: {connection_dict}")
+            raise DeploymentError(f"Invalid connection scope combination: {connection_dict}")
 
         # Estimate link direction.
         reverse = False
@@ -189,11 +189,15 @@ class Connection:
                 reverse = True
             elif (src_type, dst_type) == ("publisher", "subscriber"):
                 reverse = False
+            elif (src_type, dst_type) == ("client", "server"):
+                reverse = True
+            elif (src_type, dst_type) == ("server", "client"):
+                reverse = False
             else:
-                raise DeploymentError(f"Invalid connection: {connection_dict}")
+                raise DeploymentError(f"Invalid internal connection type: {connection_dict}")
         else:
             if src_type != dst_type:
-                raise DeploymentError(f"Invalid connection: {connection_dict}")
+                raise DeploymentError(f"Invalid external connection type: {connection_dict}")
 
         if not reverse:
             self.from_instance: str = src_instance
