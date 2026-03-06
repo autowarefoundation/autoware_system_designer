@@ -186,41 +186,13 @@ class Connection:
         port0_instance, port0_type, port0_name = self._parse_port_name(port0_str)
         port1_instance, port1_type, port1_name = self._parse_port_name(port1_str)
 
-        # Determine connection type based on from/to instance presence
-        if port0_instance and port1_instance:
-            self.type = ConnectionType.INTERNAL_TO_INTERNAL
-        elif port0_instance:
-            if port0_type in ["publisher", "server"]:
-                self.type = ConnectionType.INTERNAL_TO_EXTERNAL
-            else:
-                self.type = ConnectionType.EXTERNAL_TO_INTERNAL
-        elif port1_instance:
-            if port1_type in ["publisher", "server"]:
-                self.type = ConnectionType.INTERNAL_TO_EXTERNAL
-            else:
-                self.type = ConnectionType.EXTERNAL_TO_INTERNAL
-        else:
-            raise DeploymentError(f"Invalid connection scope combination: {connection_dict}")
-
-        if self.type == ConnectionType.INTERNAL_TO_INTERNAL:
-            # For internal connections, direction is determined by port types
-            if (port0_type, port1_type) in [("publisher", "subscriber"), ("server", "client")]:
-                port0_is_from = True
-            elif (port0_type, port1_type) in [("subscriber", "publisher"), ("client", "server")]:
-                port0_is_from = False
-            else:
-                raise DeploymentError(f"Invalid internal connection type: {connection_dict}")
-        else:
-            # For external connections, port types must match
-            if port0_type != port1_type:
-                raise DeploymentError(f"Invalid external connection type: {connection_dict}")
-            # Direction is determined based on port type and instance presence
-            instance_port_is_port0 = bool(port0_instance)
-            instance_port_type = port0_type if instance_port_is_port0 else port1_type
-            if instance_port_type in ["publisher", "server"]:
-                port0_is_from = instance_port_is_port0
-            else:
-                port0_is_from = not instance_port_is_port0
+        # Determine connection type and direction
+        self.type = self._determine_connection_type(
+            port0_instance, port0_type, port1_instance, port1_type, connection_dict
+        )
+        port0_is_from = self._determine_direction(
+            port0_instance, port0_type, port1_instance, port1_type, connection_dict
+        )
 
         # Assign from/to based on determined direction
         from_port = (port0_instance, port0_name) if port0_is_from else (port1_instance, port1_name)
@@ -241,3 +213,79 @@ class Connection:
         if len(parts) == 3:
             return parts[0], parts[1], parts[2]
         raise DeploymentError(f"Invalid port name: {port_name}")
+
+    @staticmethod
+    def _is_output_port_type(port_type: str) -> bool:
+        """Check if port type is an output type (publisher or server)."""
+        return port_type in ["publisher", "server"]
+
+    @staticmethod
+    def _determine_connection_type(
+        port0_instance: str,
+        port0_type: str,
+        port1_instance: str,
+        port1_type: str,
+        connection_dict: list | dict,
+    ) -> ConnectionType:
+        """Determine the connection type based on instance presence and port types."""
+        has_port0_instance = bool(port0_instance)
+        has_port1_instance = bool(port1_instance)
+
+        # Both ports have instances: internal-to-internal connection
+        if has_port0_instance and has_port1_instance:
+            return ConnectionType.INTERNAL_TO_INTERNAL
+
+        # Only one port has an instance: external connection
+        if has_port0_instance:
+            # Port0 is internal, check if it's output (publisher/server) or input
+            if Connection._is_output_port_type(port0_type):
+                return ConnectionType.INTERNAL_TO_EXTERNAL
+            else:
+                return ConnectionType.EXTERNAL_TO_INTERNAL
+
+        if has_port1_instance:
+            # Port1 is internal, check if it's output (publisher/server) or input
+            if Connection._is_output_port_type(port1_type):
+                return ConnectionType.INTERNAL_TO_EXTERNAL
+            else:
+                return ConnectionType.EXTERNAL_TO_INTERNAL
+
+        # Neither port has an instance: invalid
+        raise DeploymentError(f"Invalid connection scope combination: {connection_dict}")
+
+    @staticmethod
+    def _determine_direction(
+        port0_instance: str,
+        port0_type: str,
+        port1_instance: str,
+        port1_type: str,
+        connection_dict: list | dict,
+    ) -> bool:
+        """Determine if port0 is the 'from' port. Returns True if port0 is from, False if port1 is from."""
+        has_port0_instance = bool(port0_instance)
+        has_port1_instance = bool(port1_instance)
+
+        # Internal-to-internal: direction determined by port type pairs
+        if has_port0_instance and has_port1_instance:
+            # Valid pairs: (publisher, subscriber) or (server, client) -> port0 is from
+            if (port0_type, port1_type) in [("publisher", "subscriber"), ("server", "client")]:
+                return True
+            # Valid pairs: (subscriber, publisher) or (client, server) -> port1 is from
+            if (port0_type, port1_type) in [("subscriber", "publisher"), ("client", "server")]:
+                return False
+            raise DeploymentError(f"Invalid internal connection type: {connection_dict}")
+
+        # External connections: port types must match
+        if port0_type != port1_type:
+            raise DeploymentError(f"Invalid external connection type: {connection_dict}")
+
+        # Determine direction based on which port has instance and its type
+        instance_port_is_port0 = has_port0_instance
+        instance_port_type = port0_type if instance_port_is_port0 else port1_type
+
+        # If instance port is output (publisher/server), it's the 'from' port
+        if Connection._is_output_port_type(instance_port_type):
+            return instance_port_is_port0
+        else:
+            # If instance port is input (subscriber/client), the other port is 'from'
+            return not instance_port_is_port0
