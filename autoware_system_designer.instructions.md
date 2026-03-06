@@ -2,7 +2,7 @@
 
 ## 1. Role & Objective
 
-You are an AI coding assistant tasked with creating and managing Autoware System Designer (written in autoware_system_design_format). Your goal is to generate valid, modular, and consistent YAML configuration files that define the software architecture of an Autoware system.
+This document describes how to create and manage Autoware System Designer configurations (written in autoware_system_design_format). The goal is to generate valid, modular, and consistent YAML configuration files that define the software architecture of an Autoware system.
 
 ## 2. File Format Version
 
@@ -257,7 +257,7 @@ Removals are applied **before** overrides to ensure removed items don't interfer
 ## 6. Constraints & Validation Rules
 
 1. **Type Safety**: Connected ports MUST have identical `message_type`.
-2. **Single Publisher**: A subscriber port can have multiple sources, but a publisher port generally drives the topic. In AWArch, one topic is published by one node/port.
+2. **Single Publisher**: A subscriber port can have multiple sources, but a publisher port generally drives the topic. In the autoware system designer, one topic is published by one node/port.
 3. **Naming Convention**:
    - Files: `PascalCase.type.yaml` (e.g., `LidarDriver.node.yaml`).
    - Instance/Port Names: `snake_case` (e.g., `pointcloud_input`).
