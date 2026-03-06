@@ -191,7 +191,7 @@ class Connection:
             port0_instance, port0_type, port1_instance, port1_type, connection_dict
         )
         port0_is_from = self._determine_direction(
-            port0_instance, port0_type, port1_instance, port1_type, connection_dict
+            self.type, port0_instance, port0_type, port1_type, connection_dict
         )
 
         # Assign from/to based on determined direction
@@ -255,18 +255,17 @@ class Connection:
 
     @staticmethod
     def _determine_direction(
+        connection_type: ConnectionType,
         port0_instance: str,
         port0_type: str,
-        port1_instance: str,
         port1_type: str,
         connection_dict: list | dict,
     ) -> bool:
         """Determine if port0 is the 'from' port. Returns True if port0 is from, False if port1 is from."""
         has_port0_instance = bool(port0_instance)
-        has_port1_instance = bool(port1_instance)
 
         # Internal-to-internal: direction determined by port type pairs
-        if has_port0_instance and has_port1_instance:
+        if connection_type == ConnectionType.INTERNAL_TO_INTERNAL:
             # Valid pairs: (publisher, subscriber) or (server, client) -> port0 is from
             if (port0_type, port1_type) in [("publisher", "subscriber"), ("server", "client")]:
                 return True
@@ -279,13 +278,12 @@ class Connection:
         if port0_type != port1_type:
             raise DeploymentError(f"Invalid external connection type: {connection_dict}")
 
-        # Determine direction based on which port has instance and its type
-        instance_port_is_port0 = has_port0_instance
-        instance_port_type = port0_type if instance_port_is_port0 else port1_type
+        # For INTERNAL_TO_EXTERNAL: internal port (with instance) is output type and is the 'from' port
+        if connection_type == ConnectionType.INTERNAL_TO_EXTERNAL:
+            return has_port0_instance
 
-        # If instance port is output (publisher/server), it's the 'from' port
-        if Connection._is_output_port_type(instance_port_type):
-            return instance_port_is_port0
-        else:
-            # If instance port is input (subscriber/client), the other port is 'from'
-            return not instance_port_is_port0
+        # For EXTERNAL_TO_INTERNAL: internal port (with instance) is input type, external port is 'from'
+        if connection_type == ConnectionType.EXTERNAL_TO_INTERNAL:
+            return not has_port0_instance
+
+        raise DeploymentError(f"Invalid connection type for direction determination: {connection_dict}")
