@@ -157,7 +157,7 @@ class Link:
 class Connection:
     # Connection is a connection between two entities
     # In other words, it is a configuration to create link(s)
-    def __init__(self, connection_dict: dict, source: Optional[SourceLocation] = None):
+    def __init__(self, connection_dict: list, source: Optional[SourceLocation] = None):
 
         self.source = source
 
@@ -169,50 +169,51 @@ class Connection:
         if len(connection_dict) != 2:
             raise DeploymentError(f"Connection must be an array of size 2 : {connection_dict}")
 
-        src_instance, src_type, src_name = self._parse_port_name(connection_dict[0])
-        dst_instance, dst_type, dst_name = self._parse_port_name(connection_dict[1])
+        # Parse both ports
+        port0_instance, port0_type, port0_name = self._parse_port_name(connection_dict[0])
+        port1_instance, port1_type, port1_name = self._parse_port_name(connection_dict[1])
 
-        # It is internal if the instance is specified.
-        if src_instance and dst_instance:
+        # Determine connection type based on from/to instance presence
+        if port0_instance and port1_instance:
             self.type = ConnectionType.INTERNAL_TO_INTERNAL
-        elif src_instance:
+        elif port0_instance:
             self.type = ConnectionType.INTERNAL_TO_EXTERNAL
-        elif dst_instance:
+        elif port1_instance:
             self.type = ConnectionType.EXTERNAL_TO_INTERNAL
         else:
             raise DeploymentError(f"Invalid connection scope combination: {connection_dict}")
 
-        # Estimate link direction.
-        reverse = False
+        # Determine link direction: which port should be 'from' and which should be 'to'
         if self.type == ConnectionType.INTERNAL_TO_INTERNAL:
-            if (src_type, dst_type) == ("subscriber", "publisher"):
-                reverse = True
-            elif (src_type, dst_type) == ("publisher", "subscriber"):
-                reverse = False
-            elif (src_type, dst_type) == ("client", "server"):
-                reverse = True
-            elif (src_type, dst_type) == ("server", "client"):
-                reverse = False
+            # For internal connections, direction is determined by port types
+            if (port0_type, port1_type) in [("publisher", "subscriber"), ("server", "client")]:
+                port0_is_from = True
+            elif (port0_type, port1_type) in [("subscriber", "publisher"), ("client", "server")]:
+                port0_is_from = False
             else:
                 raise DeploymentError(f"Invalid internal connection type: {connection_dict}")
         else:
-            if src_type != dst_type:
+            # For external connections, port types must match
+            if port0_type != port1_type:
                 raise DeploymentError(f"Invalid external connection type: {connection_dict}")
+            # Direction is determined based on port type and instance presence
+            instance_port_is_port0 = bool(port0_instance)
+            instance_port_type = port0_type if instance_port_is_port0 else port1_type
+            if instance_port_type in ["publisher", "server"]:
+                port0_is_from = instance_port_is_port0
+            else:
+                port0_is_from = not instance_port_is_port0
 
-        if not reverse:
-            self.from_instance: str = src_instance
-            self.from_port_name: str = src_name
-            self.from_is_external: bool = not src_instance
-            self.to_instance: str = dst_instance
-            self.to_port_name: str = dst_name
-            self.to_is_external: bool = not dst_instance
-        else:
-            self.to_instance: str = src_instance
-            self.to_port_name: str = src_name
-            self.to_is_external: bool = not src_instance
-            self.from_instance: str = dst_instance
-            self.from_port_name: str = dst_name
-            self.from_is_external: bool = not dst_instance
+        # Assign from/to based on determined direction
+        from_port = (port0_instance, port0_name) if port0_is_from else (port1_instance, port1_name)
+        to_port = (port0_instance, port0_name) if not port0_is_from else (port1_instance, port1_name)
+
+        self.from_instance: str = from_port[0]
+        self.from_port_name: str = from_port[1]
+        self.from_is_external: bool = not from_port[0]
+        self.to_instance: str = to_port[0]
+        self.to_port_name: str = to_port[1]
+        self.to_is_external: bool = not to_port[0]
 
     @staticmethod
     def _parse_port_name(port_name: str) -> tuple[str, str, str]:  # (instance_name, port_type, port_name)
