@@ -41,21 +41,18 @@ components:
     compute_unit: dummy_ecu_2
 
 connections:
-  # various combinations of connection formats
-  # list of lists
   - - object_recognition.subscriber.pointcloud
     - lidar.publisher.concatenated/pointcloud
-  - [map_loader.publisher.vector_map, planner.subscriber.lanelet_map]
-  - [object_recognition.publisher.objects, planner.subscriber.predicted_objects]
-  # dictionary
-  - from: lidar.publisher.concatenated/pointcloud
-    to: localizer.subscriber.pointcloud
-  # keys can be any string, but must be unique
-  - port0: map_loader.publisher.vector_map
-    port1: localizer.subscriber.lanelet_map
-  # the order is not important
-  - port_a: object_recognition.subscriber.vector_map
-    port_b: map_loader.publisher.vector_map
+  - - map_loader.publisher.vector_map
+    - planner.subscriber.lanelet_map
+  - - object_recognition.publisher.objects
+    - planner.subscriber.predicted_objects
+  - - lidar.publisher.concatenated/pointcloud
+    - localizer.subscriber.pointcloud
+  - - map_loader.publisher.vector_map
+    - localizer.subscriber.lanelet_map
+  - - object_recognition.subscriber.vector_map
+    - map_loader.publisher.vector_map
 
 simulation:
   override:
