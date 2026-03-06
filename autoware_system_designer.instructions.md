@@ -39,14 +39,15 @@ Represents a single ROS 2 node.
   - `node_output`: (Optional) `screen`, `log`, etc.
   - `use_container`: (Optional) `true`/`false`.
   - `container_name`: (Required if `use_container: true`) Name of the component container.
-- `inputs`: List of input ports (subscribers).
+- `subscribers`: List of input ports (subscribers). Required when not using `base`.
   - `name`: Port name. Can include slashes (e.g., `perception/objects`).
   - `message_type`: Full ROS message type (e.g., `sensor_msgs/msg/PointCloud2`).
   - `remap_target`: (Optional) The internal ROS 2 topic name used by the node.
     - **Default**: If not provided, it defaults to `~/input/<name>`.
     - **Required when**: The node implementation uses a specific topic name that does not follow the `~/input/` convention (e.g., legacy code or global topics like `/tf`).
   - `global`: (Optional) If set, the input topic subscribes to a global topic name (e.g., `/tf`).
-- `outputs`: List of output ports (publishers).
+  - `qos`: (Optional) QoS settings (`reliability`, `durability`, etc.).
+- `publishers`: List of output ports (publishers). Required when not using `base`.
   - `name`: Port name. Can include slashes.
   - `message_type`: Full ROS message type.
   - `qos`: (Optional) QoS settings (`reliability`, `durability`, etc.).
@@ -54,6 +55,18 @@ Represents a single ROS 2 node.
     - **Default**: If not provided, it defaults to `~/output/<name>`.
     - **Required when**: The node implementation uses a specific topic name that does not follow the `~/output/` convention.
   - `global`: (Optional) If set, the output topic is published to a global topic name (e.g., `/tf`).
+- `servers`: (Optional) List of service/action servers.
+  - `name`: Server name.
+  - `message_type`: Full ROS service or action type (e.g., `std_srvs/srv/SetBool` or `example_interfaces/action/Fibonacci`).
+  - `global`: (Optional) If set, the server uses a global topic name.
+  - `qos`: (Optional) QoS settings.
+  - `remap_target`: (Optional) The internal ROS 2 service/action name used by the node.
+- `clients`: (Optional) List of service/action clients.
+  - `name`: Client name.
+  - `message_type`: Full ROS service or action type (e.g., `std_srvs/srv/SetBool` or `example_interfaces/action/Fibonacci`).
+  - `global`: (Optional) If set, the client uses a global topic name.
+  - `qos`: (Optional) QoS settings.
+  - `remap_target`: (Optional) The internal ROS 2 service/action name used by the node.
 - `param_files`: List of parameter file references. Can be an empty list `[]`.
   - `name`: Identifier for the file reference.
   - `default`: Path to file (use `$(find-pkg-share pkg)/path` or relative path).
@@ -64,7 +77,7 @@ Represents a single ROS 2 node.
   - `type`: Parameter type (`bool`, `int`, `double`, `string`, `array`, etc.).
   - `default`: Default value.
   - `description`: (Optional) Brief explanation of the parameter.
-- `processes`: Execution logic / Event chains.
+- `processes`: Execution logic / Event chains. Required when not using `base`.
   - `name`: Name of the process/callback.
   - `trigger_conditions`: Logic to start process. Can be nested with `or`/`and`.
     - `on_input`: Triggered by input port (`on_input: port_name`).
@@ -84,13 +97,15 @@ Represents a composite component containing nodes or other modules.
 
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
 - `name`: Must match filename (e.g., `MyModule.module`).
-- `instances`: List of internal entities.
+- `instances`: List of internal entities. Required when not using `base`.
   - `name`: Local name for the instance (e.g., `lidar_driver`).
   - `entity`: Reference to the entity definition (e.g., `LidarDriver.node`).
   - `launch`: (Optional) Override launch configurations for this instance.
-- `inputs`: List of externally accessible input ports.
-- `outputs`: List of externally accessible output ports.
-- `connections`: Internal wiring.
+- `subscribers`: List of externally accessible input ports. Required when not using `base`.
+  - `name`: Port name.
+- `publishers`: List of externally accessible output ports. Required when not using `base`.
+  - `name`: Port name.
+- `connections`: Internal wiring. Required when not using `base`.
   - `from`: Source port path. Supports wildcards (e.g., `input.*` or `node.output.*`).
   - `to`: Destination port path.
 
@@ -107,6 +122,8 @@ Top-level entry point defining the complete system.
 
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
 - `name`: Must match filename (e.g., `MyCar.system`).
+- `arguments`: (Optional) List of system arguments.
+  - `name`: Argument name.
 - `variables`: List of system variables.
   - `name`: Variable name.
   - `value`: Variable value (supports `$(find-pkg-share pkg)` and `$(env VAR)` substitutions).
@@ -118,13 +135,13 @@ Top-level entry point defining the complete system.
   - `description`: (Optional) Description of the mode.
   - `default`: (Optional) `true`/`false` to mark as default mode.
 - `parameter_sets`: List of parameter set files. Can be an empty list `[]`.
-- `components`: Top-level instances.
+- `components`: Top-level instances. Required when not using `base`.
   - `name`: Name of the component instance.
   - `entity`: Reference to module/node (e.g., `SensingModule.module`).
   - `namespace`: ROS namespace prefix.
   - `compute_unit`: Hardware resource identifier (e.g., `main_ecu`).
-  - `parameter_set`: (Optional) Single parameter set file name to apply (string, not list).
-- `connections`: Top-level wiring between components.
+  - `parameter_set`: (Optional) Parameter set file name(s) to apply. Can be a string or an array of strings.
+- `connections`: Top-level wiring between components. Required when not using `base`.
   - `from`: Source component and port (e.g., `component.output.port` or `component.output.^` for wildcard).
   - `to`: Destination component and port (e.g., `component.input.port` or `component.input.^` for wildcard).
 
@@ -157,7 +174,7 @@ The Autoware System Designer supports a base-variant pattern that allows you to 
 **Override Mechanism:**
 The `override` section merges items into the base configuration. Merge behavior depends on field type:
 
-- **Key-based merging** (lists with identifiable keys like `name`): Items with matching keys replace existing items; new keys are appended. Examples: `variables`, `modes`, `components`, `instances`, `inputs`, `outputs`, `param_values`, `processes`.
+- **Key-based merging** (lists with identifiable keys like `name`): Items with matching keys replace existing items; new keys are appended. Examples: `variables`, `modes`, `components`, `instances`, `subscribers`, `publishers`, `servers`, `clients`, `param_values`, `processes`.
 - **Append-only merging** (lists without keys): All override items are appended. Examples: `connections`, `variable_files`, `parameter_sets`.
 - **Dictionary merging**: Fields are merged recursively (e.g., `launch` configuration in nodes).
 
@@ -194,13 +211,15 @@ instances:
   - name: detector
     entity: Detector.node
     override:
-      inputs:
+      subscribers:
         - name: additional_input
           message_type: sensor_msgs/msg/Image
     remove:
-      inputs:
+      subscribers:
         - name: unused_input
 ```
+
+**Note**: When using `base`, `override`, or `remove` in node configurations, the same field names (`subscribers`, `publishers`, `servers`, `clients`) should be used.
 
 **Module-Level Variants:**
 
@@ -220,13 +239,17 @@ remove:
 ## 6. Constraints & Validation Rules
 
 1. **Type Safety**: Connected ports MUST have identical `message_type`.
-2. **Single Publisher**: An `input` port can have multiple sources, but an `output` port (publisher) generally drives the topic. In AWArch, one topic is published by one node/port.
+2. **Single Publisher**: A subscriber port can have multiple sources, but a publisher port generally drives the topic. In AWArch, one topic is published by one node/port.
 3. **Naming Convention**:
    - Files: `PascalCase.type.yaml` (e.g., `LidarDriver.node.yaml`).
    - Instance/Port Names: `snake_case` (e.g., `pointcloud_input`).
 4. **Path Resolution**:
    - Use `$(find-pkg-share <package_name>)` for absolute ROS paths.
    - Relative paths are resolved relative to the package defining them.
+5. **Required Fields**: When not using `base`, certain fields are required:
+   - **Nodes**: `package`, `launch`, `subscribers`, `publishers`, `param_files`, `param_values`, `processes`
+   - **Modules**: `instances`, `subscribers`, `publishers`, `connections`
+   - **Systems**: `components`, `connections`
 
 ## 7. Examples
 
@@ -244,13 +267,13 @@ launch:
   node_output: screen
   use_container: true
   container_name: pointcloud_container
-inputs:
+subscribers:
   - name: image
     message_type: sensor_msgs/msg/Image
   - name: ros_transform
     message_type: tf2_msgs/msg/TFMessage
     global: /tf
-outputs:
+publishers:
   - name: objects
     message_type: autoware_perception_msgs/msg/DetectedObjects
     qos:
@@ -278,10 +301,10 @@ instances:
     entity: DetectorA.node
   - name: node_filter
     entity: FilterA.node
-inputs:
+subscribers:
   - name: pointcloud
   - name: vector_map
-outputs:
+publishers:
   - name: objects
 connections:
   - from: input.pointcloud
