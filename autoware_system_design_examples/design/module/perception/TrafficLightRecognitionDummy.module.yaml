@@ -14,8 +14,8 @@ publishers:
 
 connections:
   - [
-      classification.publisher.traffic_signal_car,
       publisher.classification/car/traffic_signals,
+      classification.publisher.traffic_signal_car,
     ]
   - [
       classification.publisher.traffic_signal_pedestrian,

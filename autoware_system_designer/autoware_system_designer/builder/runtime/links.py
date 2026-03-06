@@ -157,33 +157,54 @@ class Link:
 class Connection:
     # Connection is a connection between two entities
     # In other words, it is a configuration to create link(s)
-    def __init__(self, connection_dict: list, source: Optional[SourceLocation] = None):
+    def __init__(self, connection_dict: list | dict, source: Optional[SourceLocation] = None):
 
         self.source = source
 
         # connection type
         self.type: ConnectionType = ConnectionType.UNDEFINED
 
-        if type(connection_dict) is not list:
-            raise DeploymentError(f"Connection must be an array of size 2 : {connection_dict}")
-        if len(connection_dict) != 2:
-            raise DeploymentError(f"Connection must be an array of size 2 : {connection_dict}")
+        # Handle dictionary format: extract values regardless of keys
+        if isinstance(connection_dict, dict):
+            values = list(connection_dict.values())
+            if len(values) != 2:
+                raise DeploymentError(
+                    f"Connection dictionary must have exactly 2 values: {connection_dict}"
+                )
+            port0_str = values[0]
+            port1_str = values[1]
+        # Handle list format: [port1, port2]
+        elif isinstance(connection_dict, list):
+            if len(connection_dict) != 2:
+                raise DeploymentError(f"Connection must be an array of size 2 : {connection_dict}")
+            port0_str = connection_dict[0]
+            port1_str = connection_dict[1]
+        else:
+            raise DeploymentError(
+                f"Connection must be either a list of size 2 or a dictionary with exactly 2 values: {connection_dict}"
+            )
 
         # Parse both ports
-        port0_instance, port0_type, port0_name = self._parse_port_name(connection_dict[0])
-        port1_instance, port1_type, port1_name = self._parse_port_name(connection_dict[1])
+        port0_instance, port0_type, port0_name = self._parse_port_name(port0_str)
+        port1_instance, port1_type, port1_name = self._parse_port_name(port1_str)
 
         # Determine connection type based on from/to instance presence
         if port0_instance and port1_instance:
             self.type = ConnectionType.INTERNAL_TO_INTERNAL
         elif port0_instance:
-            self.type = ConnectionType.INTERNAL_TO_EXTERNAL
+            if port0_type in ["publisher", "server"]:
+                self.type = ConnectionType.INTERNAL_TO_EXTERNAL
+            else:
+                self.type = ConnectionType.EXTERNAL_TO_INTERNAL
         elif port1_instance:
-            self.type = ConnectionType.EXTERNAL_TO_INTERNAL
+            if port1_type in ["publisher", "server"]:
+                self.type = ConnectionType.INTERNAL_TO_EXTERNAL
+            else:
+                self.type = ConnectionType.EXTERNAL_TO_INTERNAL
         else:
             raise DeploymentError(f"Invalid connection scope combination: {connection_dict}")
 
-        # Determine link direction: which port should be 'from' and which should be 'to'
+
         if self.type == ConnectionType.INTERNAL_TO_INTERNAL:
             # For internal connections, direction is determined by port types
             if (port0_type, port1_type) in [("publisher", "subscriber"), ("server", "client")]:

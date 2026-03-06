@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Module Entity Schema 0.3.0",
-  "description": "Schema for autoware_system_design_format module entities",
+  "title": "System Entity Schema 0.3.0",
+  "description": "Schema for autoware_system_design_format system entities",
   "type": "object",
   "required": ["name"],
   "properties": {
@@ -22,7 +22,68 @@
       "type": "object",
       "additionalProperties": true
     },
-    "instances": {
+    "arguments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "variables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": ["string", "number", "boolean", "array"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "variable_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "modes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "default": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "parameter_sets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "components": {
       "type": "array",
       "items": {
         "type": "object",
@@ -34,40 +95,30 @@
           "entity": {
             "type": "string"
           },
-          "launch": {
-            "type": "object",
-            "additionalProperties": true
-          }
-        },
-        "additionalProperties": false
-      }
-    },
-    "subscribers": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["name"],
-        "properties": {
-          "name": {
+          "compute_unit": {
             "type": "string"
-          }
-        },
-        "additionalProperties": false
-      }
-    },
-    "publishers": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["name"],
-        "properties": {
-          "name": {
+          },
+          "namespace": {
             "type": "string"
+          },
+          "parameter_set": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
           }
         },
         "additionalProperties": false
       }
     },
+
     "connections": {
       "type": "array",
       "items": {
@@ -92,13 +143,13 @@
       }
     }
   },
-  "additionalProperties": false,
+  "additionalProperties": true,
   "if": {
     "not": {
       "required": ["base"]
     }
   },
   "then": {
-    "required": ["instances", "subscribers", "publishers", "connections"]
+    "required": ["components", "connections"]
   }
 }
