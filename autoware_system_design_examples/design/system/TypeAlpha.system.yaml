@@ -43,14 +43,10 @@ components:
 connections:
   # various combinations of connection formats
   # list of lists
-  - 
-    - object_recognition.subscriber.pointcloud
+  - - object_recognition.subscriber.pointcloud
     - lidar.publisher.concatenated/pointcloud
   - [map_loader.publisher.vector_map, planner.subscriber.lanelet_map]
-  - [
-      object_recognition.publisher.objects, 
-      planner.subscriber.predicted_objects,
-    ]
+  - [object_recognition.publisher.objects, planner.subscriber.predicted_objects]
   # dictionary
   - from: lidar.publisher.concatenated/pointcloud
     to: localizer.subscriber.pointcloud

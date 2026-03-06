@@ -168,9 +168,7 @@ class Connection:
         if isinstance(connection_dict, dict):
             values = list(connection_dict.values())
             if len(values) != 2:
-                raise DeploymentError(
-                    f"Connection dictionary must have exactly 2 values: {connection_dict}"
-                )
+                raise DeploymentError(f"Connection dictionary must have exactly 2 values: {connection_dict}")
             port0_str = values[0]
             port1_str = values[1]
         # Handle list format: [port1, port2]
@@ -203,7 +201,6 @@ class Connection:
                 self.type = ConnectionType.EXTERNAL_TO_INTERNAL
         else:
             raise DeploymentError(f"Invalid connection scope combination: {connection_dict}")
-
 
         if self.type == ConnectionType.INTERNAL_TO_INTERNAL:
             # For internal connections, direction is determined by port types
