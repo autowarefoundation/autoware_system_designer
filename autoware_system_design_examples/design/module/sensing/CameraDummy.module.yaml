@@ -40,19 +40,35 @@ publishers:
   - name: camera7/camera_info
 
 connections:
-  - [camera_0.publisher.image, publisher.camera0/image]
-  - [camera_0.publisher.camera_info, publisher.camera0/camera_info]
-  - [camera_1.publisher.image, publisher.camera1/image]
-  - [camera_1.publisher.camera_info, publisher.camera1/camera_info]
-  - [camera_2.publisher.image, publisher.camera2/image]
-  - [camera_2.publisher.camera_info, publisher.camera2/camera_info]
-  - [camera_3.publisher.image, publisher.camera3/image]
-  - [camera_3.publisher.camera_info, publisher.camera3/camera_info]
-  - [camera_4.publisher.image, publisher.camera4/image]
-  - [camera_4.publisher.camera_info, publisher.camera4/camera_info]
-  - [camera_5.publisher.image, publisher.camera5/image]
-  - [camera_5.publisher.camera_info, publisher.camera5/camera_info]
-  - [camera_6.publisher.image, publisher.camera6/image]
-  - [camera_6.publisher.camera_info, publisher.camera6/camera_info]
-  - [camera_7.publisher.image, publisher.camera7/image]
-  - [camera_7.publisher.camera_info, publisher.camera7/camera_info]
+  - - camera_0.publisher.image
+    - publisher.camera0/image
+  - - camera_0.publisher.camera_info
+    - publisher.camera0/camera_info
+  - - camera_1.publisher.image
+    - publisher.camera1/image
+  - - camera_1.publisher.camera_info
+    - publisher.camera1/camera_info
+  - - camera_2.publisher.image
+    - publisher.camera2/image
+  - - camera_2.publisher.camera_info
+    - publisher.camera2/camera_info
+  - - camera_3.publisher.image
+    - publisher.camera3/image
+  - - camera_3.publisher.camera_info
+    - publisher.camera3/camera_info
+  - - camera_4.publisher.image
+    - publisher.camera4/image
+  - - camera_4.publisher.camera_info
+    - publisher.camera4/camera_info
+  - - camera_5.publisher.image
+    - publisher.camera5/image
+  - - camera_5.publisher.camera_info
+    - publisher.camera5/camera_info
+  - - camera_6.publisher.image
+    - publisher.camera6/image
+  - - camera_6.publisher.camera_info
+    - publisher.camera6/camera_info
+  - - camera_7.publisher.image
+    - publisher.camera7/image
+  - - camera_7.publisher.camera_info
+    - publisher.camera7/camera_info

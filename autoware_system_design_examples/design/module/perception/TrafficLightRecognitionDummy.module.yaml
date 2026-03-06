@@ -13,12 +13,9 @@ publishers:
   - name: detection/rois
 
 connections:
-  - [
-      publisher.classification/car/traffic_signals,
-      classification.publisher.traffic_signal_car,
-    ]
-  - [
-      classification.publisher.traffic_signal_pedestrian,
-      publisher.classification/pedestrian/traffic_signals,
-    ]
-  - [classification.publisher.traffic_signal_rois, publisher.detection/rois]
+  - - publisher.classification/car/traffic_signals
+    - classification.publisher.traffic_signal_car
+  - - classification.publisher.traffic_signal_pedestrian
+    - publisher.classification/pedestrian/traffic_signals
+  - - classification.publisher.traffic_signal_rois
+    - publisher.detection/rois

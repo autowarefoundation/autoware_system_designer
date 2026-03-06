@@ -27,57 +27,32 @@ publishers:
   - name: tracked_objects
 
 connections:
-  - [
-      radar_front_center.publisher.detected_objects,
-      simple_object_merger.subscriber.object1,
-    ]
-  - [
-      radar_front_left.publisher.detected_objects,
-      simple_object_merger.subscriber.object2,
-    ]
-  - [
-      radar_front_right.publisher.detected_objects,
-      simple_object_merger.subscriber.object3,
-    ]
-  - [
-      radar_rear_center.publisher.detected_objects,
-      simple_object_merger.subscriber.object4,
-    ]
-  - [
-      radar_rear_left.publisher.detected_objects,
-      simple_object_merger.subscriber.object5,
-    ]
-  - [
-      radar_rear_right.publisher.detected_objects,
-      simple_object_merger.subscriber.object6,
-    ]
-  - [simple_object_merger.publisher.merged_object, publisher.detected_objects]
+  - - radar_front_center.publisher.detected_objects
+    - simple_object_merger.subscriber.object1
+  - - radar_front_left.publisher.detected_objects
+    - simple_object_merger.subscriber.object2
+  - - radar_front_right.publisher.detected_objects
+    - simple_object_merger.subscriber.object3
+  - - radar_rear_center.publisher.detected_objects
+    - simple_object_merger.subscriber.object4
+  - - radar_rear_left.publisher.detected_objects
+    - simple_object_merger.subscriber.object5
+  - - radar_rear_right.publisher.detected_objects
+    - simple_object_merger.subscriber.object6
+  - - simple_object_merger.publisher.merged_object
+    - publisher.detected_objects
 
-  - [
-      radar_front_center.publisher.tracked_objects,
-      simple_tracked_object_merger.subscriber.object1,
-    ]
-  - [
-      radar_front_left.publisher.tracked_objects,
-      simple_tracked_object_merger.subscriber.object2,
-    ]
-  - [
-      radar_front_right.publisher.tracked_objects,
-      simple_tracked_object_merger.subscriber.object3,
-    ]
-  - [
-      radar_rear_center.publisher.tracked_objects,
-      simple_tracked_object_merger.subscriber.object4,
-    ]
-  - [
-      radar_rear_left.publisher.tracked_objects,
-      simple_tracked_object_merger.subscriber.object5,
-    ]
-  - [
-      radar_rear_right.publisher.tracked_objects,
-      simple_tracked_object_merger.subscriber.object6,
-    ]
-  - [
-      simple_tracked_object_merger.publisher.merged_object,
-      publisher.tracked_objects,
-    ]
+  - - radar_front_center.publisher.tracked_objects
+    - simple_tracked_object_merger.subscriber.object1
+  - - radar_front_left.publisher.tracked_objects
+    - simple_tracked_object_merger.subscriber.object2
+  - - radar_front_right.publisher.tracked_objects
+    - simple_tracked_object_merger.subscriber.object3
+  - - radar_rear_center.publisher.tracked_objects
+    - simple_tracked_object_merger.subscriber.object4
+  - - radar_rear_left.publisher.tracked_objects
+    - simple_tracked_object_merger.subscriber.object5
+  - - radar_rear_right.publisher.tracked_objects
+    - simple_tracked_object_merger.subscriber.object6
+  - - simple_tracked_object_merger.publisher.merged_object
+    - publisher.tracked_objects

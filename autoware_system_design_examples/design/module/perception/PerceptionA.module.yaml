@@ -19,12 +19,20 @@ publishers:
   - name: objects
 
 connections:
-  - [subscriber.pointcloud, detector_a2.subscriber.pointcloud]
-  - [subscriber.vector_map, detector_a2.subscriber.vector_map]
-  - [subscriber.vector_map, node_predictor.subscriber.lanelet_map]
+  - - subscriber.pointcloud
+    - detector_a2.subscriber.pointcloud
+  - - subscriber.vector_map
+    - detector_a2.subscriber.vector_map
+  - - subscriber.vector_map
+    - node_predictor.subscriber.lanelet_map
   # wildcard connection
-  - [subscriber.*, detector_a1.subscriber.*]
-  - [detector_a1.publisher.objects, node_tracker.subscriber.objects1]
-  - [detector_a2.publisher.objects, node_tracker.subscriber.objects2]
-  - [node_tracker.publisher.objects, node_predictor.subscriber.objects]
-  - [node_predictor.publisher.objects, publisher.objects]
+  - - subscriber.*
+    - detector_a1.subscriber.*
+  - - detector_a1.publisher.objects
+    - node_tracker.subscriber.objects1
+  - - detector_a2.publisher.objects
+    - node_tracker.subscriber.objects2
+  - - node_tracker.publisher.objects
+    - node_predictor.subscriber.objects
+  - - node_predictor.publisher.objects
+    - publisher.objects
