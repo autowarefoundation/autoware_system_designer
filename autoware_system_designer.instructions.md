@@ -39,7 +39,7 @@ Represents a single ROS 2 node.
   - `node_output`: (Optional) `screen`, `log`, etc.
   - `use_container`: (Optional) `true`/`false`.
   - `container_name`: (Required if `use_container: true`) Name of the component container.
-- `subscribers`: List of input ports (subscribers). Required when not using `base`.
+- `subscribers`: List of input ports (subscribers).
   - `name`: Port name. Can include slashes (e.g., `perception/objects`).
   - `message_type`: Full ROS message type (e.g., `sensor_msgs/msg/PointCloud2`).
   - `remap_target`: (Optional) The internal ROS 2 topic name used by the node.
@@ -47,7 +47,7 @@ Represents a single ROS 2 node.
     - **Required when**: The node implementation uses a specific topic name that does not follow the `~/input/` convention (e.g., legacy code or global topics like `/tf`).
   - `global`: (Optional) If set, the input topic subscribes to a global topic name (e.g., `/tf`).
   - `qos`: (Optional) QoS settings (`reliability`, `durability`, etc.).
-- `publishers`: List of output ports (publishers). Required when not using `base`.
+- `publishers`: List of output ports (publishers).
   - `name`: Port name. Can include slashes.
   - `message_type`: Full ROS message type.
   - `qos`: (Optional) QoS settings (`reliability`, `durability`, etc.).
@@ -77,7 +77,7 @@ Represents a single ROS 2 node.
   - `type`: Parameter type (`bool`, `int`, `double`, `string`, `array`, etc.).
   - `default`: Default value.
   - `description`: (Optional) Brief explanation of the parameter.
-- `processes`: Execution logic / Event chains. Required when not using `base`.
+- `processes`: Execution logic / Event chains.
   - `name`: Name of the process/callback.
   - `trigger_conditions`: Logic to start process. Can be nested with `or`/`and`.
     - `on_input`: Triggered by input port (`on_input: port_name`).
@@ -97,23 +97,67 @@ Represents a composite component containing nodes or other modules.
 
 - `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
 - `name`: Must match filename (e.g., `MyModule.module`).
-- `instances`: List of internal entities. Required when not using `base`.
+- `instances`: List of internal entities.
   - `name`: Local name for the instance (e.g., `lidar_driver`).
   - `entity`: Reference to the entity definition (e.g., `LidarDriver.node`).
   - `launch`: (Optional) Override launch configurations for this instance.
-- `subscribers`: List of externally accessible input ports. Required when not using `base`.
+- `subscribers`: List of externally accessible input ports.
   - `name`: Port name.
-- `publishers`: List of externally accessible output ports. Required when not using `base`.
+- `publishers`: List of externally accessible output ports.
   - `name`: Port name.
-- `connections`: Internal wiring. Required when not using `base`.
-  - `from`: Source port path. Supports wildcards (e.g., `input.*` or `node.output.*`).
-  - `to`: Destination port path.
+- `servers`: (Optional) List of externally accessible service/action servers.
+  - `name`: Server name.
+- `clients`: (Optional) List of externally accessible service/action clients.
+  - `name`: Client name.
+- `connections`: Internal wiring. List of connection pairs, where each connection is a list of two port paths. Supports wildcards (e.g., `subscriber.*` or `node.publisher.*`).
 
 **Connection Syntax:**
 
-- **External Input to Internal Input**: `from: input.<external_input_port>` -> `to: <instance>.input.<port>`
-- **Internal Output to Internal Input**: `from: <instance_a>.output.<port>` -> `to: <instance_b>.input.<port>`
-- **Internal Output to External Output**: `from: <instance>.output.<port>` -> `to: output.<external_output_port>`
+For topic-based connections (subscribers/publishers):
+
+- **External Subscriber to Internal Subscriber**:
+
+  ```yaml
+  - - subscriber.<external_subscriber_port>
+    - <instance>.subscriber.<port>
+  ```
+
+- **Internal Publisher to Internal Subscriber**:
+
+  ```yaml
+  - - <instance_a>.publisher.<port>
+    - <instance_b>.subscriber.<port>
+  ```
+
+- **Internal Publisher to External Publisher**:
+
+  ```yaml
+  - - <instance>.publisher.<port>
+    - publisher.<external_publisher_port>
+  ```
+
+For service/action-based connections (servers/clients):
+
+- **External Client to Internal Client**:
+
+  ```yaml
+  - - client.<external_client_port>
+    - <instance>.client.<port>
+  ```
+
+- **Internal Server to Internal Client**:
+
+  ```yaml
+  - - <instance_a>.server.<port>
+    - <instance_b>.client.<port>
+  ```
+
+- **Internal Server to External Server**:
+
+  ```yaml
+  - - <instance>.server.<port>
+    - server.<external_server_port>
+  ```
 
 ### 4.3. System Configuration (`.system.yaml`)
 
@@ -135,15 +179,13 @@ Top-level entry point defining the complete system.
   - `description`: (Optional) Description of the mode.
   - `default`: (Optional) `true`/`false` to mark as default mode.
 - `parameter_sets`: List of parameter set files. Can be an empty list `[]`.
-- `components`: Top-level instances. Required when not using `base`.
+- `components`: Top-level instances.
   - `name`: Name of the component instance.
   - `entity`: Reference to module/node (e.g., `SensingModule.module`).
   - `namespace`: ROS namespace prefix.
   - `compute_unit`: Hardware resource identifier (e.g., `main_ecu`).
   - `parameter_set`: (Optional) Parameter set file name(s) to apply. Can be a string or an array of strings.
-- `connections`: Top-level wiring between components. Required when not using `base`.
-  - `from`: Source component and port (e.g., `component.output.port` or `component.output.^` for wildcard).
-  - `to`: Destination component and port (e.g., `component.input.port` or `component.input.^` for wildcard).
+- `connections`: Top-level wiring between components. List of connection pairs, where each connection is a list of two port paths. Supports wildcards (e.g., `component.publisher.^` for wildcard).
 
 **Mode-Specific Overrides:**
 Each mode can define overrides using the mode name as a key:
@@ -167,74 +209,50 @@ Overrides parameters for specific nodes within the system hierarchy.
     - `type`: Parameter type (`bool`, `int`, `double`, `string`, etc.).
     - `value`: Override value (not `default`).
 
-## 5. Base-Variant Pattern (Override and Remove)
+## 5. Base-Variant Pattern
 
-The Autoware System Designer supports a base-variant pattern that allows you to define a base configuration and then create variants with overrides and removals. This is particularly useful for creating mode-specific configurations (e.g., Runtime vs. Simulation) or vehicle-specific variants.
+The Autoware System Designer supports a base-variant pattern that allows you to define a base configuration and then create variants that inherit from it. This pattern is useful for creating reusable configurations, reducing duplication, and creating mode-specific configurations (e.g., Runtime vs. Simulation) or vehicle-specific variants.
 
-**Override Mechanism:**
+### 5.1. Using the `base` Field
+
+Instead of defining all fields directly, you can specify a `base` field that references another entity of the same type. When using `base`, the current configuration inherits all fields from the base entity. To modify the inherited configuration, you must use `override` and `remove` keys (see Sections 5.2 and 5.3 for details).
+
+**Base Field Syntax:**
+
+- `base`: Reference to another entity (e.g., `BaseNode.node`, `BaseModule.module`, `BaseSystem.system`).
+- `override`: Dictionary containing fields to override or extend (see Section 5.2).
+- `remove`: Dictionary containing fields to remove (see Section 5.3).
+
+**When to Use Base:**
+
+- When creating variants of an existing configuration with minor differences
+- When you want to inherit the structure from a parent configuration
+- When you want to reduce duplication across similar configurations
+
+**Required Fields When Using Base:**
+When using `base`, the required fields listed in Section 4.1 (Nodes), Section 4.2 (Modules), and Section 4.3 (Systems) are **not required** in the variant configuration (they are inherited from the base).
+
+**Required Fields When NOT Using Base:**
+When not using `base`, you must define all required fields directly as specified in Section 4.1 (Nodes), Section 4.2 (Modules), and Section 4.3 (Systems).
+
+### 5.2. Override Mechanism
+
 The `override` section merges items into the base configuration. Merge behavior depends on field type:
 
 - **Key-based merging** (lists with identifiable keys like `name`): Items with matching keys replace existing items; new keys are appended. Examples: `variables`, `modes`, `components`, `instances`, `subscribers`, `publishers`, `servers`, `clients`, `param_values`, `processes`.
 - **Append-only merging** (lists without keys): All override items are appended. Examples: `connections`, `variable_files`, `parameter_sets`.
 - **Dictionary merging**: Fields are merged recursively (e.g., `launch` configuration in nodes).
 
-**Remove Mechanism:**
+### 5.3. Remove Mechanism
+
 The `remove` section removes specific items from the base configuration:
 
 - **Key-based removal**: Items are removed where `item[key_field]` matches `spec[key_field]`. For components/instances, connections involving removed entities are automatically filtered out.
-- **Full match removal** (lists without keys): Items are removed if they match all properties in the spec (e.g., `connections` require both `from` and `to`).
+- **Full match removal** (lists without keys): Items are removed if they match all properties in the spec (e.g., `connections` require both source and destination ports to match).
 
-**Order of Operations:** Removals are applied **before** overrides to ensure removed items don't interfere with new additions.
+### 5.4. Order of Operations
 
-### Examples
-
-**System-Level Variants** (mode-specific):
-
-```yaml
-LoggingSimulation:
-  override:
-    variables:
-      - name: map_path
-        value: $(env HOME)/autoware_map/simulation
-    components:
-      - name: sensing
-        entity: SimulatedSensorKit.module
-  remove:
-    components:
-      - name: real_sensing
-```
-
-**Node-Level Variants** (instance-level overrides):
-
-```yaml
-instances:
-  - name: detector
-    entity: Detector.node
-    override:
-      subscribers:
-        - name: additional_input
-          message_type: sensor_msgs/msg/Image
-    remove:
-      subscribers:
-        - name: unused_input
-```
-
-**Note**: When using `base`, `override`, or `remove` in node configurations, the same field names (`subscribers`, `publishers`, `servers`, `clients`) should be used.
-
-**Module-Level Variants:**
-
-```yaml
-override:
-  instances:
-    - name: new_processor
-      entity: Processor.node
-  connections:
-    - from: detector.output.objects
-      to: new_processor.input.objects
-remove:
-  instances:
-    - name: old_processor
-```
+Removals are applied **before** overrides to ensure removed items don't interfere with new additions.
 
 ## 6. Constraints & Validation Rules
 
@@ -246,10 +264,7 @@ remove:
 4. **Path Resolution**:
    - Use `$(find-pkg-share <package_name>)` for absolute ROS paths.
    - Relative paths are resolved relative to the package defining them.
-5. **Required Fields**: When not using `base`, certain fields are required:
-   - **Nodes**: `package`, `launch`, `subscribers`, `publishers`, `param_files`, `param_values`, `processes`
-   - **Modules**: `instances`, `subscribers`, `publishers`, `connections`
-   - **Systems**: `components`, `connections`
+5. **Required Fields**: See Section 5.1 for details on required fields when using or not using `base`.
 
 ## 7. Examples
 
@@ -307,14 +322,14 @@ subscribers:
 publishers:
   - name: objects
 connections:
-  - from: input.pointcloud
-    to: node_detector.input.pointcloud
-  - from: node_detector.output.objects
-    to: node_filter.input.objects
-  - from: input.vector_map
-    to: node_filter.input.vector_map
-  - from: node_filter.output.*
-    to: output.*
+  - - subscriber.pointcloud
+    - node_detector.subscriber.pointcloud
+  - - node_detector.publisher.objects
+    - node_filter.subscriber.objects
+  - - subscriber.vector_map
+    - node_filter.subscriber.vector_map
+  - - node_filter.publisher.*
+    - publisher.*
 ```
 
 ### System Example (0.3.0)
@@ -344,8 +359,8 @@ components:
     compute_unit: main_ecu
     parameter_set: sample_system_sensing.parameter_set
 connections:
-  - from: localization.output.kinematic_state
-    to: sensing.input.odometry
+  - - localization.publisher.kinematic_state
+    - sensing.subscriber.odometry
 LoggingSimulation:
   override:
     components:
