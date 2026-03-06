@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.1.0
+autoware_system_design_format: 0.3.0
 
 name: TypeAlpha.system
 
@@ -41,18 +41,18 @@ components:
     compute_unit: dummy_ecu_2
 
 connections:
-  - from: lidar.output.concatenated/pointcloud
-    to: object_recognition.input.pointcloud
-  - from: lidar.output.concatenated/pointcloud
-    to: localizer.input.pointcloud
-  - from: map_loader.output.vector_map
-    to: localizer.input.lanelet_map
-  - from: map_loader.output.vector_map
-    to: object_recognition.input.vector_map
-  - from: map_loader.output.vector_map
-    to: planner.input.lanelet_map
-  - from: object_recognition.output.objects
-    to: planner.input.predicted_objects
+  - - object_recognition.subscriber.pointcloud
+    - lidar.publisher.concatenated/pointcloud
+  - - map_loader.publisher.vector_map
+    - planner.subscriber.lanelet_map
+  - - object_recognition.publisher.objects
+    - planner.subscriber.predicted_objects
+  - - lidar.publisher.concatenated/pointcloud
+    - localizer.subscriber.pointcloud
+  - - map_loader.publisher.vector_map
+    - localizer.subscriber.lanelet_map
+  - - object_recognition.subscriber.vector_map
+    - map_loader.publisher.vector_map
 
 simulation:
   override:

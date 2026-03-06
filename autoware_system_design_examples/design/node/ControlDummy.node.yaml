@@ -9,7 +9,7 @@ package:
 launch:
   plugin: autoware::system_dummy_modules::Control
 
-inputs:
+subscribers:
   - name: mission_planning/route
     message_type: autoware_planning_msgs/msg/LaneletRoute
   - name: kinematics
@@ -19,7 +19,7 @@ inputs:
   - name: emergency_control_cmd
     message_type: autoware_control_msgs/msg/EmergencyControlCmd
 
-outputs:
+publishers:
   - name: command/control_cmd
     message_type: autoware_control_msgs/msg/Control
   - name: command/gear_cmd

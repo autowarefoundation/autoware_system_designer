@@ -10,8 +10,8 @@ launch:
   plugin: autoware::system_dummy_modules::CameraDummyDriver
 
 # interfaces
-inputs: []
-outputs:
+subscribers: []
+publishers:
   - name: image
     message_type: sensor_msgs/msg/Image
     qos:

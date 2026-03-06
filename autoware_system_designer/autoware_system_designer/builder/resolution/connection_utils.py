@@ -40,6 +40,5 @@ def filter_connections_by_removed_entities(
     return [
         conn
         for conn in connections
-        if get_endpoint_entity_name(conn.get("from")) not in removed_set
-        and get_endpoint_entity_name(conn.get("to")) not in removed_set
+        if get_endpoint_entity_name(conn[0]) not in removed_set and get_endpoint_entity_name(conn[1]) not in removed_set
     ]

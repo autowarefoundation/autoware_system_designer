@@ -213,6 +213,13 @@ class ConfigParser:
         source_map: Dict[str, Dict[str, int]] | None = None,
     ) -> Config:
         """Create appropriate data structure based on entity type."""
+
+        config = self._replace_input_output(config)
+        if "override" in config:
+            config["override"] = self._replace_input_output(config["override"])
+        if "remove" in config:
+            config["remove"] = self._replace_input_output(config["remove"])
+
         base_data = {
             "name": entity_name,
             "full_name": full_name,
@@ -324,3 +331,13 @@ class ConfigParser:
             )
         else:
             raise ValidationError(f"Unknown entity type: {entity_type}")
+
+    @staticmethod
+    def _replace_input_output(config: dict) -> dict:
+        subs = config.pop("subscribers", [])
+        pubs = config.pop("publishers", [])
+        srvs = config.pop("servers", [])
+        clis = config.pop("clients", [])
+        config["inputs"] = subs + clis
+        config["outputs"] = pubs + srvs
+        return config

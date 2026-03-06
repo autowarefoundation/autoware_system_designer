@@ -20,8 +20,8 @@ instances:
   - name: camera_7
     entity: CameraDummyDriver.node
 
-inputs: []
-outputs:
+subscribers: []
+publishers:
   - name: camera0/image
   - name: camera0/camera_info
   - name: camera1/image
@@ -40,35 +40,35 @@ outputs:
   - name: camera7/camera_info
 
 connections:
-  - from: camera_0.output.image
-    to: output.camera0/image
-  - from: camera_0.output.camera_info
-    to: output.camera0/camera_info
-  - from: camera_1.output.image
-    to: output.camera1/image
-  - from: camera_1.output.camera_info
-    to: output.camera1/camera_info
-  - from: camera_2.output.image
-    to: output.camera2/image
-  - from: camera_2.output.camera_info
-    to: output.camera2/camera_info
-  - from: camera_3.output.image
-    to: output.camera3/image
-  - from: camera_3.output.camera_info
-    to: output.camera3/camera_info
-  - from: camera_4.output.image
-    to: output.camera4/image
-  - from: camera_4.output.camera_info
-    to: output.camera4/camera_info
-  - from: camera_5.output.image
-    to: output.camera5/image
-  - from: camera_5.output.camera_info
-    to: output.camera5/camera_info
-  - from: camera_6.output.image
-    to: output.camera6/image
-  - from: camera_6.output.camera_info
-    to: output.camera6/camera_info
-  - from: camera_7.output.image
-    to: output.camera7/image
-  - from: camera_7.output.camera_info
-    to: output.camera7/camera_info
+  - - camera_0.publisher.image
+    - publisher.camera0/image
+  - - camera_0.publisher.camera_info
+    - publisher.camera0/camera_info
+  - - camera_1.publisher.image
+    - publisher.camera1/image
+  - - camera_1.publisher.camera_info
+    - publisher.camera1/camera_info
+  - - camera_2.publisher.image
+    - publisher.camera2/image
+  - - camera_2.publisher.camera_info
+    - publisher.camera2/camera_info
+  - - camera_3.publisher.image
+    - publisher.camera3/image
+  - - camera_3.publisher.camera_info
+    - publisher.camera3/camera_info
+  - - camera_4.publisher.image
+    - publisher.camera4/image
+  - - camera_4.publisher.camera_info
+    - publisher.camera4/camera_info
+  - - camera_5.publisher.image
+    - publisher.camera5/image
+  - - camera_5.publisher.camera_info
+    - publisher.camera5/camera_info
+  - - camera_6.publisher.image
+    - publisher.camera6/image
+  - - camera_6.publisher.camera_info
+    - publisher.camera6/camera_info
+  - - camera_7.publisher.image
+    - publisher.camera7/image
+  - - camera_7.publisher.camera_info
+    - publisher.camera7/camera_info

@@ -14,7 +14,7 @@ launch:
   container_name: pointcloud_container
 
 # interfaces
-inputs:
+subscribers:
   - name: input1
     message_type: sensor_msgs/msg/PointCloud2
   - name: input2
@@ -31,7 +31,7 @@ inputs:
     message_type: sensor_msgs/msg/PointCloud2
   - name: input8
     message_type: sensor_msgs/msg/PointCloud2
-outputs:
+publishers:
   - name: output
     message_type: sensor_msgs/msg/PointCloud2
 

@@ -14,8 +14,8 @@ instances:
   - name: lidar_concatenate
     entity: ConcatenatePointcloudDummy.node
 
-inputs: []
-outputs:
+subscribers: []
+publishers:
   - name: top/pointcloud
   - name: left/pointcloud
   - name: right/pointcloud
@@ -24,22 +24,22 @@ outputs:
 
 connections:
   # individual lidar outputs
-  - from: lidar_top.output.pointcloud
-    to: output.top/pointcloud
-  - from: lidar_left.output.pointcloud
-    to: output.left/pointcloud
-  - from: lidar_right.output.pointcloud
-    to: output.right/pointcloud
-  - from: lidar_rear.output.pointcloud
-    to: output.rear/pointcloud
+  - - lidar_top.publisher.pointcloud
+    - publisher.top/pointcloud
+  - - lidar_left.publisher.pointcloud
+    - publisher.left/pointcloud
+  - - lidar_right.publisher.pointcloud
+    - publisher.right/pointcloud
+  - - lidar_rear.publisher.pointcloud
+    - publisher.rear/pointcloud
   # concatenated lidar output
-  - from: lidar_top.output.pointcloud
-    to: lidar_concatenate.input.input1
-  - from: lidar_left.output.pointcloud
-    to: lidar_concatenate.input.input2
-  - from: lidar_right.output.pointcloud
-    to: lidar_concatenate.input.input3
-  - from: lidar_rear.output.pointcloud
-    to: lidar_concatenate.input.input4
-  - from: lidar_concatenate.output.output
-    to: output.concatenated/pointcloud
+  - - lidar_top.publisher.pointcloud
+    - lidar_concatenate.subscriber.input1
+  - - lidar_left.publisher.pointcloud
+    - lidar_concatenate.subscriber.input2
+  - - lidar_right.publisher.pointcloud
+    - lidar_concatenate.subscriber.input3
+  - - lidar_rear.publisher.pointcloud
+    - lidar_concatenate.subscriber.input4
+  - - lidar_concatenate.publisher.output
+    - publisher.concatenated/pointcloud

@@ -8,18 +8,18 @@ instances:
   - name: node_filter
     entity: FilterA.node
 
-inputs:
+subscribers:
   - name: pointcloud
   - name: vector_map
-outputs:
+publishers:
   - name: objects
 
 connections:
-  - from: input.pointcloud
-    to: node_detector.input.pointcloud
-  - from: node_detector.output.objects
-    to: node_filter.input.objects
-  - from: input.vector_map
-    to: node_filter.input.vector_map
-  - from: node_filter.output.*
-    to: output.*
+  - - subscriber.pointcloud
+    - node_detector.subscriber.pointcloud
+  - - node_detector.publisher.objects
+    - node_filter.subscriber.objects
+  - - subscriber.vector_map
+    - node_filter.subscriber.vector_map
+  - - node_filter.publisher.*
+    - publisher.*

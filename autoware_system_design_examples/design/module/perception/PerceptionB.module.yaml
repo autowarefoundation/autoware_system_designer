@@ -10,21 +10,21 @@ instances:
   - name: node_predictor
     entity: Predictor.node
 
-inputs:
+subscribers:
   - name: vector_map
   - name: pointcloud
-outputs:
+publishers:
   - name: objects
 
 connections:
-  - from: input.vector_map
-    to: node_predictor.input.lanelet_map
+  - - subscriber.vector_map
+    - node_predictor.subscriber.lanelet_map
   # wildcard connection
-  - from: input.*
-    to: detector_a1.input.*
-  - from: detector_a1.output.objects
-    to: node_tracker.input.objects1
-  - from: node_tracker.output.objects
-    to: node_predictor.input.objects
-  - from: node_predictor.output.objects
-    to: output.objects
+  - - subscriber.*
+    - detector_a1.subscriber.*
+  - - detector_a1.publisher.objects
+    - node_tracker.subscriber.objects1
+  - - node_tracker.publisher.objects
+    - node_predictor.subscriber.objects
+  - - node_predictor.publisher.objects
+    - publisher.objects

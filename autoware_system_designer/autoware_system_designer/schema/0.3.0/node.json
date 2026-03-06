@@ -39,7 +39,7 @@
       "type": "object",
       "additionalProperties": true
     },
-    "inputs": {
+    "subscribers": {
       "oneOf": [
         {
           "type": "array",
@@ -51,7 +51,8 @@
                 "type": "string"
               },
               "message_type": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[^/]+/msg/[^/]+$"
               },
               "global": {
                 "type": "string"
@@ -69,7 +70,7 @@
         }
       ]
     },
-    "outputs": {
+    "publishers": {
       "oneOf": [
         {
           "type": "array",
@@ -81,7 +82,8 @@
                 "type": "string"
               },
               "message_type": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[^/]+/msg/[^/]+$"
               },
               "global": {
                 "type": "string"
@@ -98,6 +100,60 @@
           }
         }
       ]
+    },
+    "servers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "message_type"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "message_type": {
+            "type": "string",
+            "pattern": "^[^/]+/(srv|action)/[^/]+$"
+          },
+          "global": {
+            "type": "string"
+          },
+          "qos": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "remap_target": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "clients": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "message_type"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "message_type": {
+            "type": "string",
+            "pattern": "^[^/]+/(srv|action)/[^/]+$"
+          },
+          "global": {
+            "type": "string"
+          },
+          "qos": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "remap_target": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "param_files": {
       "oneOf": [
@@ -203,8 +259,8 @@
     "required": [
       "package",
       "launch",
-      "inputs",
-      "outputs",
+      "subscribers",
+      "publishers",
       "param_files",
       "param_values",
       "processes"
