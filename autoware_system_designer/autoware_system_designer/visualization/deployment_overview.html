@@ -9,6 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
     <link rel="stylesheet" href="css/styles.css" />
+    <script src="theme.js"></script>
   </head>
   <body>
     <div id="loading">
@@ -74,53 +75,15 @@
         systemsIndexPath,
       } = deploymentConfig;
 
-      // Dark mode functionality
-      function getSystemThemePreference() {
-        return window.matchMedia &&
-          window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light";
-      }
-
-      function getSavedThemePreference() {
-        return localStorage.getItem("theme");
-      }
-
-      function saveThemePreference(theme) {
-        localStorage.setItem("theme", theme);
-      }
-
-      function applyTheme(theme) {
-        document.documentElement.setAttribute("data-theme", theme);
-        const toggle = document.getElementById("dark-mode-switch");
-        if (toggle) {
-          toggle.classList.toggle("active", theme === "dark");
-        }
-      }
-
-      function toggleDarkMode() {
-        const currentTheme =
-          document.documentElement.getAttribute("data-theme") || "light";
-        const newTheme = currentTheme === "dark" ? "light" : "dark";
-        applyTheme(newTheme);
-        saveThemePreference(newTheme);
-
-        // Update current diagram module if it has dark mode support
+      // Optional callback for diagram modules when theme changes (set by theme.js)
+      window.__onThemeChange = function () {
         if (
           currentDiagramModule &&
           typeof currentDiagramModule.updateTheme === "function"
         ) {
           currentDiagramModule.updateTheme();
         }
-      }
-
-      // Initialize theme
-      function initializeTheme() {
-        const savedTheme = getSavedThemePreference();
-        const systemTheme = getSystemThemePreference();
-        const theme = savedTheme || systemTheme;
-        applyTheme(theme);
-      }
+      };
 
       // Parse URL parameters
       function getUrlParameter(name) {
@@ -494,8 +457,10 @@
         });
       }
 
-      // Dark mode listener
-      darkModeToggle.addEventListener("click", toggleDarkMode);
+      // Dark mode listener (theme.js provides toggleDarkMode)
+      darkModeToggle.addEventListener("click", function () {
+        window.toggleDarkMode();
+      });
 
       // Resizer functionality
       function initializeResizer() {
@@ -544,8 +509,8 @@
         // Initialize UI from config
         initializeUI();
 
-        // Initialize theme
-        initializeTheme();
+        // Initialize theme (uses localStorage so mode persists across pages)
+        window.initializeTheme();
 
         // Initialize resizer
         initializeResizer();

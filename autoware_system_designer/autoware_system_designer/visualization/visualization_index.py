@@ -1,6 +1,7 @@
 import fcntl
 import logging
 import os
+import shutil
 from pathlib import Path
 
 from ..file_io.source_location import SourceLocation, format_source
@@ -80,8 +81,24 @@ def update_index(output_root_dir: str):
         logger.error(f"Failed to update visualization index: {e}{format_source(src)}")
 
 
+def _copy_shared_assets_to_install_root(install_root: Path) -> None:
+    """Copy css/styles.css and js/theme.js to install root for systems.html."""
+    pkg_dir = Path(__file__).resolve().parent
+    css_src = pkg_dir / "css" / "styles.css"
+    theme_src = pkg_dir / "js" / "theme.js"
+    css_dest_dir = install_root / "css"
+    css_dest_dir.mkdir(parents=True, exist_ok=True)
+    if css_src.exists():
+        shutil.copy2(css_src, css_dest_dir / "styles.css")
+    if theme_src.exists():
+        shutil.copy2(theme_src, install_root / "theme.js")
+
+
 def _generate_index_file(install_root: Path, output_file: Path):
     deployments = []
+
+    # Copy shared assets (theme + styles) to install root so systems.html can load them
+    _copy_shared_assets_to_install_root(install_root)
 
     # Walk through the install directory to find deployments
     # We scan specifically for our known structure to avoid false positives
