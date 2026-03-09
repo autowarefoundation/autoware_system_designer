@@ -211,6 +211,33 @@ def _command_groups_to_rows(command_groups: list[dict[str, Any]]) -> list[dict[s
     return rows
 
 
+def _rows_for_deploy(command_groups: list[dict[str, Any]], deploy_name: str) -> list[dict[str, Any]]:
+    """Build rows for a single deploy (no deploy_name in row); recomputes rowspan metadata."""
+    rows = [
+        {"mode": mg["mode"], "ecu": eg["ecu"], "cmd": deploy["cmd"]}
+        for mg in command_groups
+        for eg in mg["ecus"]
+        for deploy in eg["deploys"]
+        if deploy["deploy_name"] == deploy_name
+    ]
+    _add_row_span_metadata(rows)
+    return rows
+
+
+def _commands_by_deploy(
+    command_groups: list[dict[str, Any]],
+) -> tuple[list[str], dict[str, list[dict[str, Any]]]]:
+    """Get sorted deploy names and a map deploy_name -> rows for that deploy."""
+    deploy_names_set: set[str] = set()
+    for mg in command_groups:
+        for eg in mg["ecus"]:
+            for deploy in eg["deploys"]:
+                deploy_names_set.add(deploy["deploy_name"])
+    deploy_names = sorted(deploy_names_set)
+    commands_by_deploy = {name: _rows_for_deploy(command_groups, name) for name in deploy_names}
+    return deploy_names, commands_by_deploy
+
+
 def _calculate_systems_index_path(web_dir: str) -> str:
     """Calculate relative path from web_dir to systems.html index."""
     install_root = get_install_root(Path(web_dir))
@@ -253,8 +280,11 @@ def generate_launch_commands_page(
             system_name, package_name, launcher_dir, mode_keys, deploy_variants, web_dir
         )
         command_groups = _build_command_groups(deploy_commands)
-        command_rows = _command_groups_to_rows(command_groups)
+        deploy_names, commands_by_deploy = _commands_by_deploy(command_groups)
+        command_rows = commands_by_deploy[deploy_names[0]] if deploy_names else []
     else:
+        deploy_names = []
+        commands_by_deploy = {}
         commands = _build_launch_commands(system_name, package_name, launcher_dir, mode_keys, web_dir)
         command_rows = _flat_commands_to_rows(commands)
 
@@ -269,6 +299,8 @@ def generate_launch_commands_page(
         system_name=system_name,
         package_name=package_name or "",
         command_rows=command_rows,
+        deploy_names=deploy_names,
+        commands_by_deploy=commands_by_deploy,
         systems_index_path=systems_index_path,
         overview_path=overview_path,
     )

@@ -602,6 +602,33 @@ body.simple-page .page-description {
   margin-bottom: 20px;
 }
 
+body.simple-page .deploy-selector {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+body.simple-page .deploy-selector label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+body.simple-page .deploy-selector select {
+  padding: 6px 10px;
+  font-size: 1em;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  min-width: 160px;
+}
+
+body.simple-page .deploy-selector select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 body.simple-page .description code,
 body.simple-page .page-description code {
   background: var(--bg-tertiary);
