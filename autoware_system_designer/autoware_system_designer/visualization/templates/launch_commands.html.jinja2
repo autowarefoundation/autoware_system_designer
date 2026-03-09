@@ -19,24 +19,30 @@
             <a href="{{ overview_path }}">Diagram</a>
         </div>
         <p class="page-description">ROS 2 launch commands per mode and ECU (compute unit).</p>
-        {% if commands %}
+        {% if command_rows %}
         <table>
             <thead>
                 <tr>
                     <th>Mode</th>
                     <th>ECU</th>
+                    <th>Deploy</th>
                     <th>Command</th>
                 </tr>
             </thead>
             <tbody>
-                {% for mode, ecu, cmd in commands %}
+                {% for row in command_rows %}
                 <tr>
-                    <td>{{ mode }}</td>
-                    <td>{{ ecu }}</td>
+                    {% if row.show_mode_cell %}
+                    <td rowspan="{{ row.mode_rowspan }}">{{ row.mode }}</td>
+                    {% endif %}
+                    {% if row.show_ecu_cell %}
+                    <td rowspan="{{ row.ecu_rowspan }}">{{ row.ecu }}</td>
+                    {% endif %}
+                    <td>{{ row.deploy_name or "—" }}</td>
                     <td class="command-cell">
                         <div class="command-with-copy">
-                            <button type="button" class="copy-btn" data-cmd="{{ cmd | e }}">Copy</button>
-                            <code>{{ cmd }}</code>
+                            <button type="button" class="copy-btn" data-cmd="{{ row.cmd | e }}">Copy</button>
+                            <code>{{ row.cmd }}</code>
                         </div>
                     </td>
                 </tr>

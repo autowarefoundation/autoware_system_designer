@@ -376,6 +376,7 @@ class Deployment:
                 launcher_dir=self.launcher_dir,
                 mode_keys=self.mode_keys,
                 web_dir=web_dir,
+                deploy_variants=self.deploy_variants,
             )
 
     def generate_parameter_set_template(self):
