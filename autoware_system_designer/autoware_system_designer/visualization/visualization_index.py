@@ -153,20 +153,27 @@ def _generate_index_file(install_root: Path, output_file: Path):
         web_path = dep["path"]
         deployment_overview_path = web_path / f"{dep['name']}_overview.html"
 
-        main_link = f"{deployment_overview_path}?diagram={dep['diagram_types'][0]}"
+        diagram_types = dep["diagram_types"]
+        default_diagram = (
+            "node_diagram" if "node_diagram" in diagram_types else diagram_types[0]
+        )
+        diagram_link = f"{deployment_overview_path}?diagram={default_diagram}"
 
-        diagrams = []
-        for diagram_type in dep["diagram_types"]:
-            diagram_label = diagram_type.replace("_", " ").title()
-            diagram_link = f"{deployment_overview_path}?diagram={diagram_type}"
-            diagrams.append({"label": diagram_label, "link": diagram_link, "type": diagram_type})
+        web_dir_abs = install_root / web_path
+        launch_commands_filename = f"{dep['name']}_launch_commands.html"
+        launch_commands_path = web_dir_abs / launch_commands_filename
+        launch_commands_link = (
+            (web_path / launch_commands_filename).as_posix()
+            if launch_commands_path.exists()
+            else None
+        )
 
         view_deployments.append(
             {
                 "name": dep["name"],
                 "package": dep["package"],
-                "main_link": main_link,
-                "diagrams": diagrams,
+                "diagram_link": diagram_link,
+                "launch_commands_link": launch_commands_link,
             }
         )
 

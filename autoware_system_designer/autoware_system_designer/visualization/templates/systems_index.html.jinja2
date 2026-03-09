@@ -52,14 +52,14 @@
         .deployment-header {
             padding: 20px 20px 15px 20px;
         }
-        .diagram-buttons {
+        .item-links {
             display: flex;
             gap: 10px;
             padding: 0 20px 20px 20px;
             border-top: 1px solid #f0f0f0;
             background: #fafafa;
         }
-        .diagram-button {
+        .item-link {
             text-decoration: none;
             color: #0066cc;
             background: #f8f9fa;
@@ -69,18 +69,11 @@
             font-size: 0.9em;
             font-weight: 500;
             transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 6px;
         }
-        .diagram-button:hover {
+        .item-link:hover {
             background: #e9ecef;
             border-color: #adb5bd;
             color: #0056b3;
-        }
-        .diagram-icon {
-            display: flex;
-            align-items: center;
         }
         .deployment-name {
             font-weight: bold;
@@ -115,15 +108,14 @@
             {% for dep in deployments %}
             <li class="deployment-item">
                 <div class="deployment-header">
-                    <a href="{{ dep.main_link }}" class="deployment-name">{{ dep.name }}</a>
+                    <a href="{{ dep.diagram_link }}" class="deployment-name">{{ dep.name }}</a>
                     <div class="deployment-meta">Package: <span class="deployment-package">{{ dep.package }}</span></div>
                 </div>
-                <div class="diagram-buttons">
-                    {% for diagram in dep.diagrams %}
-                    <a class="diagram-button" href="{{ diagram.link }}" data-type="{{ diagram.type }}">
-                        <span class="diagram-icon">{{ diagram.label }}</span>
-                    </a>
-                    {% endfor %}
+                <div class="item-links">
+                    <a class="item-link" href="{{ dep.diagram_link }}">Diagram</a>
+                    {% if dep.launch_commands_link %}
+                    <a class="item-link" href="{{ dep.launch_commands_link }}">Launch commands</a>
+                    {% endif %}
                 </div>
             </li>
             {% endfor %}
