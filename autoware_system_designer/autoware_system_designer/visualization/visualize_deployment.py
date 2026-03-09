@@ -138,7 +138,7 @@ def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualiza
             "deployment_name": name,
             "package_name": name,
             "available_modes": modes,
-            "available_diagram_types": sorted(["node_diagram", "sequence_diagram", "logic_diagram"]),
+            "available_diagram_types": ["node_diagram", "sequence_diagram", "logic_diagram"],
             "default_mode": default_mode,
             "default_diagram_type": "node_diagram",
             "systems_index_path": systems_index_rel_path,
