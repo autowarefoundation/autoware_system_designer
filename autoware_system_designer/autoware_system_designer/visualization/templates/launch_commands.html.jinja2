@@ -63,6 +63,33 @@
             padding: 2px 6px;
             border-radius: 4px;
         }
+        .command-with-copy {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .command-with-copy code {
+            flex: 1;
+            min-width: 0;
+        }
+        .copy-btn {
+            flex-shrink: 0;
+            padding: 4px 10px;
+            font-size: 0.85em;
+            cursor: pointer;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+        .copy-btn:hover {
+            background: #0056b3;
+        }
+        .copy-btn.copied {
+            background: #28a745;
+        }
         .empty-state {
             color: #666;
             font-style: italic;
@@ -92,7 +119,12 @@
                 <tr>
                     <td>{{ mode }}</td>
                     <td>{{ ecu }}</td>
-                    <td class="command-cell"><code>{{ cmd }}</code></td>
+                    <td class="command-cell">
+                        <div class="command-with-copy">
+                            <button type="button" class="copy-btn" data-cmd="{{ cmd | e }}">Copy</button>
+                            <code>{{ cmd }}</code>
+                        </div>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -101,5 +133,22 @@
         <p class="empty-state">No launch commands found for this deployment.</p>
         {% endif %}
     </div>
+    <script>
+        document.querySelectorAll('.copy-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var cmd = this.getAttribute('data-cmd');
+                if (!cmd) return;
+                navigator.clipboard.writeText(cmd).then(function() {
+                    var label = btn.textContent;
+                    btn.textContent = 'Copied!';
+                    btn.classList.add('copied');
+                    setTimeout(function() {
+                        btn.textContent = label;
+                        btn.classList.remove('copied');
+                    }, 1500);
+                });
+            });
+        });
+    </script>
 </body>
 </html>
