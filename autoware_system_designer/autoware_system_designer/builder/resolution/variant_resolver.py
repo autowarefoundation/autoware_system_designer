@@ -16,7 +16,7 @@ import logging
 from typing import Any, Dict, List, Optional, TypeVar
 
 from ...models.config import ModuleConfig, NodeConfig, SystemConfig
-from .connection_utils import filter_connections_by_removed_entities
+from .connection_resolver import filter_connections_by_removed_entities
 
 logger = logging.getLogger(__name__)
 
