@@ -171,18 +171,14 @@ def _generate_index_file(install_root: Path, output_file: Path):
         deployment_overview_path = web_path / f"{dep['name']}_overview.html"
 
         diagram_types = dep["diagram_types"]
-        default_diagram = (
-            "node_diagram" if "node_diagram" in diagram_types else diagram_types[0]
-        )
+        default_diagram = "node_diagram" if "node_diagram" in diagram_types else diagram_types[0]
         diagram_link = f"{deployment_overview_path}?diagram={default_diagram}"
 
         web_dir_abs = install_root / web_path
         launch_commands_filename = f"{dep['name']}_launch_commands.html"
         launch_commands_path = web_dir_abs / launch_commands_filename
         launch_commands_link = (
-            (web_path / launch_commands_filename).as_posix()
-            if launch_commands_path.exists()
-            else None
+            (web_path / launch_commands_filename).as_posix() if launch_commands_path.exists() else None
         )
 
         view_deployments.append(

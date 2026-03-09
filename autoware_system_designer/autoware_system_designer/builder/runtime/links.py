@@ -190,9 +190,7 @@ class Connection:
         self.type = self._determine_connection_type(
             port0_instance, port0_type, port1_instance, port1_type, connection_dict
         )
-        port0_is_from = self._determine_direction(
-            self.type, port0_instance, port0_type, port1_type, connection_dict
-        )
+        port0_is_from = self._determine_direction(self.type, port0_instance, port0_type, port1_type, connection_dict)
 
         # Assign from/to based on determined direction
         from_port = (port0_instance, port0_name) if port0_is_from else (port1_instance, port1_name)

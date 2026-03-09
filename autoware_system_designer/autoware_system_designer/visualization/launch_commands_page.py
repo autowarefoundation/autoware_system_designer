@@ -19,123 +19,99 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from ..file_io.template_renderer import TemplateRenderer
 from .visualization_index import get_install_root
 
 logger = logging.getLogger(__name__)
 
+LAUNCH_FILE_SUFFIX = ".launch.xml"
 
-def _discover_compute_units(launcher_dir: str, mode_key: str) -> List[str]:
-    """Discover compute units by listing subdirs of launcher_dir/mode_key that contain a .launch.xml file."""
-    mode_dir = Path(launcher_dir) / mode_key
+
+def _discover_compute_units_in_dir(mode_dir: Path) -> list[str]:
+    """Discover compute units by listing subdirs of mode_dir that contain a .launch.xml file."""
     if not mode_dir.is_dir():
         return []
-    compute_units = []
-    for entry in sorted(mode_dir.iterdir()):
-        if not entry.is_dir():
-            continue
-        launch_files = list(entry.glob("*.launch.xml"))
-        if launch_files:
-            compute_units.append(entry.name)
-    return compute_units
+    return [
+        entry.name
+        for entry in sorted(mode_dir.iterdir())
+        if entry.is_dir() and list(entry.glob(f"*{LAUNCH_FILE_SUFFIX}"))
+    ]
 
 
-def _discover_compute_units_under_deploy(
-    deployments_dir: Path, deploy_name: str, mode_key: str
-) -> List[str]:
-    """Discover compute units under launcher/deployments/<deploy_name>/<mode_key>/."""
-    mode_dir = deployments_dir / deploy_name / mode_key
-    if not mode_dir.is_dir():
-        return []
-    compute_units = []
-    for entry in sorted(mode_dir.iterdir()):
-        if not entry.is_dir():
-            continue
-        launch_files = list(entry.glob("*.launch.xml"))
-        if launch_files:
-            compute_units.append(entry.name)
-    return compute_units
+def _build_launch_path_arg(
+    package_name: str | None,
+    system_name: str,
+    path_after_launcher: str,
+    launcher_base: Path,
+    web_dir: str,
+) -> str:
+    """Build the path argument for ros2 launch (canonical or workspace-relative)."""
+    if package_name:
+        return f"install/{package_name}/share/{package_name}/exports/{system_name}/launcher" f"/{path_after_launcher}"
+    launch_file = (launcher_base / path_after_launcher).resolve()
+    install_root = get_install_root(Path(web_dir))
+    if install_root and install_root.exists():
+        try:
+            return launch_file.relative_to(install_root.parent).as_posix()
+        except ValueError:
+            pass
+    return launch_file.as_posix()
 
 
 def _build_launch_commands(
     system_name: str,
-    package_name: Optional[str],
+    package_name: str | None,
     launcher_dir: str,
-    mode_keys: List[str],
+    mode_keys: list[str],
     web_dir: str,
-) -> List[Tuple[str, str, str]]:
+) -> list[tuple[str, str, str]]:
     """Build list of (mode, compute_unit, launch_command) for all modes and ECUs.
 
     Command format: ros2 launch <path_relative_to_workspace>
-    Path uses canonical form: install/<package_name>/share/<package_name>/exports/<system_name>/launcher/<mode>/<ecu>/<ecu>.launch.xml
+    Path uses canonical form: install/<package_name>/share/.../launcher/<mode>/<ecu>/<ecu>.launch.xml
     """
-    result = []
+    launcher_root = Path(launcher_dir).resolve()
+    result: list[tuple[str, str, str]] = []
     for mode_key in mode_keys:
-        for compute_unit in _discover_compute_units(launcher_dir, mode_key):
-            launch_filename = f"{compute_unit.lower()}.launch.xml"
-            if package_name:
-                path_arg = (
-                    f"install/{package_name}/share/{package_name}/exports/{system_name}/launcher"
-                    f"/{mode_key}/{compute_unit}/{launch_filename}"
-                )
-            else:
-                launcher_root = Path(launcher_dir).resolve()
-                launch_file = launcher_root / mode_key / compute_unit / launch_filename
-                install_root = get_install_root(Path(web_dir))
-                if install_root and install_root.exists():
-                    workspace_root = install_root.parent
-                    try:
-                        path_arg = launch_file.relative_to(workspace_root).as_posix()
-                    except ValueError:
-                        path_arg = launch_file.as_posix()
-                else:
-                    path_arg = launch_file.as_posix()
-            cmd = f"ros2 launch {path_arg}"
-            result.append((mode_key, compute_unit, cmd))
+        mode_dir = launcher_root / mode_key
+        for compute_unit in _discover_compute_units_in_dir(mode_dir):
+            launch_filename = f"{compute_unit.lower()}{LAUNCH_FILE_SUFFIX}"
+            path_after = f"{mode_key}/{compute_unit}/{launch_filename}"
+            path_arg = _build_launch_path_arg(package_name, system_name, path_after, launcher_root, web_dir)
+            result.append((mode_key, compute_unit, f"ros2 launch {path_arg}"))
     return result
 
 
+def _add_row_span_metadata(rows: list[dict[str, Any]]) -> None:
+    """Add show_mode_cell, show_ecu_cell, mode_rowspan, ecu_rowspan to each row (in-place)."""
+    for idx, row in enumerate(rows):
+        row["show_mode_cell"] = idx == 0 or rows[idx - 1]["mode"] != row["mode"]
+        row["show_ecu_cell"] = idx == 0 or rows[idx - 1]["mode"] != row["mode"] or rows[idx - 1]["ecu"] != row["ecu"]
+    for idx, row in enumerate(rows):
+        row["mode_rowspan"] = sum(1 for r in rows[idx:] if r["mode"] == row["mode"]) if row["show_mode_cell"] else 0
+        row["ecu_rowspan"] = (
+            sum(1 for r in rows[idx:] if r["mode"] == row["mode"] and r["ecu"] == row["ecu"])
+            if row["show_ecu_cell"]
+            else 0
+        )
+
+
 def _flat_commands_to_rows(
-    commands: List[Tuple[str, str, str]],
-) -> List[Dict[str, Any]]:
-    """Convert flat (mode, ecu, cmd) list to rows with mode/ecu grouping and rowspans (no deploy variants)."""
-    if not commands:
-        return []
-    rows: List[Dict[str, Any]] = []
-    for mode_key, compute_unit, cmd in commands:
-        rows.append({
-            "mode": mode_key,
-            "ecu": compute_unit,
-            "deploy_name": "",
-            "cmd": cmd,
-        })
-    for idx, row in enumerate(rows):
-        row["show_mode_cell"] = (
-            idx == 0 or rows[idx - 1]["mode"] != row["mode"]
-        )
-        row["show_ecu_cell"] = (
-            idx == 0 or rows[idx - 1]["mode"] != row["mode"] or rows[idx - 1]["ecu"] != row["ecu"]
-        )
-    for idx, row in enumerate(rows):
-        if row["show_mode_cell"]:
-            row["mode_rowspan"] = sum(
-                1 for r in rows[idx:] if r["mode"] == row["mode"]
-            )
-        else:
-            row["mode_rowspan"] = 0
-        if row["show_ecu_cell"]:
-            row["ecu_rowspan"] = sum(
-                1 for r in rows[idx:] if r["mode"] == row["mode"] and r["ecu"] == row["ecu"]
-            )
-        else:
-            row["ecu_rowspan"] = 0
+    commands: list[tuple[str, str, str]],
+) -> list[dict[str, Any]]:
+    """Convert flat (mode, ecu, cmd) list to rows with mode/ecu grouping and rowspans (no deploy)."""
+    rows = [
+        {"mode": mode_key, "ecu": compute_unit, "deploy_name": "", "cmd": cmd}
+        for mode_key, compute_unit, cmd in commands
+    ]
+    _add_row_span_metadata(rows)
     return rows
 
 
 def _path_arg_for_deploy(
-    package_name: Optional[str],
+    package_name: str | None,
     system_name: str,
     launcher_dir: str,
     deploy_name: str,
@@ -144,47 +120,33 @@ def _path_arg_for_deploy(
     web_dir: str,
 ) -> str:
     """Build path argument for a deploy-variant launch file."""
-    launch_filename = f"{compute_unit.lower()}.launch.xml"
-    if package_name:
-        return (
-            f"install/{package_name}/share/{package_name}/exports/{system_name}/launcher"
-            f"/deployments/{deploy_name}/{mode_key}/{compute_unit}/{launch_filename}"
-        )
-    launcher_root = Path(launcher_dir) / "deployments" / deploy_name / mode_key / compute_unit
-    launch_file = launcher_root / launch_filename
-    install_root = get_install_root(Path(web_dir))
-    if install_root and install_root.exists():
-        workspace_root = install_root.parent
-        try:
-            return launch_file.resolve().relative_to(workspace_root).as_posix()
-        except ValueError:
-            return launch_file.resolve().as_posix()
-    return launch_file.resolve().as_posix()
+    launch_filename = f"{compute_unit.lower()}{LAUNCH_FILE_SUFFIX}"
+    path_after = f"deployments/{deploy_name}/{mode_key}/{compute_unit}/{launch_filename}"
+    launcher_base = Path(launcher_dir)
+    return _build_launch_path_arg(package_name, system_name, path_after, launcher_base, web_dir)
 
 
 def _build_deploy_commands(
     system_name: str,
-    package_name: Optional[str],
+    package_name: str | None,
     launcher_dir: str,
-    mode_keys: List[str],
-    deploy_variants: List[Dict[str, Any]],
+    mode_keys: list[str],
+    deploy_variants: list[dict[str, Any]],
     web_dir: str,
-) -> List[Tuple[str, str, str, str]]:
+) -> list[tuple[str, str, str, str]]:
     """Build list of (mode, ecu, deploy_name, launch_command) ordered by mode > ecu > deploy."""
-    result: List[Tuple[str, str, str, str]] = []
+    result: list[tuple[str, str, str, str]] = []
     deployments_dir = Path(launcher_dir) / "deployments"
     if not deployments_dir.is_dir():
         return result
     for mode_key in mode_keys:
-        # Collect (ecu, deploy_name, cmd) for this mode so we can order by ecu then deploy
-        mode_entries: List[Tuple[str, str, str]] = []
+        mode_entries: list[tuple[str, str, str]] = []
         for deploy_item in deploy_variants:
             deploy_name = deploy_item.get("name")
             if not deploy_name:
                 continue
-            for compute_unit in _discover_compute_units_under_deploy(
-                deployments_dir, deploy_name, mode_key
-            ):
+            mode_dir = deployments_dir / deploy_name / mode_key
+            for compute_unit in _discover_compute_units_in_dir(mode_dir):
                 path_arg = _path_arg_for_deploy(
                     package_name,
                     system_name,
@@ -194,8 +156,7 @@ def _build_deploy_commands(
                     compute_unit,
                     web_dir,
                 )
-                cmd = f"ros2 launch {path_arg}"
-                mode_entries.append((compute_unit, deploy_name, cmd))
+                mode_entries.append((compute_unit, deploy_name, f"ros2 launch {path_arg}"))
         mode_entries.sort(key=lambda x: (x[0], x[1]))
         for compute_unit, deploy_name, cmd in mode_entries:
             result.append((mode_key, compute_unit, deploy_name, cmd))
@@ -203,78 +164,50 @@ def _build_deploy_commands(
 
 
 def _build_command_groups(
-    deploy_commands: List[Tuple[str, str, str, str]],
-) -> List[Dict[str, Any]]:
+    deploy_commands: list[tuple[str, str, str, str]],
+) -> list[dict[str, Any]]:
     """Build hierarchy mode > ecu > deploys for template with rowspans."""
     if not deploy_commands:
         return []
-    groups: List[Dict[str, Any]] = []
-    current_mode: Optional[str] = None
-    mode_group: Optional[Dict[str, Any]] = None
-    current_ecu: Optional[str] = None
-    ecu_group: Optional[Dict[str, Any]] = None
+    groups: list[dict[str, Any]] = []
+    current_mode: str | None = None
+    mode_group: dict[str, Any] | None = None
+    current_ecu: str | None = None
+    ecu_group: dict[str, Any] | None = None
     for mode_key, compute_unit, deploy_name, cmd in deploy_commands:
         if mode_key != current_mode:
             current_mode = mode_key
-            mode_group = {
-                "mode": mode_key,
-                "mode_rowspan": 0,
-                "ecus": [],
-            }
+            mode_group = {"mode": mode_key, "mode_rowspan": 0, "ecus": []}
             groups.append(mode_group)
             current_ecu = None
         if compute_unit != current_ecu:
             current_ecu = compute_unit
-            ecu_group = {
-                "ecu": compute_unit,
-                "ecu_rowspan": 0,
-                "deploys": [],
-            }
-            if mode_group:
+            ecu_group = {"ecu": compute_unit, "ecu_rowspan": 0, "deploys": []}
+            if mode_group is not None:
                 mode_group["ecus"].append(ecu_group)
         deploy_entry = {"deploy_name": deploy_name, "cmd": cmd}
-        if ecu_group:
+        if ecu_group is not None:
             ecu_group["deploys"].append(deploy_entry)
             ecu_group["ecu_rowspan"] += 1
-        if mode_group:
+        if mode_group is not None:
             mode_group["mode_rowspan"] += 1
     return groups
 
 
-def _command_groups_to_rows(
-    command_groups: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+def _command_groups_to_rows(command_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert command_groups to flat rows with show_mode_cell, mode_rowspan, show_ecu_cell, ecu_rowspan."""
-    rows: List[Dict[str, Any]] = []
-    for mode_group in command_groups:
-        for ecu_group in mode_group["ecus"]:
-            for deploy in ecu_group["deploys"]:
-                rows.append({
-                    "mode": mode_group["mode"],
-                    "ecu": ecu_group["ecu"],
-                    "deploy_name": deploy["deploy_name"],
-                    "cmd": deploy["cmd"],
-                })
-    for idx, row in enumerate(rows):
-        row["show_mode_cell"] = (
-            idx == 0 or rows[idx - 1]["mode"] != row["mode"]
-        )
-        row["show_ecu_cell"] = (
-            idx == 0 or rows[idx - 1]["mode"] != row["mode"] or rows[idx - 1]["ecu"] != row["ecu"]
-        )
-    for idx, row in enumerate(rows):
-        if row["show_mode_cell"]:
-            row["mode_rowspan"] = sum(
-                1 for r in rows[idx:] if r["mode"] == row["mode"]
-            )
-        else:
-            row["mode_rowspan"] = 0
-        if row["show_ecu_cell"]:
-            row["ecu_rowspan"] = sum(
-                1 for r in rows[idx:] if r["mode"] == row["mode"] and r["ecu"] == row["ecu"]
-            )
-        else:
-            row["ecu_rowspan"] = 0
+    rows = [
+        {
+            "mode": mg["mode"],
+            "ecu": eg["ecu"],
+            "deploy_name": deploy["deploy_name"],
+            "cmd": deploy["cmd"],
+        }
+        for mg in command_groups
+        for eg in mg["ecus"]
+        for deploy in eg["deploys"]
+    ]
+    _add_row_span_metadata(rows)
     return rows
 
 
@@ -286,19 +219,17 @@ def _calculate_systems_index_path(web_dir: str) -> str:
             rel_to_root = os.path.relpath(install_root, web_dir)
             return os.path.join(rel_to_root, "systems.html")
         except ValueError:
-            logger.warning(
-                "Could not calculate relative path from %s to %s", web_dir, install_root
-            )
+            logger.warning("Could not calculate relative path from %s to %s", web_dir, install_root)
     return "../../../../../../../systems.html"
 
 
 def generate_launch_commands_page(
     system_name: str,
-    package_name: Optional[str],
+    package_name: str | None,
     launcher_dir: str,
-    mode_keys: List[str],
+    mode_keys: list[str],
     web_dir: str,
-    deploy_variants: Optional[List[Dict[str, Any]]] = None,
+    deploy_variants: list[dict[str, Any]] | None = None,
 ) -> None:
     """Generate the launch commands HTML page for a deployment.
 
@@ -324,9 +255,7 @@ def generate_launch_commands_page(
         command_groups = _build_command_groups(deploy_commands)
         command_rows = _command_groups_to_rows(command_groups)
     else:
-        commands = _build_launch_commands(
-            system_name, package_name, launcher_dir, mode_keys, web_dir
-        )
+        commands = _build_launch_commands(system_name, package_name, launcher_dir, mode_keys, web_dir)
         command_rows = _flat_commands_to_rows(commands)
 
     systems_index_path = _calculate_systems_index_path(web_dir)
