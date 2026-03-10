@@ -122,6 +122,7 @@ def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualiza
             "js/node_diagram.js",
             "js/sequence_diagram.js",
             "js/logic_diagram.js",
+            "js/theme.js",
         ]
         for module in js_modules:
             _copy_static_asset(module, web_dir)

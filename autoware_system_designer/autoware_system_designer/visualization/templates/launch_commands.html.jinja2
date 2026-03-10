@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Launch — {{ system_name }}</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="simple-page">
+    <div class="page-container">
+        <div class="page-header">
+            <h1>Launch Commands — {{ system_name }}</h1>
+            <div class="dark-mode-toggle">
+                <label for="dark-mode-switch">Dark Mode</label>
+                <div class="toggle-switch" id="dark-mode-switch"></div>
+            </div>
+        </div>
+        <div class="nav-links">
+            <a href="{{ systems_index_path }}">← System index</a>
+            <span class="nav-link-sep">|</span>
+            <a href="{{ overview_path }}">Diagram</a>
+        </div>
+        <p class="page-description">ROS 2 launch commands per mode and ECU (compute unit).</p>
+        {% if deploy_names %}
+        <div class="deploy-selector">
+            <label for="deploy-select">Deploy:</label>
+            <select id="deploy-select" aria-label="Select deploy">
+                {% for name in deploy_names %}
+                <option value="{{ name }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% else %}
+        <div class="deploy-selector">
+            <label for="deploy-select">Deploy:</label>
+            <select id="deploy-select" disabled aria-label="Select deploy">
+                <option>—</option>
+            </select>
+        </div>
+        {% endif %}
+        {% if command_rows %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Mode</th>
+                    <th>ECU</th>
+                    <th>Command</th>
+                </tr>
+            </thead>
+            <tbody id="commands-tbody">
+                {% for row in command_rows %}
+                <tr>
+                    {% if row.show_mode_cell %}
+                    <td rowspan="{{ row.mode_rowspan }}">{{ row.mode }}</td>
+                    {% endif %}
+                    {% if row.show_ecu_cell %}
+                    <td rowspan="{{ row.ecu_rowspan }}">{{ row.ecu }}</td>
+                    {% endif %}
+                    <td class="command-cell">
+                        <div class="command-with-copy">
+                            <button type="button" class="copy-btn" data-cmd="{{ row.cmd | e }}">Copy</button>
+                            <code>{{ row.cmd }}</code>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">No launch commands found for this deployment.</p>
+        {% endif %}
+    </div>
+    <script src="theme.js"></script>
+    <script>
+        window.initializeTheme();
+        document.getElementById('dark-mode-switch').addEventListener('click', function() {
+            window.toggleDarkMode();
+        });
+        function bindCopyButtons(container) {
+            if (!container) return;
+            container.querySelectorAll('.copy-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    var cmd = this.getAttribute('data-cmd');
+                    if (!cmd) return;
+                    navigator.clipboard.writeText(cmd).then(function() {
+                        var label = btn.textContent;
+                        btn.textContent = 'Copied!';
+                        btn.classList.add('copied');
+                        setTimeout(function() {
+                            btn.textContent = label;
+                            btn.classList.remove('copied');
+                        }, 1500);
+                    });
+                });
+            });
+        }
+        document.querySelectorAll('.copy-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var cmd = this.getAttribute('data-cmd');
+                if (!cmd) return;
+                navigator.clipboard.writeText(cmd).then(function() {
+                    var label = btn.textContent;
+                    btn.textContent = 'Copied!';
+                    btn.classList.add('copied');
+                    setTimeout(function() {
+                        btn.textContent = label;
+                        btn.classList.remove('copied');
+                    }, 1500);
+                });
+            });
+        });
+        {% if deploy_names %}
+        (function() {
+            var commandsByDeploy = {{ commands_by_deploy | tojson }};
+            var tbody = document.getElementById('commands-tbody');
+            function rowHtml(row) {
+                var modeCell = row.show_mode_cell
+                    ? '<td rowspan="' + row.mode_rowspan + '">' + escapeHtml(row.mode) + '</td>'
+                    : '';
+                var ecuCell = row.show_ecu_cell
+                    ? '<td rowspan="' + row.ecu_rowspan + '">' + escapeHtml(row.ecu) + '</td>'
+                    : '';
+                var cmdEscaped = escapeHtml(row.cmd).replace(/"/g, '&quot;');
+                return '<tr>' + modeCell + ecuCell +
+                    '<td class="command-cell"><div class="command-with-copy">' +
+                    '<button type="button" class="copy-btn" data-cmd="' + cmdEscaped + '">Copy</button>' +
+                    '<code>' + escapeHtml(row.cmd) + '</code></div></td></tr>';
+            }
+            function escapeHtml(s) {
+                var div = document.createElement('div');
+                div.textContent = s;
+                return div.innerHTML;
+            }
+            document.getElementById('deploy-select').addEventListener('change', function() {
+                var name = this.value;
+                var rows = commandsByDeploy[name] || [];
+                tbody.innerHTML = rows.map(rowHtml).join('');
+                bindCopyButtons(tbody);
+            });
+        })();
+        {% endif %}
+    </script>
+</body>
+</html>

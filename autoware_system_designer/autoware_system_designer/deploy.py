@@ -36,6 +36,7 @@ from .models.parsing.yaml_parser import yaml_parser
 from .ros2_launcher.generate_module_launcher import generate_module_launch_file
 from .template.parameter_template_generator import ParameterTemplateGenerator
 from .utils import generate_build_scripts
+from .visualization.launch_commands_page import generate_launch_commands_page
 from .visualization.visualize_deployment import visualize_deployment
 
 logger = logging.getLogger(__name__)
@@ -364,6 +365,17 @@ class Deployment:
                 launcher_dir=self.launcher_dir,
                 deployment_package_path=self.deployment_package_path,
                 system_name=self.name,
+                deploy_variants=self.deploy_variants,
+            )
+
+        web_dir = os.path.join(self.visualization_dir, "web")
+        if os.path.isdir(web_dir):
+            generate_launch_commands_page(
+                system_name=self.name,
+                package_name=getattr(self.config_registry, "deployment_package_name", None),
+                launcher_dir=self.launcher_dir,
+                mode_keys=self.mode_keys,
+                web_dir=web_dir,
                 deploy_variants=self.deploy_variants,
             )
 

@@ -1,6 +1,7 @@
 import fcntl
 import logging
 import os
+import shutil
 from pathlib import Path
 
 from ..file_io.source_location import SourceLocation, format_source
@@ -80,8 +81,24 @@ def update_index(output_root_dir: str):
         logger.error(f"Failed to update visualization index: {e}{format_source(src)}")
 
 
+def _copy_shared_assets_to_install_root(install_root: Path) -> None:
+    """Copy css/styles.css and js/theme.js to install root for systems.html."""
+    pkg_dir = Path(__file__).resolve().parent
+    css_src = pkg_dir / "css" / "styles.css"
+    theme_src = pkg_dir / "js" / "theme.js"
+    css_dest_dir = install_root / "css"
+    css_dest_dir.mkdir(parents=True, exist_ok=True)
+    if css_src.exists():
+        shutil.copy2(css_src, css_dest_dir / "styles.css")
+    if theme_src.exists():
+        shutil.copy2(theme_src, install_root / "theme.js")
+
+
 def _generate_index_file(install_root: Path, output_file: Path):
     deployments = []
+
+    # Copy shared assets (theme + styles) to install root so systems.html can load them
+    _copy_shared_assets_to_install_root(install_root)
 
     # Walk through the install directory to find deployments
     # We scan specifically for our known structure to avoid false positives
@@ -153,20 +170,23 @@ def _generate_index_file(install_root: Path, output_file: Path):
         web_path = dep["path"]
         deployment_overview_path = web_path / f"{dep['name']}_overview.html"
 
-        main_link = f"{deployment_overview_path}?diagram={dep['diagram_types'][0]}"
+        diagram_types = dep["diagram_types"]
+        default_diagram = "node_diagram" if "node_diagram" in diagram_types else diagram_types[0]
+        diagram_link = f"{deployment_overview_path}?diagram={default_diagram}"
 
-        diagrams = []
-        for diagram_type in dep["diagram_types"]:
-            diagram_label = diagram_type.replace("_", " ").title()
-            diagram_link = f"{deployment_overview_path}?diagram={diagram_type}"
-            diagrams.append({"label": diagram_label, "link": diagram_link, "type": diagram_type})
+        web_dir_abs = install_root / web_path
+        launch_commands_filename = f"{dep['name']}_launch_commands.html"
+        launch_commands_path = web_dir_abs / launch_commands_filename
+        launch_commands_link = (
+            (web_path / launch_commands_filename).as_posix() if launch_commands_path.exists() else None
+        )
 
         view_deployments.append(
             {
                 "name": dep["name"],
                 "package": dep["package"],
-                "main_link": main_link,
-                "diagrams": diagrams,
+                "diagram_link": diagram_link,
+                "launch_commands_link": launch_commands_link,
             }
         )
 

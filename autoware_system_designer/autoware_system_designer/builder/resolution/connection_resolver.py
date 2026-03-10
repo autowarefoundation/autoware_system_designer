@@ -58,6 +58,9 @@ def filter_connections_by_removed_entities(
         pair = _connection_to_list(conn)
         if pair is None:
             continue
-        if _get_endpoint_entity_name(pair[0]) not in removed_set and _get_endpoint_entity_name(pair[1]) not in removed_set:
+        if (
+            _get_endpoint_entity_name(pair[0]) not in removed_set
+            and _get_endpoint_entity_name(pair[1]) not in removed_set
+        ):
             result.append(pair)
     return result
