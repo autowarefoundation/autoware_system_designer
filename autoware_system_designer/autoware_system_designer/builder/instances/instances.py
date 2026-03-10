@@ -20,7 +20,7 @@ from ...models.config import ModuleConfig, NodeConfig, ParameterSetConfig, Syste
 from ...utils.naming import generate_unique_id
 from ...visualization.visualization_guide import get_component_color, get_component_position
 from ..graph.event_manager import EventManager
-from ..graph.launch_manager import LaunchManager
+from ..config.launch_manager import LaunchManager
 from ..graph.link_manager import LinkManager
 from ..parameters.parameter_manager import ParameterManager
 from .instance_serializer import (
