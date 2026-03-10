@@ -117,11 +117,18 @@ class ParameterTemplateGenerator:
             parameter_files = {pf["name"]: pf["path"] for pf in parameter_files_list}
 
             if parameter_files or parameters:
+                package = "unknown_package"
+                if getattr(instance, "launch_manager", None) is not None:
+                    package = instance.launch_manager.package_name
+                elif getattr(instance, "configuration", None) and getattr(
+                    instance.configuration, "launch", None
+                ):
+                    package = instance.configuration.launch.get("package", "unknown_package")
                 node_info = {
                     "node": full_namespace,
                     "parameter_files": parameter_files,
                     "parameters": parameters,
-                    "package": instance.configuration.launch.get("package", "unknown_package"),
+                    "package": package,
                 }
                 node_data.append(node_info)
 

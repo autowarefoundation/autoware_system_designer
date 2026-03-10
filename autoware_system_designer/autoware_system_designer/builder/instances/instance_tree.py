@@ -6,6 +6,7 @@ from ...file_io.source_location import format_source, source_from_config
 from ...models.parsing.data_validator import entity_name_decode
 from ..parameters.parameter_set_applier import apply_parameter_set
 from ..runtime.parameters import ParameterType
+from ..graph.launch_manager import LaunchManager
 
 if TYPE_CHECKING:
     from ..config.config_registry import ConfigRegistry
@@ -138,11 +139,12 @@ def set_node_instances(
     """Set instances for node entity type."""
     logger.info(f"Setting node entity {entity_id} for instance {instance.namespace_str}")
     instance.configuration = config_registry.get_node(entity_name)
-    if launch_override:
-        if instance.configuration.launch is None:
-            instance.configuration.launch = {}
-        instance.configuration.launch.update(launch_override)
     instance.entity_type = "node"
+
+    launch_manager = LaunchManager.from_config(instance.configuration)
+    if launch_override:
+        launch_manager.apply_override(launch_override)
+    instance.launch_manager = launch_manager
 
     # run the node configuration
     run_node_configuration(instance, config_registry)

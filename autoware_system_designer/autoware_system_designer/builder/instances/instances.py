@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from ...deployment.deployment_config import deploy_config
 from ...exceptions import ValidationError
@@ -20,6 +20,7 @@ from ...models.config import ModuleConfig, NodeConfig, ParameterSetConfig, Syste
 from ...utils.naming import generate_unique_id
 from ...visualization.visualization_guide import get_component_color, get_component_position
 from ..graph.event_manager import EventManager
+from ..graph.launch_manager import LaunchManager
 from ..graph.link_manager import LinkManager
 from ..parameters.parameter_manager import ParameterManager
 from .instance_serializer import (
@@ -48,6 +49,9 @@ class Instance:
 
         # configuration
         self.configuration: NodeConfig | ModuleConfig | ParameterSetConfig | SystemConfig | None = None
+
+        # launch (node instances only)
+        self.launch_manager: Optional[LaunchManager] = None
 
         # instance topology
         self.entity_type: str = None

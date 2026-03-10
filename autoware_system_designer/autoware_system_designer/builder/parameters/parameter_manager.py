@@ -29,6 +29,7 @@ from ..runtime.parameters import (
     ParameterList,
     ParameterType,
 )
+from ..runtime.execution import LaunchState
 
 if TYPE_CHECKING:
     from ..config.config_registry import ConfigRegistry
@@ -145,8 +146,9 @@ class ParameterManager:
                 param_type = param.get("parameter_type", {})
                 param_type_name = param_type.get("name") if isinstance(param_type, dict) else str(param_type)
                 param_name = param.get("name")
+                is_ros2_file = (node.get("launch_state") == LaunchState.ROS2_LAUNCH_FILE)
                 if (
-                    node.get("is_ros2_file_launch")
+                    is_ros2_file
                     and param_type_name in launch_param_types
                     and isinstance(param_name, str)
                     and param_name in available_args

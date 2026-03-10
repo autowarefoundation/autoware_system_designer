@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Tuple
 from ..parameters.parameter_manager import ParameterManager
 from .instance_serializer import collect_launcher_data
 
+from ..runtime.execution import LaunchState
+
 
 def collect_component_nodes(component_instance) -> List[Dict[str, Any]]:
     """Collect launcher node payloads from a runtime component instance."""
@@ -124,14 +126,13 @@ def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: Lis
     launch_data = node_instance.get("launcher", {})
     node_data["package"] = launch_data.get("package", "")
     node_data["ros2_launch_file"] = launch_data.get("ros2_launch_file", None)
-    node_data["is_ros2_file_launch"] = node_data["ros2_launch_file"] is not None
     node_data["node_output"] = launch_data.get("node_output", "screen")
     node_data["args"] = launch_data.get("args", "")
-
-    if not node_data["is_ros2_file_launch"]:
+ 
+    node_data["launch_state"] = launch_data.get("launch_state")
+    if node_data["launch_state"] != LaunchState.ROS2_LAUNCH_FILE:
         node_data["plugin"] = launch_data.get("plugin", "")
         node_data["executable"] = launch_data.get("executable", "")
-        node_data["use_container"] = launch_data.get("use_container", False)
         node_data["container"] = launch_data.get("container", "perception_container")
 
     def normalize_parameter_type(param_type: Any) -> Dict[str, Any]:
