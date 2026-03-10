@@ -88,6 +88,29 @@ body {
   text-decoration: underline;
 }
 
+#sidebar-header .header-link-sep {
+  margin: 0 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+#sidebar-header .home-link,
+#sidebar-header .launcher-link {
+  display: inline-block;
+  margin-bottom: 10px;
+}
+
+.launcher-link {
+  font-size: 13px;
+  color: var(--highlight);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.launcher-link:hover {
+  text-decoration: underline;
+}
+
 #sidebar-header h1 {
   margin: 0 0 10px 0;
   font-size: 18px;
@@ -583,6 +606,11 @@ body.simple-page .page-header {
 
 body.simple-page .nav-links {
   margin-bottom: 20px;
+}
+
+body.simple-page .nav-links .nav-link-sep {
+  margin: 0 8px;
+  color: var(--text-muted);
 }
 
 body.simple-page .nav-links a {

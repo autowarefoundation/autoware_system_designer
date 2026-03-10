@@ -21,6 +21,8 @@
     <div id="sidebar">
       <div id="sidebar-header">
         <a href="#" class="home-link">&larr; Back to Systems</a>
+        <span class="header-link-sep">|</span>
+        <a href="#" class="launcher-link" id="launcher-link">Launch commands</a>
         <h1></h1>
         <div class="package-info"></div>
         <div class="dark-mode-toggle">
@@ -405,6 +407,10 @@
 
         const backLink = document.querySelector(".home-link");
         if (backLink) backLink.href = systemsIndexPath;
+
+        const launcherLink = document.getElementById("launcher-link");
+        if (launcherLink)
+          launcherLink.href = `${deploymentName}_launch_commands.html`;
 
         const headerTitle = document.querySelector("#sidebar-header h1");
         if (headerTitle) headerTitle.textContent = deploymentName;
