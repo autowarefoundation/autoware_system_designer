@@ -14,12 +14,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Keys from component/launch config that are applied to LaunchManager (matches LaunchConfig.apply_override).
+LAUNCH_OVERRIDE_KEYS = frozenset(
+    {"container_name", "use_container", "ros2_launch_file", "node_output", "args"}
+)
+
 
 def set_instances(
     instance: "Instance",
     entity_id: str,
     config_registry: "ConfigRegistry",
-    launch_override: dict | None = None,
 ) -> None:
     try:
         entity_name, entity_type = entity_name_decode(entity_id)
@@ -28,7 +32,7 @@ def set_instances(
         elif entity_type == "module":
             set_module_instances(instance, entity_id, entity_name, config_registry)
         elif entity_type == "node":
-            set_node_instances(instance, entity_id, entity_name, config_registry, launch_override)
+            set_node_instances(instance, entity_id, entity_name, config_registry)
     except Exception:
         raise ValidationError(f"Error setting instances for {entity_id}, at {instance.configuration.file_path}")
 
@@ -54,6 +58,12 @@ def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry"
 
         # create instance
         child_instance = _create_child_instance(instance_name, compute_unit_name, namespace, instance)
+        launch_args = {k: cfg_component[k] for k in LAUNCH_OVERRIDE_KEYS if k in cfg_component}
+        if launch_args:
+            child_instance.component_arguments = {
+                **(child_instance.component_arguments or {}),
+                **launch_args,
+            }
 
         try:
             set_instances(child_instance, entity_id, config_registry)
@@ -134,7 +144,6 @@ def set_node_instances(
     entity_id: str,
     entity_name: str,
     config_registry: "ConfigRegistry",
-    launch_override: dict | None = None,
 ) -> None:
     """Set instances for node entity type."""
     logger.info(f"Setting node entity {entity_id} for instance {instance.namespace_str}")
@@ -142,8 +151,14 @@ def set_node_instances(
     instance.entity_type = "node"
 
     launch_manager = LaunchManager.from_config(instance.configuration)
-    if launch_override:
-        launch_manager.apply_override(launch_override)
+    if instance.component_arguments:
+        launch_override = {
+            k: instance.component_arguments[k]
+            for k in LAUNCH_OVERRIDE_KEYS
+            if k in instance.component_arguments
+        }
+        if launch_override:
+            launch_manager.apply_override(launch_override)
     instance.launch_manager = launch_manager
 
     # run the node configuration
@@ -180,6 +195,12 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
             layer_delta=1,
         )
         child_instance.parent_module_list = instance.parent_module_list.copy()
+        launch_args = launch_override or {}
+        if launch_args:
+            child_instance.component_arguments = {
+                **(instance.component_arguments or {}),
+                **launch_args,
+            }
 
         # recursive call of set_instances
         try:
@@ -187,7 +208,6 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
                 child_instance,
                 cfg_node.get("entity"),
                 config_registry,
-                launch_override=launch_override,
             )
         except Exception as e:
             # add the instance to the children dict for debugging

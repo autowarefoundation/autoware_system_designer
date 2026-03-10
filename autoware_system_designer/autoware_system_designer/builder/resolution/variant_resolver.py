@@ -45,8 +45,12 @@ class VariantResolver:
                 if isinstance(item, dict):
                     key = item.get(key_field)
                     if key and key in base_map:
-                        # Replace existing item
-                        merged_list[base_map[key]] = item
+                        # Merge override into base so base keys (e.g. container_name) are preserved
+                        base_item = merged_list[base_map[key]]
+                        if isinstance(base_item, dict):
+                            merged_list[base_map[key]] = {**base_item, **item}
+                        else:
+                            merged_list[base_map[key]] = item
                     else:
                         # Append new item
                         merged_list.append(item)
