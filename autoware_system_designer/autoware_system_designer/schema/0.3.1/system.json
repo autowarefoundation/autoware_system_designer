@@ -1,0 +1,167 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "System Entity Schema 0.3.1",
+  "description": "Schema for autoware_system_design_format system entities",
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "autoware_system_design_format": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "base": {
+      "type": "string"
+    },
+    "override": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "remove": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "arguments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "variables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": ["string", "number", "boolean", "array"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "variable_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "value"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "modes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "default": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "parameter_sets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "entity"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "entity": {
+            "type": "string"
+          },
+          "compute_unit": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "parameter_set": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "container_name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "connections": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "string"
+            }
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "maxProperties": 2,
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "additionalProperties": true,
+  "if": {
+    "not": {
+      "required": ["base"]
+    }
+  },
+  "then": {
+    "required": ["components", "connections"]
+  }
+}

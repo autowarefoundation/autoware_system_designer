@@ -104,14 +104,6 @@ def _node_semantics(config: Dict[str, Any]) -> Iterable[SchemaIssue]:
                 )
             )
 
-        if launch.get("use_container") is True and "container_name" not in launch:
-            issues.append(
-                SchemaIssue(
-                    message="Launch config must have 'container_name' when 'use_container' is true",
-                    yaml_path="/launch/use_container",
-                )
-            )
-
     issues.extend(_parameter_type_semantics(config.get("param_values"), base_path="/param_values"))
     return issues
 

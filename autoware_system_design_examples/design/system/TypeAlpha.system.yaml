@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.3.0
+autoware_system_design_format: 0.3.1
 
 name: TypeAlpha.system
 
@@ -22,6 +22,7 @@ components:
     entity: LidarDummy.module
     namespace: sensing/lidar
     compute_unit: perception_ecu_1
+    container_name: pointcloud_container
   - name: map_loader
     entity: MapDummy.node
     namespace: map
@@ -35,6 +36,7 @@ components:
     namespace: perception/object_recognition
     compute_unit: main_ecu
     parameter_set: [PerceptionModuleA.parameter_set]
+    container_name: pointcloud_container
   - name: planner
     entity: PlanningDummy.node
     namespace: planning

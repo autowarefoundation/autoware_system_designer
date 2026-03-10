@@ -52,7 +52,7 @@ class LaunchConfig:
         plugin: str = "",
         executable: str = "",
         use_container: bool = False,
-        container_name: str = "perception_container",
+        container_name: str = "default_container",
         launch_state: LaunchState = LaunchState.SINGLE_NODE,
     ):
         self.package_name = package_name
@@ -77,7 +77,7 @@ class LaunchConfig:
         plugin = launch.get("plugin", "")
         executable = launch.get("executable", "")
         use_container = launch.get("use_container", False)
-        container_name = launch.get("container_name", "perception_container")
+        container_name = launch.get("container_name", "default_container")
         launch_state = LaunchState.from_config(launch)
 
         return cls(

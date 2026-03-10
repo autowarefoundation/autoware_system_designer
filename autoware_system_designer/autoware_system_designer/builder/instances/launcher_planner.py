@@ -121,19 +121,7 @@ def _extract_node_data(node_instance, module_path: List[str]) -> Dict[str, Any]:
 
 def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: List[str]) -> Dict[str, Any]:
     """Extract node launcher data from serialized node dictionary."""
-    node_data = {"name": node_instance.get("name", "")}
-
     launch_data = node_instance.get("launcher", {})
-    node_data["package"] = launch_data.get("package", "")
-    node_data["ros2_launch_file"] = launch_data.get("ros2_launch_file", None)
-    node_data["node_output"] = launch_data.get("node_output", "screen")
-    node_data["args"] = launch_data.get("args", "")
- 
-    node_data["launch_state"] = launch_data.get("launch_state")
-    if node_data["launch_state"] != LaunchState.ROS2_LAUNCH_FILE:
-        node_data["plugin"] = launch_data.get("plugin", "")
-        node_data["executable"] = launch_data.get("executable", "")
-        node_data["container"] = launch_data.get("container", "perception_container")
 
     def normalize_parameter_type(param_type: Any) -> Dict[str, Any]:
         if isinstance(param_type, dict) and "name" in param_type:
@@ -142,18 +130,45 @@ def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: Lis
             return {"name": param_type}
         return {"name": str(param_type)}
 
-    node_data["ports"] = launch_data.get("ports", [])
-    node_data["full_namespace_path"] = "/".join(module_path) if module_path else ""
-    node_data["param_values"] = []
+    param_values = []
     for param in launch_data.get("param_values", []):
         param_copy = dict(param)
         param_copy["parameter_type"] = normalize_parameter_type(param.get("parameter_type"))
-        node_data["param_values"].append(param_copy)
+        param_copy.setdefault("default_value", param.get("value", param.get("default_value")))
+        param_values.append(param_copy)
 
-    node_data["param_files"] = []
+    param_files = []
     for param_file in launch_data.get("param_files", []):
         param_file_copy = dict(param_file)
         param_file_copy["parameter_type"] = normalize_parameter_type(param_file.get("parameter_type"))
-        node_data["param_files"].append(param_file_copy)
+        param_file_copy.setdefault("default", param_file.get("path", param_file.get("default", "")))
+        param_file_copy.setdefault("path", param_file_copy["default"])
+        param_file_copy.setdefault("allow_substs", param_file.get("allow_substs", False))
+        param_files.append(param_file_copy)
+
+    # parameter_files for node_launcher and component_launcher (needs .path)
+    parameter_files = [
+        {"name": pf["name"], "allow_substs": pf.get("allow_substs", False), "path": pf.get("path", pf.get("default", ""))}
+        for pf in param_files
+    ]
+
+    node_data: Dict[str, Any] = {
+        "name": node_instance.get("name", ""),
+        "full_namespace_path": "/".join(module_path) if module_path else "",
+        "package": launch_data.get("package", ""),
+        "ros2_launch_file": launch_data.get("ros2_launch_file"),
+        "node_output": launch_data.get("node_output", "screen"),
+        "args": launch_data.get("args", ""),
+        "launch_state": launch_data.get("launch_state"),
+        "container_name": launch_data.get("container", launch_data.get("container_name", "default_container")),
+        "ports": launch_data.get("ports", []),
+        "param_values": param_values,
+        "param_files": param_files,
+        "parameter_files": parameter_files,
+    }
+    if node_data["launch_state"] != LaunchState.ROS2_LAUNCH_FILE.value:
+        node_data["plugin"] = launch_data.get("plugin", "")
+        node_data["executable"] = launch_data.get("executable", "")
+        node_data["container"] = launch_data.get("container", "default_container")
 
     return node_data

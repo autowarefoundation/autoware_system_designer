@@ -66,7 +66,9 @@ class LaunchManager:
             launcher_data["executable"] = cfg.executable
             launcher_data["container"] = cfg.container_name
 
-        # Ports from instance (explicit remap = port.remap_target differs from default)
+        launcher_data["container_name"] = cfg.container_name
+
+        # Inputs/outputs for node_launcher.xml.jinja2 (list of {"name": ...})
         in_ports = instance.link_manager.get_all_in_ports()
         out_ports = instance.link_manager.get_all_out_ports()
         remap_inputs_explicit = {
@@ -79,6 +81,8 @@ class LaunchManager:
             for port in out_ports
             if port.remap_target and port.remap_target != "~/output/" + port.name
         }
+        launcher_data["inputs"] = [{"name": p.name} for p in in_ports]
+        launcher_data["outputs"] = [{"name": p.name} for p in out_ports]
         ports = []
         for port in in_ports:
             if port.is_global and port.name not in remap_inputs_explicit:
@@ -115,6 +119,7 @@ class LaunchManager:
         for param in instance.parameter_manager.get_parameters_for_launch():
             param_copy = dict(param)
             param_copy["parameter_type"] = serialize_parameter_type(param.get("parameter_type"))
+            param_copy["default_value"] = param_copy.get("value")
             param_values.append(param_copy)
         launcher_data["param_values"] = param_values
 
@@ -124,7 +129,16 @@ class LaunchManager:
             param_file_copy["parameter_type"] = serialize_parameter_type(
                 param_file.get("parameter_type")
             )
+            param_file_copy["default"] = param_file_copy.get("path", "")
             param_files.append(param_file_copy)
         launcher_data["param_files"] = param_files
+        launcher_data["parameter_files"] = [
+            {
+                "name": pf["name"],
+                "allow_substs": pf.get("allow_substs", False),
+                "path": pf.get("path", pf.get("default", "")),
+            }
+            for pf in launcher_data["param_files"]
+        ]
 
         return launcher_data
