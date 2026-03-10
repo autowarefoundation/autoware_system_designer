@@ -59,6 +59,8 @@ class Instance:
         self.children: Dict[str, Instance] = {}
         self.parent_module_list: List[str] = []
 
+        self.component_arguments: dict | None = None
+
         # interface
         self.link_manager: LinkManager = LinkManager(self)
 

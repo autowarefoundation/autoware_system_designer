@@ -255,6 +255,10 @@ def _create_child_instance(
 
     child_instance = Instance(name, compute_unit, namespace, parent_instance.layer + layer_delta)
     child_instance.parent = parent_instance
+    # parameter resolver propagation
     if parent_instance.parameter_resolver:
         child_instance.set_parameter_resolver(parent_instance.parameter_resolver)
+    # component arguments propagation
+    if parent_instance.component_arguments:
+        child_instance.component_arguments = parent_instance.component_arguments
     return child_instance
