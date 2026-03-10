@@ -634,29 +634,43 @@ class ParameterManager:
     # Node Parameter Initialization
     # =========================================================================
 
-    def initialize_node_parameters(self, config_registry: Optional["ConfigRegistry"] = None):
+    def initialize_node_parameters(
+        self,
+        config_registry: Optional["ConfigRegistry"] = None,
+        config: Optional[Any] = None,
+        param_files: Optional[List[Dict[str, Any]]] = None,
+        param_values: Optional[List[Dict[str, Any]]] = None,
+    ):
         """Initialize parameters for node entity during node configuration.
         This method initializes both default parameter_files and default parameters
-        from the node's configuration file.
+        from the provided config (param_files and param_values).
+
+        Args:
+            config_registry: Registry for resolving package paths.
+            config: Config-like object used for source_from_config (file_path, source_map).
+            param_files: List of param_file entries (e.g. [{"name": "...", "value": "..."}]).
+            param_values: List of param value entries (e.g. [{"name": "...", "type": "...", "value": ...}]).
         """
         if self.instance.entity_type != "node":
             return
 
+        param_files = param_files if param_files is not None else []
+        param_values = param_values if param_values is not None else []
+        cfg = config
+
         package_name = self._get_package_name()
 
         # 1. Set default parameter_files from node configuration
-        # Use new param_files field, fallback to parameter_files is handled in parser
-        if hasattr(self.instance.configuration, "param_files") and self.instance.configuration.param_files:
-            for idx, cfg_param in enumerate(self.instance.configuration.param_files):
+        if param_files:
+            for idx, cfg_param in enumerate(param_files):
                 param_name = cfg_param.get("name")
                 param_value = cfg_param.get("value", cfg_param.get("default"))
-                # param_schema = cfg_param.get("schema")
 
-                cfg_source = source_from_config(self.instance.configuration, f"/param_files/{idx}")
+                cfg_source = source_from_config(cfg, f"/param_files/{idx}") if cfg else None
 
                 if param_name is None or param_value is None:
                     raise ParameterConfigurationError(
-                        f"param_name or param_value is None. namespace: {self.instance.namespace_str}, param_files: {self.instance.configuration.param_files}"
+                        f"param_name or param_value is None. namespace: {self.instance.namespace_str}, param_files: {param_files}"
                     )
 
                 # Resolve parameter file path if resolver is available
@@ -683,18 +697,17 @@ class ParameterManager:
                 )
 
         # 2. Set default parameters from node parameters
-        # Use new param_values field, fallback to parameters is handled in parser
-        if hasattr(self.instance.configuration, "param_values") and self.instance.configuration.param_values:
-            for idx, cfg_param in enumerate(self.instance.configuration.param_values):
+        if param_values:
+            for idx, cfg_param in enumerate(param_values):
                 param_name = cfg_param.get("name")
                 param_value = cfg_param.get("value", cfg_param.get("default"))
                 param_type = cfg_param.get("type", "string")
 
-                cfg_source = source_from_config(self.instance.configuration, f"/param_values/{idx}")
+                cfg_source = source_from_config(cfg, f"/param_values/{idx}") if cfg else None
 
                 if param_name is None or param_value is None:
                     raise ParameterConfigurationError(
-                        f"param_name or param_value is None. namespace: {self.instance.namespace_str}, param_values: {self.instance.configuration.param_values}"
+                        f"param_name or param_value is None. namespace: {self.instance.namespace_str}, param_values: {param_values}"
                     )
 
                 # Resolve parameter value if resolver is available

@@ -226,8 +226,19 @@ def run_node_configuration(instance: "Instance", config_registry: "ConfigRegistr
     # set ports
     instance.link_manager.initialize_node_ports()
 
-    # set parameters
-    instance.parameter_manager.initialize_node_parameters(config_registry)
+    # Parse param_files and param_values from config (fallback to legacy names)
+    param_files = getattr(instance.configuration, "param_files", None) or getattr(
+        instance.configuration, "parameter_files", []
+    )
+    param_values = getattr(instance.configuration, "param_values", None) or getattr(
+        instance.configuration, "parameters", []
+    )
+    instance.parameter_manager.initialize_node_parameters(
+        config_registry,
+        config=instance.configuration,
+        param_files=param_files or [],
+        param_values=param_values or [],
+    )
 
     # initialize processes and events
     instance.event_manager.initialize_node_processes()
