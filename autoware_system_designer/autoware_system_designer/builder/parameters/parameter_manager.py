@@ -296,9 +296,9 @@ class ParameterManager:
             return match.group(0)  # Return original if not found
 
     def _get_package_name(self) -> Optional[str]:
-        """Get package name from instance configuration."""
-        if self.instance.entity_type == "node" and self.instance.configuration:
-            return self.instance.configuration.package_name
+        """Get package name from instance launch_manager."""
+        if self.instance.entity_type == "node" and getattr(self.instance, "launch_manager", None):
+            return self.instance.launch_manager.package_name
         return None
 
     def _normalize_parameter_value(
@@ -642,9 +642,7 @@ class ParameterManager:
         if self.instance.entity_type != "node":
             return
 
-        package_name = None
-        if self.instance.configuration and hasattr(self.instance.configuration, "package_name"):
-            package_name = self.instance.configuration.package_name
+        package_name = self._get_package_name()
 
         # 1. Set default parameter_files from node configuration
         # Use new param_files field, fallback to parameter_files is handled in parser

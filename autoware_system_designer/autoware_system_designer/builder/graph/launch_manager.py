@@ -66,21 +66,21 @@ class LaunchManager:
             launcher_data["executable"] = cfg.executable
             launcher_data["container"] = cfg.container_name
 
-        # Ports from instance
-        inputs_cfg = getattr(instance.configuration, "inputs", None) or []
-        outputs_cfg = getattr(instance.configuration, "outputs", None) or []
+        # Ports from instance (explicit remap = port.remap_target differs from default)
+        in_ports = instance.link_manager.get_all_in_ports()
+        out_ports = instance.link_manager.get_all_out_ports()
         remap_inputs_explicit = {
-            input_cfg.get("name")
-            for input_cfg in inputs_cfg
-            if "remap_target" in input_cfg and input_cfg.get("remap_target") not in (None, "")
+            port.name
+            for port in in_ports
+            if port.remap_target and port.remap_target != "~/input/" + port.name
         }
         remap_outputs_explicit = {
-            output_cfg.get("name")
-            for output_cfg in outputs_cfg
-            if "remap_target" in output_cfg and output_cfg.get("remap_target") not in (None, "")
+            port.name
+            for port in out_ports
+            if port.remap_target and port.remap_target != "~/output/" + port.name
         }
         ports = []
-        for port in instance.link_manager.get_all_in_ports():
+        for port in in_ports:
             if port.is_global and port.name not in remap_inputs_explicit:
                 continue
             topic = port.get_topic()
@@ -94,7 +94,7 @@ class LaunchManager:
                     "remap_target": port.remap_target,
                 }
             )
-        for port in instance.link_manager.get_all_out_ports():
+        for port in out_ports:
             if port.is_global and port.name not in remap_outputs_explicit:
                 continue
             topic = port.get_topic()
