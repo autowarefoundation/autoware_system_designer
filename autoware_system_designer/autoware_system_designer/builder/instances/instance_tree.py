@@ -57,13 +57,10 @@ def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry"
             namespace = []
 
         # create instance
-        child_instance = _create_child_instance(instance_name, compute_unit_name, namespace, instance)
-        launch_args = {k: cfg_component[k] for k in LAUNCH_OVERRIDE_KEYS if k in cfg_component}
-        if launch_args:
-            child_instance.component_arguments = {
-                **(child_instance.component_arguments or {}),
-                **launch_args,
-            }
+        launch_overrides = {k: cfg_component[k] for k in LAUNCH_OVERRIDE_KEYS if k in cfg_component}
+        child_instance = _create_child_instance(
+            instance_name, compute_unit_name, namespace, instance, launch_overrides=launch_overrides or None
+        )
 
         try:
             set_instances(child_instance, entity_id, config_registry)
@@ -193,14 +190,9 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
             instance.namespace + [child_name],
             instance,
             layer_delta=1,
+            launch_overrides=launch_override or None,
         )
         child_instance.parent_module_list = instance.parent_module_list.copy()
-        launch_args = launch_override or {}
-        if launch_args:
-            child_instance.component_arguments = {
-                **(instance.component_arguments or {}),
-                **launch_args,
-            }
 
         # recursive call of set_instances
         try:
@@ -270,6 +262,7 @@ def _create_child_instance(
     namespace: list[str],
     parent_instance: "Instance",
     layer_delta: int = 0,
+    launch_overrides: dict | None = None,
 ) -> "Instance":
     from .instances import Instance
 
@@ -278,7 +271,13 @@ def _create_child_instance(
     # parameter resolver propagation
     if parent_instance.parameter_resolver:
         child_instance.set_parameter_resolver(parent_instance.parameter_resolver)
-    # component arguments propagation
+    # component arguments: propagate from parent and apply any launch overrides in one place.
+    # Higher hierarchy (e.g. system) wins over lower (e.g. module): parent is merged last.
     if parent_instance.component_arguments:
         child_instance.component_arguments = parent_instance.component_arguments
+    if launch_overrides:
+        child_instance.component_arguments = {
+            **launch_overrides,
+            **(child_instance.component_arguments or {}),
+        }
     return child_instance
