@@ -10,7 +10,6 @@ launch:
   plugin: autoware::perception_dummy_nodes::DetectorA
   executable: detector_a_node
   node_output: screen
-  use_container: true
 
 # interfaces
 subscribers:
