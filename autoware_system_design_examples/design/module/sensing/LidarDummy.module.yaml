@@ -1,27 +1,27 @@
-autoware_system_design_format: 0.3.0
+autoware_system_design_format: 0.3.1
 
 name: LidarDummy.module
 
 instances:
   - name: lidar_top
     entity: LidarDummyDriver.node
-    launch:
+    arguments:
       use_container: true
   - name: lidar_left
     entity: LidarDummyDriver.node
-    launch:
+    arguments:
       use_container: true
   - name: lidar_right
     entity: LidarDummyDriver.node
-    launch:
+    arguments:
       use_container: true
   - name: lidar_rear
     entity: LidarDummyDriver.node
-    launch:
+    arguments:
       use_container: true
   - name: lidar_concatenate
     entity: ConcatenatePointcloudDummy.node
-    launch:
+    arguments:
       use_container: true
 
 subscribers: []

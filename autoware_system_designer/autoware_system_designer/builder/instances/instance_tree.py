@@ -55,10 +55,8 @@ def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry"
             namespace = []
 
         # create instance
-        launch_overrides = {k: cfg_component[k] for k in LAUNCH_OVERRIDE_KEYS if k in cfg_component}
-        child_instance = _create_child_instance(
-            instance_name, compute_unit_name, namespace, instance, launch_overrides=launch_overrides or None
-        )
+        instance.arguments = cfg_component.get("arguments", {})
+        child_instance = _create_child_instance(instance_name, compute_unit_name, namespace, instance)
 
         try:
             set_instances(child_instance, entity_id, config_registry)
@@ -146,12 +144,10 @@ def set_node_instances(
     instance.entity_type = "node"
 
     launch_manager = LaunchManager.from_config(instance.configuration)
-    if instance.component_arguments:
-        launch_override = {
-            k: instance.component_arguments[k] for k in LAUNCH_OVERRIDE_KEYS if k in instance.component_arguments
-        }
-        if launch_override:
-            launch_manager.apply_override(launch_override)
+    if instance.arguments:
+        argument_override = {k: instance.arguments[k] for k in LAUNCH_OVERRIDE_KEYS if k in instance.arguments}
+        if argument_override:
+            launch_manager.apply_override(argument_override)
     instance.launch_manager = launch_manager
 
     # run the node configuration
@@ -172,8 +168,8 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
             )
 
         child_name = cfg_node.get("name")
-        launch_override = cfg_node.get("launch")
-        if launch_override:
+        argument_override = cfg_node.get("arguments")
+        if argument_override:
             _, entity_type = entity_name_decode(cfg_node.get("entity"))
             if entity_type != "node":
                 cfg_src = source_from_config(instance.configuration, f"/instances/{idx}/launch")
@@ -186,7 +182,7 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
             instance.namespace + [child_name],
             instance,
             layer_delta=1,
-            launch_overrides=launch_override or None,
+            argument_overrides=argument_override or None,
         )
         child_instance.parent_module_list = instance.parent_module_list.copy()
 
@@ -258,7 +254,7 @@ def _create_child_instance(
     namespace: list[str],
     parent_instance: "Instance",
     layer_delta: int = 0,
-    launch_overrides: dict | None = None,
+    argument_overrides: dict | None = None,
 ) -> "Instance":
     from .instances import Instance
 
@@ -267,13 +263,13 @@ def _create_child_instance(
     # parameter resolver propagation
     if parent_instance.parameter_resolver:
         child_instance.set_parameter_resolver(parent_instance.parameter_resolver)
-    # component arguments: propagate from parent and apply any launch overrides in one place.
+    # arguments: propagate from parent and apply any launch overrides in one place.
     # Higher hierarchy (e.g. system) wins over lower (e.g. module): parent is merged last.
-    if parent_instance.component_arguments:
-        child_instance.component_arguments = parent_instance.component_arguments
-    if launch_overrides:
-        child_instance.component_arguments = {
-            **launch_overrides,
-            **(child_instance.component_arguments or {}),
+    if parent_instance.arguments:
+        child_instance.arguments = parent_instance.arguments
+    if argument_overrides:
+        child_instance.arguments = {
+            **argument_overrides,
+            **(child_instance.arguments or {}),
         }
     return child_instance

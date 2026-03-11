@@ -280,8 +280,6 @@ launch:
   plugin: my_perception::Detector
   executable: detector_node
   node_output: screen
-  use_container: true
-  container_name: pointcloud_container
 subscribers:
   - name: image
     message_type: sensor_msgs/msg/Image

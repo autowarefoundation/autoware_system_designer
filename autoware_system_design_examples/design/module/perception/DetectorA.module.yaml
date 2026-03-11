@@ -1,11 +1,11 @@
-autoware_system_design_format: 0.3.0
+autoware_system_design_format: 0.3.1
 
 name: DetectorA.module
 
 instances:
   - name: node_detector
     entity: DetectorA.node
-    launch:
+    arguments:
       use_container: true
   - name: node_filter
     entity: FilterA.node

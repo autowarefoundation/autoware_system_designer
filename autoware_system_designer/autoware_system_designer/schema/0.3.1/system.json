@@ -123,8 +123,9 @@
               }
             ]
           },
-          "container_name": {
-            "type": "string"
+          "arguments": {
+            "type": "object",
+            "additionalProperties": true
           }
         },
         "additionalProperties": false
