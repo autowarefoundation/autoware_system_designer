@@ -15,9 +15,8 @@
 from typing import Any, Dict, List, Tuple
 
 from ..parameters.parameter_manager import ParameterManager
-from .instance_serializer import collect_launcher_data
-
 from ..runtime.execution import LaunchState
+from .instance_serializer import collect_launcher_data
 
 
 def collect_component_nodes(component_instance) -> List[Dict[str, Any]]:
@@ -148,7 +147,11 @@ def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: Lis
 
     # parameter_files for node_launcher and component_launcher (needs .path)
     parameter_files = [
-        {"name": pf["name"], "allow_substs": pf.get("allow_substs", False), "path": pf.get("path", pf.get("default", ""))}
+        {
+            "name": pf["name"],
+            "allow_substs": pf.get("allow_substs", False),
+            "path": pf.get("path", pf.get("default", "")),
+        }
         for pf in param_files
     ]
 

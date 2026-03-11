@@ -120,9 +120,7 @@ class ParameterTemplateGenerator:
                 package = "unknown_package"
                 if getattr(instance, "launch_manager", None) is not None:
                     package = instance.launch_manager.package_name
-                elif getattr(instance, "configuration", None) and getattr(
-                    instance.configuration, "launch", None
-                ):
+                elif getattr(instance, "configuration", None) and getattr(instance.configuration, "launch", None):
                     package = instance.configuration.launch.get("package", "unknown_package")
                 node_info = {
                     "node": full_namespace,

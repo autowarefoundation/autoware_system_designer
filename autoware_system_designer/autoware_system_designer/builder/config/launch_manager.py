@@ -72,14 +72,10 @@ class LaunchManager:
         in_ports = instance.link_manager.get_all_in_ports()
         out_ports = instance.link_manager.get_all_out_ports()
         remap_inputs_explicit = {
-            port.name
-            for port in in_ports
-            if port.remap_target and port.remap_target != "~/input/" + port.name
+            port.name for port in in_ports if port.remap_target and port.remap_target != "~/input/" + port.name
         }
         remap_outputs_explicit = {
-            port.name
-            for port in out_ports
-            if port.remap_target and port.remap_target != "~/output/" + port.name
+            port.name for port in out_ports if port.remap_target and port.remap_target != "~/output/" + port.name
         }
         launcher_data["inputs"] = [{"name": p.name} for p in in_ports]
         launcher_data["outputs"] = [{"name": p.name} for p in out_ports]
@@ -126,9 +122,7 @@ class LaunchManager:
         param_files = []
         for param_file in instance.parameter_manager.get_parameter_files_for_launch():
             param_file_copy = dict(param_file)
-            param_file_copy["parameter_type"] = serialize_parameter_type(
-                param_file.get("parameter_type")
-            )
+            param_file_copy["parameter_type"] = serialize_parameter_type(param_file.get("parameter_type"))
             param_file_copy["default"] = param_file_copy.get("path", "")
             param_files.append(param_file_copy)
         launcher_data["param_files"] = param_files

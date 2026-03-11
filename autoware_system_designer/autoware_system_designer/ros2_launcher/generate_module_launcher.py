@@ -169,7 +169,9 @@ def _generate_compute_unit_launcher_from_data(
     _render_template_to_file("compute_unit_launcher.xml.jinja2", launcher_file, template_data)
 
 
-def generate_module_launch_file(instance: Instance | Dict[str, Any], output_dir: str, forward_args: List[str] | None = None):
+def generate_module_launch_file(
+    instance: Instance | Dict[str, Any], output_dir: str, forward_args: List[str] | None = None
+):
     """Main entry point for launcher generation."""
 
     if isinstance(instance, Instance):

@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING
 from ...exceptions import ValidationError
 from ...file_io.source_location import format_source, source_from_config
 from ...models.parsing.data_validator import entity_name_decode
+from ..config.launch_manager import LaunchManager
 from ..parameters.parameter_set_applier import apply_parameter_set
 from ..runtime.parameters import ParameterType
-from ..config.launch_manager import LaunchManager
 
 if TYPE_CHECKING:
     from ..config.config_registry import ConfigRegistry
@@ -15,9 +15,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Keys from component/launch config that are applied to LaunchManager (matches LaunchConfig.apply_override).
-LAUNCH_OVERRIDE_KEYS = frozenset(
-    {"container_name", "use_container", "ros2_launch_file", "node_output", "args"}
-)
+LAUNCH_OVERRIDE_KEYS = frozenset({"container_name", "use_container", "ros2_launch_file", "node_output", "args"})
 
 
 def set_instances(
@@ -150,9 +148,7 @@ def set_node_instances(
     launch_manager = LaunchManager.from_config(instance.configuration)
     if instance.component_arguments:
         launch_override = {
-            k: instance.component_arguments[k]
-            for k in LAUNCH_OVERRIDE_KEYS
-            if k in instance.component_arguments
+            k: instance.component_arguments[k] for k in LAUNCH_OVERRIDE_KEYS if k in instance.component_arguments
         }
         if launch_override:
             launch_manager.apply_override(launch_override)
