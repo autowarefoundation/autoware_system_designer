@@ -667,6 +667,37 @@ class LinkManager:
         """Get all output ports."""
         return list(self.out_ports.values())
 
+    def get_all_remap_ports(self):
+        """Get all ports for topic remapping.
+
+        Returns:
+            {"name": str, "topic": str, "remap_target": Optional[str]}.
+        """
+        ports: List[Dict[str, Any]] = []
+
+        for port in self.in_ports.values():
+            if port.is_global or port.get_topic() == "":
+                continue
+            ports.append(
+                {
+                    "name": port.name,
+                    "topic": port.get_topic(),
+                    "remap_target": port.remap_target,
+                }
+            )
+
+        for port in self.out_ports.values():
+            if port.is_global:
+                continue
+            ports.append(
+                {
+                    "name": port.name,
+                    "topic": port.get_topic(),
+                    "remap_target": port.remap_target,
+                }
+            )
+        return ports
+
     def get_all_links(self):
         """Get all links."""
         return self.links

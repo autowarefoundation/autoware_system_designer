@@ -71,31 +71,8 @@ class LaunchManager:
             case _:  # SINGLE_NODE
                 launcher_data["executable"] = cfg.executable
 
-        # Inputs/outputs for node_launcher.xml.jinja2 (list of {"name": ...})
-        in_ports = instance.link_manager.get_all_in_ports()
-        out_ports = instance.link_manager.get_all_out_ports()
-        ports = []
-        for port in in_ports:
-            if port.is_global or port.get_topic() == "":
-                continue
-            ports.append(
-                {
-                    "name": port.name,
-                    "topic": port.get_topic(),
-                    "remap_target": port.remap_target,
-                }
-            )
-        for port in out_ports:
-            if port.is_global:
-                continue
-            ports.append(
-                {
-                    "name": port.name,
-                    "topic": port.get_topic(),
-                    "remap_target": port.remap_target,
-                }
-            )
-        launcher_data["ports"] = ports
+        # Ports for topic remapping
+        launcher_data["ports"] = instance.link_manager.get_all_remap_ports()
 
         # param_values and param_files from instance (template-ready: parameter_type as string)
         launcher_data["param_values"] = list(instance.parameter_manager.get_parameters_for_launch())
