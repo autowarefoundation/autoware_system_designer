@@ -58,7 +58,7 @@ class LauncherData(TypedDict, total=False):
     ros2_launch_file: Optional[str]
     node_output: str
     args: str
-    launch_state: str  # "ros2_launch_file" | "single_node" | "ros_container"
+    launch_state: str  # "ros2_launch_file" | "single_node" | "composable_node" | "node_container"
     plugin: str
     executable: str
     container: str

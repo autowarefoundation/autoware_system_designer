@@ -55,18 +55,22 @@ class LaunchManager:
 
         launcher_data: Dict[str, Any] = {
             "package": cfg.package_name,
-            "ros2_launch_file": cfg.ros2_launch_file,
             "node_output": cfg.node_output,
             "args": resolved_args,
             "launch_state": cfg.launch_state.value,
         }
 
-        if cfg.launch_state != LaunchState.ROS2_LAUNCH_FILE:
-            launcher_data["plugin"] = cfg.plugin
-            launcher_data["executable"] = cfg.executable
-            launcher_data["container"] = cfg.container_name
-
-        launcher_data["container_name"] = cfg.container_name
+        # Set container name and launch-type-specific fields by launch state
+        match cfg.launch_state:
+            case LaunchState.ROS2_LAUNCH_FILE:
+                launcher_data["ros2_launch_file"] = cfg.ros2_launch_file
+            case LaunchState.NODE_CONTAINER:
+                launcher_data["executable"] = cfg.executable
+            case LaunchState.COMPOSABLE_NODE:
+                launcher_data["container_target"] = cfg.container_name
+                launcher_data["plugin"] = cfg.plugin
+            case _:  # SINGLE_NODE
+                launcher_data["executable"] = cfg.executable
 
         # Inputs/outputs for node_launcher.xml.jinja2 (list of {"name": ...})
         in_ports = instance.link_manager.get_all_in_ports()

@@ -156,22 +156,27 @@ def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: Lis
     ]
 
     node_data: Dict[str, Any] = {
-        "name": node_instance.get("name", ""),
+        "name": node_instance.get("name"),
         "full_namespace_path": "/".join(module_path) if module_path else "",
-        "package": launch_data.get("package", ""),
+        "package": launch_data.get("package"),
         "ros2_launch_file": launch_data.get("ros2_launch_file"),
         "node_output": launch_data.get("node_output", "screen"),
         "args": launch_data.get("args", ""),
         "launch_state": launch_data.get("launch_state"),
-        "container_name": launch_data.get("container", launch_data.get("container_name", "default_container")),
         "ports": launch_data.get("ports", []),
         "param_values": param_values,
         "param_files": param_files,
         "parameter_files": parameter_files,
     }
-    if node_data["launch_state"] != LaunchState.ROS2_LAUNCH_FILE.value:
-        node_data["plugin"] = launch_data.get("plugin", "")
-        node_data["executable"] = launch_data.get("executable", "")
-        node_data["container"] = launch_data.get("container", "default_container")
-
+    # Set launch-type-specific fields by launch state (aligned with LaunchManager.get_launcher_data)
+    launch_state_val = node_data["launch_state"]
+    if launch_state_val == LaunchState.ROS2_LAUNCH_FILE.value:
+        pass  # only ros2_launch_file set above
+    elif launch_state_val == LaunchState.NODE_CONTAINER.value:
+        node_data["executable"] = launch_data.get("executable")
+    elif launch_state_val == LaunchState.COMPOSABLE_NODE.value:
+        node_data["plugin"] = launch_data.get("plugin")
+        node_data["container_target"] = launch_data.get("container_target")
+    else:  # SINGLE_NODE
+        node_data["executable"] = launch_data.get("executable")
     return node_data

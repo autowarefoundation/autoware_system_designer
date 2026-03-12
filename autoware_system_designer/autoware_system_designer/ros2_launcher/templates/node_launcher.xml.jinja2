@@ -22,9 +22,13 @@
   <arg name="{{ param.name }}" default="{{ param.default_value }}"/>
 {% endfor %}
 
-{% if use_container %}
+{% if launch_state == 'composable_node' %}
   {# Default from design (container_name) when set; user can override via launch arg #}
-  <arg name="node_container_name" default="{{ container_name or 'default_container' }}"/>
+  <arg name="container_target" default="{{ container_target }}"/>
+{% endif %}
+
+{% if launch_state == 'node_container' %}
+  <arg name="container_name" default="{{ container_name }}"/>
 {% endif %}
 
 {% if launch_state == 'ros2_launch_file' %}
@@ -42,8 +46,8 @@
     <arg name="{{param_file.name}}" value="$(var {{ param_file.name }})"/>
 {% endfor %}
   </include>
-{% elif launch_state == 'ros_container' %}
-  <load_composable_node target="$(var node_container_name)">
+{% elif launch_state == 'composable_node' %}
+  <load_composable_node target="$(var container_target)">
     <composable_node pkg="{{ package_name }}" plugin="{{ plugin_name }}" name="$(var node_name)">
       <!-- Remap input and output topics -->
 {% for input in inputs %}
@@ -64,6 +68,9 @@
 {% endfor %}
     </composable_node>
   </load_composable_node>
+{% elif launch_state == 'node_container' %}
+  <node_container pkg="{{ package_name }}" exec="{{ executable_name }}" name="$(var container_name)" namespace="/" output="{{ node_output }}">
+  </node_container>
 {% else %}
   <node pkg="{{ package_name }}" exec="{{ executable_name }}" name="$(var node_name)" output="{{ node_output }}">
     <!-- Remap input and output topics -->

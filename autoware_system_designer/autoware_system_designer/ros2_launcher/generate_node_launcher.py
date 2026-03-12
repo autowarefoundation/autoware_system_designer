@@ -96,9 +96,10 @@ def create_node_launcher_xml(node_config: NodeConfig) -> str:
     template_data["launch_state"] = launch_state.value
 
     if launch_state != LaunchState.ROS2_LAUNCH_FILE:
-        template_data["plugin_name"] = launch_config.get("plugin")
         template_data["executable_name"] = launch_config.get("executable")
-        template_data["container_name"] = launch_config.get("container_name")
+        template_data["container_target"] = launch_config.get("container_name")
+        if launch_state == LaunchState.COMPOSABLE_NODE:
+            template_data["plugin_name"] = launch_config.get("plugin")
 
     template_data["inputs"] = node_config.inputs or []
     template_data["outputs"] = node_config.outputs or []

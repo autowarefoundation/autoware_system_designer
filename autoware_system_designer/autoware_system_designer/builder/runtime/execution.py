@@ -21,7 +21,8 @@ class LaunchState(str, Enum):
 
     ROS2_LAUNCH_FILE = "ros2_launch_file"
     SINGLE_NODE = "single_node"
-    ROS_CONTAINER = "ros_container"
+    COMPOSABLE_NODE = "composable_node"
+    NODE_CONTAINER = "node_container"
 
     @classmethod
     def from_config(cls, launch: Optional[Dict[str, Any]]) -> "LaunchState":
@@ -30,8 +31,10 @@ class LaunchState(str, Enum):
             return cls.SINGLE_NODE
         if launch.get("ros2_launch_file") not in (None, ""):
             return cls.ROS2_LAUNCH_FILE
-        if launch.get("use_container") is True:
-            return cls.ROS_CONTAINER
+        if launch.get("type") == "node_container":
+            return cls.NODE_CONTAINER
+        if launch.get("use_container") is True or launch.get("type") == "composable_node":
+            return cls.COMPOSABLE_NODE
         return cls.SINGLE_NODE
 
 
@@ -54,6 +57,7 @@ class LaunchConfig:
         use_container: bool = False,
         container_name: str = "default_container",
         launch_state: LaunchState = LaunchState.SINGLE_NODE,
+        launch_type: Optional[str] = None,
     ):
         self.package_name = package_name
         self.ros2_launch_file = ros2_launch_file
@@ -64,6 +68,7 @@ class LaunchConfig:
         self.use_container = use_container
         self.container_name = container_name
         self.launch_state = launch_state
+        self.launch_type = launch_type
 
     @classmethod
     def from_config(cls, config: Any) -> "LaunchConfig":
@@ -79,6 +84,7 @@ class LaunchConfig:
         use_container = launch.get("use_container", False)
         container_name = launch.get("container_name", "default_container")
         launch_state = LaunchState.from_config(launch)
+        launch_type = launch.get("type")
 
         return cls(
             package_name=package_name,
@@ -90,6 +96,7 @@ class LaunchConfig:
             use_container=use_container,
             container_name=container_name,
             launch_state=launch_state,
+            launch_type=launch_type,
         )
 
     def apply_override(self, override: Dict[str, Any]) -> None:
@@ -106,13 +113,17 @@ class LaunchConfig:
             self.use_container = override["use_container"]
         if "container_name" in override:
             self.container_name = override["container_name"]
+        if "type" in override:
+            self.launch_type = override["type"]
         self._update_launch_state()
 
     def _update_launch_state(self) -> None:
         """Set launch_state from current members."""
         if self.ros2_launch_file not in (None, ""):
             self.launch_state = LaunchState.ROS2_LAUNCH_FILE
-        elif self.use_container:
-            self.launch_state = LaunchState.ROS_CONTAINER
+        elif self.launch_type == "node_container":
+            self.launch_state = LaunchState.NODE_CONTAINER
+        elif self.use_container or self.launch_type == "composable_node":
+            self.launch_state = LaunchState.COMPOSABLE_NODE
         else:
             self.launch_state = LaunchState.SINGLE_NODE
