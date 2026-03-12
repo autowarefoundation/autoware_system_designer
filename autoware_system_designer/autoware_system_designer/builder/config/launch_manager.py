@@ -114,11 +114,11 @@ class LaunchManager:
             )
         launcher_data["ports"] = ports
 
-        # param_values and param_files from instance
+        # param_values and param_files from instance (template-ready: parameter_type as {"name": ...})
         param_values = []
         for param in instance.parameter_manager.get_parameters_for_launch():
             param_copy = dict(param)
-            param_copy["parameter_type"] = serialize_parameter_type(param.get("parameter_type"))
+            param_copy["parameter_type"] = {"name": serialize_parameter_type(param.get("parameter_type"))}
             param_copy["default_value"] = param_copy.get("value")
             param_values.append(param_copy)
         launcher_data["param_values"] = param_values
@@ -126,8 +126,7 @@ class LaunchManager:
         param_files = []
         for param_file in instance.parameter_manager.get_parameter_files_for_launch():
             param_file_copy = dict(param_file)
-            param_file_copy["parameter_type"] = serialize_parameter_type(param_file.get("parameter_type"))
-            param_file_copy["default"] = param_file_copy.get("path", "")
+            param_file_copy["parameter_type"] = {"name": serialize_parameter_type(param_file.get("parameter_type"))}
             param_files.append(param_file_copy)
         launcher_data["param_files"] = param_files
         launcher_data["parameter_files"] = [
