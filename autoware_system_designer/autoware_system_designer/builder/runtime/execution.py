@@ -55,7 +55,7 @@ class LaunchConfig:
         plugin: str = "",
         executable: str = "",
         use_container: bool = False,
-        container_name: str = "default_container",
+        container_target: str = "",
         launch_state: LaunchState = LaunchState.SINGLE_NODE,
         launch_type: Optional[str] = None,
     ):
@@ -66,7 +66,7 @@ class LaunchConfig:
         self.plugin = plugin
         self.executable = executable
         self.use_container = use_container
-        self.container_name = container_name
+        self.container_target = container_target
         self.launch_state = launch_state
         self.launch_type = launch_type
 
@@ -82,7 +82,7 @@ class LaunchConfig:
         plugin = launch.get("plugin", "")
         executable = launch.get("executable", "")
         use_container = launch.get("use_container", False)
-        container_name = launch.get("container_name", "default_container")
+        container_target = launch.get("container_target", "default_container")
         launch_state = LaunchState.from_config(launch)
         launch_type = launch.get("type")
 
@@ -94,7 +94,7 @@ class LaunchConfig:
             plugin=plugin,
             executable=executable,
             use_container=use_container,
-            container_name=container_name,
+            container_target=container_target,
             launch_state=launch_state,
             launch_type=launch_type,
         )
@@ -111,8 +111,8 @@ class LaunchConfig:
             self.args = override["args"]
         if "use_container" in override:
             self.use_container = override["use_container"]
-        if "container_name" in override:
-            self.container_name = override["container_name"]
+        if "container_target" in override:
+            self.container_target = override["container_target"]
         if "type" in override:
             self.launch_type = override["type"]
         self._update_launch_state()

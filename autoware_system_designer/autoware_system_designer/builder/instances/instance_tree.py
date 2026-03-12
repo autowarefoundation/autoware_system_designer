@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Keys from component/launch config that are applied to LaunchManager (matches LaunchConfig.apply_override).
-LAUNCH_OVERRIDE_KEYS = frozenset({"container_name", "use_container", "ros2_launch_file", "node_output", "args", "type"})
+LAUNCH_OVERRIDE_KEYS = frozenset({"container_target", "use_container", "ros2_launch_file", "node_output", "args", "type"})
 
 
 def set_instances(

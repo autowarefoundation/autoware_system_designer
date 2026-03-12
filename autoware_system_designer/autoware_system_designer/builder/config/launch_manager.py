@@ -67,7 +67,7 @@ class LaunchManager:
             case LaunchState.NODE_CONTAINER:
                 launcher_data["executable"] = cfg.executable
             case LaunchState.COMPOSABLE_NODE:
-                launcher_data["container_target"] = cfg.container_name
+                launcher_data["container_target"] = cfg.container_target
                 launcher_data["plugin"] = cfg.plugin
             case _:  # SINGLE_NODE
                 launcher_data["executable"] = cfg.executable

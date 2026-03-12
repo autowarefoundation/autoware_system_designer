@@ -23,7 +23,7 @@ components:
     namespace: sensing/lidar
     compute_unit: perception_ecu_1
     arguments:
-      container_name: pointcloud_container
+      container_target: pointcloud_container
   - name: map_loader
     entity: MapDummy.node
     namespace: map
@@ -38,7 +38,7 @@ components:
     compute_unit: main_ecu
     parameter_set: [PerceptionModuleA.parameter_set]
     arguments:
-      container_name: pointcloud_container
+      container_target: pointcloud_container
   - name: planner
     entity: PlanningDummy.node
     namespace: planning
@@ -67,4 +67,4 @@ simulation:
         compute_unit: main_ecu
         parameter_set: [PerceptionModuleABuild.parameter_set]
         arguments:
-          container_name: pointcloud_container
+          container_target: pointcloud_container
