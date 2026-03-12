@@ -48,7 +48,6 @@ class LaunchManager:
 
     def get_launcher_data(self, instance: "Instance") -> Dict[str, Any]:
         """Build full launcher dict for this node instance (for generation/serialization)."""
-        from ..instances.instance_serializer import serialize_parameter_type
 
         cfg = self.launch_config
         resolved_args = instance.parameter_manager.resolve_substitutions(cfg.args)
@@ -114,28 +113,15 @@ class LaunchManager:
             )
         launcher_data["ports"] = ports
 
-        # param_values and param_files from instance (template-ready: parameter_type as {"name": ...})
+        # param_values and param_files from instance (template-ready: parameter_type as string)
         param_values = []
         for param in instance.parameter_manager.get_parameters_for_launch():
-            param_copy = dict(param)
-            param_copy["parameter_type"] = {"name": serialize_parameter_type(param.get("parameter_type"))}
-            param_copy["default_value"] = param_copy.get("value")
-            param_values.append(param_copy)
+            param_values.append(param)
         launcher_data["param_values"] = param_values
 
         param_files = []
         for param_file in instance.parameter_manager.get_parameter_files_for_launch():
-            param_file_copy = dict(param_file)
-            param_file_copy["parameter_type"] = {"name": serialize_parameter_type(param_file.get("parameter_type"))}
-            param_files.append(param_file_copy)
+            param_files.append(param_file)
         launcher_data["param_files"] = param_files
-        launcher_data["parameter_files"] = [
-            {
-                "name": pf["name"],
-                "allow_substs": pf.get("allow_substs", False),
-                "path": pf.get("path", pf.get("default", "")),
-            }
-            for pf in launcher_data["param_files"]
-        ]
 
         return launcher_data

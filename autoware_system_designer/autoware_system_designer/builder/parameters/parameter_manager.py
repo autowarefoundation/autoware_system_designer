@@ -29,6 +29,7 @@ from ..runtime.parameters import (
     ParameterFileList,
     ParameterList,
     ParameterType,
+    parameter_type_to_str,
 )
 
 if TYPE_CHECKING:
@@ -181,7 +182,7 @@ class ParameterManager:
                         "type": "param",
                         "name": param.name,
                         "value": param.value,
-                        "parameter_type": param.parameter_type,
+                        "parameter_type": parameter_type_to_str(param.parameter_type),
                     }
                 )
 
@@ -208,7 +209,7 @@ class ParameterManager:
                     "name": param_file.name,
                     "path": resolved_path,
                     "allow_substs": param_file.allow_substs,
-                    "parameter_type": param_file.parameter_type,
+                    "parameter_type": parameter_type_to_str(param_file.parameter_type),
                 }
             )
         return result

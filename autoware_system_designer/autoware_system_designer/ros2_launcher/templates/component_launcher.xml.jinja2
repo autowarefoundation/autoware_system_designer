@@ -16,35 +16,35 @@
 
 <!-- Parameters - Non-Override Parameters -->
 {% for param in node.param_values %}
-{% if param.parameter_type.name != 'OVERRIDE' and param.parameter_type.name != 'MODE' %}
+{% if param.parameter_type != 'OVERRIDE' and param.parameter_type != 'MODE' %}
 <param name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
 {% endfor %}
 
 <!-- Parameters - Override Parameter files -->
 {% for param_file in node.param_files %}
-{% if param_file.parameter_type.name == 'OVERRIDE_FILE' %}
+{% if param_file.parameter_type == 'OVERRIDE_FILE' %}
 <param from="{{ param_file.path }}" allow_substs="{{ param_file.allow_substs }}"/>
 {% endif %}
 {% endfor %}
 
 <!-- Parameters - Mode Parameter files -->
 {% for param_file in node.param_files %}
-{% if param_file.parameter_type.name == 'MODE_FILE' %}
+{% if param_file.parameter_type == 'MODE_FILE' %}
 <param from="{{ param_file.path }}" allow_substs="{{ param_file.allow_substs }}"/>
 {% endif %}
 {% endfor %}
 
 <!-- Parameters - Overrides -->
 {% for param in node.param_values %}
-{% if param.parameter_type.name == 'OVERRIDE' %}
+{% if param.parameter_type == 'OVERRIDE' %}
 <param name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
 {% endfor %}
 
 <!-- Parameters - Mode Overrides (highest priority) -->
 {% for param in node.param_values %}
-{% if param.parameter_type.name == 'MODE' %}
+{% if param.parameter_type == 'MODE' %}
 <param name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
 {% endfor %}
@@ -54,11 +54,11 @@
   <!-- Node: {{ node.full_namespace_path }}/{{ node.name }} -->
 {% if node.launch_state == 'ros2_launch_file' %}
   <include file="$(find-pkg-share {{node.package}})/launch/{{node.ros2_launch_file}}">
-{% for param_file in node.parameter_files %}
+{% for param_file in node.param_files %}
     <arg name="{{ param_file.name }}" value="{{ param_file.path }}"/>
 {% endfor %}
 {% for param in node.param_values %}
-{% if param.parameter_type.name == 'DEFAULT' or param.parameter_type.name == 'DEFAULT_FILE' %}
+{% if param.parameter_type == 'DEFAULT' or param.parameter_type == 'DEFAULT_FILE' %}
 {% if param.name in forward_args %}
     <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
 {% else %}
@@ -67,7 +67,7 @@
 {% endif %}
 {% endfor %}
 {% for param in node.param_values %}
-{% if param.parameter_type.name == 'MODE' %}
+{% if param.parameter_type == 'MODE' %}
 {% if param.name in forward_args %}
     <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
 {% else %}
@@ -76,7 +76,7 @@
 {% endif %}
 {% endfor %}
 {% for param in node.param_values %}
-{% if param.parameter_type.name == 'OVERRIDE' %}
+{% if param.parameter_type == 'OVERRIDE' %}
 {% if param.name in forward_args %}
     <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
 {% else %}

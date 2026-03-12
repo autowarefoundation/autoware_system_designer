@@ -32,6 +32,15 @@ class ParameterType(Enum):
     MODE = 6  # Mode specific parameter (highest priority)
 
 
+def parameter_type_to_str(value) -> str:
+    """Convert ParameterType enum (or any value with .name) to string for export."""
+    if value is None:
+        return ""
+    if hasattr(value, "name"):
+        return value.name
+    return str(value)
+
+
 class Parameter:
     """Represents a single parameter with its value and metadata."""
 
