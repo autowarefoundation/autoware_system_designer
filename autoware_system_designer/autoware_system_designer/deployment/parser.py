@@ -25,17 +25,17 @@ from ..models.parsing.data_validator import entity_name_decode
 from ..models.parsing.yaml_parser import yaml_parser
 
 
-def iter_mode_payload_and_data(
+def iter_mode_data(
     mode_keys: List[str],
     system_structure_dir: str,
 ) -> Iterator[Tuple[str, Dict[str, Any], Dict[str, Any]]]:
-    """Yield (mode_key, payload, extracted_data) for each mode."""
+    """Yield (mode_key, extracted_data) for each mode."""
 
     for mode_key in mode_keys:
         structure_path = os.path.join(system_structure_dir, f"{mode_key}.json")
         payload = load_system_structure(structure_path)
         data, _ = extract_system_structure_data(payload)
-        yield mode_key, payload, data
+        yield mode_key, data
 
 
 def _normalize_system_name(system_ref: str) -> str:

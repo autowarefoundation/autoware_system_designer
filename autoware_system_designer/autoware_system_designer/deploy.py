@@ -23,7 +23,7 @@ from .builder.deployment_instance import DeploymentInstance
 from .deployment.deploy_launchers import generate_deploy_launchers
 from .deployment.deployment_config import DeploymentConfig
 from .deployment.modes import apply_mode_configuration, select_modes
-from .deployment.parser import iter_mode_payload_and_data, resolve_input_target
+from .deployment.parser import iter_mode_data, resolve_input_target
 from .exceptions import DeploymentError, ValidationError
 from .file_io.source_location import SourceLocation, format_source
 from .file_io.system_structure_json import (
@@ -254,29 +254,13 @@ class Deployment:
                 if system_path:
                     details.append(f"system= {system_path} ")
                 details_str = f" ({', '.join(details)})" if details else ""
-
-                hint = (
-                    "Hint: top-level 'connections' apply to all modes; "
-                    "use '<Mode>.override.connections' or '<Mode>.remove.connections' for mode-specific wiring."
-                )
-
-                # If any design files had a newer minor format version,
-                # surface this so the user knows it may be related.
-                mismatch_files = getattr(self.config_registry, "minor_version_mismatch_files", [])
-                if mismatch_files:
-                    from .builder.config.config_registry import _format_mismatch_hint
-
-                    hint += "\n" + _format_mismatch_hint(mismatch_files)
-
-                raise DeploymentError(
-                    f"Error while building deploy for mode '{mode_key}'{details_str}: {e}\n{hint}"
-                ) from e
+                raise DeploymentError(f"Error while building deploy for mode '{mode_key}'{details_str}: {e}") from e
 
     def visualize(self):
         # Collect data from all deployment instances
         deploy_data = {
             mode_key: data
-            for mode_key, _payload, data in iter_mode_payload_and_data(self.mode_keys, self.system_structure_dir)
+            for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir)
         }
 
         visualize_deployment(deploy_data, self.name, self.visualization_dir)
@@ -299,7 +283,7 @@ class Deployment:
         topics_template_path = os.path.join(template_dir, "sys_monitor_topics.yaml.jinja2")
 
         # Generate system monitor for each mode
-        for mode_key, _payload, data in iter_mode_payload_and_data(self.mode_keys, self.system_structure_dir):
+        for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir):
             # Create mode-specific output directory
             mode_monitor_dir = os.path.join(self.system_monitor_dir, mode_key, "component_state_monitor")
             self.generate_by_template(data, topics_template_path, mode_monitor_dir, "topics.yaml")
@@ -310,7 +294,7 @@ class Deployment:
         """Generate shell scripts to build necessary packages for each ECU."""
         deploy_data = {
             mode_key: data
-            for mode_key, _payload, data in iter_mode_payload_and_data(self.mode_keys, self.system_structure_dir)
+            for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir)
         }
 
         package_resolution_by_name: Dict[str, str | None] = {}
@@ -345,13 +329,13 @@ class Deployment:
     def generate_launcher(self):
         deploy_variable_names = self._collect_deploy_variable_names()
         # Generate launcher files for each mode
-        for mode_key, payload, _data in iter_mode_payload_and_data(self.mode_keys, self.system_structure_dir):
+        for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir):
             # Create mode-specific launcher directory
             mode_launcher_dir = os.path.join(self.launcher_dir, mode_key)
 
             # Generate module launch files from JSON structure
             generate_module_launch_file(
-                payload,
+                data,
                 mode_launcher_dir,
                 forward_args=deploy_variable_names,
             )
@@ -386,7 +370,7 @@ class Deployment:
 
         # Generate parameter set template for each mode
         output_paths = {}
-        for mode_key, _payload, data in iter_mode_payload_and_data(self.mode_keys, self.system_structure_dir):
+        for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir):
             # Create mode-specific output directory
             mode_parameter_dir = os.path.join(self.parameter_set_dir, mode_key)
             os.makedirs(mode_parameter_dir, exist_ok=True)

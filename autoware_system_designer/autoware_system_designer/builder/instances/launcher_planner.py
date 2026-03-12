@@ -168,7 +168,7 @@ def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: Lis
         "param_files": param_files,
         "parameter_files": parameter_files,
     }
-    # Set launch-type-specific fields by launch state (aligned with LaunchManager.get_launcher_data)
+    # Set launch-type-specific fields by launch state
     launch_state_val = node_data["launch_state"]
     if launch_state_val == LaunchState.ROS2_LAUNCH_FILE.value:
         pass  # only ros2_launch_file set above

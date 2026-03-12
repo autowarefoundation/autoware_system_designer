@@ -209,15 +209,14 @@ def generate_module_launch_file(
             return
         return
 
-    instance_data, _ = extract_system_structure_data(instance)
     logger.debug(f"Generating launcher from system structure data in {output_dir}")
 
-    if instance_data.get("entity_type") != "system":
+    if instance.get("entity_type") != "system":
         logger.debug("Launcher generation expects system-level data; skipping.")
         return
 
     compute_unit_map, component_args_by_id, component_map = build_serialized_system_component_maps(
-        instance_data, forward_args
+        instance, forward_args
     )
 
     for compute_unit, components in compute_unit_map.items():
