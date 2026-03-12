@@ -74,54 +74,31 @@ class LaunchManager:
         # Inputs/outputs for node_launcher.xml.jinja2 (list of {"name": ...})
         in_ports = instance.link_manager.get_all_in_ports()
         out_ports = instance.link_manager.get_all_out_ports()
-        remap_inputs_explicit = {
-            port.name for port in in_ports if port.remap_target and port.remap_target != "~/input/" + port.name
-        }
-        remap_outputs_explicit = {
-            port.name for port in out_ports if port.remap_target and port.remap_target != "~/output/" + port.name
-        }
-        launcher_data["inputs"] = [{"name": p.name} for p in in_ports]
-        launcher_data["outputs"] = [{"name": p.name} for p in out_ports]
         ports = []
         for port in in_ports:
-            if port.is_global and port.name not in remap_inputs_explicit:
-                continue
-            topic = port.get_topic()
-            if not topic:
+            if port.is_global or port.get_topic() == "":
                 continue
             ports.append(
                 {
-                    "direction": "input",
                     "name": port.name,
-                    "topic": topic,
+                    "topic": port.get_topic(),
                     "remap_target": port.remap_target,
                 }
             )
         for port in out_ports:
-            if port.is_global and port.name not in remap_outputs_explicit:
-                continue
-            topic = port.get_topic()
-            if not topic:
+            if port.is_global:
                 continue
             ports.append(
                 {
-                    "direction": "output",
                     "name": port.name,
-                    "topic": topic,
+                    "topic": port.get_topic(),
                     "remap_target": port.remap_target,
                 }
             )
         launcher_data["ports"] = ports
 
         # param_values and param_files from instance (template-ready: parameter_type as string)
-        param_values = []
-        for param in instance.parameter_manager.get_parameters_for_launch():
-            param_values.append(param)
-        launcher_data["param_values"] = param_values
-
-        param_files = []
-        for param_file in instance.parameter_manager.get_parameter_files_for_launch():
-            param_files.append(param_file)
-        launcher_data["param_files"] = param_files
+        launcher_data["param_values"] = list(instance.parameter_manager.get_parameters_for_launch())
+        launcher_data["param_files"] = list(instance.parameter_manager.get_parameter_files_for_launch())
 
         return launcher_data

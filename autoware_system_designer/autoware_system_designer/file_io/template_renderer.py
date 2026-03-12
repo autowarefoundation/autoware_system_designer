@@ -70,6 +70,7 @@ def custom_serializer(obj):
             "namespace": getattr(obj, "namespace", []),
             "topic": getattr(obj, "topic", []),
             "is_global": getattr(obj, "is_global", False),
+            "remap_target": getattr(obj, "remap_target", None),
             "port_path": getattr(obj, "port_path", None),
             "event": getattr(obj, "event", None),
         }

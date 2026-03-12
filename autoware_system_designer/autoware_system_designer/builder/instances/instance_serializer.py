@@ -38,6 +38,7 @@ def serialize_port(port) -> PortData:
         "namespace": port.namespace,
         "topic": port.topic,
         "is_global": port.is_global,
+        "remap_target": port.remap_target,
         "port_path": port.port_path,
         "event": serialize_event(port.event),
     }

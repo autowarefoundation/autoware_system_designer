@@ -26,6 +26,7 @@ class PortData(TypedDict, total=False):
     namespace: List[str]
     topic: List[str]
     is_global: bool
+    remap_target: Optional[str]
     port_path: str
     event: Optional[EventData]
     connected_ids: List[str]
