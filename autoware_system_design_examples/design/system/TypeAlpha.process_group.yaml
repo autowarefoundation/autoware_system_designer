@@ -1,0 +1,11 @@
+process_group:
+  - name: pointcloud_container
+    type : ros2_component_container_multi-thread
+    member:
+      - /sensing/lidar/lidar_top
+      - /sensing/lidar/lidar_left
+      - /sensing/lidar/lidar_right
+      - /sensing/lidar/lidar_rear
+      - /sensing/lidar/lidar_concatenate
+      - /perception/object_recognition/detector_a1/node_detector
+      - /perception/object_recognition/detector_a2/node_detector
