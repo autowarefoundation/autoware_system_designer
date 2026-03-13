@@ -258,10 +258,7 @@ class Deployment:
 
     def visualize(self):
         # Collect data from all deployment instances
-        deploy_data = {
-            mode_key: data
-            for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir)
-        }
+        deploy_data = {mode_key: data for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir)}
 
         visualize_deployment(deploy_data, self.name, self.visualization_dir)
 
@@ -292,10 +289,7 @@ class Deployment:
 
     def generate_build_scripts(self):
         """Generate shell scripts to build necessary packages for each ECU."""
-        deploy_data = {
-            mode_key: data
-            for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir)
-        }
+        deploy_data = {mode_key: data for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir)}
 
         package_resolution_by_name: Dict[str, str | None] = {}
         packages_without_provider: set[str] = set()

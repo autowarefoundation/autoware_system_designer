@@ -28,6 +28,7 @@ def lookup_source(source_map: Optional[Dict[str, Dict[str, int]]], yaml_path: Op
         column=entry.get("column"),
     )
 
+
 def source_from_source_map(source_map: Any, file_path: Any, yaml_path: Optional[str]) -> SourceLocation:
     """Create a SourceLocation using a Config-like object (file_path + optional source_map)."""
 
@@ -39,6 +40,7 @@ def source_from_source_map(source_map: Any, file_path: Any, yaml_path: Optional[
         column=loc.column,
     )
 
+
 def source_from_config(config: Any, yaml_path: Optional[str]) -> SourceLocation:
     """Create a SourceLocation using a Config-like object (file_path + optional source_map)."""
 
@@ -46,6 +48,7 @@ def source_from_config(config: Any, yaml_path: Optional[str]) -> SourceLocation:
     file_path = getattr(config, "file_path", None)
 
     return source_from_source_map(source_map, file_path, yaml_path)
+
 
 def _infer_workspace_root(path: Path) -> Optional[Path]:
     """Infer a reasonable workspace root to make paths relative."""

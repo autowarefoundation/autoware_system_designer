@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 def set_instances(
     instance: "Instance",
     entity_id: str,
@@ -137,7 +138,7 @@ def set_node_instances(
     logger.info(f"Setting node entity {entity_id} for instance {instance.namespace_str}")
     instance.configuration = config_registry.get_node(entity_name)
     instance.entity_type = "node"
-    instance.launch_manager  = LaunchManager.from_config(instance.configuration)
+    instance.launch_manager = LaunchManager.from_config(instance.configuration)
 
     # run the node configuration
     run_node_configuration(instance, config_registry)

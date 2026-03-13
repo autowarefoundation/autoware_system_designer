@@ -44,6 +44,7 @@ class LaunchManager:
             self.launch_config.launch_state = LaunchState.COMPOSABLE_NODE
         if launch_type:
             self.launch_config.launch_type = launch_type
+
     @property
     def package_name(self) -> str:
         """Convenience access for code that expects launch_manager.package_name."""
