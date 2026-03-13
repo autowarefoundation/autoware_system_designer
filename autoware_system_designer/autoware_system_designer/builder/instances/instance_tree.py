@@ -14,10 +14,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Keys from component/launch config that are applied to LaunchManager (matches LaunchConfig.apply_override).
-LAUNCH_OVERRIDE_KEYS = frozenset({"container_target", "use_container", "ros2_launch_file", "node_output", "args", "type"})
-
-
 def set_instances(
     instance: "Instance",
     entity_id: str,
@@ -215,12 +211,7 @@ def run_node_configuration(instance: "Instance", config_registry: "ConfigRegistr
     instance.link_manager.initialize_node_ports()
 
     # Initialize node parameters
-    instance.parameter_manager.initialize_node_parameters(
-        config_registry,
-        config=instance.configuration,
-        param_files=instance.configuration.param_files,
-        param_values=instance.configuration.param_values,
-    )
+    instance.parameter_manager.initialize_node_parameters(config_registry)
 
     # initialize processes and events
     instance.event_manager.initialize_node_processes()

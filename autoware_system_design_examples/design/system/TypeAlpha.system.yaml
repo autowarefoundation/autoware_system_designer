@@ -62,4 +62,3 @@ simulation:
         namespace: perception/object_recognition
         compute_unit: main_ecu
         parameter_set: [PerceptionModuleABuild.parameter_set]
-

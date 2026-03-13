@@ -82,7 +82,7 @@ class LaunchConfig:
         plugin = launch.get("plugin", "")
         executable = launch.get("executable", "")
         use_container = launch.get("use_container", False)
-        container_target = launch.get("container_target", "default_container")
+        container_target = launch.get("container_target", launch.get("container_name", ""))
         launch_state = LaunchState.from_config(launch)
         launch_type = launch.get("type")
 
