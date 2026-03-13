@@ -38,7 +38,7 @@ Represents a single ROS 2 node.
   - `ros2_launch_file`: (Required if `executable` and `plugin` are not set) Alternative setting used for normal ros2 launcher wrapper.
   - `node_output`: (Optional) `screen`, `log`, etc.
   - `use_container`: (Optional) `true`/`false`.
-  - `container_target`: (Required if `use_container: true`) target component container.
+  - `container_name`: (Required if `use_container: true`) Name of the component container.
 - `subscribers`: List of input ports (subscribers).
   - `name`: Port name. Can include slashes (e.g., `perception/objects`).
   - `message_type`: Full ROS message type (e.g., `sensor_msgs/msg/PointCloud2`).

@@ -10,6 +10,8 @@ launch:
   plugin: autoware::pointcloud_preprocessor::ConcatenatePointcloudComponent
   executable: concatenate_pointcloud_node
   node_output: screen
+  use_container: false
+  container_name: pointcloud_container
 
 # interfaces
 subscribers:
