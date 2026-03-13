@@ -33,10 +33,6 @@
           },
           "entity": {
             "type": "string"
-          },
-          "arguments": {
-            "type": "object",
-            "additionalProperties": true
           }
         },
         "additionalProperties": false

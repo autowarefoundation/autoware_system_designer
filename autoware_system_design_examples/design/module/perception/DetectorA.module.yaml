@@ -5,8 +5,6 @@ name: DetectorA.module
 instances:
   - name: node_detector
     entity: DetectorA.node
-    arguments:
-      use_container: true
   - name: node_filter
     entity: FilterA.node
 

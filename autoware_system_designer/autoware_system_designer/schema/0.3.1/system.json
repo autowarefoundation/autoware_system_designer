@@ -22,19 +22,6 @@
       "type": "object",
       "additionalProperties": true
     },
-    "arguments": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["name"],
-        "properties": {
-          "name": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      }
-    },
     "variables": {
       "type": "array",
       "items": {

@@ -5,24 +5,14 @@ name: LidarDummy.module
 instances:
   - name: lidar_top
     entity: LidarDummyDriver.node
-    arguments:
-      use_container: true
   - name: lidar_left
     entity: LidarDummyDriver.node
-    arguments:
-      use_container: true
   - name: lidar_right
     entity: LidarDummyDriver.node
-    arguments:
-      use_container: true
   - name: lidar_rear
     entity: LidarDummyDriver.node
-    arguments:
-      use_container: true
   - name: lidar_concatenate
     entity: ConcatenatePointcloudDummy.node
-    arguments:
-      use_container: true
 
 subscribers: []
 publishers:

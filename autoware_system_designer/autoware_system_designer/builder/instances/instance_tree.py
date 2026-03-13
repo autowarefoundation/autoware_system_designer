@@ -55,7 +55,6 @@ def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry"
             namespace = []
 
         # create instance
-        instance.arguments = cfg_component.get("arguments", {})
         child_instance = _create_child_instance(instance_name, compute_unit_name, namespace, instance)
 
         try:
@@ -142,13 +141,7 @@ def set_node_instances(
     logger.info(f"Setting node entity {entity_id} for instance {instance.namespace_str}")
     instance.configuration = config_registry.get_node(entity_name)
     instance.entity_type = "node"
-
-    launch_manager = LaunchManager.from_config(instance.configuration)
-    if instance.arguments:
-        argument_override = {k: instance.arguments[k] for k in LAUNCH_OVERRIDE_KEYS if k in instance.arguments}
-        if argument_override:
-            launch_manager.apply_override(argument_override)
-    instance.launch_manager = launch_manager
+    instance.launch_manager  = LaunchManager.from_config(instance.configuration)
 
     # run the node configuration
     run_node_configuration(instance, config_registry)
@@ -168,21 +161,12 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
             )
 
         child_name = cfg_node.get("name")
-        argument_override = cfg_node.get("arguments")
-        if argument_override:
-            _, entity_type = entity_name_decode(cfg_node.get("entity"))
-            if entity_type != "node":
-                cfg_src = source_from_config(instance.configuration, f"/instances/{idx}/launch")
-                raise ValidationError(
-                    f"Launch override is only supported for node instances (got '{entity_type}'){format_source(cfg_src)}"
-                )
         child_instance = _create_child_instance(
             child_name,
             instance.compute_unit,
             instance.namespace + [child_name],
             instance,
             layer_delta=1,
-            argument_overrides=argument_override or None,
         )
         child_instance.parent_module_list = instance.parent_module_list.copy()
 
@@ -248,7 +232,6 @@ def _create_child_instance(
     namespace: list[str],
     parent_instance: "Instance",
     layer_delta: int = 0,
-    argument_overrides: dict | None = None,
 ) -> "Instance":
     from .instances import Instance
 
@@ -257,13 +240,5 @@ def _create_child_instance(
     # parameter resolver propagation
     if parent_instance.parameter_resolver:
         child_instance.set_parameter_resolver(parent_instance.parameter_resolver)
-    # arguments: propagate from parent and apply any launch overrides in one place.
-    # Higher hierarchy (e.g. system) wins over lower (e.g. module): parent is merged last.
-    if parent_instance.arguments:
-        child_instance.arguments = parent_instance.arguments
-    if argument_overrides:
-        child_instance.arguments = {
-            **argument_overrides,
-            **(child_instance.arguments or {}),
-        }
+
     return child_instance
