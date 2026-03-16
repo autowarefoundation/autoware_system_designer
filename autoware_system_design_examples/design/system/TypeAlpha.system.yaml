@@ -40,6 +40,14 @@ components:
     namespace: planning
     compute_unit: dummy_ecu_2
 
+node_groups:
+  - name: pointcloud_container
+    type: ros2_component_container_mt
+    nodes:
+      - /sensing/lidar/*
+      - /perception/object_recognition/detector_a1/node_detector
+      - /perception/object_recognition/detector_a2/node_detector
+
 connections:
   - - object_recognition.subscriber.pointcloud
     - lidar.publisher.concatenated/pointcloud
@@ -54,13 +62,6 @@ connections:
   - - object_recognition.subscriber.vector_map
     - map_loader.publisher.vector_map
 
-node_groups:
-  - name: pointcloud_container
-    type: ros2_component_container_mt
-    nodes:
-      - /sensing/lidar/*
-      - /perception/object_recognition/detector_a1/node_detector
-      - /perception/object_recognition/detector_a2/node_detector
 
 # mode configuration
 simulation:

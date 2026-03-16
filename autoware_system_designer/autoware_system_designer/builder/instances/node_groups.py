@@ -83,24 +83,26 @@ def apply_node_groups(instance: "Instance") -> None:
             matched_nodes=matched_nodes,
         )
 
-        _create_group_container_node(
+        container_instance = _create_group_container_node(
             instance=instance,
             group_name=group_name,
             group_type=group_type,
             compute_unit=group_compute_unit,
+            matched_nodes=matched_nodes,
         )
+        container_target_path = container_instance.node_path
 
         for node_instance in matched_nodes:
             previous_target = node_instance.launch_manager.launch_config.container_target
-            if previous_target and previous_target != group_name:
+            if previous_target and previous_target != container_target_path:
                 logger.warning(
                     "Node '%s' container target reassigned from '%s' to '%s'",
                     node_instance.namespace_str,
                     previous_target,
-                    group_name,
+                    container_target_path,
                 )
 
-            node_instance.launch_manager.update(container_target=group_name)
+            node_instance.launch_manager.update(container_target=container_target_path)
 
 
 def _resolve_group_compute_unit(
@@ -158,6 +160,7 @@ def _create_group_container_node(
     group_name: str,
     group_type: str,
     compute_unit: str,
+    matched_nodes: list["Instance"],
 ) -> "Instance":
     if group_name in instance.children:
         raise ValidationError(f"Node group name '{group_name}' conflicts with existing system component name")
@@ -167,6 +170,7 @@ def _create_group_container_node(
         group_name=group_name,
         group_type=group_type,
         compute_unit=compute_unit,
+        namespace=_resolve_group_namespace(matched_nodes),
     )
     instance.children[group_name] = container_instance
 
@@ -181,7 +185,7 @@ def _create_group_container_node(
 
 
 def _create_container_node_instance(
-    parent_instance: "Instance", group_name: str, group_type: str, compute_unit: str
+    parent_instance: "Instance", group_name: str, group_type: str, compute_unit: str, namespace: list[str]
 ) -> "Instance":
     from .instances import Instance
 
@@ -191,7 +195,7 @@ def _create_container_node_instance(
     container_instance = Instance(
         name=group_name,
         compute_unit=compute_unit,
-        namespace=[],
+        namespace=namespace,
         layer=parent_instance.layer,
     )
     container_instance.parent = parent_instance
@@ -218,6 +222,23 @@ def _iter_node_instances(instance: "Instance"):
 
     for child in instance.children.values():
         yield from _iter_node_instances(child)
+
+
+def _resolve_group_namespace(matched_nodes: list["Instance"]) -> list[str]:
+    if not matched_nodes:
+        return []
+
+    common_namespace = matched_nodes[0].namespace.copy()
+    for node_instance in matched_nodes[1:]:
+        max_prefix_len = min(len(common_namespace), len(node_instance.namespace))
+        idx = 0
+        while idx < max_prefix_len and common_namespace[idx] == node_instance.namespace[idx]:
+            idx += 1
+        common_namespace = common_namespace[:idx]
+        if not common_namespace:
+            break
+
+    return common_namespace
 
 
 def _normalize_node_group_path(raw_path: str) -> str:
