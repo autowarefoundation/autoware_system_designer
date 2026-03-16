@@ -87,7 +87,7 @@ def apply_parameter_set(
                         check_namespace
                         and not namespace_path_is_descendant(
                             node_namespace,
-                            target_instance.namespace_str,
+                            target_instance.namespace,
                             include_self=True,
                         )
                     ):

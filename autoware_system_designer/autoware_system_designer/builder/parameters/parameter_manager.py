@@ -613,7 +613,7 @@ class ParameterManager:
         # Helper for recursive search
         def _search(inst):
             # Check if current instance matches
-            if inst.entity_type == "node" and namespace_paths_equal(inst.namespace_str, target_namespace):
+            if inst.entity_type == "node" and namespace_paths_equal(inst.namespace, target_namespace):
                 matches.append(inst)
 
             # Optimization: only traverse if target could be deeper
@@ -621,9 +621,9 @@ class ParameterManager:
             # OR current namespace is root "/"
             # OR current namespace is a prefix of target
 
-            if is_root_namespace(inst.namespace_str) or namespace_path_is_descendant(
+            if is_root_namespace(inst.namespace) or namespace_path_is_descendant(
                 target_namespace,
-                inst.namespace_str,
+                inst.namespace,
                 include_self=True,
             ):
                 for child in inst.children.values():
