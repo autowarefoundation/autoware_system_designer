@@ -5,9 +5,9 @@ from ...exceptions import ValidationError
 from ...file_io.source_location import format_source, source_from_config
 from ...models.parsing.data_validator import entity_name_decode
 from ..config.launch_manager import LaunchManager
-from .node_groups import apply_node_groups
 from ..parameters.parameter_set_applier import apply_parameter_set
 from ..runtime.parameters import ParameterType
+from .node_groups import apply_node_groups
 
 if TYPE_CHECKING:
     from ..config.config_registry import ConfigRegistry
