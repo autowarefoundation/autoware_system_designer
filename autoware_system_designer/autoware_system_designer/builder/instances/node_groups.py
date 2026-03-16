@@ -207,7 +207,6 @@ def _create_container_node_instance(
             plugin=launch_spec.get("plugin", ""),
             executable=launch_spec.get("executable", ""),
             launch_state=LaunchState.NODE_CONTAINER,
-            launch_type=launch_spec.get("type", "node_container"),
         )
     )
 

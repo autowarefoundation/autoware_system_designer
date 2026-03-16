@@ -37,13 +37,11 @@ class LaunchManager:
         launch_config = LaunchConfig.from_config(config)
         return cls(launch_config=launch_config)
 
-    def update(self, container_target: str = "", launch_type: str | None = None):
+    def update(self, container_target: str = ""):
         """Update launch configuration with new container target and/or launch type."""
         if container_target:
             self.launch_config.container_target = container_target
             self.launch_config.launch_state = LaunchState.COMPOSABLE_NODE
-        if launch_type:
-            self.launch_config.launch_type = launch_type
 
     @property
     def package_name(self) -> str:

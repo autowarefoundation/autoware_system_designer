@@ -29,11 +29,13 @@ class LaunchState(str, Enum):
         """Derive launch state from config dict (configuration.launch)."""
         if not launch:
             return cls.SINGLE_NODE
+        if launch.get("launch_state") in cls._value2member_map_:
+            return cls(launch["launch_state"])
         if launch.get("ros2_launch_file") not in (None, ""):
             return cls.ROS2_LAUNCH_FILE
         if launch.get("type") == "node_container":
             return cls.NODE_CONTAINER
-        if launch.get("use_container") is True or launch.get("type") == "composable_node":
+        if launch.get("type") == "composable_node":
             return cls.COMPOSABLE_NODE
         return cls.SINGLE_NODE
 
@@ -54,10 +56,8 @@ class LaunchConfig:
         args: str = "",
         plugin: str = "",
         executable: str = "",
-        use_container: bool = False,
         container_target: str = "",
         launch_state: LaunchState = LaunchState.SINGLE_NODE,
-        launch_type: Optional[str] = None,
     ):
         self.package_name = package_name
         self.ros2_launch_file = ros2_launch_file
@@ -65,10 +65,8 @@ class LaunchConfig:
         self.args = args
         self.plugin = plugin
         self.executable = executable
-        self.use_container = use_container
         self.container_target = container_target
         self.launch_state = launch_state
-        self.launch_type = launch_type
 
     @classmethod
     def from_config(cls, config: Any) -> "LaunchConfig":
@@ -81,10 +79,8 @@ class LaunchConfig:
         args = launch.get("args", "")
         plugin = launch.get("plugin", "")
         executable = launch.get("executable", "")
-        use_container = launch.get("use_container", False)
         container_target = launch.get("container_target", launch.get("container_name", ""))
         launch_state = LaunchState.from_config(launch)
-        launch_type = launch.get("type")
 
         return cls(
             package_name=package_name,
@@ -93,10 +89,8 @@ class LaunchConfig:
             args=args,
             plugin=plugin,
             executable=executable,
-            use_container=use_container,
             container_target=container_target,
             launch_state=launch_state,
-            launch_type=launch_type,
         )
 
     def apply_override(self, override: Dict[str, Any]) -> None:
@@ -109,21 +103,27 @@ class LaunchConfig:
             self.node_output = override["node_output"]
         if "args" in override:
             self.args = override["args"]
-        if "use_container" in override:
-            self.use_container = override["use_container"]
         if "container_target" in override:
             self.container_target = override["container_target"]
-        if "type" in override:
-            self.launch_type = override["type"]
-        self._update_launch_state()
 
-    def _update_launch_state(self) -> None:
+        override_launch_state: Optional[LaunchState] = self.launch_state
+        if "launch_state" in override and override["launch_state"] in LaunchState._value2member_map_:
+            override_launch_state = LaunchState(override["launch_state"])
+        if "type" in override:
+            try:
+                override_launch_state = LaunchState(override["type"])
+            except ValueError:
+                pass
+
+        self._update_launch_state(override_launch_state=override_launch_state)
+
+    def _update_launch_state(self, *, override_launch_state: Optional[LaunchState] = None) -> None:
         """Set launch_state from current members."""
         if self.ros2_launch_file not in (None, ""):
             self.launch_state = LaunchState.ROS2_LAUNCH_FILE
-        elif self.launch_type == "node_container":
+        elif override_launch_state == LaunchState.NODE_CONTAINER:
             self.launch_state = LaunchState.NODE_CONTAINER
-        elif self.use_container or self.launch_type == "composable_node":
+        elif override_launch_state == LaunchState.COMPOSABLE_NODE:
             self.launch_state = LaunchState.COMPOSABLE_NODE
         else:
             self.launch_state = LaunchState.SINGLE_NODE
