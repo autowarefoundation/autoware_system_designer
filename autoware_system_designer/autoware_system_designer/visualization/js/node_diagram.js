@@ -105,7 +105,12 @@ class NodeDiagramModule extends DiagramBase {
       const inPortsCount = (instance.in_ports || []).length;
       const outPortsCount = (instance.out_ports || []).length;
       const maxPorts = Math.max(inPortsCount, outPortsCount);
-      const nodeHeight = Math.max(100, 80 + maxPorts * 25);
+      const containerTarget = this.getContainerTarget(instance);
+      const containerTargetExtraHeight = containerTarget ? 22 : 0;
+      const nodeHeight = Math.max(
+        100,
+        80 + maxPorts * 25 + containerTargetExtraHeight,
+      );
 
       const node = {
         id: nodeId,
@@ -215,6 +220,18 @@ class NodeDiagramModule extends DiagramBase {
     }
 
     return rootNode;
+  }
+
+  getContainerTarget(data) {
+    if (!data) return "";
+
+    return (
+      data.container_target ||
+      data.launch?.container_target ||
+      data.launch_config?.container_target ||
+      data.launcher?.container_target ||
+      ""
+    );
   }
 
   async layoutAndRenderNodeDiagram(graphData) {
@@ -554,6 +571,45 @@ class NodeDiagramModule extends DiagramBase {
     };
 
     g.appendChild(rect);
+
+    const containerTarget = this.getContainerTarget(userData);
+    if (containerTarget) {
+      const badgePadding = 6;
+      const badgeHeight = 14;
+      const badgeText = String(containerTarget);
+      const badgeWidth = Math.min(
+        node.width - 2 * badgePadding,
+        Math.max(48, badgeText.length * 6 + 12),
+      );
+      const badgeX = (node.width - badgeWidth) / 2;
+      const badgeY = node.height - badgeHeight - badgePadding;
+
+      const badgeRect = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "rect",
+      );
+      badgeRect.setAttribute("x", badgeX);
+      badgeRect.setAttribute("y", badgeY);
+      badgeRect.setAttribute("width", badgeWidth);
+      badgeRect.setAttribute("height", badgeHeight);
+      badgeRect.setAttribute("rx", 3);
+      badgeRect.style.fill = this.isDarkMode() ? "rgba(0,0,0,0.25)" : "#e9ecef";
+      badgeRect.style.stroke = this.isDarkMode() ? "#6c757d" : "#adb5bd";
+      badgeRect.style.strokeWidth = "1";
+      g.appendChild(badgeRect);
+
+      const badgeLabel = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "text",
+      );
+      badgeLabel.setAttribute("x", node.width / 2);
+      badgeLabel.setAttribute("y", badgeY + badgeHeight / 2 + 0.5);
+      badgeLabel.textContent = badgeText;
+      badgeLabel.classList.add("node-label");
+      badgeLabel.style.fontSize = "9px";
+      badgeLabel.style.fill = this.isDarkMode() ? "#dee2e6" : "#495057";
+      g.appendChild(badgeLabel);
+    }
 
     if (node.labels && node.labels.length > 0) {
       const fontSize = Math.max(12, 36 - depth * 5);
