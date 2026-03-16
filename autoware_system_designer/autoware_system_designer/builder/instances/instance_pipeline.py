@@ -57,13 +57,16 @@ def set_system(
         instance.set_event_tree()
         _snapshot("3_events")
 
-        # 4. validate node namespaces
+        # 4. execution node groups (ros composible node containers)
+
+        # 5. validate node namespaces
         current_step = "validate"
         check_duplicate_node_namespaces(instance)
 
-        # 5. finalize parameters (resolve substitutions)
+        # 6. finalize parameters (resolve substitutions)
         current_step = "finalize"
         finalize_parameters_recursive(instance)
+
     except Exception as e:
         _snapshot(current_step, e)
         raise

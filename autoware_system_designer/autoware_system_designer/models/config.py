@@ -107,3 +107,4 @@ class SystemConfig(Config):
     connections: List[Dict[str, Any]] = None
     variables: List[Dict[str, Any]] = None
     variable_files: List[Dict[str, Any]] = None
+    node_groups: List[Dict[str, Any]] = None

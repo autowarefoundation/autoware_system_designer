@@ -141,6 +141,28 @@
           }
         ]
       }
+    },
+    "node_groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "nodes"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      }
     }
   },
   "additionalProperties": true,

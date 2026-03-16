@@ -171,6 +171,7 @@ class SystemVariantResolver(VariantResolver):
             {"field": "parameter_sets", "key_field": None},  # Parameter sets are appended
             {"field": "components", "key_field": "name"},
             {"field": "connections", "key_field": None},
+            {"field": "node_groups", "key_field": "name"},
         ]
         self._resolve_merges(system_config, config_yaml, merge_specs)
 
@@ -205,6 +206,7 @@ class SystemVariantResolver(VariantResolver):
             {"field": "components", "key_field": "name"},
             {"field": "variables", "key_field": "name"},
             {"field": "connections", "key_field": None},
+            {"field": "node_groups", "key_field": "name"},
         ]
         self._resolve_removals(system_config, remove_config, remove_specs)
 

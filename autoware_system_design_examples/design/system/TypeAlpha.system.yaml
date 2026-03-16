@@ -54,6 +54,15 @@ connections:
   - - object_recognition.subscriber.vector_map
     - map_loader.publisher.vector_map
 
+node_groups:
+  - name: pointcloud_container
+    type: ros2_component_container_multi-thread
+    nodes:
+      - /sensing/lidar/*
+      - /perception/object_recognition/detector_a1/node_detector
+      - /perception/object_recognition/detector_a2/node_detector
+
+# mode configuration
 simulation:
   override:
     components:
@@ -62,3 +71,9 @@ simulation:
         namespace: perception/object_recognition
         compute_unit: main_ecu
         parameter_set: [PerceptionModuleABuild.parameter_set]
+    node_groups:
+      - name: pointcloud_container
+        type: ros2_component_container_multi-thread
+        nodes:
+          - /sensing/lidar/*
+          - /perception/object_recognition/detector_a1/node_detector

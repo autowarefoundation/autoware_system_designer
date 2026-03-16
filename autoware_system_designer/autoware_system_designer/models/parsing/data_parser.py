@@ -328,6 +328,7 @@ class ConfigParser:
                 connections=config.get("connections"),
                 variables=config.get("variables"),
                 variable_files=config.get("variable_files"),
+                node_groups=config.get("node_groups"),
             )
         else:
             raise ValidationError(f"Unknown entity type: {entity_type}")

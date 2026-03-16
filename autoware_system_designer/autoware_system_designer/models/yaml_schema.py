@@ -251,6 +251,7 @@ def get_semantic_checks(
                     "parameter_sets",
                     "components",
                     "connections",
+                    "node_groups",
                     "arguments",
                     "variables",
                     "variable_files",
