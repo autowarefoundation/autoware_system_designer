@@ -40,7 +40,7 @@ class Instance:
         self.name: str = name
         self.namespace: List[str] = namespace.copy()
         # add the instance name to the namespace
-        self.namespace_str: str = "/" + "/".join(self.namespace)
+        self.namespace_str: str = "/" + "/".join(self.namespace) if self.namespace else ""
 
         self.compute_unit: str = compute_unit
         self.layer: int = layer
@@ -83,6 +83,13 @@ class Instance:
 
         # status
         self.is_initialized = False
+
+    @property
+    def node_path(self) -> str:
+        """Get the full node path for this instance (namespace + name)."""
+        if self.namespace:
+            return "/" + "/".join(self.namespace) + "/" + self.name
+        return "/" + self.name
 
     @property
     def unique_id(self):

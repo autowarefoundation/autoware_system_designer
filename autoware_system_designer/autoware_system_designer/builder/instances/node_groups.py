@@ -53,7 +53,7 @@ def apply_node_groups(instance: "Instance") -> None:
 				if node_instance.unique_id in matched_ids:
 					continue
 
-				if _node_group_pattern_matches(pattern, node_instance.namespace_str):
+				if _node_group_pattern_matches(pattern, node_instance.node_path):
 					matched_nodes.append(node_instance)
 					matched_ids.add(node_instance.unique_id)
 
@@ -95,25 +95,23 @@ def _normalize_node_group_path(raw_path: str) -> str:
 	if not path.startswith("/"):
 		path = f"/{path}"
 
-	# collapse repeated separators
-	while "//" in path:
-		path = path.replace("//", "/")
-
 	if len(path) > 1 and path.endswith("/"):
 		path = path.rstrip("/")
 
 	return path
 
 
-def _node_group_pattern_matches(pattern: str, node_namespace: str) -> bool:
+def _node_group_pattern_matches(pattern: str, node_path: str) -> bool:
 	normalized_pattern = _normalize_node_group_path(pattern)
-	normalized_node = _normalize_node_group_path(node_namespace)
+	normalized_node_path = _normalize_node_group_path(node_path)
 
 	# glob-style pattern (supports broad wildcard matching)
 	if any(ch in normalized_pattern for ch in ["*", "?", "["]):
-		return fnmatch(normalized_node, normalized_pattern)
+		return fnmatch(normalized_node_path, normalized_pattern)
 
 	# plain path: treat as prefix to include all nodes under the path
 	if normalized_pattern == "/":
 		return True
-	return normalized_node == normalized_pattern or normalized_node.startswith(f"{normalized_pattern}/")
+	return normalized_node_path == normalized_pattern or normalized_node_path.startswith(
+		f"{normalized_pattern}/"
+	)
