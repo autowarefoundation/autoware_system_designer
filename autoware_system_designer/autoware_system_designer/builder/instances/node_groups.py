@@ -1,11 +1,10 @@
 import logging
-from pathlib import Path
 from fnmatch import fnmatch
 from typing import TYPE_CHECKING, Any
 
 from ...exceptions import ValidationError
-from ...models.config import NodeConfig
 from ..config.launch_manager import LaunchManager
+from ..runtime.execution import LaunchConfig, LaunchState
 
 if TYPE_CHECKING:
 	from .instances import Instance
@@ -201,6 +200,7 @@ def _create_container_node_instance(
 	from .instances import Instance
 
 	container_spec = NODE_GROUP_CONTAINER_SPECS[group_type]
+	launch_spec = container_spec["launch"]
 
 	container_instance = Instance(
 		name=group_name,
@@ -209,66 +209,24 @@ def _create_container_node_instance(
 		layer=parent_instance.layer,
 	)
 	container_instance.parent = parent_instance
-
-	container_instance.configuration = _build_synthetic_container_node_config(
-		system_file_path=parent_instance.configuration.file_path,
-		group_name=group_name,
-		container_spec=container_spec,
-	)
 	container_instance.entity_type = "node"
-	container_instance.launch_manager = LaunchManager.from_config(container_instance.configuration)
+	container_instance.launch_manager = LaunchManager(
+		launch_config=LaunchConfig(
+			package_name=container_spec["package_name"],
+			node_output=launch_spec.get("node_output", "screen"),
+			args=launch_spec.get("args", ""),
+			plugin=launch_spec.get("plugin", ""),
+			executable=launch_spec.get("executable", ""),
+			use_container=launch_spec.get("use_container", False),
+			container_target=launch_spec.get("container_target", launch_spec.get("container_name", "")),
+			launch_state=LaunchState.NODE_CONTAINER,
+			launch_type=launch_spec.get("type", "node_container"),
+		)
+	)
 
 	container_instance.is_initialized = True
 
 	return container_instance
-
-
-def _build_synthetic_container_node_config(
-	*,
-	system_file_path: Path,
-	group_name: str,
-	container_spec: dict[str, Any],
-) -> NodeConfig:
-	return NodeConfig(
-		name=f"{group_name}.synthetic.node",
-		full_name=f"{group_name}.synthetic.node",
-		entity_type="node",
-		config={
-			"name": f"{group_name}.synthetic.node",
-			"package": {
-				"name": container_spec["package_name"],
-				"provider": container_spec["package_provider"],
-			},
-			"launch": container_spec["launch"],
-			"subscribers": [],
-			"publishers": [],
-			"param_files": [],
-			"param_values": [],
-			"processes": [
-				{
-					"name": "run",
-					"trigger_conditions": [],
-					"outcomes": [],
-				}
-			],
-		},
-		file_path=system_file_path,
-		package=container_spec["package_name"],
-		package_name=container_spec["package_name"],
-		package_provider=container_spec["package_provider"],
-		launch=container_spec["launch"],
-		inputs=[],
-		outputs=[],
-		param_files=[],
-		param_values=[],
-		processes=[
-			{
-				"name": "run",
-				"trigger_conditions": [],
-				"outcomes": [],
-			}
-		],
-	)
 
 
 def _iter_node_instances(instance: "Instance"):
