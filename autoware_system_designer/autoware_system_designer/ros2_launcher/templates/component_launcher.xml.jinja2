@@ -93,6 +93,7 @@
   </load_composable_node>
 {% elif node.launch_state == 'node_container' %}
   <node_container pkg="{{ node.package }}" exec="{{ node.executable }}" name="{{ node.name }}" namespace="{{ node.full_namespace_path }}" output="{{ node.node_output }}">
+    <composable_node pkg="autoware_glog_component" plugin="autoware::glog_component::GlogComponent" name="glog_component" namespace=""/>
   </node_container>
 {% else %}
   <node pkg="{{ node.package }}" exec="{{ node.executable }}" name="{{ node.name }}" namespace="{{ node.full_namespace_path }}" output="{{ node.node_output }}"{% if node.args %} args="{{ node.args }}"{% endif %}>

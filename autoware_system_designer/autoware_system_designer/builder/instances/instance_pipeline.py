@@ -73,20 +73,21 @@ def set_system(
 
 
 def check_duplicate_node_namespaces(instance) -> None:
-    """Check for duplicate node namespaces in the entire system."""
-    namespace_map = {}
-    root_namespaces = {"", "/"}
+    """Check for duplicate full node paths in the entire system.
+
+    Components/modules may share namespaces. Node instances must have unique
+    node paths (namespace + node name).
+    """
+    node_path_map = {}
 
     def _collect_namespaces(inst):
         if inst.entity_type == "node":
-            if inst.namespace_str in root_namespaces:
-                pass
-            elif inst.namespace_str in namespace_map:
+            if inst.node_path in node_path_map:
                 raise ValidationError(
-                    f"Duplicate node namespace found: '{inst.namespace_str}'. "
-                    f"Conflict between instance '{inst.name}' and '{namespace_map[inst.namespace_str]}'"
+                    f"Duplicate node path found: '{inst.node_path}'. "
+                    f"Conflict between instance '{inst.name}' and '{node_path_map[inst.node_path]}'"
                 )
-            namespace_map[inst.namespace_str] = inst.name
+            node_path_map[inst.node_path] = inst.name
 
         for child in inst.children.values():
             _collect_namespaces(child)

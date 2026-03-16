@@ -69,6 +69,42 @@ def resolve_common_namespace(namespaces: Iterable[Sequence[str]]) -> list[str]:
     return common_namespace
 
 
+def resolve_common_namespace_from_paths(paths: Iterable[str]) -> list[str]:
+    """Resolve common namespace from node-path style strings.
+
+    Path rules:
+      - Glob patterns use static prefix before wildcard.
+      - Plain paths are treated as node paths, so the last segment (node name)
+        is removed.
+    """
+
+    namespace_list = [_path_pattern_to_namespace_segments(path) for path in paths]
+    if not namespace_list:
+        return []
+
+    return resolve_common_namespace(namespace_list)
+
+
+def _path_pattern_to_namespace_segments(path_pattern: str) -> list[str]:
+    normalized_pattern = normalize_node_group_path(path_pattern)
+    if normalized_pattern == "/":
+        return []
+
+    segments = [segment for segment in normalized_pattern.split("/") if segment]
+    if not segments:
+        return []
+
+    wildcard_index = next(
+        (idx for idx, segment in enumerate(segments) if any(ch in segment for ch in ["*", "?", "["])),
+        None,
+    )
+
+    if wildcard_index is not None:
+        return segments[:wildcard_index]
+
+    return segments[:-1]
+
+
 def resolve_namespace(path: str | Sequence[str] | Namespace | None) -> Namespace:
     """Resolve any namespace representation to `Namespace`."""
     return Namespace.from_path(path)

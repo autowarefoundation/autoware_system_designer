@@ -46,5 +46,5 @@ class DeploymentInstance(Instance):
         )
 
     def check_duplicate_node_namespaces(self):
-        """Check for duplicate node namespaces in the entire system."""
+        """Check for duplicate full node paths in the entire system."""
         check_duplicate_node_namespaces_impl(self)

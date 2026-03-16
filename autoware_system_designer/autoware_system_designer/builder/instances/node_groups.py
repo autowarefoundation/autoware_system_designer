@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 from ...exceptions import ValidationError
 from ..config.launch_manager import LaunchManager
 from ..runtime.execution import LaunchConfig, LaunchState
-from ..runtime.namespace import node_group_pattern_matches, resolve_common_namespace
+from ..runtime.namespace import node_group_pattern_matches, resolve_common_namespace_from_paths
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -88,7 +88,7 @@ def apply_node_groups(instance: "Instance") -> None:
             group_name=group_name,
             group_type=group_type,
             compute_unit=group_compute_unit,
-            matched_nodes=matched_nodes,
+            node_patterns=node_patterns,
         )
         container_target_path = container_instance.node_path
 
@@ -160,17 +160,19 @@ def _create_group_container_node(
     group_name: str,
     group_type: str,
     compute_unit: str,
-    matched_nodes: list["Instance"],
+    node_patterns: list[str],
 ) -> "Instance":
     if group_name in instance.children:
         raise ValidationError(f"Node group name '{group_name}' conflicts with existing system component name")
+
+    container_namespace = resolve_common_namespace_from_paths(node_patterns)
 
     container_instance = _create_container_node_instance(
         parent_instance=instance,
         group_name=group_name,
         group_type=group_type,
         compute_unit=compute_unit,
-        namespace=resolve_common_namespace(node_instance.namespace for node_instance in matched_nodes),
+        namespace=container_namespace,
     )
     instance.children[group_name] = container_instance
 
