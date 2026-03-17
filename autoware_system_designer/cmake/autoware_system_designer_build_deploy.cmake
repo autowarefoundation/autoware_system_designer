@@ -45,12 +45,18 @@ macro(autoware_system_designer_build_deploy project_name)
 
   set(BUILD_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/deployment_process.py")
   set(TEE_RUN_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/tee_run.py")
+  set(RUN_WITH_POLICY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/run_deploy_with_policy.py")
   set(SYSTEM_DESIGNER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../autoware_system_designer")
   set(SYSTEM_DESIGNER_RESOURCE_DIR "${CMAKE_BINARY_DIR}/../autoware_system_designer/resource")
   set(OUTPUT_ROOT_DIR "${CMAKE_INSTALL_PREFIX}/share/${CMAKE_PROJECT_NAME}/")
   get_filename_component(WORKSPACE_ROOT "${CMAKE_BINARY_DIR}/../.." ABSOLUTE)
   set(LOG_DIR "${WORKSPACE_ROOT}/log/latest_build/${CMAKE_PROJECT_NAME}")
   set(LOG_FILE "${LOG_DIR}/build_${_INPUT_NAME}.log")
+  # If OFF (default), deployment failures are reported but do not fail package build.
+  # If ON, deployment failures fail package build (recommended for CI).
+  if(NOT DEFINED AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT)
+    set(AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT OFF)
+  endif()
   set(_WORKSPACE_ARGS "")
   if(EXISTS "${CMAKE_SOURCE_DIR}/workspace.yaml")
     list(APPEND _WORKSPACE_ARGS "${CMAKE_SOURCE_DIR}/workspace.yaml")
@@ -79,9 +85,17 @@ macro(autoware_system_designer_build_deploy project_name)
     COMMAND ${CMAKE_COMMAND} -E make_directory ${LOG_DIR}
     COMMAND ${CMAKE_COMMAND} -E env
       PYTHONPATH=${SYSTEM_DESIGNER_SOURCE_DIR}:$ENV{PYTHONPATH}
-      autoware_system_designer_PRINT_LEVEL=${_PRINT_LEVEL}
-      python3 ${TEE_RUN_SCRIPT} --log-file ${LOG_FILE} -- python3 -d ${BUILD_PY_SCRIPT} ${_DEPLOYMENT_FILE} ${SYSTEM_DESIGNER_RESOURCE_DIR} ${OUTPUT_ROOT_DIR} ${_WORKSPACE_ARGS}
-    COMMENT "Running build.py script ${_LOG_DESC}. PRINT_LEVEL=${_PRINT_LEVEL}; full log: ${LOG_FILE}"
+      AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT=${AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT}
+      python3 ${RUN_WITH_POLICY_SCRIPT}
+        --log-file ${LOG_FILE}
+        --print-level ${_PRINT_LEVEL}
+        ${TEE_RUN_SCRIPT}
+        ${BUILD_PY_SCRIPT}
+        ${_DEPLOYMENT_FILE}
+        ${SYSTEM_DESIGNER_RESOURCE_DIR}
+        ${OUTPUT_ROOT_DIR}
+        ${_WORKSPACE_ARGS}
+    COMMENT "Running build.py script ${_LOG_DESC}. PRINT_LEVEL=${_PRINT_LEVEL}, STRICT=${AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT}; full log: ${LOG_FILE}"
   )
   add_dependencies(${project_name} run_build_py_${_INPUT_NAME})
 endmacro()
