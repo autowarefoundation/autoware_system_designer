@@ -105,6 +105,16 @@ def main():
     )
     parser.add_argument("output_dir", help="Directory to save manifests")
     parser.add_argument("install_prefix", help="CMAKE_INSTALL_PREFIX")
+    parser.add_argument(
+        "--package-map-mode",
+        choices=["install", "source"],
+        default="install",
+        help=(
+            "How to generate package_map paths. "
+            "'install' uses install_prefix/share/<pkg> (default), "
+            "'source' uses workspace source package directories (CI/no-build mode)."
+        ),
+    )
     args = parser.parse_args()
 
     # Find workspace root
@@ -118,11 +128,14 @@ def main():
     # Identify the current package name to detect install layout (isolated vs merged)
     current_pkg_name = get_package_name(args.start_path)
 
+    is_source_mode = args.package_map_mode == "source"
     is_isolated = False
     install_base = args.install_prefix
     clean_prefix = args.install_prefix.rstrip(os.path.sep)
 
-    if os.path.basename(clean_prefix) == current_pkg_name:
+    if is_source_mode:
+        print("Detected source package_map mode (CI/no-build)")
+    elif os.path.basename(clean_prefix) == current_pkg_name:
         is_isolated = True
         install_base = os.path.dirname(clean_prefix)
         print(f"Detected isolated install layout. Base: {install_base}")
@@ -194,7 +207,9 @@ def main():
     # 1. Generate package_map for ALL workspace packages
     package_map = {}
     for pkg_src_path, pkg_name in pkg_paths.items():
-        if is_isolated:
+        if is_source_mode:
+            p = pkg_src_path
+        elif is_isolated:
             # isolated: install_base/pkg_name/share/pkg_name
             p = os.path.join(install_base, pkg_name, "share", pkg_name)
         else:

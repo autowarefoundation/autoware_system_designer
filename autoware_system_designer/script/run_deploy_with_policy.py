@@ -28,8 +28,7 @@ def _truthy(value: str) -> bool:
 def _parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run deployment build through tee_run.py and decide whether to propagate "
-            "failures based on strict mode."
+            "Run deployment build through tee_run.py and decide whether to propagate failures based on strict mode."
         )
     )
     parser.add_argument("--log-file", required=True, help="Path to combined log file")
