@@ -17,7 +17,13 @@ macro(autoware_system_designer_build_deploy project_name)
   #   autoware_system_designer_build_deploy(<project> <deployment_file>)
   #   autoware_system_designer_build_deploy(<project> <design_file>)
   #   autoware_system_designer_build_deploy(<project> <deployment|design> PRINT_LEVEL=<LEVEL>)
+  #   autoware_system_designer_build_deploy(<project> <deployment|design> STRICT=<AUTO|ON|OFF>)
+  #   autoware_system_designer_build_deploy(<project> <deployment|design> PRINT_LEVEL=<LEVEL> STRICT=<AUTO|ON|OFF>)
   # PRINT_LEVEL controls what is printed to the terminal (stderr).
+  # STRICT controls whether deployment generation failure fails the build.
+  #   AUTO: follow AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT (default)
+  #   ON:   fail build when deployment generation fails
+  #   OFF:  warn and continue local build
   # Full logs are still written to the per-target log file.
   # Valid levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
   set(_EXTRA_ARGS ${ARGN})
@@ -29,23 +35,31 @@ macro(autoware_system_designer_build_deploy project_name)
 
   # Defaults
   set(_PRINT_LEVEL "ERROR")
+  set(_STRICT_MODE "AUTO")
 
-  # Parse optional args: only PRINT_LEVEL=<LEVEL> is supported.
+  # Parse optional args: PRINT_LEVEL=<LEVEL>, STRICT=<AUTO|ON|OFF>
   if(_EXTRA_LEN GREATER 1)
-    if(_EXTRA_LEN GREATER 2)
-      message(FATAL_ERROR "autoware_system_designer_build_deploy: only PRINT_LEVEL=<LEVEL> is supported as an optional arg. Got: ${ARGN}")
-    endif()
-    list(GET _EXTRA_ARGS 1 _ONLY)
-    if(NOT _ONLY MATCHES "^PRINT_LEVEL=.+$")
-      message(FATAL_ERROR "autoware_system_designer_build_deploy: only PRINT_LEVEL=<LEVEL> is supported (e.g. PRINT_LEVEL=WARNING). Got: ${_ONLY}")
-    endif()
-    string(REPLACE "=" ";" _PAIR "${_ONLY}")
-    list(GET _PAIR 1 _PRINT_LEVEL)
+    math(EXPR _LAST_IDX "${_EXTRA_LEN} - 1")
+    foreach(_IDX RANGE 1 ${_LAST_IDX})
+      list(GET _EXTRA_ARGS ${_IDX} _OPT)
+      if(_OPT MATCHES "^PRINT_LEVEL=.+$")
+        string(REPLACE "=" ";" _PAIR "${_OPT}")
+        list(GET _PAIR 1 _PRINT_LEVEL)
+      elseif(_OPT MATCHES "^STRICT=.+$")
+        string(REPLACE "=" ";" _PAIR "${_OPT}")
+        list(GET _PAIR 1 _STRICT_MODE)
+        string(TOUPPER "${_STRICT_MODE}" _STRICT_MODE)
+        if(NOT _STRICT_MODE STREQUAL "AUTO" AND NOT _STRICT_MODE STREQUAL "ON" AND NOT _STRICT_MODE STREQUAL "OFF")
+          message(FATAL_ERROR "autoware_system_designer_build_deploy: STRICT must be AUTO, ON, or OFF. Got: ${_OPT}")
+        endif()
+      else()
+        message(FATAL_ERROR "autoware_system_designer_build_deploy: supported optional args are PRINT_LEVEL=<LEVEL> and STRICT=<AUTO|ON|OFF>. Got: ${_OPT}")
+      endif()
+    endforeach()
   endif()
 
   set(BUILD_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/deployment_process.py")
-  set(TEE_RUN_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/tee_run.py")
-  set(RUN_WITH_POLICY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/run_deploy_with_policy.py")
+  set(SYSTEM_DESIGNER_RUNNER_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/system_designer_runner.py")
   set(SYSTEM_DESIGNER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../autoware_system_designer")
   set(SYSTEM_DESIGNER_RESOURCE_DIR "${CMAKE_BINARY_DIR}/../autoware_system_designer/resource")
   set(OUTPUT_ROOT_DIR "${CMAKE_INSTALL_PREFIX}/share/${CMAKE_PROJECT_NAME}/")
@@ -57,6 +71,7 @@ macro(autoware_system_designer_build_deploy project_name)
   if(NOT DEFINED AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT)
     set(AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT OFF)
   endif()
+  string(TOLOWER "${_STRICT_MODE}" _STRICT_MODE_CLI)
   set(_WORKSPACE_ARGS "")
   if(EXISTS "${CMAKE_SOURCE_DIR}/workspace.yaml")
     list(APPEND _WORKSPACE_ARGS "${CMAKE_SOURCE_DIR}/workspace.yaml")
@@ -86,16 +101,17 @@ macro(autoware_system_designer_build_deploy project_name)
     COMMAND ${CMAKE_COMMAND} -E env
       PYTHONPATH=${SYSTEM_DESIGNER_SOURCE_DIR}:$ENV{PYTHONPATH}
       AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT=${AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT}
-      python3 ${RUN_WITH_POLICY_SCRIPT}
+      python3 ${SYSTEM_DESIGNER_RUNNER_SCRIPT}
+        deploy
         --log-file ${LOG_FILE}
         --print-level ${_PRINT_LEVEL}
-        ${TEE_RUN_SCRIPT}
+        --strict ${_STRICT_MODE_CLI}
         ${BUILD_PY_SCRIPT}
         ${_DEPLOYMENT_FILE}
         ${SYSTEM_DESIGNER_RESOURCE_DIR}
         ${OUTPUT_ROOT_DIR}
         ${_WORKSPACE_ARGS}
-    COMMENT "Running build.py script ${_LOG_DESC}. PRINT_LEVEL=${_PRINT_LEVEL}, STRICT=${AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT}; full log: ${LOG_FILE}"
+    COMMENT "Running build.py script ${_LOG_DESC}. PRINT_LEVEL=${_PRINT_LEVEL}, STRICT=${_STRICT_MODE} (env default=${AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT}); full log: ${LOG_FILE}"
   )
   add_dependencies(${project_name} run_build_py_${_INPUT_NAME})
 endmacro()

@@ -42,11 +42,11 @@ class DeploymentConfig:
     def from_env(cls) -> "DeploymentConfig":
         """Create configuration from environment variables."""
         return cls(
-            layer_limit=int(os.getenv("autoware_system_designer_LAYER_LIMIT", "50")),
-            log_level=os.getenv("autoware_system_designer_LOG_LEVEL", "INFO"),
-            print_level=os.getenv("autoware_system_designer_PRINT_LEVEL", "ERROR"),
-            cache_enabled=os.getenv("autoware_system_designer_CACHE_ENABLED", "true").lower() == "true",
-            max_cache_size=int(os.getenv("autoware_system_designer_MAX_CACHE_SIZE", "128")),
+            layer_limit=int(os.getenv("AUTOWARE_SYSTEM_DESIGNER_LAYER_LIMIT", "50")),
+            log_level=os.getenv("AUTOWARE_SYSTEM_DESIGNER_LOG_LEVEL", "INFO"),
+            print_level=os.getenv("AUTOWARE_SYSTEM_DESIGNER_PRINT_LEVEL", "ERROR"),
+            cache_enabled=os.getenv("AUTOWARE_SYSTEM_DESIGNER_CACHE_ENABLED", "true").lower() == "true",
+            max_cache_size=int(os.getenv("AUTOWARE_SYSTEM_DESIGNER_MAX_CACHE_SIZE", "128")),
         )
 
     def set_logging(self) -> logging.Logger:

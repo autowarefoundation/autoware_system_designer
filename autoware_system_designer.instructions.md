@@ -409,6 +409,8 @@ Builds the entire system deployment.
 autoware_system_designer_build_deploy(
   <project_name>
   <deployment_file>
+  [PRINT_LEVEL=<DEBUG|INFO|WARNING|ERROR|CRITICAL>]
+  [STRICT=<AUTO|ON|OFF>]
 )
 ```
 

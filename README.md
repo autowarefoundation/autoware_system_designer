@@ -93,6 +93,8 @@ autoware_system_designer_parameter()
 autoware_system_designer_build_deploy(
   ${PROJECT_NAME}
   vehicle_x.deployment
+  PRINT_LEVEL=WARNING
+  STRICT=AUTO  # AUTO|ON|OFF (AUTO follows AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT)
 )
 ```
 
