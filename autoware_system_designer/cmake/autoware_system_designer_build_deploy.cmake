@@ -14,11 +14,11 @@
 
 macro(autoware_system_designer_build_deploy project_name)
   # Supported invocation patterns:
-  #   autoware_system_designer_build_deploy(<project> <deployment_file>)
+  #   autoware_system_designer_build_deploy(<project> <deployment_name>.deployments)
   #   autoware_system_designer_build_deploy(<project> <design_file>)
-  #   autoware_system_designer_build_deploy(<project> <deployment|design> PRINT_LEVEL=<LEVEL>)
-  #   autoware_system_designer_build_deploy(<project> <deployment|design> STRICT=<AUTO|ON|OFF>)
-  #   autoware_system_designer_build_deploy(<project> <deployment|design> PRINT_LEVEL=<LEVEL> STRICT=<AUTO|ON|OFF>)
+  #   autoware_system_designer_build_deploy(<project> <deployment_or_system_target> PRINT_LEVEL=<LEVEL>)
+  #   autoware_system_designer_build_deploy(<project> <deployment_or_system_target> STRICT=<AUTO|ON|OFF>)
+  #   autoware_system_designer_build_deploy(<project> <deployment_or_system_target> PRINT_LEVEL=<LEVEL> STRICT=<AUTO|ON|OFF>)
   # PRINT_LEVEL controls what is printed to the terminal (stderr).
   # STRICT controls whether deployment generation failure fails the build.
   #   AUTO: follow AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT (default)
@@ -77,23 +77,19 @@ macro(autoware_system_designer_build_deploy project_name)
     list(APPEND _WORKSPACE_ARGS "${CMAKE_SOURCE_DIR}/workspace.yaml")
   endif()
 
-  if(_INPUT_NAME MATCHES ".*\\.deployments\\.yaml$")
-    # Deployments table file path was provided directly.
-    set(_DEPLOYMENT_FILE "${_INPUT_NAME}")
-    set(_LOG_DESC "(deployments_table=${_INPUT_NAME})")
-  elseif(_INPUT_NAME MATCHES ".*\\.deployments$")
+  if(_INPUT_NAME MATCHES ".*\\.deployments$")
     # Deployments table name (without .yaml): resolve under this package's deployment directory.
     set(_DEPLOYMENT_FILE "${CMAKE_SOURCE_DIR}/deployment/${_INPUT_NAME}.yaml")
     set(_LOG_DESC "(deployments_table=${_INPUT_NAME})")
   elseif(_INPUT_NAME MATCHES ".*\\.system$")
-    # If the input is an design file, use it directly.
+    # Explicit system entity target.
     set(_DEPLOYMENT_FILE "${_INPUT_NAME}")
-    set(_LOG_DESC "(design=${_INPUT_NAME})")
-  else()
-    # If it's a deployment name, treat as a system name/file within the system.
-    # We assume usage of system files now.
-    set(_DEPLOYMENT_FILE "${_INPUT_NAME}.system.yaml")
     set(_LOG_DESC "(system=${_INPUT_NAME})")
+  else()
+    message(FATAL_ERROR
+      "autoware_system_designer_build_deploy: unsupported target '${_INPUT_NAME}'. "
+      "Use '<name>.deployments' or '*.system'."
+    )
   endif()
 
   add_custom_target(run_build_py_${_INPUT_NAME} ALL
