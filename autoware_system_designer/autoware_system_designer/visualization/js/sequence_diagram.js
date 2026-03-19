@@ -148,9 +148,7 @@ class SequenceDiagramModule extends DiagramBase {
     if (instance.entity_type === "node") {
       if (instance.events && Array.isArray(instance.events)) {
         instance.events.forEach((event) => {
-          const nsLabel = instance.namespace
-            ? instance.namespace.join("<br/>")
-            : "";
+          const nsLabel = instance.namespace;
           const fullLabel = `${nsLabel}<br/><br/>[${event.name}]`;
           // Using unique_id from data
           lines.push(`participant ${event.unique_id} as ${fullLabel}`);

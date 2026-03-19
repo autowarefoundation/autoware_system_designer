@@ -86,6 +86,16 @@ class Instance:
         self.is_initialized = False
 
     @property
+    def path(self) -> str:
+        """Get the full path of this instance in the hierarchy."""
+        if self.entity_type == "node":
+            return self.namespace.node_path(self.name)
+        elif self.entity_type == "system":
+            return "/"
+        else:
+            return self.namespace.to_string()
+
+    @property
     def node_path(self) -> str:
         """Get the full node path for this instance (namespace + name).
 

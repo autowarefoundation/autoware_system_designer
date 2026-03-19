@@ -174,7 +174,7 @@
 
           let displayValue = value;
 
-          if (key === "namespace" && Array.isArray(value)) {
+          if (Array.isArray(value)) {
             displayValue = "/" + value.join("/");
           } else if (typeof value === "object" && value !== null) {
             if (Array.isArray(value)) displayValue = "[" + value.length + "]";
