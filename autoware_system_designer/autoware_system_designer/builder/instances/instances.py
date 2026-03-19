@@ -92,7 +92,16 @@ class Instance:
 
     @property
     def node_path(self) -> str:
-        """Get the full node path for this instance (namespace + name)."""
+        """Get the full node path for this instance (namespace + name).
+
+        Module children (created by create_module_children) already have the
+        node name appended to the namespace, so namespace_str is the full path.
+        System-level children and synthetic nodes (e.g. container nodes from
+        node_groups) keep a user-supplied or computed namespace that does NOT
+        include the node name, so it must be appended.
+        """
+        if self.parent is not None and self.parent.entity_type == "module":
+            return self.namespace_str
         return self.namespace.node_path(self.name)
 
     @property
