@@ -174,9 +174,7 @@
 
           let displayValue = value;
 
-          if (Array.isArray(value)) {
-            displayValue = "/" + value.join("/");
-          } else if (typeof value === "object" && value !== null) {
+          if (typeof value === "object" && value !== null) {
             if (Array.isArray(value)) displayValue = "[" + value.length + "]";
             else displayValue = "{...}";
           }

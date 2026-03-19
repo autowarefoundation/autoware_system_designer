@@ -23,7 +23,13 @@ from ...file_io.source_location import SourceLocation, format_source, source_fro
 from ...models.parsing.yaml_parser import yaml_parser
 from ...utils.parameter_types import coerce_numeric_value, normalize_type_name
 from ..runtime.execution import LaunchState
-from ..runtime.namespace import is_root_namespace, namespace_path_is_descendant, namespace_paths_equal
+from ..runtime.namespace import (
+    is_root_namespace,
+    namespace_path_is_descendant,
+    namespace_paths_equal,
+    node_group_pattern_matches,
+    resolve_common_namespace_from_paths,
+)
 from ..runtime.parameters import (
     Parameter,
     ParameterFile,
@@ -603,28 +609,41 @@ class ParameterManager:
         """Find all nodes matching the absolute namespace path in the current instance's subtree.
 
         Args:
-            target_path: Absolute namespace path (e.g., "/perception/object_recognition/node_tracker")
+            target_path: Absolute namespace path or glob pattern
+                (e.g., "/perception/object_recognition/node_tracker", "/*")
         Returns:
             List of matching Instance objects (nodes)
         """
         matches = []
+        has_wildcard = any(ch in target_path for ch in ["*", "?", "["])
+        target_namespace_prefix = resolve_common_namespace_from_paths([target_path]) if has_wildcard else None
+        target_namespace_path = f"/{'/'.join(target_namespace_prefix)}" if target_namespace_prefix else ""
 
         # Helper for recursive search
         def _search(inst):
 
-            if inst.entity_type == "node" and namespace_paths_equal(inst.node_path, target_path):
-                matches.append(inst)
+            if inst.entity_type == "node":
+                if has_wildcard:
+                    if node_group_pattern_matches(target_path, inst.node_path):
+                        matches.append(inst)
+                elif namespace_paths_equal(inst.node_path, target_path):
+                    matches.append(inst)
 
             # Optimization: only traverse if target could be deeper
             # i.e., target_path starts with current namespace
             # OR current namespace is root "/"
             # OR current namespace is a prefix of target
 
-            if is_root_namespace(inst.namespace) or namespace_path_is_descendant(
-                target_path,
-                inst.namespace,
-                include_self=True,
-            ):
+            should_traverse = is_root_namespace(inst.namespace)
+            if not should_traverse:
+                candidate_path = target_namespace_path if has_wildcard else target_path
+                should_traverse = is_root_namespace(candidate_path) or namespace_path_is_descendant(
+                    candidate_path,
+                    inst.namespace,
+                    include_self=True,
+                )
+
+            if should_traverse:
                 for child in inst.children.values():
                     _search(child)
 
