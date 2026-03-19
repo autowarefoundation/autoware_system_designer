@@ -612,8 +612,15 @@ class ParameterManager:
 
         # Helper for recursive search
         def _search(inst):
-            # Check if current instance matches
-            if inst.entity_type == "node" and namespace_paths_equal(inst.namespace, target_namespace):
+            # Check if current instance matches (compare both namespace and
+            # node_path so that nodes whose namespace does not include their
+            # name – e.g. synthetic container nodes or system children with a
+            # namespace that differs from the instance name – can still be
+            # found via their canonical node path).
+            if inst.entity_type == "node" and (
+                namespace_paths_equal(inst.namespace, target_namespace)
+                or namespace_paths_equal(inst.node_path, target_namespace)
+            ):
                 matches.append(inst)
 
             # Optimization: only traverse if target could be deeper
