@@ -1,5 +1,4 @@
 import logging
-import re
 from typing import TYPE_CHECKING
 
 from ...exceptions import ValidationError
@@ -18,42 +17,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-_NAME_OVERRIDE_PATTERN = re.compile(r"^<([^/<>]+)>$")
+def _resolve_component_path(component_name: str, raw_path: str | None) -> tuple[Namespace, Namespace]:
+    """Resolve component namespace and full component path."""
+    if raw_path and not isinstance(raw_path, str):
+        raise ValidationError(f"Invalid component path type for '{component_name}': {type(raw_path).__name__}")
 
+    path = (raw_path or "").strip()
+    # empty raw_path: place component under root with its name as namespace
+    if not path:
+        resolved_path = Namespace([component_name])
+        return Namespace(), resolved_path
 
-def _resolve_component_namespaces(component_name: str, raw_namespace: str | None) -> tuple[Namespace, Namespace]:
-    """Resolve component namespace and effective path namespace.
-
-    Rules:
-      - namespace excludes the component name itself
-      - empty namespace means root
-      - `</>` means direct-root mapping (effective path is `/`)
-      - trailing `<name>` overrides component name in effective path
-    """
-    namespace = Namespace()
-
-    if raw_namespace and not isinstance(raw_namespace, str):
-        raise ValidationError(
-            f"Invalid component namespace type for '{component_name}': {type(raw_namespace).__name__}"
-        )
-
-    ns = (raw_namespace or "").strip()
-    if not ns:
-        return namespace, Namespace([component_name])
-
-    if ns == "</>":
+    # raw_path is root: place component directly at root
+    resolved_path = Namespace.from_path(path)
+    if not resolved_path:
         return Namespace(), Namespace()
 
-    namespace = Namespace.from_path(ns)
-
-    if namespace:
-        matched = _NAME_OVERRIDE_PATTERN.match(namespace[-1])
-        if matched:
-            resolved_name = matched.group(1)
-            namespace = Namespace(namespace[:-1])
-            return namespace, Namespace(list(namespace) + [resolved_name])
-
-    return namespace, Namespace(list(namespace) + [component_name])
+    # raw_path is not root: remapped component. decompose to namespace and name
+    return Namespace(resolved_path[:-1]), resolved_path
 
 
 def set_instances(
@@ -85,7 +66,7 @@ def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry"
         compute_unit_name = cfg_component.get("compute_unit")
         instance_name = cfg_component.get("name")
         entity_id = cfg_component.get("entity")
-        namespace, resolved_path = _resolve_component_namespaces(instance_name, cfg_component.get("namespace"))
+        namespace, resolved_path = _resolve_component_path(instance_name, cfg_component.get("path"))
 
         # create instance
         child_instance = _create_child_instance(instance_name, compute_unit_name, namespace, instance)

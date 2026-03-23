@@ -20,7 +20,7 @@ modes:
 components:
   - name: lidar
     entity: LidarDummy.module
-    namespace: /sensing/
+    path: /sensing/lidar
     compute_unit: main_ecu
   - name: map
     entity: MapDummy.node
@@ -30,7 +30,7 @@ components:
     compute_unit: dummy_ecu_1
   - name: object_recognition
     entity: PerceptionA.module
-    namespace: /perception/
+    path: /perception/object_recognition
     compute_unit: main_ecu
     parameter_set: [PerceptionModuleA.parameter_set]
   - name: planning
@@ -65,7 +65,7 @@ simulation:
     components:
       - name: object_recognition
         entity: PerceptionB.module
-        namespace: /perception/
+        path: /perception/object_recognition
         compute_unit: main_ecu
         parameter_set: [PerceptionModuleABuild.parameter_set]
     node_groups:

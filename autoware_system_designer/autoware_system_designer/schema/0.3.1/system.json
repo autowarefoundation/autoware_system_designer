@@ -94,7 +94,7 @@
           "compute_unit": {
             "type": "string"
           },
-          "namespace": {
+          "path": {
             "type": "string"
           },
           "parameter_set": {
