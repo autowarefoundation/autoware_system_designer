@@ -17,10 +17,9 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from ..file_io.source_location import SourceLocation, format_source
-from ..file_io.system_structure_json import extract_system_structure_data
 from ..file_io.template_renderer import TemplateRenderer
 from ..models.system_structure import DeploymentDataByMode
 from .visualization_index import get_install_root
@@ -64,7 +63,6 @@ def _copy_static_asset(filename: str, destination_dir: str) -> None:
 
 def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str) -> None:
     """Generate JavaScript data files for web visualization."""
-    data, _ = extract_system_structure_data(data)
     # Node diagram data
     node_data = {**data, "mode": mode_key, "window_variable": "systemDesignData"}
     output_path = os.path.join(web_data_dir, f"{mode_key}_node_diagram.js")
@@ -90,7 +88,7 @@ def _calculate_systems_index_path(web_dir: str) -> str:
             return os.path.join(rel_to_root, "systems.html")
         except ValueError:
             logger.warning(f"Could not calculate relative path from {web_dir} to {install_root}")
-    return "../../../../../../../systems.html"
+    return ""
 
 
 def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualization_dir: str):
