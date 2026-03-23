@@ -20,24 +20,21 @@ modes:
 components:
   - name: lidar
     entity: LidarDummy.module
-    namespace: sensing/lidar
+    namespace: /sensing/
     compute_unit: main_ecu
-  - name: map_loader
+  - name: map
     entity: MapDummy.node
-    namespace: map
     compute_unit: dummy_ecu_1
-  - name: localizer
+  - name: localization
     entity: LocalizationDummy.node
-    namespace: localization
     compute_unit: dummy_ecu_1
   - name: object_recognition
     entity: PerceptionA.module
-    namespace: perception/object_recognition
+    namespace: /perception/
     compute_unit: main_ecu
     parameter_set: [PerceptionModuleA.parameter_set]
-  - name: planner
+  - name: planning
     entity: PlanningDummy.node
-    namespace: planning
     compute_unit: dummy_ecu_2
 
 node_groups:
@@ -51,16 +48,16 @@ node_groups:
 connections:
   - - object_recognition.subscriber.pointcloud
     - lidar.publisher.concatenated/pointcloud
-  - - map_loader.publisher.vector_map
-    - planner.subscriber.lanelet_map
+  - - map.publisher.vector_map
+    - planning.subscriber.lanelet_map
   - - object_recognition.publisher.objects
-    - planner.subscriber.predicted_objects
+    - planning.subscriber.predicted_objects
   - - lidar.publisher.concatenated/pointcloud
-    - localizer.subscriber.pointcloud
-  - - map_loader.publisher.vector_map
-    - localizer.subscriber.lanelet_map
+    - localization.subscriber.pointcloud
+  - - map.publisher.vector_map
+    - localization.subscriber.lanelet_map
   - - object_recognition.subscriber.vector_map
-    - map_loader.publisher.vector_map
+    - map.publisher.vector_map
 
 # mode configuration
 simulation:
@@ -68,7 +65,7 @@ simulation:
     components:
       - name: object_recognition
         entity: PerceptionB.module
-        namespace: perception/object_recognition
+        namespace: /perception/
         compute_unit: main_ecu
         parameter_set: [PerceptionModuleABuild.parameter_set]
     node_groups:

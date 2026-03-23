@@ -80,7 +80,10 @@ class InstanceData(TypedDict, total=False):
     name: str
     unique_id: str
     entity_type: str
-    namespace: List[str]
+    namespace: str
+    resolved_path: str
+    port_namespace: str
+    path: str
     compute_unit: Optional[str]
     vis_guide: Optional[Dict[str, Any]]
     in_ports: List[PortData]

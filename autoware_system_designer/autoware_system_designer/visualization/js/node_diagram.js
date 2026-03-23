@@ -115,7 +115,7 @@ class NodeDiagramModule extends DiagramBase {
       const node = {
         id: nodeId,
         labels: [
-          { text: instance.namespace || "" },
+          { text: instance.path || "" },
           { text: instance.name || nodeId || "Unnamed" },
         ],
         width: 300,

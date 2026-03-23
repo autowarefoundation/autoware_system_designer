@@ -3,6 +3,7 @@ from typing import Callable, Dict
 
 from ...exceptions import ValidationError
 from ..parameters.parameter_resolver import ParameterResolver
+from ..runtime.namespace import Namespace
 from .instance_tree import set_instances
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ def set_system(
         logger.info(f"Setting system {system_config.full_name} for instance {instance.name}")
         instance.configuration = system_config
         instance.entity_type = "system"
+        instance.set_resolved_path([])
 
         # Apply system variables and variable files to the parameter resolver if available
         if instance.parameter_resolver:
@@ -59,7 +61,7 @@ def set_system(
 
         # 4. validate node namespaces
         current_step = "validate"
-        check_duplicate_node_namespaces(instance)
+        check_duplicate_node_path(instance)
 
         # 5. finalize parameters (resolve substitutions)
         current_step = "finalize"
@@ -69,22 +71,30 @@ def set_system(
         raise
 
 
-def check_duplicate_node_namespaces(instance) -> None:
-    """Check for duplicate full node paths in the entire system.
+def check_duplicate_node_path(instance) -> None:
+    """Check for duplicate normalized (namespace + name) node paths.
 
     Components/modules may share namespaces. Node instances must have unique
-    node paths (namespace + node name).
+    normalized paths generated from namespace + node name.
     """
     node_path_map = {}
 
+    def _normalize_namespace_name(namespace, name: str) -> str:
+        namespace_segments = Namespace.from_path(namespace)
+        path_segments = list(namespace_segments)
+        if name:
+            path_segments.append(name)
+        return f"/{'/'.join(path_segments)}" if path_segments else "/"
+
     def _collect_namespaces(inst):
         if inst.entity_type == "node":
-            if inst.node_path in node_path_map:
+            normalized_path = _normalize_namespace_name(inst.namespace, inst.name)
+            if normalized_path in node_path_map:
                 raise ValidationError(
-                    f"Duplicate node path found: '{inst.node_path}'. "
-                    f"Conflict between instance '{inst.name}' and '{node_path_map[inst.node_path]}'"
+                    f"Duplicate node path found: '{normalized_path}'. "
+                    f"Conflict between instance '{inst.name}' and '{node_path_map[normalized_path]}'"
                 )
-            node_path_map[inst.node_path] = inst.name
+            node_path_map[normalized_path] = inst.name
 
         for child in inst.children.values():
             _collect_namespaces(child)

@@ -348,7 +348,7 @@ class ParameterManager:
 
         if path is None:
             raise ParameterConfigurationError(
-                f"path is None. package_name: {package_name}, node_path: {self.instance.node_path}, path: {path}"
+                f"path is None. package_name: {package_name}, node_path: {self.instance.path}, path: {path}"
             )
 
         # Resolve any substitutions in the path first
@@ -624,9 +624,9 @@ class ParameterManager:
 
             if inst.entity_type == "node":
                 if has_wildcard:
-                    if node_group_pattern_matches(target_path, inst.node_path):
+                    if node_group_pattern_matches(target_path, inst.path):
                         matches.append(inst)
-                elif namespace_paths_equal(inst.node_path, target_path):
+                elif namespace_paths_equal(inst.path, target_path):
                     matches.append(inst)
 
             # Optimization: only traverse if target could be deeper
@@ -634,12 +634,12 @@ class ParameterManager:
             # OR current namespace is root "/"
             # OR current namespace is a prefix of target
 
-            should_traverse = is_root_namespace(inst.namespace)
+            should_traverse = is_root_namespace(inst.resolved_path)
             if not should_traverse:
                 candidate_path = target_namespace_path if has_wildcard else target_path
                 should_traverse = is_root_namespace(candidate_path) or namespace_path_is_descendant(
                     candidate_path,
-                    inst.namespace,
+                    inst.resolved_path,
                     include_self=True,
                 )
 
@@ -678,7 +678,7 @@ class ParameterManager:
 
                 if param_name is None or param_value is None:
                     raise ParameterConfigurationError(
-                        f"param_name or param_value is None. path: {self.instance.node_path}, param_files: {self.instance.configuration.param_files}"
+                        f"param_name or param_value is None. path: {self.instance.path}, param_files: {self.instance.configuration.param_files}"
                     )
 
                 # Resolve parameter file path if resolver is available
@@ -716,7 +716,7 @@ class ParameterManager:
 
                 if param_name is None or param_value is None:
                     raise ParameterConfigurationError(
-                        f"param_name or param_value is None. path: {self.instance.node_path}, param_values: {self.instance.configuration.param_values}"
+                        f"param_name or param_value is None. path: {self.instance.path}, param_values: {self.instance.configuration.param_values}"
                     )
 
                 # Resolve parameter value if resolver is available

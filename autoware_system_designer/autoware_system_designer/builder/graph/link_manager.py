@@ -299,7 +299,7 @@ class LinkManager:
             to_port: Destination port (InPort or OutPort)
             connection_type: Type of connection
         """
-        link = Link(from_port.msg_type, from_port, to_port, self.instance.namespace, connection_type)
+        link = Link(from_port.msg_type, from_port, to_port, self.instance.resolved_path, connection_type)
         self.links.append(link)
 
     def _resolve_ports_for_connection(
@@ -330,14 +330,14 @@ class LinkManager:
                     f"[E_CONN_TARGET_MISSING] EXTERNAL_TO_INTERNAL input.{connection.from_port_name} -> {connection.to_instance}.input.{connection.to_port_name}"
                 )
             port_name = (from_info or {}).get("port_name", connection.from_port_name)
-            from_port = InPort(port_name, to_port.msg_type, self.instance.namespace)
+            from_port = InPort(port_name, to_port.msg_type, self.instance.port_namespace)
         elif connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
             if from_port is None:
                 raise ValidationError(
                     f"[E_CONN_SOURCE_MISSING] INTERNAL_TO_EXTERNAL {connection.from_instance}.output.{connection.from_port_name} -> output.{connection.to_port_name}"
                 )
             port_name = (to_info or {}).get("port_name", connection.to_port_name)
-            to_port = OutPort(port_name, from_port.msg_type, self.instance.namespace)
+            to_port = OutPort(port_name, from_port.msg_type, self.instance.port_namespace)
 
         if from_info is not None:
             from_info["port"] = from_port
@@ -562,10 +562,10 @@ class LinkManager:
         """Create external ports based on link list."""
         for link in self.links:
             if link.connection_type == ConnectionType.EXTERNAL_TO_INTERNAL:
-                if link.from_port.namespace == self.instance.namespace:
+                if link.from_port.namespace == self.instance.port_namespace:
                     self.set_in_port(link.from_port)
             elif link.connection_type == ConnectionType.INTERNAL_TO_EXTERNAL:
-                if link.to_port.namespace == self.instance.namespace:
+                if link.to_port.namespace == self.instance.port_namespace:
                     self.set_out_port(link.to_port)
 
     def initialize_node_ports(self):
@@ -580,7 +580,7 @@ class LinkManager:
             in_port_instance = InPort(
                 in_port_name,
                 in_port_msg_type,
-                self.instance.namespace,
+                self.instance.port_namespace,
                 remap_target=cfg_in_port.get("remap_target"),
             )
             if "global" in cfg_in_port:
@@ -598,7 +598,7 @@ class LinkManager:
             out_port_instance = OutPort(
                 out_port_name,
                 out_port_msg_type,
-                self.instance.namespace,
+                self.instance.port_namespace,
                 remap_target=cfg_out_port.get("remap_target"),
             )
             if "global" in cfg_out_port:

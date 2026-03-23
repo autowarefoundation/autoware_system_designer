@@ -70,7 +70,7 @@ def apply_node_groups(instance: "Instance") -> None:
                 if node_instance.unique_id in matched_ids:
                     continue
 
-                if node_group_pattern_matches(pattern, node_instance.node_path):
+                if node_group_pattern_matches(pattern, node_instance.path):
                     matched_nodes.append(node_instance)
                     matched_ids.add(node_instance.unique_id)
 
@@ -90,14 +90,14 @@ def apply_node_groups(instance: "Instance") -> None:
             compute_unit=group_compute_unit,
             node_patterns=node_patterns,
         )
-        container_target_path = container_instance.node_path
+        container_target_path = container_instance.path
 
         for node_instance in matched_nodes:
             previous_target = node_instance.launch_manager.launch_config.container_target
             if previous_target and previous_target != container_target_path:
                 logger.warning(
                     "Node '%s' container target reassigned from '%s' to '%s'",
-                    node_instance.node_path,
+                    node_instance.path,
                     previous_target,
                     container_target_path,
                 )

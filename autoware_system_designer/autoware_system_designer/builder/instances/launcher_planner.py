@@ -22,19 +22,17 @@ def collect_component_nodes(component_instance) -> List[Dict[str, Any]]:
     """Collect launcher node payloads from a runtime component instance."""
     nodes: List[Dict[str, Any]] = []
 
-    base_namespace = (getattr(component_instance, "namespace", None) or []).copy()
-
-    def traverse(current_instance, full_namespace_path: List[str]):
-        for child_name, child_instance in current_instance.children.items():
+    def traverse(current_instance):
+        for child_instance in current_instance.children.values():
             if child_instance.entity_type == "node":
-                nodes.append(_extract_node_data(child_instance, full_namespace_path))
+                nodes.append(_extract_node_data(child_instance))
             elif child_instance.entity_type == "module":
-                traverse(child_instance, full_namespace_path + [child_name])
+                traverse(child_instance)
 
     if component_instance.entity_type == "module":
-        traverse(component_instance, base_namespace)
+        traverse(component_instance)
     elif component_instance.entity_type == "node":
-        nodes.append(_extract_node_data(component_instance, base_namespace))
+        nodes.append(_extract_node_data(component_instance))
 
     return nodes
 
@@ -43,23 +41,24 @@ def collect_component_nodes_from_data(component_data: Dict[str, Any]) -> List[Di
     """Collect launcher node payloads from serialized component data."""
     nodes: List[Dict[str, Any]] = []
 
-    base_namespace = component_data.get("namespace", []) or []
-    if isinstance(base_namespace, str):
-        base_namespace = [base_namespace]
-    elif not isinstance(base_namespace, list):
-        base_namespace = []
+    def _to_rel_ns(value: Any) -> str:
+        if isinstance(value, list):
+            return "/".join([seg for seg in value if seg])
+        if isinstance(value, str):
+            return value.strip("/")
+        return ""
 
-    def traverse(current_data: Dict[str, Any], full_namespace_path: List[str]):
+    def traverse(current_data: Dict[str, Any]):
         for child in current_data.get("children", []):
             if child.get("entity_type") == "node":
-                nodes.append(_extract_node_data_from_dict(child, full_namespace_path))
+                nodes.append(_extract_node_data_from_dict(child, _to_rel_ns(child.get("namespace"))))
             elif child.get("entity_type") == "module":
-                traverse(child, full_namespace_path + [child.get("name")])
+                traverse(child)
 
     if component_data.get("entity_type") == "module":
-        traverse(component_data, base_namespace)
+        traverse(component_data)
     elif component_data.get("entity_type") == "node":
-        nodes.append(_extract_node_data_from_dict(component_data, base_namespace))
+        nodes.append(_extract_node_data_from_dict(component_data, _to_rel_ns(component_data.get("namespace"))))
 
     return nodes
 
@@ -109,19 +108,19 @@ def build_serialized_system_component_maps(
     return compute_unit_map, component_required_args_map, component_map
 
 
-def _extract_node_data(node_instance, module_path: List[str]) -> Dict[str, Any]:
+def _extract_node_data(node_instance) -> Dict[str, Any]:
     """Extract node launcher data from runtime instance."""
     node_data = collect_launcher_data(node_instance)
     node_data["name"] = node_instance.name
-    node_data["full_namespace_path"] = "/".join(module_path) if module_path else ""
+    node_data["full_namespace_path"] = node_instance.namespace.to_string().lstrip("/")
     return node_data
 
 
-def _extract_node_data_from_dict(node_instance: Dict[str, Any], module_path: List[str]) -> Dict[str, Any]:
+def _extract_node_data_from_dict(node_instance: Dict[str, Any], full_namespace_path: str) -> Dict[str, Any]:
     """Extract node launcher data from serialized node dictionary (launcher is canonical from LaunchManager)."""
     launch_data = node_instance.get("launcher", {})
     return {
         **launch_data,
         "name": node_instance.get("name"),
-        "full_namespace_path": "/".join(module_path) if module_path else "",
+        "full_namespace_path": full_namespace_path,
     }

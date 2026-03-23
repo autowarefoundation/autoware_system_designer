@@ -42,6 +42,7 @@ class Instance:
     ):
         self.name: str = name
         self.namespace: Namespace = Namespace(namespace)
+        self.resolved_path = Namespace(list(self.namespace) + [self.name])
 
         self.compute_unit: str = compute_unit
         self.layer: int = layer
@@ -72,6 +73,19 @@ class Instance:
         # event manager
         self.event_manager: EventManager = EventManager(self)
 
+    def set_resolved_path(self, resolved_path: list[str] | Namespace) -> None:
+        """Set resolved path and synchronize exported port namespace."""
+        self.resolved_path = Namespace(resolved_path)
+
+    @property
+    def port_namespace(self) -> Namespace:
+        """Get the namespace to be used for port naming."""
+        return self.resolved_path
+
+    @property
+    def path_list(self) -> List:
+        return list(self.resolved_path)
+
     def set_parameter_resolver(self, parameter_resolver):
         """Set the parameter resolver for this instance and propagate to parameter manager."""
         self.parameter_resolver = parameter_resolver
@@ -88,48 +102,33 @@ class Instance:
     @property
     def path(self) -> str:
         """Get the full path of this instance in the hierarchy."""
-        if self.entity_type == "node":
-            return self.namespace.node_path(self.name)
-        elif self.entity_type == "system":
+        if self.entity_type == "system":
             return "/"
-        else:
-            return self.namespace.to_string()
 
-    @property
-    def node_path(self) -> str:
-        """Get the full node path for this instance (namespace + name).
-
-        Module children (created by create_module_children) already have the
-        node name appended to the namespace, so namespace_str is the full path.
-        System-level children and synthetic nodes (e.g. container nodes from
-        node_groups) keep a user-supplied or computed namespace that does NOT
-        include the node name, so it must be appended.
-        """
-        if self.parent is not None and self.parent.entity_type == "module":
-            return self.namespace.to_string()
-        return self.namespace.node_path(self.name)
+        resolved = self.resolved_path.to_string()
+        return resolved if resolved else "/"
 
     @property
     def unique_id(self):
-        return generate_unique_id(self.namespace.copy(), "instance", self.compute_unit, self.layer, self.name)
+        return generate_unique_id(self.path, "instance", self.compute_unit, self.layer, self.name)
 
     @property
     def vis_guide(self) -> dict:
         """Get visualization guide including colors."""
         return {
-            "color": get_component_color(self.namespace, variant="base"),
-            "medium_color": get_component_color(self.namespace, variant="medium"),
-            "background_color": get_component_color(self.namespace, variant="bright"),
-            "text_color": get_component_color(self.namespace, variant="darkest"),
-            "dark_color": get_component_color(self.namespace, variant="fade"),
+            "color": get_component_color(self.path_list, variant="base"),
+            "medium_color": get_component_color(self.path_list, variant="medium"),
+            "background_color": get_component_color(self.path_list, variant="bright"),
+            "text_color": get_component_color(self.path_list, variant="darkest"),
+            "dark_color": get_component_color(self.path_list, variant="fade"),
             "dark_medium_color": get_component_color(
-                self.namespace, variant="darkish"
+                self.path_list, variant="darkish"
             ),  # Integrated dark+text variant for nodes
             "dark_background_color": get_component_color(
-                self.namespace, variant="dark"
+                self.path_list, variant="dark"
             ),  # Pure dark variant for modules
-            "dark_text_color": get_component_color(self.namespace, variant="bright"),
-            "position": get_component_position(self.namespace),
+            "dark_text_color": get_component_color(self.path_list, variant="bright"),
+            "position": get_component_position(self.path_list),
         }
 
     def get_child(self, name: str):

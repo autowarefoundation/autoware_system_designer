@@ -4,7 +4,7 @@
 {% for out_port in instance.out_ports -%}
 {# check if out_port.topic strings array is empty -#}
 {% if out_port.topic -%}
-- node: {{ instance.namespace[0]}}
+- node: {{ instance.path.split('/')[1] if instance.path and instance.path != '/' else instance.name }}
   mode: [online, logging_simulation, planning_simulation]
   type: launch
   args:

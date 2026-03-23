@@ -173,7 +173,17 @@ class ParameterTemplateGenerator:
         self, instance_data: Dict[str, Any], node_data: List[Dict[str, Any]]
     ) -> None:
         if instance_data.get("entity_type") == "node":
-            node_path = "/" + "/".join(instance_data.get("namespace", [])) + "/" + instance_data.get("name", "unknown_node")
+            namespace_value = instance_data.get("namespace", [])
+            if isinstance(namespace_value, str):
+                namespace_path = namespace_value.strip("/")
+            elif isinstance(namespace_value, list):
+                namespace_path = "/".join(namespace_value)
+            else:
+                namespace_path = ""
+
+            node_path = instance_data.get("path") or (
+                f"/{namespace_path}/{instance_data.get('name', 'unknown_node')}".replace("//", "/")
+            )
     
             parameter_files_list, parameters = self._extract_parameters_from_data(instance_data, node_path)
             parameter_files = {pf["name"]: pf["path"] for pf in parameter_files_list}

@@ -15,7 +15,7 @@
 from typing import Callable, Dict
 
 from ..models.config import SystemConfig
-from .instances.instance_pipeline import check_duplicate_node_namespaces as check_duplicate_node_namespaces_impl
+from .instances.instance_pipeline import check_duplicate_node_path as check_duplicate_node_path_impl
 from .instances.instance_pipeline import set_system as set_system_impl
 from .instances.instances import Instance
 
@@ -45,6 +45,6 @@ class DeploymentInstance(Instance):
             snapshot_callback=snapshot_callback,
         )
 
-    def check_duplicate_node_namespaces(self):
-        """Check for duplicate full node paths in the entire system."""
-        check_duplicate_node_namespaces_impl(self)
+    def check_duplicate_node_path(self):
+        """Check for duplicate normalized (namespace + name) node paths."""
+        check_duplicate_node_path_impl(self)

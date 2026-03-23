@@ -98,12 +98,12 @@ def apply_parameter_set(
                         is_root_namespace(target_namespace)
                         or namespace_path_is_descendant(
                             target_namespace,
-                            target_instance.namespace,
+                            target_instance.resolved_path,
                             include_self=True,
                         )
                     ):
                         logger.debug(
-                            f"Parameter set '{param_set_name}' skip node '{node_namespace}' (component path '{target_instance.node_path}')"
+                            f"Parameter set '{param_set_name}' skip node '{node_namespace}' (component path '{target_instance.path}')"
                         )
                         continue
 

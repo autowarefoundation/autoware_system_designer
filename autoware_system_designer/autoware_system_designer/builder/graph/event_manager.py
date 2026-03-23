@@ -46,7 +46,7 @@ class EventManager:
         # parse processes and get trigger conditions and output conditions
         for process_config in self.instance.configuration.processes:
             name = process_config.get("name")
-            self.processes.append(Process(name, self.instance.namespace, process_config))
+            self.processes.append(Process(name, self.instance.resolved_path, process_config))
 
         # set the process events
         process_event_list = [process.event for process in self.processes]
