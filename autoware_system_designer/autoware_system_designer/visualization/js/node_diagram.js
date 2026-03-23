@@ -115,7 +115,7 @@ class NodeDiagramModule extends DiagramBase {
       const node = {
         id: nodeId,
         labels: [
-          { text: instance.path || "" },
+          { text: instance.namespace || "" },
           { text: instance.name || nodeId || "Unnamed" },
         ],
         width: 300,
@@ -622,7 +622,7 @@ class NodeDiagramModule extends DiagramBase {
         );
         nsText.setAttribute("x", node.width / 2);
         nsText.setAttribute("y", yOffset);
-        nsText.textContent = "/" + node.labels[0].text + "/";
+        nsText.textContent = node.labels[0].text + "/";
         nsText.classList.add("node-label");
         nsText.style.fontSize = "5px";
         nsText.style.fill = this.isDarkMode()

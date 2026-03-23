@@ -184,7 +184,7 @@ class ParameterTemplateGenerator:
             node_path = instance_data.get("path") or (
                 f"/{namespace_path}/{instance_data.get('name', 'unknown_node')}".replace("//", "/")
             )
-    
+
             parameter_files_list, parameters = self._extract_parameters_from_data(instance_data, node_path)
             parameter_files = {pf["name"]: pf["path"] for pf in parameter_files_list}
 

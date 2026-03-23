@@ -33,7 +33,9 @@ def _resolve_component_namespaces(component_name: str, raw_namespace: str | None
     namespace = Namespace()
 
     if raw_namespace and not isinstance(raw_namespace, str):
-        raise ValidationError(f"Invalid component namespace type for '{component_name}': {type(raw_namespace).__name__}")
+        raise ValidationError(
+            f"Invalid component namespace type for '{component_name}': {type(raw_namespace).__name__}"
+        )
 
     ns = (raw_namespace or "").strip()
     if not ns:

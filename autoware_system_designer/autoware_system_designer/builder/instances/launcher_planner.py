@@ -41,24 +41,17 @@ def collect_component_nodes_from_data(component_data: Dict[str, Any]) -> List[Di
     """Collect launcher node payloads from serialized component data."""
     nodes: List[Dict[str, Any]] = []
 
-    def _to_rel_ns(value: Any) -> str:
-        if isinstance(value, list):
-            return "/".join([seg for seg in value if seg])
-        if isinstance(value, str):
-            return value.strip("/")
-        return ""
-
     def traverse(current_data: Dict[str, Any]):
         for child in current_data.get("children", []):
             if child.get("entity_type") == "node":
-                nodes.append(_extract_node_data_from_dict(child, _to_rel_ns(child.get("namespace"))))
+                nodes.append(_extract_node_data_from_dict(child, child.get("namespace")))
             elif child.get("entity_type") == "module":
                 traverse(child)
 
     if component_data.get("entity_type") == "module":
         traverse(component_data)
     elif component_data.get("entity_type") == "node":
-        nodes.append(_extract_node_data_from_dict(component_data, _to_rel_ns(component_data.get("namespace"))))
+        nodes.append(_extract_node_data_from_dict(component_data, component_data.get("namespace")))
 
     return nodes
 
@@ -112,7 +105,7 @@ def _extract_node_data(node_instance) -> Dict[str, Any]:
     """Extract node launcher data from runtime instance."""
     node_data = collect_launcher_data(node_instance)
     node_data["name"] = node_instance.name
-    node_data["full_namespace_path"] = node_instance.namespace.to_string().lstrip("/")
+    node_data["full_namespace_path"] = node_instance.namespace.to_string()
     return node_data
 
 
