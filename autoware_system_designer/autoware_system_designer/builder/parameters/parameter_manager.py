@@ -884,6 +884,11 @@ class ParameterManager:
                     ParameterType.OVERRIDE_FILE if is_override else ParameterType.DEFAULT_FILE
                 )
 
+                # Only default parameter files should be expanded into launcher
+                # param values.
+                if effective_type != ParameterType.DEFAULT_FILE:
+                    continue
+
                 for p_name, p_value in flattened_params.items():
                     if self.parameter_resolver:
                         p_value = self.parameter_resolver.resolve_parameter_value(p_value, source=source)

@@ -16,7 +16,7 @@
 
 <!-- Parameters - Non-Override Parameters -->
 {% for param in node.param_values %}
-{% if param.parameter_type != 'OVERRIDE' and param.parameter_type != 'MODE' %}
+{% if param.parameter_type != 'OVERRIDE' and param.parameter_type != 'OVERRIDE_FILE' and param.parameter_type != 'MODE' and param.parameter_type != 'MODE_FILE' %}
 <param name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
 {% endfor %}
