@@ -1,4 +1,4 @@
-name: lint autoware system design format
+name: build example systems
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  lint-system-design-format:
+  build-example-systems:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -23,7 +23,7 @@ jobs:
           pip install -r autoware_system_designer/requirements.txt
           pip install -e autoware_system_designer
 
-      - name: Run pre-commit
+      - name: build example systems
         uses: pre-commit/action@v3.0.1
         with:
-          extra_args: lint-system-design-format --all-files
+          extra_args: build-example-systems --all-files
