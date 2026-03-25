@@ -92,7 +92,7 @@ autoware_system_designer_parameter()
 # Use this only in the package responsible for building the full system configuration.
 autoware_system_designer_build_deploy(
   ${PROJECT_NAME}
-  vehicle_x.deployment
+  vehicle_x.system
   PRINT_LEVEL=WARNING
   STRICT=AUTO  # AUTO|ON|OFF (AUTO follows AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT)
 )
