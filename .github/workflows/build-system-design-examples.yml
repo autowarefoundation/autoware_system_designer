@@ -1,0 +1,29 @@
+name: Build System Design Examples
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-system-design-examples:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install -r autoware_system_designer/requirements.txt
+          pip install -e autoware_system_designer
+
+      - name: Run pre-commit build hook
+        uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: build-system-design-examples --all-files
