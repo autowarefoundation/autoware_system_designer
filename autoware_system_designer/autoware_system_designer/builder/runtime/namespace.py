@@ -43,6 +43,7 @@ class Namespace(list[str]):
         """
         return "/" + "/".join(self) if self else "/"
 
+
 def resolve_common_namespace(namespaces: Iterable[Sequence[str]]) -> list[str]:
     """Resolve longest common namespace prefix from the given namespaces."""
     namespace_list = [list(ns) for ns in namespaces]
