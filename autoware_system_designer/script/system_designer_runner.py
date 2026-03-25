@@ -242,7 +242,9 @@ def main(argv: List[str]) -> int:
 
     sys.stderr.write(
         "[autoware_system_designer] WARNING: deployment build failed but is non-fatal in local build "
-        f"(set -DAUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT=ON to fail). "
+        "(set -DAUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT=ON in CMake, or set "
+        "AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT=1/on/true in the environment, or pass "
+        "--strict on to fail). "
         f"See log: {args.log_file}\n"
     )
     return 0
