@@ -52,7 +52,7 @@ repos:
   - repo: local
     hooks:
       - id: lint-system-design-format
-        name: Lint System Design Format
+        name: lint system design format
         description: Lint Autoware System Design Format YAML files
         entry: python3 autoware_system_designer/autoware_system_designer/linter/run_lint.py
         language: system
@@ -60,10 +60,10 @@ repos:
         pass_filenames: true
         require_serial: false
 
-      - id: build-system-design-examples
-        name: Build System Design Examples
+      - id: build-example-systems
+        name: build example systems
         description: Generate manifests and run deployment_process.py for vehicle_x.system
-        entry: bash tools/build-system-design-examples.sh
+        entry: bash tools/build-example-systems.sh
         language: system
         always_run: true
         pass_filenames: false

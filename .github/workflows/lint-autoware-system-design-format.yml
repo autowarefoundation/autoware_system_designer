@@ -1,4 +1,4 @@
-name: Lint Autoware System Design Format
+name: lint autoware system design format
 
 on:
   pull_request:
