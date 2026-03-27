@@ -21,30 +21,16 @@
 {% endif %}
 {% endfor %}
 
-<!-- Parameters - Override Parameter files -->
-{% for param_file in node.param_files %}
-{% if param_file.parameter_type == 'OVERRIDE_FILE' %}
-<param from="{{ param_file.path }}" allow_substs="{{ param_file.allow_substs }}"/>
-{% endif %}
-{% endfor %}
-
-<!-- Parameters - Mode Parameter files -->
-{% for param_file in node.param_files %}
-{% if param_file.parameter_type == 'MODE_FILE' %}
-<param from="{{ param_file.path }}" allow_substs="{{ param_file.allow_substs }}"/>
-{% endif %}
-{% endfor %}
-
 <!-- Parameters - Overrides -->
 {% for param in node.param_values %}
-{% if param.parameter_type == 'OVERRIDE' %}
+{% if param.parameter_type == 'OVERRIDE' or param.parameter_type == 'OVERRIDE_FILE' %}
 <param name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
 {% endfor %}
 
 <!-- Parameters - Mode Overrides (highest priority) -->
 {% for param in node.param_values %}
-{% if param.parameter_type == 'MODE' %}
+{% if param.parameter_type == 'MODE' or param.parameter_type == 'MODE_FILE' %}
 <param name="{{ param.name }}" value="{{ param.value }}"/>
 {% endif %}
 {% endfor %}

@@ -871,33 +871,27 @@ class ParameterManager:
             if not data:
                 return
 
-            node_name = self.instance.name
-            for key, value in data.items():
-                if key not in ("/**", f"/{node_name}", node_name):
-                    continue
-                ros_params = value.get("ros__parameters") if isinstance(value, dict) else None
-                if not ros_params:
-                    continue
+            # Simplified contract: parameter files target only '/**'.
+            global_section = data.get("/**") if isinstance(data, dict) else None
+            ros_params = global_section.get("ros__parameters") if isinstance(global_section, dict) else None
+            if not ros_params:
+                return
 
-                flattened_params = self._flatten_parameters(ros_params)
-                effective_type = parameter_type or (
-                    ParameterType.OVERRIDE_FILE if is_override else ParameterType.DEFAULT_FILE
+            flattened_params = self._flatten_parameters(ros_params)
+            effective_type = parameter_type or (ParameterType.OVERRIDE_FILE if is_override else ParameterType.DEFAULT_FILE)
+
+            if effective_type not in (ParameterType.DEFAULT_FILE, ParameterType.OVERRIDE_FILE, ParameterType.MODE_FILE):
+                return
+
+            for p_name, p_value in flattened_params.items():
+                if self.parameter_resolver:
+                    p_value = self.parameter_resolver.resolve_parameter_value(p_value, source=source)
+                self.parameters.set_parameter(
+                    p_name,
+                    p_value,
+                    data_type=self._infer_ros_param_type(p_value),
+                    parameter_type=effective_type,
+                    source=source,
                 )
-
-                # Only default parameter files should be expanded into launcher
-                # param values.
-                if effective_type != ParameterType.DEFAULT_FILE:
-                    continue
-
-                for p_name, p_value in flattened_params.items():
-                    if self.parameter_resolver:
-                        p_value = self.parameter_resolver.resolve_parameter_value(p_value, source=source)
-                    self.parameters.set_parameter(
-                        p_name,
-                        p_value,
-                        data_type=self._infer_ros_param_type(p_value),
-                        parameter_type=effective_type,
-                        source=source,
-                    )
         except Exception as e:
             logger.warning(f"Failed to load parameters from file {file_path}: {e}{format_source(source)}")
