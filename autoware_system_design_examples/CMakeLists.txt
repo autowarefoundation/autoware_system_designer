@@ -13,4 +13,4 @@ add_library(${PROJECT_NAME} SHARED src/empty.cpp)
 
 autoware_system_designer_generate_launcher()
 
-autoware_system_designer_build_deploy(${PROJECT_NAME} vehicle_x.system PRINT_LEVEL=WARNING)
+autoware_system_designer_build_deploy(${PROJECT_NAME} vehicle_x.system PRINT_LEVEL=WARNING STRICT=ON)

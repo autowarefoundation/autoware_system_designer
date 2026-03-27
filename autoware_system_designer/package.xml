@@ -12,7 +12,9 @@
   <buildtool_depend>ament_cmake_python</buildtool_depend>
   <buildtool_depend>autoware_cmake</buildtool_depend>
 
-  <build_depend>python3-jsonschema</build_depend>
+  <depend>python3-jinja2</depend>
+  <depend>python3-yaml</depend>
+  <depend>python3-jsonschema</depend>
 
   <exec_depend>ament_index_python</exec_depend>
 
