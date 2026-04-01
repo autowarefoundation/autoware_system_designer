@@ -25,6 +25,7 @@ from providers.completion_provider import CompletionProvider
 from providers.definition_provider import DefinitionProvider
 from providers.hover_provider import HoverProvider
 from providers.inlay_hint_provider import InlayHintProvider
+from providers.signature_help_provider import SignatureHelpProvider
 from registry_manager import RegistryManager
 from validation_engine import ValidationEngine
 
@@ -50,6 +51,7 @@ class AutowareSystemDesignerLanguageServer:
         self.definition_provider = DefinitionProvider(self.registry_manager)
         self.hover_provider = HoverProvider(self.registry_manager)
         self.inlay_hint_provider = InlayHintProvider(self.registry_manager)
+        self.signature_help_provider = SignatureHelpProvider(self.registry_manager)
 
         # Register handlers
         self._register_handlers()
@@ -85,6 +87,10 @@ class AutowareSystemDesignerLanguageServer:
         def hover(ls, params):
             return self._on_hover(ls, params)
 
+        @self.server.feature(lsp.TEXT_DOCUMENT_SIGNATURE_HELP)
+        def signature_help(ls, params):
+            return self._on_signature_help(ls, params)
+
         @self.server.feature(lsp.TEXT_DOCUMENT_INLAY_HINT)
         def inlay_hint(ls, params):
             return self._on_inlay_hint(ls, params)
@@ -116,10 +122,7 @@ class AutowareSystemDesignerLanguageServer:
                 change=lsp.TextDocumentSyncKind.Full,
                 save=lsp.SaveOptions(include_text=True),
             ),
-            # Completion provider disabled - using diagnostics instead
-            # completion_provider=lsp.CompletionOptions(
-            #     trigger_characters=['.', ':']
-            # ),
+            signature_help_provider=lsp.SignatureHelpOptions(trigger_characters=["."]),
             definition_provider=True,
             hover_provider=True,
             inlay_hint_provider=True,
@@ -219,3 +222,7 @@ class AutowareSystemDesignerLanguageServer:
     def _on_inlay_hint(self, ls, params: lsp.InlayHintParams) -> Optional[List[lsp.InlayHint]]:
         """Handle inlay hint requests."""
         return self.inlay_hint_provider.get_inlay_hints(params, self.server)
+
+    def _on_signature_help(self, ls, params: lsp.SignatureHelpParams) -> Optional[lsp.SignatureHelp]:
+        """Handle signature help requests."""
+        return self.signature_help_provider.get_signature_help(params, self.server)
