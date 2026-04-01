@@ -52,7 +52,13 @@ class ResolutionService:
 
         return None
 
-    def _get_node_port_type(self, config: Config, port_type: str, port_name: str) -> Optional[str]:
+    def _get_node_port_type(
+        self,
+        config: Config,
+        port_type: str,
+        port_name: str,
+        _seen_bases: Optional[Set[str]] = None,
+    ) -> Optional[str]:
         """Get type directly from node definition, including variant overrides and base inheritance."""
         if port_type == "input":
             direct_ports = config.inputs or []
@@ -75,12 +81,17 @@ class ResolutionService:
                 if port.get("name") == port_name:
                     return port.get("message_type")
 
-        # Traverse base chain
+        # Traverse base chain with cycle detection
         base_name = raw.get("base")
         if base_name:
+            if _seen_bases is None:
+                _seen_bases = set()
+            if base_name in _seen_bases:
+                return None
+            _seen_bases.add(base_name)
             base_config = self.registry_manager.get_entity(base_name)
             if base_config:
-                return self._get_node_port_type(base_config, port_type, port_name)
+                return self._get_node_port_type(base_config, port_type, port_name, _seen_bases)
 
         return None
 

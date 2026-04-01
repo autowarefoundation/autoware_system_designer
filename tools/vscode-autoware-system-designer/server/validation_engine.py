@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 import yaml
 from lsprotocol import types as lsp
@@ -215,7 +215,7 @@ class ValidationEngine:
                 if not from_valid:
                     diagnostics.append(
                         lsp.Diagnostic(
-                            range=self._get_connection_range(i, document_content),
+                            range=self._get_connection_range(i, document_content, "from"),
                             message=f"Invalid connection source: {from_message}",
                             severity=lsp.DiagnosticSeverity.Error,
                         )
@@ -226,7 +226,7 @@ class ValidationEngine:
                 if not to_valid:
                     diagnostics.append(
                         lsp.Diagnostic(
-                            range=self._get_connection_range(i, document_content),
+                            range=self._get_connection_range(i, document_content, "to"),
                             message=f"Invalid connection destination: {to_message}",
                             severity=lsp.DiagnosticSeverity.Error,
                         )
@@ -234,16 +234,15 @@ class ValidationEngine:
 
         return diagnostics
 
-    def _get_entity_inputs(self, config: Config) -> List[dict]:
-        """Get input ports from a config, handling both Node and Module types."""
-        inputs: List[dict] = []
+    def _get_entity_inputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[dict]:
+        """Get input ports from a config, with cycle detection for base-node inheritance."""
+        if _seen is None:
+            _seen = set()
+        if config.full_name in _seen:
+            return []
+        _seen.add(config.full_name)
 
-        if hasattr(config, "inputs") and config.inputs:
-            inputs = list(config.inputs)
-        elif hasattr(config, "external_interfaces"):
-            ext = config.external_interfaces or {}
-            if isinstance(ext, dict):
-                inputs = list(ext.get("input", []))
+        inputs: List[dict] = list(config.inputs) if (hasattr(config, "inputs") and config.inputs) else []
 
         # For variant entities, merge in override inputs and inherit from base node.
         raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
@@ -258,22 +257,21 @@ class ValidationEngine:
         if base_name:
             base_config = self.registry_manager.get_entity(base_name)
             if base_config:
-                base_inputs = self._get_entity_inputs(base_config)
+                base_inputs = self._get_entity_inputs(base_config, _seen)
                 existing_names = {p.get("name") for p in inputs if p.get("name")}
                 inputs = inputs + [p for p in base_inputs if p.get("name") not in existing_names]
 
         return inputs
 
-    def _get_entity_outputs(self, config: Config) -> List[dict]:
-        """Get output ports from a config, handling both Node and Module types."""
-        outputs: List[dict] = []
+    def _get_entity_outputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[dict]:
+        """Get output ports from a config, with cycle detection for base-node inheritance."""
+        if _seen is None:
+            _seen = set()
+        if config.full_name in _seen:
+            return []
+        _seen.add(config.full_name)
 
-        if hasattr(config, "outputs") and config.outputs:
-            outputs = list(config.outputs)
-        elif hasattr(config, "external_interfaces"):
-            ext = config.external_interfaces or {}
-            if isinstance(ext, dict):
-                outputs = list(ext.get("output", []))
+        outputs: List[dict] = list(config.outputs) if (hasattr(config, "outputs") and config.outputs) else []
 
         # For variant entities, merge in override outputs and inherit from base node.
         raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
@@ -288,7 +286,7 @@ class ValidationEngine:
         if base_name:
             base_config = self.registry_manager.get_entity(base_name)
             if base_config:
-                base_outputs = self._get_entity_outputs(base_config)
+                base_outputs = self._get_entity_outputs(base_config, _seen)
                 existing_names = {p.get("name") for p in outputs if p.get("name")}
                 outputs = outputs + [p for p in base_outputs if p.get("name") not in existing_names]
 
@@ -316,7 +314,7 @@ class ValidationEngine:
         if config.entity_type == ConfigType.MODULE:
             if parts[0] in self._INPUT_TERMS:
                 # External input interface of the module itself
-                inputs = config.inputs or []
+                inputs = self._get_entity_inputs(config)
                 if not inputs:
                     return False, f"No input interfaces defined in module {config.name}"
                 input_names = [iface.get("name") for iface in inputs if iface.get("name")]
@@ -329,7 +327,7 @@ class ValidationEngine:
 
             elif parts[0] in self._OUTPUT_TERMS:
                 # External output interface of the module itself
-                outputs = config.outputs or []
+                outputs = self._get_entity_outputs(config)
                 if not outputs:
                     return False, f"No output interfaces defined in module {config.name}"
                 output_names = [iface.get("name") for iface in outputs if iface.get("name")]
@@ -523,8 +521,20 @@ class ValidationEngine:
 
         return None
 
-    def _get_connection_range(self, connection_index: int, document_content: str = None) -> lsp.Range:
-        """Get the range for a connection entry (2-element list format)."""
+    def _get_connection_range(
+        self, connection_index: int, document_content: str = None, side: str = "from"
+    ) -> lsp.Range:
+        """Get the range for a specific side of a connection entry.
+
+        Supports both YAML connection formats:
+          - List:  ``- - source_ref`` / ``  - dest_ref``
+          - Dict:  ``- from: source_ref`` / ``  to: dest_ref``
+
+        Args:
+            connection_index: 0-based index of the connection in the connections list.
+            document_content: Raw YAML document text.
+            side: ``"from"`` to highlight the source line, ``"to"`` for the destination line.
+        """
         if document_content:
             lines = document_content.split("\n")
             connections_found = 0
@@ -541,12 +551,30 @@ class ValidationEngine:
                     in_connections_section = False
                     continue
 
-                # Each connection entry starts with a double-dash list item: "  - - source"
-                if in_connections_section and stripped.startswith("- -"):
+                if not in_connections_section:
+                    continue
+
+                # List format: "  - - source_ref"
+                if stripped.startswith("- -"):
                     if connections_found == connection_index:
+                        target_line = line_num if side == "from" else line_num + 1
+                        target_line = min(target_line, len(lines) - 1)
+                        tl = lines[target_line]
                         return lsp.Range(
-                            start=lsp.Position(line=line_num, character=0),
-                            end=lsp.Position(line=line_num, character=len(line)),
+                            start=lsp.Position(line=target_line, character=0),
+                            end=lsp.Position(line=target_line, character=len(tl)),
+                        )
+                    connections_found += 1
+
+                # Dict format: "  - from: source_ref"
+                elif stripped.startswith("- from:"):
+                    if connections_found == connection_index:
+                        target_line = line_num if side == "from" else line_num + 1
+                        target_line = min(target_line, len(lines) - 1)
+                        tl = lines[target_line]
+                        return lsp.Range(
+                            start=lsp.Position(line=target_line, character=0),
+                            end=lsp.Position(line=target_line, character=len(tl)),
                         )
                     connections_found += 1
 

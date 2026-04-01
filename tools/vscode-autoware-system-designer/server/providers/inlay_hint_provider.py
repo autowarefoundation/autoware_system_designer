@@ -21,7 +21,7 @@ class InlayHintProvider:
     #   "    - instance.subscriber.port_name" (to ref, single dash)
     # Also matches external refs like "subscriber.port_name" or "publisher.port_name"
     _LIST_CONN_RE = re.compile(
-        r"-\s+((?:\w[\w/-]*\.)?(?:subscriber|publisher|server|client|input|output)\.[\w/*.-]+)"
+        r"-\s+(?:-\s+)?((?:\w[\w/-]*\.)?(?:subscriber|publisher|server|client|input|output)\.[\w/*.-]+)"
     )
     # Matches dict-format connection strings: "from: ..." or "to: ..."
     _DICT_CONN_RE = re.compile(r"(?:from|to):\s*([\w\.\*/-]+)")

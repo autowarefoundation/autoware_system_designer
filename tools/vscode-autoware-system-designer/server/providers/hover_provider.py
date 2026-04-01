@@ -70,8 +70,11 @@ class HoverProvider:
             instances = config.instances or []
             hover_text += f"**Instances:** {len(instances)}\n"
 
-            inputs = getattr(config, "inputs", None) or []
-            outputs = getattr(config, "outputs", None) or []
+            from validation_engine import ValidationEngine
+
+            ve = ValidationEngine(self.registry_manager)
+            inputs = ve._get_entity_inputs(config)
+            outputs = ve._get_entity_outputs(config)
             hover_text += f"**External Inputs:** {len(inputs)}\n"
             hover_text += f"**External Outputs:** {len(outputs)}\n"
 
