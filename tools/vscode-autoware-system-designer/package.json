@@ -31,15 +31,17 @@
       }
     }
   },
-  "overrides": {
-    "minimatch": "^10.2.1"
+  "pnpm": {
+    "overrides": {
+      "minimatch": "^10.2.1"
+    }
   },
   "scripts": {
-    "vscode:prepublish": "npm run bundle && node scripts/bundle_python_pkg.js",
+    "vscode:prepublish": "pnpm run bundle && node scripts/bundle_python_pkg.js",
     "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --minify",
     "compile": "tsc -p ./",
     "watch": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "pnpm run compile && pnpm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js"
   },
@@ -59,5 +61,6 @@
     "type": "git",
     "url": "https://github.com/tier4/autoware_system_designer"
   },
-  "publisher": "TIER IV"
+  "publisher": "TIER IV",
+  "packageManager": "pnpm@10.33.0"
 }

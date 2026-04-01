@@ -53,16 +53,35 @@ class ResolutionService:
         return None
 
     def _get_node_port_type(self, config: Config, port_type: str, port_name: str) -> Optional[str]:
-        """Get type directly from node definition."""
-        ports = []
+        """Get type directly from node definition, including variant overrides and base inheritance."""
         if port_type == "input":
-            ports = config.inputs or []
+            direct_ports = config.inputs or []
         elif port_type == "output":
-            ports = config.outputs or []
+            direct_ports = config.outputs or []
+        else:
+            direct_ports = []
 
-        for port in ports:
+        # Check direct ports first
+        for port in direct_ports:
             if port.get("name") == port_name:
                 return port.get("message_type")
+
+        # For variant nodes, check override ports
+        raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
+        override = raw.get("override", {})
+        if isinstance(override, dict):
+            override_ports = override.get("inputs" if port_type == "input" else "outputs", []) or []
+            for port in override_ports:
+                if port.get("name") == port_name:
+                    return port.get("message_type")
+
+        # Traverse base chain
+        base_name = raw.get("base")
+        if base_name:
+            base_config = self.registry_manager.get_entity(base_name)
+            if base_config:
+                return self._get_node_port_type(base_config, port_type, port_name)
+
         return None
 
     @staticmethod

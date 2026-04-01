@@ -236,27 +236,63 @@ class ValidationEngine:
 
     def _get_entity_inputs(self, config: Config) -> List[dict]:
         """Get input ports from a config, handling both Node and Module types."""
-        if hasattr(config, "inputs") and config.inputs:
-            return config.inputs
+        inputs: List[dict] = []
 
-        if hasattr(config, "external_interfaces"):
+        if hasattr(config, "inputs") and config.inputs:
+            inputs = list(config.inputs)
+        elif hasattr(config, "external_interfaces"):
             ext = config.external_interfaces or {}
             if isinstance(ext, dict):
-                return ext.get("input", [])
+                inputs = list(ext.get("input", []))
 
-        return []
+        # For variant entities, merge in override inputs and inherit from base node.
+        raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
+        override = raw.get("override", {})
+        if isinstance(override, dict):
+            override_inputs = override.get("inputs", []) or []
+            if override_inputs:
+                override_names = {p.get("name") for p in override_inputs if p.get("name")}
+                inputs = [p for p in inputs if p.get("name") not in override_names] + override_inputs
+
+        base_name = raw.get("base")
+        if base_name:
+            base_config = self.registry_manager.get_entity(base_name)
+            if base_config:
+                base_inputs = self._get_entity_inputs(base_config)
+                existing_names = {p.get("name") for p in inputs if p.get("name")}
+                inputs = inputs + [p for p in base_inputs if p.get("name") not in existing_names]
+
+        return inputs
 
     def _get_entity_outputs(self, config: Config) -> List[dict]:
         """Get output ports from a config, handling both Node and Module types."""
-        if hasattr(config, "outputs") and config.outputs:
-            return config.outputs
+        outputs: List[dict] = []
 
-        if hasattr(config, "external_interfaces"):
+        if hasattr(config, "outputs") and config.outputs:
+            outputs = list(config.outputs)
+        elif hasattr(config, "external_interfaces"):
             ext = config.external_interfaces or {}
             if isinstance(ext, dict):
-                return ext.get("output", [])
+                outputs = list(ext.get("output", []))
 
-        return []
+        # For variant entities, merge in override outputs and inherit from base node.
+        raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
+        override = raw.get("override", {})
+        if isinstance(override, dict):
+            override_outputs = override.get("outputs", []) or []
+            if override_outputs:
+                override_names = {p.get("name") for p in override_outputs if p.get("name")}
+                outputs = [p for p in outputs if p.get("name") not in override_names] + override_outputs
+
+        base_name = raw.get("base")
+        if base_name:
+            base_config = self.registry_manager.get_entity(base_name)
+            if base_config:
+                base_outputs = self._get_entity_outputs(base_config)
+                existing_names = {p.get("name") for p in outputs if p.get("name")}
+                outputs = outputs + [p for p in base_outputs if p.get("name") not in existing_names]
+
+        return outputs
 
     # Port direction terms used in YAML connection strings map to stored inputs/outputs
     _INPUT_TERMS = {"input", "subscriber", "server"}
