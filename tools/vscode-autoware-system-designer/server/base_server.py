@@ -9,8 +9,16 @@ from typing import Any, Dict, List, Optional
 from lsprotocol import types as lsp
 from pygls.server import LanguageServer
 
-# Import from the autoware_system_designer package
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "autoware_system_designer"))
+# Find the autoware_system_designer Python package.
+# When installed via VSIX, it is bundled at server/bundled/ inside the extension.
+# When running from source (debug), it is found via the relative dev path.
+_server_dir = os.path.dirname(os.path.abspath(__file__))
+_bundled_path = os.path.join(_server_dir, "bundled")
+_dev_path = os.path.normpath(os.path.join(_server_dir, "..", "..", "..", "autoware_system_designer"))
+for _pkg_root in [_bundled_path, _dev_path]:
+    if os.path.isdir(_pkg_root) and _pkg_root not in sys.path:
+        sys.path.insert(0, _pkg_root)
+        break
 
 from document_processor import DocumentProcessor
 from providers.completion_provider import CompletionProvider
