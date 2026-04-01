@@ -10,7 +10,7 @@ from lsprotocol import types as lsp
 from pygls.server import LanguageServer
 
 # Import from the autoware_system_designer package
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "autoware_system_designer"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "autoware_system_designer"))
 
 from document_processor import DocumentProcessor
 from providers.completion_provider import CompletionProvider

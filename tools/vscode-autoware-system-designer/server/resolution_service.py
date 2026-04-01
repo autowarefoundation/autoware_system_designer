@@ -160,13 +160,13 @@ class ResolutionService:
         if config.entity_type == ConfigType.MODULE:
             instances = config.instances or []
             for inst in instances:
-                if inst.get("instance") == instance_name:
+                if inst.get("name") == instance_name:
                     entity_name = inst.get("entity")
                     break
         elif config.entity_type == ConfigType.SYSTEM:
             components = config.components or []
             for comp in components:
-                if comp.get("component") == instance_name:
+                if comp.get("name") == instance_name:
                     entity_name = comp.get("entity")
                     break
 

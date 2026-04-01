@@ -62,16 +62,16 @@ class HoverProvider:
                     msg_type = port.get("message_type", "unknown")
                     hover_text += f"- `{name}`: {msg_type}\n"
 
-            if config.parameters:
-                hover_text += f"\n### Parameters\n{len(config.parameters)} parameter(s) defined\n"
+            param_values = getattr(config, "param_values", None) or []
+            if param_values:
+                hover_text += f"\n### Parameters\n{len(param_values)} parameter(s) defined\n"
 
         elif config.entity_type == ConfigType.MODULE:
             instances = config.instances or []
             hover_text += f"**Instances:** {len(instances)}\n"
 
-            external_interfaces = config.external_interfaces or {}
-            inputs = external_interfaces.get("input", [])
-            outputs = external_interfaces.get("output", [])
+            inputs = getattr(config, "inputs", None) or []
+            outputs = getattr(config, "outputs", None) or []
             hover_text += f"**External Inputs:** {len(inputs)}\n"
             hover_text += f"**External Outputs:** {len(outputs)}\n"
 

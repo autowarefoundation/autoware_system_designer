@@ -54,12 +54,12 @@ class DefinitionProvider:
         parts = word.split(".")
 
         if len(parts) >= 3:
+            _PORT_DIRECTIONS = {"input", "output", "subscriber", "publisher", "server", "client"}
+
             if config.entity_type == ConfigType.MODULE:
-                # Handle module connections: instance.port_type.port_name
-                if len(parts) >= 3 and parts[1] in ["input", "output"]:
+                # Handle module connections: instance.direction.port_name
+                if len(parts) >= 3 and parts[1] in _PORT_DIRECTIONS:
                     instance_name = parts[0]
-                    port_type = parts[1]
-                    port_name = parts[2]
 
                     # Find the instance
                     instances = config.instances or []
@@ -68,7 +68,6 @@ class DefinitionProvider:
                             entity_name = instance.get("entity")
                             if entity_name in self.registry_manager.entity_registry:
                                 entity_config = self.registry_manager.entity_registry[entity_name]
-                                # Return location in the entity file at the port definition
                                 return lsp.Location(
                                     uri=path_to_uri(str(entity_config.file_path)),
                                     range=lsp.Range(
@@ -78,11 +77,9 @@ class DefinitionProvider:
                                 )
 
             elif config.entity_type == ConfigType.SYSTEM:
-                # Handle system connections: component.port_type.port_name
-                if len(parts) >= 3 and parts[1] in ["input", "output"]:
+                # Handle system connections: component.direction.port_name
+                if len(parts) >= 3 and parts[1] in _PORT_DIRECTIONS:
                     component_name = parts[0]
-                    port_type = parts[1]
-                    port_name = parts[2]
 
                     # Find the component
                     components = config.components or []
@@ -91,7 +88,6 @@ class DefinitionProvider:
                             component_entity = component.get("entity")
                             if component_entity in self.registry_manager.entity_registry:
                                 entity_config = self.registry_manager.entity_registry[component_entity]
-                                # Return location in the entity file at the port definition
                                 return lsp.Location(
                                     uri=path_to_uri(str(entity_config.file_path)),
                                     range=lsp.Range(
