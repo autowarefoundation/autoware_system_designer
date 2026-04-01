@@ -61,6 +61,6 @@
     "type": "git",
     "url": "https://github.com/tier4/autoware_system_designer"
   },
-  "publisher": "TIER IV",
+  "publisher": "tier4",
   "packageManager": "pnpm@10.33.0"
 }

@@ -69,7 +69,7 @@ npm install -g pnpm
 ### 2. Install TypeScript and vsce globally
 
 ```bash
-npm install -g typescript @vscode/vsce
+pnpm add -g typescript @vscode/vsce
 ```
 
 ### 3. Install Node.js dependencies
