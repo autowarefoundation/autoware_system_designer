@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 class ResolutionService:
     """Service for resolving entity connections and types recursively."""
 
+    # Direction terms in YAML connection strings
+    _INPUT_TERMS: Set[str] = {"input", "subscriber", "server"}
+    _OUTPUT_TERMS: Set[str] = {"output", "publisher", "client"}
+
     def __init__(self, registry_manager: RegistryManager):
         self.registry_manager = registry_manager
         # To prevent infinite loops in cyclic graphs (though system design should be acyclic)
@@ -61,6 +65,20 @@ class ResolutionService:
                 return port.get("message_type")
         return None
 
+    @staticmethod
+    def _get_connection_refs(connection) -> Tuple[Optional[str], Optional[str]]:
+        """Extract (from_ref, to_ref) from a connection entry.
+
+        Connections are stored either as:
+          - list/tuple: [from_str, to_str]  (the primary YAML format)
+          - dict: {"from": from_str, "to": to_str}
+        """
+        if isinstance(connection, (list, tuple)) and len(connection) >= 2:
+            return str(connection[0]), str(connection[1])
+        elif isinstance(connection, dict):
+            return connection.get("from"), connection.get("to")
+        return None, None
+
     def _resolve_composite_port_type(self, config: Config, port_type: str, port_name: str) -> Optional[str]:
         """Resolve type for Module or System by tracing connections."""
         connections = config.connections or []
@@ -68,32 +86,37 @@ class ResolutionService:
         # Strategy:
         # If we are looking for the type of an INPUT port of a Module:
         # It is determined by what it connects TO inside the module.
-        # e.g. input.A -> instance.input.B
-        # type(input.A) == type(instance.entity.input.B)
+        # e.g. subscriber.A -> instance.subscriber.B
+        # type(subscriber.A) == type(instance.entity.input.B)
 
         # If we are looking for the type of an OUTPUT port of a Module:
         # It is determined by what connects TO it inside the module.
-        # e.g. instance.output.B -> output.A
-        # type(output.A) == type(instance.entity.output.B)
+        # e.g. instance.publisher.B -> publisher.A
+        # type(publisher.A) == type(instance.entity.output.B)
+
+        # Build all possible ref forms for this port across all direction term variants
+        if port_type == "input":
+            self_refs = {f"{term}.{port_name}" for term in self._INPUT_TERMS}
+        else:
+            self_refs = {f"{term}.{port_name}" for term in self._OUTPUT_TERMS}
 
         candidate_types = set()
 
-        if port_type == "input":
-            # Find connections starting from "input.port_name"
-            source_ref = f"input.{port_name}"
-            for conn in connections:
-                if conn.get("from") == source_ref:
-                    to_ref = conn.get("to")
+        for conn in connections:
+            from_ref, to_ref = self._get_connection_refs(conn)
+            if from_ref is None or to_ref is None:
+                continue
+
+            if port_type == "input":
+                # Find connections starting from this module's input port
+                if from_ref in self_refs:
                     resolved_type = self._resolve_target_ref_type(config, to_ref)
                     if resolved_type:
                         candidate_types.add(resolved_type)
 
-        elif port_type == "output":
-            # Find connections ending at "output.port_name"
-            target_ref = f"output.{port_name}"
-            for conn in connections:
-                if conn.get("to") == target_ref:
-                    from_ref = conn.get("from")
+            elif port_type == "output":
+                # Find connections ending at this module's output port
+                if to_ref in self_refs:
                     resolved_type = self._resolve_source_ref_type(config, from_ref)
                     if resolved_type:
                         candidate_types.add(resolved_type)
@@ -102,26 +125,23 @@ class ResolutionService:
             return None
 
         # If multiple branches have different types, that's a conflict, but for now return one
-        # Ideally should return the first valid one
         return list(candidate_types)[0]
 
     def _resolve_target_ref_type(self, current_config: Config, ref: str) -> Optional[str]:
-        """Resolve the type of a target reference (e.g. instance.input.X)."""
+        """Resolve the type of a target reference (e.g. instance.subscriber.X or instance.input.X)."""
         if not ref:
             return None
 
         parts = ref.split(".")
-        # Expecting: instance_name.input.port_name
+        # Expecting: instance_name.direction.port_name
         if len(parts) < 3:
             return None
 
-        # Handle wildcard? skip for now
-
         instance_name = parts[0]
-        direction = parts[1]  # should be 'input'
+        direction = parts[1]
         port_name = parts[2]
 
-        if direction != "input":
+        if direction not in self._INPUT_TERMS:
             return None  # Can only connect to inputs
 
         entity_config = self.get_instance_entity(current_config, instance_name)
@@ -131,20 +151,20 @@ class ResolutionService:
         return None
 
     def _resolve_source_ref_type(self, current_config: Config, ref: str) -> Optional[str]:
-        """Resolve the type of a source reference (e.g. instance.output.X)."""
+        """Resolve the type of a source reference (e.g. instance.publisher.X or instance.output.X)."""
         if not ref:
             return None
 
         parts = ref.split(".")
-        # Expecting: instance_name.output.port_name
+        # Expecting: instance_name.direction.port_name
         if len(parts) < 3:
             return None
 
         instance_name = parts[0]
-        direction = parts[1]  # should be 'output'
+        direction = parts[1]
         port_name = parts[2]
 
-        if direction != "output":
+        if direction not in self._OUTPUT_TERMS:
             return None
 
         entity_config = self.get_instance_entity(current_config, instance_name)
