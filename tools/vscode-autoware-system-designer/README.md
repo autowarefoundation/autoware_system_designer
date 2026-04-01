@@ -45,14 +45,14 @@ A VSCode extension that provides language server support for Autoware System Des
 
 ### Prerequisites
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| [Node.js](https://nodejs.org/) | 18+ | Build toolchain |
-| [pnpm](https://pnpm.io/) | 8+ | Package manager |
-| [TypeScript](https://www.typescriptlang.org/) | 4.9+ | Compile extension source |
-| [@vscode/vsce](https://github.com/microsoft/vscode-vsce) | latest | Package `.vsix` (production only) |
-| Python | 3.8+ | Language server runtime |
-| pip packages: `pygls>=1.0.0`, `lsprotocol>=2022.0.0` | — | Language server libraries |
+| Tool                                                     | Version | Purpose                           |
+| -------------------------------------------------------- | ------- | --------------------------------- |
+| [Node.js](https://nodejs.org/)                           | 18+     | Build toolchain                   |
+| [pnpm](https://pnpm.io/)                                 | 8+      | Package manager                   |
+| [TypeScript](https://www.typescriptlang.org/)            | 4.9+    | Compile extension source          |
+| [@vscode/vsce](https://github.com/microsoft/vscode-vsce) | latest  | Package `.vsix` (production only) |
+| Python                                                   | 3.8+    | Language server runtime           |
+| pip packages: `pygls>=1.0.0`, `lsprotocol>=2022.0.0`     | —       | Language server libraries         |
 
 ### 1. Install Node.js and pnpm
 
@@ -95,9 +95,11 @@ code --install-extension vscode-autoware-system-designer-*.vsix
 ### Development (no packaging needed)
 
 1. Open this directory in VSCode:
+
    ```bash
    code path-to/vscode-autoware-system-designer/
    ```
+
 2. Press **F5** — VSCode compiles the TypeScript and opens an Extension Development Host with the extension loaded live.
 3. Edit `src/extension.ts` and the TypeScript compiler (`tsc --watch`) recompiles automatically; reload the host window (`Ctrl+Shift+P` → "Reload Window") to pick up changes.
 4. Logs appear in the host window under **Output → "Autoware System Designer Language Server"**.

@@ -454,8 +454,6 @@ class ValidationEngine:
 
         return None
 
-
-
     def _get_message_type(self, ref: str, config: Config) -> Optional[str]:
         """Get the message type for a connection reference."""
         if "*" in ref:

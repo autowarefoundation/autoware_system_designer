@@ -12,14 +12,24 @@ const src = path.join(
   "autoware_system_designer",
   "autoware_system_designer",
 );
-const dest = path.join(extensionRoot, "server", "bundled", "autoware_system_designer");
+const dest = path.join(
+  extensionRoot,
+  "server",
+  "bundled",
+  "autoware_system_designer",
+);
 
 if (!fs.existsSync(src)) {
   console.error(`Source package not found: ${src}`);
   process.exit(1);
 }
 
-fs.rmSync(path.join(extensionRoot, "server", "bundled"), { recursive: true, force: true });
-fs.mkdirSync(path.join(extensionRoot, "server", "bundled"), { recursive: true });
+fs.rmSync(path.join(extensionRoot, "server", "bundled"), {
+  recursive: true,
+  force: true,
+});
+fs.mkdirSync(path.join(extensionRoot, "server", "bundled"), {
+  recursive: true,
+});
 fs.cpSync(src, dest, { recursive: true });
 console.log(`Bundled autoware_system_designer -> ${dest}`);
