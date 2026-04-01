@@ -54,7 +54,7 @@ class DefinitionProvider:
         parts = word.split(".")
 
         if len(parts) >= 3:
-            _PORT_DIRECTIONS = {"input", "output", "subscriber", "publisher", "server", "client"}
+            _PORT_DIRECTIONS = {"subscriber", "publisher", "server", "client"}
 
             if config.entity_type == ConfigType.MODULE:
                 # Handle module connections: instance.direction.port_name

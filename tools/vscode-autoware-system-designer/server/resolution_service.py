@@ -14,8 +14,8 @@ class ResolutionService:
     """Service for resolving entity connections and types recursively."""
 
     # Direction terms in YAML connection strings
-    _INPUT_TERMS: Set[str] = {"input", "subscriber", "server"}
-    _OUTPUT_TERMS: Set[str] = {"output", "publisher", "client"}
+    _INPUT_TERMS: Set[str] = {"subscriber", "server"}
+    _OUTPUT_TERMS: Set[str] = {"publisher", "client"}
 
     def __init__(self, registry_manager: RegistryManager):
         self.registry_manager = registry_manager

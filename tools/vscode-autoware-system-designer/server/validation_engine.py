@@ -293,8 +293,8 @@ class ValidationEngine:
         return outputs
 
     # Port direction terms used in YAML connection strings map to stored inputs/outputs
-    _INPUT_TERMS = {"input", "subscriber", "server"}
-    _OUTPUT_TERMS = {"output", "publisher", "client"}
+    _INPUT_TERMS = {"subscriber", "server"}
+    _OUTPUT_TERMS = {"publisher", "client"}
 
     def _validate_connection_reference(self, ref: str, config: Config) -> Tuple[bool, str]:
         """Validate if a connection reference is valid."""
