@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 
+import re
 from typing import Optional
 
 from lsprotocol import types as lsp
 from registry_manager import RegistryManager
+from resolution_service import ResolutionService
 from utils.text_utils import get_word_at_position
+from utils.uri_utils import uri_to_path
 
 from autoware_system_designer.models.config import Config, ConfigType
 
 
 class HoverProvider:
     """Provides hover information functionality."""
+
+    _CONN_INSTANCE_RE = re.compile(r"(\w[\w/-]*)\.(?:subscriber|publisher|server|client)\.")
 
     def __init__(self, registry_manager: RegistryManager):
         self.registry_manager = registry_manager
@@ -21,16 +26,61 @@ class HoverProvider:
         if not document:
             return None
 
-        # Get current word
         line = document.lines[params.position.line]
-        word = get_word_at_position(line, params.position.character)
+        character = params.position.character
+
+        # Check if cursor is on an instance name in a connection ref
+        file_path = uri_to_path(params.text_document.uri)
+        current_config = self.registry_manager.get_entity_by_file(file_path)
+        if current_config and current_config.entity_type in (ConfigType.MODULE, ConfigType.SYSTEM):
+            instance_hover = self._get_instance_port_hover(line, character, current_config)
+            if instance_hover:
+                return instance_hover
 
         # Check if it's an entity name
+        word = get_word_at_position(line, character)
         if word in self.registry_manager.entity_registry:
             config = self.registry_manager.entity_registry[word]
             return self._create_entity_hover(config)
 
         return None
+
+    def _get_instance_port_hover(self, line: str, character: int, current_config: Config) -> Optional[lsp.Hover]:
+        """Return port hover if cursor is on an instance name in a connection ref."""
+        resolution_service = ResolutionService(self.registry_manager)
+        for match in self._CONN_INSTANCE_RE.finditer(line):
+            start, end = match.start(1), match.end(1)
+            if start <= character <= end:
+                instance_name = match.group(1)
+                entity_config = resolution_service.get_instance_entity(current_config, instance_name)
+                if not entity_config:
+                    return None
+                hover_text = self._format_ports_hover(instance_name, entity_config)
+                return lsp.Hover(contents=lsp.MarkupContent(kind=lsp.MarkupKind.Markdown, value=hover_text))
+        return None
+
+    def _format_ports_hover(self, instance_name: str, entity_config: Config) -> str:
+        """Format available ports of an instance entity as markdown."""
+        from validation_engine import ValidationEngine
+
+        ve = ValidationEngine(self.registry_manager)
+        inputs = ve._get_entity_inputs(entity_config)
+        outputs = ve._get_entity_outputs(entity_config)
+
+        hover_text = f"**{instance_name}** (`{entity_config.full_name}`)\n\n"
+        if inputs:
+            hover_text += "### Subscribers\n"
+            for p in inputs:
+                name = p.get("name", "unknown")
+                msg_type = p.get("message_type", "unknown")
+                hover_text += f"- `{name}`: {msg_type}\n"
+        if outputs:
+            hover_text += "\n### Publishers\n"
+            for p in outputs:
+                name = p.get("name", "unknown")
+                msg_type = p.get("message_type", "unknown")
+                hover_text += f"- `{name}`: {msg_type}\n"
+        return hover_text
 
     def _create_entity_hover(self, config: Config) -> lsp.Hover:
         """Create hover information for an entity."""
