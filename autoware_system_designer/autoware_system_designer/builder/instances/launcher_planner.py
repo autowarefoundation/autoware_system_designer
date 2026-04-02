@@ -15,66 +15,35 @@
 from typing import Any, Dict, List, Tuple
 
 from ..parameters.parameter_manager import ParameterManager
-from .instance_serializer import collect_launcher_data
 
 
-def collect_component_nodes(component_instance) -> List[Dict[str, Any]]:
-    """Collect launcher node payloads from a runtime component instance."""
-    nodes: List[Dict[str, Any]] = []
-
-    def traverse(current_instance):
-        for child_instance in current_instance.children.values():
-            if child_instance.entity_type == "node":
-                nodes.append(_extract_node_data(child_instance))
-            elif child_instance.entity_type == "module":
-                traverse(child_instance)
-
-    if component_instance.entity_type == "module":
-        traverse(component_instance)
-    elif component_instance.entity_type == "node":
-        nodes.append(_extract_node_data(component_instance))
-
-    return nodes
+def _extract_node_data(node_instance: Dict[str, Any], full_namespace_path: str) -> Dict[str, Any]:
+    """Extract node launcher data from serialized node dictionary (launcher is canonical from LaunchManager)."""
+    launch_data = node_instance.get("launcher", {})
+    return {
+        **launch_data,
+        "name": node_instance.get("name"),
+        "full_namespace_path": full_namespace_path,
+    }
 
 
-def collect_component_nodes_from_data(component_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+def collect_component_nodes(component_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Collect launcher node payloads from serialized component data."""
     nodes: List[Dict[str, Any]] = []
 
     def traverse(current_data: Dict[str, Any]):
         for child in current_data.get("children", []):
             if child.get("entity_type") == "node":
-                nodes.append(_extract_node_data_from_dict(child, child.get("namespace")))
+                nodes.append(_extract_node_data(child, child.get("namespace")))
             elif child.get("entity_type") == "module":
                 traverse(child)
 
     if component_data.get("entity_type") == "module":
         traverse(component_data)
     elif component_data.get("entity_type") == "node":
-        nodes.append(_extract_node_data_from_dict(component_data, component_data.get("namespace")))
+        nodes.append(_extract_node_data(component_data, component_data.get("namespace")))
 
     return nodes
-
-
-def build_runtime_system_component_maps(
-    system_instance, forward_args: List[str] | None
-) -> Tuple[Dict[str, list], Dict[Tuple[str, str], List[str]], Dict[Tuple[str, str], list]]:
-    """Build compute-unit and component maps from runtime system instance."""
-    compute_unit_map: Dict[str, list] = {}
-    component_required_args_map: Dict[Tuple[str, str], List[str]] = {}
-    component_map: Dict[Tuple[str, str], list] = {}
-
-    for component in system_instance.children.values():
-        compute_unit_map.setdefault(component.compute_unit, []).append(component)
-        component_key = (component.compute_unit, component.name)
-        component_map[component_key] = [component]
-
-        nodes = collect_component_nodes(component)
-        component_required_args_map[component_key] = ParameterManager.collect_component_required_system_args(
-            nodes, forward_args
-        )
-
-    return compute_unit_map, component_required_args_map, component_map
 
 
 def build_serialized_system_component_maps(
@@ -93,27 +62,9 @@ def build_serialized_system_component_maps(
         compute_unit_map.setdefault(compute_unit, []).append(component)
         component_map[component_key] = [component]
 
-        nodes = collect_component_nodes_from_data(component)
+        nodes = collect_component_nodes(component)
         component_required_args_map[component_key] = ParameterManager.collect_component_required_system_args(
             nodes, forward_args
         )
 
     return compute_unit_map, component_required_args_map, component_map
-
-
-def _extract_node_data(node_instance) -> Dict[str, Any]:
-    """Extract node launcher data from runtime instance."""
-    node_data = collect_launcher_data(node_instance)
-    node_data["name"] = node_instance.name
-    node_data["full_namespace_path"] = node_instance.namespace.to_string()
-    return node_data
-
-
-def _extract_node_data_from_dict(node_instance: Dict[str, Any], full_namespace_path: str) -> Dict[str, Any]:
-    """Extract node launcher data from serialized node dictionary (launcher is canonical from LaunchManager)."""
-    launch_data = node_instance.get("launcher", {})
-    return {
-        **launch_data,
-        "name": node_instance.get("name"),
-        "full_namespace_path": full_namespace_path,
-    }
