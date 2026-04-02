@@ -2,7 +2,7 @@
   "name": "vscode-autoware-system-designer",
   "displayName": "Autoware System Designer",
   "description": "VSCode extension for Autoware System Design Format with connection validation and interactive features",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "engines": {
     "vscode": "^1.74.0"
   },
