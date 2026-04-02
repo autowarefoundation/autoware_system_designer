@@ -4,6 +4,7 @@ from typing import Optional
 
 from lsprotocol import types as lsp
 from registry_manager import RegistryManager
+from resolution_service import ResolutionService
 from utils.text_utils import get_word_at_position
 
 from autoware_system_designer.models.config import Config, ConfigType
@@ -12,8 +13,9 @@ from autoware_system_designer.models.config import Config, ConfigType
 class HoverProvider:
     """Provides hover information functionality."""
 
-    def __init__(self, registry_manager: RegistryManager):
+    def __init__(self, registry_manager: RegistryManager, resolution_service: ResolutionService):
         self.registry_manager = registry_manager
+        self.resolution_service = resolution_service
 
     def get_hover(self, params: lsp.HoverParams, server) -> Optional[lsp.Hover]:
         """Handle hover requests."""
@@ -21,11 +23,11 @@ class HoverProvider:
         if not document:
             return None
 
-        # Get current word
         line = document.lines[params.position.line]
-        word = get_word_at_position(line, params.position.character)
+        character = params.position.character
 
         # Check if it's an entity name
+        word = get_word_at_position(line, character)
         if word in self.registry_manager.entity_registry:
             config = self.registry_manager.entity_registry[word]
             return self._create_entity_hover(config)
@@ -62,16 +64,16 @@ class HoverProvider:
                     msg_type = port.get("message_type", "unknown")
                     hover_text += f"- `{name}`: {msg_type}\n"
 
-            if config.parameters:
-                hover_text += f"\n### Parameters\n{len(config.parameters)} parameter(s) defined\n"
+            param_values = getattr(config, "param_values", None) or []
+            if param_values:
+                hover_text += f"\n### Parameters\n{len(param_values)} parameter(s) defined\n"
 
         elif config.entity_type == ConfigType.MODULE:
             instances = config.instances or []
             hover_text += f"**Instances:** {len(instances)}\n"
 
-            external_interfaces = config.external_interfaces or {}
-            inputs = external_interfaces.get("input", [])
-            outputs = external_interfaces.get("output", [])
+            inputs = self.resolution_service.get_entity_inputs(config)
+            outputs = self.resolution_service.get_entity_outputs(config)
             hover_text += f"**External Inputs:** {len(inputs)}\n"
             hover_text += f"**External Outputs:** {len(outputs)}\n"
 

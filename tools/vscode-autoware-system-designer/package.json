@@ -2,7 +2,7 @@
   "name": "vscode-autoware-system-designer",
   "displayName": "Autoware System Designer",
   "description": "VSCode extension for Autoware System Design Format with connection validation and interactive features",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -15,6 +15,16 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configurationDefaults": {
+      "[yaml]": {
+        "editor.inlineSuggest.suppressSuggestions": true,
+        "editor.quickSuggestions": {
+          "other": true,
+          "comments": false,
+          "strings": true
+        }
+      }
+    },
     "configuration": {
       "title": "Autoware System Designer",
       "properties": {
@@ -31,14 +41,17 @@
       }
     }
   },
-  "overrides": {
-    "minimatch": "^10.2.1"
+  "pnpm": {
+    "overrides": {
+      "minimatch": "^10.2.1"
+    }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "pnpm run bundle && node scripts/bundle_python_pkg.js",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --minify",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
+    "watch": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",
+    "pretest": "pnpm run compile && pnpm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js"
   },
@@ -46,16 +59,18 @@
     "vscode-languageclient": "^8.1.0"
   },
   "devDependencies": {
-    "@types/vscode": "^1.74.0",
     "@types/node": "16.x",
-    "eslint": "^8.28.0",
-    "typescript": "^4.9.0",
+    "@types/vscode": "^1.74.0",
     "@typescript-eslint/eslint-plugin": "^5.42.0",
-    "@typescript-eslint/parser": "^5.42.0"
+    "@typescript-eslint/parser": "^5.42.0",
+    "esbuild": "^0.27.4",
+    "eslint": "^8.28.0",
+    "typescript": "^4.9.0"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/tier4/autoware_system_designer"
   },
-  "publisher": "TIER IV"
+  "publisher": "tier4",
+  "packageManager": "pnpm@10.33.0"
 }

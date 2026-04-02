@@ -1,178 +1,130 @@
 #!/usr/bin/env python3
 
-from typing import List, Optional
+import re
+from typing import List
 
 from lsprotocol import types as lsp
 from registry_manager import RegistryManager
-from utils.text_utils import get_word_at_position
+from utils.uri_utils import uri_to_path
 
 from autoware_system_designer.models.config import Config, ConfigType
 
 
 class CompletionProvider:
-    """Provides auto-completion functionality."""
+    """Provides auto-completion for connection port references.
+
+    Two-stage completion:
+      Stage 1 — after 'instance.'         → offers direction keywords (publisher/subscriber/...)
+      Stage 2 — after 'instance.dir.'     → offers port names from that instance's entity
+    """
+
+    # Stage 2: instance_name.direction.partial_port
+    _PORT_RE = re.compile(r"(\w[\w/-]*)\.(publisher|subscriber|server|client)\.([\w/-]*)$")
+    # Stage 1: instance_name.partial_direction  (must not already have a second dot)
+    _DIRECTION_RE = re.compile(r"(\w[\w/-]*)\.(\w*)$")
 
     def __init__(self, registry_manager: RegistryManager):
         self.registry_manager = registry_manager
 
     def get_completions(self, params: lsp.CompletionParams, server) -> lsp.CompletionList:
         """Handle completion requests."""
-        # Disabled completion popups to avoid conflicts with AI editor tab completion
-        # Instead, validation warnings are shown for incomplete references
+        document = server.workspace.get_document(params.text_document.uri)
+        if not document:
+            return lsp.CompletionList(is_incomplete=False, items=[])
+
+        line = document.lines[params.position.line]
+        line_to_cursor = line[: params.position.character]
+
+        file_path = uri_to_path(params.text_document.uri)
+        current_config = self.registry_manager.get_entity_by_file(file_path)
+        if not current_config or current_config.entity_type not in (ConfigType.MODULE, ConfigType.SYSTEM):
+            return lsp.CompletionList(is_incomplete=False, items=[])
+
+        # Stage 2: instance.direction.partial → complete port names
+        match = self._PORT_RE.search(line_to_cursor)
+        if match:
+            instance_name = match.group(1)
+            direction = match.group(2)
+            partial = match.group(3)
+            return self._complete_ports(current_config, instance_name, direction, partial)
+
+        # Stage 1: instance.partial → complete direction keyword
+        match = self._DIRECTION_RE.search(line_to_cursor)
+        if match:
+            instance_name = match.group(1)
+            partial = match.group(2)
+            return self._complete_directions(current_config, instance_name, partial)
+
         return lsp.CompletionList(is_incomplete=False, items=[])
 
-    def _analyze_completion_context(self, line: str, character: int, config: Config) -> str:
-        """Analyze the completion context based on the current line."""
-        line = line.strip()
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
-        # Check for entity references
-        if "entity:" in line:
-            return "entity"
+    def _resolve(self, current_config: Config, instance_name: str):
+        from resolution_service import ResolutionService
+        from validation_engine import ValidationEngine
 
-        # Check for message type fields
-        if "message_type:" in line:
-            return "message_type"
+        rs = ResolutionService(self.registry_manager)
+        entity_config = rs.get_instance_entity(current_config, instance_name)
+        if not entity_config:
+            return None, None, None
+        ve = ValidationEngine(self.registry_manager)
+        inputs = ve._get_entity_inputs(entity_config)
+        outputs = ve._get_entity_outputs(entity_config)
+        return entity_config, inputs, outputs
 
-        # Check for parameter names
-        if "name:" in line and ("parameters:" in "\n".join(self._get_context_lines(line))):
-            return "parameter_name"
+    def _complete_directions(self, current_config: Config, instance_name: str, partial: str) -> lsp.CompletionList:
+        _, inputs, outputs = self._resolve(current_config, instance_name)
+        if inputs is None:
+            return lsp.CompletionList(is_incomplete=False, items=[])
 
-        # Check for connection references
-        if "from:" in line or "to:" in line:
-            # Determine if it's a from or to reference
-            if "from:" in line:
-                return "connection_from"
-            elif "to:" in line:
-                return "connection_to"
-
-        return "unknown"
-
-    def _get_context_lines(self, current_line: str) -> List[str]:
-        """Get context lines around the current line (simplified)."""
-        # In a real implementation, you'd get the actual document lines
-        # For now, just return the current line
-        return [current_line]
-
-    def _get_connection_completion_items(self, config: Config, context: str) -> List[lsp.CompletionItem]:
-        """Get completion items for connection references."""
-        items = []
-
-        if config.entity_type == ConfigType.MODULE:
-            # Module connections
-            external_interfaces = config.external_interfaces or {}
-
-            # Input interfaces
-            inputs = external_interfaces.get("input", [])
-            for interface in inputs:
-                name = interface.get("name")
-                if name:
+        items: List[lsp.CompletionItem] = []
+        if inputs:
+            for kw in ("subscriber", "server"):
+                if kw.startswith(partial):
                     items.append(
                         lsp.CompletionItem(
-                            label=f"input.{name}",
+                            label=kw,
                             kind=lsp.CompletionItemKind.Field,
-                            detail="External input interface",
-                            documentation=f"Input interface: {name}",
+                            detail=f"{len(inputs)} input port(s)",
                         )
                     )
-
-            # Output interfaces
-            outputs = external_interfaces.get("output", [])
-            for interface in outputs:
-                name = interface.get("name")
-                if name:
+        if outputs:
+            for kw in ("publisher", "client"):
+                if kw.startswith(partial):
                     items.append(
                         lsp.CompletionItem(
-                            label=f"output.{name}",
+                            label=kw,
                             kind=lsp.CompletionItemKind.Field,
-                            detail="External output interface",
-                            documentation=f"Output interface: {name}",
+                            detail=f"{len(outputs)} output port(s)",
                         )
                     )
+        return lsp.CompletionList(is_incomplete=False, items=items)
 
-            # Instance ports
-            instances = config.instances or []
-            for instance in instances:
-                instance_name = instance.get("name")
-                entity_name = instance.get("entity")
+    def _complete_ports(
+        self, current_config: Config, instance_name: str, direction: str, partial: str
+    ) -> lsp.CompletionList:
+        _, inputs, outputs = self._resolve(current_config, instance_name)
+        if inputs is None:
+            return lsp.CompletionList(is_incomplete=False, items=[])
 
-                if instance_name and entity_name and entity_name in self.registry_manager.entity_registry:
-                    entity_config = self.registry_manager.entity_registry[entity_name]
+        ports = inputs if direction in ("subscriber", "client") else outputs
 
-                    # Input ports
-                    if entity_config.inputs:
-                        for port in entity_config.inputs:
-                            port_name = port.get("name")
-                            msg_type = port.get("message_type", "unknown")
-                            if port_name:
-                                items.append(
-                                    lsp.CompletionItem(
-                                        label=f"{instance_name}.input.{port_name}",
-                                        kind=lsp.CompletionItemKind.Field,
-                                        detail=f"Input port: {msg_type}",
-                                        documentation=f"Instance: {instance_name}\nEntity: {entity_name}\nPort: {port_name}\nType: {msg_type}",
-                                    )
-                                )
-
-                    # Output ports
-                    if entity_config.outputs:
-                        for port in entity_config.outputs:
-                            port_name = port.get("name")
-                            msg_type = port.get("message_type", "unknown")
-                            if port_name:
-                                items.append(
-                                    lsp.CompletionItem(
-                                        label=f"{instance_name}.output.{port_name}",
-                                        kind=lsp.CompletionItemKind.Field,
-                                        detail=f"Output port: {msg_type}",
-                                        documentation=f"Instance: {instance_name}\nEntity: {entity_name}\nPort: {port_name}\nType: {msg_type}",
-                                    )
-                                )
-
-        elif config.entity_type == ConfigType.SYSTEM:
-            # System connections
-            components = config.components or []
-            for component in components:
-                component_name = component.get("name")
-                component_entity = component.get("entity")
-
-                if component_name and component_entity and component_entity in self.registry_manager.entity_registry:
-                    entity_config = self.registry_manager.entity_registry[component_entity]
-
-                    # Input ports
-                    if entity_config.inputs:
-                        for port in entity_config.inputs:
-                            port_name = port.get("name")
-                            msg_type = port.get("message_type", "unknown")
-                            if port_name:
-                                items.append(
-                                    lsp.CompletionItem(
-                                        label=f"{component_name}.input.{port_name}",
-                                        kind=lsp.CompletionItemKind.Field,
-                                        detail=f"Input port: {msg_type}",
-                                        documentation=f"Component: {component_name}\nEntity: {component_entity}\nPort: {port_name}\nType: {msg_type}",
-                                    )
-                                )
-
-                    # Output ports
-                    if entity_config.outputs:
-                        for port in entity_config.outputs:
-                            port_name = port.get("name")
-                            msg_type = port.get("message_type", "unknown")
-                            if port_name:
-                                items.append(
-                                    lsp.CompletionItem(
-                                        label=f"{component_name}.output.{port_name}",
-                                        kind=lsp.CompletionItemKind.Field,
-                                        detail=f"Output port: {msg_type}",
-                                        documentation=f"Component: {component_name}\nEntity: {component_entity}\nPort: {port_name}\nType: {msg_type}",
-                                    )
-                                )
-
-        return items
-
-    def _uri_to_path(self, uri: str) -> str:
-        """Convert URI to file path."""
-        from urllib.parse import unquote, urlparse
-
-        parsed = urlparse(uri)
-        return unquote(parsed.path)
+        items: List[lsp.CompletionItem] = []
+        for port in ports:
+            name = port.get("name", "")
+            msg_type = port.get("message_type", "unknown")
+            if name.startswith(partial):
+                items.append(
+                    lsp.CompletionItem(
+                        label=name,
+                        kind=lsp.CompletionItemKind.Value,
+                        detail=msg_type,
+                        documentation=lsp.MarkupContent(
+                            kind=lsp.MarkupKind.Markdown,
+                            value=f"`{direction}.{name}` — {msg_type}",
+                        ),
+                    )
+                )
+        return lsp.CompletionList(is_incomplete=False, items=items)

@@ -9,14 +9,22 @@ from typing import Any, Dict, List, Optional
 from lsprotocol import types as lsp
 from pygls.server import LanguageServer
 
-# Import from the autoware_system_designer package
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "autoware_system_designer"))
+# Find the autoware_system_designer Python package.
+# When installed via VSIX, it is bundled at server/bundled/ inside the extension.
+# When running from source (debug), it is found via the relative dev path.
+_server_dir = os.path.dirname(os.path.abspath(__file__))
+_bundled_path = os.path.join(_server_dir, "bundled")
+_dev_path = os.path.normpath(os.path.join(_server_dir, "..", "..", "..", "autoware_system_designer"))
+for _pkg_root in [_dev_path, _bundled_path]:
+    if os.path.isdir(_pkg_root) and _pkg_root not in sys.path:
+        sys.path.insert(0, _pkg_root)
+        break
 
 from document_processor import DocumentProcessor
 from providers.completion_provider import CompletionProvider
 from providers.definition_provider import DefinitionProvider
 from providers.hover_provider import HoverProvider
-from providers.inlay_hint_provider import InlayHintProvider
+from providers.signature_help_provider import SignatureHelpProvider
 from registry_manager import RegistryManager
 from validation_engine import ValidationEngine
 
@@ -40,8 +48,8 @@ class AutowareSystemDesignerLanguageServer:
         self.validation_engine = ValidationEngine(self.registry_manager)
         self.completion_provider = CompletionProvider(self.registry_manager)
         self.definition_provider = DefinitionProvider(self.registry_manager)
-        self.hover_provider = HoverProvider(self.registry_manager)
-        self.inlay_hint_provider = InlayHintProvider(self.registry_manager)
+        self.hover_provider = HoverProvider(self.registry_manager, self.validation_engine.resolution_service)
+        self.signature_help_provider = SignatureHelpProvider(self.registry_manager)
 
         # Register handlers
         self._register_handlers()
@@ -65,7 +73,7 @@ class AutowareSystemDesignerLanguageServer:
         def did_close(ls, params):
             self._on_text_document_did_close(ls, params)
 
-        @self.server.feature(lsp.TEXT_DOCUMENT_COMPLETION)
+        @self.server.feature(lsp.TEXT_DOCUMENT_COMPLETION, lsp.CompletionOptions(trigger_characters=["."]))
         def completion(ls, params):
             return self._on_completion(ls, params)
 
@@ -77,9 +85,9 @@ class AutowareSystemDesignerLanguageServer:
         def hover(ls, params):
             return self._on_hover(ls, params)
 
-        @self.server.feature(lsp.TEXT_DOCUMENT_INLAY_HINT)
-        def inlay_hint(ls, params):
-            return self._on_inlay_hint(ls, params)
+        @self.server.feature(lsp.TEXT_DOCUMENT_SIGNATURE_HELP)
+        def signature_help(ls, params):
+            return self._on_signature_help(ls, params)
 
         @self.server.feature(lsp.WORKSPACE_DID_CHANGE_WATCHED_FILES)
         def did_change_watched_files(ls, params):
@@ -108,13 +116,10 @@ class AutowareSystemDesignerLanguageServer:
                 change=lsp.TextDocumentSyncKind.Full,
                 save=lsp.SaveOptions(include_text=True),
             ),
-            # Completion provider disabled - using diagnostics instead
-            # completion_provider=lsp.CompletionOptions(
-            #     trigger_characters=['.', ':']
-            # ),
+            completion_provider=lsp.CompletionOptions(trigger_characters=["."]),
+            signature_help_provider=lsp.SignatureHelpOptions(trigger_characters=["."]),
             definition_provider=True,
             hover_provider=True,
-            inlay_hint_provider=True,
         )
 
         return lsp.InitializeResult(capabilities=capabilities)
@@ -208,6 +213,6 @@ class AutowareSystemDesignerLanguageServer:
         """Handle hover requests."""
         return self.hover_provider.get_hover(params, self.server)
 
-    def _on_inlay_hint(self, ls, params: lsp.InlayHintParams) -> Optional[List[lsp.InlayHint]]:
-        """Handle inlay hint requests."""
-        return self.inlay_hint_provider.get_inlay_hints(params, self.server)
+    def _on_signature_help(self, ls, params: lsp.SignatureHelpParams) -> Optional[lsp.SignatureHelp]:
+        """Handle signature help requests."""
+        return self.signature_help_provider.get_signature_help(params, self.server)

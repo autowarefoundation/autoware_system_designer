@@ -45,32 +45,72 @@ A VSCode extension that provides language server support for Autoware System Des
 
 ### Prerequisites
 
-- Python 3.7+ with `pygls` and `lsprotocol` packages
-- The Autoware System Designer package must be available in the Python path
+| Tool                                                     | Version | Purpose                           |
+| -------------------------------------------------------- | ------- | --------------------------------- |
+| [Node.js](https://nodejs.org/)                           | 18+     | Build toolchain                   |
+| [pnpm](https://pnpm.io/)                                 | 8+      | Package manager                   |
+| [TypeScript](https://www.typescriptlang.org/)            | 4.9+    | Compile extension source          |
+| [@vscode/vsce](https://github.com/microsoft/vscode-vsce) | latest  | Package `.vsix` (production only) |
+| Python                                                   | 3.8+    | Language server runtime           |
+| pip packages: `pygls>=1.0.0`, `lsprotocol>=2022.0.0`     | —       | Language server libraries         |
 
-### Installing Dependencies
+### 1. Install Node.js and pnpm
 
 ```bash
-# Install Python dependencies for the language server
+# Node.js (via nvm — recommended)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+nvm install --lts
+nvm use --lts
+
+# pnpm
+npm install -g pnpm
+```
+
+### 2. Install TypeScript and vsce globally
+
+```bash
+pnpm add -g typescript @vscode/vsce
+```
+
+### 3. Install Node.js dependencies
+
+```bash
+cd path-to/vscode-autoware-system-designer/
+pnpm install
+```
+
+### 4. Install Python language server dependencies
+
+```bash
 pip install -r server/requirements.txt
 ```
 
-### Building the Extension
+### Build and Install (production)
 
 ```bash
-npm install -g vsce
-
-cd path-to-package/
-vsce package
-
+vsce package --no-dependencies
 code --install-extension vscode-autoware-system-designer-*.vsix
 ```
 
-### Running the Extension
+### Development (no packaging needed)
 
-1. Open the extension directory in VSCode
-2. Press F5 to launch the Extension Development Host
-3. Open a workspace containing Autoware System Design YAML files
+1. Open this directory in VSCode:
+
+   ```bash
+   code path-to/vscode-autoware-system-designer/
+   ```
+
+2. Press **F5** — VSCode compiles the TypeScript and opens an Extension Development Host with the extension loaded live.
+3. Edit `src/extension.ts` and the TypeScript compiler (`tsc --watch`) recompiles automatically; reload the host window (`Ctrl+Shift+P` → "Reload Window") to pick up changes.
+4. Logs appear in the host window under **Output → "Autoware System Designer Language Server"**.
+
+Enable verbose Python server logging via workspace settings in the host window:
+
+```json
+{
+  "autowareSystemDesigner.languageServer.debug": true
+}
+```
 
 ## Configuration
 
@@ -134,10 +174,10 @@ vscode-autoware-system-designer/
 
 ```bash
 # Run tests
-npm test
+pnpm test
 
 # Lint code
-npm run lint
+pnpm lint
 ```
 
 ### Debugging

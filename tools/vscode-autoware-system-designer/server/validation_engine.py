@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 import yaml
 from lsprotocol import types as lsp
@@ -197,18 +197,25 @@ class ValidationEngine:
         """Validate connections in the config and return diagnostics."""
         diagnostics = []
 
-        if config.entity_type == ConfigType.MODULE:
+        if config.entity_type in [ConfigType.MODULE, ConfigType.SYSTEM]:
             connections = config.connections or []
             for i, connection in enumerate(connections):
-                from_ref = connection.get("from", "")
-                to_ref = connection.get("to", "")
+                # Connections are stored as 2-element lists [source, dest]
+                if isinstance(connection, (list, tuple)) and len(connection) >= 2:
+                    from_ref = str(connection[0])
+                    to_ref = str(connection[1])
+                elif isinstance(connection, dict):
+                    from_ref = connection.get("from", "")
+                    to_ref = connection.get("to", "")
+                else:
+                    continue
 
                 # Validate from reference
                 from_valid, from_message = self._validate_connection_reference(from_ref, config)
                 if not from_valid:
                     diagnostics.append(
                         lsp.Diagnostic(
-                            range=self._get_connection_range(i, "from", document_content),
+                            range=self._get_connection_range(i, document_content, "from"),
                             message=f"Invalid connection source: {from_message}",
                             severity=lsp.DiagnosticSeverity.Error,
                         )
@@ -219,89 +226,24 @@ class ValidationEngine:
                 if not to_valid:
                     diagnostics.append(
                         lsp.Diagnostic(
-                            range=self._get_connection_range(i, "to", document_content),
+                            range=self._get_connection_range(i, document_content, "to"),
                             message=f"Invalid connection destination: {to_message}",
                             severity=lsp.DiagnosticSeverity.Error,
                         )
                     )
-
-                # Validate message type compatibility if both are valid
-                if from_valid and to_valid and from_ref and to_ref:
-                    compatibility_issue = self._check_message_type_compatibility(from_ref, to_ref, config)
-                    if compatibility_issue:
-                        diagnostics.append(
-                            lsp.Diagnostic(
-                                range=self._get_connection_range(i, "to", document_content),
-                                message=f"Message type mismatch: {compatibility_issue}",
-                                severity=lsp.DiagnosticSeverity.Error,
-                            )
-                        )
-
-        elif config.entity_type == ConfigType.SYSTEM:
-            connections = config.connections or []
-            for i, connection in enumerate(connections):
-                from_ref = connection.get("from", "")
-                to_ref = connection.get("to", "")
-
-                # Validate from reference
-                from_valid, from_message = self._validate_connection_reference(from_ref, config)
-                if not from_valid:
-                    diagnostics.append(
-                        lsp.Diagnostic(
-                            range=self._get_connection_range(i, "from", document_content),
-                            message=f"Invalid connection source: {from_message}",
-                            severity=lsp.DiagnosticSeverity.Error,
-                        )
-                    )
-
-                # Validate to reference
-                to_valid, to_message = self._validate_connection_reference(to_ref, config)
-                if not to_valid:
-                    diagnostics.append(
-                        lsp.Diagnostic(
-                            range=self._get_connection_range(i, "to", document_content),
-                            message=f"Invalid connection destination: {to_message}",
-                            severity=lsp.DiagnosticSeverity.Error,
-                        )
-                    )
-
-                # Validate message type compatibility if both are valid
-                if from_valid and to_valid and from_ref and to_ref:
-                    compatibility_issue = self._check_message_type_compatibility(from_ref, to_ref, config)
-                    if compatibility_issue:
-                        diagnostics.append(
-                            lsp.Diagnostic(
-                                range=self._get_connection_range(i, "to", document_content),
-                                message=f"Message type mismatch: {compatibility_issue}",
-                                severity=lsp.DiagnosticSeverity.Error,
-                            )
-                        )
 
         return diagnostics
 
-    def _get_entity_inputs(self, config: Config) -> List[dict]:
-        """Get input ports from a config, handling both Node and Module types."""
-        if hasattr(config, "inputs") and config.inputs:
-            return config.inputs
+    def _get_entity_inputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[dict]:
+        return self.resolution_service.get_entity_inputs(config, _seen)
 
-        if hasattr(config, "external_interfaces"):
-            ext = config.external_interfaces or {}
-            if isinstance(ext, dict):
-                return ext.get("input", [])
+    def _get_entity_outputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[dict]:
+        return self.resolution_service.get_entity_outputs(config, _seen)
 
-        return []
-
-    def _get_entity_outputs(self, config: Config) -> List[dict]:
-        """Get output ports from a config, handling both Node and Module types."""
-        if hasattr(config, "outputs") and config.outputs:
-            return config.outputs
-
-        if hasattr(config, "external_interfaces"):
-            ext = config.external_interfaces or {}
-            if isinstance(ext, dict):
-                return ext.get("output", [])
-
-        return []
+    # Port direction terms used in YAML connection strings map to stored inputs/outputs
+    # Note: YAML parser maps clients -> inputs and servers -> outputs.
+    _INPUT_TERMS = {"subscriber", "client"}
+    _OUTPUT_TERMS = {"publisher", "server"}
 
     def _validate_connection_reference(self, ref: str, config: Config) -> Tuple[bool, str]:
         """Validate if a connection reference is valid."""
@@ -312,21 +254,19 @@ class ValidationEngine:
         if "*" in ref:
             return True, ""  # Wildcards are allowed for now
 
-        # Parse reference (e.g., "input.pointcloud", "node_detector.output.objects")
+        # Parse reference (e.g., "subscriber.pointcloud", "node_detector.publisher.objects")
         parts = ref.split(".")
 
         if len(parts) < 2:
             return False, f"Invalid reference format: {ref}"
 
         if config.entity_type == ConfigType.MODULE:
-            if parts[0] == "input":
-                # Check external interfaces
-                external_interfaces = config.external_interfaces or {}
-                inputs = external_interfaces.get("input", [])
+            if parts[0] in self._INPUT_TERMS:
+                # External input interface of the module itself
+                inputs = self._get_entity_inputs(config)
                 if not inputs:
                     return False, f"No input interfaces defined in module {config.name}"
-
-                input_names = [interface.get("name") for interface in inputs if interface.get("name")]
+                input_names = [iface.get("name") for iface in inputs if iface.get("name")]
                 if parts[1] not in input_names:
                     return (
                         False,
@@ -334,14 +274,12 @@ class ValidationEngine:
                     )
                 return True, ""
 
-            elif parts[0] == "output":
-                # Check external interfaces
-                external_interfaces = config.external_interfaces or {}
-                outputs = external_interfaces.get("output", [])
+            elif parts[0] in self._OUTPUT_TERMS:
+                # External output interface of the module itself
+                outputs = self._get_entity_outputs(config)
                 if not outputs:
                     return False, f"No output interfaces defined in module {config.name}"
-
-                output_names = [interface.get("name") for interface in outputs if interface.get("name")]
+                output_names = [iface.get("name") for iface in outputs if iface.get("name")]
                 if parts[1] not in output_names:
                     return (
                         False,
@@ -350,12 +288,12 @@ class ValidationEngine:
                 return True, ""
 
             else:
-                # Check instance ports
+                # Instance port: instance_name.direction.port_name
                 instance_name = parts[0]
-                port_type = parts[1] if len(parts) > 1 else None
+                port_dir = parts[1] if len(parts) > 1 else None
                 port_name = parts[2] if len(parts) > 2 else None
 
-                if not port_type or not port_name:
+                if not port_dir or not port_name:
                     return False, f"Invalid instance reference format: {ref}"
 
                 instances = config.instances or []
@@ -373,7 +311,7 @@ class ValidationEngine:
                             return False, f"Entity '{entity_name}' not found in registry"
 
                         entity_config = self.registry_manager.entity_registry[entity_name]
-                        if port_type == "input":
+                        if port_dir in self._INPUT_TERMS:
                             inputs = self._get_entity_inputs(entity_config)
                             if not inputs:
                                 return False, f"Entity '{entity_name}' has no input ports"
@@ -383,7 +321,7 @@ class ValidationEngine:
                                     False,
                                     f"Input port '{port_name}' not found in entity '{entity_name}'. Available inputs: {', '.join(input_names)}",
                                 )
-                        elif port_type == "output":
+                        elif port_dir in self._OUTPUT_TERMS:
                             outputs = self._get_entity_outputs(entity_config)
                             if not outputs:
                                 return False, f"Entity '{entity_name}' has no output ports"
@@ -396,18 +334,18 @@ class ValidationEngine:
                         else:
                             return (
                                 False,
-                                f"Invalid port type '{port_type}'. Must be 'input' or 'output'",
+                                f"Invalid port direction '{port_dir}'. Must be one of: subscriber, publisher, server, client",
                             )
                         return True, ""
                 return False, f"Instance '{instance_name}' configuration error"
 
         elif config.entity_type == ConfigType.SYSTEM:
-            # System connections reference component ports
+            # System connections reference component ports: component.direction.port_name
             component_name = parts[0]
-            port_type = parts[1] if len(parts) > 1 else None
+            port_dir = parts[1] if len(parts) > 1 else None
             port_name = parts[2] if len(parts) > 2 else None
 
-            if not port_type or not port_name:
+            if not port_dir or not port_name:
                 return False, f"Invalid component reference format: {ref}"
 
             components = config.components or []
@@ -425,7 +363,7 @@ class ValidationEngine:
                         return False, f"Entity '{component_entity}' not found in registry"
 
                     entity_config = self.registry_manager.entity_registry[component_entity]
-                    if port_type == "input":
+                    if port_dir in self._INPUT_TERMS:
                         inputs = self._get_entity_inputs(entity_config)
                         if not inputs:
                             return False, f"Entity '{component_entity}' has no input ports"
@@ -435,7 +373,7 @@ class ValidationEngine:
                                 False,
                                 f"Input port '{port_name}' not found in component '{component_name}'. Available inputs: {', '.join(input_names)}",
                             )
-                    elif port_type == "output":
+                    elif port_dir in self._OUTPUT_TERMS:
                         outputs = self._get_entity_outputs(entity_config)
                         if not outputs:
                             return False, f"Entity '{component_entity}' has no output ports"
@@ -448,7 +386,7 @@ class ValidationEngine:
                     else:
                         return (
                             False,
-                            f"Invalid port type '{port_type}'. Must be 'input' or 'output'",
+                            f"Invalid port direction '{port_dir}'. Must be one of: subscriber, publisher, server, client",
                         )
                     return True, ""
             return False, f"Component '{component_name}' configuration error"
@@ -471,7 +409,6 @@ class ValidationEngine:
             return None  # Wildcards don't have specific types
 
         parts = ref.split(".")
-        # Reference validation is already done elsewhere, assuming valid structure mostly
         if len(parts) < 2:
             return None
 
@@ -480,21 +417,26 @@ class ValidationEngine:
         port_name = None
 
         if config.entity_type == ConfigType.MODULE:
-            if parts[0] == "input":
-                # External input interface
+            if parts[0] in self._INPUT_TERMS:
                 port_type = "input"
                 port_name = parts[1]
-            elif parts[0] == "output":
-                # External output interface
+            elif parts[0] in self._OUTPUT_TERMS:
                 port_type = "output"
                 port_name = parts[1]
             else:
-                # instance.input.X or instance.output.X
+                # instance_name.direction.port_name
                 instance_name = parts[0]
-                port_type = parts[1]
+                port_dir = parts[1]
                 port_name = parts[2] if len(parts) > 2 else None
 
                 if not port_name:
+                    return None
+
+                if port_dir in self._INPUT_TERMS:
+                    port_type = "input"
+                elif port_dir in self._OUTPUT_TERMS:
+                    port_type = "output"
+                else:
                     return None
 
                 target_entity_config = self.resolution_service.get_instance_entity(config, instance_name)
@@ -502,12 +444,19 @@ class ValidationEngine:
                     return None
 
         elif config.entity_type == ConfigType.SYSTEM:
-            # component.input.X or component.output.X
+            # component_name.direction.port_name
             component_name = parts[0]
-            port_type = parts[1]
+            port_dir = parts[1]
             port_name = parts[2] if len(parts) > 2 else None
 
             if not port_name:
+                return None
+
+            if port_dir in self._INPUT_TERMS:
+                port_type = "input"
+            elif port_dir in self._OUTPUT_TERMS:
+                port_type = "output"
+            else:
                 return None
 
             target_entity_config = self.resolution_service.get_instance_entity(config, component_name)
@@ -519,10 +468,21 @@ class ValidationEngine:
 
         return None
 
-    def _get_connection_range(self, connection_index: int, field: str, document_content: str = None) -> lsp.Range:
-        """Get the range for a connection field."""
+    def _get_connection_range(
+        self, connection_index: int, document_content: str = None, side: str = "from"
+    ) -> lsp.Range:
+        """Get the range for a specific side of a connection entry.
+
+        Supports both YAML connection formats:
+          - List:  ``- - source_ref`` / ``  - dest_ref``
+          - Dict:  ``- from: source_ref`` / ``  to: dest_ref``
+
+        Args:
+            connection_index: 0-based index of the connection in the connections list.
+            document_content: Raw YAML document text.
+            side: ``"from"`` to highlight the source line, ``"to"`` for the destination line.
+        """
         if document_content:
-            # Try to find the actual line in the document
             lines = document_content.split("\n")
             connections_found = 0
             in_connections_section = False
@@ -530,60 +490,43 @@ class ValidationEngine:
             for line_num, line in enumerate(lines):
                 stripped = line.strip()
 
-                # Check if we're entering the connections section
                 if stripped == "connections:" or stripped.startswith("connections:"):
                     in_connections_section = True
                     continue
 
-                # Check if we're leaving the connections section (new top-level key)
                 if in_connections_section and stripped and not line[0].isspace() and not stripped.startswith("-"):
                     in_connections_section = False
                     continue
 
-                # Look for connection items (lines starting with '-')
-                if in_connections_section and stripped.startswith("-"):
-                    # This might be the start of a new connection
-                    # Look ahead to find 'from:' or 'to:' fields
-                    connection_start_line = line_num
-                    found_field = False
+                if not in_connections_section:
+                    continue
 
-                    # Look ahead in the same connection block
-                    for next_line_num in range(line_num, min(line_num + 10, len(lines))):
-                        next_line = lines[next_line_num]
-                        next_stripped = next_line.strip()
+                # List format: "  - - source_ref"
+                if stripped.startswith("- -"):
+                    if connections_found == connection_index:
+                        target_line = line_num if side == "from" else line_num + 1
+                        target_line = min(target_line, len(lines) - 1)
+                        tl = lines[target_line]
+                        return lsp.Range(
+                            start=lsp.Position(line=target_line, character=0),
+                            end=lsp.Position(line=target_line, character=len(tl)),
+                        )
+                    connections_found += 1
 
-                        # Check if this line contains our field
-                        if f"{field}:" in next_stripped:
-                            if connections_found == connection_index:
-                                # Found the right connection, get the field value
-                                colon_pos = next_line.find(":")
-                                if colon_pos != -1:
-                                    value = next_line[colon_pos + 1 :].strip().strip("\"'")
-                                    value_start_pos = next_line.find(value, colon_pos)
-                                    if value_start_pos == -1:
-                                        value_start_pos = colon_pos + 1
-                                    return lsp.Range(
-                                        start=lsp.Position(line=next_line_num, character=value_start_pos),
-                                        end=lsp.Position(
-                                            line=next_line_num,
-                                            character=value_start_pos + len(value),
-                                        ),
-                                    )
-                            found_field = True
-                            break
-
-                        # If we hit another connection item or top-level key, stop
-                        if next_line_num > line_num:
-                            if (next_stripped.startswith("-") and next_line_num != line_num) or (
-                                next_stripped and not next_line[0].isspace() and not next_stripped.startswith("-")
-                            ):
-                                break
-
-                    if found_field:
-                        connections_found += 1
+                # Dict format: "  - from: source_ref"
+                elif stripped.startswith("- from:"):
+                    if connections_found == connection_index:
+                        target_line = line_num if side == "from" else line_num + 1
+                        target_line = min(target_line, len(lines) - 1)
+                        tl = lines[target_line]
+                        return lsp.Range(
+                            start=lsp.Position(line=target_line, character=0),
+                            end=lsp.Position(line=target_line, character=len(tl)),
+                        )
+                    connections_found += 1
 
         # Fallback: approximate line number
-        line = 20 + connection_index * 5
+        line = 20 + connection_index * 3
         return lsp.Range(start=lsp.Position(line=line, character=0), end=lsp.Position(line=line, character=50))
 
     def _extract_name_from_content(self, document_content: str) -> Optional[str]:

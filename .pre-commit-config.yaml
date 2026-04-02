@@ -40,6 +40,18 @@ repos:
         args: [-c, .markdownlint.yaml, --fix]
         files: \.md$
 
+  - repo: https://github.com/pycqa/isort
+    rev: 7.0.0
+    hooks:
+      - id: isort
+        args: [--profile=black, --line-length=120]
+
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 26.1.0
+    hooks:
+      - id: black
+        args: [--line-length=120]
+
   # Prettier - opinionated code formatter
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8
@@ -68,15 +80,3 @@ repos:
         always_run: true
         pass_filenames: false
         require_serial: true
-
-  - repo: https://github.com/pycqa/isort
-    rev: 7.0.0
-    hooks:
-      - id: isort
-        args: [--profile=black, --line-length=120]
-
-  - repo: https://github.com/psf/black-pre-commit-mirror
-    rev: 26.1.0
-    hooks:
-      - id: black
-        args: [--line-length=120]
