@@ -373,6 +373,15 @@
             },
           };
 
+          function escapeHtml(str) {
+            return String(str)
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;")
+              .replace(/'/g, "&#39;");
+          }
+
           function buildSourceBadge(ptype, source) {
             const style = paramTypeStyle[ptype] || {
               label: (ptype || "").toLowerCase() || "—",
@@ -390,9 +399,9 @@
               const fp = source.file_path;
               const line = source.line || 1;
               const editorUrl = getEditorUrl(fp, line);
-              return `<a href="${editorUrl}" title="${fp}:${line}" style="${badgeStyle}cursor:pointer;text-decoration:none;">${style.label}</a>`;
+              return `<a href="${editorUrl}" title="${escapeHtml(fp)}:${escapeHtml(line)}" style="${badgeStyle}cursor:pointer;text-decoration:none;">${escapeHtml(style.label)}</a>`;
             }
-            return `<span style="${badgeStyle}" title="${ptype}">${style.label}</span>`;
+            return `<span style="${badgeStyle}" title="${escapeHtml(ptype)}">${escapeHtml(style.label)}</span>`;
           }
 
           let parameterHtml = `<div>`;
@@ -402,8 +411,8 @@
               let displayVal = pVal;
               if (typeof pVal === "object") displayVal = JSON.stringify(pVal);
               parameterHtml += `<div style="padding: 6px 0; border-bottom: 1px solid var(--border-color);">
-                            <div style="font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 2px; word-break: break-all;">${pName}</div>
-                            <div style="font-family: 'Consolas', monospace; font-size: 12px; color: var(--text-primary); word-break: break-all; padding-left: 8px;">${displayVal}</div>
+                            <div style="font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 2px; word-break: break-all;">${escapeHtml(pName)}</div>
+                            <div style="font-family: 'Consolas', monospace; font-size: 12px; color: var(--text-primary); word-break: break-all; padding-left: 8px;">${escapeHtml(String(displayVal))}</div>
                         </div>`;
             }
           } else if (Array.isArray(params)) {
@@ -416,8 +425,8 @@
 
               parameterHtml += `<div style="padding: 6px 0; border-bottom: 1px solid var(--border-color);">
                               <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin-bottom:2px;">
-                                <span style="font-size:12px;font-weight:500;color:var(--text-secondary);word-break:break-all;flex:1;">${p.name} ${badge}</span>
-                                <span style="font-family:'Consolas',monospace;font-size:12px;color:var(--text-primary);word-break:break-all;text-align:right;flex-shrink:0;">${displayVal}</span>
+                                <span style="font-size:12px;font-weight:500;color:var(--text-secondary);word-break:break-all;flex:1;">${escapeHtml(p.name)} ${badge}</span>
+                                <span style="font-family:'Consolas',monospace;font-size:12px;color:var(--text-primary);word-break:break-all;text-align:right;flex-shrink:0;">${escapeHtml(String(displayVal))}</span>
                               </div>
                           </div>`;
             });
