@@ -133,6 +133,7 @@
         packageName,
         systemsIndexPath,
         editorScheme: defaultEditorScheme = "vscode",
+        systemDefinitionFile = "",
       } = deploymentConfig;
 
       // --- Editor URL helper ---
@@ -438,9 +439,7 @@
           parameterHtml += `</div>`;
 
           html += `<div class="info-card">
-                    <div class="info-title">Parameter
-                      <span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:6px;" title="Badges open the source file in your selected editor. If clicking does nothing, check the Editor setting in the sidebar or open the path shown on hover manually.">badges → editor</span>
-                    </div>
+                    <div class="info-title">Parameter</div>
                     ${parameterHtml}
                 </div>`;
         }
@@ -591,8 +590,20 @@
         if (headerTitle) headerTitle.textContent = deploymentName;
 
         const packageInfoDiv = document.querySelector(".package-info");
-        if (packageInfoDiv)
+        if (packageInfoDiv) {
           packageInfoDiv.textContent = `Package: ${packageName}`;
+          if (systemDefinitionFile) {
+            const editorUrl = getEditorUrl(systemDefinitionFile, 1);
+            const shortName = systemDefinitionFile.split("/").pop();
+            const link = document.createElement("a");
+            link.href = editorUrl;
+            link.title = systemDefinitionFile;
+            link.textContent = shortName;
+            link.style.cssText =
+              "display:block;font-size:12px;color:var(--link-color,#1e88e5);text-decoration:none;word-break:break-all;font-family:'Consolas',monospace;margin-top:2px;";
+            packageInfoDiv.appendChild(link);
+          }
+        }
 
         // Populate mode selector
         modeSelect.innerHTML = "";

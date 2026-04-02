@@ -260,7 +260,7 @@ class Deployment:
         # Collect data from all deployment instances
         deploy_data = {mode_key: data for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir)}
 
-        visualize_deployment(deploy_data, self.name, self.visualization_dir)
+        visualize_deployment(deploy_data, self.name, self.visualization_dir, self.config_yaml_dir)
 
     def generate_by_template(self, data, template_path, output_dir, output_filename):
         """Generate file from template using the unified template renderer."""

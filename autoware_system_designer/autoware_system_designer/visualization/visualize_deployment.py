@@ -91,7 +91,12 @@ def _calculate_systems_index_path(web_dir: str) -> str:
     return ""
 
 
-def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualization_dir: str):
+def visualize_deployment(
+    deploy_data: DeploymentDataByMode,
+    name: str,
+    visualization_dir: str,
+    system_definition_file: Optional[str] = None,
+):
     """Generate visualization files for deployment data.
 
     Args:
@@ -142,6 +147,7 @@ def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualiza
             "default_diagram_type": "node_diagram",
             "systems_index_path": systems_index_rel_path,
             "editor_scheme": "vscode",
+            "system_definition_file": system_definition_file or "",
         }
 
         config_output_path = os.path.join(web_dir, "config.js")
