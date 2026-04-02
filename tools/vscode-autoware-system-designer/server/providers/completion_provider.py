@@ -83,19 +83,23 @@ class CompletionProvider:
         if inputs:
             for kw in ("subscriber", "server"):
                 if kw.startswith(partial):
-                    items.append(lsp.CompletionItem(
-                        label=kw,
-                        kind=lsp.CompletionItemKind.Field,
-                        detail=f"{len(inputs)} input port(s)",
-                    ))
+                    items.append(
+                        lsp.CompletionItem(
+                            label=kw,
+                            kind=lsp.CompletionItemKind.Field,
+                            detail=f"{len(inputs)} input port(s)",
+                        )
+                    )
         if outputs:
             for kw in ("publisher", "client"):
                 if kw.startswith(partial):
-                    items.append(lsp.CompletionItem(
-                        label=kw,
-                        kind=lsp.CompletionItemKind.Field,
-                        detail=f"{len(outputs)} output port(s)",
-                    ))
+                    items.append(
+                        lsp.CompletionItem(
+                            label=kw,
+                            kind=lsp.CompletionItemKind.Field,
+                            detail=f"{len(outputs)} output port(s)",
+                        )
+                    )
         return lsp.CompletionList(is_incomplete=False, items=items)
 
     def _complete_ports(
@@ -112,13 +116,15 @@ class CompletionProvider:
             name = port.get("name", "")
             msg_type = port.get("message_type", "unknown")
             if name.startswith(partial):
-                items.append(lsp.CompletionItem(
-                    label=name,
-                    kind=lsp.CompletionItemKind.Value,
-                    detail=msg_type,
-                    documentation=lsp.MarkupContent(
-                        kind=lsp.MarkupKind.Markdown,
-                        value=f"`{direction}.{name}` — {msg_type}",
-                    ),
-                ))
+                items.append(
+                    lsp.CompletionItem(
+                        label=name,
+                        kind=lsp.CompletionItemKind.Value,
+                        detail=msg_type,
+                        documentation=lsp.MarkupContent(
+                            kind=lsp.MarkupKind.Markdown,
+                            value=f"`{direction}.{name}` — {msg_type}",
+                        ),
+                    )
+                )
         return lsp.CompletionList(is_incomplete=False, items=items)

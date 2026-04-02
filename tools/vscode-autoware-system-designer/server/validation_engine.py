@@ -244,6 +244,7 @@ class ValidationEngine:
     # Note: YAML parser maps clients -> inputs and servers -> outputs.
     _INPUT_TERMS = {"subscriber", "client"}
     _OUTPUT_TERMS = {"publisher", "server"}
+
     def _validate_connection_reference(self, ref: str, config: Config) -> Tuple[bool, str]:
         """Validate if a connection reference is valid."""
         if not ref:
