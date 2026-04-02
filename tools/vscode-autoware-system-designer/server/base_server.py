@@ -75,7 +75,7 @@ class AutowareSystemDesignerLanguageServer:
         def did_close(ls, params):
             self._on_text_document_did_close(ls, params)
 
-        @self.server.feature(lsp.TEXT_DOCUMENT_COMPLETION)
+        @self.server.feature(lsp.TEXT_DOCUMENT_COMPLETION, lsp.CompletionOptions(trigger_characters=["."]))
         def completion(ls, params):
             return self._on_completion(ls, params)
 
@@ -122,6 +122,7 @@ class AutowareSystemDesignerLanguageServer:
                 change=lsp.TextDocumentSyncKind.Full,
                 save=lsp.SaveOptions(include_text=True),
             ),
+            completion_provider=lsp.CompletionOptions(trigger_characters=["."]),
             signature_help_provider=lsp.SignatureHelpOptions(trigger_characters=["."]),
             definition_provider=True,
             hover_provider=True,
