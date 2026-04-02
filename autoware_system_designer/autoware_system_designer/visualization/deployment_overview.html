@@ -232,21 +232,7 @@
                 </div>`;
         }
 
-        // --- Source File Block ---
-        if (data.source_file) {
-          const fp = data.source_file;
-          const editorUrl = getEditorUrl(fp, 1);
-          const shortName = fp.split("/").pop();
-          html += `<div class="info-card">
-                    <div class="info-title">Source</div>
-                    <div class="info-row">
-                        <a href="${editorUrl}" title="${fp}"
-                           style="color:var(--link-color,#1e88e5);text-decoration:none;word-break:break-all;font-size:13px;font-family:'Consolas',monospace;">
-                            ${shortName}
-                        </a>
-                    </div>
-                </div>`;
-        }
+        // --- Source File Block --- (built via DOM API to avoid HTML injection)
 
         // --- 1. Info Block ---
         let infoHtml = "";
@@ -450,6 +436,34 @@
         }
 
         infoPanel.innerHTML = html;
+
+        if (data.source_file) {
+          const fp = data.source_file;
+          const shortName = fp.split("/").pop();
+          const editorUrl = getEditorUrl(fp, 1);
+
+          const a = document.createElement("a");
+          a.setAttribute("href", editorUrl);
+          a.setAttribute("title", fp);
+          a.style.cssText =
+            "color:var(--link-color,#1e88e5);text-decoration:none;word-break:break-all;font-size:13px;font-family:'Consolas',monospace;";
+          a.textContent = shortName;
+
+          const row = document.createElement("div");
+          row.className = "info-row";
+          row.appendChild(a);
+
+          const titleEl = document.createElement("div");
+          titleEl.className = "info-title";
+          titleEl.textContent = "Source";
+
+          const card = document.createElement("div");
+          card.className = "info-card";
+          card.appendChild(titleEl);
+          card.appendChild(row);
+
+          infoPanel.insertBefore(card, infoPanel.firstChild);
+        }
       }
 
       function updateDiagramTypeSelection() {

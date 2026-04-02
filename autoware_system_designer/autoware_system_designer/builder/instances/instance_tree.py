@@ -59,6 +59,11 @@ def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry"
 
     Creates component instances from the system configuration.
     """
+    if instance.configuration is not None:
+        instance.source_file = (
+            str(instance.configuration.file_path) if instance.configuration.file_path is not None else None
+        )
+
     components_to_instantiate = instance.configuration.components
 
     # First pass: create all component instances
@@ -132,6 +137,9 @@ def set_module_instances(
     """Set instances for module entity type."""
     logger.info(f"Setting module entity {entity_id} for instance {instance.path}")
     instance.configuration = config_registry.get_module(entity_name)
+    instance.source_file = (
+        str(instance.configuration.file_path) if instance.configuration.file_path is not None else None
+    )
     instance.entity_type = "module"
 
     # check if the module is already set
@@ -158,6 +166,9 @@ def set_node_instances(
     """Set instances for node entity type."""
     logger.info(f"Setting node entity {entity_id} for instance {instance.path}")
     instance.configuration = config_registry.get_node(entity_name)
+    instance.source_file = (
+        str(instance.configuration.file_path) if instance.configuration.file_path is not None else None
+    )
     instance.entity_type = "node"
     instance.launch_manager = LaunchManager.from_config(instance.configuration)
 

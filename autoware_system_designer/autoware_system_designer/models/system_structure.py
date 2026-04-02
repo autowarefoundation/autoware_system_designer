@@ -37,7 +37,7 @@ class ParameterData(TypedDict, total=False):
     value: Any
     type: str
     parameter_type: str
-    source: Dict[str, Any]
+    source: Optional[Dict[str, Any]]
 
 
 class ParameterFileData(TypedDict, total=False):
@@ -46,7 +46,7 @@ class ParameterFileData(TypedDict, total=False):
     allow_substs: bool
     is_override: bool
     parameter_type: str
-    source: Dict[str, Any]
+    source: Optional[Dict[str, Any]]
 
 
 class LauncherPortData(TypedDict, total=False):
@@ -88,6 +88,7 @@ class InstanceData(TypedDict, total=False):
     path: str
     compute_unit: Optional[str]
     vis_guide: Optional[Dict[str, Any]]
+    source_file: Optional[str]
     in_ports: List[PortData]
     out_ports: List[PortData]
     children: List["InstanceData"]

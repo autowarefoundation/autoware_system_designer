@@ -51,6 +51,7 @@ class Instance:
 
         # configuration
         self.configuration: NodeConfig | ModuleConfig | ParameterSetConfig | SystemConfig | None = None
+        self.source_file: Optional[str] = None
 
         # launch (node instances only)
         self.launch_manager: Optional[LaunchManager] = None
