@@ -4,6 +4,7 @@ from typing import Optional
 
 from lsprotocol import types as lsp
 from registry_manager import RegistryManager
+from resolution_service import ResolutionService
 from utils.text_utils import get_word_at_position
 
 from autoware_system_designer.models.config import Config, ConfigType
@@ -12,8 +13,9 @@ from autoware_system_designer.models.config import Config, ConfigType
 class HoverProvider:
     """Provides hover information functionality."""
 
-    def __init__(self, registry_manager: RegistryManager):
+    def __init__(self, registry_manager: RegistryManager, resolution_service: ResolutionService):
         self.registry_manager = registry_manager
+        self.resolution_service = resolution_service
 
     def get_hover(self, params: lsp.HoverParams, server) -> Optional[lsp.Hover]:
         """Handle hover requests."""
@@ -70,11 +72,8 @@ class HoverProvider:
             instances = config.instances or []
             hover_text += f"**Instances:** {len(instances)}\n"
 
-            from validation_engine import ValidationEngine
-
-            ve = ValidationEngine(self.registry_manager)
-            inputs = ve._get_entity_inputs(config)
-            outputs = ve._get_entity_outputs(config)
+            inputs = self.resolution_service.get_entity_inputs(config)
+            outputs = self.resolution_service.get_entity_outputs(config)
             hover_text += f"**External Inputs:** {len(inputs)}\n"
             hover_text += f"**External Outputs:** {len(outputs)}\n"
 

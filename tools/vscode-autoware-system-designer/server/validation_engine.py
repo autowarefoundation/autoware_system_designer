@@ -235,62 +235,10 @@ class ValidationEngine:
         return diagnostics
 
     def _get_entity_inputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[dict]:
-        """Get input ports from a config, with cycle detection for base-node inheritance."""
-        if _seen is None:
-            _seen = set()
-        if config.full_name in _seen:
-            return []
-        _seen.add(config.full_name)
-
-        inputs: List[dict] = list(config.inputs) if (hasattr(config, "inputs") and config.inputs) else []
-
-        # For variant entities, merge in override inputs and inherit from base node.
-        raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
-        override = raw.get("override", {})
-        if isinstance(override, dict):
-            override_inputs = override.get("inputs", []) or []
-            if override_inputs:
-                override_names = {p.get("name") for p in override_inputs if p.get("name")}
-                inputs = [p for p in inputs if p.get("name") not in override_names] + override_inputs
-
-        base_name = raw.get("base")
-        if base_name:
-            base_config = self.registry_manager.get_entity(base_name)
-            if base_config:
-                base_inputs = self._get_entity_inputs(base_config, _seen)
-                existing_names = {p.get("name") for p in inputs if p.get("name")}
-                inputs = inputs + [p for p in base_inputs if p.get("name") not in existing_names]
-
-        return inputs
+        return self.resolution_service.get_entity_inputs(config, _seen)
 
     def _get_entity_outputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[dict]:
-        """Get output ports from a config, with cycle detection for base-node inheritance."""
-        if _seen is None:
-            _seen = set()
-        if config.full_name in _seen:
-            return []
-        _seen.add(config.full_name)
-
-        outputs: List[dict] = list(config.outputs) if (hasattr(config, "outputs") and config.outputs) else []
-
-        # For variant entities, merge in override outputs and inherit from base node.
-        raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
-        override = raw.get("override", {})
-        if isinstance(override, dict):
-            override_outputs = override.get("outputs", []) or []
-            if override_outputs:
-                override_names = {p.get("name") for p in override_outputs if p.get("name")}
-                outputs = [p for p in outputs if p.get("name") not in override_names] + override_outputs
-
-        base_name = raw.get("base")
-        if base_name:
-            base_config = self.registry_manager.get_entity(base_name)
-            if base_config:
-                base_outputs = self._get_entity_outputs(base_config, _seen)
-                existing_names = {p.get("name") for p in outputs if p.get("name")}
-                outputs = outputs + [p for p in base_outputs if p.get("name") not in existing_names]
-
-        return outputs
+        return self.resolution_service.get_entity_outputs(config, _seen)
 
     # Port direction terms used in YAML connection strings map to stored inputs/outputs
     _INPUT_TERMS = {"subscriber", "server"}
