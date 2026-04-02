@@ -247,7 +247,6 @@ body {
   color: var(--text-primary);
 }
 
-
 /* Node diagram styles */
 .node-diagram-container {
   width: 100%;
@@ -459,7 +458,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.2s, background 0.2s;
+  transition:
+    color 0.2s,
+    background 0.2s;
 }
 
 #settings-btn:hover {
@@ -521,7 +522,9 @@ body {
   padding: 2px 6px;
   border-radius: 4px;
   line-height: 1;
-  transition: color 0.2s, background 0.2s;
+  transition:
+    color 0.2s,
+    background 0.2s;
 }
 
 #settings-close:hover {

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
 
+from ...file_io.source_location import SourceLocation
 from ...models.system_structure import (
     SCHEMA_VERSION,
     EventData,
@@ -8,7 +9,6 @@ from ...models.system_structure import (
     PortData,
     SystemStructurePayload,
 )
-from ...file_io.source_location import SourceLocation
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -93,6 +93,7 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
         "path": instance.path,
         "compute_unit": instance.compute_unit,
         "vis_guide": instance.vis_guide,
+        "source_file": str(instance.configuration.file_path) if instance.configuration is not None else None,
         "in_ports": [serialize_port(p) for p in instance.link_manager.get_all_in_ports()],
         "out_ports": [serialize_port(p) for p in instance.link_manager.get_all_out_ports()],
         "children": (

@@ -5,9 +5,21 @@
     <title>Autoware System Designer</title>
     <script src="config.js"></script>
     <script src="diagram_base.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js" integrity="sha384-KO35c6PFq7tFxAEx6FtATwL9vOBOmCzQYr7GM0iTr3oO22s7Jc9OkclOH4AV7jwK" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js" integrity="sha384-WmdflGW9aGfoBdHc4rRyWzYuAjEmDwMdGdiPNacbwfGKxBW/SO6guzuQ76qjnSlr" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js" integrity="sha384-yc/c2Lk1s2V2ir1rxvjo8YyVD9PlOlYTqpNr3Wm1WIuAA30GlDYNx6U5104OiavY" crossorigin="anonymous"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"
+      integrity="sha384-KO35c6PFq7tFxAEx6FtATwL9vOBOmCzQYr7GM0iTr3oO22s7Jc9OkclOH4AV7jwK"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"
+      integrity="sha384-WmdflGW9aGfoBdHc4rRyWzYuAjEmDwMdGdiPNacbwfGKxBW/SO6guzuQ76qjnSlr"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"
+      integrity="sha384-yc/c2Lk1s2V2ir1rxvjo8YyVD9PlOlYTqpNr3Wm1WIuAA30GlDYNx6U5104OiavY"
+      crossorigin="anonymous"
+    ></script>
     <link rel="stylesheet" href="css/styles.css" />
     <script src="theme.js"></script>
   </head>
@@ -26,8 +38,18 @@
         <h1></h1>
         <div class="package-info"></div>
         <button id="settings-btn" title="Settings" aria-label="Open settings">
-          <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
+              clip-rule="evenodd"
+            />
           </svg>
         </button>
       </div>
@@ -51,10 +73,17 @@
 
     <!-- Settings Popup -->
     <div id="settings-overlay"></div>
-    <div id="settings-popup" role="dialog" aria-modal="true" aria-label="Settings">
+    <div
+      id="settings-popup"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Settings"
+    >
       <div id="settings-popup-header">
         <span>Settings</span>
-        <button id="settings-close" aria-label="Close settings">&#x2715;</button>
+        <button id="settings-close" aria-label="Close settings">
+          &#x2715;
+        </button>
       </div>
       <div class="settings-row">
         <label for="dark-mode-switch">Dark Mode</label>
@@ -202,6 +231,22 @@
                 </div>`;
         }
 
+        // --- Source File Block ---
+        if (data.source_file) {
+          const fp = data.source_file;
+          const editorUrl = getEditorUrl(fp, 1);
+          const shortName = fp.split("/").pop();
+          html += `<div class="info-card">
+                    <div class="info-title">Source</div>
+                    <div class="info-row">
+                        <a href="${editorUrl}" title="${fp}"
+                           style="color:var(--link-color,#1e88e5);text-decoration:none;word-break:break-all;font-size:13px;font-family:'Consolas',monospace;">
+                            ${shortName}
+                        </a>
+                    </div>
+                </div>`;
+        }
+
         // --- 1. Info Block ---
         let infoHtml = "";
         // Fields explicitly excluded from Info block or handled in other blocks
@@ -219,6 +264,7 @@
           "target",
           "sections",
           "vis_guide",
+          "source_file",
           "in_ports",
           "out_ports",
           "parameters",
@@ -296,18 +342,59 @@
         if (!isEmpty(params)) {
           // Source type → { label, text color, bg rgba, border rgba }
           const paramTypeStyle = {
-            DEFAULT:       { label: "default",   color: "#888888", bg: "rgba(136,136,136,0.12)", border: "rgba(136,136,136,0.35)" },
-            DEFAULT_FILE:  { label: "def-file",  color: "#888888", bg: "rgba(136,136,136,0.12)", border: "rgba(136,136,136,0.35)" },
-            OVERRIDE:      { label: "override",  color: "#d4890a", bg: "rgba(212,137,10,0.12)",  border: "rgba(212,137,10,0.40)"  },
-            OVERRIDE_FILE: { label: "ovr-file",  color: "#d4890a", bg: "rgba(212,137,10,0.12)",  border: "rgba(212,137,10,0.40)"  },
-            MODE:          { label: "mode",      color: "#1e88e5", bg: "rgba(30,136,229,0.12)",  border: "rgba(30,136,229,0.40)"  },
-            MODE_FILE:     { label: "mode-file", color: "#1e88e5", bg: "rgba(30,136,229,0.12)",  border: "rgba(30,136,229,0.40)"  },
-            GLOBAL:        { label: "global",    color: "#8e24aa", bg: "rgba(142,36,170,0.12)",  border: "rgba(142,36,170,0.40)"  },
+            DEFAULT: {
+              label: "default",
+              color: "#888888",
+              bg: "rgba(136,136,136,0.12)",
+              border: "rgba(136,136,136,0.35)",
+            },
+            DEFAULT_FILE: {
+              label: "def-file",
+              color: "#888888",
+              bg: "rgba(136,136,136,0.12)",
+              border: "rgba(136,136,136,0.35)",
+            },
+            OVERRIDE: {
+              label: "override",
+              color: "#d4890a",
+              bg: "rgba(212,137,10,0.12)",
+              border: "rgba(212,137,10,0.40)",
+            },
+            OVERRIDE_FILE: {
+              label: "ovr-file",
+              color: "#d4890a",
+              bg: "rgba(212,137,10,0.12)",
+              border: "rgba(212,137,10,0.40)",
+            },
+            MODE: {
+              label: "mode",
+              color: "#1e88e5",
+              bg: "rgba(30,136,229,0.12)",
+              border: "rgba(30,136,229,0.40)",
+            },
+            MODE_FILE: {
+              label: "mode-file",
+              color: "#1e88e5",
+              bg: "rgba(30,136,229,0.12)",
+              border: "rgba(30,136,229,0.40)",
+            },
+            GLOBAL: {
+              label: "global",
+              color: "#8e24aa",
+              bg: "rgba(142,36,170,0.12)",
+              border: "rgba(142,36,170,0.40)",
+            },
           };
 
           function buildSourceBadge(ptype, source) {
-            const style = paramTypeStyle[ptype] || { label: (ptype || "").toLowerCase() || "—", color: "#888", bg: "rgba(136,136,136,0.12)", border: "rgba(136,136,136,0.35)" };
-            const badgeStyle = `display:inline-block;font-size:10px;font-weight:600;` +
+            const style = paramTypeStyle[ptype] || {
+              label: (ptype || "").toLowerCase() || "—",
+              color: "#888",
+              bg: "rgba(136,136,136,0.12)",
+              border: "rgba(136,136,136,0.35)",
+            };
+            const badgeStyle =
+              `display:inline-block;font-size:10px;font-weight:600;` +
               `color:${style.color};background:${style.bg};border:1px solid ${style.border};` +
               `border-radius:3px;padding:1px 5px;font-family:'Consolas',monospace;` +
               `vertical-align:middle;white-space:nowrap;`;
