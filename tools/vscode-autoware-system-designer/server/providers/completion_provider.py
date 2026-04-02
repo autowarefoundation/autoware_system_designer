@@ -105,7 +105,7 @@ class CompletionProvider:
         if inputs is None:
             return lsp.CompletionList(is_incomplete=False, items=[])
 
-        ports = inputs if direction in ("subscriber", "server") else outputs
+        ports = inputs if direction in ("subscriber", "client") else outputs
 
         items: List[lsp.CompletionItem] = []
         for port in ports:
