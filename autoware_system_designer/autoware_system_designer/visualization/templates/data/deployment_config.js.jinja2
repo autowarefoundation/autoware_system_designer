@@ -6,6 +6,6 @@ const deploymentConfig = {
     defaultMode: "{{ default_mode }}",
     availableDiagramTypes: {{ available_diagram_types | tojson }},
     defaultDiagramType: "{{ default_diagram_type }}",
-    editorScheme: "{{ editor_scheme }}",
-    systemDefinitionFile: "{{ system_definition_file }}"
+    editorScheme: {{ editor_scheme | tojson }},
+    systemDefinitionFile: {{ system_definition_file | tojson }}
 };
