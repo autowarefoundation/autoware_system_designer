@@ -52,9 +52,13 @@ class SignatureHelpProvider:
 
         signatures = []
         if inputs:
+            # For inputs, expose both subscription and client service directions
             signatures.append(self._build_signature(instance_name, entity_config, "subscriber", inputs))
+            signatures.append(self._build_signature(instance_name, entity_config, "client", inputs))
         if outputs:
+            # For outputs, expose both publication and server service directions
             signatures.append(self._build_signature(instance_name, entity_config, "publisher", outputs))
+            signatures.append(self._build_signature(instance_name, entity_config, "server", outputs))
 
         if not signatures:
             return None
