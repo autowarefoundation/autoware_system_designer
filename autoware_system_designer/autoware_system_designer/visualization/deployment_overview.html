@@ -25,10 +25,11 @@
         <a href="#" class="launcher-link" id="launcher-link">Launch commands</a>
         <h1></h1>
         <div class="package-info"></div>
-        <div class="dark-mode-toggle">
-          <label for="dark-mode-switch">Dark Mode</label>
-          <div class="toggle-switch" id="dark-mode-switch"></div>
-        </div>
+        <button id="settings-btn" title="Settings" aria-label="Open settings">
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
+          </svg>
+        </button>
       </div>
 
       <div id="mode-selector-section">
@@ -45,6 +46,33 @@
 
       <div id="info-panel">
         <!-- Node details will be populated here -->
+      </div>
+    </div>
+
+    <!-- Settings Popup -->
+    <div id="settings-overlay"></div>
+    <div id="settings-popup" role="dialog" aria-modal="true" aria-label="Settings">
+      <div id="settings-popup-header">
+        <span>Settings</span>
+        <button id="settings-close" aria-label="Close settings">&#x2715;</button>
+      </div>
+      <div class="settings-row">
+        <label for="dark-mode-switch">Dark Mode</label>
+        <div class="toggle-switch" id="dark-mode-switch"></div>
+      </div>
+      <div class="settings-row">
+        <label for="editor-selector">Editor</label>
+        <select id="editor-selector">
+          <option value="vscode">VS Code</option>
+          <option value="vscode-insiders">VS Code Insiders</option>
+          <option value="cursor">Cursor</option>
+          <option value="windsurf">Windsurf</option>
+          <option value="idea">IntelliJ IDEA</option>
+          <option value="clion">CLion</option>
+          <option value="pycharm">PyCharm</option>
+          <option value="webstorm">WebStorm</option>
+          <option value="subl">Sublime Text</option>
+        </select>
       </div>
     </div>
 
@@ -75,7 +103,28 @@
         defaultMode,
         packageName,
         systemsIndexPath,
+        editorScheme: defaultEditorScheme = "vscode",
       } = deploymentConfig;
+
+      // --- Editor URL helper ---
+      // Reads preference from localStorage (set by editor selector in sidebar).
+      // Falls back to deploymentConfig.editorScheme, then "vscode".
+      function getEditorUrl(fp, line) {
+        const scheme =
+          localStorage.getItem("editorScheme") || defaultEditorScheme;
+        switch (scheme) {
+          case "idea":
+          case "clion":
+          case "pycharm":
+          case "webstorm":
+            return `${scheme}://open?file=${encodeURIComponent(fp)}&line=${line}`;
+          case "subl":
+            return `subl://open?url=file://${encodeURIComponent(fp)}&line=${line}`;
+          default:
+            // vscode, vscode-insiders, cursor, windsurf — all share the same scheme
+            return `${scheme}://file/${fp}:${line}`;
+        }
+      }
 
       // Optional callback for diagram modules when theme changes (set by theme.js)
       window.__onThemeChange = function () {
@@ -258,9 +307,8 @@
             if (source && source.file_path) {
               const fp = source.file_path;
               const line = source.line || 1;
-              const vsUrl = `vscode://file/${fp}:${line}`;
-              // Title shows full path for hover tooltip; href uses vscode:// protocol
-              return `<a href="${vsUrl}" title="${fp}:${line}" style="${badgeStyle}cursor:pointer;text-decoration:none;">${style.label}</a>`;
+              const editorUrl = getEditorUrl(fp, line);
+              return `<a href="${editorUrl}" title="${fp}:${line}" style="${badgeStyle}cursor:pointer;text-decoration:none;">${style.label}</a>`;
             }
             return `<span style="${badgeStyle}" title="${ptype}">${style.label}</span>`;
           }
@@ -296,7 +344,7 @@
 
           html += `<div class="info-card">
                     <div class="info-title">Parameter
-                      <span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:6px;" title="Badges link to the source file in VS Code (vscode:// protocol). If clicking does nothing, see the path on hover and open it manually.">badges → VS Code</span>
+                      <span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:6px;" title="Badges open the source file in your selected editor. If clicking does nothing, check the Editor setting in the sidebar or open the path shown on hover manually.">badges → editor</span>
                     </div>
                     ${parameterHtml}
                 </div>`;
@@ -493,11 +541,44 @@
           currentMode = e.target.value;
           loadDiagram(currentDiagramType, currentMode);
         });
+
+        // Editor selector — persists choice in localStorage
+        const editorSelect = document.getElementById("editor-selector");
+        const savedScheme =
+          localStorage.getItem("editorScheme") || defaultEditorScheme;
+        if (editorSelect) {
+          editorSelect.value = savedScheme;
+          editorSelect.addEventListener("change", (e) => {
+            localStorage.setItem("editorScheme", e.target.value);
+          });
+        }
       }
 
       // Dark mode listener (theme.js provides toggleDarkMode)
       darkModeToggle.addEventListener("click", function () {
         window.toggleDarkMode();
+      });
+
+      // Settings popup
+      const settingsBtn = document.getElementById("settings-btn");
+      const settingsOverlay = document.getElementById("settings-overlay");
+      const settingsPopup = document.getElementById("settings-popup");
+      const settingsClose = document.getElementById("settings-close");
+
+      function openSettings() {
+        settingsPopup.classList.add("open");
+        settingsOverlay.classList.add("open");
+      }
+      function closeSettings() {
+        settingsPopup.classList.remove("open");
+        settingsOverlay.classList.remove("open");
+      }
+
+      settingsBtn.addEventListener("click", openSettings);
+      settingsClose.addEventListener("click", closeSettings);
+      settingsOverlay.addEventListener("click", closeSettings);
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeSettings();
       });
 
       // Resizer functionality

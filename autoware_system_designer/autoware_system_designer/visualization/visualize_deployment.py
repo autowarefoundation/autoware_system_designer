@@ -141,6 +141,7 @@ def visualize_deployment(deploy_data: DeploymentDataByMode, name: str, visualiza
             "default_mode": default_mode,
             "default_diagram_type": "node_diagram",
             "systems_index_path": systems_index_rel_path,
+            "editor_scheme": "vscode",
         }
 
         config_output_path = os.path.join(web_dir, "config.js")

@@ -59,7 +59,7 @@ body {
 
 /* Sidebar */
 #sidebar {
-  width: 300px;
+  width: 320px;
   flex-shrink: 0;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
@@ -73,6 +73,7 @@ body {
   padding: 20px;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-sidebar-header);
+  position: relative;
 }
 
 .home-link {
@@ -245,6 +246,7 @@ body {
   background: var(--bg-secondary);
   color: var(--text-primary);
 }
+
 
 /* Node diagram styles */
 .node-diagram-container {
@@ -443,20 +445,117 @@ body {
   word-break: break-all;
 }
 
-/* Dark mode toggle */
-.dark-mode-toggle {
-  margin-top: 15px;
+/* Settings gear button */
+#settings-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, background 0.2s;
+}
+
+#settings-btn:hover {
+  color: var(--text-primary);
+  background: var(--border-color);
+}
+
+/* Settings popup overlay */
+#settings-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 200;
+}
+
+#settings-overlay.open {
+  display: block;
+}
+
+/* Settings popup box */
+#settings-popup {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: 300px;
+  z-index: 201;
+  overflow: hidden;
+}
+
+#settings-popup.open {
+  display: block;
+}
+
+#settings-popup-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-sidebar-header);
+  border-bottom: 1px solid var(--border-color);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
 }
 
-.dark-mode-toggle label {
+#settings-close {
+  background: none;
+  border: none;
+  cursor: pointer;
   font-size: 14px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.2s, background 0.2s;
+}
+
+#settings-close:hover {
+  color: var(--text-primary);
+  background: var(--border-color);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-row label {
+  font-size: 14px;
   font-weight: 500;
+  color: var(--text-secondary);
   margin: 0;
+}
+
+.settings-row select {
+  padding: 5px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 13px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  max-width: 160px;
 }
 
 .toggle-switch {
