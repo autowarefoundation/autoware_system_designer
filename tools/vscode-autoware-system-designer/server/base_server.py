@@ -126,15 +126,23 @@ class AutowareSystemDesignerLanguageServer:
 
     def _on_text_document_did_open(self, ls, params: lsp.DidOpenTextDocumentParams):
         """Handle document open event."""
-        # Don't update registry on open (assume already in registry or will be handled by save/watcher)
+        # Update registry on open so the current file content is immediately reflected,
+        # closing the race window between did_open and the file-watcher event.
         self.document_processor.process_document(
-            params.text_document.uri, params.text_document.text, self.server, update_registry=False
+            params.text_document.uri, params.text_document.text, self.server, update_registry=True
         )
+        # Re-validate other open documents since the registry may have changed.
+        self._revalidate_open_documents(exclude_uri=params.text_document.uri)
 
     def _on_text_document_did_change(self, ls, params: lsp.DidChangeTextDocumentParams):
         """Handle document change event."""
-        # Per user requirement, we do NOT process/validate on change, only on save.
-        pass
+        # Validate on change for immediate diagnostic feedback, but do NOT update the
+        # registry — unsaved/incomplete content must not pollute the shared registry.
+        if params.content_changes:
+            content = params.content_changes[-1].text
+            self.document_processor.process_document(
+                params.text_document.uri, content, self.server, update_registry=False
+            )
 
     def _on_workspace_did_change_watched_files(self, ls, params: lsp.DidChangeWatchedFilesParams):
         """Handle watched file changes."""

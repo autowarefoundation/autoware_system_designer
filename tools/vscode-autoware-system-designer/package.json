@@ -15,6 +15,12 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "autowareSystemDesigner.reloadWorkspace",
+        "title": "Autoware System Designer: Reload Workspace"
+      }
+    ],
     "configurationDefaults": {
       "[yaml]": {
         "editor.inlineSuggest.suppressSuggestions": true,
