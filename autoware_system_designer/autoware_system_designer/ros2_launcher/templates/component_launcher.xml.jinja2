@@ -37,7 +37,7 @@
 {% endmacro %}
 
 {% for node in nodes %}
-  <!-- Node: {{ node.full_namespace_path }}/{{ node.name }} -->
+  <!-- Node: {{ node.node_path }} -->
 {% if node.launch_state == 'ros2_launch_file' %}
   <include file="$(find-pkg-share {{node.package}})/launch/{{node.ros2_launch_file}}">
 {% for param_file in node.param_files %}

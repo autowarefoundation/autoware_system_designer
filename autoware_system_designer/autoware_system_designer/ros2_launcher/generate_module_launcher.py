@@ -19,7 +19,7 @@ from typing import Any, Dict, List
 
 from ..builder.instances.launcher_planner import (
     build_serialized_system_component_maps,
-    collect_component_nodes_from_data,
+    collect_component_nodes,
 )
 from ..file_io.source_location import SourceLocation, format_source
 from ..file_io.template_renderer import TemplateRenderer
@@ -50,7 +50,7 @@ def _render_template_to_file(template_name: str, output_file_path: str, template
         raise
 
 
-def _generate_component_launcher_from_data(
+def _generate_component_launcher(
     compute_unit: str,
     namespace: str,
     components: list,
@@ -68,7 +68,7 @@ def _generate_component_launcher_from_data(
 
     all_nodes = []
     for component in components:
-        all_nodes.extend(collect_component_nodes_from_data(component))
+        all_nodes.extend(collect_component_nodes(component))
 
     template_data = {
         "compute_unit": compute_unit,
@@ -79,7 +79,7 @@ def _generate_component_launcher_from_data(
     _render_template_to_file("component_launcher.xml.jinja2", launcher_file, template_data)
 
 
-def _generate_compute_unit_launcher_from_data(
+def _generate_compute_unit_launcher(
     compute_unit: str,
     components: list,
     output_dir: str,
@@ -126,7 +126,7 @@ def generate_module_launch_file(instance: Dict[str, Any], output_dir: str, forwa
             component.get("name", ""): component_args_by_id.get((compute_unit, component.get("name", "")), [])
             for component in components
         }
-        _generate_compute_unit_launcher_from_data(
+        _generate_compute_unit_launcher(
             compute_unit,
             components,
             output_dir,
@@ -135,7 +135,7 @@ def generate_module_launch_file(instance: Dict[str, Any], output_dir: str, forwa
         )
 
     for (compute_unit, component_name), components in component_map.items():
-        _generate_component_launcher_from_data(
+        _generate_component_launcher(
             compute_unit,
             component_name,
             components,
