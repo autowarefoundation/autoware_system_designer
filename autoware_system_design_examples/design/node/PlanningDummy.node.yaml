@@ -18,7 +18,7 @@ subscribers:
   - name: occupancy_grid_map
     message_type: nav_msgs/msg/OccupancyGrid
   - name: traffic_signals
-    message_type: tier4_perception_msgs/msg/TrafficLightGroupArray
+    message_type: autoware_perception_msgs/msg/TrafficLightGroupArray
   - name: obstacle_pointcloud
     message_type: sensor_msgs/msg/PointCloud2
 
