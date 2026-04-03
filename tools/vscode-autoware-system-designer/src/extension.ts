@@ -1,5 +1,5 @@
 import * as path from "path";
-import { ExtensionContext, workspace } from "vscode";
+import { ExtensionContext, commands, workspace } from "vscode";
 import {
   LanguageClient,
   LanguageClientOptions,
@@ -62,6 +62,17 @@ export function activate(context: ExtensionContext) {
 
   // Start the client. This will also launch the server
   client.start();
+
+  // Register command to force a full workspace rescan (clears stale registry state)
+  context.subscriptions.push(
+    commands.registerCommand(
+      "autowareSystemDesigner.reloadWorkspace",
+      async () => {
+        await client.stop();
+        await client.start();
+      },
+    ),
+  );
 }
 
 export function deactivate(): Thenable<void> | undefined {

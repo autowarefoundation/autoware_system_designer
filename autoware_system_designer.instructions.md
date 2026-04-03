@@ -339,7 +339,7 @@ autoware_system_design_format: 0.3.0
 name: AutowareSample.system
 variables:
   - name: config_path
-    value: $(find-pkg-share autoware_sample_deployment)/config
+    value: $(find-pkg-share autoware_sample_designs)/config
   - name: vehicle_model
     value: sample_vehicle
 variable_files:
