@@ -17,13 +17,16 @@ from typing import Any, Dict, List, Tuple
 from ..parameters.parameter_manager import ParameterManager
 
 
-def _extract_node_data(node_instance: Dict[str, Any], full_namespace_path: str) -> Dict[str, Any]:
+def _extract_node_data(node_instance: Dict[str, Any], namespace: str) -> Dict[str, Any]:
     """Extract node launcher data from serialized node dictionary (launcher is canonical from LaunchManager)."""
     launch_data = node_instance.get("launcher", {})
+    name = node_instance.get("name")
+    node_path = node_instance.get("path")
     return {
         **launch_data,
-        "name": node_instance.get("name"),
-        "full_namespace_path": full_namespace_path,
+        "name": name,
+        "namespace": namespace,
+        "node_path": node_path,
     }
 
 
