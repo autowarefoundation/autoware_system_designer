@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-from ..builder.instances.launcher_planner import (
+from .component_map import (
     build_serialized_system_component_maps,
     collect_component_nodes,
 )
