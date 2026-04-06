@@ -17,12 +17,12 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
+from ..file_io.source_location import SourceLocation, format_source
+from ..file_io.template_renderer import TemplateRenderer
 from .component_map import (
     build_serialized_system_component_maps,
     collect_component_nodes,
 )
-from ..file_io.source_location import SourceLocation, format_source
-from ..file_io.template_renderer import TemplateRenderer
 
 logger = logging.getLogger(__name__)
 
