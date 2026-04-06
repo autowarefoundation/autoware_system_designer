@@ -12,24 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from ...file_io.source_location import SourceLocation
-
-
-class ParameterType(Enum):
-    """Parameter type with priority ordering (lower value = lower priority).
-    Used only for individual parameters, not parameter files.
-    """
-
-    GLOBAL = 0  # Global parameter (lowest priority)
-    DEFAULT_FILE = 1  # Parameter loaded from default parameter file
-    DEFAULT = 2  # Default parameter
-    OVERRIDE_FILE = 3  # Parameter loaded from override parameter file
-    OVERRIDE = 4  # Directly set override parameter
-    MODE_FILE = 5  # Parameter loaded from mode parameter file
-    MODE = 6  # Mode specific parameter (highest priority)
+from ...models.domain import ParameterType
 
 
 def parameter_type_to_str(value) -> str:

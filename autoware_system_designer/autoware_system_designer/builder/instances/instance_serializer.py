@@ -23,6 +23,7 @@ from ...models.system_structure import (
     PortData,
     SystemStructurePayload,
 )
+from ..runtime.parameters import parameter_type_to_str
 
 if TYPE_CHECKING:
     from .instances import Instance
@@ -67,12 +68,6 @@ def serialize_port(port) -> PortData:
     data["connected_ids"] = connected_ids
 
     return data
-
-
-def serialize_parameter_type(param_type) -> str:
-    if hasattr(param_type, "name"):
-        return param_type.name
-    return str(param_type)
 
 
 def serialize_source(source: SourceLocation | None) -> Dict[str, Any] | None:
@@ -177,7 +172,7 @@ def _collect_parameters(instance: "Instance") -> list[ParameterData]:
             name=p.name,
             value=p.value,
             type=p.data_type,
-            parameter_type=serialize_parameter_type(p.parameter_type),
+            parameter_type=parameter_type_to_str(p.parameter_type),
             source=serialize_source(p.source),
         )
         for p in instance.parameter_manager.get_all_parameters()
@@ -192,7 +187,7 @@ def _collect_parameter_files(instance: "Instance") -> list[ParameterFileData]:
             path=pf.path,
             allow_substs=pf.allow_substs,
             is_override=pf.is_override,
-            parameter_type=serialize_parameter_type(pf.parameter_type),
+            parameter_type=parameter_type_to_str(pf.parameter_type),
             source=serialize_source(pf.source),
         )
         for pf in instance.parameter_manager.get_all_parameter_files()
