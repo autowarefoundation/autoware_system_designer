@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import difflib
-import fnmatch
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Dict, List
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ...exceptions import ValidationError
 from ...file_io.source_location import format_source, source_from_config
@@ -26,14 +26,24 @@ from ..runtime.ports import InPort, OutPort
 if TYPE_CHECKING:
     from ..instances.instances import Instance
 
+
+@dataclass
+class _PortInfo:
+    """Runtime metadata for a port during connection resolution."""
+
+    port_name: str
+    instance: Optional["Instance"]
+    port: Optional[InPort | OutPort]
+
+
 logger = logging.getLogger(__name__)
 
 
 def match_and_pair_wildcard_ports(
     source_pattern: str,
     target_pattern: str,
-    source_ports: Dict[str, Any],
-    target_ports: Dict[str, Any],
+    source_ports: Dict[str, "_PortInfo"],
+    target_ports: Dict[str, "_PortInfo"],
 ) -> List[tuple[str, str]]:
     """Return (source_key, target_key) pairs honoring wildcard usage.
 
@@ -259,7 +269,7 @@ class LinkManager:
             f"Suggest: {self._suggest(port_name, available)}"
         )
 
-    def _register_external_port(self, port_dict: Dict[str, Any], port_obj: InPort | OutPort, kind: str):
+    def _register_external_port(self, port_dict: Dict[str, InPort | OutPort], port_obj: InPort | OutPort, kind: str):
         """Generic logic for adding/updating an external port.
 
         kind: 'input' or 'output'.
@@ -273,7 +283,7 @@ class LinkManager:
         else:
             cfg_list = getattr(self.instance.configuration, "outputs", []) or []
 
-        declared_names = {item.get("name") for item in cfg_list}
+        declared_names = {item.name for item in cfg_list}
         if port_obj.name not in declared_names:
             raise ValidationError(self._err_external_decl(kind, port_obj.name, sorted(declared_names)))
 
@@ -305,21 +315,19 @@ class LinkManager:
     def _resolve_ports_for_connection(
         self,
         connection: Connection,
-        from_info: Dict[str, Any] | None,
-        to_info: Dict[str, Any] | None,
+        from_info: _PortInfo | None,
+        to_info: _PortInfo | None,
     ) -> tuple[OutPort | InPort, OutPort | InPort]:
         """Resolve concrete port objects for a connection, creating externals when needed."""
 
-        def _existing_port(info: Dict[str, Any] | None, accessor) -> OutPort | InPort | None:
+        def _existing_port(info: _PortInfo | None, accessor) -> OutPort | InPort | None:
             if not info:
                 return None
-            port = info.get("port")
-            if port is not None:
-                return port
-            instance = info.get("instance")
-            if instance is None:
+            if info.port is not None:
+                return info.port
+            if info.instance is None:
                 return None
-            return accessor(instance.link_manager, info["port_name"])
+            return accessor(info.instance.link_manager, info.port_name)
 
         from_port = _existing_port(from_info, lambda lm, name: lm.get_out_port(name))
         to_port = _existing_port(to_info, lambda lm, name: lm.get_in_port(name))
@@ -329,28 +337,28 @@ class LinkManager:
                 raise ValidationError(
                     f"[E_CONN_TARGET_MISSING] EXTERNAL_TO_INTERNAL input.{connection.from_port_name} -> {connection.to_instance}.input.{connection.to_port_name}"
                 )
-            port_name = (from_info or {}).get("port_name", connection.from_port_name)
+            port_name = from_info.port_name if from_info else connection.from_port_name
             from_port = InPort(port_name, to_port.msg_type, self.instance.port_namespace)
         elif connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
             if from_port is None:
                 raise ValidationError(
                     f"[E_CONN_SOURCE_MISSING] INTERNAL_TO_EXTERNAL {connection.from_instance}.output.{connection.from_port_name} -> output.{connection.to_port_name}"
                 )
-            port_name = (to_info or {}).get("port_name", connection.to_port_name)
+            port_name = to_info.port_name if to_info else connection.to_port_name
             to_port = OutPort(port_name, from_port.msg_type, self.instance.port_namespace)
 
         if from_info is not None:
-            from_info["port"] = from_port
+            from_info.port = from_port
         if to_info is not None:
-            to_info["port"] = to_port
+            to_info.port = to_port
 
         return from_port, to_port
 
     def _create_wildcard_links(
         self,
         connection: Connection,
-        port_list_from: Dict[str, Dict[str, Any]],
-        port_list_to: Dict[str, Dict[str, Any]],
+        port_list_from: Dict[str, _PortInfo],
+        port_list_to: Dict[str, _PortInfo],
     ):
         """Create links for wildcard connections.
 
@@ -454,38 +462,26 @@ class LinkManager:
         # Check for and deduplicate duplicate connections
         connection_list = self._check_and_deduplicate_connections(connection_list)
 
-        # dictionary of ports, having field of instance, port-name, port-type
-        port_list_from: Dict[str, Dict[str, Any]] = {}
-        port_list_to: Dict[str, Dict[str, Any]] = {}
+        port_list_from: Dict[str, _PortInfo] = {}
+        port_list_to: Dict[str, _PortInfo] = {}
 
         # ports from children instances
         for child_instance in self.instance.children.values():
             for port_name, port in child_instance.link_manager.in_ports.items():
                 idx = f"{child_instance.name}.{port_name}"
-                port_list_to[idx] = {
-                    "instance": child_instance,
-                    "port_name": port_name,
-                    "port": port,
-                }
+                port_list_to[idx] = _PortInfo(port_name=port_name, instance=child_instance, port=port)
             for port_name, port in child_instance.link_manager.out_ports.items():
                 idx = f"{child_instance.name}.{port_name}"
-                port_list_from[idx] = {
-                    "instance": child_instance,
-                    "port_name": port_name,
-                    "port": port,
-                }
+                port_list_from[idx] = _PortInfo(port_name=port_name, instance=child_instance, port=port)
+
         # ports from external interfaces
         inputs = getattr(self.instance.configuration, "inputs", []) or []
         for ext_input in inputs:
-            port_name = ext_input.get("name")
-            idx = f".{port_name}"
-            port_list_from[idx] = {"instance": None, "port_name": port_name, "port": None}
+            port_list_from[f".{ext_input.name}"] = _PortInfo(port_name=ext_input.name, instance=None, port=None)
 
         outputs = getattr(self.instance.configuration, "outputs", []) or []
         for ext_output in outputs:
-            port_name = ext_output.get("name")
-            idx = f".{port_name}"
-            port_list_to[idx] = {"instance": None, "port_name": port_name, "port": None}
+            port_list_to[f".{ext_output.name}"] = _PortInfo(port_name=ext_output.name, instance=None, port=None)
 
         # Establish links based on connection type
         for connection in connection_list:
@@ -575,39 +571,35 @@ class LinkManager:
 
         # set in_ports
         for cfg_in_port in self.instance.configuration.inputs:
-            in_port_name = cfg_in_port.get("name")
-            in_port_msg_type = cfg_in_port.get("message_type")
             in_port_instance = InPort(
-                in_port_name,
-                in_port_msg_type,
+                cfg_in_port.name,
+                cfg_in_port.message_type,
                 self.instance.port_namespace,
-                remap_target=cfg_in_port.get("remap_target"),
+                remap_target=cfg_in_port.remap_target,
             )
-            if "global" in cfg_in_port:
+            if cfg_in_port.global_topic is not None:
                 in_port_instance.is_global = True
-                topic = cfg_in_port.get("global")
+                topic = cfg_in_port.global_topic
                 if topic[0] == "/":
                     topic = topic[1:]
                 in_port_instance.topic = topic.split("/")
-            self.in_ports[in_port_name] = in_port_instance
+            self.in_ports[cfg_in_port.name] = in_port_instance
 
         # set out_ports
         for cfg_out_port in self.instance.configuration.outputs:
-            out_port_name = cfg_out_port.get("name")
-            out_port_msg_type = cfg_out_port.get("message_type")
             out_port_instance = OutPort(
-                out_port_name,
-                out_port_msg_type,
+                cfg_out_port.name,
+                cfg_out_port.message_type,
                 self.instance.port_namespace,
-                remap_target=cfg_out_port.get("remap_target"),
+                remap_target=cfg_out_port.remap_target,
             )
-            if "global" in cfg_out_port:
+            if cfg_out_port.global_topic is not None:
                 out_port_instance.is_global = True
-                topic = cfg_out_port.get("global")
+                topic = cfg_out_port.global_topic
                 if topic[0] == "/":
                     topic = topic[1:]
                 out_port_instance.topic = topic.split("/")
-            self.out_ports[out_port_name] = out_port_instance
+            self.out_ports[cfg_out_port.name] = out_port_instance
 
     def get_input_events(self):
         """Get input events from all input ports."""

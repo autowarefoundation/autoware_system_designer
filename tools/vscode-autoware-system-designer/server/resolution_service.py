@@ -6,6 +6,7 @@ from typing import List, Optional, Set, Tuple
 from registry_manager import RegistryManager
 
 from autoware_system_designer.models.config import Config, ConfigType
+from autoware_system_designer.models.domain import PortDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -67,12 +68,12 @@ class ResolutionService:
         else:
             direct_ports = []
 
-        # Check direct ports first
+        # Check direct ports first (typed PortDefinition objects)
         for port in direct_ports:
-            if port.get("name") == port_name:
-                return port.get("message_type")
+            if port.name == port_name:
+                return port.message_type
 
-        # For variant nodes, check override ports (stored in raw config dict)
+        # For variant nodes, check override ports (stored as raw dicts in config.config["override"])
         raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
         override = raw.get("override", {})
         if isinstance(override, dict):
@@ -203,7 +204,7 @@ class ResolutionService:
 
         return None
 
-    def get_entity_inputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[dict]:
+    def get_entity_inputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[PortDefinition]:
         """Get resolved input ports for a config, applying variant overrides and base inheritance."""
         if _seen is None:
             _seen = set()
@@ -211,27 +212,29 @@ class ResolutionService:
             return []
         _seen.add(config.full_name)
 
-        inputs: List[dict] = list(config.inputs) if (hasattr(config, "inputs") and config.inputs) else []
+        inputs: List[PortDefinition] = list(config.inputs) if (hasattr(config, "inputs") and config.inputs) else []
 
+        # Check override ports in raw config (for unresolved variants in LSP context)
         raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
         override = raw.get("override", {})
         if isinstance(override, dict):
             override_inputs = override.get("inputs", []) or []
             if override_inputs:
                 override_names = {p.get("name") for p in override_inputs if p.get("name")}
-                inputs = [p for p in inputs if p.get("name") not in override_names] + override_inputs
+                inputs = [p for p in inputs if p.name not in override_names]
+                inputs += [PortDefinition.from_dict(p) for p in override_inputs]
 
         base_name = config.base if hasattr(config, "base") else None
         if base_name:
             base_config = self.registry_manager.get_entity(base_name)
             if base_config:
                 base_inputs = self.get_entity_inputs(base_config, _seen)
-                existing_names = {p.get("name") for p in inputs if p.get("name")}
-                inputs = inputs + [p for p in base_inputs if p.get("name") not in existing_names]
+                existing_names = {p.name for p in inputs}
+                inputs = inputs + [p for p in base_inputs if p.name not in existing_names]
 
         return inputs
 
-    def get_entity_outputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[dict]:
+    def get_entity_outputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[PortDefinition]:
         """Get resolved output ports for a config, applying variant overrides and base inheritance."""
         if _seen is None:
             _seen = set()
@@ -239,23 +242,25 @@ class ResolutionService:
             return []
         _seen.add(config.full_name)
 
-        outputs: List[dict] = list(config.outputs) if (hasattr(config, "outputs") and config.outputs) else []
+        outputs: List[PortDefinition] = list(config.outputs) if (hasattr(config, "outputs") and config.outputs) else []
 
+        # Check override ports in raw config (for unresolved variants in LSP context)
         raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
         override = raw.get("override", {})
         if isinstance(override, dict):
             override_outputs = override.get("outputs", []) or []
             if override_outputs:
                 override_names = {p.get("name") for p in override_outputs if p.get("name")}
-                outputs = [p for p in outputs if p.get("name") not in override_names] + override_outputs
+                outputs = [p for p in outputs if p.name not in override_names]
+                outputs += [PortDefinition.from_dict(p) for p in override_outputs]
 
         base_name = config.base if hasattr(config, "base") else None
         if base_name:
             base_config = self.registry_manager.get_entity(base_name)
             if base_config:
                 base_outputs = self.get_entity_outputs(base_config, _seen)
-                existing_names = {p.get("name") for p in outputs if p.get("name")}
-                outputs = outputs + [p for p in base_outputs if p.get("name") not in existing_names]
+                existing_names = {p.name for p in outputs}
+                outputs = outputs + [p for p in base_outputs if p.name not in existing_names]
 
         return outputs
 

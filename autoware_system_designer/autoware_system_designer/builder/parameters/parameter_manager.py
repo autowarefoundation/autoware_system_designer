@@ -670,9 +670,8 @@ class ParameterManager:
         # Use new param_files field, fallback to parameter_files is handled in parser
         if hasattr(self.instance.configuration, "param_files") and self.instance.configuration.param_files:
             for idx, cfg_param in enumerate(self.instance.configuration.param_files):
-                param_name = cfg_param.get("name")
-                param_value = cfg_param.get("value", cfg_param.get("default"))
-                # param_schema = cfg_param.get("schema")
+                param_name = cfg_param.name
+                param_value = cfg_param.path
 
                 cfg_source = source_from_config(self.instance.configuration, f"/param_files/{idx}")
 
@@ -708,9 +707,9 @@ class ParameterManager:
         # Use new param_values field, fallback to parameters is handled in parser
         if hasattr(self.instance.configuration, "param_values") and self.instance.configuration.param_values:
             for idx, cfg_param in enumerate(self.instance.configuration.param_values):
-                param_name = cfg_param.get("name")
-                param_value = cfg_param.get("value", cfg_param.get("default"))
-                param_type = cfg_param.get("type", "string")
+                param_name = cfg_param.name
+                param_value = cfg_param.value
+                param_type = cfg_param.type
 
                 cfg_source = source_from_config(self.instance.configuration, f"/param_values/{idx}")
 

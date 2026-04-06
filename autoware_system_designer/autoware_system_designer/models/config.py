@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
+
 
 class ConfigType:
     """Constants for entity types."""
@@ -71,10 +73,10 @@ class NodeConfig(Config):
     package_provider: Optional[str] = None
     package_resolution: Optional[str] = None  # "source" or "installed", set from workspace.yaml
     launch: Dict[str, Any] = None
-    inputs: List[Dict[str, Any]] = None   # Each dict has port_role: "subscriber" | "client"
-    outputs: List[Dict[str, Any]] = None  # Each dict has port_role: "publisher" | "server"
-    param_files: Optional[List[Dict[str, Any]]] = None
-    param_values: Optional[List[Dict[str, Any]]] = None
+    inputs: List[PortDefinition] = None
+    outputs: List[PortDefinition] = None
+    param_files: Optional[List[ParameterFileDefinition]] = None
+    param_values: Optional[List[ParameterValueDefinition]] = None
     processes: List[Dict[str, Any]] = None
 
 
@@ -84,8 +86,8 @@ class ModuleConfig(Config):
 
     base: Optional[str] = None  # Parent entity name for variants
     instances: List[Dict[str, Any]] = None
-    inputs: List[Dict[str, Any]] = None   # Each dict has port_role: "subscriber" | "client"
-    outputs: List[Dict[str, Any]] = None  # Each dict has port_role: "publisher" | "server"
+    inputs: List[PortDefinition] = None
+    outputs: List[PortDefinition] = None
     connections: List[Dict[str, Any]] = None
 
 

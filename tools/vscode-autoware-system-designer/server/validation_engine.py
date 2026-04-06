@@ -10,6 +10,7 @@ from registry_manager import RegistryManager
 from resolution_service import ResolutionService
 
 from autoware_system_designer.models.config import Config, ConfigType
+from autoware_system_designer.models.domain import PortDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -234,10 +235,10 @@ class ValidationEngine:
 
         return diagnostics
 
-    def _get_entity_inputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[dict]:
+    def _get_entity_inputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[PortDefinition]:
         return self.resolution_service.get_entity_inputs(config, _seen)
 
-    def _get_entity_outputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[dict]:
+    def _get_entity_outputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[PortDefinition]:
         return self.resolution_service.get_entity_outputs(config, _seen)
 
     # Port direction terms used in YAML connection strings map to stored inputs/outputs
@@ -266,7 +267,7 @@ class ValidationEngine:
                 inputs = self._get_entity_inputs(config)
                 if not inputs:
                     return False, f"No input interfaces defined in module {config.name}"
-                input_names = [iface.get("name") for iface in inputs if iface.get("name")]
+                input_names = [iface.name for iface in inputs if iface.name]
                 if parts[1] not in input_names:
                     return (
                         False,
@@ -279,7 +280,7 @@ class ValidationEngine:
                 outputs = self._get_entity_outputs(config)
                 if not outputs:
                     return False, f"No output interfaces defined in module {config.name}"
-                output_names = [iface.get("name") for iface in outputs if iface.get("name")]
+                output_names = [iface.name for iface in outputs if iface.name]
                 if parts[1] not in output_names:
                     return (
                         False,
@@ -315,7 +316,7 @@ class ValidationEngine:
                             inputs = self._get_entity_inputs(entity_config)
                             if not inputs:
                                 return False, f"Entity '{entity_name}' has no input ports"
-                            input_names = [port.get("name") for port in inputs if port.get("name")]
+                            input_names = [port.name for port in inputs if port.name]
                             if port_name not in input_names:
                                 return (
                                     False,
@@ -325,7 +326,7 @@ class ValidationEngine:
                             outputs = self._get_entity_outputs(entity_config)
                             if not outputs:
                                 return False, f"Entity '{entity_name}' has no output ports"
-                            output_names = [port.get("name") for port in outputs if port.get("name")]
+                            output_names = [port.name for port in outputs if port.name]
                             if port_name not in output_names:
                                 return (
                                     False,
@@ -367,7 +368,7 @@ class ValidationEngine:
                         inputs = self._get_entity_inputs(entity_config)
                         if not inputs:
                             return False, f"Entity '{component_entity}' has no input ports"
-                        input_names = [port.get("name") for port in inputs if port.get("name")]
+                        input_names = [port.name for port in inputs if port.name]
                         if port_name not in input_names:
                             return (
                                 False,
@@ -377,7 +378,7 @@ class ValidationEngine:
                         outputs = self._get_entity_outputs(entity_config)
                         if not outputs:
                             return False, f"Entity '{component_entity}' has no output ports"
-                        output_names = [port.get("name") for port in outputs if port.get("name")]
+                        output_names = [port.name for port in outputs if port.name]
                         if port_name not in output_names:
                             return (
                                 False,

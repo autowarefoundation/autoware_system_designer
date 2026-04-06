@@ -28,6 +28,7 @@ from ..config import (
     ParameterSetConfig,
     SystemConfig,
 )
+from ..domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
 from .data_validator import ValidatorFactory, entity_name_decode
 from .yaml_parser import yaml_parser
 
@@ -272,10 +273,10 @@ class ConfigParser:
                 package_name=pkg_name,
                 package_provider=pkg_provider,
                 launch=config.get("launch"),
-                inputs=config.get("inputs"),
-                outputs=config.get("outputs"),
-                param_files=param_files,
-                param_values=param_values,
+                inputs=[PortDefinition.from_dict(p) for p in config.get("inputs") or []],
+                outputs=[PortDefinition.from_dict(p) for p in config.get("outputs") or []],
+                param_files=[ParameterFileDefinition.from_dict(p) for p in param_files] if param_files else None,
+                param_values=[ParameterValueDefinition.from_dict(p) for p in param_values] if param_values else None,
                 processes=config.get("processes"),
             )
         elif entity_type == ConfigType.MODULE:
@@ -285,8 +286,8 @@ class ConfigParser:
                 base=base_name,
                 sub_type=sub_type,
                 instances=config.get("instances"),
-                inputs=config.get("inputs"),
-                outputs=config.get("outputs"),
+                inputs=[PortDefinition.from_dict(p) for p in config.get("inputs") or []],
+                outputs=[PortDefinition.from_dict(p) for p in config.get("outputs") or []],
                 connections=config.get("connections"),
             )
         elif entity_type == ConfigType.PARAMETER_SET:

@@ -13,9 +13,10 @@
 # limitations under the License.
 
 import logging
-from typing import Any, Dict, List, Optional, TypeVar
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 from ...models.config import ModuleConfig, NodeConfig, SystemConfig
+from ...models.domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
 from .connection_resolver import filter_connections_by_removed_entities
 
 logger = logging.getLogger(__name__)
@@ -24,11 +25,19 @@ logger = logging.getLogger(__name__)
 class VariantResolver:
     """Base class for resolving variant merging and removals."""
 
-    def _merge_list(self, base_list: List[Dict], override_list: List[Dict], key_field: str = None) -> List[Dict]:
+    @staticmethod
+    def _get_field(item: Any, key_field: str) -> Any:
+        """Get a field value from either a dataclass or a dict."""
+        if isinstance(item, dict):
+            return item.get(key_field)
+        return getattr(item, key_field, None)
+
+    def _merge_list(self, base_list: List[Any], override_list: List[Any], key_field: str = None) -> List[Any]:
         """
         Merge override_list into base_list.
         If key_field is provided, items with matching key_field in override_list replace those in base_list.
         Otherwise, items are appended.
+        Items may be dicts or typed dataclass instances.
         """
         if not override_list:
             return base_list or []
@@ -38,19 +47,16 @@ class VariantResolver:
         if key_field:
             # Create a map for quick lookup and replacement
             base_map = {
-                item[key_field]: i for i, item in enumerate(merged_list) if isinstance(item, dict) and key_field in item
+                self._get_field(item, key_field): i
+                for i, item in enumerate(merged_list)
+                if self._get_field(item, key_field) is not None
             }
 
             for item in override_list:
-                if isinstance(item, dict):
-                    key = item.get(key_field)
-                    if key and key in base_map:
-                        merged_list[base_map[key]] = item
-                    else:
-                        # Append new item
-                        merged_list.append(item)
+                key = self._get_field(item, key_field)
+                if key and key in base_map:
+                    merged_list[base_map[key]] = item
                 else:
-                    # For non-dict items, always append
                     merged_list.append(item)
         else:
             # Simple append if no key_field is provided
@@ -63,13 +69,14 @@ class VariantResolver:
         Remove items from target_list based on remove_specs.
         If key_field is provided, remove items where item[key_field] matches spec[key_field].
         Otherwise, remove items that match all properties in spec.
+        Items may be dicts or typed dataclass instances; remove_specs are always dicts or scalars.
         """
         if not remove_specs or not target_list:
             return target_list
 
         result_list = []
 
-        # Prepare lookup for key-based removal (dict items only)
+        # Prepare lookup for key-based removal
         remove_keys = set()
         if key_field:
             for spec in remove_specs:
@@ -84,10 +91,17 @@ class VariantResolver:
         for item in target_list:
             should_remove = False
             if key_field:
-                if isinstance(item, dict) and item.get(key_field) in remove_keys:
+                item_key = self._get_field(item, key_field)
+                if item_key in remove_keys:
                     should_remove = True
-                elif not isinstance(item, dict) and item in scalar_remove_values:
-                    should_remove = True
+                elif item_key is None and not isinstance(item, dict):
+                    # Scalar item with no key_field value (e.g. bare string in a mixed list)
+                    temp = frozenset(item) if isinstance(item, list) else item
+                    try:
+                        if temp in scalar_remove_values:
+                            should_remove = True
+                    except TypeError:
+                        pass  # unhashable typed object — handled by key_field lookup above
             else:
                 if not isinstance(item, dict):
                     temp = frozenset(item) if isinstance(item, list) else item
@@ -113,19 +127,26 @@ class VariantResolver:
         merge_specs format:
         [
             {'field': 'variables', 'key_field': 'name'},
+            {'field': 'inputs', 'key_field': 'name', 'converter': PortDefinition.from_dict},
             {'field': 'connections', 'key_field': None}
         ]
+        The optional 'converter' callable converts override dict items to the appropriate typed object.
         """
         override_config = config_yaml.get("override", {})
         for spec in merge_specs:
             field = spec["field"]
             key_field = spec["key_field"]
+            converter: Optional[Callable] = spec.get("converter")
 
             # Get current list from object
             base_list = getattr(config_object, field)
 
-            # Get override list from yaml
+            # Get override list from yaml (raw dicts)
             override_list = override_config.get(field, [])
+
+            # Convert override items to typed objects if a converter is provided
+            if converter and override_list:
+                override_list = [converter(item) if isinstance(item, dict) else item for item in override_list]
 
             # Merge
             merged_list = self._merge_list(base_list, override_list, key_field)
@@ -232,10 +253,10 @@ class NodeVariantResolver(VariantResolver):
             node_config.launch.update(override_config["launch"])
 
         merge_specs = [
-            {"field": "inputs", "key_field": "name"},
-            {"field": "outputs", "key_field": "name"},
-            {"field": "param_files", "key_field": "name"},
-            {"field": "param_values", "key_field": "name"},
+            {"field": "inputs", "key_field": "name", "converter": PortDefinition.from_dict},
+            {"field": "outputs", "key_field": "name", "converter": PortDefinition.from_dict},
+            {"field": "param_files", "key_field": "name", "converter": ParameterFileDefinition.from_dict},
+            {"field": "param_values", "key_field": "name", "converter": ParameterValueDefinition.from_dict},
             {"field": "processes", "key_field": "name"},
         ]
         self._resolve_merges(node_config, config_yaml, merge_specs)
@@ -246,7 +267,7 @@ class NodeVariantResolver(VariantResolver):
             {"field": "outputs", "key_field": "name"},
             {"field": "param_files", "key_field": "name"},
             {"field": "param_values", "key_field": "name"},
-            {"field": "processes", "key_field": "name"},
+            {"field": "processes", "key_field": "name"},  # processes remain as dicts
         ]
         self._resolve_removals(node_config, remove_config, remove_specs)
 
@@ -268,8 +289,8 @@ class ModuleVariantResolver(VariantResolver):
 
         merge_specs = [
             {"field": "instances", "key_field": "name"},
-            {"field": "inputs", "key_field": "name"},
-            {"field": "outputs", "key_field": "name"},
+            {"field": "inputs", "key_field": "name", "converter": PortDefinition.from_dict},
+            {"field": "outputs", "key_field": "name", "converter": PortDefinition.from_dict},
             {"field": "connections", "key_field": None},
         ]
         self._resolve_merges(module_config, config_yaml, merge_specs)

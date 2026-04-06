@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from ..builder.runtime.execution import LaunchState
 from ..exceptions import ValidationError
@@ -23,47 +23,6 @@ from ..file_io.template_renderer import TemplateRenderer
 from ..models.config import ConfigType, NodeConfig
 from ..models.parsing.data_parser import ConfigParser
 from ..utils import pascal_to_snake
-
-
-def _normalize_parameter_files(parameter_files: Any) -> List[Dict[str, Any]]:
-    if not parameter_files:
-        return []
-
-    if isinstance(parameter_files, list):
-        return [dict(item) for item in parameter_files if isinstance(item, dict)]
-
-    if isinstance(parameter_files, dict):
-        # Single object form: {name: ..., default/path: ..., ...}
-        if "name" in parameter_files:
-            return [dict(parameter_files)]
-
-        # Mapping form: {param_file_name: path}
-        result: List[Dict[str, Any]] = []
-        for name, path in parameter_files.items():
-            result.append({"name": str(name), "default": path})
-        return result
-
-    return []
-
-
-def _normalize_parameters(parameters: Any) -> List[Dict[str, Any]]:
-    if not parameters:
-        return []
-
-    if isinstance(parameters, list):
-        return [dict(item) for item in parameters if isinstance(item, dict)]
-
-    if isinstance(parameters, dict):
-        if "name" in parameters:
-            return [dict(parameters)]
-
-        # Mapping form: {param_name: value}
-        result: List[Dict[str, Any]] = []
-        for name, value in parameters.items():
-            result.append({"name": str(name), "default": value})
-        return result
-
-    return []
 
 
 def _process_parameter_path(path: Any, package_name: Optional[str]) -> Any:
@@ -104,27 +63,21 @@ def create_node_launcher_xml(node_config: NodeConfig) -> str:
     template_data["inputs"] = node_config.inputs or []
     template_data["outputs"] = node_config.outputs or []
 
-    param_path_list = _normalize_parameter_files(node_config.param_files)
     template_data["param_files"] = [
         {
-            "name": param_file.get("name"),
-            "default": _process_parameter_path(param_file.get("default"), package_name),
-            "allow_substs": str(param_file.get("allow_substs", False)).lower(),
+            "name": pf.name,
+            "default": _process_parameter_path(pf.path, package_name),
+            "allow_substs": str(pf.allow_substs).lower(),
         }
-        for param_file in param_path_list
+        for pf in (node_config.param_files or [])
     ]
 
-    parameter_list = _normalize_parameters(node_config.param_values)
     template_data["param_values"] = [
         {
-            "name": param.get("name"),
-            "default_value": (
-                str(param.get("default")).lower()
-                if param.get("type") == "bool" or isinstance(param.get("default"), bool)
-                else param.get("default")
-            ),
+            "name": pv.name,
+            "default_value": (str(pv.value).lower() if pv.type == "bool" or isinstance(pv.value, bool) else pv.value),
         }
-        for param in parameter_list
+        for pv in (node_config.param_values or [])
     ]
 
     renderer = TemplateRenderer()
