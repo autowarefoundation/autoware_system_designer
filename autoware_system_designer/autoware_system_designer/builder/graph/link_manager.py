@@ -16,10 +16,11 @@ import difflib
 import logging
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from ...exceptions import ValidationError
 from ...file_io.source_location import format_source, source_from_config
+from ...models.system_structure import LauncherPortData
 from ..runtime.links import Connection, ConnectionType, Link
 from ..runtime.ports import InPort, OutPort
 
@@ -659,13 +660,9 @@ class LinkManager:
         """Get all output ports."""
         return list(self.out_ports.values())
 
-    def get_all_remap_ports(self):
-        """Get all ports for topic remapping.
-
-        Returns:
-            {"name": str, "topic": str, "remap_target": Optional[str]}.
-        """
-        ports: List[Dict[str, Any]] = []
+    def get_all_remap_ports(self) -> List[LauncherPortData]:
+        """Get all ports for topic remapping."""
+        ports: List[LauncherPortData] = []
 
         for port in self.in_ports.values():
             if port.is_global or port.get_topic() == "":

@@ -6,6 +6,8 @@ from ...models.system_structure import (
     SCHEMA_VERSION,
     EventData,
     InstanceData,
+    ParameterData,
+    ParameterFileData,
     PortData,
     SystemStructurePayload,
 )
@@ -117,13 +119,13 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
         ),
         "events": [serialize_event(e) for e in instance.event_manager.get_all_events()],
         "parameters": [
-            {
-                "name": p.name,
-                "value": p.value,
-                "type": p.data_type,
-                "parameter_type": serialize_parameter_type(p.parameter_type),
-                "source": serialize_source(p.source),
-            }
+            ParameterData(
+                name=p.name,
+                value=p.value,
+                type=p.data_type,
+                parameter_type=serialize_parameter_type(p.parameter_type),
+                source=serialize_source(p.source),
+            )
             for p in instance.parameter_manager.get_all_parameters()
         ],
     }
@@ -131,14 +133,14 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
     if instance.entity_type == "node":
         data["package"] = instance.launch_manager.package_name
         data["parameter_files_all"] = [
-            {
-                "name": pf.name,
-                "path": pf.path,
-                "allow_substs": pf.allow_substs,
-                "is_override": pf.is_override,
-                "parameter_type": serialize_parameter_type(pf.parameter_type),
-                "source": serialize_source(pf.source),
-            }
+            ParameterFileData(
+                name=pf.name,
+                path=pf.path,
+                allow_substs=pf.allow_substs,
+                is_override=pf.is_override,
+                parameter_type=serialize_parameter_type(pf.parameter_type),
+                source=serialize_source(pf.source),
+            )
             for pf in instance.parameter_manager.get_all_parameter_files()
         ]
         data["launcher"] = collect_launcher_data(instance)

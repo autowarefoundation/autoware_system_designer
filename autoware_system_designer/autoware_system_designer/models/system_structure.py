@@ -56,6 +56,19 @@ class LauncherPortData(TypedDict, total=False):
     remap_target: Optional[str]
 
 
+class LauncherParamValueData(TypedDict, total=False):
+    name: str
+    value: Any
+    parameter_type: str
+
+
+class LauncherParamFileData(TypedDict, total=False):
+    name: str
+    path: str
+    allow_substs: bool
+    parameter_type: str
+
+
 class LauncherData(TypedDict, total=False):
     package: str
     ros2_launch_file: Optional[str]
@@ -66,8 +79,8 @@ class LauncherData(TypedDict, total=False):
     executable: str
     container: str
     ports: List[LauncherPortData]
-    param_values: List[Dict[str, Any]]
-    param_files: List[Dict[str, Any]]
+    param_values: List[LauncherParamValueData]
+    param_files: List[LauncherParamFileData]
 
 
 class LinkData(TypedDict, total=False):

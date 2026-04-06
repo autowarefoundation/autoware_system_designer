@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from ...exceptions import ParameterConfigurationError, ValidationError
 from ...file_io.source_location import SourceLocation, format_source, source_from_config
 from ...models.parsing.yaml_parser import yaml_parser
+from ...models.system_structure import LauncherParamFileData, LauncherParamValueData
 from ...utils.parameter_types import coerce_numeric_value, normalize_type_name
 from ..runtime.execution import LaunchState
 from ..runtime.namespace import (
@@ -167,16 +168,14 @@ class ParameterManager:
 
         return [arg for arg in system_args if arg in required]
 
-    def get_parameters_for_launch(self) -> List[Dict[str, Any]]:
+    def get_parameters_for_launch(self) -> List[LauncherParamValueData]:
         """Get all parameters for launcher generation.
 
-        Returns list of parameter dicts:
-        - {"type": "param", "name": "...", "value": "...", "parameter_type": ParameterType}
-
+        Returns list of parameter dicts with name, value, and parameter_type.
         Global parameters are returned first (applied first in launcher), followed by other parameters.
         Higher priority parameters will override lower priority ones.
         """
-        result = []
+        result: List[LauncherParamValueData] = []
 
         # sort by its priority. larger enum value is lower priority, comes earlier in the launcher
         self.parameters.list.sort(key=lambda x: x.parameter_type.value)
@@ -186,7 +185,6 @@ class ParameterManager:
             if param.value is not None:
                 result.append(
                     {
-                        "type": "param",
                         "name": param.name,
                         "value": param.value,
                         "parameter_type": parameter_type_to_str(param.parameter_type),
@@ -195,13 +193,12 @@ class ParameterManager:
 
         return result
 
-    def get_parameter_files_for_launch(self) -> List[Dict[str, Any]]:
+    def get_parameter_files_for_launch(self) -> List[LauncherParamFileData]:
         """Get all parameter files for launcher generation.
 
-        Returns list of parameter file dicts:
-        - {"type": "param_file", "path": "..."}
+        Returns list of parameter file dicts with name, path, allow_substs, and parameter_type.
         """
-        result = []
+        result: List[LauncherParamFileData] = []
         for param_file in self.parameter_files.list:
             # Skip DEFAULT_FILE parameter files as their parameters are expanded individually
             if param_file.parameter_type == ParameterType.DEFAULT_FILE:
@@ -212,7 +209,6 @@ class ParameterManager:
             )
             result.append(
                 {
-                    "type": "param_file",
                     "name": param_file.name,
                     "path": resolved_path,
                     "allow_substs": param_file.allow_substs,
