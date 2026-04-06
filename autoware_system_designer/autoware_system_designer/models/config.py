@@ -14,9 +14,71 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
 from .domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
+
+
+class LaunchConfigDict(TypedDict, total=False):
+    plugin: str
+    executable: str
+    ros2_launch_file: str
+    node_output: str
+    args: str
+    container_name: str
+    type: str
+    launch_state: str
+
+
+class ProcessDict(TypedDict, total=False):
+    name: str
+    trigger_conditions: List[Any]
+    outcomes: List[Any]
+
+
+class InstanceRefDict(TypedDict, total=False):
+    name: str
+    entity: str
+
+
+class ComponentDict(TypedDict, total=False):
+    name: str
+    entity: str
+    path: str
+    compute_unit: str
+    parameter_set: Union[str, List[str]]
+
+
+class ArgumentDict(TypedDict, total=False):
+    name: str
+
+
+class ModeDict(TypedDict, total=False):
+    name: str
+    description: str
+    default: bool
+
+
+class VariableDict(TypedDict, total=False):
+    name: str
+    value: Any
+    default: Any
+
+
+class VariableFileDict(TypedDict, total=False):
+    name: str
+    path: str
+
+
+class NodeGroupDict(TypedDict, total=False):
+    name: str
+    type: str
+    nodes: List[str]
+
+
+class ParameterSetItemDict(TypedDict, total=False):
+    node: str
+    param_values: List[Dict[str, Any]]
 
 
 class ConfigType:
@@ -72,12 +134,12 @@ class NodeConfig(Config):
     package_name: Optional[str] = None
     package_provider: Optional[str] = None
     package_resolution: Optional[str] = None  # "source" or "installed", set from workspace.yaml
-    launch: Dict[str, Any] = None
+    launch: Optional[LaunchConfigDict] = None
     inputs: List[PortDefinition] = None
     outputs: List[PortDefinition] = None
     param_files: Optional[List[ParameterFileDefinition]] = None
     param_values: Optional[List[ParameterValueDefinition]] = None
-    processes: List[Dict[str, Any]] = None
+    processes: Optional[List[ProcessDict]] = None
 
 
 @dataclass
@@ -85,18 +147,18 @@ class ModuleConfig(Config):
     """Data structure for module entities."""
 
     base: Optional[str] = None  # Parent entity name for variants
-    instances: List[Dict[str, Any]] = None
+    instances: Optional[List[InstanceRefDict]] = None
     inputs: List[PortDefinition] = None
     outputs: List[PortDefinition] = None
-    connections: List[Dict[str, Any]] = None
+    connections: Optional[List[Any]] = None
 
 
 @dataclass
 class ParameterSetConfig(Config):
     """Data structure for parameter set entities."""
 
-    parameters: Optional[List[Dict[str, Any]]] = None
-    local_variables: List[Dict[str, Any]] = None
+    parameters: Optional[List[ParameterSetItemDict]] = None
+    local_variables: Optional[List[VariableDict]] = None
 
 
 @dataclass
@@ -104,12 +166,12 @@ class SystemConfig(Config):
     """Data structure for system entities."""
 
     base: Optional[str] = None  # Parent entity name for variants
-    arguments: List[Dict[str, Any]] = None
-    modes: List[Dict[str, Any]] = None
-    mode_configs: Dict[str, Dict[str, Any]] = None  # Mode-specific overrides/removals
-    parameter_sets: List[str] = None  # System-level parameter sets
-    components: List[Dict[str, Any]] = None
-    connections: List[Dict[str, Any]] = None
-    variables: List[Dict[str, Any]] = None
-    variable_files: List[Dict[str, Any]] = None
-    node_groups: List[Dict[str, Any]] = None
+    arguments: Optional[List[ArgumentDict]] = None
+    modes: Optional[List[ModeDict]] = None
+    mode_configs: Optional[Dict[str, Dict[str, Any]]] = None  # Mode-specific overrides/removals
+    parameter_sets: Optional[List[str]] = None  # System-level parameter sets
+    components: Optional[List[ComponentDict]] = None
+    connections: Optional[List[Any]] = None
+    variables: Optional[List[VariableDict]] = None
+    variable_files: Optional[List[VariableFileDict]] = None
+    node_groups: Optional[List[NodeGroupDict]] = None
