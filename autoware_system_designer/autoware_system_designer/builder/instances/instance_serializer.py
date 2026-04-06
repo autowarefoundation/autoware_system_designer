@@ -10,6 +10,7 @@ to strongly-typed InstanceData TypedDicts. Each Instance tree is recursively
 converted, with separate helpers for ports, parameters, events, and links.
 The result is passed to system_structure_json.py for JSON serialization.
 """
+
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
 

@@ -88,5 +88,3 @@ class ParameterValueDefinition:
             value=value,
             type=d.get("type", "string"),
         )
-
-

@@ -10,6 +10,7 @@ This module provides I/O functions for saving/loading SystemStructurePayload
 (the schema-versioned InstanceData wrapper). Conversion from Instance to
 InstanceData is delegated to instance_serializer.py.
 """
+
 import json
 import logging
 import os

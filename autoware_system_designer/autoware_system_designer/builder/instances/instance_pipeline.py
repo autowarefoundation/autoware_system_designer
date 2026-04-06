@@ -11,6 +11,7 @@ This module implements the Config→Instance conversion. It orchestrates:
 - Port and link management (link_manager, port system)
 - Event and parameter setup (event_manager, parameter_manager)
 """
+
 import logging
 from typing import Callable, Dict
 
