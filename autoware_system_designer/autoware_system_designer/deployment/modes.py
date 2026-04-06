@@ -18,9 +18,9 @@ import copy
 import logging
 from typing import List, Tuple
 
-from ..builder.resolution.variant_resolver import SystemVariantResolver
+from ..building.resolution.variant_resolver import SystemVariantResolver
 from ..file_io.source_location import format_source, source_from_config
-from ..models.config import SystemConfig
+from ..parsing.config import SystemConfig
 
 logger = logging.getLogger(__name__)
 

@@ -18,7 +18,7 @@ import logging
 import os
 from typing import Any, Dict, List
 
-from ..file_io.system_structure_json import extract_system_structure_data, load_system_structure
+from ..exporting.json_io import extract_system_structure_data, load_system_structure
 from ..file_io.template_renderer import TemplateRenderer
 
 logger = logging.getLogger(__name__)

@@ -18,21 +18,22 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .builder.config.config_registry import ConfigRegistry
-from .builder.deployment_instance import DeploymentInstance
+from .building.config.config_registry import ConfigRegistry
+from .building.deployment_instance import DeploymentInstance
 from .deployment.deploy_launchers import generate_deploy_launchers
 from .deployment.deployment_config import DeploymentConfig
 from .deployment.modes import apply_mode_configuration, select_modes
 from .deployment.parser import iter_mode_data, resolve_input_target
 from .exceptions import DeploymentError, ValidationError
-from .file_io.source_location import SourceLocation, format_source
-from .file_io.system_structure_json import (
+from .exporting.instance_to_json import collect_system_structure
+from .exporting.json_io import (
     save_system_structure,
     save_system_structure_snapshot,
 )
+from .file_io.source_location import SourceLocation, format_source
 from .file_io.template_renderer import TemplateRenderer
-from .models.config import NodeConfig, SystemConfig
-from .models.parsing.yaml_parser import yaml_parser
+from .parsing.config import NodeConfig, SystemConfig
+from .parsing.loaders.yaml_parser import yaml_parser
 from .ros2_launcher.generate_module_launcher import generate_module_launch_file
 from .template.parameter_template_generator import ParameterTemplateGenerator
 from .utils import generate_build_scripts
@@ -44,56 +45,67 @@ logger = logging.getLogger(__name__)
 
 class Deployment:
     def __init__(self, deploy_config: DeploymentConfig):
-        # entity collection
+        # Layer 1: YAML → Config (via ConfigRegistry)
+        system_config, self.config_registry, self.deploy_variants, self.deployment_table_path = (
+            self._layer1_yaml_to_config(deploy_config)
+        )
+
+        # Layer 2+3: Config → Instance → JSON (via DeploymentInstance and serialization)
+        self._initialize_from_system_config(system_config, deploy_config)
+
+    def _layer1_yaml_to_config(self, deploy_config: DeploymentConfig):
+        """Layer 1: Load YAML manifests and resolve system config."""
+        # Load manifests and build ConfigRegistry
         system_yaml_list, package_paths, file_package_map = self._get_system_list(deploy_config)
-        self.config_registry = ConfigRegistry(
+        config_registry = ConfigRegistry(
             system_yaml_list,
             package_paths,
             file_package_map,
             workspace_config=deploy_config.workspace_config,
         )
         deployment_file_abs = str(Path(deploy_config.deployment_file).resolve())
-        self.config_registry.deployment_package_name = file_package_map.get(deployment_file_abs)
+        config_registry.deployment_package_name = file_package_map.get(deployment_file_abs)
 
-        # detect mode of input file (deployment vs system only)
         logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)
 
+        # Resolve input target (could be deployment file or system-only file)
         input_path = deploy_config.deployment_file
-        self.deploy_variants: List[Dict[str, Any]] = []
-        self.deployment_table_path: Optional[str] = None
-        self.system_argument_variables: List[str] = []
+        deploy_variants: List[Dict[str, Any]] = []
+        deployment_table_path: Optional[str] = None
 
-        system_config, self.deploy_variants, self.deployment_table_path = resolve_input_target(
-            input_path, self.config_registry
-        )
+        system_config, deploy_variants, deployment_table_path = resolve_input_target(input_path, config_registry)
         if not system_config:
             raise ValidationError(f"System not found from input: {input_path}")
 
         # Fallback for deployments-table mode where deployment_file itself is not an entity file.
-        if self.config_registry.deployment_package_name is None:
+        if config_registry.deployment_package_name is None:
             system_file_abs = str(Path(system_config.file_path).resolve())
-            self.config_registry.deployment_package_name = file_package_map.get(system_file_abs)
+            config_registry.deployment_package_name = file_package_map.get(system_file_abs)
 
-        self.config_yaml_dir = str(system_config.file_path)
-        logger.info(f"Resolved system file path from registry: {self.config_yaml_dir}")
+        logger.info(f"Resolved system file path from registry: {system_config.file_path}")
+        return system_config, config_registry, deploy_variants, deployment_table_path
 
+    def _initialize_from_system_config(self, system_config: SystemConfig, deploy_config: DeploymentConfig):
+        """Initialize deployment state from resolved system config."""
         self.name = system_config.name
         self.system_argument_variables = self._collect_system_argument_names(system_config)
         self.deployment_package_path = str(Path(deploy_config.output_root_dir).resolve())
+        self.config_yaml_dir = str(system_config.file_path)
 
-        # mode identifiers
-        self.mode_keys: List[str] = []
-
-        # set output paths
+        # Set output directory structure
         self.output_root_dir = deploy_config.output_root_dir
         self.launcher_dir = os.path.join(self.output_root_dir, "exports", self.name, "launcher/")
         self.system_monitor_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_monitor/")
         self.visualization_dir = os.path.join(self.output_root_dir, "exports", self.name, "visualization/")
         self.parameter_set_dir = os.path.join(self.output_root_dir, "exports", self.name, "parameter_set/")
         self.system_structure_dir = os.path.join(self.output_root_dir, "exports", self.name, "system_structure/")
+
+        # Build the deployment (Layers 2 and 3)
+        self.mode_keys: List[str] = []
         self.system_structure_snapshots: Dict[str, Dict[str, Any]] = {}
 
-        # build the deployment
+        # Get package paths from layer 1
+        _, package_paths, _ = self._get_system_list(deploy_config)
         self._build(system_config, package_paths)
 
     def _collect_deploy_variable_names(self) -> List[str]:
@@ -183,6 +195,8 @@ class Deployment:
         deploy_instance: DeploymentInstance,
         snapshot_store: Dict[str, Any],
     ):
+        """Create callback for saving intermediate snapshots during instance population (Layer 2)."""
+
         def snapshot_callback(step: str, error: Exception | None = None) -> None:
             snapshot_path = os.path.join(self.system_structure_dir, f"{mode_key}_{step}.json")
             payload = save_system_structure_snapshot(snapshot_path, deploy_instance, self.name, mode_key, step, error)
@@ -190,13 +204,14 @@ class Deployment:
 
         return snapshot_callback
 
-    def _build_mode_instance(
+    def _layer2_config_to_instance(
         self,
         mode_name: str,
         mode_system_config: SystemConfig,
         package_paths: Dict[str, str],
         default_mode: str,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, DeploymentInstance, Dict[str, Any]]:
+        """Layer 2: Transform Config → Instance (populate DeploymentInstance from SystemConfig)."""
         mode_suffix = f"_{mode_name}" if mode_name else ""
         instance_name = f"{self.name}{mode_suffix}"
         deploy_instance = DeploymentInstance(instance_name)
@@ -206,6 +221,7 @@ class Deployment:
 
         snapshot_callback = self._create_snapshot_callback(mode_key, deploy_instance, snapshot_store)
 
+        # Transform: SystemConfig → DeploymentInstance (populates nodes, edges, components)
         deploy_instance.set_system(
             mode_system_config,
             self.config_registry,
@@ -213,14 +229,17 @@ class Deployment:
             snapshot_callback=snapshot_callback,
         )
 
-        # Save system structure JSON for downstream consumers
-        structure_payload = deploy_instance.collect_system_structure(self.name, mode_key)
+        return mode_key, deploy_instance, snapshot_store
+
+    def _layer3_instance_to_json(self, mode_key: str, deploy_instance: DeploymentInstance) -> None:
+        """Layer 3: Transform Instance → JSON (serialize DeploymentInstance to JSON structure)."""
+        # Extract and serialize system structure
+        structure_payload = collect_system_structure(deploy_instance, self.name, mode_key)
         structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
         save_system_structure(structure_path, structure_payload)
 
-        return mode_key, snapshot_store
-
     def _build(self, system_config, package_paths):
+        """Layer 2+3: Config → Instance → JSON (for each mode)."""
         mode_names, default_mode = select_modes(system_config)
         if system_config.modes:
             logger.info(f"Building deployment for {len(mode_names)} modes: {mode_names}, default: {default_mode}")
@@ -228,21 +247,23 @@ class Deployment:
             logger.info("Building deployment with single 'default' mode")
 
         # Create deployment instance for each mode
-        self.mode_keys = []
         for mode_name in mode_names:
             mode_key = mode_name if mode_name else default_mode
             snapshot_store: Dict[str, Any] = {}
             try:
-                # Apply mode configuration on top of base system
+                # Layer 2: Config → Instance (apply mode-specific config and create instance)
                 mode_system_config = apply_mode_configuration(system_config, mode_name)
-
-                mode_key, snapshot_store = self._build_mode_instance(
+                mode_key, deploy_instance, snapshot_store = self._layer2_config_to_instance(
                     mode_name, mode_system_config, package_paths, default_mode
                 )
+
+                # Layer 3: Instance → JSON (serialize and save)
+                self._layer3_instance_to_json(mode_key, deploy_instance)
+
                 self.mode_keys.append(mode_key)
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
-
                 self.system_structure_snapshots[mode_key] = snapshot_store
+
             except Exception as e:
                 self.system_structure_snapshots[mode_key] = snapshot_store
                 # try to visualize the system to show error status
@@ -257,13 +278,14 @@ class Deployment:
                 raise DeploymentError(f"Error while building deploy for mode '{mode_key}'{details_str}: {e}") from e
 
     def visualize(self):
+        """Layer 3+ Consumer: Generate visualization from JSON system structure."""
         # Collect data from all deployment instances
         deploy_data = {mode_key: data for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir)}
 
         visualize_deployment(deploy_data, self.name, self.visualization_dir, self.config_yaml_dir)
 
     def generate_by_template(self, data, template_path, output_dir, output_filename):
-        """Generate file from template using the unified template renderer."""
+        """Layer 3+ Helper: Render a template using JSON system structure data."""
         # Initialize template renderer
         renderer = TemplateRenderer()
 
@@ -275,6 +297,7 @@ class Deployment:
         renderer.render_template_to_file(template_name, output_path, **data)
 
     def generate_system_monitor(self):
+        """Layer 3+ Consumer: Generate system monitor configuration from JSON system structure."""
         # load the template file
         template_dir = os.path.join(os.path.dirname(__file__), "template")
         topics_template_path = os.path.join(template_dir, "sys_monitor_topics.yaml.jinja2")
@@ -288,7 +311,7 @@ class Deployment:
             logger.info(f"Generated system monitor for mode: {mode_key}")
 
     def generate_build_scripts(self):
-        """Generate shell scripts to build necessary packages for each ECU."""
+        """Layer 3+ Consumer: Generate shell scripts from JSON system structure."""
         deploy_data = {mode_key: data for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir)}
 
         package_resolution_by_name: Dict[str, str | None] = {}
@@ -321,6 +344,7 @@ class Deployment:
         )
 
     def generate_launcher(self):
+        """Layer 3+ Consumer: Generate ROS 2 launch files from JSON system structure."""
         deploy_variable_names = self._collect_deploy_variable_names()
         # Generate launcher files for each mode
         for mode_key, data in iter_mode_data(self.mode_keys, self.system_structure_dir):
@@ -358,7 +382,7 @@ class Deployment:
             )
 
     def generate_parameter_set_template(self):
-        """Generate parameter set template using ParameterTemplateGenerator."""
+        """Layer 3+ Consumer: Generate parameter set template using ParameterTemplateGenerator."""
         if not self.mode_keys:
             raise DeploymentError("Deployment instances are not initialized")
 

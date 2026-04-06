@@ -28,8 +28,8 @@ from providers.signature_help_provider import SignatureHelpProvider
 from registry_manager import RegistryManager
 from validation_engine import ValidationEngine
 
-from autoware_system_designer.models.config import Config
-from autoware_system_designer.models.parsing.data_parser import ConfigParser
+from autoware_system_designer.parsing.config import Config
+from autoware_system_designer.parsing.loaders.data_parser import ConfigParser
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -46,10 +46,11 @@ class AutowareSystemDesignerLanguageServer:
         self.registry_manager = RegistryManager()
         self.document_processor = DocumentProcessor(self.config_parser, self.registry_manager)
         self.validation_engine = ValidationEngine(self.registry_manager)
-        self.completion_provider = CompletionProvider(self.registry_manager)
+        # Inject the shared resolution_service into providers
+        self.completion_provider = CompletionProvider(self.registry_manager, self.validation_engine.resolution_service)
         self.definition_provider = DefinitionProvider(self.registry_manager)
         self.hover_provider = HoverProvider(self.registry_manager, self.validation_engine.resolution_service)
-        self.signature_help_provider = SignatureHelpProvider(self.registry_manager)
+        self.signature_help_provider = SignatureHelpProvider(self.registry_manager, self.validation_engine.resolution_service)
 
         # Register handlers
         self._register_handlers()

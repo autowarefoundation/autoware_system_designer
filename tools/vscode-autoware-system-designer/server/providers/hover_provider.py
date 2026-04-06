@@ -7,7 +7,7 @@ from registry_manager import RegistryManager
 from resolution_service import ResolutionService
 from utils.text_utils import get_word_at_position
 
-from autoware_system_designer.models.config import Config, ConfigType
+from autoware_system_designer.parsing.config import Config, ConfigType
 
 
 class HoverProvider:
@@ -53,16 +53,12 @@ class HoverProvider:
             if config.inputs:
                 hover_text += "\n### Inputs\n"
                 for port in config.inputs:
-                    name = port.get("name", "unknown")
-                    msg_type = port.get("message_type", "unknown")
-                    hover_text += f"- `{name}`: {msg_type}\n"
+                    hover_text += f"- `{port.name}`: {port.message_type or 'unknown'}\n"
 
             if config.outputs:
                 hover_text += "\n### Outputs\n"
                 for port in config.outputs:
-                    name = port.get("name", "unknown")
-                    msg_type = port.get("message_type", "unknown")
-                    hover_text += f"- `{name}`: {msg_type}\n"
+                    hover_text += f"- `{port.name}`: {port.message_type or 'unknown'}\n"
 
             param_values = getattr(config, "param_values", None) or []
             if param_values:
