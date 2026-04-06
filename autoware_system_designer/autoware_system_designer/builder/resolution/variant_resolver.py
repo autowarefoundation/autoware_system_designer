@@ -175,7 +175,7 @@ class SystemVariantResolver(VariantResolver):
         ]
         self._resolve_merges(system_config, config_yaml, merge_specs)
 
-        # Handle mode_configs manual merge from override
+        # Handle mode_configs manual merge from override.modes_config section
         if system_config.modes:
             if system_config.mode_configs is None:
                 system_config.mode_configs = {}
@@ -185,7 +185,6 @@ class SystemVariantResolver(VariantResolver):
 
             for mode_name in mode_names:
                 if mode_name in override_config:
-                    # Overwrite/Update mode config from override
                     system_config.mode_configs[mode_name] = override_config[mode_name]
 
     def _apply_removals(self, system_config: SystemConfig, remove_config: Dict[str, Any]):

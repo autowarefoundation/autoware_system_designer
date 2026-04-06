@@ -66,14 +66,15 @@ class Config:
 class NodeConfig(Config):
     """Data structure for node entities."""
 
+    base: Optional[str] = None  # Parent entity name for variants
     package_name: Optional[str] = None
     package_provider: Optional[str] = None
     package_resolution: Optional[str] = None  # "source" or "installed", set from workspace.yaml
     launch: Dict[str, Any] = None
-    inputs: List[Dict[str, Any]] = None
-    outputs: List[Dict[str, Any]] = None
-    param_files: Any = None  # Can be dict or list
-    param_values: Any = None  # Can be dict or list
+    inputs: List[Dict[str, Any]] = None   # Each dict has port_role: "subscriber" | "client"
+    outputs: List[Dict[str, Any]] = None  # Each dict has port_role: "publisher" | "server"
+    param_files: Optional[List[Dict[str, Any]]] = None
+    param_values: Optional[List[Dict[str, Any]]] = None
     processes: List[Dict[str, Any]] = None
 
 
@@ -81,9 +82,10 @@ class NodeConfig(Config):
 class ModuleConfig(Config):
     """Data structure for module entities."""
 
+    base: Optional[str] = None  # Parent entity name for variants
     instances: List[Dict[str, Any]] = None
-    inputs: List[Dict[str, Any]] = None
-    outputs: List[Dict[str, Any]] = None
+    inputs: List[Dict[str, Any]] = None   # Each dict has port_role: "subscriber" | "client"
+    outputs: List[Dict[str, Any]] = None  # Each dict has port_role: "publisher" | "server"
     connections: List[Dict[str, Any]] = None
 
 
@@ -91,7 +93,7 @@ class ModuleConfig(Config):
 class ParameterSetConfig(Config):
     """Data structure for parameter set entities."""
 
-    parameters: Any = None  # Can be dict or list
+    parameters: Optional[List[Dict[str, Any]]] = None
     local_variables: List[Dict[str, Any]] = None
 
 
@@ -99,6 +101,7 @@ class ParameterSetConfig(Config):
 class SystemConfig(Config):
     """Data structure for system entities."""
 
+    base: Optional[str] = None  # Parent entity name for variants
     arguments: List[Dict[str, Any]] = None
     modes: List[Dict[str, Any]] = None
     mode_configs: Dict[str, Dict[str, Any]] = None  # Mode-specific overrides/removals

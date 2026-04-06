@@ -206,7 +206,7 @@ class ConfigRegistry:
                 return entity
 
             # Get parent name
-            base_target = entity.config.get("base")
+            base_target = entity.base
             if not base_target:
                 # Should have been validated, but fallback
                 return entity

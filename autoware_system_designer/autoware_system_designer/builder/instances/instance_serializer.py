@@ -130,7 +130,7 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
 
     if instance.entity_type == "node":
         data["package"] = instance.launch_manager.package_name
-        data["param_files_all"] = [
+        data["parameter_files_all"] = [
             {
                 "name": pf.name,
                 "path": pf.path,

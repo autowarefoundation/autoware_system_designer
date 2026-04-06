@@ -72,7 +72,7 @@ class ResolutionService:
             if port.get("name") == port_name:
                 return port.get("message_type")
 
-        # For variant nodes, check override ports
+        # For variant nodes, check override ports (stored in raw config dict)
         raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
         override = raw.get("override", {})
         if isinstance(override, dict):
@@ -82,7 +82,7 @@ class ResolutionService:
                     return port.get("message_type")
 
         # Traverse base chain with cycle detection
-        base_name = raw.get("base")
+        base_name = config.base if hasattr(config, "base") else None
         if base_name:
             if _seen_bases is None:
                 _seen_bases = set()
@@ -221,7 +221,7 @@ class ResolutionService:
                 override_names = {p.get("name") for p in override_inputs if p.get("name")}
                 inputs = [p for p in inputs if p.get("name") not in override_names] + override_inputs
 
-        base_name = raw.get("base")
+        base_name = config.base if hasattr(config, "base") else None
         if base_name:
             base_config = self.registry_manager.get_entity(base_name)
             if base_config:
@@ -249,7 +249,7 @@ class ResolutionService:
                 override_names = {p.get("name") for p in override_outputs if p.get("name")}
                 outputs = [p for p in outputs if p.get("name") not in override_names] + override_outputs
 
-        base_name = raw.get("base")
+        base_name = config.base if hasattr(config, "base") else None
         if base_name:
             base_config = self.registry_manager.get_entity(base_name)
             if base_config:

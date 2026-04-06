@@ -229,7 +229,11 @@ class ConfigParser:
             "source_map": source_map,
         }
 
+        base_name = config.get("base")
+
         if entity_type == ConfigType.NODE:
+            sub_type = ConfigSubType.VARIANT if base_name else ConfigSubType.BASE
+
             # Map param_files
             param_files = config.get("param_files")
 
@@ -237,7 +241,7 @@ class ConfigParser:
             param_values = config.get("param_values")
 
             # requires at least one of param_files or param_values to be present. empty list is valid.
-            if "base" not in config and param_files is None and param_values is None:
+            if sub_type == ConfigSubType.BASE and param_files is None and param_values is None:
                 raise ValidationError(f"Either param_files or param_values must be present at {file_path}")
 
             # Initialize parameter values from defaults
@@ -261,9 +265,9 @@ class ConfigParser:
                 pkg_name = pkg_info.get("name")
                 pkg_provider = pkg_info.get("provider")
 
-            sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
             return NodeConfig(
                 **base_data,
+                base=base_name,
                 sub_type=sub_type,
                 package_name=pkg_name,
                 package_provider=pkg_provider,
@@ -275,9 +279,10 @@ class ConfigParser:
                 processes=config.get("processes"),
             )
         elif entity_type == ConfigType.MODULE:
-            sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
+            sub_type = ConfigSubType.VARIANT if base_name else ConfigSubType.BASE
             return ModuleConfig(
                 **base_data,
+                base=base_name,
                 sub_type=sub_type,
                 instances=config.get("instances"),
                 inputs=config.get("inputs"),
@@ -302,16 +307,13 @@ class ConfigParser:
                     )
             return ParameterSetConfig(**base_data, parameters=parameters, local_variables=config.get("local_variables"))
         elif entity_type == ConfigType.SYSTEM:
-            sub_type = ConfigSubType.VARIANT if "base" in config else ConfigSubType.BASE
+            sub_type = ConfigSubType.VARIANT if base_name else ConfigSubType.BASE
 
-            # Parse mode-specific configurations
+            # Parse mode-specific configurations: mode names are top-level keys in the YAML
             mode_configs = {}
             modes = config.get("modes")
             if modes:
-                # Extract mode names from modes list
                 mode_names = [m.get("name") for m in modes if isinstance(m, dict) and "name" in m]
-
-                # Look for top-level keys matching mode names
                 for mode_name in mode_names:
                     if mode_name in config:
                         mode_configs[mode_name] = config[mode_name]
@@ -319,6 +321,7 @@ class ConfigParser:
 
             return SystemConfig(
                 **base_data,
+                base=base_name,
                 sub_type=sub_type,
                 arguments=config.get("arguments"),
                 modes=config.get("modes"),
@@ -339,6 +342,14 @@ class ConfigParser:
         pubs = config.pop("publishers", [])
         srvs = config.pop("servers", [])
         clis = config.pop("clients", [])
+        for port in subs:
+            port.setdefault("port_role", "subscriber")
+        for port in clis:
+            port.setdefault("port_role", "client")
+        for port in pubs:
+            port.setdefault("port_role", "publisher")
+        for port in srvs:
+            port.setdefault("port_role", "server")
         config["inputs"] = subs + clis
         config["outputs"] = pubs + srvs
         return config
