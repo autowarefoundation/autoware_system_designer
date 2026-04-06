@@ -1,12 +1,11 @@
 import json
 import logging
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
+from ..builder.instances.instance_serializer import collect_system_structure
 from ..models.system_structure import (
-    SCHEMA_VERSION,
     InstanceData,
     SystemStructureMetadata,
     SystemStructurePayload,
@@ -17,17 +16,11 @@ logger = logging.getLogger(__name__)
 
 
 def build_system_structure(instance, system_name: str, mode: str) -> SystemStructurePayload:
-    """Build a schema-versioned system structure payload from an Instance."""
+    """Build a schema-versioned system structure payload from an Instance.
 
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "metadata": {
-            "system_name": system_name,
-            "mode": mode,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-        },
-        "data": instance.collect_instance_data(),
-    }
+    Delegates to the authoritative serializer in instance_serializer module.
+    """
+    return collect_system_structure(instance, system_name, mode)
 
 
 def build_system_structure_snapshot(

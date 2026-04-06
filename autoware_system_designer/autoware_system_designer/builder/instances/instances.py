@@ -17,6 +17,7 @@ from typing import Dict, List, Optional
 from ...deployment.deployment_config import deploy_config
 from ...exceptions import ValidationError
 from ...models.config import ModuleConfig, NodeConfig, ParameterSetConfig, SystemConfig
+from ...models.system_structure import InstanceData, SystemStructurePayload
 from ...utils.naming import generate_unique_id
 from ...visualization.visualization_guide import get_component_color, get_component_position
 from ..config.launch_manager import LaunchManager
@@ -149,8 +150,8 @@ class Instance:
         # delegate to event manager
         self.event_manager.set_event_tree()
 
-    def collect_instance_data(self) -> dict:
+    def collect_instance_data(self) -> InstanceData:
         return collect_instance_data(self)
 
-    def collect_system_structure(self, system_name: str, mode: str) -> dict:
+    def collect_system_structure(self, system_name: str, mode: str) -> SystemStructurePayload:
         return collect_system_structure(self, system_name, mode)
