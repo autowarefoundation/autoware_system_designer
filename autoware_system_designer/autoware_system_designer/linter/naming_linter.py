@@ -18,9 +18,9 @@ import re
 from pathlib import Path
 from typing import Any, Dict
 
-from ..models.config import ConfigType
-from ..models.parsing.data_validator import entity_name_decode
-from ..models.parsing.yaml_parser import yaml_parser
+from ..parsing.config import ConfigType
+from ..parsing.loaders.data_validator import entity_name_decode
+from ..parsing.loaders.yaml_parser import yaml_parser
 from .report import LintResult
 
 

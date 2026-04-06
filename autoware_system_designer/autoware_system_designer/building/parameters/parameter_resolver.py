@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from ...file_io.source_location import SourceLocation, format_source
-from ...models.parsing.yaml_parser import yaml_parser
+from ...parsing.loaders.yaml_parser import yaml_parser
 
 logger = logging.getLogger(__name__)
 

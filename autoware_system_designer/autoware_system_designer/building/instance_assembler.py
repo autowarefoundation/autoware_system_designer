@@ -15,10 +15,10 @@ This module implements the Config→Instance conversion. It orchestrates:
 import logging
 from typing import Callable, Dict
 
-from ...exceptions import ValidationError
-from ..parameters.parameter_resolver import ParameterResolver
-from ..runtime.namespace import Namespace
-from .instance_tree import set_instances
+from ..exceptions import ValidationError
+from .parameters.parameter_resolver import ParameterResolver
+from .runtime.namespace import Namespace
+from .instances.instance_tree import set_instances
 
 logger = logging.getLogger(__name__)
 

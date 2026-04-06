@@ -25,7 +25,7 @@ from ...exceptions import (
     ValidationError,
 )
 from ...file_io.source_location import SourceLocation, format_source
-from ...models.config import (
+from ...parsing.config import (
     Config,
     ConfigSubType,
     ConfigType,
@@ -34,8 +34,8 @@ from ...models.config import (
     ParameterSetConfig,
     SystemConfig,
 )
-from ...models.parsing.data_parser import ConfigParser
-from ...models.parsing.data_validator import entity_name_decode
+from ...parsing.loaders.data_parser import ConfigParser
+from ...parsing.loaders.data_validator import entity_name_decode
 from ...utils.format_version import check_format_version
 from ..resolution.variant_resolver import (
     ModuleVariantResolver,
@@ -105,7 +105,7 @@ class ConfigRegistry:
 
     def _load_entities(self, config_yaml_file_paths: List[str]) -> None:
         """Load entities from configuration files."""
-        from ...models.parsing.yaml_parser import yaml_parser as _yaml_parser
+        from ...parsing.loaders.yaml_parser import yaml_parser as _yaml_parser
 
         for file_path in config_yaml_file_paths:
             logger.debug(f"Loading entity from: {file_path}")

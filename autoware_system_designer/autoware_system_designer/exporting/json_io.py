@@ -17,13 +17,13 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-from ..builder.instances.instance_serializer import collect_system_structure
-from ..models.system_structure import (
+from .instance_to_json import collect_system_structure
+from .schema import (
     InstanceData,
     SystemStructureMetadata,
     SystemStructurePayload,
 )
-from .source_location import SourceLocation, format_source
+from ..file_io.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)
 

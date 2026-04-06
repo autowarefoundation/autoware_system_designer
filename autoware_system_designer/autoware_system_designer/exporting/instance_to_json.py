@@ -14,8 +14,8 @@ The result is passed to system_structure_json.py for JSON serialization.
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
 
-from ...file_io.source_location import SourceLocation
-from ...models.system_structure import (
+from ..file_io.source_location import SourceLocation
+from .schema import (
     SCHEMA_VERSION,
     EventData,
     InstanceData,
@@ -24,10 +24,10 @@ from ...models.system_structure import (
     PortData,
     SystemStructurePayload,
 )
-from ..runtime.parameters import parameter_type_to_str
+from ..building.runtime.parameters import parameter_type_to_str
 
 if TYPE_CHECKING:
-    from .instances import Instance
+    from ..building.instances import Instance
 
 
 def serialize_event(event) -> EventData | None:

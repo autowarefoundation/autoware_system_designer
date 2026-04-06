@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 from ...exceptions import ValidationError
 from ...file_io.source_location import format_source, source_from_config
-from ...models.parsing.data_validator import entity_name_decode
+from ...parsing.loaders.data_validator import entity_name_decode
 from ..config.launch_manager import LaunchManager
 from ..parameters.parameter_set_applier import apply_parameter_set
 from ..runtime.namespace import Namespace

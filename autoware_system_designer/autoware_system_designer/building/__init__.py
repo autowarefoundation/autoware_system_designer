@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Builders module."""
+"""Building module - Config to Instance data flow."""
 
-from .config.config_registry import ConfigRegistry
-from .deployment_instance import DeploymentInstance
+# Note: building module has circular dependencies with exporting module.
+# Import submodules directly when needed to avoid circular imports at module load time.
+# Example: from autoware_system_designer.building.config import ConfigRegistry
+# Example: from autoware_system_designer.building.deployment_instance import DeploymentInstance
 
-__all__ = ["DeploymentInstance", "ConfigRegistry"]
+__all__ = []

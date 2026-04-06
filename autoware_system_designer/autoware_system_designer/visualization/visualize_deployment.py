@@ -21,7 +21,7 @@ from typing import Dict, Optional
 
 from ..file_io.source_location import SourceLocation, format_source
 from ..file_io.template_renderer import TemplateRenderer
-from ..models.system_structure import DeploymentDataByMode
+from ..exporting.schema import DeploymentDataByMode
 from .visualization_index import get_install_root
 
 logger = logging.getLogger(__name__)

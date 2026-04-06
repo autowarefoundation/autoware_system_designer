@@ -15,7 +15,7 @@
 from typing import Any, Dict, List, Optional
 
 from ...file_io.source_location import SourceLocation
-from ...models.domain import ParameterType
+from ...parsing.domain import ParameterType
 
 
 def parameter_type_to_str(value) -> str:

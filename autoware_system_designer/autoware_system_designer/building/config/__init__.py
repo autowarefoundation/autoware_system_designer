@@ -12,4 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""data model module."""
+"""Configuration management module."""
+
+from .config_registry import ConfigRegistry
+
+__all__ = ["ConfigRegistry"]

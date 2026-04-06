@@ -14,9 +14,9 @@
 
 from typing import Callable, Dict
 
-from ..models.config import SystemConfig
-from .instances.instance_pipeline import check_duplicate_node_path as check_duplicate_node_path_impl
-from .instances.instance_pipeline import set_system as set_system_impl
+from ..parsing.config import SystemConfig
+from .instance_assembler import check_duplicate_node_path as check_duplicate_node_path_impl
+from .instance_assembler import set_system as set_system_impl
 from .instances.instances import Instance
 
 
