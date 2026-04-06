@@ -26,6 +26,7 @@ from .deployment.modes import apply_mode_configuration, select_modes
 from .deployment.parser import iter_mode_data, resolve_input_target
 from .exceptions import DeploymentError, ValidationError
 from .file_io.source_location import SourceLocation, format_source
+from .exporting.instance_to_json import collect_system_structure
 from .exporting.json_io import (
     save_system_structure,
     save_system_structure_snapshot,
@@ -214,7 +215,7 @@ class Deployment:
         )
 
         # Save system structure JSON for downstream consumers
-        structure_payload = deploy_instance.collect_system_structure(self.name, mode_key)
+        structure_payload = collect_system_structure(deploy_instance, self.name, mode_key)
         structure_path = os.path.join(self.system_structure_dir, f"{mode_key}.json")
         save_system_structure(structure_path, structure_payload)
 

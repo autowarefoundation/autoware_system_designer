@@ -14,9 +14,4 @@
 
 """Building module - Config to Instance data flow."""
 
-# Note: building module has circular dependencies with exporting module.
-# Import submodules directly when needed to avoid circular imports at module load time.
-# Example: from autoware_system_designer.building.config import ConfigRegistry
-# Example: from autoware_system_designer.building.deployment_instance import DeploymentInstance
-
 __all__ = []

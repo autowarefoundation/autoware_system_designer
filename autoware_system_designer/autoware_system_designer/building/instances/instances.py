@@ -17,7 +17,6 @@ from typing import Dict, List, Optional
 from ...deployment.deployment_config import deploy_config
 from ...exceptions import ValidationError
 from ...parsing.config import ModuleConfig, NodeConfig, ParameterSetConfig, SystemConfig
-from ...exporting.schema import InstanceData, SystemStructurePayload
 from ...utils.naming import generate_unique_id
 from ...visualization.visualization_guide import get_component_color, get_component_position
 from ..config.launch_manager import LaunchManager
@@ -25,10 +24,6 @@ from ..graph.event_manager import EventManager
 from ..graph.link_manager import LinkManager
 from ..parameters.parameter_manager import ParameterManager
 from ..runtime.namespace import Namespace
-from ...exporting.instance_to_json import (
-    collect_instance_data,
-    collect_system_structure,
-)
 
 
 class Instance:
@@ -150,8 +145,3 @@ class Instance:
         # delegate to event manager
         self.event_manager.set_event_tree()
 
-    def collect_instance_data(self) -> InstanceData:
-        return collect_instance_data(self)
-
-    def collect_system_structure(self, system_name: str, mode: str) -> SystemStructurePayload:
-        return collect_system_structure(self, system_name, mode)
