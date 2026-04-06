@@ -23,6 +23,32 @@ class ResolutionService:
         # To prevent infinite loops in cyclic graphs (though system design should be acyclic)
         self._visited: Set[str] = set()
 
+    @staticmethod
+    def _get_field(item, key_field: str):
+        """Get a field value from either an object or a dict."""
+        if isinstance(item, dict):
+            return item.get(key_field)
+        return getattr(item, key_field, None)
+
+    @staticmethod
+    def _get_override_ports(override: dict, port_type: str):
+        """Get override ports supporting both normalized and YAML direction keys."""
+        if not isinstance(override, dict):
+            return []
+
+        if port_type == "input":
+            if "inputs" in override:
+                return override.get("inputs") or []
+            subscribers = override.get("subscribers", []) or []
+            clients = override.get("clients", []) or []
+            return list(subscribers) + list(clients)
+
+        if "outputs" in override:
+            return override.get("outputs") or []
+        publishers = override.get("publishers", []) or []
+        servers = override.get("servers", []) or []
+        return list(publishers) + list(servers)
+
     def resolve_port_type(self, config: Config, port_type: str, port_name: str) -> Optional[str]:
         """
         recursively resolve the type of a port.
@@ -77,10 +103,10 @@ class ResolutionService:
         raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
         override = raw.get("override", {})
         if isinstance(override, dict):
-            override_ports = override.get("inputs" if port_type == "input" else "outputs", []) or []
+            override_ports = self._get_override_ports(override, port_type)
             for port in override_ports:
-                if port.get("name") == port_name:
-                    return port.get("message_type")
+                if self._get_field(port, "name") == port_name:
+                    return self._get_field(port, "message_type")
 
         # Traverse base chain with cycle detection
         base_name = config.base if hasattr(config, "base") else None
@@ -218,11 +244,13 @@ class ResolutionService:
         raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
         override = raw.get("override", {})
         if isinstance(override, dict):
-            override_inputs = override.get("inputs", []) or []
+            override_inputs = self._get_override_ports(override, "input")
             if override_inputs:
-                override_names = {p.get("name") for p in override_inputs if p.get("name")}
-                inputs = [p for p in inputs if p.get("name") not in override_names]
-                inputs += [PortDefinition.from_dict(p) for p in override_inputs]
+                override_names = {
+                    self._get_field(p, "name") for p in override_inputs if self._get_field(p, "name") is not None
+                }
+                inputs = [p for p in inputs if self._get_field(p, "name") not in override_names]
+                inputs += [PortDefinition.from_dict(p) if isinstance(p, dict) else p for p in override_inputs]
 
         base_name = config.base if hasattr(config, "base") else None
         if base_name:
@@ -248,11 +276,13 @@ class ResolutionService:
         raw = config.config if hasattr(config, "config") and isinstance(config.config, dict) else {}
         override = raw.get("override", {})
         if isinstance(override, dict):
-            override_outputs = override.get("outputs", []) or []
+            override_outputs = self._get_override_ports(override, "output")
             if override_outputs:
-                override_names = {p.get("name") for p in override_outputs if p.get("name")}
-                outputs = [p for p in outputs if p.get("name") not in override_names]
-                outputs += [PortDefinition.from_dict(p) for p in override_outputs]
+                override_names = {
+                    self._get_field(p, "name") for p in override_outputs if self._get_field(p, "name") is not None
+                }
+                outputs = [p for p in outputs if self._get_field(p, "name") not in override_names]
+                outputs += [PortDefinition.from_dict(p) if isinstance(p, dict) else p for p in override_outputs]
 
         base_name = config.base if hasattr(config, "base") else None
         if base_name:
