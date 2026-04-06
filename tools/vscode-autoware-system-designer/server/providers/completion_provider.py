@@ -5,7 +5,9 @@ from typing import List
 
 from lsprotocol import types as lsp
 from registry_manager import RegistryManager
+from resolution_service import ResolutionService
 from utils.uri_utils import uri_to_path
+from validation_engine import ValidationEngine
 
 from autoware_system_designer.parsing.config import Config, ConfigType
 
@@ -23,8 +25,9 @@ class CompletionProvider:
     # Stage 1: instance_name.partial_direction  (must not already have a second dot)
     _DIRECTION_RE = re.compile(r"(\w[\w/-]*)\.(\w*)$")
 
-    def __init__(self, registry_manager: RegistryManager):
+    def __init__(self, registry_manager: RegistryManager, resolution_service: ResolutionService):
         self.registry_manager = registry_manager
+        self.resolution_service = resolution_service
 
     def get_completions(self, params: lsp.CompletionParams, server) -> lsp.CompletionList:
         """Handle completion requests."""
@@ -62,13 +65,10 @@ class CompletionProvider:
     # ------------------------------------------------------------------
 
     def _resolve(self, current_config: Config, instance_name: str):
-        from resolution_service import ResolutionService
-        from validation_engine import ValidationEngine
-
-        rs = ResolutionService(self.registry_manager)
-        entity_config = rs.get_instance_entity(current_config, instance_name)
+        entity_config = self.resolution_service.get_instance_entity(current_config, instance_name)
         if not entity_config:
             return None, None, None
+        # Create ValidationEngine to get resolved ports (it reuses resolution_service internally)
         ve = ValidationEngine(self.registry_manager)
         inputs = ve._get_entity_inputs(entity_config)
         outputs = ve._get_entity_outputs(entity_config)
@@ -113,8 +113,8 @@ class CompletionProvider:
 
         items: List[lsp.CompletionItem] = []
         for port in ports:
-            name = port.get("name", "")
-            msg_type = port.get("message_type", "unknown")
+            name = port.name
+            msg_type = port.message_type or "unknown"
             if name.startswith(partial):
                 items.append(
                     lsp.CompletionItem(

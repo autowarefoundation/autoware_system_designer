@@ -5,7 +5,9 @@ from typing import Optional
 
 from lsprotocol import types as lsp
 from registry_manager import RegistryManager
+from resolution_service import ResolutionService
 from utils.uri_utils import uri_to_path
+from validation_engine import ValidationEngine
 
 from autoware_system_designer.parsing.config import Config, ConfigType
 
@@ -15,8 +17,9 @@ class SignatureHelpProvider:
 
     _INSTANCE_PREFIX_RE = re.compile(r"(\w[\w/-]*)\.(\w*)$")
 
-    def __init__(self, registry_manager: RegistryManager):
+    def __init__(self, registry_manager: RegistryManager, resolution_service: ResolutionService):
         self.registry_manager = registry_manager
+        self.resolution_service = resolution_service
 
     def get_signature_help(self, params: lsp.SignatureHelpParams, server) -> Optional[lsp.SignatureHelp]:
         """Handle signature help requests."""
@@ -38,11 +41,7 @@ class SignatureHelpProvider:
 
         instance_name = match.group(1)
 
-        from resolution_service import ResolutionService
-        from validation_engine import ValidationEngine
-
-        resolution_service = ResolutionService(self.registry_manager)
-        entity_config = resolution_service.get_instance_entity(current_config, instance_name)
+        entity_config = self.resolution_service.get_instance_entity(current_config, instance_name)
         if not entity_config:
             return None
 
@@ -68,13 +67,13 @@ class SignatureHelpProvider:
     def _build_signature(
         self, instance_name: str, entity_config: Config, direction: str, ports: list
     ) -> lsp.SignatureInformation:
-        port_labels = [f"{direction}.{p.get('name', '?')}" for p in ports]
+        port_labels = [f"{direction}.{p.name}" for p in ports]
         label = f"{instance_name}.{direction}.({', '.join(port_labels)})"
 
         doc_lines = [f"**{instance_name}** `{entity_config.full_name}`\n"]
         for p in ports:
-            name = p.get("name", "unknown")
-            msg_type = p.get("message_type", "unknown")
+            name = p.name
+            msg_type = p.message_type or "unknown"
             doc_lines.append(f"- `{direction}.{name}` — {msg_type}")
         documentation = lsp.MarkupContent(kind=lsp.MarkupKind.Markdown, value="\n".join(doc_lines))
 

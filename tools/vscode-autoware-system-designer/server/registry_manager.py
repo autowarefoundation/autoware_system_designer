@@ -3,7 +3,8 @@
 import logging
 from pathlib import Path
 from typing import Dict, Optional
-from urllib.parse import unquote, urlparse
+
+from utils.uri_utils import uri_to_path
 
 from autoware_system_designer.parsing.config import Config
 from autoware_system_designer.parsing.loaders.data_parser import ConfigParser
@@ -21,7 +22,7 @@ class RegistryManager:
 
     def scan_workspace(self, workspace_uri: str):
         """Scan workspace for entity files and build registry."""
-        workspace_path = self._uri_to_path(workspace_uri)
+        workspace_path = uri_to_path(workspace_uri)
 
         # Find all entity files
         patterns = [
@@ -86,8 +87,3 @@ class RegistryManager:
             del self.entity_registry[config.full_name]
             del self.file_registry[file_path]
             logger.info(f"Unregistered entity: {config.full_name}")
-
-    def _uri_to_path(self, uri: str) -> str:
-        """Convert URI to file path."""
-        parsed = urlparse(uri)
-        return unquote(parsed.path)

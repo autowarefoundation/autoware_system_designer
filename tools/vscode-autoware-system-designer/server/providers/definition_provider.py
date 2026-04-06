@@ -29,11 +29,16 @@ class DefinitionProvider:
         # Check if it's an entity name
         if word in self.registry_manager.entity_registry:
             config = self.registry_manager.entity_registry[word]
+            # Use source_map to find the exact line of the 'name' field
+            line_num = 0
+            if hasattr(config, 'source_map') and config.source_map and 'name' in config.source_map:
+                # source_map['name'] is (line, column) tuple; YAML lines are 0-indexed
+                line_num = config.source_map['name'][0]
             return lsp.Location(
                 uri=path_to_uri(str(config.file_path)),
                 range=lsp.Range(
-                    start=lsp.Position(line=1, character=0),  # Skip the format header
-                    end=lsp.Position(line=2, character=0),
+                    start=lsp.Position(line=line_num, character=0),
+                    end=lsp.Position(line=line_num + 1, character=0),
                 ),
             )
 
@@ -68,11 +73,15 @@ class DefinitionProvider:
                             entity_name = instance.get("entity")
                             if entity_name in self.registry_manager.entity_registry:
                                 entity_config = self.registry_manager.entity_registry[entity_name]
+                                # Use source_map for precise line of 'name' field
+                                line_num = 0
+                                if hasattr(entity_config, 'source_map') and entity_config.source_map and 'name' in entity_config.source_map:
+                                    line_num = entity_config.source_map['name'][0]
                                 return lsp.Location(
                                     uri=path_to_uri(str(entity_config.file_path)),
                                     range=lsp.Range(
-                                        start=lsp.Position(line=10, character=0),  # Approximate location
-                                        end=lsp.Position(line=11, character=0),
+                                        start=lsp.Position(line=line_num, character=0),
+                                        end=lsp.Position(line=line_num + 1, character=0),
                                     ),
                                 )
 
@@ -88,11 +97,15 @@ class DefinitionProvider:
                             component_entity = component.get("entity")
                             if component_entity in self.registry_manager.entity_registry:
                                 entity_config = self.registry_manager.entity_registry[component_entity]
+                                # Use source_map for precise line of 'name' field
+                                line_num = 0
+                                if hasattr(entity_config, 'source_map') and entity_config.source_map and 'name' in entity_config.source_map:
+                                    line_num = entity_config.source_map['name'][0]
                                 return lsp.Location(
                                     uri=path_to_uri(str(entity_config.file_path)),
                                     range=lsp.Range(
-                                        start=lsp.Position(line=10, character=0),  # Approximate location
-                                        end=lsp.Position(line=11, character=0),
+                                        start=lsp.Position(line=line_num, character=0),
+                                        end=lsp.Position(line=line_num + 1, character=0),
                                     ),
                                 )
 

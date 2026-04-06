@@ -3,11 +3,11 @@
 import logging
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
 
 from lsprotocol import types as lsp
 from pygls.server import LanguageServer
 from registry_manager import RegistryManager
+from utils.uri_utils import uri_to_path
 from validation_engine import ValidationEngine
 
 from autoware_system_designer.exceptions import ValidationError
@@ -27,7 +27,7 @@ class DocumentProcessor:
 
     def process_document(self, uri: str, content: str, server: LanguageServer, update_registry: bool = False):
         """Process a document and update registries."""
-        file_path = self._uri_to_path(uri)
+        file_path = uri_to_path(uri)
         file_path_obj = Path(file_path)
 
         # Always validate, even if parsing fails
@@ -86,8 +86,3 @@ class DocumentProcessor:
         # We don't unregister on close anymore, as the file might still exist in the workspace
         # File watching will handle unregistration if the file is deleted
         pass
-
-    def _uri_to_path(self, uri: str) -> str:
-        """Convert URI to file path."""
-        parsed = urlparse(uri)
-        return unquote(parsed.path)
