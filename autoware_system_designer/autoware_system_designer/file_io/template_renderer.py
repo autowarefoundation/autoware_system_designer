@@ -59,52 +59,6 @@ def _get_template_directories() -> list[str]:
         return []
 
 
-def custom_serializer(obj):
-    """Custom JSON serializer for domain objects."""
-
-    if hasattr(obj, "port_path") and hasattr(obj, "msg_type"):
-        return {
-            "unique_id": getattr(obj, "unique_id", None),
-            "name": getattr(obj, "name", None),
-            "msg_type": getattr(obj, "msg_type", None),
-            "namespace": getattr(obj, "namespace", []),
-            "topic": getattr(obj, "topic", []),
-            "is_global": getattr(obj, "is_global", False),
-            "remap_target": getattr(obj, "remap_target", None),
-            "port_path": getattr(obj, "port_path", None),
-            "event": getattr(obj, "event", None),
-        }
-
-    if hasattr(obj, "from_port") and hasattr(obj, "to_port") and hasattr(obj, "connection_type"):
-        return {
-            "from_port": obj.from_port,
-            "to_port": obj.to_port,
-            "msg_type": getattr(obj, "msg_type", None),
-            "connection_type": str(obj.connection_type) if obj.connection_type else None,
-        }
-
-    if hasattr(obj, "type_list") and hasattr(obj, "triggers"):
-        return {
-            "unique_id": getattr(obj, "unique_id", None),
-            "name": getattr(obj, "name", None),
-            "type": getattr(obj, "type", None),
-            "frequency": getattr(obj, "frequency", None),
-            "warn_rate": getattr(obj, "warn_rate", None),
-            "error_rate": getattr(obj, "error_rate", None),
-            "timeout": getattr(obj, "timeout", None),
-            "trigger_ids": [t.unique_id for t in obj.triggers] if obj.triggers else [],
-            "action_ids": [a.unique_id for a in obj.actions] if obj.actions else [],
-        }
-
-    return str(obj)
-
-
-def tojson_filter(value):
-    """Jinja2 filter to serialize objects to JSON."""
-
-    return json.dumps(value, default=custom_serializer)
-
-
 class TemplateRenderer:
     """Unified template rendering utility."""
 
@@ -125,7 +79,7 @@ class TemplateRenderer:
             newline_sequence="\n",
             autoescape=False,
         )
-        self.env.filters["tojson"] = tojson_filter
+        self.env.filters["tojson"] = json.dumps
 
     def render_template(self, template_name: str, **kwargs) -> str:
         template = self.env.get_template(template_name)
