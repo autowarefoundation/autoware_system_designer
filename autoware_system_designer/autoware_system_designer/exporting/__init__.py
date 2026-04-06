@@ -17,6 +17,7 @@
 # Import only schema to avoid circular imports
 # (file_io/__init__.py imports from exporting)
 from .schema import (
+    SCHEMA_VERSION,
     EventData,
     InstanceData,
     LauncherData,
@@ -27,7 +28,6 @@ from .schema import (
     ParameterData,
     ParameterFileData,
     PortData,
-    SCHEMA_VERSION,
     SystemStructureMetadata,
     SystemStructurePayload,
 )

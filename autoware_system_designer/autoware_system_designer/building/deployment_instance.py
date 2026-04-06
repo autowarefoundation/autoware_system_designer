@@ -31,10 +31,10 @@ from typing import Callable, Dict
 
 from ..exceptions import ValidationError
 from ..parsing.config import SystemConfig
-from .parameters.parameter_resolver import ParameterResolver
-from .runtime.namespace import Namespace
 from .instances.instance_tree import set_instances
 from .instances.instances import Instance
+from .parameters.parameter_resolver import ParameterResolver
+from .runtime.namespace import Namespace
 
 logger = logging.getLogger(__name__)
 

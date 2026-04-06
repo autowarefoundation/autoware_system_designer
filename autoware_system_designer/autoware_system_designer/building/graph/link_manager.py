@@ -19,8 +19,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from ...exceptions import ValidationError
-from ...file_io.source_location import format_source, source_from_config
 from ...exporting.schema import LauncherPortData
+from ...file_io.source_location import format_source, source_from_config
 from ..runtime.links import Connection, ConnectionType, Link
 from ..runtime.ports import InPort, OutPort
 

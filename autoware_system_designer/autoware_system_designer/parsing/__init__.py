@@ -40,11 +40,6 @@ from .json_schema_loader import (
     load_schema,
     resolve_schema_version,
 )
-from .yaml_schema import (
-    SchemaIssue,
-    get_semantic_checks,
-    validate_against_schema,
-)
 
 # Loaders - YAML parsing and validation
 from .loaders import (
@@ -56,6 +51,11 @@ from .loaders import (
     SystemValidator,
     ValidatorFactory,
     YamlParser,
+)
+from .yaml_schema import (
+    SchemaIssue,
+    get_semantic_checks,
+    validate_against_schema,
 )
 
 __all__ = [

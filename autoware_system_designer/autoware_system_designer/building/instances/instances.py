@@ -144,4 +144,3 @@ class Instance:
     def set_event_tree(self):
         # delegate to event manager
         self.event_manager.set_event_tree()
-

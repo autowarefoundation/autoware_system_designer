@@ -25,12 +25,12 @@ from .deployment.deployment_config import DeploymentConfig
 from .deployment.modes import apply_mode_configuration, select_modes
 from .deployment.parser import iter_mode_data, resolve_input_target
 from .exceptions import DeploymentError, ValidationError
-from .file_io.source_location import SourceLocation, format_source
 from .exporting.instance_to_json import collect_system_structure
 from .exporting.json_io import (
     save_system_structure,
     save_system_structure_snapshot,
 )
+from .file_io.source_location import SourceLocation, format_source
 from .file_io.template_renderer import TemplateRenderer
 from .parsing.config import NodeConfig, SystemConfig
 from .parsing.loaders.yaml_parser import yaml_parser

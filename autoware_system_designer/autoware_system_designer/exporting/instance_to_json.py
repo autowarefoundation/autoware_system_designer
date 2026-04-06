@@ -14,6 +14,7 @@ The result is passed to system_structure_json.py for JSON serialization.
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
 
+from ..building.runtime.parameters import parameter_type_to_str
 from ..file_io.source_location import SourceLocation
 from .schema import (
     SCHEMA_VERSION,
@@ -24,7 +25,6 @@ from .schema import (
     PortData,
     SystemStructurePayload,
 )
-from ..building.runtime.parameters import parameter_type_to_str
 
 if TYPE_CHECKING:
     from ..building.instances import Instance
