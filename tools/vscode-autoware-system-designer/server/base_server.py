@@ -28,8 +28,8 @@ from providers.signature_help_provider import SignatureHelpProvider
 from registry_manager import RegistryManager
 from validation_engine import ValidationEngine
 
-from autoware_system_designer.models.config import Config
-from autoware_system_designer.models.parsing.data_parser import ConfigParser
+from autoware_system_designer.parsing.config import Config
+from autoware_system_designer.parsing.loaders.data_parser import ConfigParser
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)

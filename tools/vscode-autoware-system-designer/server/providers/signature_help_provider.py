@@ -7,7 +7,7 @@ from lsprotocol import types as lsp
 from registry_manager import RegistryManager
 from utils.uri_utils import uri_to_path
 
-from autoware_system_designer.models.config import Config, ConfigType
+from autoware_system_designer.parsing.config import Config, ConfigType
 
 
 class SignatureHelpProvider:

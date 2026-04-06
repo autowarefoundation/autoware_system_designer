@@ -7,7 +7,7 @@ from registry_manager import RegistryManager
 from utils.text_utils import get_word_at_position
 from utils.uri_utils import path_to_uri, uri_to_path
 
-from autoware_system_designer.models.config import Config, ConfigType
+from autoware_system_designer.parsing.config import Config, ConfigType
 
 
 class DefinitionProvider:

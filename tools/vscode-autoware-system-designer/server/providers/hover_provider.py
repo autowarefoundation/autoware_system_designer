@@ -7,7 +7,7 @@ from registry_manager import RegistryManager
 from resolution_service import ResolutionService
 from utils.text_utils import get_word_at_position
 
-from autoware_system_designer.models.config import Config, ConfigType
+from autoware_system_designer.parsing.config import Config, ConfigType
 
 
 class HoverProvider:
