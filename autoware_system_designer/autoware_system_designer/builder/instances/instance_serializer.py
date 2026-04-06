@@ -1,3 +1,15 @@
+"""Convert Instance graph to InstanceData (JSON TypedDict).
+
+Three-layer data flow:
+  1. YAML → Config (models/config.py via data_parser.py)
+  2. Config → Instance (builders/instances/instance_pipeline.py)
+  3. Instance → InstanceData (this module) → JSON (system_structure_json.py)
+
+This module implements explicit conversion from in-memory Instance objects
+to strongly-typed InstanceData TypedDicts. Each Instance tree is recursively
+converted, with separate helpers for ports, parameters, events, and links.
+The result is passed to system_structure_json.py for JSON serialization.
+"""
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
 
@@ -87,65 +99,104 @@ def collect_launcher_data(instance: "Instance") -> Dict[str, Any]:
 
 
 def collect_instance_data(instance: "Instance") -> InstanceData:
-    data = {
+    """Convert Instance to InstanceData TypedDict.
+
+    Explicit conversion of in-memory Instance graph to typed JSON structure.
+    Ensures all InstanceData fields are populated with appropriate defaults.
+    """
+    data: InstanceData = {
         "name": instance.name,
         "unique_id": instance.unique_id,
         "entity_type": instance.entity_type,
         "namespace": instance.namespace.to_string(),
+        "resolved_path": instance.resolved_path.to_string(),
+        "port_namespace": instance.port_namespace.to_string(),
         "path": instance.path,
         "compute_unit": instance.compute_unit,
         "vis_guide": instance.vis_guide,
         "source_file": instance.source_file,
-        "in_ports": [serialize_port(p) for p in instance.link_manager.get_all_in_ports()],
-        "out_ports": [serialize_port(p) for p in instance.link_manager.get_all_out_ports()],
-        "children": (
-            [collect_instance_data(child) for child in instance.children.values()]
-            if hasattr(instance, "children")
-            else []
-        ),
-        "links": (
-            [
-                {
-                    "unique_id": link.unique_id,
-                    "from_port": serialize_port(link.from_port),
-                    "to_port": serialize_port(link.to_port),
-                    "msg_type": link.msg_type,
-                    "topic": link.topic,
-                }
-                for link in instance.link_manager.get_all_links()
-            ]
-            if hasattr(instance.link_manager, "links")
-            else []
-        ),
-        "events": [serialize_event(e) for e in instance.event_manager.get_all_events()],
-        "parameters": [
-            ParameterData(
-                name=p.name,
-                value=p.value,
-                type=p.data_type,
-                parameter_type=serialize_parameter_type(p.parameter_type),
-                source=serialize_source(p.source),
-            )
-            for p in instance.parameter_manager.get_all_parameters()
-        ],
+        "in_ports": _collect_in_ports(instance),
+        "out_ports": _collect_out_ports(instance),
+        "children": _collect_children(instance),
+        "links": _collect_links(instance),
+        "events": _collect_events(instance),
+        "parameters": _collect_parameters(instance),
     }
 
     if instance.entity_type == "node":
         data["package"] = instance.launch_manager.package_name
-        data["parameter_files_all"] = [
-            ParameterFileData(
-                name=pf.name,
-                path=pf.path,
-                allow_substs=pf.allow_substs,
-                is_override=pf.is_override,
-                parameter_type=serialize_parameter_type(pf.parameter_type),
-                source=serialize_source(pf.source),
-            )
-            for pf in instance.parameter_manager.get_all_parameter_files()
-        ]
+        data["parameter_files_all"] = _collect_parameter_files(instance)
         data["launcher"] = collect_launcher_data(instance)
 
     return data
+
+
+def _collect_in_ports(instance: "Instance") -> list[PortData]:
+    """Collect and serialize all input ports."""
+    return [serialize_port(p) for p in instance.link_manager.get_all_in_ports()]
+
+
+def _collect_out_ports(instance: "Instance") -> list[PortData]:
+    """Collect and serialize all output ports."""
+    return [serialize_port(p) for p in instance.link_manager.get_all_out_ports()]
+
+
+def _collect_children(instance: "Instance") -> list[InstanceData]:
+    """Recursively collect child instance data."""
+    if not hasattr(instance, "children"):
+        return []
+    return [collect_instance_data(child) for child in instance.children.values()]
+
+
+def _collect_links(instance: "Instance") -> list[Dict[str, Any]]:
+    """Collect and serialize all links."""
+    if not hasattr(instance.link_manager, "links"):
+        return []
+
+    return [
+        {
+            "unique_id": link.unique_id,
+            "from_port": serialize_port(link.from_port),
+            "to_port": serialize_port(link.to_port),
+            "msg_type": link.msg_type,
+            "topic": link.topic,
+        }
+        for link in instance.link_manager.get_all_links()
+    ]
+
+
+def _collect_events(instance: "Instance") -> list[EventData | None]:
+    """Collect and serialize all events."""
+    return [serialize_event(e) for e in instance.event_manager.get_all_events()]
+
+
+def _collect_parameters(instance: "Instance") -> list[ParameterData]:
+    """Collect and serialize all parameters."""
+    return [
+        ParameterData(
+            name=p.name,
+            value=p.value,
+            type=p.data_type,
+            parameter_type=serialize_parameter_type(p.parameter_type),
+            source=serialize_source(p.source),
+        )
+        for p in instance.parameter_manager.get_all_parameters()
+    ]
+
+
+def _collect_parameter_files(instance: "Instance") -> list[ParameterFileData]:
+    """Collect and serialize all parameter files."""
+    return [
+        ParameterFileData(
+            name=pf.name,
+            path=pf.path,
+            allow_substs=pf.allow_substs,
+            is_override=pf.is_override,
+            parameter_type=serialize_parameter_type(pf.parameter_type),
+            source=serialize_source(pf.source),
+        )
+        for pf in instance.parameter_manager.get_all_parameter_files()
+    ]
 
 
 def collect_system_structure(instance: "Instance", system_name: str, mode: str) -> SystemStructurePayload:

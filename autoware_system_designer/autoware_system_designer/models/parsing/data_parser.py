@@ -12,6 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Convert YAML entity definitions to typed Config objects.
+
+Three-layer data flow:
+  1. YAML → dict (yaml_parser.py)
+  2. dict → Config* (this module) via data_validator.py for schema validation
+  3. Config → Instance (builders/instances/instance_pipeline.py)
+  4. Instance → InstanceData → JSON (file_io/system_structure_json.py)
+
+This module implements the second layer: parsing YAML dicts into strongly-typed
+Config objects (NodeConfig, ModuleConfig, SystemConfig, ParameterSetConfig).
+Validation is delegated to data_validator.py; schema compliance is checked before
+conversion to Config classes.
+"""
+
 import logging
 from pathlib import Path
 from typing import Any, Dict
