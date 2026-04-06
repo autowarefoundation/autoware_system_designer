@@ -12,20 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Deployment instance: top-level system assembly orchestration.
-
-Three-layer data flow:
-  1. YAML → Config (models/parsing/data_parser.py)
-  2. Config → Instance (this module)
-  3. Instance → InstanceData → JSON (builders/instances/instance_serializer.py)
-
-This module implements the Config→Instance conversion by orchestrating:
-- Parameter resolution (parameter_resolver)
-- Instance tree construction (instance_tree.set_instances)
-- Port and link management (link_manager, port system)
-- Event and parameter setup (event_manager, parameter_manager)
-"""
-
 import logging
 from typing import Callable, Dict
 

@@ -1,15 +1,16 @@
-"""Convert Instance graph to InstanceData (JSON TypedDict).
-
-Three-layer data flow:
-  1. YAML → Config (models/config.py via data_parser.py)
-  2. Config → Instance (builders/instances/instance_pipeline.py)
-  3. Instance → InstanceData (this module) → JSON (system_structure_json.py)
-
-This module implements explicit conversion from in-memory Instance objects
-to strongly-typed InstanceData TypedDicts. Each Instance tree is recursively
-converted, with separate helpers for ports, parameters, events, and links.
-The result is passed to system_structure_json.py for JSON serialization.
-"""
+# Copyright 2026 TIER IV, inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict

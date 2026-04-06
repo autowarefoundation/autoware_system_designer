@@ -1,15 +1,16 @@
-"""System structure JSON I/O and serialization.
-
-Three-layer data flow:
-  1. YAML → Config (models/config.py via data_parser.py)
-  2. Config → Instance (builders/instances/instance_pipeline.py)
-  3. Instance → InstanceData (builders/instances/instance_serializer.py)
-  4. InstanceData → JSON (this module)
-
-This module provides I/O functions for saving/loading SystemStructurePayload
-(the schema-versioned InstanceData wrapper). Conversion from Instance to
-InstanceData is delegated to instance_serializer.py.
-"""
+# Copyright 2026 TIER IV, inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import json
 import logging
