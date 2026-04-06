@@ -40,7 +40,7 @@ class DeploymentInstance(Instance):
         self,
         system_config: SystemConfig,
         config_registry,
-        package_paths: Dict[str, str] = {},
+        package_paths: Dict[str, str],
         snapshot_callback: Callable[[str, Exception | None], None] | None = None,
     ) -> None:
         """Set system for this deployment instance."""

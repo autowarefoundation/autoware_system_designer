@@ -73,9 +73,7 @@ class Deployment:
         deploy_variants: List[Dict[str, Any]] = []
         deployment_table_path: Optional[str] = None
 
-        system_config, deploy_variants, deployment_table_path = resolve_input_target(
-            input_path, config_registry
-        )
+        system_config, deploy_variants, deployment_table_path = resolve_input_target(input_path, config_registry)
         if not system_config:
             raise ValidationError(f"System not found from input: {input_path}")
 
@@ -198,6 +196,7 @@ class Deployment:
         snapshot_store: Dict[str, Any],
     ):
         """Create callback for saving intermediate snapshots during instance population (Layer 2)."""
+
         def snapshot_callback(step: str, error: Exception | None = None) -> None:
             snapshot_path = os.path.join(self.system_structure_dir, f"{mode_key}_{step}.json")
             payload = save_system_structure_snapshot(snapshot_path, deploy_instance, self.name, mode_key, step, error)

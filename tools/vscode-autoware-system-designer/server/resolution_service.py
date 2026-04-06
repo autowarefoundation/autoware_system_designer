@@ -221,7 +221,7 @@ class ResolutionService:
             override_inputs = override.get("inputs", []) or []
             if override_inputs:
                 override_names = {p.get("name") for p in override_inputs if p.get("name")}
-                inputs = [p for p in inputs if p.name not in override_names]
+                inputs = [p for p in inputs if p.get("name") not in override_names]
                 inputs += [PortDefinition.from_dict(p) for p in override_inputs]
 
         base_name = config.base if hasattr(config, "base") else None
@@ -251,7 +251,7 @@ class ResolutionService:
             override_outputs = override.get("outputs", []) or []
             if override_outputs:
                 override_names = {p.get("name") for p in override_outputs if p.get("name")}
-                outputs = [p for p in outputs if p.name not in override_names]
+                outputs = [p for p in outputs if p.get("name") not in override_names]
                 outputs += [PortDefinition.from_dict(p) for p in override_outputs]
 
         base_name = config.base if hasattr(config, "base") else None
