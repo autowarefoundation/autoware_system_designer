@@ -106,8 +106,6 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
         "unique_id": instance.unique_id,
         "entity_type": instance.entity_type,
         "namespace": instance.namespace.to_string(),
-        "resolved_path": instance.resolved_path.to_string(),
-        "port_namespace": instance.port_namespace.to_string(),
         "path": instance.path,
         "compute_unit": instance.compute_unit,
         "vis_guide": instance.vis_guide,

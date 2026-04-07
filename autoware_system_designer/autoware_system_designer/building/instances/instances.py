@@ -75,11 +75,6 @@ class Instance:
         self.resolved_path = Namespace(resolved_path)
 
     @property
-    def port_namespace(self) -> Namespace:
-        """Get the namespace to be used for port naming."""
-        return self.resolved_path
-
-    @property
     def path_list(self) -> List:
         return list(self.resolved_path)
 
