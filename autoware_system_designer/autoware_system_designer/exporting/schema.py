@@ -111,7 +111,6 @@ class InstanceData(TypedDict, total=False):
     entity_type: str
     namespace: str
     resolved_path: str
-    port_namespace: str
     path: str
     compute_unit: Optional[str]
     vis_guide: Optional[Dict[str, Any]]

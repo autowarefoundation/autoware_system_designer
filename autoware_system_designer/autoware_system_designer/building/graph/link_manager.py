@@ -339,14 +339,14 @@ class LinkManager:
                     f"[E_CONN_TARGET_MISSING] EXTERNAL_TO_INTERNAL input.{connection.from_port_name} -> {connection.to_instance}.input.{connection.to_port_name}"
                 )
             port_name = from_info.port_name if from_info else connection.from_port_name
-            from_port = InPort(port_name, to_port.msg_type, self.instance.port_namespace)
+            from_port = InPort(port_name, to_port.msg_type, self.instance.resolved_path)
         elif connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
             if from_port is None:
                 raise ValidationError(
                     f"[E_CONN_SOURCE_MISSING] INTERNAL_TO_EXTERNAL {connection.from_instance}.output.{connection.from_port_name} -> output.{connection.to_port_name}"
                 )
             port_name = to_info.port_name if to_info else connection.to_port_name
-            to_port = OutPort(port_name, from_port.msg_type, self.instance.port_namespace)
+            to_port = OutPort(port_name, from_port.msg_type, self.instance.resolved_path)
 
         if from_info is not None:
             from_info.port = from_port
@@ -559,10 +559,10 @@ class LinkManager:
         """Create external ports based on link list."""
         for link in self.links:
             if link.connection_type == ConnectionType.EXTERNAL_TO_INTERNAL:
-                if link.from_port.namespace == self.instance.port_namespace:
+                if link.from_port.namespace == self.instance.resolved_path:
                     self.set_in_port(link.from_port)
             elif link.connection_type == ConnectionType.INTERNAL_TO_EXTERNAL:
-                if link.to_port.namespace == self.instance.port_namespace:
+                if link.to_port.namespace == self.instance.resolved_path:
                     self.set_out_port(link.to_port)
 
     def initialize_node_ports(self):
@@ -575,7 +575,7 @@ class LinkManager:
             in_port_instance = InPort(
                 cfg_in_port.name,
                 cfg_in_port.message_type,
-                self.instance.port_namespace,
+                self.instance.resolved_path,
                 remap_target=cfg_in_port.remap_target,
             )
             if cfg_in_port.global_topic is not None:
@@ -591,7 +591,7 @@ class LinkManager:
             out_port_instance = OutPort(
                 cfg_out_port.name,
                 cfg_out_port.message_type,
-                self.instance.port_namespace,
+                self.instance.resolved_path,
                 remap_target=cfg_out_port.remap_target,
             )
             if cfg_out_port.global_topic is not None:

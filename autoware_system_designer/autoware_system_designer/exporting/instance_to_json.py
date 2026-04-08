@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
 
@@ -29,6 +30,32 @@ from .schema import (
 
 if TYPE_CHECKING:
     from ..building.instances import Instance
+
+
+_SCIENTIFIC_NOTATION_PATTERN = re.compile(r"^[+-]?\d+(\.\d+)?[eE][+-]?\d+$")
+
+
+def _float_to_decimal_str(value: float) -> str:
+    """Convert a float to a decimal string without scientific notation."""
+    s = repr(value)
+    if "e" in s or "E" in s:
+        return f"{value:.15f}".rstrip("0").rstrip(".")
+    return s
+
+
+def _resolve_scientific_notation(value: Any) -> Any:
+    """Convert scientific notation to decimal string representation.
+
+    Handles two cases:
+    - float: Python's YAML parser converts unquoted '1e-3' to float 0.001,
+      which json.dumps may re-serialize as '1e-05' for very small values.
+    - str: quoted '1e-3' remains a string and must be expanded to '0.001'.
+    """
+    if isinstance(value, float):
+        return _float_to_decimal_str(value)
+    if isinstance(value, str) and _SCIENTIFIC_NOTATION_PATTERN.match(value.strip()):
+        return _float_to_decimal_str(float(value))
+    return value
 
 
 def serialize_event(event) -> EventData | None:
@@ -90,7 +117,10 @@ def collect_launcher_data(instance: "Instance") -> Dict[str, Any]:
         return {}
 
     if getattr(instance, "launch_manager", None) is not None:
-        return instance.launch_manager.get_launcher_data(instance)
+        data = instance.launch_manager.get_launcher_data(instance)
+        for param in data.get("param_values", []):
+            param["value"] = _resolve_scientific_notation(param["value"])
+        return data
 
     return {}
 
@@ -106,8 +136,6 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
         "unique_id": instance.unique_id,
         "entity_type": instance.entity_type,
         "namespace": instance.namespace.to_string(),
-        "resolved_path": instance.resolved_path.to_string(),
-        "port_namespace": instance.port_namespace.to_string(),
         "path": instance.path,
         "compute_unit": instance.compute_unit,
         "vis_guide": instance.vis_guide,
@@ -172,7 +200,7 @@ def _collect_parameters(instance: "Instance") -> list[ParameterData]:
     return [
         ParameterData(
             name=p.name,
-            value=p.value,
+            value=_resolve_scientific_notation(p.value),
             type=p.data_type,
             parameter_type=parameter_type_to_str(p.parameter_type),
             source=serialize_source(p.source),
