@@ -17,9 +17,10 @@ macro(autoware_system_designer_generate_launcher)
   set(DESIGN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/design")
 
   if(EXISTS ${DESIGN_DIR})
-    # Set up paths - use absolute path to the script
-    set(GENERATE_LAUNCHER_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/generate_node_launcher.py")
-    set(SYSTEM_DESIGNER_RUNNER_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/system_designer_runner.py")
+    # Set up paths - use installed script paths from the found package
+    get_filename_component(_AWSD_SCRIPT_DIR "${autoware_system_designer_DIR}/../script" ABSOLUTE)
+    set(GENERATE_LAUNCHER_PY_SCRIPT "${_AWSD_SCRIPT_DIR}/generate_node_launcher.py")
+    set(SYSTEM_DESIGNER_RUNNER_SCRIPT "${_AWSD_SCRIPT_DIR}/system_designer_runner.py")
     set(LAUNCHER_FILE_DIR "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/launcher/")
 
     # Set up logging

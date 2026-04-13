@@ -17,9 +17,10 @@ macro(autoware_system_designer_parameter)
   set(SCHEMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/schema")
 
   if(EXISTS ${SCHEMA_DIR})
-    # Set up paths - use absolute path to the script
-    set(PARAMETER_PROCESS_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/parameter_process.py")
-    set(SYSTEM_DESIGNER_RUNNER_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/system_designer_runner.py")
+    # Set up paths - use installed script paths from the found package
+    get_filename_component(_AWSD_SCRIPT_DIR "${autoware_system_designer_DIR}/../script" ABSOLUTE)
+    set(PARAMETER_PROCESS_SCRIPT "${_AWSD_SCRIPT_DIR}/parameter_process.py")
+    set(SYSTEM_DESIGNER_RUNNER_SCRIPT "${_AWSD_SCRIPT_DIR}/system_designer_runner.py")
     set(CONFIG_OUTPUT_DIR "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/config")
 
     # Set up logging
