@@ -50,7 +50,9 @@ class AutowareSystemDesignerLanguageServer:
         self.completion_provider = CompletionProvider(self.registry_manager, self.validation_engine.resolution_service)
         self.definition_provider = DefinitionProvider(self.registry_manager)
         self.hover_provider = HoverProvider(self.registry_manager, self.validation_engine.resolution_service)
-        self.signature_help_provider = SignatureHelpProvider(self.registry_manager, self.validation_engine.resolution_service)
+        self.signature_help_provider = SignatureHelpProvider(
+            self.registry_manager, self.validation_engine.resolution_service
+        )
 
         # Register handlers
         self._register_handlers()
