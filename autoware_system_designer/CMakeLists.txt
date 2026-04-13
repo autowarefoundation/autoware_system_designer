@@ -19,17 +19,17 @@ install(
 
 # Collect system descriptions at install time.
 # ${CMAKE_CURRENT_SOURCE_DIR} and ${Python3_EXECUTABLE} are expanded at configure time;
-# \${CMAKE_INSTALL_PREFIX} is deferred to install time so the correct prefix is used.
 install(CODE "
+  set(_dest_prefix \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}\")
   execute_process(
     COMMAND \"${CMAKE_COMMAND}\" -E remove_directory
-      \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/resource\"
+      \"\${_dest_prefix}/share/${PROJECT_NAME}/resource\"
   )
   execute_process(
     COMMAND \"${Python3_EXECUTABLE}\"
       \"${CMAKE_CURRENT_SOURCE_DIR}/script/collect_system_design_manifests.py\"
       \"${CMAKE_CURRENT_SOURCE_DIR}\"
-      \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/resource\"
+      \"\${_dest_prefix}/share/${PROJECT_NAME}/resource\"
       \"\${CMAKE_INSTALL_PREFIX}\"
     COMMAND_ERROR_IS_FATAL ANY
   )
