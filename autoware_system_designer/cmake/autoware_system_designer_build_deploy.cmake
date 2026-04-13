@@ -63,19 +63,23 @@ macro(autoware_system_designer_build_deploy project_name)
   set(BUILD_PY_SCRIPT "${_AWSD_SCRIPT_DIR}/deployment_process.py")
   set(SYSTEM_DESIGNER_RUNNER_SCRIPT "${_AWSD_SCRIPT_DIR}/system_designer_runner.py")
 
-  # Python dist-packages derived from install prefix; covers isolated and merged layouts.
+  # Locate the installed Python package dir; covers dist-packages (Debian/Ubuntu) and
+  # site-packages (venv / pip / some ROS 2 builds), both under local/lib and lib.
   get_filename_component(_AWSD_INSTALL_PREFIX "${autoware_system_designer_DIR}/../../.." ABSOLUTE)
   file(GLOB _AWSD_PYTHON_PATHS
     "${_AWSD_INSTALL_PREFIX}/local/lib/python*/dist-packages"
+    "${_AWSD_INSTALL_PREFIX}/local/lib/python*/site-packages"
     "${_AWSD_INSTALL_PREFIX}/lib/python*/dist-packages"
+    "${_AWSD_INSTALL_PREFIX}/lib/python*/site-packages"
   )
   list(SORT _AWSD_PYTHON_PATHS ORDER ASCENDING)
   if(_AWSD_PYTHON_PATHS)
     list(LENGTH _AWSD_PYTHON_PATHS _AWSD_PYTHON_PATHS_LEN)
     math(EXPR _AWSD_PYTHON_PATHS_LAST "${_AWSD_PYTHON_PATHS_LEN} - 1")
     list(GET _AWSD_PYTHON_PATHS ${_AWSD_PYTHON_PATHS_LAST} _AWSD_PYTHON_PATH)
+    set(_AWSD_PYTHONPATH_ENV "PYTHONPATH=${_AWSD_PYTHON_PATH}:$ENV{PYTHONPATH}")
   else()
-    set(_AWSD_PYTHON_PATH "")
+    set(_AWSD_PYTHONPATH_ENV "")
   endif()
 
   get_filename_component(SYSTEM_DESIGNER_RESOURCE_DIR "${autoware_system_designer_DIR}/../resource" ABSOLUTE)
@@ -113,7 +117,7 @@ macro(autoware_system_designer_build_deploy project_name)
   add_custom_target(run_build_py_${_INPUT_NAME} ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${LOG_DIR}
     COMMAND ${CMAKE_COMMAND} -E env
-      PYTHONPATH=${_AWSD_PYTHON_PATH}:$ENV{PYTHONPATH}
+      ${_AWSD_PYTHONPATH_ENV}
       AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT=${AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT}
       python3 ${SYSTEM_DESIGNER_RUNNER_SCRIPT}
         deploy
