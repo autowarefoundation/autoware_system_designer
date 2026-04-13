@@ -39,15 +39,6 @@ ament_package(
   CONFIG_EXTRAS "autoware_system_designer-extras.cmake"
 )
 
-# Copy the script to the build directory
-# Reconfigure when scripts change so build/*/script stays up-to-date.
-file(GLOB_RECURSE SCRIPT_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/script/*.py)
-
-foreach(SCRIPT_FILE ${SCRIPT_FILES})
-  get_filename_component(SCRIPT_FILE_NAME ${SCRIPT_FILE} NAME)
-  configure_file(${SCRIPT_FILE} ${CMAKE_BINARY_DIR}/script/${SCRIPT_FILE_NAME} COPYONLY)
-endforeach()
-
 install(
   DIRECTORY cmake
   DESTINATION share/${PROJECT_NAME}

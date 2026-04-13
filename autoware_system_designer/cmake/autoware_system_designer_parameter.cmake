@@ -17,6 +17,10 @@ macro(autoware_system_designer_parameter)
   set(SCHEMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/schema")
 
   if(EXISTS ${SCHEMA_DIR})
+    if(NOT Python3_EXECUTABLE)
+      find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    endif()
+
     # Set up paths - use installed script paths from the found package
     get_filename_component(_AWSD_SCRIPT_DIR "${autoware_system_designer_DIR}/../script" ABSOLUTE)
     set(PARAMETER_PROCESS_SCRIPT "${_AWSD_SCRIPT_DIR}/parameter_process.py")
@@ -46,7 +50,7 @@ macro(autoware_system_designer_parameter)
         OUTPUT ${CONFIG_FILES}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${CONFIG_OUTPUT_DIR}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${LOG_DIR}
-        COMMAND python3 ${SYSTEM_DESIGNER_RUNNER_SCRIPT} run --log-file ${LOG_FILE} -- python3 ${PARAMETER_PROCESS_SCRIPT} ${SCHEMA_DIR} ${CONFIG_OUTPUT_DIR} --package-name ${PROJECT_NAME}
+        COMMAND ${Python3_EXECUTABLE} ${SYSTEM_DESIGNER_RUNNER_SCRIPT} run --log-file ${LOG_FILE} -- ${Python3_EXECUTABLE} ${PARAMETER_PROCESS_SCRIPT} ${SCHEMA_DIR} ${CONFIG_OUTPUT_DIR} --package-name ${PROJECT_NAME}
         DEPENDS ${SCHEMA_FILES} ${PARAMETER_PROCESS_SCRIPT} ${SYSTEM_DESIGNER_RUNNER_SCRIPT}
         COMMENT "Generating parameter files for ${PROJECT_NAME} from schema files. Terminal shows warnings/errors; full log: ${LOG_FILE}"
         VERBATIM

@@ -58,6 +58,10 @@ macro(autoware_system_designer_build_deploy project_name)
     endforeach()
   endif()
 
+  if(NOT Python3_EXECUTABLE)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  endif()
+
   # autoware_system_designer_DIR = <prefix>/share/autoware_system_designer/cmake
   get_filename_component(_AWSD_SCRIPT_DIR "${autoware_system_designer_DIR}/../script" ABSOLUTE)
   set(BUILD_PY_SCRIPT "${_AWSD_SCRIPT_DIR}/deployment_process.py")
@@ -119,7 +123,7 @@ macro(autoware_system_designer_build_deploy project_name)
     COMMAND ${CMAKE_COMMAND} -E env
       ${_AWSD_PYTHONPATH_ENV}
       AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT=${AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT}
-      python3 ${SYSTEM_DESIGNER_RUNNER_SCRIPT}
+      ${Python3_EXECUTABLE} ${SYSTEM_DESIGNER_RUNNER_SCRIPT}
         deploy
         --log-file ${LOG_FILE}
         --print-level ${_PRINT_LEVEL}
