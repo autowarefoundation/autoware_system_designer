@@ -17,18 +17,23 @@ install(
   USE_SOURCE_PERMISSIONS
 )
 
-# Collect system descriptions
-# Scans the workspace source directory
-# and writes resource manifests directly to the install share directory.
-add_custom_target(collect_system_design_manifests ALL
-  COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/resource
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/resource
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/script/collect_system_design_manifests.py
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/resource
-    ${CMAKE_INSTALL_PREFIX}
-  COMMENT "Collecting autoware system descriptions"
-)
+# Collect system descriptions at install time.
+# ${CMAKE_CURRENT_SOURCE_DIR} and ${Python3_EXECUTABLE} are expanded at configure time;
+# \${CMAKE_INSTALL_PREFIX} is deferred to install time so the correct prefix is used.
+install(CODE "
+  execute_process(
+    COMMAND \"${CMAKE_COMMAND}\" -E remove_directory
+      \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/resource\"
+  )
+  execute_process(
+    COMMAND \"${Python3_EXECUTABLE}\"
+      \"${CMAKE_CURRENT_SOURCE_DIR}/script/collect_system_design_manifests.py\"
+      \"${CMAKE_CURRENT_SOURCE_DIR}\"
+      \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/resource\"
+      \"\${CMAKE_INSTALL_PREFIX}\"
+    COMMAND_ERROR_IS_FATAL ANY
+  )
+")
 
 ament_package(
   CONFIG_EXTRAS "autoware_system_designer-extras.cmake"
