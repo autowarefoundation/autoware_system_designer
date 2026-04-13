@@ -31,9 +31,9 @@ class DefinitionProvider:
             config = self.registry_manager.entity_registry[word]
             # Use source_map to find the exact line of the 'name' field
             line_num = 0
-            if hasattr(config, 'source_map') and config.source_map and 'name' in config.source_map:
+            if hasattr(config, "source_map") and config.source_map and "name" in config.source_map:
                 # source_map['name'] is (line, column) tuple; YAML lines are 0-indexed
-                line_num = config.source_map['name'][0]
+                line_num = config.source_map["name"][0]
             return lsp.Location(
                 uri=path_to_uri(str(config.file_path)),
                 range=lsp.Range(
@@ -75,8 +75,12 @@ class DefinitionProvider:
                                 entity_config = self.registry_manager.entity_registry[entity_name]
                                 # Use source_map for precise line of 'name' field
                                 line_num = 0
-                                if hasattr(entity_config, 'source_map') and entity_config.source_map and 'name' in entity_config.source_map:
-                                    line_num = entity_config.source_map['name'][0]
+                                if (
+                                    hasattr(entity_config, "source_map")
+                                    and entity_config.source_map
+                                    and "name" in entity_config.source_map
+                                ):
+                                    line_num = entity_config.source_map["name"][0]
                                 return lsp.Location(
                                     uri=path_to_uri(str(entity_config.file_path)),
                                     range=lsp.Range(
@@ -99,8 +103,12 @@ class DefinitionProvider:
                                 entity_config = self.registry_manager.entity_registry[component_entity]
                                 # Use source_map for precise line of 'name' field
                                 line_num = 0
-                                if hasattr(entity_config, 'source_map') and entity_config.source_map and 'name' in entity_config.source_map:
-                                    line_num = entity_config.source_map['name'][0]
+                                if (
+                                    hasattr(entity_config, "source_map")
+                                    and entity_config.source_map
+                                    and "name" in entity_config.source_map
+                                ):
+                                    line_num = entity_config.source_map["name"][0]
                                 return lsp.Location(
                                     uri=path_to_uri(str(entity_config.file_path)),
                                     range=lsp.Range(

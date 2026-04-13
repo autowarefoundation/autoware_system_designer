@@ -58,10 +58,39 @@ macro(autoware_system_designer_build_deploy project_name)
     endforeach()
   endif()
 
-  set(BUILD_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/deployment_process.py")
-  set(SYSTEM_DESIGNER_RUNNER_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/system_designer_runner.py")
-  set(SYSTEM_DESIGNER_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../autoware_system_designer")
-  set(SYSTEM_DESIGNER_RESOURCE_DIR "${CMAKE_BINARY_DIR}/../autoware_system_designer/resource")
+  # Always call find_package so Python3_VERSION_MAJOR/MINOR are guaranteed set,
+  # even when the caller already found Python3 before invoking this macro.
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+  # autoware_system_designer_DIR = <prefix>/share/autoware_system_designer/cmake
+  get_filename_component(_AWSD_SCRIPT_DIR "${autoware_system_designer_DIR}/../script" ABSOLUTE)
+  set(BUILD_PY_SCRIPT "${_AWSD_SCRIPT_DIR}/deployment_process.py")
+  set(SYSTEM_DESIGNER_RUNNER_SCRIPT "${_AWSD_SCRIPT_DIR}/system_designer_runner.py")
+
+  # Derive the installed Python package dir from the interpreter version.
+  # Glob + lexicographic sort mis-orders versions (e.g. python3.10 sorts before python3.9),
+  # so we use Python3_VERSION_MAJOR/MINOR to construct the exact path instead.
+  get_filename_component(_AWSD_INSTALL_PREFIX "${autoware_system_designer_DIR}/../../.." ABSOLUTE)
+  set(_AWSD_PYVER "${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}")
+  set(_AWSD_PYTHON_PATH "")
+  foreach(_AWSD_SUBDIR
+      "local/lib/python${_AWSD_PYVER}/dist-packages"
+      "local/lib/python${_AWSD_PYVER}/site-packages"
+      "lib/python${_AWSD_PYVER}/dist-packages"
+      "lib/python${_AWSD_PYVER}/site-packages"
+  )
+    if(EXISTS "${_AWSD_INSTALL_PREFIX}/${_AWSD_SUBDIR}")
+      set(_AWSD_PYTHON_PATH "${_AWSD_INSTALL_PREFIX}/${_AWSD_SUBDIR}")
+      break()
+    endif()
+  endforeach()
+  set(_AWSD_PYTHONPATH_ARGS "")
+  if(_AWSD_PYTHON_PATH)
+    set(_AWSD_PYTHONPATH_ARGS "PYTHONPATH=${_AWSD_PYTHON_PATH}")
+  endif()
+
+  get_filename_component(SYSTEM_DESIGNER_RESOURCE_DIR "${autoware_system_designer_DIR}/../resource" ABSOLUTE)
+
   set(OUTPUT_ROOT_DIR "${CMAKE_INSTALL_PREFIX}/share/${CMAKE_PROJECT_NAME}/")
   get_filename_component(WORKSPACE_ROOT "${CMAKE_BINARY_DIR}/../.." ABSOLUTE)
   set(LOG_DIR "${WORKSPACE_ROOT}/log/latest_build/${CMAKE_PROJECT_NAME}")
@@ -95,9 +124,9 @@ macro(autoware_system_designer_build_deploy project_name)
   add_custom_target(run_build_py_${_INPUT_NAME} ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${LOG_DIR}
     COMMAND ${CMAKE_COMMAND} -E env
-      PYTHONPATH=${SYSTEM_DESIGNER_SOURCE_DIR}:$ENV{PYTHONPATH}
+      ${_AWSD_PYTHONPATH_ARGS}
       AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT=${AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT}
-      python3 ${SYSTEM_DESIGNER_RUNNER_SCRIPT}
+      ${Python3_EXECUTABLE} ${SYSTEM_DESIGNER_RUNNER_SCRIPT}
         deploy
         --log-file ${LOG_FILE}
         --print-level ${_PRINT_LEVEL}

@@ -17,9 +17,14 @@ macro(autoware_system_designer_generate_launcher)
   set(DESIGN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/design")
 
   if(EXISTS ${DESIGN_DIR})
-    # Set up paths - use absolute path to the script
-    set(GENERATE_LAUNCHER_PY_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/generate_node_launcher.py")
-    set(SYSTEM_DESIGNER_RUNNER_SCRIPT "${CMAKE_BINARY_DIR}/../autoware_system_designer/script/system_designer_runner.py")
+    if(NOT Python3_EXECUTABLE)
+      find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    endif()
+
+    # Set up paths - use installed script paths from the found package
+    get_filename_component(_AWSD_SCRIPT_DIR "${autoware_system_designer_DIR}/../script" ABSOLUTE)
+    set(GENERATE_LAUNCHER_PY_SCRIPT "${_AWSD_SCRIPT_DIR}/generate_node_launcher.py")
+    set(SYSTEM_DESIGNER_RUNNER_SCRIPT "${_AWSD_SCRIPT_DIR}/system_designer_runner.py")
     set(LAUNCHER_FILE_DIR "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/launcher/")
 
     # Set up logging
@@ -47,7 +52,7 @@ macro(autoware_system_designer_generate_launcher)
           OUTPUT ${LAUNCHER_FILE}
           COMMAND ${CMAKE_COMMAND} -E make_directory ${LAUNCHER_FILE_DIR}
           COMMAND ${CMAKE_COMMAND} -E make_directory ${LOG_DIR}
-          COMMAND python3 ${SYSTEM_DESIGNER_RUNNER_SCRIPT} run --log-file ${LOG_FILE} --append -- python3 ${GENERATE_LAUNCHER_PY_SCRIPT} ${NODE_YAML_FILE} ${LAUNCHER_FILE_DIR}
+          COMMAND ${Python3_EXECUTABLE} ${SYSTEM_DESIGNER_RUNNER_SCRIPT} run --log-file ${LOG_FILE} --append -- ${Python3_EXECUTABLE} ${GENERATE_LAUNCHER_PY_SCRIPT} ${NODE_YAML_FILE} ${LAUNCHER_FILE_DIR}
           DEPENDS ${NODE_YAML_FILE} ${GENERATE_LAUNCHER_PY_SCRIPT} ${SYSTEM_DESIGNER_RUNNER_SCRIPT}
           COMMENT "Generating launcher file ${NODE_NAME}.launch.xml. Terminal shows warnings/errors; full log: ${LOG_FILE}"
           VERBATIM

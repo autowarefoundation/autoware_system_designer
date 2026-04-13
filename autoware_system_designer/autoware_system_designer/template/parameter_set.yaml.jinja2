@@ -6,7 +6,7 @@ parameters:
 {% for node in parameters %}
   - node: {{ node.node }}
 {% if node.parameter_files %}
-    parame_files:
+    param_files:
 {% for param_name, param_path in node.parameter_files.items() %}
       - {{ param_name }}: {{ param_path }}
 {% endfor %}
