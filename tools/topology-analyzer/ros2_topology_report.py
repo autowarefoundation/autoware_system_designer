@@ -4,6 +4,8 @@ import argparse
 import itertools
 import json
 import os
+import re
+from collections import defaultdict
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -18,6 +20,22 @@ from functions.ros2_topology_common import (
 _IGNORED_TOPICS: Set[str] = set()
 _RENAME_SIM_THRESHOLD = 0.70
 _RENAME_SIM_MARGIN = 0.12
+
+# Standard ROS 2 parameter management service suffixes — derivative of node name, suppress as rename noise.
+_PARAM_SVC_SUFFIXES: Set[str] = {
+    "describe_parameters",
+    "get_parameter_types",
+    "get_parameters",
+    "list_parameters",
+    "set_parameters",
+    "set_parameters_atomically",
+}
+
+# Tool-internal nodes that should be excluded from system comparisons by default.
+_TOOL_NODE_RE = re.compile(r"^/graph_snapshot$|^/launch_ros_\d+$")
+
+# Topics present on virtually every ROS 2 node — hide from single-report display by default.
+_COMMON_TOPICS: Set[str] = {"/rosout", "/clock", "/parameter_events"}
 
 
 def _basename(name: str) -> str:
@@ -589,6 +607,76 @@ def _filter_transform_listener(nodes: List[Dict], *, include: bool) -> List[Dict
     return [n for n in nodes if "transform_listener" not in (n.get("fq_name", "") or "")]
 
 
+def _filter_tool_nodes(nodes: List[Dict], *, include: bool) -> List[Dict]:
+    """Remove /graph_snapshot and /launch_ros_* nodes (tool artifacts, not system nodes)."""
+    if include:
+        return nodes
+    return [n for n in nodes if not _TOOL_NODE_RE.match(n.get("fq_name", "") or "")]
+
+
+def _is_param_svc_rename(old_name: str, new_name: str) -> bool:
+    """True when a service rename is purely a node-name-prefix change on a std ROS 2 param service."""
+    old_base = _basename(old_name)
+    new_base = _basename(new_name)
+    return old_base == new_base and old_base in _PARAM_SVC_SUFFIXES
+
+
+def _namespace_prefix(fq: str, depth: int = 2) -> str:
+    parts = [p for p in fq.strip("/").split("/") if p]
+    return "/" + "/".join(parts[:depth]) if parts else fq
+
+
+def _namespace_summary(
+    added: List[str],
+    removed: List[str],
+    changed: List[Tuple[str, str, object]],
+) -> List[str]:
+    stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"added": 0, "removed": 0, "changed": 0})
+    for fq in added:
+        stats[_namespace_prefix(fq)]["added"] += 1
+    for fq in removed:
+        stats[_namespace_prefix(fq)]["removed"] += 1
+    for ofq, _nfq, _d in changed:
+        stats[_namespace_prefix(ofq)]["changed"] += 1
+    lines: List[str] = []
+    for ns in sorted(stats.keys()):
+        s = stats[ns]
+        parts = []
+        if s["added"]:
+            parts.append(f"+{s['added']} added")
+        if s["removed"]:
+            parts.append(f"-{s['removed']} removed")
+        if s["changed"]:
+            parts.append(f"~{s['changed']} changed")
+        lines.append(f"- {ns}: {', '.join(parts)}")
+    return lines
+
+
+def _classify_node_change(ofq: str, nfq: str, diffs: Dict) -> str:
+    tags = []
+    has_structural = any(
+        diffs[k][0] or diffs[k][1]
+        for k in ("publishers", "subscribers", "services", "clients")
+    )
+    has_remapped = (ofq != nfq) or any(
+        diffs[k][3]
+        for k in ("publishers", "subscribers", "services", "clients")
+    )
+    param_diff = diffs.get("parameters")
+    value_diff = diffs.get("parameter_values")
+    has_param_name = param_diff and (param_diff.get("removed") or param_diff.get("added"))
+    has_param_value = value_diff and value_diff.get("changed")
+    if has_structural:
+        tags.append("structural")
+    if has_remapped:
+        tags.append("remapped")
+    if has_param_name:
+        tags.append("param-name")
+    if has_param_value:
+        tags.append("param-value")
+    return "[" + ", ".join(tags) + "]" if tags else "[changed]"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=(
@@ -645,6 +733,28 @@ def main() -> int:
         action="store_true",
         help="Include /parameter_events in matching and diffs (default: ignored).",
     )
+    ap.add_argument(
+        "--include-tool-nodes",
+        action="store_true",
+        help="Include /graph_snapshot and /launch_ros_* nodes (default: ignored).",
+    )
+    ap.add_argument(
+        "--include-common-topics",
+        action="store_true",
+        help="Show /rosout, /clock, /parameter_events in single-report group display (default: hidden).",
+    )
+    ap.add_argument(
+        "--max-match-summary",
+        type=int,
+        default=100,
+        help="Max matched pairs shown in diff summary (0 = no limit).",
+    )
+    ap.add_argument(
+        "--max-changed-nodes",
+        type=int,
+        default=200,
+        help="Max changed node entries shown in diff (0 = no limit).",
+    )
 
     args = ap.parse_args()
 
@@ -658,6 +768,7 @@ def main() -> int:
     if len(args.graph_json) == 1:
         data, nodes = _load_graph(args.graph_json[0])
         nodes = _filter_transform_listener(nodes, include=args.include_transform_listener)
+        nodes = _filter_tool_nodes(nodes, include=args.include_tool_nodes)
 
         # Group nodes by signature.
         groups: Dict[str, Dict] = {}
@@ -694,8 +805,12 @@ def main() -> int:
         lines.append(f"- Nodes (processed): {len(nodes)}")
         if not args.include_transform_listener:
             lines.append("- Filter: ignored nodes containing 'transform_listener'")
+        if not args.include_tool_nodes:
+            lines.append("- Filter: ignored tool nodes (/graph_snapshot, /launch_ros_*)")
         if not args.include_parameter_events:
             lines.append("- Filter: ignored topic '/parameter_events'")
+        if not args.include_common_topics:
+            lines.append("- Display: common topics (/rosout, /clock, /parameter_events) hidden in groups")
         lines.append(f"- Signature groups: {len(sorted_groups)}")
         dup = data.get("duplicates", []) or []
         lines.append(f"- Duplicate node names: {len(dup)}")
@@ -721,15 +836,25 @@ def main() -> int:
                 f"- pubs: {len(sig.pubs)}  subs: {len(sig.subs)}  srvs: {len(sig.srvs)}  clis: {len(sig.clis)}"
             )
             if sig.pubs:
-                lines.append("- publish topics:")
-                for t, types in sig.pubs[:30]:
-                    ty = ", ".join(types) if types else "<unknown>"
-                    lines.append(f"  - {t} :: {ty}")
+                pub_items = [
+                    (t, types) for t, types in sig.pubs
+                    if args.include_common_topics or t not in _COMMON_TOPICS
+                ]
+                if pub_items:
+                    lines.append("- publish topics:")
+                    for t, types in pub_items:
+                        ty = ", ".join(types) if types else "<unknown>"
+                        lines.append(f"  - {t} :: {ty}")
             if sig.subs:
-                lines.append("- subscribe topics:")
-                for t, types in sig.subs[:30]:
-                    ty = ", ".join(types) if types else "<unknown>"
-                    lines.append(f"  - {t} :: {ty}")
+                sub_items = [
+                    (t, types) for t, types in sig.subs
+                    if args.include_common_topics or t not in _COMMON_TOPICS
+                ]
+                if sub_items:
+                    lines.append("- subscribe topics:")
+                    for t, types in sub_items:
+                        ty = ", ".join(types) if types else "<unknown>"
+                        lines.append(f"  - {t} :: {ty}")
             lines.append("")
 
         lines.append("## Topic Index (publishers/subscribers counts)\n")
@@ -750,6 +875,8 @@ def main() -> int:
     new_data, new_nodes = _load_graph(new_path)
     old_nodes = _filter_transform_listener(old_nodes, include=args.include_transform_listener)
     new_nodes = _filter_transform_listener(new_nodes, include=args.include_transform_listener)
+    old_nodes = _filter_tool_nodes(old_nodes, include=args.include_tool_nodes)
+    new_nodes = _filter_tool_nodes(new_nodes, include=args.include_tool_nodes)
 
     old_params = old_data.get("param_names", {}) or {}
     new_params = new_data.get("param_names", {}) or {}
@@ -838,10 +965,18 @@ def main() -> int:
             or (
                 param_diff
                 and (
-                    param_diff["removed"] or param_diff["added"] or param_diff["old_status"] or param_diff["new_status"]
+                    param_diff["removed"]
+                    or param_diff["added"]
+                    or param_diff["old_status"] != param_diff["new_status"]
                 )
             )
-            or (value_diff and (value_diff["changed"] or value_diff["old_status"] or value_diff["new_status"]))
+            or (
+                value_diff
+                and (
+                    value_diff["changed"]
+                    or value_diff["old_status"] != value_diff["new_status"]
+                )
+            )
         ):
             changed_nodes.append(
                 (
@@ -860,8 +995,32 @@ def main() -> int:
 
     old_edges = _remap_old_edges(_edge_set(old_nodes), mapping)
     new_edges = _edge_set(new_nodes)
-    removed_edges = sorted(old_edges - new_edges)
-    added_edges = sorted(new_edges - old_edges)
+    raw_removed = old_edges - new_edges
+    raw_added = new_edges - old_edges
+
+    # Detect edge renames: same (pub, sub) endpoints after mapping, only the topic name changed.
+    removed_by_ep: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+    added_by_ep: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+    for p, s, t in raw_removed:
+        removed_by_ep[(p, s)].append(t)
+    for p, s, t in raw_added:
+        added_by_ep[(p, s)].append(t)
+
+    renamed_edges: List[Tuple[str, str, str, str]] = []  # (pub, sub, old_topic, new_topic)
+    consumed_removed: Set[Tuple[str, str, str]] = set()
+    consumed_added: Set[Tuple[str, str, str]] = set()
+    for (p, s), old_topics in removed_by_ep.items():
+        new_topics = added_by_ep.get((p, s), [])
+        if len(old_topics) == 1 and len(new_topics) == 1:
+            ot, nt = old_topics[0], new_topics[0]
+            if _basename(ot) == _basename(nt):
+                renamed_edges.append((p, s, ot, nt))
+                consumed_removed.add((p, s, ot))
+                consumed_added.add((p, s, nt))
+
+    removed_edges = sorted(raw_removed - consumed_removed)
+    added_edges = sorted(raw_added - consumed_added)
+    renamed_edges.sort()
 
     out_path = args.out
     if out_path is None:
@@ -877,6 +1036,8 @@ def main() -> int:
     lines.append(f"- New nodes: {len(new_nodes)}")
     if not args.include_transform_listener:
         lines.append("- Filter: ignored nodes containing 'transform_listener'")
+    if not args.include_tool_nodes:
+        lines.append("- Filter: ignored tool nodes (/graph_snapshot, /launch_ros_*)")
     if not args.include_parameter_events:
         lines.append("- Filter: ignored topic '/parameter_events'")
     if param_enabled:
@@ -888,13 +1049,22 @@ def main() -> int:
     lines.append(f"- Removed nodes (unmatched): {len(removed_nodes)}")
     lines.append("")
 
+    lines.append("## Namespace Summary\n")
+    ns_summary = _namespace_summary(added_nodes, removed_nodes, changed_nodes)
+    if ns_summary:
+        lines.extend(ns_summary)
+    else:
+        lines.append("- (no differences)")
+    lines.append("")
+
     lines.append("## Matching summary\n")
     evidence_sorted = sorted(evidence, key=lambda x: (-x[2], x[0], x[1]))
-    for ofq, nfq, s in evidence_sorted[:50]:
+    max_match = args.max_match_summary if args.max_match_summary > 0 else len(evidence_sorted)
+    for ofq, nfq, s in evidence_sorted[:max_match]:
         suffix = "" if ofq == nfq else ", renamed"
         lines.append(f"- {ofq} -> {nfq} (sim={s:.2f}{suffix})")
-    if len(evidence_sorted) > 50:
-        lines.append(f"- ... {len(evidence_sorted) - 50} more matched pairs")
+    if len(evidence_sorted) > max_match:
+        lines.append(f"- ... {len(evidence_sorted) - max_match} more matched pairs")
     lines.append("")
 
     if added_nodes:
@@ -915,10 +1085,17 @@ def main() -> int:
 
     if changed_nodes:
         lines.append("## Changed nodes (matched but endpoints differ)\n")
-        for ofq, nfq, diffs in sorted(changed_nodes, key=lambda x: x[0])[:80]:
-            lines.append(f"### {ofq} -> {nfq}")
+        max_changed = args.max_changed_nodes if args.max_changed_nodes > 0 else len(changed_nodes)
+        for ofq, nfq, diffs in sorted(changed_nodes, key=lambda x: x[0])[:max_changed]:
+            change_tag = _classify_node_change(ofq, nfq, diffs)
+            lines.append(f"### {ofq} -> {nfq} {change_tag}")
+            node_was_renamed = ofq != nfq
             for kind in ("publishers", "subscribers", "services", "clients"):
                 removed, added, changed, renamed = diffs[kind]
+                # Suppress standard ROS 2 param service renames that are purely derived
+                # from the node itself being renamed — they add no information.
+                if node_was_renamed and kind == "services":
+                    renamed = [(o, n) for o, n in renamed if not _is_param_svc_rename(o, n)]
                 if not (removed or added or changed or renamed):
                     continue
                 lines.append(f"- {kind}:")
@@ -953,23 +1130,35 @@ def main() -> int:
                     n_str = "<unset>" if nv is None else nv
                     lines.append(f"  - changed: {k} :: {o_str} -> {n_str}")
             lines.append("")
-        if len(changed_nodes) > 80:
-            lines.append(f"- ... {len(changed_nodes) - 80} more changed matched nodes")
+        if len(changed_nodes) > max_changed:
+            lines.append(f"- ... {len(changed_nodes) - max_changed} more changed matched nodes")
         lines.append("")
 
     lines.append("## Edge-level changes (pub -> sub on topic)\n")
     lines.append(f"- Added edges: {len(added_edges)}")
     lines.append(f"- Removed edges: {len(removed_edges)}")
+    lines.append(f"- Renamed edges (same endpoints, topic renamed): {len(renamed_edges)}")
     lines.append("")
-    for p, s, t in added_edges[:80]:
-        lines.append(f"- + {p} -> {s} : {t}")
-    if len(added_edges) > 80:
-        lines.append(f"- ... {len(added_edges) - 80} more added edges")
-    lines.append("")
-    for p, s, t in removed_edges[:80]:
-        lines.append(f"- - {p} -> {s} : {t}")
-    if len(removed_edges) > 80:
-        lines.append(f"- ... {len(removed_edges) - 80} more removed edges")
+    if renamed_edges:
+        lines.append("### Renamed edges\n")
+        for p, s, ot, nt in renamed_edges[:80]:
+            lines.append(f"- ~ {p} -> {s} : {ot} -> {nt}")
+        if len(renamed_edges) > 80:
+            lines.append(f"- ... {len(renamed_edges) - 80} more renamed edges")
+        lines.append("")
+    if added_edges:
+        lines.append("### Added edges\n")
+        for p, s, t in added_edges[:80]:
+            lines.append(f"- + {p} -> {s} : {t}")
+        if len(added_edges) > 80:
+            lines.append(f"- ... {len(added_edges) - 80} more added edges")
+        lines.append("")
+    if removed_edges:
+        lines.append("### Removed edges\n")
+        for p, s, t in removed_edges[:80]:
+            lines.append(f"- - {p} -> {s} : {t}")
+        if len(removed_edges) > 80:
+            lines.append(f"- ... {len(removed_edges) - 80} more removed edges")
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
