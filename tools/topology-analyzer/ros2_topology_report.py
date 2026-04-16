@@ -689,6 +689,7 @@ def _classify_node_change(ofq: str, nfq: str, diffs: Dict) -> str:
     has_param_name = param_diff and (param_diff.get("removed") or param_diff.get("added"))
     has_param_value = value_diff and value_diff.get("changed")
     has_container = bool(diffs.get("component"))
+    has_process = bool(diffs.get("process"))
     if has_structural:
         tags.append("structural")
     if has_remapped:
@@ -699,6 +700,8 @@ def _classify_node_change(ofq: str, nfq: str, diffs: Dict) -> str:
         tags.append("param-value")
     if has_container:
         tags.append("container")
+    if has_process:
+        tags.append("process")
     return "[" + ", ".join(tags) + "]" if tags else "[changed]"
 
 
@@ -729,6 +732,79 @@ def _build_container_map(nodes: List[Dict]) -> Dict[str, List[str]]:
         if comp and comp.get("container"):
             result[comp["container"]].append(n.get("fq_name", ""))
     return {k: sorted(v) for k, v in result.items()}
+
+
+def _build_process_groups(
+    nodes: List[Dict],
+) -> Tuple[Dict[int, Dict], List[str]]:
+    """
+    Group nodes by OS PID.
+
+    Returns:
+      groups         — {pid: {"pid", "exe", "package", "executor_type",
+                              "component_classes", "nodes": [fq, ...]}}
+      no_process_fqs — sorted list of fq_names that had no process info
+    """
+    groups: Dict[int, Dict] = {}
+    no_process: List[str] = []
+    for n in nodes:
+        proc = n.get("process")
+        fq = n.get("fq_name", "")
+        if not proc:
+            no_process.append(fq)
+            continue
+        pid = proc.get("pid")
+        if pid is None:
+            no_process.append(fq)
+            continue
+        if pid not in groups:
+            groups[pid] = {
+                "pid": pid,
+                "exe": proc.get("exe"),
+                "package": proc.get("package"),
+                "executor_type": proc.get("executor_type"),
+                "component_classes": proc.get("component_classes"),
+                "nodes": [],
+            }
+        groups[pid]["nodes"].append(fq)
+    for g in groups.values():
+        g["nodes"].sort()
+    return groups, sorted(no_process)
+
+
+def _diff_process_info(
+    old_proc: Optional[Dict],
+    new_proc: Optional[Dict],
+) -> Optional[Dict]:
+    """
+    Return a diff dict when process info changed in a meaningful way.
+    Ephemeral fields (PID, cmdline, ros_libraries) are intentionally ignored
+    because they will always differ between snapshots.
+    Returns None when nothing significant changed.
+    """
+    if old_proc is None and new_proc is None:
+        return None
+    if old_proc is None:
+        return {
+            "gained": True,
+            "executor_type": new_proc.get("executor_type"),
+            "package": new_proc.get("package"),
+        }
+    if new_proc is None:
+        return {"lost": True}
+
+    diff: Dict = {}
+    for field in ("executor_type", "package"):
+        ov, nv = old_proc.get(field), new_proc.get(field)
+        if ov != nv:
+            diff[field] = {"old": ov, "new": nv}
+    # Compare exe by basename only — install prefix may legitimately differ.
+    old_exe_base = os.path.basename(old_proc.get("exe") or "")
+    new_exe_base = os.path.basename(new_proc.get("exe") or "")
+    if old_exe_base != new_exe_base:
+        diff["exe"] = {"old": old_exe_base, "new": new_exe_base}
+
+    return diff if diff else None
 
 
 def main() -> int:
@@ -936,6 +1012,48 @@ def main() -> int:
                     lines.append(f"- {fq}")
                 lines.append("")
 
+        process_groups, no_process_fqs = _build_process_groups(nodes)
+        if process_groups:
+            lines.append("## Process / Executor Summary\n")
+            lines.append(f"- Unique processes: {len(process_groups)}")
+            lines.append(f"- Nodes without process info: {len(no_process_fqs)}")
+
+            exec_counts: Dict[str, int] = defaultdict(int)
+            for g in process_groups.values():
+                exec_counts[g["executor_type"] or "standalone"] += 1
+            lines.append("- Executor type breakdown:")
+            for et, cnt in sorted(exec_counts.items()):
+                lines.append(f"  - {et}: {cnt} process(es)")
+            lines.append("")
+
+            # Sort by (executor_type, package, pid) so related processes cluster together.
+            sorted_pids = sorted(
+                process_groups.keys(),
+                key=lambda p: (
+                    process_groups[p]["executor_type"] or "standalone",
+                    process_groups[p]["package"] or "",
+                    p,
+                ),
+            )
+            for pid in sorted_pids:
+                g = process_groups[pid]
+                et = g["executor_type"] or "standalone"
+                pkg = g["package"] or "<unknown>"
+                node_list = g["nodes"]
+                lines.append(f"### PID {pid}  [{et}]  {pkg}")
+                lines.append(f"- exe: {g['exe'] or '<unknown>'}")
+                if g.get("component_classes"):
+                    cls = g["component_classes"]
+                    preview_cls = ", ".join(cls[: args.max_nodes_per_group])
+                    if len(cls) > args.max_nodes_per_group:
+                        preview_cls += f", +{len(cls) - args.max_nodes_per_group} more"
+                    lines.append(f"- component classes: {preview_cls}")
+                preview = ", ".join(node_list[: args.max_nodes_per_group])
+                if len(node_list) > args.max_nodes_per_group:
+                    preview += f", +{len(node_list) - args.max_nodes_per_group} more"
+                lines.append(f"- nodes ({len(node_list)}): {preview}")
+                lines.append("")
+
         lines.append("## Topic Index (publishers/subscribers counts)\n")
         for topic, ps in topic_items:
             pubs = ps.get("publishers", [])
@@ -1029,6 +1147,11 @@ def main() -> int:
             n.get("component_info"),
         )
 
+        process_diff = _diff_process_info(
+            o.get("process"),
+            n.get("process"),
+        )
+
         if (
             pubs[0]
             or pubs[1]
@@ -1062,6 +1185,7 @@ def main() -> int:
                 )
             )
             or component_diff
+            or process_diff
         ):
             changed_nodes.append(
                 (
@@ -1075,6 +1199,7 @@ def main() -> int:
                         "parameters": param_diff,
                         "parameter_values": value_diff,
                         "component": component_diff,
+                        "process": process_diff,
                     },
                 )
             )
@@ -1127,12 +1252,15 @@ def main() -> int:
     if not args.include_parameter_events:
         lines.append("- Filter: ignored topic '/parameter_events'")
     component_enabled = any(n.get("component_info") is not None for n in old_nodes + new_nodes)
+    process_enabled = any(n.get("process") is not None for n in old_nodes + new_nodes)
     if param_enabled:
         lines.append("- Parameters: compared by name (param_names)")
     if param_values_enabled:
         lines.append("- Parameters: compared by value (param_values)")
     if component_enabled:
         lines.append("- Component containers: compared")
+    if process_enabled:
+        lines.append("- Process info: compared (executor_type, package, exe)")
     lines.append(f"- Matched node pairs: {len(mapping)}")
     lines.append(f"- Added nodes (unmatched): {len(added_nodes)}")
     lines.append(f"- Removed nodes (unmatched): {len(removed_nodes)}")
@@ -1222,6 +1350,63 @@ def main() -> int:
                             lines.append(f"- left:   {om}  [now standalone]")
                 lines.append("")
 
+    # Collect process-level changes across all matched nodes for a dedicated summary.
+    proc_exec_changes: List[Tuple[str, str, str, str]] = []  # (ofq, nfq, old_et, new_et)
+    proc_pkg_changes: List[Tuple[str, str, str, str]] = []   # (ofq, nfq, old_pkg, new_pkg)
+    proc_gained: List[str] = []
+    proc_lost: List[str] = []
+    for ofq, nfq, diffs in changed_nodes:
+        pd = diffs.get("process")
+        if not pd:
+            continue
+        if pd.get("gained"):
+            proc_gained.append(nfq)
+        elif pd.get("lost"):
+            proc_lost.append(ofq)
+        else:
+            if "executor_type" in pd:
+                proc_exec_changes.append(
+                    (ofq, nfq, pd["executor_type"]["old"] or "none", pd["executor_type"]["new"] or "none")
+                )
+            if "package" in pd:
+                proc_pkg_changes.append(
+                    (ofq, nfq, pd["package"]["old"] or "<unknown>", pd["package"]["new"] or "<unknown>")
+                )
+
+    if process_enabled and (proc_exec_changes or proc_pkg_changes or proc_gained or proc_lost):
+        lines.append("## Process Changes\n")
+        lines.append(f"- Executor type changes: {len(proc_exec_changes)}")
+        lines.append(f"- Package changes: {len(proc_pkg_changes)}")
+        lines.append(f"- Nodes gaining process info: {len(proc_gained)}")
+        lines.append(f"- Nodes losing process info: {len(proc_lost)}")
+        lines.append("")
+
+        if proc_exec_changes:
+            lines.append("### Executor type changes\n")
+            for ofq, nfq, old_et, new_et in sorted(proc_exec_changes, key=lambda x: x[0]):
+                label = f"{ofq}" if ofq == nfq else f"{ofq} -> {nfq}"
+                lines.append(f"- {label}  [{old_et} -> {new_et}]")
+            lines.append("")
+
+        if proc_pkg_changes:
+            lines.append("### Package changes\n")
+            for ofq, nfq, old_pkg, new_pkg in sorted(proc_pkg_changes, key=lambda x: x[0]):
+                label = f"{ofq}" if ofq == nfq else f"{ofq} -> {nfq}"
+                lines.append(f"- {label}  [{old_pkg} -> {new_pkg}]")
+            lines.append("")
+
+        if proc_gained:
+            lines.append("### Gained process info\n")
+            for fq in sorted(proc_gained):
+                lines.append(f"- {fq}")
+            lines.append("")
+
+        if proc_lost:
+            lines.append("### Lost process info\n")
+            for fq in sorted(proc_lost):
+                lines.append(f"- {fq}")
+            lines.append("")
+
     lines.append("## Matching summary\n")
     evidence_sorted = sorted(evidence, key=lambda x: (-x[2], x[0], x[1]))
     max_match = args.max_match_summary if args.max_match_summary > 0 else len(evidence_sorted)
@@ -1309,6 +1494,21 @@ def main() -> int:
                     lines.append(f"  - container: {old_c} -> {new_c}")
                     if old_id != new_id:
                         lines.append(f"  - component_id: {old_id} -> {new_id}")
+            proc_diff = diffs.get("process") if isinstance(diffs, dict) else None
+            if proc_diff:
+                lines.append("- process:")
+                if proc_diff.get("gained"):
+                    et = proc_diff.get("executor_type") or "none"
+                    pkg = proc_diff.get("package") or "<unknown>"
+                    lines.append(f"  - gained process info  [executor_type={et}, package={pkg}]")
+                elif proc_diff.get("lost"):
+                    lines.append("  - lost process info")
+                else:
+                    for field in ("executor_type", "package", "exe"):
+                        if field in proc_diff:
+                            ov = proc_diff[field]["old"] or "none"
+                            nv = proc_diff[field]["new"] or "none"
+                            lines.append(f"  - {field}: {ov} -> {nv}")
             lines.append("")
         if len(changed_nodes) > max_changed:
             lines.append(f"- ... {len(changed_nodes) - max_changed} more changed matched nodes")
