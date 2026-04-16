@@ -8,7 +8,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import rclpy
 from rclpy.node import Node
@@ -45,6 +45,297 @@ def _compile_filter(pattern: Optional[str]) -> Optional[re.Pattern]:
     if not pattern:
         return None
     return re.compile(pattern)
+
+
+# ─── Process / executor discovery ────────────────────────────────────────────
+
+# Maps component_container binary basename → ROS 2 executor type string.
+_CONTAINER_EXECUTOR: Dict[str, str] = {
+    "component_container": "single_threaded",
+    "component_container_mt": "multi_threaded",
+    "component_container_isolated": "isolated",
+}
+
+
+def _ros_lib_prefixes() -> List[str]:
+    """
+    Return the lib/ sub-directories of every entry in AMENT_PREFIX_PATH.
+    Falls back to /opt/ros/ when the variable is unset.
+    """
+    prefixes: List[str] = []
+    for p in os.environ.get("AMENT_PREFIX_PATH", "").split(":"):
+        p = p.strip()
+        if p:
+            prefixes.append(os.path.join(p, "lib", ""))  # trailing sep for startswith
+    return prefixes or [os.path.join("/opt", "ros", "")]
+
+
+def _read_proc_cmdline(pid: int) -> Optional[List[str]]:
+    """Read /proc/<pid>/cmdline and split on NUL bytes."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            raw = fh.read()
+        tokens = raw.split(b"\x00")
+        return [t.decode("utf-8", errors="replace") for t in tokens if t]
+    except OSError:
+        return None
+
+
+def _read_proc_exe(pid: int) -> Optional[str]:
+    """Resolve /proc/<pid>/exe symlink → absolute binary path."""
+    try:
+        return os.readlink(f"/proc/{pid}/exe")
+    except OSError:
+        return None
+
+
+def _read_proc_maps_libs(pid: int, lib_prefixes: List[str]) -> List[str]:
+    """
+    Parse /proc/<pid>/maps and return unique .so paths that live under any of
+    the given lib_prefixes (ROS 2 / workspace install paths).
+    """
+    libs: Set[str] = set()
+    try:
+        with open(f"/proc/{pid}/maps", "r", errors="replace") as fh:
+            for line in fh:
+                cols = line.rstrip().split()
+                if len(cols) < 6:
+                    continue
+                path = cols[5]
+                if ".so" not in path:
+                    continue
+                for pfx in lib_prefixes:
+                    if path.startswith(pfx):
+                        libs.add(path)
+                        break
+    except OSError:
+        pass
+    return sorted(libs)
+
+
+def _parse_ros_remappings(cmdline: List[str]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Walk --ros-args tokens and return (node_name, namespace) from
+    ``-r __node:=<name>`` / ``-r __ns:=<ns>`` remapping rules.
+    """
+    node_name: Optional[str] = None
+    namespace: Optional[str] = None
+    i = 0
+    while i < len(cmdline):
+        arg = cmdline[i]
+        if arg in ("-r", "--remap") and i + 1 < len(cmdline):
+            remap = cmdline[i + 1]
+            i += 2
+            if remap.startswith("__node:="):
+                node_name = remap[len("__node:="):]
+            elif remap.startswith("__ns:="):
+                namespace = remap[len("__ns:="):]
+        else:
+            i += 1
+    return node_name, namespace
+
+
+def _package_from_exe(exe: str) -> Optional[str]:
+    """
+    Derive the ROS 2 package name from an executable path.
+
+    Handles two patterns:
+    1. Install-space: <prefix>/lib/<package>/<executable>
+    2. Build-space (colcon): <ws>/build/<package>/…/<executable>
+    """
+    if not exe:
+        return None
+    parts = exe.replace("\\", "/").split("/")
+    # Install-space: rightmost "lib" followed by at least two more components.
+    for i in range(len(parts) - 2, -1, -1):
+        if parts[i] == "lib" and i + 2 <= len(parts) - 1:
+            return parts[i + 1]
+    # Build-space: colcon places executables under <ws>/build/<package>/…
+    for i in range(len(parts) - 2, -1, -1):
+        if parts[i] == "build":
+            return parts[i + 1]
+    return None
+
+
+def _resolve_exe_and_pkg(
+    cmdline: List[str], exe: Optional[str]
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Return ``(effective_exe_path, package_name)``.
+    For Python launchers (python3 …) the real script is ``cmdline[1]``.
+    """
+    base = os.path.basename(exe or "")
+    if exe and "python" not in base:
+        return exe, _package_from_exe(exe)
+    # Python launcher — the actual script is the first positional argument.
+    script = cmdline[1] if len(cmdline) >= 2 else None
+    return script or exe, _package_from_exe(script) if script else None
+
+
+def _load_ament_components(lib_prefixes: List[str]) -> Dict[str, List[str]]:
+    """
+    Parse the ``rclcpp_components`` ament resource index for every install
+    prefix derived from *lib_prefixes*.
+
+    Returns ``{library_basename: [class_name, ...]}`` for every registered
+    component factory.  One ``.so`` can contain multiple component classes.
+
+    Index file format (one entry per line)::
+
+        fully::qualified::ClassName;lib/pkg/libcomp.so
+    """
+    comp_map: Dict[str, List[str]] = {}
+    seen_roots: Set[str] = set()
+    for lib_pfx in lib_prefixes:
+        install_pfx = os.path.dirname(lib_pfx.rstrip("/\\"))
+        if install_pfx in seen_roots:
+            continue
+        seen_roots.add(install_pfx)
+        idx_dir = os.path.join(
+            install_pfx, "share", "ament_index", "resource_index", "rclcpp_components"
+        )
+        if not os.path.isdir(idx_dir):
+            continue
+        try:
+            entries = os.listdir(idx_dir)
+        except OSError:
+            continue
+        for pkg_file in entries:
+            fpath = os.path.join(idx_dir, pkg_file)
+            try:
+                with open(fpath, encoding="utf-8", errors="replace") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        # "ClassName;lib/pkg/libcomp.so"
+                        parts = line.split(";", 1)
+                        class_name = parts[0].strip()
+                        if len(parts) == 2:
+                            lib_file = os.path.basename(parts[1].strip())
+                            comp_map.setdefault(lib_file, []).append(class_name)
+            except OSError:
+                pass
+    return comp_map
+
+
+def _component_classes_from_libs(
+    libraries: List[str], ament_components: Dict[str, List[str]]
+) -> List[str]:
+    """Return the component class names whose plugin .so appears in *libraries*."""
+    classes: List[str] = []
+    for lib_path in libraries:
+        lb = os.path.basename(lib_path)
+        if lb in ament_components:
+            classes.extend(ament_components[lb])
+    return sorted(set(classes))
+
+
+def _scan_ros_processes(
+    lib_prefixes: List[str],
+) -> Tuple[Dict[str, Dict], Dict[int, Dict]]:
+    """
+    Scan ``/proc`` for every process that carries ``--ros-args`` in its
+    command line.
+
+    Returns two indices:
+
+    * ``by_fq``  — ``{fq_node_name: process_entry}``  (keyed by the node's
+      fully-qualified name derived from ``__node`` / ``__ns`` remappings)
+    * ``by_pid`` — ``{pid: process_entry}``
+    """
+    by_fq: Dict[str, Dict] = {}
+    by_pid: Dict[int, Dict] = {}
+
+    try:
+        pids = [int(d) for d in os.listdir("/proc") if d.isdigit()]
+    except OSError:
+        return by_fq, by_pid
+
+    for pid in pids:
+        cmdline = _read_proc_cmdline(pid)
+        if not cmdline or "--ros-args" not in cmdline:
+            continue
+
+        exe_raw = _read_proc_exe(pid)
+        eff_exe, pkg = _resolve_exe_and_pkg(cmdline, exe_raw)
+        libs = _read_proc_maps_libs(pid, lib_prefixes)
+        exe_base = os.path.basename(eff_exe or "")
+        executor_type: Optional[str] = _CONTAINER_EXECUTOR.get(exe_base)
+
+        node_name, namespace = _parse_ros_remappings(cmdline)
+
+        entry: Dict = {
+            "pid": pid,
+            "exe": eff_exe,
+            "package": pkg,
+            "executor_type": executor_type,
+            "cmdline": cmdline,
+            "ros_libraries": libs,
+        }
+        by_pid[pid] = entry
+
+        if node_name:
+            fq = _fq_name(node_name, namespace or "/")
+            by_fq[fq] = entry
+
+    return by_fq, by_pid
+
+
+def _build_process_info_map(
+    graph: List[NodeGraphInfo],
+    component_info_map: Dict[str, Dict],
+    by_fq: Dict[str, Dict],
+    by_pid: Dict[int, Dict],
+    ament_components: Dict[str, List[str]],
+) -> Dict[str, Optional[Dict]]:
+    """
+    Assign each graph node its OS process information.
+
+    * **Composable nodes** inherit their container's process (they have no
+      process of their own).
+    * **Standalone nodes** are matched by their fully-qualified name, which
+      must appear in ``by_fq`` (built from ``--ros-args`` remappings).
+    * In both cases ``component_classes`` lists every ``rclcpp_components``
+      plugin class whose ``.so`` is loaded into the process — resolving the
+      "plugin class not available at runtime" limitation for containers.
+    """
+    # Build container-fq → pid index
+    container_to_pid: Dict[str, int] = {
+        fq: e["pid"]
+        for fq, e in by_fq.items()
+        if os.path.basename(e.get("exe") or "") in _CONTAINER_EXECUTOR
+    }
+
+    result: Dict[str, Optional[Dict]] = {}
+    for n in graph:
+        comp = component_info_map.get(n.fq_name)
+        if comp is not None:
+            # Composable node — look up the container's process.
+            pid = container_to_pid.get(comp.get("container", ""))
+            if pid is not None and pid in by_pid:
+                e = dict(by_pid[pid])
+                e["component_classes"] = _component_classes_from_libs(
+                    e.get("ros_libraries", []), ament_components
+                ) or None
+                result[n.fq_name] = e
+            else:
+                result[n.fq_name] = None
+        else:
+            # Standalone node — match by fq_name.
+            e = by_fq.get(n.fq_name)
+            if e:
+                e = dict(e)
+                classes = _component_classes_from_libs(
+                    e.get("ros_libraries", []), ament_components
+                )
+                # Non-empty only for container nodes themselves (ComponentManager).
+                e["component_classes"] = classes or None
+                result[n.fq_name] = e
+            else:
+                result[n.fq_name] = None
+
+    return result
 
 
 def main() -> int:
@@ -87,6 +378,18 @@ def main() -> int:
         action="store_true",
         help="Include hidden node names if exposed by the graph APIs.",
     )
+    parser.add_argument(
+        "--no-process",
+        action="store_true",
+        help=(
+            "Skip OS process / executor discovery. "
+            "By default the snapshot enriches every node with its PID, "
+            "binary path, originating package, executor type, loaded ROS 2 "
+            "libraries, and (for component containers) resolved plugin class "
+            "names from the ament index. Use this flag when /proc is "
+            "unavailable or a lean snapshot is preferred."
+        ),
+    )
 
     parser.add_argument(
         "--params",
@@ -106,6 +409,7 @@ def main() -> int:
 
     try:
         # Let discovery settle.
+        print(f"[snapshot] Waiting {args.spin_seconds}s for graph discovery...", file=sys.stderr)
         end_t = time.time() + max(0.0, args.spin_seconds)
         while time.time() < end_t:
             rclpy.spin_once(node, timeout_sec=0.1)
@@ -129,6 +433,8 @@ def main() -> int:
         entries.sort(key=lambda x: x[2])
         if args.max_nodes and args.max_nodes > 0:
             entries = entries[: args.max_nodes]
+
+        print(f"[snapshot] Found {len(entries)} node(s). Collecting graph info...", file=sys.stderr)
 
         # Track duplicates (same fq name appearing multiple times).
         fq_counts: Dict[str, int] = {}
@@ -216,7 +522,17 @@ def main() -> int:
                 values[name] = _param_value_to_string(val)
             return values, None
 
-        for name, namespace, fq in entries:
+        total = len(entries)
+
+        def _print_progress(done: int, total: int) -> None:
+            width = 30
+            filled = int(width * done / total) if total else width
+            bar = "#" * filled + "-" * (width - filled)
+            sys.stderr.write(f"\r[snapshot] [{bar}] {done}/{total}")
+            sys.stderr.flush()
+
+        _print_progress(0, total)
+        for done, (name, namespace, fq) in enumerate(entries, 1):
             try:
                 pubs = node.get_publisher_names_and_types_by_node(name, namespace)
                 subs = node.get_subscriber_names_and_types_by_node(name, namespace)
@@ -299,14 +615,20 @@ def main() -> int:
             except Exception as exc:  # noqa: BLE001
                 errors[fq] = f"{type(exc).__name__}: {exc}"
 
+            _print_progress(done, total)
+
             if args.sleep_per_node and args.sleep_per_node > 0.0:
                 time.sleep(args.sleep_per_node)
+
+        sys.stderr.write("\n")
+        sys.stderr.flush()
 
         # --- Component container detection ---
         # Composable nodes are loaded into a ComponentManager container.
         # Containers expose a /{container_fq}/_container/list_nodes service that returns
         # the fully-qualified names and unique IDs of all loaded components.
         # This lets us record which nodes are composable and which container they live in.
+        print("[snapshot] Detecting component containers...", file=sys.stderr)
         component_info_map: Dict[str, Dict[str, object]] = {}
         try:
             from composition_interfaces.srv import ListNodes as _ListNodesSrv  # type: ignore
@@ -334,6 +656,22 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             errors["__component_detection__"] = f"{type(exc).__name__}: {exc}"
 
+        # --- Process / executor discovery ---
+        # Scan /proc to map each node → (PID, binary, package, executor type,
+        # loaded ROS 2 libraries, plugin class names from the ament index).
+        process_info_map: Dict[str, Optional[Dict]] = {}
+        if not args.no_process:
+            print("[snapshot] Scanning processes...", file=sys.stderr)
+            try:
+                _lib_pfx = _ros_lib_prefixes()
+                _ament_comps = _load_ament_components(_lib_pfx)
+                _by_fq, _by_pid = _scan_ros_processes(_lib_pfx)
+                process_info_map = _build_process_info_map(
+                    graph, component_info_map, _by_fq, _by_pid, _ament_comps
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors["__process_discovery__"] = f"{type(exc).__name__}: {exc}"
+
         payload = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "filtered": bool(args.filter),
@@ -344,7 +682,11 @@ def main() -> int:
             "param_names": param_names,
             "param_values": param_values,
             "nodes": [
-                {**asdict(n), "component_info": component_info_map.get(n.fq_name)}
+                {
+                    **asdict(n),
+                    "component_info": component_info_map.get(n.fq_name),
+                    "process": process_info_map.get(n.fq_name),
+                }
                 for n in graph
             ],
         }
@@ -361,6 +703,7 @@ def main() -> int:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, sort_keys=False)
 
+        print(f"[snapshot] Done. Written to: {out_path}", file=sys.stderr)
         print(out_path)
         return 0
     finally:

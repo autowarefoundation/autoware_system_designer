@@ -69,6 +69,7 @@ Matches nodes between the two snapshots — name-agnostic, so nodes that were re
 | `--max-nodes N`                | `0` (unlimited)                                 | Cap the number of nodes processed                                                                                                                             |
 | `--sleep-per-node N`           | `0.0`                                           | Optional sleep between nodes to reduce CPU/network spikes on large graphs                                                                                     |
 | `--include-hidden`             | off                                             | Include hidden node names (those with `/_` in the path)                                                                                                       |
+| `--no-process`                 | off (process info is **on** by default)         | Skip OS process / executor discovery. By default every node is enriched with PID, binary path, package, executor type, loaded ROS 2 libraries, and resolved plugin class names. Use when `/proc` is unavailable or a lean snapshot is needed. |
 
 ### Snapshot JSON format
 
@@ -87,7 +88,23 @@ Matches nodes between the two snapshots — name-agnostic, so nodes that were re
       "subscribers": { "/sensing/lidar/top/distortion_corrector_node/pointcloud": ["sensor_msgs/msg/PointCloud2"] },
       "services": { "...": ["..."] },
       "clients": {},
-      "component_info": { "container": "/pointcloud_container", "component_id": 3 }
+      "component_info": { "container": "/sensing/lidar/top/pointcloud_container", "component_id": 3 },
+      "process": {
+        "pid": 12345,
+        "exe": "/opt/ros/humble/lib/rclcpp_components/component_container_mt",
+        "package": "rclcpp_components",
+        "executor_type": "multi_threaded",
+        "cmdline": ["component_container_mt", "--ros-args", "-r", "__node:=pointcloud_container", "-r", "__ns:=/sensing/lidar/top"],
+        "ros_libraries": [
+          "/opt/ros/humble/lib/librcl.so.4",
+          "/opt/ros/humble/lib/librclcpp.so.16",
+          "/workspace/install/autoware_pointcloud_preprocessor/lib/libautoware_pointcloud_preprocessor.so"
+        ],
+        "component_classes": [
+          "autoware::pointcloud_preprocessor::RingOutlierFilterComponent",
+          "autoware::pointcloud_preprocessor::DistortionCorrectorComponent"
+        ]
+      }
     },
     {
       "fq_name": "/localization/pose_estimator/ndt_scan_matcher",
@@ -95,15 +112,38 @@ Matches nodes between the two snapshots — name-agnostic, so nodes that were re
       "subscribers": { "...": ["..."] },
       "services": {},
       "clients": {},
-      "component_info": null
+      "component_info": null,
+      "process": {
+        "pid": 23456,
+        "exe": "/workspace/install/ndt_scan_matcher/lib/ndt_scan_matcher/ndt_scan_matcher",
+        "package": "ndt_scan_matcher",
+        "executor_type": null,
+        "cmdline": ["ndt_scan_matcher", "--ros-args", "-r", "__node:=ndt_scan_matcher", "-r", "__ns:=/localization/pose_estimator"],
+        "ros_libraries": ["/opt/ros/humble/lib/librcl.so.4", "..."],
+        "component_classes": null
+      }
     }
   ]
 }
 ```
 
+#### `process` field details
+
+| Field               | Type             | Description                                                                                                                                                 |
+| ------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pid`               | int              | OS process ID                                                                                                                                               |
+| `exe`               | string \| null   | Absolute path to the executable binary (or Python script for Python nodes)                                                                                  |
+| `package`           | string \| null   | ROS 2 package name derived from the install-space path (`<prefix>/lib/<package>/<exec>`)                                                                    |
+| `executor_type`     | string \| null   | `"single_threaded"`, `"multi_threaded"`, or `"isolated"` for component containers; `null` for standalone nodes (executor is internal to the process)        |
+| `cmdline`           | list of strings  | Full command line as seen in `/proc/<pid>/cmdline`                                                                                                          |
+| `ros_libraries`     | list of strings  | ROS 2 / workspace `.so` files mapped into the process (from `/proc/<pid>/maps`), filtered to paths under `AMENT_PREFIX_PATH`                                |
+| `component_classes` | list \| null     | For component containers: every `rclcpp_components` plugin class whose library is loaded, resolved from the ament index. `null` for standalone nodes.       |
+
+`process` is `null` when the node's process could not be matched (e.g. running on a remote host, or launched without explicit `--ros-args -r __node:=` remapping). Use `--no-process` to omit this field entirely.
+
 `component_info` is `null` for standalone nodes (launched as separate processes).
 It is populated for composable nodes loaded into a `ComponentManager` container.
-If `composition_interfaces` is not available on the system, all entries will be `null`.
+If `composition_interfaces` is not available on the system, all `component_info` entries will be `null`.
 
 ---
 
@@ -231,11 +271,15 @@ Edges are pub→sub connections through a topic. Three categories:
 
 ## Limitations
 
-**Plugin class is not available at runtime.**
-The C++ plugin class name (e.g., `autoware::euclidean_cluster::VoxelGridBasedEuclideanClusterNode`) is a launch-time property that the ROS 2 graph API does not expose.
-The snapshot records which container a composable node runs in (via `composition_interfaces/srv/ListNodes`), but not the plugin class that was loaded.
-If a node's plugin is swapped for one with an identical pub/sub interface, the diff will show no change.
-To detect plugin-level changes, cross-reference the snapshot with the launch files or `.node.yaml` design files.
+**Plugin class resolution uses the ament index, not the live DDS graph.**
+The ROS 2 graph API does not expose the C++ plugin class name at runtime.
+The snapshot resolves plugin classes by cross-referencing the loaded `.so` files in the container process (`/proc/<pid>/maps`) against the ament resource index (`share/ament_index/resource_index/rclcpp_components`).
+This correctly identifies *which classes are registered in the loaded libraries* but cannot determine *which specific instance of a duplicate class* a given composable node represents when multiple nodes of the same type run inside the same container.
+`component_classes` on a composable node entry lists all classes available in the container process — not just the one backing that particular node.
+
+**Nodes without `--ros-args` remappings have `process: null`.**
+When a node is launched without explicit `__node:=` / `__ns:=` remapping arguments, the snapshot tool cannot correlate it to a running process by command-line inspection alone.
+This is uncommon in production launch configurations (where remappings are always set) but can occur with manually started nodes.
 
 ---
 
