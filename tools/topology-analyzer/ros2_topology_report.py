@@ -360,6 +360,83 @@ def _match_nodes(
                 )
             )
 
+    # 1.8) Same-type-composition groups, M:N disambiguation by name.
+    # Step 1.7 resolved 1:1 groups. Here we handle groups where M old and N new
+    # nodes share the same type token frozenset (e.g. multiple identical-driver
+    # LiDAR nodes renamed across snapshots). Within such a group type_sim=1.0
+    # for every pair, so name similarity is the only discriminator.
+    # A small margin (0.01) is kept as a sanity check; the mutual-best constraint
+    # is the primary guard against false matches.
+    _GROUP_NAME_MARGIN = 0.01
+    for key, type_olds in type_to_old.items():
+        type_news = type_to_new.get(key, [])
+        if len(type_olds) == 1 and len(type_news) == 1:
+            continue  # already handled by Step 1.7
+        olds_rem = [fq for fq in type_olds if fq not in mapping]
+        news_rem = [fq for fq in type_news if fq not in matched_new]
+        if not olds_rem or not news_rem:
+            continue
+        # Build mutual-best name-similarity tables within this type group.
+        old_best_g: Dict[str, Tuple[Optional[str], float, float]] = {}
+        for ofq in olds_rem:
+            g_best_n: Optional[str] = None
+            g_best_s = -1.0
+            g_second_s = -1.0
+            for nfq in news_rem:
+                s = _name_similarity(ofq, nfq)
+                if s > g_best_s:
+                    g_second_s = g_best_s
+                    g_best_s = s
+                    g_best_n = nfq
+                elif s > g_second_s:
+                    g_second_s = s
+            old_best_g[ofq] = (g_best_n, g_best_s, g_second_s)
+        new_best_g: Dict[str, Tuple[Optional[str], float]] = {}
+        for nfq in news_rem:
+            g_best_o: Optional[str] = None
+            g_best_s = -1.0
+            for ofq in olds_rem:
+                s = _name_similarity(ofq, nfq)
+                if s > g_best_s:
+                    g_best_s = s
+                    g_best_o = ofq
+            new_best_g[nfq] = (g_best_o, g_best_s)
+        group_cands: List[Tuple[float, str, str]] = []
+        for ofq, (g_nfq, g_s, g_s2) in old_best_g.items():
+            if g_nfq is None:
+                continue
+            g_second = g_s2 if g_s2 >= 0 else 0.0
+            if (g_s - g_second) < _GROUP_NAME_MARGIN:
+                continue
+            bo, _ = new_best_g.get(g_nfq, (None, -1.0))
+            if bo != ofq:
+                continue
+            group_cands.append((g_s, ofq, g_nfq))
+        group_cands.sort(reverse=True, key=lambda x: x[0])
+        used_old_g: Set[str] = set()
+        used_new_g: Set[str] = set()
+        for _, ofq, nfq in group_cands:
+            if ofq in used_old_g or nfq in used_new_g:
+                continue
+            mapping[ofq] = nfq
+            matched_new.add(nfq)
+            used_old_g.add(ofq)
+            used_new_g.add(nfq)
+            evidence.append(
+                (
+                    ofq,
+                    nfq,
+                    _match_score(
+                        ofq,
+                        nfq,
+                        old_type=_node_type_tokens(old_by_fq[ofq]),
+                        new_type=_node_type_tokens(new_by_fq[nfq]),
+                        old_param=_param_tokens(old_params, ofq),
+                        new_param=_param_tokens(new_params, nfq),
+                    ),
+                )
+            )
+
     rem_old = [fq for fq in old_by_fq.keys() if fq not in mapping]
     rem_new = [fq for fq in new_by_fq.keys() if fq not in matched_new]
 
