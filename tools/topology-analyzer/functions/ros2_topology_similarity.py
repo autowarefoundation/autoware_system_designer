@@ -3,7 +3,7 @@
 import argparse
 import json
 import os
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from ros2_topology_common import (
     Signature,
@@ -52,9 +52,16 @@ def main() -> int:
         help="Output Markdown path. Default: alongside new graph as topology_similarity.md",
     )
     ap.add_argument(
-        "--include-types",
-        action="store_true",
-        help="Include message/service types in similarity comparison (stricter).",
+        "--match-by",
+        choices=["type", "name", "name-type"],
+        default="type",
+        help=(
+            "How to compare node signatures: "
+            "'type' (default) matches by message/service types only — "
+            "topic-name agnostic, robust across namespace changes; "
+            "'name' matches by topic/service names only; "
+            "'name-type' matches by both name and type (strictest)."
+        ),
     )
     ap.add_argument(
         "--min-similarity",
@@ -85,11 +92,15 @@ def main() -> int:
     old_counts, old_examples, old_sigs = _build_groups(old)
     new_counts, new_examples, new_sigs = _build_groups(new)
 
+    type_only = args.match_by == "type"
+    include_types = args.match_by == "name-type"
     old_item_sets: Dict[str, Set[str]] = {
-        sid: set(iter_signature_items(sig, include_types=args.include_types)) for sid, sig in old_sigs.items()
+        sid: set(iter_signature_items(sig, include_types=include_types, type_only=type_only))
+        for sid, sig in old_sigs.items()
     }
     new_item_sets: Dict[str, Set[str]] = {
-        sid: set(iter_signature_items(sig, include_types=args.include_types)) for sid, sig in new_sigs.items()
+        sid: set(iter_signature_items(sig, include_types=include_types, type_only=type_only))
+        for sid, sig in new_sigs.items()
     }
 
     def best_match(source_sid: str, source_items: Set[str], target_item_sets: Dict[str, Set[str]]):
@@ -142,7 +153,7 @@ def main() -> int:
     lines.append(f"- New: {os.path.abspath(args.new_graph_json)}")
     lines.append(f"- Old timestamp: {old.get('timestamp','')}")
     lines.append(f"- New timestamp: {new.get('timestamp','')}")
-    lines.append(f"- include_types: {bool(args.include_types)}")
+    lines.append(f"- match_by: {args.match_by}")
     lines.append(f"- min_similarity: {args.min_similarity}")
     lines.append(f"- signatures changed: {len(changed)}")
     lines.append("")

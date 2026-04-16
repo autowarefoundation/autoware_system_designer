@@ -209,37 +209,24 @@ def _match_score(
     *,
     old_type: Set[str],
     new_type: Set[str],
-    old_end: Set[str],
-    new_end: Set[str],
     old_param: Set[str],
     new_param: Set[str],
-    old_container: Optional[str] = None,
-    new_container: Optional[str] = None,
 ) -> float:
     type_sim = jaccard(old_type, new_type)
-    end_sim = jaccard(old_end, new_end)
     name_sim = _name_similarity(old_fq, new_fq)
     param_sim = jaccard(old_param, new_param) if (old_param or new_param) else 0.0
-    # Container signal: shared container name is a positive hint that two nodes are the same.
-    # Only fires when both sides have container info and the name matches — never a penalty.
-    container_match = bool(old_container and new_container and old_container == new_container)
 
-    # Weighted blend: keep topology dominant, but allow name/params/container to disambiguate.
-    w_type = 0.50
-    w_end = 0.30
-    w_name = 0.15
+    # Interface type composition is the primary identity signal: a node's role is
+    # defined by the message types it publishes/subscribes/serves, not by topic names.
+    # Topic names change freely with namespace remapping or system reconfiguration;
+    # container assignment reflects deployment config, not functional identity.
+    w_type = 0.75
+    w_name = 0.20
     w_param = 0.05 if (old_param or new_param) else 0.0
-    w_container = 0.05 if container_match else 0.0
-    w_sum = w_type + w_end + w_name + w_param + w_container
+    w_sum = w_type + w_name + w_param
     if w_sum == 0:
         return 0.0
-    return (
-        w_type * type_sim
-        + w_end * end_sim
-        + w_name * name_sim
-        + w_param * param_sim
-        + w_container * 1.0
-    ) / w_sum
+    return (w_type * type_sim + w_name * name_sim + w_param * param_sim) / w_sum
 
 
 def _load_graph(path: str) -> Tuple[Dict, List[Dict]]:
@@ -267,10 +254,6 @@ def _match_nodes(
 
     old_by_fq = {n.get("fq_name", ""): n for n in old_nodes}
     new_by_fq = {n.get("fq_name", ""): n for n in new_nodes}
-
-    # Container lookup for use as a matching signal.
-    old_container_by_fq = {fq: (n.get("component_info") or {}).get("container") for fq, n in old_by_fq.items()}
-    new_container_by_fq = {fq: (n.get("component_info") or {}).get("container") for fq, n in new_by_fq.items()}
 
     sid_to_old: Dict[str, List[str]] = {}
     sid_to_new: Dict[str, List[str]] = {}
@@ -300,12 +283,8 @@ def _match_nodes(
                     fq,
                     old_type=_node_type_tokens(old_by_fq[fq]),
                     new_type=_node_type_tokens(new_by_fq[fq]),
-                    old_end=_node_endpoints(old_by_fq[fq]),
-                    new_end=_node_endpoints(new_by_fq[fq]),
                     old_param=_param_tokens(old_params, fq),
                     new_param=_param_tokens(new_params, fq),
-                    old_container=old_container_by_fq.get(fq),
-                    new_container=new_container_by_fq.get(fq),
                 ),
             )
         )
@@ -336,18 +315,59 @@ def _match_nodes(
                 (
                     ofq,
                     nfq,
-                    jaccard(_node_endpoints(old_by_fq[ofq]), _node_endpoints(new_by_fq[nfq])),
+                    jaccard(_node_type_tokens(old_by_fq[ofq]), _node_type_tokens(new_by_fq[nfq])),
+                )
+            )
+
+    # 1.7) Type-composition matching: same direction+type set, any topic names.
+    # Catches nodes whose topics were renamed (namespace move, topic remapping)
+    # but whose functional interface (message type composition) is identical.
+    # Uses a frozenset of direction-qualified type tokens as the grouping key.
+    type_to_old: Dict[frozenset, List[str]] = {}
+    type_to_new: Dict[frozenset, List[str]] = {}
+    for fq, n in old_by_fq.items():
+        if fq in mapping:
+            continue
+        key = frozenset(_node_type_tokens(n))
+        if key:  # skip nodes with no type info (e.g. bare parameter servers)
+            type_to_old.setdefault(key, []).append(fq)
+    for fq, n in new_by_fq.items():
+        if fq in matched_new:
+            continue
+        key = frozenset(_node_type_tokens(n))
+        if key:
+            type_to_new.setdefault(key, []).append(fq)
+    for key, olds in type_to_old.items():
+        news = type_to_new.get(key, [])
+        if len(olds) == 1 and len(news) == 1:
+            ofq, nfq = olds[0], news[0]
+            if ofq in mapping or nfq in matched_new:
+                continue
+            mapping[ofq] = nfq
+            matched_new.add(nfq)
+            evidence.append(
+                (
+                    ofq,
+                    nfq,
+                    _match_score(
+                        ofq,
+                        nfq,
+                        old_type=_node_type_tokens(old_by_fq[ofq]),
+                        new_type=_node_type_tokens(new_by_fq[nfq]),
+                        old_param=_param_tokens(old_params, ofq),
+                        new_param=_param_tokens(new_params, nfq),
+                    ),
                 )
             )
 
     rem_old = [fq for fq in old_by_fq.keys() if fq not in mapping]
     rem_new = [fq for fq in new_by_fq.keys() if fq not in matched_new]
 
-    # Fuzzy matching uses blended similarity (types, endpoints, name, parameters).
+    # Fuzzy matching uses blended similarity (types, name, parameters).
+    # Topic-name endpoint similarity is intentionally excluded: topic names change
+    # freely across namespace remappings and do not define node identity.
     old_type = {fq: _node_type_tokens(old_by_fq[fq]) for fq in rem_old}
     new_type = {fq: _node_type_tokens(new_by_fq[fq]) for fq in rem_new}
-    old_end = {fq: _node_endpoints(old_by_fq[fq]) for fq in rem_old}
-    new_end = {fq: _node_endpoints(new_by_fq[fq]) for fq in rem_new}
     old_param = {fq: _param_tokens(old_params, fq) for fq in rem_old}
     new_param = {fq: _param_tokens(new_params, fq) for fq in rem_new}
 
@@ -364,12 +384,8 @@ def _match_nodes(
                 nfq,
                 old_type=ot,
                 new_type=new_type[nfq],
-                old_end=old_end[ofq],
-                new_end=new_end[nfq],
                 old_param=old_param[ofq],
                 new_param=new_param[nfq],
-                old_container=old_container_by_fq.get(ofq),
-                new_container=new_container_by_fq.get(nfq),
             )
             if s > best_s:
                 second_s = best_s
@@ -390,12 +406,8 @@ def _match_nodes(
                 nfq,
                 old_type=old_type[ofq],
                 new_type=nt,
-                old_end=old_end[ofq],
-                new_end=new_end[nfq],
                 old_param=old_param[ofq],
                 new_param=new_param[nfq],
-                old_container=old_container_by_fq.get(ofq),
-                new_container=new_container_by_fq.get(nfq),
             )
             if s > best_s:
                 best_s = s

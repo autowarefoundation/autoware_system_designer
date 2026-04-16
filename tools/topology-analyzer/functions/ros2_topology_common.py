@@ -42,7 +42,46 @@ def signature_id(sig: Signature) -> str:
     return hashlib.sha256(b).hexdigest()[:12]
 
 
-def iter_signature_items(sig: Signature, include_types: bool) -> Iterable[str]:
+def iter_type_items(sig: Signature) -> Iterable[str]:
+    """Yield direction-qualified type tokens without topic names.
+
+    Used for type-composition-first matching: two nodes are considered similar when
+    they publish/subscribe/serve the same message types, regardless of what the
+    topics are named.  Robust across namespace changes and topic remappings.
+    """
+    for _, types in sig.pubs:
+        for t in types:
+            yield f"PT|{t}"
+    for _, types in sig.subs:
+        for t in types:
+            yield f"ST|{t}"
+    for _, types in sig.srvs:
+        for t in types:
+            yield f"SVT|{t}"
+    for _, types in sig.clis:
+        for t in types:
+            yield f"CLT|{t}"
+
+
+def iter_signature_items(
+    sig: Signature,
+    include_types: bool = False,
+    type_only: bool = False,
+) -> Iterable[str]:
+    """Yield comparison tokens for a node signature.
+
+    Args:
+        type_only: if True, yield direction-qualified type tokens only (no topic
+                   names).  Takes priority over *include_types*.  This is the
+                   recommended mode for matching nodes across systems where topic
+                   names may differ (namespace moves, topic remapping, etc.).
+        include_types: if True (and *type_only* is False), append message types
+                       to topic names.
+    """
+    if type_only:
+        yield from iter_type_items(sig)
+        return
+
     def emit(prefix: str, items: Sequence[Tuple[str, Tuple[str, ...]]]):
         for name, types in items:
             if include_types:
