@@ -302,6 +302,38 @@ def main() -> int:
             if args.sleep_per_node and args.sleep_per_node > 0.0:
                 time.sleep(args.sleep_per_node)
 
+        # --- Component container detection ---
+        # Composable nodes are loaded into a ComponentManager container.
+        # Containers expose a /{container_fq}/_container/list_nodes service that returns
+        # the fully-qualified names and unique IDs of all loaded components.
+        # This lets us record which nodes are composable and which container they live in.
+        component_info_map: Dict[str, Dict[str, object]] = {}
+        try:
+            from composition_interfaces.srv import ListNodes as _ListNodesSrv  # type: ignore
+
+            for n in graph:
+                list_svc = f"{n.fq_name}/_container/list_nodes"
+                if list_svc not in n.services:
+                    continue
+                cli = node.create_client(_ListNodesSrv, list_svc)
+                try:
+                    if cli.wait_for_service(timeout_sec=0.5):
+                        future = cli.call_async(_ListNodesSrv.Request())
+                        rclpy.spin_until_future_complete(node, future, timeout_sec=1.0)
+                        if future.result() is not None:
+                            resp = future.result()
+                            for comp_name, comp_id in zip(
+                                resp.full_node_names, resp.unique_ids
+                            ):
+                                component_info_map[comp_name] = {
+                                    "container": n.fq_name,
+                                    "component_id": int(comp_id),
+                                }
+                finally:
+                    node.destroy_client(cli)
+        except Exception as exc:  # noqa: BLE001
+            errors["__component_detection__"] = f"{type(exc).__name__}: {exc}"
+
         payload = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "filtered": bool(args.filter),
@@ -311,7 +343,10 @@ def main() -> int:
             "errors": errors,
             "param_names": param_names,
             "param_values": param_values,
-            "nodes": [asdict(n) for n in graph],
+            "nodes": [
+                {**asdict(n), "component_info": component_info_map.get(n.fq_name)}
+                for n in graph
+            ],
         }
 
         if args.out:

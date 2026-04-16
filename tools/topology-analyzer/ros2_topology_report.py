@@ -213,21 +213,33 @@ def _match_score(
     new_end: Set[str],
     old_param: Set[str],
     new_param: Set[str],
+    old_container: Optional[str] = None,
+    new_container: Optional[str] = None,
 ) -> float:
     type_sim = jaccard(old_type, new_type)
     end_sim = jaccard(old_end, new_end)
     name_sim = _name_similarity(old_fq, new_fq)
     param_sim = jaccard(old_param, new_param) if (old_param or new_param) else 0.0
+    # Container signal: shared container name is a positive hint that two nodes are the same.
+    # Only fires when both sides have container info and the name matches — never a penalty.
+    container_match = bool(old_container and new_container and old_container == new_container)
 
-    # Weighted blend: keep topology dominant, but allow name/params to disambiguate.
+    # Weighted blend: keep topology dominant, but allow name/params/container to disambiguate.
     w_type = 0.50
     w_end = 0.30
     w_name = 0.15
     w_param = 0.05 if (old_param or new_param) else 0.0
-    w_sum = w_type + w_end + w_name + w_param
+    w_container = 0.05 if container_match else 0.0
+    w_sum = w_type + w_end + w_name + w_param + w_container
     if w_sum == 0:
         return 0.0
-    return (w_type * type_sim + w_end * end_sim + w_name * name_sim + w_param * param_sim) / w_sum
+    return (
+        w_type * type_sim
+        + w_end * end_sim
+        + w_name * name_sim
+        + w_param * param_sim
+        + w_container * 1.0
+    ) / w_sum
 
 
 def _load_graph(path: str) -> Tuple[Dict, List[Dict]]:
@@ -255,6 +267,10 @@ def _match_nodes(
 
     old_by_fq = {n.get("fq_name", ""): n for n in old_nodes}
     new_by_fq = {n.get("fq_name", ""): n for n in new_nodes}
+
+    # Container lookup for use as a matching signal.
+    old_container_by_fq = {fq: (n.get("component_info") or {}).get("container") for fq, n in old_by_fq.items()}
+    new_container_by_fq = {fq: (n.get("component_info") or {}).get("container") for fq, n in new_by_fq.items()}
 
     sid_to_old: Dict[str, List[str]] = {}
     sid_to_new: Dict[str, List[str]] = {}
@@ -288,6 +304,8 @@ def _match_nodes(
                     new_end=_node_endpoints(new_by_fq[fq]),
                     old_param=_param_tokens(old_params, fq),
                     new_param=_param_tokens(new_params, fq),
+                    old_container=old_container_by_fq.get(fq),
+                    new_container=new_container_by_fq.get(fq),
                 ),
             )
         )
@@ -350,6 +368,8 @@ def _match_nodes(
                 new_end=new_end[nfq],
                 old_param=old_param[ofq],
                 new_param=new_param[nfq],
+                old_container=old_container_by_fq.get(ofq),
+                new_container=new_container_by_fq.get(nfq),
             )
             if s > best_s:
                 second_s = best_s
@@ -374,6 +394,8 @@ def _match_nodes(
                 new_end=new_end[nfq],
                 old_param=old_param[ofq],
                 new_param=new_param[nfq],
+                old_container=old_container_by_fq.get(ofq),
+                new_container=new_container_by_fq.get(nfq),
             )
             if s > best_s:
                 best_s = s
@@ -666,6 +688,7 @@ def _classify_node_change(ofq: str, nfq: str, diffs: Dict) -> str:
     value_diff = diffs.get("parameter_values")
     has_param_name = param_diff and (param_diff.get("removed") or param_diff.get("added"))
     has_param_value = value_diff and value_diff.get("changed")
+    has_container = bool(diffs.get("component"))
     if has_structural:
         tags.append("structural")
     if has_remapped:
@@ -674,7 +697,38 @@ def _classify_node_change(ofq: str, nfq: str, diffs: Dict) -> str:
         tags.append("param-name")
     if has_param_value:
         tags.append("param-value")
+    if has_container:
+        tags.append("container")
     return "[" + ", ".join(tags) + "]" if tags else "[changed]"
+
+
+def _diff_component_info(
+    old_info: Optional[Dict],
+    new_info: Optional[Dict],
+) -> Optional[Dict]:
+    """Return a diff dict when component_info changed, else None."""
+    if old_info == new_info:
+        return None
+    old_container = (old_info or {}).get("container")
+    new_container = (new_info or {}).get("container")
+    old_id = (old_info or {}).get("component_id")
+    new_id = (new_info or {}).get("component_id")
+    return {
+        "old_container": old_container,
+        "new_container": new_container,
+        "old_id": old_id,
+        "new_id": new_id,
+    }
+
+
+def _build_container_map(nodes: List[Dict]) -> Dict[str, List[str]]:
+    """Return {container_fq: sorted [composable_node_fq, ...]} for all composable nodes."""
+    result: Dict[str, List[str]] = defaultdict(list)
+    for n in nodes:
+        comp = n.get("component_info")
+        if comp and comp.get("container"):
+            result[comp["container"]].append(n.get("fq_name", ""))
+    return {k: sorted(v) for k, v in result.items()}
 
 
 def main() -> int:
@@ -781,11 +835,15 @@ def main() -> int:
                     "count": 0,
                     "sig": sig,
                     "examples": [],
+                    "containers": set(),
                 },
             )
             g["count"] += 1
             if len(g["examples"]) < max(1, args.max_nodes_per_group):
                 g["examples"].append(n.get("fq_name", ""))
+            comp = n.get("component_info")
+            if comp and comp.get("container"):
+                g["containers"].add(comp["container"])
 
         # Sort groups by size desc, then id.
         sorted_groups = sorted(groups.items(), key=lambda kv: (-kv[1]["count"], kv[0]))
@@ -811,6 +869,8 @@ def main() -> int:
             lines.append("- Filter: ignored topic '/parameter_events'")
         if not args.include_common_topics:
             lines.append("- Display: common topics (/rosout, /clock, /parameter_events) hidden in groups")
+        has_component_data = any(n.get("component_info") is not None for n in nodes)
+        lines.append(f"- Component data: {'yes' if has_component_data else 'no (snapshot taken without composition_interfaces or no composable nodes)'}")
         lines.append(f"- Signature groups: {len(sorted_groups)}")
         dup = data.get("duplicates", []) or []
         lines.append(f"- Duplicate node names: {len(dup)}")
@@ -832,6 +892,9 @@ def main() -> int:
             if g["examples"]:
                 ex = ", ".join(g["examples"][: args.max_nodes_per_group])
                 lines.append(f"- example nodes: {ex}")
+            if g.get("containers"):
+                containers_str = ", ".join(sorted(g["containers"]))
+                lines.append(f"- container(s): {containers_str}")
             lines.append(
                 f"- pubs: {len(sig.pubs)}  subs: {len(sig.subs)}  srvs: {len(sig.srvs)}  clis: {len(sig.clis)}"
             )
@@ -856,6 +919,22 @@ def main() -> int:
                         ty = ", ".join(types) if types else "<unknown>"
                         lines.append(f"  - {t} :: {ty}")
             lines.append("")
+
+        container_map = _build_container_map(nodes)
+        if container_map:
+            standalone_count = sum(
+                1 for n in nodes if not (n.get("component_info") or {}).get("container")
+            )
+            lines.append("## Composable Node Containers\n")
+            lines.append(f"- Standalone nodes: {standalone_count}")
+            lines.append(f"- Containers: {len(container_map)}")
+            lines.append("")
+            for cname in sorted(container_map.keys()):
+                members = container_map[cname]
+                lines.append(f"### {cname} ({len(members)} composable nodes)\n")
+                for fq in members:
+                    lines.append(f"- {fq}")
+                lines.append("")
 
         lines.append("## Topic Index (publishers/subscribers counts)\n")
         for topic, ps in topic_items:
@@ -945,6 +1024,11 @@ def main() -> int:
                 "new_status": n_val_status,
             }
 
+        component_diff = _diff_component_info(
+            o.get("component_info"),
+            n.get("component_info"),
+        )
+
         if (
             pubs[0]
             or pubs[1]
@@ -977,6 +1061,7 @@ def main() -> int:
                     or value_diff["old_status"] != value_diff["new_status"]
                 )
             )
+            or component_diff
         ):
             changed_nodes.append(
                 (
@@ -989,6 +1074,7 @@ def main() -> int:
                         "clients": clis,
                         "parameters": param_diff,
                         "parameter_values": value_diff,
+                        "component": component_diff,
                     },
                 )
             )
@@ -1040,10 +1126,13 @@ def main() -> int:
         lines.append("- Filter: ignored tool nodes (/graph_snapshot, /launch_ros_*)")
     if not args.include_parameter_events:
         lines.append("- Filter: ignored topic '/parameter_events'")
+    component_enabled = any(n.get("component_info") is not None for n in old_nodes + new_nodes)
     if param_enabled:
         lines.append("- Parameters: compared by name (param_names)")
     if param_values_enabled:
         lines.append("- Parameters: compared by value (param_values)")
+    if component_enabled:
+        lines.append("- Component containers: compared")
     lines.append(f"- Matched node pairs: {len(mapping)}")
     lines.append(f"- Added nodes (unmatched): {len(added_nodes)}")
     lines.append(f"- Removed nodes (unmatched): {len(removed_nodes)}")
@@ -1056,6 +1145,82 @@ def main() -> int:
     else:
         lines.append("- (no differences)")
     lines.append("")
+
+    old_container_map = _build_container_map(old_nodes)
+    new_container_map = _build_container_map(new_nodes)
+    if old_container_map or new_container_map:
+        old_standalone = sum(1 for n in old_nodes if not (n.get("component_info") or {}).get("container"))
+        new_standalone = sum(1 for n in new_nodes if not (n.get("component_info") or {}).get("container"))
+        lines.append("## Container Changes\n")
+        lines.append(f"- Standalone nodes: {old_standalone} -> {new_standalone}")
+        lines.append(f"- Containers: {len(old_container_map)} -> {len(new_container_map)}")
+        lines.append("")
+
+        added_containers = sorted(set(new_container_map.keys()) - set(old_container_map.keys()))
+        removed_containers = sorted(set(old_container_map.keys()) - set(new_container_map.keys()))
+        common_containers = sorted(set(old_container_map.keys()) & set(new_container_map.keys()))
+
+        if added_containers:
+            lines.append("### Added containers\n")
+            for c in added_containers:
+                members = new_container_map[c]
+                preview = ", ".join(members[:5])
+                suffix = f", +{len(members) - 5} more" if len(members) > 5 else ""
+                lines.append(f"- {c} ({len(members)} nodes): {preview}{suffix}")
+            lines.append("")
+
+        if removed_containers:
+            lines.append("### Removed containers\n")
+            for c in removed_containers:
+                members = old_container_map[c]
+                preview = ", ".join(members[:5])
+                suffix = f", +{len(members) - 5} more" if len(members) > 5 else ""
+                lines.append(f"- {c} ({len(members)} nodes): {preview}{suffix}")
+            lines.append("")
+
+        # For common containers: diff membership using node mapping.
+        reverse_mapping = {v: k for k, v in mapping.items()}
+        changed_container_list = []
+        for c in common_containers:
+            old_members = set(old_container_map[c])
+            new_members = set(new_container_map[c])
+            # Old members whose matched counterpart is still in this container.
+            staying_new = {mapping[om] for om in old_members if mapping.get(om) in new_members}
+            left_old = sorted(old_members - {om for om in old_members if mapping.get(om) in staying_new})
+            joined_new = sorted(new_members - staying_new)
+            if left_old or joined_new:
+                changed_container_list.append((c, left_old, joined_new))
+
+        if changed_container_list:
+            lines.append("### Changed containers (membership differs)\n")
+            for c, left_old, joined_new in changed_container_list:
+                parts = []
+                if joined_new:
+                    parts.append(f"+{len(joined_new)} joined")
+                if left_old:
+                    parts.append(f"-{len(left_old)} left")
+                lines.append(f"#### {c} ({', '.join(parts)})\n")
+                for nm in joined_new:
+                    om = reverse_mapping.get(nm)
+                    if om is None:
+                        lines.append(f"- joined: {nm}  [new node]")
+                    else:
+                        om_old_container = (old_by_fq.get(om, {}).get("component_info") or {}).get("container")
+                        if om_old_container:
+                            lines.append(f"- joined: {nm}  [from {om_old_container}]")
+                        else:
+                            lines.append(f"- joined: {nm}  [was standalone]")
+                for om in left_old:
+                    nm = mapping.get(om)
+                    if nm is None:
+                        lines.append(f"- left:   {om}  [node removed]")
+                    else:
+                        nm_new_container = (new_by_fq.get(nm, {}).get("component_info") or {}).get("container")
+                        if nm_new_container:
+                            lines.append(f"- left:   {om}  [now in {nm_new_container}]")
+                        else:
+                            lines.append(f"- left:   {om}  [now standalone]")
+                lines.append("")
 
     lines.append("## Matching summary\n")
     evidence_sorted = sorted(evidence, key=lambda x: (-x[2], x[0], x[1]))
@@ -1129,6 +1294,21 @@ def main() -> int:
                     o_str = "<unset>" if ov is None else ov
                     n_str = "<unset>" if nv is None else nv
                     lines.append(f"  - changed: {k} :: {o_str} -> {n_str}")
+            comp_diff = diffs.get("component") if isinstance(diffs, dict) else None
+            if comp_diff:
+                lines.append("- component:")
+                old_c = comp_diff.get("old_container")
+                new_c = comp_diff.get("new_container")
+                old_id = comp_diff.get("old_id")
+                new_id = comp_diff.get("new_id")
+                if old_c is None and new_c is not None:
+                    lines.append(f"  - standalone -> composable in {new_c} (id={new_id})")
+                elif old_c is not None and new_c is None:
+                    lines.append(f"  - composable in {old_c} (id={old_id}) -> standalone")
+                else:
+                    lines.append(f"  - container: {old_c} -> {new_c}")
+                    if old_id != new_id:
+                        lines.append(f"  - component_id: {old_id} -> {new_id}")
             lines.append("")
         if len(changed_nodes) > max_changed:
             lines.append(f"- ... {len(changed_nodes) - max_changed} more changed matched nodes")

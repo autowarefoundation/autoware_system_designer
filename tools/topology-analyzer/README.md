@@ -38,6 +38,7 @@ python3 ros2_topology_report.py /tmp/snap_a/graph.json --out /tmp/topology_a.md
 
 Groups nodes by their pub/sub/service/client signature and lists all topics with types.
 Common infrastructure topics (`/rosout`, `/clock`, `/parameter_events`) are hidden by default to reduce noise.
+If the snapshot has `component_info` data (taken with an updated snapshot script), a **Composable Node Containers** section lists every `ComponentManager` container and its composable nodes.
 
 ### 3. Diff two systems
 
@@ -48,6 +49,7 @@ python3 ros2_topology_report.py /tmp/snap_a/graph.json /tmp/snap_b/graph.json --
 Matches nodes between the two snapshots — name-agnostic, so nodes that were renamed or moved to a different namespace are still paired by topology similarity — then reports:
 
 - **Namespace Summary** — per-namespace counts of added/removed/changed nodes
+- **Container Changes** — (when component data present) containers added/removed, and which composable nodes joined or left each container
 - **Matching summary** — all matched node pairs with similarity scores
 - **Added nodes** — nodes in the new system with no match in the old
 - **Removed nodes** — nodes in the old system with no match in the new
@@ -76,25 +78,32 @@ Matches nodes between the two snapshots — name-agnostic, so nodes that were re
   "node_count": 208,
   "duplicates": [],
   "errors": {},
-  "param_names": { "/some/node": ["param_a", "param_b"] },
+  "param_names":  { "/some/node": ["param_a", "param_b"] },
   "param_values": { "/some/node": { "param_a": "1.0" } },
   "nodes": [
     {
       "fq_name": "/sensing/lidar/top/ring_outlier_filter",
-      "publishers": {
-        "/sensing/lidar/top/pointcloud": ["sensor_msgs/msg/PointCloud2"]
-      },
-      "subscribers": {
-        "/sensing/lidar/top/distortion_corrector_node/pointcloud": [
-          "sensor_msgs/msg/PointCloud2"
-        ]
-      },
+      "publishers":  { "/sensing/lidar/top/pointcloud":                          ["sensor_msgs/msg/PointCloud2"] },
+      "subscribers": { "/sensing/lidar/top/distortion_corrector_node/pointcloud": ["sensor_msgs/msg/PointCloud2"] },
       "services": { "...": ["..."] },
-      "clients": {}
+      "clients": {},
+      "component_info": { "container": "/pointcloud_container", "component_id": 3 }
+    },
+    {
+      "fq_name": "/localization/pose_estimator/ndt_scan_matcher",
+      "publishers":  { "...": ["..."] },
+      "subscribers": { "...": ["..."] },
+      "services": {},
+      "clients": {},
+      "component_info": null
     }
   ]
 }
 ```
+
+`component_info` is `null` for standalone nodes (launched as separate processes).
+It is populated for composable nodes loaded into a `ComponentManager` container.
+If `composition_interfaces` is not available on the system, all entries will be `null`.
 
 ---
 
@@ -131,6 +140,30 @@ Matches nodes between the two snapshots — name-agnostic, so nodes that were re
 
 ## Diff output reference
 
+### Container Changes
+
+Only present when at least one snapshot contains `component_info` data (i.e., the snapshot was taken with a build that has `composition_interfaces` available).
+
+```text
+## Container Changes
+
+- Standalone nodes: 12 -> 10
+- Containers: 4 -> 5
+
+### Added containers
+- /sensing/lidar/new_container (3 nodes): /sensing/lidar/top/node_a, /sensing/lidar/top/node_b, ...
+
+### Removed containers
+- /old/lidar_container (2 nodes): /sensing/lidar/left/old_node_x, /sensing/lidar/left/old_node_y
+
+### Changed containers (membership differs)
+#### /pointcloud_container (+2 joined, -1 left)
+
+- joined: /sensing/lidar/new_node  [new node]
+- joined: /sensing/lidar/moved_node  [from /old/lidar_container]
+- left:   /sensing/lidar/split_node  [now in /sensing/lidar/new_container]
+```
+
 ### Namespace Summary
 
 Quick overview of which namespaces have activity:
@@ -151,6 +184,7 @@ Each changed node entry is tagged with the kinds of differences found:
 | `[remapped]`    | The node or its topics were renamed/moved to a different namespace; message types unchanged |
 | `[param-name]`  | Parameter names were added or removed                                                       |
 | `[param-value]` | Parameter values changed                                                                    |
+| `[container]`   | The composable container the node runs in changed, or the node moved between standalone/composable |
 
 Example:
 
@@ -161,6 +195,18 @@ Example:
   - added:   /sensing/lidar/top/crop_box_filter_wheels/output
 - parameter values:
   - changed: output_frame :: velodyne_top -> base_link
+
+### /some/node -> /some/node [container]
+- component:
+  - container: /old_container -> /new_container
+```
+
+For composable-to-standalone transitions:
+
+```text
+### /some/node -> /some/node [container]
+- component:
+  - standalone -> composable in /pointcloud_container (id=3)
 ```
 
 ### Edge-level changes
@@ -180,6 +226,16 @@ Edges are pub→sub connections through a topic. Three categories:
 + /sensing/lidar/left/lidar -> /sensing/lidar/left/crop_box_filter_self : /sensing/lidar/left/lidar/velodyne_points
 - /sensing/lidar/left/velodyne_ros_wrapper_node -> /sensing/lidar/left/crop_box_filter_self : /sensing/lidar/left/pointcloud_raw_ex
 ```
+
+---
+
+## Limitations
+
+**Plugin class is not available at runtime.**
+The C++ plugin class name (e.g., `autoware::euclidean_cluster::VoxelGridBasedEuclideanClusterNode`) is a launch-time property that the ROS 2 graph API does not expose.
+The snapshot records which container a composable node runs in (via `composition_interfaces/srv/ListNodes`), but not the plugin class that was loaded.
+If a node's plugin is swapped for one with an identical pub/sub interface, the diff will show no change.
+To detect plugin-level changes, cross-reference the snapshot with the launch files or `.node.yaml` design files.
 
 ---
 
