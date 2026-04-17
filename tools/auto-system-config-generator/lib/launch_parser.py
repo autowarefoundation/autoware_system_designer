@@ -27,13 +27,13 @@ class RemapEntry:
             return "output"
         return "unknown"
 
-    def port_name(self, node_namespace: str = "") -> Optional[str]:
+    def port_name(self, node_namespace: str = "", group_namespace: str = "") -> Optional[str]:
         """Port name derived from the from_topic pattern.
 
-        For the standard ~/input/xxx and ~/output/xxx convention the port name
-        is the suffix after the prefix.  For bare 'input'/'output' remaps the
-        port name is derived from the resolved topic so the name is meaningful.
-        Slashes in port names are replaced with underscores for format compatibility.
+        For ~/input/xxx and ~/output/xxx the port name is the suffix.
+        For bare 'input'/'output' remaps the port name is derived from the
+        resolved topic with the group/node namespace prefix stripped.
+        Slashes are preserved in port names.
         """
         raw: Optional[str] = None
         if self.from_topic.startswith("~/input/"):
@@ -42,14 +42,17 @@ class RemapEntry:
             raw = self.from_topic[len("~/output/"):]
         elif self.from_topic in ("input", "output"):
             topic = self.to_topic
-            ns = node_namespace.rstrip("/")
-            if ns and topic.startswith(ns + "/"):
-                topic = topic[len(ns) + 1:]
-            topic = topic.lstrip("/")
-            raw = topic if topic else self.from_topic
+            for ns in [group_namespace, node_namespace]:
+                ns = ns.rstrip("/")
+                if ns and topic.startswith(ns + "/"):
+                    topic = topic[len(ns) + 1:]
+                    break
+            else:
+                topic = topic.lstrip("/")
+            raw = topic or self.from_topic
         if raw is None:
             return None
-        return raw.replace("/", "_")
+        return raw  # preserve "/" in port names
 
 
 @dataclass

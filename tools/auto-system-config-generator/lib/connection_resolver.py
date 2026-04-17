@@ -92,7 +92,7 @@ def resolve_connections(groups: list[ComponentGroup]) -> list[TopicConnection]:
                 direction = remap.direction
                 if direction == "unknown":
                     continue
-                port = remap.port_name(node.namespace)
+                port = remap.port_name(node.namespace, group_namespace=group.namespace)
                 if not port:
                     continue
                 topic = _resolved_topic(node, remap)
@@ -155,7 +155,7 @@ def extract_module_interfaces(
             for remap in node.remaps:
                 if remap.direction == "unknown":
                     continue
-                port = remap.port_name(node.namespace)
+                port = remap.port_name(node.namespace, group_namespace=g.namespace)
                 if not port:
                     continue
                 topic = _resolved_topic(node, remap)
@@ -177,7 +177,7 @@ def extract_module_interfaces(
         for remap in node.remaps:
             if remap.direction == "unknown":
                 continue
-            port = remap.port_name(node.namespace)
+            port = remap.port_name(node.namespace, group_namespace=group.namespace)
             if not port:
                 continue
             topic = _resolved_topic(node, remap)

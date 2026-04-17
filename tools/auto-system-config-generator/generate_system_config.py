@@ -37,9 +37,17 @@ except ImportError:
     sys.exit(1)
 
 from lib.connection_resolver import resolve_connections
-from lib.emitter import emit_module_yaml, emit_system_yaml
+from lib.emitter import (
+    _collect_all_pub_sub,
+    emit_module_yaml,
+    emit_module_yaml_from_tree,
+    emit_parameter_set_yaml,
+    emit_system_yaml,
+    emit_system_yaml_from_tree,
+)
 from lib.grouper import group_nodes
 from lib.launch_parser import parse_launch_xml
+from lib.namespace_tree import NamespaceNode, build_namespace_tree
 
 
 def load_component_map(path: Path) -> dict:
@@ -48,6 +56,33 @@ def load_component_map(path: Path) -> dict:
     with open(path) as f:
         data = yaml.safe_load(f) or {}
     return data
+
+
+def _emit_recursive_modules(
+    ns_node: NamespaceNode,
+    all_pub: dict,
+    all_sub: dict,
+    out_dir: Path,
+    verbose: bool,
+) -> int:
+    """Recursively emit module YAMLs for ns_node and all descendants. Returns count."""
+    count = 0
+    if not ns_node.all_nodes:
+        return 0
+
+    module_yaml = emit_module_yaml_from_tree(ns_node, all_pub, all_sub)
+    rel = ns_node.namespace.strip("/")
+    module_file = out_dir / "module" / rel / f"{ns_node.entity_name}.module.yaml"
+    module_file.parent.mkdir(parents=True, exist_ok=True)
+    module_file.write_text(module_yaml)
+    count += 1
+    if verbose:
+        print(f"  Written: {module_file}")
+
+    for child in ns_node.children.values():
+        count += _emit_recursive_modules(child, all_pub, all_sub, out_dir, verbose)
+
+    return count
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,11 +116,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Compute unit label assigned to all components (default: main_ecu)",
     )
     parser.add_argument(
-        "--group-depth",
+        "--system-depth",
         type=int,
         default=1,
         metavar="N",
-        help="Namespace depth for component grouping (default: 1 = top-level)",
+        help="Namespace depth for system.yaml components (default: 1 = top-level). "
+             "Sub-modules below this depth are generated recursively.",
+    )
+    parser.add_argument(
+        "--group-depth",
+        type=int,
+        default=None,
+        metavar="N",
+        help="(Legacy) Namespace depth for flat grouping. If set, uses flat mode "
+             "instead of recursive tree mode.",
     )
     parser.add_argument(
         "--component-map",
@@ -100,6 +144,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip generating per-component module YAML files",
     )
     parser.add_argument(
+        "--parameter-sets",
+        action="store_true",
+        help="Generate parameter_set YAML files for each top-level component",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Print progress information",
@@ -111,7 +160,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: launch XML not found: {launch_xml}", file=sys.stderr)
         return 1
 
-    # Locate component map
     if args.component_map:
         map_path = Path(args.component_map)
     else:
@@ -119,54 +167,108 @@ def main(argv: list[str] | None = None) -> int:
 
     component_map = load_component_map(map_path)
 
-    # Parse
     if args.verbose:
         print(f"Parsing {launch_xml} ...")
     nodes, containers = parse_launch_xml(launch_xml)
     if args.verbose:
         print(f"  Found {len(nodes)} nodes, {len(containers)} containers")
 
-    # Group
-    groups = group_nodes(nodes, containers, depth=args.group_depth, overrides=component_map)
-    if args.verbose:
-        for g in groups:
-            print(f"  Group '{g.name}' ({g.namespace}): {len(g.nodes)} nodes, {len(g.containers)} containers")
-
-    # Connections
-    connections = resolve_connections(groups)
-    if args.verbose:
-        print(f"  Resolved {len(connections)} cross-component connections")
-
-    # Output
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    # system.yaml
-    system_yaml = emit_system_yaml(
-        system_name=args.system_name,
-        groups=groups,
-        all_containers=containers,
-        connections=connections,
-        compute_unit=args.compute_unit,
-    )
-    system_file = out / f"{args.system_name}.system.yaml"
-    system_file.write_text(system_yaml)
-    print(f"Written: {system_file}")
+    flat_mode = args.group_depth is not None
 
-    # module.yaml files
-    if not args.no_modules:
-        for group in groups:
-            if not group.nodes:
-                continue
-            module_yaml = emit_module_yaml(group, groups)
-            # (root) group gets a safe filename
-            safe_entity = group.entity_name if group.namespace != "(root)" else "RosSystem"
-            module_file = out / f"{safe_entity}.module.yaml"
-            module_file.write_text(module_yaml)
-            if args.verbose:
-                print(f"Written: {module_file}")
-        module_count = sum(1 for g in groups if g.nodes)
-        print(f"Written: {module_count} module YAML file(s) in {out}/")
+    if flat_mode:
+        # ---- Legacy flat mode ----
+        depth = args.group_depth
+        groups = group_nodes(nodes, containers, depth=depth, overrides=component_map)
+        if args.verbose:
+            for g in groups:
+                print(f"  Group '{g.name}' ({g.namespace}): {len(g.nodes)} nodes")
+
+        connections = resolve_connections(groups)
+        if args.verbose:
+            print(f"  Resolved {len(connections)} cross-component connections")
+
+        system_yaml = emit_system_yaml(
+            system_name=args.system_name,
+            groups=groups,
+            all_containers=containers,
+            connections=connections,
+            compute_unit=args.compute_unit,
+        )
+        system_file = out / f"{args.system_name}.system.yaml"
+        system_file.write_text(system_yaml)
+        print(f"Written: {system_file}")
+
+        if not args.no_modules:
+            for group in groups:
+                if not group.nodes:
+                    continue
+                module_yaml = emit_module_yaml(group, groups)
+                safe_entity = group.entity_name if group.namespace != "(root)" else "RosSystem"
+                module_file = out / f"{safe_entity}.module.yaml"
+                module_file.write_text(module_yaml)
+                if args.verbose:
+                    print(f"Written: {module_file}")
+            module_count = sum(1 for g in groups if g.nodes)
+            print(f"Written: {module_count} module YAML file(s) in {out}/")
+
+    else:
+        # ---- Recursive tree mode ----
+        top_nodes = build_namespace_tree(
+            nodes, containers,
+            overrides=component_map,
+            top_depth=args.system_depth,
+        )
+        if args.verbose:
+            for ns, ns_node in top_nodes.items():
+                total = len(ns_node.all_nodes)
+                print(f"  Component '{ns_node.name}' ({ns}): {total} nodes total")
+
+        # Collect global pub/sub maps for connection resolution
+        all_pub, all_sub = _collect_all_pub_sub(list(top_nodes.values()))
+
+        # Build cross-component connections at top level
+        from lib.connection_resolver import resolve_connections
+        # Use flat groups for system-level connections (top depth only)
+        groups = group_nodes(nodes, containers, depth=args.system_depth, overrides=component_map)
+        connections = resolve_connections(groups)
+        if args.verbose:
+            print(f"  Resolved {len(connections)} cross-component connections")
+
+        # Parameter sets
+        ps_names: list[str] = []
+        if args.parameter_sets:
+            ps_dir = out / "parameter_set"
+            ps_dir.mkdir(parents=True, exist_ok=True)
+            for ns, ns_node in sorted(top_nodes.items()):
+                ps_yaml = emit_parameter_set_yaml(args.system_name, ns_node.name, ns_node)
+                ps_name = f"{args.system_name}_{ns_node.name}.parameter_set"
+                ps_names.append(ps_name)
+                ps_file = ps_dir / f"{ps_name}.yaml"
+                ps_file.write_text(ps_yaml)
+                if args.verbose:
+                    print(f"  Written: {ps_file}")
+
+        system_yaml = emit_system_yaml_from_tree(
+            system_name=args.system_name,
+            top_nodes=top_nodes,
+            all_containers=containers,
+            connections=connections,
+            compute_unit=args.compute_unit,
+            parameter_sets=ps_names if ps_names else None,
+        )
+        system_file = out / "system" / f"{args.system_name}.system.yaml"
+        system_file.parent.mkdir(parents=True, exist_ok=True)
+        system_file.write_text(system_yaml)
+        print(f"Written: {system_file}")
+
+        if not args.no_modules:
+            total_modules = 0
+            for ns_node in top_nodes.values():
+                total_modules += _emit_recursive_modules(ns_node, all_pub, all_sub, out, args.verbose)
+            print(f"Written: {total_modules} module YAML file(s) in {out}/module/")
 
     return 0
 
