@@ -92,21 +92,22 @@ def resolve_connections(groups: list[ComponentGroup]) -> list[TopicConnection]:
                 direction = remap.direction
                 if direction == "unknown":
                     continue
-                port = remap.port_name(node.namespace, group_namespace=group.namespace)
-                if not port:
-                    continue
                 topic = _resolved_topic(node, remap)
                 if _is_infra(topic):
                     continue
 
-                ref = PortRef(
-                    component=group.name,
-                    port=port,
-                    node_path=node.full_path,
-                )
                 if direction == "output":
+                    port = remap.port_name(node.namespace, group_namespace=group.namespace)
+                    if not port:
+                        continue
+                    ref = PortRef(component=group.name, port=port, node_path=node.full_path)
                     publishers[topic].append(ref)
                 else:
+                    # Canonical subscriber port is the full topic path — deduplicate per component
+                    canonical = topic.lstrip("/")
+                    if any(r.component == group.name for r in subscribers[topic]):
+                        continue
+                    ref = PortRef(component=group.name, port=canonical, node_path=node.full_path)
                     subscribers[topic].append(ref)
 
     connections: list[TopicConnection] = []
@@ -171,20 +172,20 @@ def extract_module_interfaces(
     external_sub_ports: list[tuple[str, str]] = []
 
     seen_pub: set[str] = set()
-    seen_sub: set[str] = set()
+    seen_sub_topics: set[str] = set()  # deduplicate subscribers by resolved topic
 
     for node in group.nodes:
         for remap in node.remaps:
             if remap.direction == "unknown":
-                continue
-            port = remap.port_name(node.namespace, group_namespace=group.namespace)
-            if not port:
                 continue
             topic = _resolved_topic(node, remap)
             if _is_infra(topic):
                 continue
 
             if remap.direction == "output":
+                port = remap.port_name(node.namespace, group_namespace=group.namespace)
+                if not port:
+                    continue
                 # Is this topic consumed by any OTHER group?
                 consumers = [r for r in all_sub.get(topic, []) if r.component != group.name]
                 if consumers and port not in seen_pub:
@@ -193,9 +194,9 @@ def extract_module_interfaces(
             else:
                 # Is this topic produced by any OTHER group?
                 producers = [r for r in all_pub.get(topic, []) if r.component != group.name]
-                if producers and port not in seen_sub:
-                    seen_sub.add(port)
-                    external_sub_ports.append((port, topic))
+                if producers and topic not in seen_sub_topics:
+                    seen_sub_topics.add(topic)
+                    external_sub_ports.append((topic.lstrip("/"), topic))
 
     # Internal connections: same-group publisher → same-group subscriber
     internal: list[tuple[str, str, str, str]] = []

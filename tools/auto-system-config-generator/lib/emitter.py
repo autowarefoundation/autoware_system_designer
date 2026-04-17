@@ -99,29 +99,29 @@ def _extract_ns_module_interface(
     external_pub: list[tuple[str, str]] = []
     external_sub: list[tuple[str, str]] = []
     seen_pub: set[str] = set()
-    seen_sub: set[str] = set()
+    seen_sub_topics: set[str] = set()  # deduplicate subscribers by resolved topic
 
     # Iterate direct nodes of this level to find cross-boundary ports
     for node in ns_node.direct_nodes:
         for remap in node.remaps:
             if remap.direction == "unknown":
                 continue
-            port = remap.port_name(node.namespace, group_namespace=my_ns)
-            if not port:
-                continue
             topic = _resolved_topic(node, remap)
             if _is_infra(topic):
                 continue
             if remap.direction == "output":
+                port = remap.port_name(node.namespace, group_namespace=my_ns)
+                if not port:
+                    continue
                 consumers = [r for r in all_sub.get(topic, []) if r.component != my_ns]
                 if consumers and port not in seen_pub:
                     seen_pub.add(port)
                     external_pub.append((port, topic))
             else:
                 producers = [r for r in all_pub.get(topic, []) if r.component != my_ns]
-                if producers and port not in seen_sub:
-                    seen_sub.add(port)
-                    external_sub.append((port, topic))
+                if producers and topic not in seen_sub_topics:
+                    seen_sub_topics.add(topic)
+                    external_sub.append((topic.lstrip("/"), topic))
 
     # Also check child boundary ports
     for child in ns_node.children.values():
@@ -130,13 +130,13 @@ def _extract_ns_module_interface(
             for remap in node.remaps:
                 if remap.direction == "unknown":
                     continue
-                port = remap.port_name(node.namespace, group_namespace=child_ns)
-                if not port:
-                    continue
                 topic = _resolved_topic(node, remap)
                 if _is_infra(topic):
                     continue
                 if remap.direction == "output":
+                    port = remap.port_name(node.namespace, group_namespace=child_ns)
+                    if not port:
+                        continue
                     # External if consumed outside this ns_node entirely
                     consumers = [r for r in all_sub.get(topic, [])
                                  if not r.component.startswith(my_ns)]
@@ -146,9 +146,9 @@ def _extract_ns_module_interface(
                 else:
                     producers = [r for r in all_pub.get(topic, [])
                                  if not r.component.startswith(my_ns)]
-                    if producers and port not in seen_sub:
-                        seen_sub.add(port)
-                        external_sub.append((port, topic))
+                    if producers and topic not in seen_sub_topics:
+                        seen_sub_topics.add(topic)
+                        external_sub.append((topic.lstrip("/"), topic))
 
     # Internal connections at this level (cross-child or direct↔child)
     internal: list[tuple[str, str, str, str]] = []
@@ -266,7 +266,8 @@ def _build_tree_module_connections(
     all_sub: dict[str, list[PortRef]],
 ) -> list[str]:
     lines: list[str] = []
-    sub_ports = {port for port, _ in iface.subscribers}
+    # Map resolved topic → canonical port name (used for subscriber boundary lookup)
+    topic_to_sub_canonical: dict[str, str] = {topic: port for port, topic in iface.subscribers}
     pub_ports = {port for port, _ in iface.publishers}
 
     seen_ext_in: set[tuple] = set()
@@ -279,27 +280,35 @@ def _build_tree_module_connections(
         for remap in node.remaps:
             if remap.direction != "input":
                 continue
-            port = remap.port_name(node.namespace, group_namespace=ns_node.namespace)
-            if port and port in sub_ports:
-                key = (port, inst)
-                if key not in seen_ext_in:
-                    seen_ext_in.add(key)
-                    lines.append(f"  - - subscriber.{port}")
-                    lines.append(f"    - {inst}.subscriber.{port}")
+            topic = _resolved_topic(node, remap)
+            canonical = topic_to_sub_canonical.get(topic)
+            if not canonical:
+                continue
+            node_port = remap.port_name(node.namespace, group_namespace=ns_node.namespace)
+            if not node_port:
+                continue
+            key = (canonical, inst)
+            if key not in seen_ext_in:
+                seen_ext_in.add(key)
+                lines.append(f"  - - subscriber.{canonical}")
+                lines.append(f"    - {inst}.subscriber.{node_port}")
 
     # External input → child sub-module subscriber (passthrough)
+    # Child's canonical subscriber port is also topic.lstrip("/") after recursive fix
     for child in ns_node.children.values():
         for node in child.all_nodes:
             for remap in node.remaps:
                 if remap.direction != "input":
                     continue
-                port = remap.port_name(node.namespace, group_namespace=child.namespace)
-                if port and port in sub_ports:
-                    key = (port, child.name)
-                    if key not in seen_ext_in:
-                        seen_ext_in.add(key)
-                        lines.append(f"  - - subscriber.{port}")
-                        lines.append(f"    - {child.name}.subscriber.{port}")
+                topic = _resolved_topic(node, remap)
+                canonical = topic_to_sub_canonical.get(topic)
+                if not canonical:
+                    continue
+                key = (canonical, child.name)
+                if key not in seen_ext_in:
+                    seen_ext_in.add(key)
+                    lines.append(f"  - - subscriber.{canonical}")
+                    lines.append(f"    - {child.name}.subscriber.{canonical}")
 
     # Direct node publisher → external output
     for node in ns_node.direct_nodes:
@@ -439,7 +448,7 @@ def _build_module_connections(
     name_map: dict[str, str],
 ) -> list[str]:
     lines: list[str] = []
-    sub_ports = {port for port, _ in iface.subscribers}
+    topic_to_sub_canonical: dict[str, str] = {topic: port for port, topic in iface.subscribers}
     pub_ports = {port for port, _ in iface.publishers}
 
     seen_ext_in: set[tuple] = set()
@@ -448,13 +457,18 @@ def _build_module_connections(
         for remap in node.remaps:
             if remap.direction != "input":
                 continue
-            port = remap.port_name(node.namespace, group_namespace=group.namespace)
-            if port and port in sub_ports:
-                key = (port, inst)
-                if key not in seen_ext_in:
-                    seen_ext_in.add(key)
-                    lines.append(f"  - - subscriber.{port}")
-                    lines.append(f"    - {inst}.subscriber.{port}")
+            topic = _resolved_topic(node, remap)
+            canonical = topic_to_sub_canonical.get(topic)
+            if not canonical:
+                continue
+            node_port = remap.port_name(node.namespace, group_namespace=group.namespace)
+            if not node_port:
+                continue
+            key = (canonical, inst)
+            if key not in seen_ext_in:
+                seen_ext_in.add(key)
+                lines.append(f"  - - subscriber.{canonical}")
+                lines.append(f"    - {inst}.subscriber.{node_port}")
 
     seen_ext_out: set[tuple] = set()
     for node in group.nodes:

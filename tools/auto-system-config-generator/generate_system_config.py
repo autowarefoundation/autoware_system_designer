@@ -45,6 +45,7 @@ from lib.emitter import (
     emit_system_yaml,
     emit_system_yaml_from_tree,
 )
+from lib.graph_parser import merge_graph_topics, parse_graph_json
 from lib.grouper import group_nodes
 from lib.launch_parser import parse_launch_xml
 from lib.namespace_tree import NamespaceNode, build_namespace_tree
@@ -149,6 +150,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Generate parameter_set YAML files for each top-level component",
     )
     parser.add_argument(
+        "--graph-json",
+        default=None,
+        metavar="FILE",
+        help="Path to a ROS 2 graph snapshot JSON. Topics that are hard-coded "
+             "(not visible as remaps in the launch XML) are merged into the "
+             "corresponding node records from this snapshot.",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Print progress information",
@@ -172,6 +181,18 @@ def main(argv: list[str] | None = None) -> int:
     nodes, containers = parse_launch_xml(launch_xml)
     if args.verbose:
         print(f"  Found {len(nodes)} nodes, {len(containers)} containers")
+
+    if args.graph_json:
+        graph_path = Path(args.graph_json)
+        if not graph_path.exists():
+            print(f"ERROR: graph JSON not found: {graph_path}", file=sys.stderr)
+            return 1
+        if args.verbose:
+            print(f"Merging graph snapshot: {graph_path} ...")
+        graph_data = parse_graph_json(graph_path)
+        added = merge_graph_topics(nodes, graph_data)
+        if args.verbose:
+            print(f"  Graph snapshot: {len(graph_data)} nodes, {added} synthetic remaps added")
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)

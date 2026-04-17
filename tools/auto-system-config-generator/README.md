@@ -54,25 +54,39 @@ python3 generate_system_config.py \
 | `--system-name` | `GeneratedSystem` | System name (file prefix and YAML `name` field) |
 | `--output-dir` | `generated/` | Output directory |
 | `--compute-unit` | `main_ecu` | Compute unit label assigned to all components |
-| `--group-depth` | `1` | Namespace depth for component grouping (1 = top-level) |
+| `--system-depth` | `1` | Namespace depth for system.yaml components (1 = top-level). Sub-modules below this depth are generated recursively. |
+| `--parameter-sets` | off | Generate `parameter_set` YAML files for each top-level component and wire them into system.yaml |
 | `--component-map` | `config/component_map.yaml` | Namespace → name/entity override YAML |
 | `--no-modules` | off | Skip per-component module YAML files |
+| `--group-depth` | (unset) | **Legacy flat mode**: use fixed-depth grouping instead of the recursive tree |
 | `--verbose` | off | Print grouping and connection statistics |
+
+## Output layout
+
+```
+<output-dir>/
+├── system/<SystemName>.system.yaml
+├── module/
+│   ├── <top_ns>/<Entity>.module.yaml
+│   └── <top_ns>/<sub_ns>/<Entity>.module.yaml   (recursive)
+└── parameter_set/                               (only with --parameter-sets)
+    └── <SystemName>_<component>.parameter_set.yaml
+```
 
 ## How it works
 
 1. **Parse** — `launch_parser.py` reads `generated.launch.xml` using `lxml` in recovery mode (handles XML with embedded JSON strings). Extracts `<node>`, `<composable_node>`, and `<node_container>` elements along with their `<remap>` and `<param>` children.
 
-2. **Group** — `grouper.py` assigns each node to a `ComponentGroup` by the first N segments of its ROS namespace (default N=1). Names and entity labels come from `config/component_map.yaml` when available.
+2. **Build namespace tree** — `namespace_tree.py` places every node into a recursive `NamespaceNode` tree mirroring the ROS namespace hierarchy. E.g. `/perception/object_recognition/detection/clustering/euclidean_cluster_node` becomes a `direct_node` of the `/perception/object_recognition/detection/clustering` node, which is a child of `/perception/object_recognition/detection`, and so on.
 
 3. **Resolve connections** — `connection_resolver.py` examines every `<remap>` entry:
    - `~/input/xxx` → subscriber port named `xxx`
    - `~/output/xxx` → publisher port named `xxx`
-   - Bare `input` / `output` → port name derived from the resolved topic
+   - Bare `input` / `output` → port name derived from the resolved topic with namespace stripped
    - Infrastructure topics (`/rosout`, `/tf`, `/diagnostics*`, etc.) are filtered out.
-   - A connection entry is generated for every topic where the publisher and subscriber belong to different groups.
+   - Cross-component connections are resolved at each level of the tree.
 
-4. **Emit** — `emitter.py` serializes groups and connections into `autoware_system_design_format: 0.3.1` YAML.
+4. **Emit** — `emitter.py` recursively serializes each `NamespaceNode` into a `*.module.yaml` file placed at the matching path under `module/`. The `system.yaml` lists only top-level namespace nodes as components. Optional `parameter_set` YAMLs collect all `param` files declared across the node subtree.
 
 ## Customizing component names
 
