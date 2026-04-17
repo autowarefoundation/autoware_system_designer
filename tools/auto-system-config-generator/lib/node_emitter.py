@@ -77,6 +77,32 @@ def collect_nodes_by_entity_flat(
     return dict(result)
 
 
+def _common_namespace(namespaces: list[str]) -> str:
+    """Return the longest common namespace prefix across the given namespaces."""
+    if not namespaces:
+        return ""
+    parts_list = [ns.strip("/").split("/") for ns in namespaces if ns.strip("/")]
+    if not parts_list:
+        return ""
+    common: list[str] = []
+    for level in zip(*parts_list):
+        if len(set(level)) == 1:
+            common.append(level[0])
+        else:
+            break
+    return "/".join(common)
+
+
+def namespace_for_entity(nodes: list[NodeRecord]) -> str:
+    """Return the common namespace path for a set of NodeRecords.
+
+    Used to determine the subdirectory under node/ where the generated
+    *.node.yaml should be placed.
+    """
+    namespaces = [n.namespace for n in nodes if n.namespace]
+    return _common_namespace(namespaces)
+
+
 # ---------------------------------------------------------------------------
 # Existing definition lookup
 # ---------------------------------------------------------------------------

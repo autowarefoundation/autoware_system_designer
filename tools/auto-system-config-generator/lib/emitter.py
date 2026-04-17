@@ -113,12 +113,14 @@ def _extract_ns_module_interface(
                 port = remap.port_name(node.namespace, group_namespace=my_ns)
                 if not port:
                     continue
-                consumers = [r for r in all_sub.get(topic, []) if r.component != my_ns]
+                consumers = [r for r in all_sub.get(topic, [])
+                             if r.component != my_ns and not r.component.startswith(my_ns + "/")]
                 if consumers and port not in seen_pub:
                     seen_pub.add(port)
                     external_pub.append((port, topic))
             else:
-                producers = [r for r in all_pub.get(topic, []) if r.component != my_ns]
+                producers = [r for r in all_pub.get(topic, [])
+                             if r.component != my_ns and not r.component.startswith(my_ns + "/")]
                 if producers and topic not in seen_sub_topics:
                     seen_sub_topics.add(topic)
                     external_sub.append((topic.lstrip("/"), topic))

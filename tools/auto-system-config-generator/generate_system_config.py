@@ -56,6 +56,7 @@ from lib.node_emitter import (
     find_defined_node_entities,
     find_package_map,
     load_package_map,
+    namespace_for_entity,
 )
 
 
@@ -114,12 +115,14 @@ def _emit_node_configs(
         print("  All node entities already defined — no *.node.yaml files written")
         return
 
-    node_dir = out_dir / "node"
-    node_dir.mkdir(parents=True, exist_ok=True)
+    node_base_dir = out_dir / "node"
     for entity_name in sorted(undefined):
         node_records = nodes_by_entity[entity_name]
         node_yaml = emit_node_yaml(entity_name, node_records, graph)
-        node_file = node_dir / f"{entity_name}.yaml"
+        ns = namespace_for_entity(node_records)
+        entity_dir = node_base_dir / ns if ns else node_base_dir
+        entity_dir.mkdir(parents=True, exist_ok=True)
+        node_file = entity_dir / f"{entity_name}.yaml"
         node_file.write_text(node_yaml)
         if verbose:
             print(f"  Written: {node_file}")
