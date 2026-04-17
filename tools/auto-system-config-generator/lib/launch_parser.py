@@ -33,22 +33,23 @@ class RemapEntry:
         For the standard ~/input/xxx and ~/output/xxx convention the port name
         is the suffix after the prefix.  For bare 'input'/'output' remaps the
         port name is derived from the resolved topic so the name is meaningful.
+        Slashes in port names are replaced with underscores for format compatibility.
         """
+        raw: Optional[str] = None
         if self.from_topic.startswith("~/input/"):
-            return self.from_topic[len("~/input/"):]
-        if self.from_topic.startswith("~/output/"):
-            return self.from_topic[len("~/output/"):]
-        if self.from_topic in ("input", "output"):
-            # Derive a readable name from the resolved topic path.
-            # Strip the node namespace prefix so the port reflects the topic's
-            # semantic segment rather than its full absolute path.
+            raw = self.from_topic[len("~/input/"):]
+        elif self.from_topic.startswith("~/output/"):
+            raw = self.from_topic[len("~/output/"):]
+        elif self.from_topic in ("input", "output"):
             topic = self.to_topic
             ns = node_namespace.rstrip("/")
             if ns and topic.startswith(ns + "/"):
                 topic = topic[len(ns) + 1:]
             topic = topic.lstrip("/")
-            return topic if topic else self.from_topic
-        return None
+            raw = topic if topic else self.from_topic
+        if raw is None:
+            return None
+        return raw.replace("/", "_")
 
 
 @dataclass
@@ -65,8 +66,9 @@ class NodeRecord:
 
     @property
     def full_path(self) -> str:
+        name = self.name if self.name and self.name.lower() != "none" else (self.exec or "unknown")
         ns = self.namespace.rstrip("/")
-        return f"{ns}/{self.name}" if ns else f"/{self.name}"
+        return f"{ns}/{name}" if ns else f"/{name}"
 
     @property
     def top_namespace(self) -> str:
@@ -76,7 +78,9 @@ class NodeRecord:
     @property
     def instance_name(self) -> str:
         """snake_case name suitable for use as an instance identifier."""
-        return self.name.replace("-", "_")
+        name = self.name if self.name and self.name.lower() != "none" else None
+        raw = name or self.exec or (self.plugin.split("::")[-1].lower() if self.plugin else "unknown")
+        return raw.replace("-", "_")
 
 
 @dataclass

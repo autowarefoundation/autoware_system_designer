@@ -85,6 +85,8 @@ def resolve_connections(groups: list[ComponentGroup]) -> list[TopicConnection]:
     subscribers: dict[str, list[PortRef]] = defaultdict(list)
 
     for group in groups:
+        if group.namespace == "(root)":
+            continue
         for node in group.nodes:
             for remap in node.remaps:
                 direction = remap.direction
@@ -136,7 +138,7 @@ class ModuleInterface:
     """External ports and internal connections for a single ComponentGroup."""
     publishers: list[tuple[str, str]]     # (port_name, topic)
     subscribers: list[tuple[str, str]]    # (port_name, topic)
-    internal_connections: list[tuple[str, str, str, str]]  # (pub_node, pub_port, sub_node, sub_port)
+    internal_connections: list[tuple[str, str, str, str]]  # (pub_node_path, pub_port, sub_node_path, sub_port)
 
 
 def extract_module_interfaces(
@@ -216,8 +218,8 @@ def extract_module_interfaces(
                 sub_node = node_by_path.get(sub_ref.node_path)
                 if pub_node and sub_node:
                     internal.append((
-                        pub_node.instance_name, pub_ref.port,
-                        sub_node.instance_name, sub_ref.port,
+                        pub_ref.node_path, pub_ref.port,
+                        sub_ref.node_path, sub_ref.port,
                     ))
 
     return ModuleInterface(

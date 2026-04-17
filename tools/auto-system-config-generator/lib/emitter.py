@@ -15,8 +15,20 @@ DESIGN_FORMAT = "0.3.1"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _indent(text: str, n: int = 2) -> str:
-    return textwrap.indent(text, " " * n)
+def _build_instance_name_map(nodes: list[NodeRecord]) -> dict[str, str]:
+    """Return {node.full_path: deduplicated_instance_name} for a list of nodes."""
+    used: dict[str, int] = {}
+    result: dict[str, str] = {}
+    for node in nodes:
+        base = node.instance_name
+        if base in used:
+            used[base] += 1
+            name = f"{base}_{used[base]}"
+        else:
+            used[base] = 1
+            name = base
+        result[node.full_path] = name
+    return result
 
 
 def _node_to_instance_entity(node: NodeRecord) -> str:
@@ -40,26 +52,23 @@ def emit_module_yaml(
     all_groups: list[ComponentGroup],
 ) -> str:
     """Generate a *.module.yaml for the given ComponentGroup."""
+    name_map = _build_instance_name_map(group.nodes)
     iface = extract_module_interfaces(group, all_groups)
+
+    entity_name = group.entity_name if group.namespace != "(root)" else "RosSystem"
 
     lines: list[str] = []
     lines.append(f"autoware_system_design_format: {DESIGN_FORMAT}")
     lines.append("")
-    lines.append(f"name: {group.entity_name}.module")
+    lines.append(f"name: {entity_name}.module")
     lines.append("")
 
-    # instances (deduplicate names by suffixing collisions)
+    # instances
     lines.append("instances:")
     if group.nodes:
-        used_inst_names: dict[str, int] = {}
         for node in group.nodes:
+            inst = name_map[node.full_path]
             entity = _node_to_instance_entity(node)
-            inst = node.instance_name
-            if inst in used_inst_names:
-                used_inst_names[inst] += 1
-                inst = f"{inst}_{used_inst_names[inst]}"
-            else:
-                used_inst_names[inst] = 1
             lines.append(f"  - name: {inst}")
             lines.append(f"    entity: {entity}")
             if node.is_composable and node.container:
@@ -88,7 +97,7 @@ def emit_module_yaml(
 
     # connections
     lines.append("connections:")
-    conn_lines = _build_module_connections(group, iface)
+    conn_lines = _build_module_connections(group, iface, name_map)
     if conn_lines:
         lines.extend(conn_lines)
     else:
@@ -97,36 +106,56 @@ def emit_module_yaml(
     return "\n".join(lines) + "\n"
 
 
-def _build_module_connections(group: ComponentGroup, iface: ModuleInterface) -> list[str]:
+def _build_module_connections(
+    group: ComponentGroup,
+    iface: ModuleInterface,
+    name_map: dict[str, str],
+) -> list[str]:
     lines: list[str] = []
 
     sub_ports = {port for port, _ in iface.subscribers}
     pub_ports = {port for port, _ in iface.publishers}
 
     # External input → internal node subscriber
+    seen_ext_in: set[tuple] = set()
     for node in group.nodes:
+        inst = name_map[node.full_path]
         for remap in node.remaps:
             if remap.direction != "input":
                 continue
-            port = remap.port_name
+            port = remap.port_name(node.namespace)
             if port and port in sub_ports:
-                lines.append(f"  - - subscriber.{port}")
-                lines.append(f"    - {node.instance_name}.subscriber.{port}")
+                key = (port, inst)
+                if key not in seen_ext_in:
+                    seen_ext_in.add(key)
+                    lines.append(f"  - - subscriber.{port}")
+                    lines.append(f"    - {inst}.subscriber.{port}")
 
     # Internal node publisher → external output
+    seen_ext_out: set[tuple] = set()
     for node in group.nodes:
+        inst = name_map[node.full_path]
         for remap in node.remaps:
             if remap.direction != "output":
                 continue
-            port = remap.port_name
+            port = remap.port_name(node.namespace)
             if port and port in pub_ports:
-                lines.append(f"  - - {node.instance_name}.publisher.{port}")
-                lines.append(f"    - publisher.{port}")
+                key = (inst, port)
+                if key not in seen_ext_out:
+                    seen_ext_out.add(key)
+                    lines.append(f"  - - {inst}.publisher.{port}")
+                    lines.append(f"    - publisher.{port}")
 
-    # Internal node-to-node connections
-    for pub_inst, pub_port, sub_inst, sub_port in iface.internal_connections:
-        lines.append(f"  - - {pub_inst}.publisher.{pub_port}")
-        lines.append(f"    - {sub_inst}.subscriber.{sub_port}")
+    # Internal node-to-node connections (node_path → deduplicated name via name_map)
+    seen_internal: set[tuple] = set()
+    for pub_path, pub_port, sub_path, sub_port in iface.internal_connections:
+        pub_inst = name_map.get(pub_path, pub_path)
+        sub_inst = name_map.get(sub_path, sub_path)
+        key = (pub_inst, pub_port, sub_inst, sub_port)
+        if key not in seen_internal:
+            seen_internal.add(key)
+            lines.append(f"  - - {pub_inst}.publisher.{pub_port}")
+            lines.append(f"    - {sub_inst}.subscriber.{sub_port}")
 
     return lines
 

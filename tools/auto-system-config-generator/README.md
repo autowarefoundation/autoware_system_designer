@@ -1,6 +1,6 @@
 # auto-system-config-generator
 
-Parses a flattened ROS 2 launch XML (output of [launch_unifier](https://github.com/kenji-miyake/ros_component_diagram_generator)) and generates skeleton **Autoware System Designer** YAML configs:
+Parses a flattened ROS 2 launch XML (output of [launch_unifier](https://github.com/xmfcx/launch_unifier_ws)) and generates skeleton **Autoware System Designer** YAML configs:
 
 - `<SystemName>.system.yaml` — top-level system with components, node_groups, and connections
 - `<EntityName>.module.yaml` — one per top-level namespace group
