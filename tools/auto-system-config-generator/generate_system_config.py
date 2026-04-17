@@ -49,6 +49,14 @@ from lib.graph_parser import merge_graph_topics, parse_graph_json
 from lib.grouper import group_nodes
 from lib.launch_parser import parse_launch_xml
 from lib.namespace_tree import NamespaceNode, build_namespace_tree
+from lib.node_emitter import (
+    collect_nodes_by_entity,
+    collect_nodes_by_entity_flat,
+    emit_node_yaml,
+    find_defined_node_entities,
+    find_package_map,
+    load_package_map,
+)
 
 
 def load_component_map(path: Path) -> dict:
@@ -84,6 +92,39 @@ def _emit_recursive_modules(
         count += _emit_recursive_modules(child, all_pub, all_sub, out_dir, verbose)
 
     return count
+
+
+def _emit_node_configs(
+    nodes_by_entity: dict,
+    graph,
+    out_dir: Path,
+    package_map_path,
+    verbose: bool,
+) -> None:
+    """Generate *.node.yaml files for entities not already defined."""
+    package_map = load_package_map(package_map_path) if package_map_path else {}
+    entity_names = set(nodes_by_entity.keys())
+    defined = find_defined_node_entities(entity_names, package_map)
+
+    undefined = entity_names - defined
+    if verbose and defined:
+        print(f"  Skipping {len(defined)} already-defined node entity/entities")
+
+    if not undefined:
+        print("  All node entities already defined — no *.node.yaml files written")
+        return
+
+    node_dir = out_dir / "node"
+    node_dir.mkdir(parents=True, exist_ok=True)
+    for entity_name in sorted(undefined):
+        node_records = nodes_by_entity[entity_name]
+        node_yaml = emit_node_yaml(entity_name, node_records, graph)
+        node_file = node_dir / f"{entity_name}.yaml"
+        node_file.write_text(node_yaml)
+        if verbose:
+            print(f"  Written: {node_file}")
+
+    print(f"Written: {len(undefined)} node YAML file(s) in {out_dir}/node/")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -158,6 +199,19 @@ def main(argv: list[str] | None = None) -> int:
              "corresponding node records from this snapshot.",
     )
     parser.add_argument(
+        "--node-configs",
+        action="store_true",
+        help="Generate *.node.yaml files for node entities not already defined "
+             "in any known package share directory",
+    )
+    parser.add_argument(
+        "--package-map",
+        default=None,
+        metavar="FILE",
+        help="Path to _package_map.yaml used to detect already-defined node "
+             "entities (auto-discovered via ament_index when omitted)",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Print progress information",
@@ -182,6 +236,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.verbose:
         print(f"  Found {len(nodes)} nodes, {len(containers)} containers")
 
+    graph_data = None
     if args.graph_json:
         graph_path = Path(args.graph_json)
         if not graph_path.exists():
@@ -234,6 +289,15 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"Written: {module_file}")
             module_count = sum(1 for g in groups if g.nodes)
             print(f"Written: {module_count} module YAML file(s) in {out}/")
+
+        if args.node_configs:
+            _emit_node_configs(
+                nodes_by_entity=collect_nodes_by_entity_flat(groups),
+                graph=graph_data,
+                out_dir=out,
+                package_map_path=Path(args.package_map) if args.package_map else find_package_map(),
+                verbose=args.verbose,
+            )
 
     else:
         # ---- Recursive tree mode ----
@@ -290,6 +354,15 @@ def main(argv: list[str] | None = None) -> int:
             for ns_node in top_nodes.values():
                 total_modules += _emit_recursive_modules(ns_node, all_pub, all_sub, out, args.verbose)
             print(f"Written: {total_modules} module YAML file(s) in {out}/module/")
+
+        if args.node_configs:
+            _emit_node_configs(
+                nodes_by_entity=collect_nodes_by_entity(list(top_nodes.values())),
+                graph=graph_data,
+                out_dir=out,
+                package_map_path=Path(args.package_map) if args.package_map else find_package_map(),
+                verbose=args.verbose,
+            )
 
     return 0
 
