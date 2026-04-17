@@ -1,0 +1,55 @@
+# Namespace → component override mapping
+# Customize the generated component names and entity references for known namespaces.
+#
+# Format:
+#   /namespace:
+#     name: component_name_in_system_yaml   (snake_case)
+#     entity_name: EntityName               (PascalCase, will become EntityName.module)
+
+/sensing:
+  name: sensing
+  entity_name: Sensing
+
+/perception:
+  name: perception
+  entity_name: Perception
+
+/localization:
+  name: localization
+  entity_name: Localization
+
+/map:
+  name: map
+  entity_name: Map
+
+/planning:
+  name: planning
+  entity_name: Planning
+
+/control:
+  name: control
+  entity_name: Control
+
+/system:
+  name: system
+  entity_name: System
+
+/adapi:
+  name: adapi
+  entity_name: Adapi
+
+/autoware_api:
+  name: autoware_api
+  entity_name: AutowareApi
+
+/awapi:
+  name: awapi
+  entity_name: Awapi
+
+/default_adapi:
+  name: default_adapi
+  entity_name: DefaultAdapi
+
+/l4_toolkit:
+  name: l4_toolkit
+  entity_name: L4Toolkit
