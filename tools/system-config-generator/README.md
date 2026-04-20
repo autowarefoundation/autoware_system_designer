@@ -9,7 +9,7 @@ Unified pipeline that turns a ROS 2 launch file into skeleton **Autoware System 
 
 ## How it works
 
-```
+```text
 ┌──────────────────────────────────────────────────────────┐
 │  Phase 1 — Parse launcher                                │
 │  launch_unifier flattens the launch tree into a single   │
@@ -30,10 +30,10 @@ Unified pipeline that turns a ROS 2 launch file into skeleton **Autoware System 
 
 ### Sub-tools used
 
-| Sub-tool | Role |
-|----------|------|
-| `launch_unifier/` (vendored) | Evaluates launch files and serialises the resolved entity tree to flat XML |
-| `topology-analyzer/` (sibling tool) | Captures live node pub/sub/service topology from a running ROS 2 system |
+| Sub-tool                                                                                              | Role                                                                       |
+| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `launch_unifier/` (vendored from [xmfcx/launch_unifier](https://github.com/xmfcx/launch_unifier.git)) | Evaluates launch files and serialises the resolved entity tree to flat XML |
+| `topology-analyzer/` (sibling tool)                                                                   | Captures live node pub/sub/service topology from a running ROS 2 system    |
 
 ---
 
@@ -122,38 +122,38 @@ python3 run_launch_unifier.py \
 
 ### Launch source (one required)
 
-| Flag | Description |
-|------|-------------|
-| `--launch-xml FILE` | Pre-generated `generated.launch.xml` — skips launch_unifier |
-| `--launch-package PKG` | ROS 2 package owning the launch file (use with `--launch-file`) |
-| `--launch-file FILE` | Launch file name inside the package share |
-| `--launch-path PATH` | Absolute path to a launch file (alternative to `--launch-package`) |
-| `--launch-args key:=val ...` | Space-separated launch arguments forwarded to the launch file |
-| `--launch-debug` | Enable launch debug logging |
+| Flag                         | Description                                                        |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `--launch-xml FILE`          | Pre-generated `generated.launch.xml` — skips launch_unifier        |
+| `--launch-package PKG`       | ROS 2 package owning the launch file (use with `--launch-file`)    |
+| `--launch-file FILE`         | Launch file name inside the package share                          |
+| `--launch-path PATH`         | Absolute path to a launch file (alternative to `--launch-package`) |
+| `--launch-args key:=val ...` | Space-separated launch arguments forwarded to the launch file      |
+| `--launch-debug`             | Enable launch debug logging                                        |
 
 ### Runtime snapshot (optional)
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--graph-json FILE` | — | Path to a pre-captured graph snapshot JSON |
-| `--live-snapshot` | off | Capture a live snapshot from the running ROS 2 system |
-| `--snapshot-spin-seconds N` | `3.0` | Discovery wait time for `--live-snapshot` |
-| `--snapshot-params` | `names` | Parameter depth for `--live-snapshot`: `none`, `names`, or `values` |
+| Flag                        | Default | Description                                                         |
+| --------------------------- | ------- | ------------------------------------------------------------------- |
+| `--graph-json FILE`         | —       | Path to a pre-captured graph snapshot JSON                          |
+| `--live-snapshot`           | off     | Capture a live snapshot from the running ROS 2 system               |
+| `--snapshot-spin-seconds N` | `3.0`   | Discovery wait time for `--live-snapshot`                           |
+| `--snapshot-params`         | `names` | Parameter depth for `--live-snapshot`: `none`, `names`, or `values` |
 
 ### Generation options
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--system-name NAME` | `GeneratedSystem` | System name (file prefix and YAML `name` field) |
-| `--output-dir DIR` | `generated/` | Output directory |
-| `--compute-unit NAME` | `main_ecu` | Compute unit label for all components |
-| `--system-depth N` | `1` | Namespace depth for system.yaml components. Sub-modules below this depth are generated recursively. |
-| `--parameter-sets` | off | Generate `parameter_set` YAML files per top-level component |
-| `--component-map FILE` | `config/component_map.yaml` | Namespace → name/entity override YAML |
-| `--no-modules` | off | Skip per-component module YAML files |
-| `--no-node-configs` | off | Skip generating `*.node.yaml` for undefined node entities (on by default) |
-| `--package-map FILE` | auto | `_package_map.yaml` for entity discovery (auto via ament_index) |
-| `--verbose` | off | Print progress and statistics |
+| Flag                   | Default                     | Description                                                                                         |
+| ---------------------- | --------------------------- | --------------------------------------------------------------------------------------------------- |
+| `--system-name NAME`   | `GeneratedSystem`           | System name (file prefix and YAML `name` field)                                                     |
+| `--output-dir DIR`     | `generated/`                | Output directory                                                                                    |
+| `--compute-unit NAME`  | `main_ecu`                  | Compute unit label for all components                                                               |
+| `--system-depth N`     | `1`                         | Namespace depth for system.yaml components. Sub-modules below this depth are generated recursively. |
+| `--parameter-sets`     | off                         | Generate `parameter_set` YAML files per top-level component                                         |
+| `--component-map FILE` | `config/component_map.yaml` | Namespace → name/entity override YAML                                                               |
+| `--no-modules`         | off                         | Skip per-component module YAML files                                                                |
+| `--no-node-configs`    | off                         | Skip generating `*.node.yaml` for undefined node entities (on by default)                           |
+| `--package-map FILE`   | auto                        | `_package_map.yaml` for entity discovery (auto via ament_index)                                     |
+| `--verbose`            | off                         | Print progress and statistics                                                                       |
 
 ---
 
@@ -161,7 +161,7 @@ python3 run_launch_unifier.py \
 
 All output is contained under a single `--output-dir`:
 
-```
+```text
 <output-dir>/
 └── YYYYMMDD_HHMMSS/                             (timestamp of the run)
     ├── unified_launch/                          (only when launch_unifier runs)
