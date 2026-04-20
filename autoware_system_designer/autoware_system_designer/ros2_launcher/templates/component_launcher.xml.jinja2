@@ -75,6 +75,9 @@
   <load_composable_node target="{{ node.container_target }}">
     <composable_node pkg="{{ node.package }}" plugin="{{ node.plugin }}" name="{{ node.name }}" namespace="{{ node.namespace }}">
       {{ node_configuration(node)|indent(6) }}
+{% if node.use_intra_process_comms %}
+      <extra_arg name="use_intra_process_comms" value="true"/>
+{% endif %}
     </composable_node>
   </load_composable_node>
 {% elif node.launch_state == 'node_container' %}

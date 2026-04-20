@@ -37,11 +37,13 @@ class LaunchManager:
         launch_config = LaunchConfig.from_config(config)
         return cls(launch_config=launch_config)
 
-    def update(self, container_target: str = ""):
+    def update(self, container_target: str = "", use_intra_process_comms: bool = False):
         """Update launch configuration with new container target and/or launch type."""
         if container_target:
             self.launch_config.container_target = container_target
             self.launch_config.launch_state = LaunchState.COMPOSABLE_NODE
+        if use_intra_process_comms:
+            self.launch_config.use_intra_process_comms = True
 
     @property
     def package_name(self) -> str:
@@ -70,6 +72,7 @@ class LaunchManager:
             case LaunchState.COMPOSABLE_NODE:
                 launcher_data["container_target"] = cfg.container_target
                 launcher_data["plugin"] = cfg.plugin
+                launcher_data["use_intra_process_comms"] = cfg.use_intra_process_comms
             case _:  # SINGLE_NODE
                 launcher_data["executable"] = cfg.executable
 

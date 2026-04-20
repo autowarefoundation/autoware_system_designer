@@ -58,6 +58,7 @@ class LaunchConfig:
         executable: str = "",
         container_target: str = "",
         launch_state: LaunchState = LaunchState.SINGLE_NODE,
+        use_intra_process_comms: bool = False,
     ):
         self.package_name = package_name
         self.ros2_launch_file = ros2_launch_file
@@ -67,6 +68,7 @@ class LaunchConfig:
         self.executable = executable
         self.container_target = container_target
         self.launch_state = launch_state
+        self.use_intra_process_comms = use_intra_process_comms
 
     @classmethod
     def from_config(cls, config: Any) -> "LaunchConfig":

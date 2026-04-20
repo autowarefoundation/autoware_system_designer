@@ -30,6 +30,24 @@ NODE_GROUP_CONTAINER_SPECS = {
             "type": "node_container",
         },
     },
+    "ros2_component_container_mt_icp": {
+        "package_name": "rclcpp_components",
+        "package_provider": "ros2",
+        "launch": {
+            "executable": "component_container_mt",
+            "type": "node_container",
+            "use_intra_process_comms": True,
+        },
+    },
+    "ros2_component_container_icp": {
+        "package_name": "rclcpp_components",
+        "package_provider": "ros2",
+        "launch": {
+            "executable": "component_container",
+            "type": "node_container",
+            "use_intra_process_comms": True,
+        },
+    },
 }
 
 
@@ -92,6 +110,8 @@ def apply_node_groups(instance: "Instance") -> None:
         )
         container_target_path = container_instance.path
 
+        use_ipc = NODE_GROUP_CONTAINER_SPECS[group_type]["launch"].get("use_intra_process_comms", False)
+
         for node_instance in matched_nodes:
             previous_target = node_instance.launch_manager.launch_config.container_target
             if previous_target and previous_target != container_target_path:
@@ -102,7 +122,10 @@ def apply_node_groups(instance: "Instance") -> None:
                     container_target_path,
                 )
 
-            node_instance.launch_manager.update(container_target=container_target_path)
+            node_instance.launch_manager.update(
+                container_target=container_target_path,
+                use_intra_process_comms=use_ipc,
+            )
 
 
 def _resolve_group_compute_unit(
