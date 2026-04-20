@@ -92,8 +92,11 @@ def create_entity_tree(
     logging.root.setLevel("CRITICAL")
     loop.create_task(launch_service.run_async())
     loop.run_until_complete(asyncio.sleep(0))
-    shutdown_task = loop.create_task(launch_service.shutdown())
-    loop.run_until_complete(shutdown_task)
+    # shutdown() returns None when the service already exited on its own (idle with no
+    # pending futures, which is the normal case when no nodes are actually launched).
+    shutdown_coro = launch_service.shutdown()
+    if shutdown_coro is not None:
+        loop.run_until_complete(loop.create_task(shutdown_coro))
     logging.root.setLevel("INFO")
 
     return entity_tree

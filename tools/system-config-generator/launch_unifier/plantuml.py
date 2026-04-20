@@ -24,9 +24,9 @@ _TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"
 
 
 def _get_all_entities(tree: dict):
-    if tree.get("children"):
+    if "entity" in tree:
         entities = [tree["entity"]]
-        for subtree in tree["children"]:
+        for subtree in tree.get("children", []):
             entities.extend(_get_all_entities(subtree))
         return entities
     else:
@@ -95,9 +95,9 @@ def create_entity_index_map(tree: dict):
     index_map = {}
 
     def update_index(tree):
-        if tree.get("children"):
+        if "entity" in tree:
             index_map[str(tree["entity"])] = tree
-            for subtree in tree["children"]:
+            for subtree in tree.get("children", []):
                 update_index(subtree)
         else:
             index_map[str(tree)] = tree
@@ -109,12 +109,12 @@ def create_entity_index_map(tree: dict):
 
 def get_children(index_map: dict, entity: dict):
     index = index_map[str(entity)]
-    if not index.get("children"):
+    if "entity" not in index:
         return []
 
     children = []
-    for child in index["children"]:
-        if child.get("children"):
+    for child in index.get("children", []):
+        if "entity" in child:
             children.append(child["entity"])
         else:
             children.append(child)

@@ -96,14 +96,16 @@ def _patch_node():
 
     Node.__init__ = _patched_init
 
-    _orig_execute = Node.execute
-
     def _patched_execute(self, context):
-        # Materialise generators so both the original execute() and our capture
+        # Materialise generators so both _perform_substitutions and our capture
         # code can iterate the same data.
         _normalize_context_lists(context, ("global_params", "ros_remaps"))
 
-        ret = _orig_execute(self, context)
+        # Resolve all node attributes without spawning a process.
+        # _perform_substitutions sets __expanded_node_name, __expanded_node_namespace,
+        # __expanded_remappings, and processes parameters — all we need for analysis.
+        self._perform_substitutions(context)
+        ret = []
 
         fa = self.final_attributes
 
@@ -303,13 +305,34 @@ def _patch_load_composable_nodes():
     # composable node's final_attributes after get_composable_node_load_request
     # has already populated the other fields.
 
-    _orig_lcn_execute = LoadComposableNodes.execute
-
     def _patched_lcn_execute(self, context):
-        ret = _orig_lcn_execute(self, context)
-        container_name = self._LoadComposableNodes__final_target_container_name
+        # Resolve target container name — mirrors LoadComposableNodes.execute() logic
+        # but skips creating the rclpy client and scheduling _load_in_sequence so that
+        # no nodes are actually loaded into a running system.
+        from launch.utilities import is_a_subclass
+        from launch_ros.actions.composable_node_container import ComposableNodeContainer  # noqa: PLC0415
+
+        target = self._LoadComposableNodes__target_container
+        if is_a_subclass(target, ComposableNodeContainer):
+            container_name = target.node_name
+        else:
+            from launch.utilities import normalize_to_list_of_substitutions, perform_substitutions  # noqa: PLC0415
+            container_name = perform_substitutions(
+                context, normalize_to_list_of_substitutions(target)
+            )
+
+        self._LoadComposableNodes__final_target_container_name = container_name
+
+        # Build load requests via our already-patched module function so that
+        # final_attributes are populated on each ComposableNode descriptor.
         for node_desc in self._LoadComposableNodes__composable_node_descriptions:
+            try:
+                lcn_module.get_composable_node_load_request(node_desc, context)
+            except Exception:
+                pass
             node_desc.final_attributes.target_container = container_name
-        return ret
+
+        # Return no child actions — do NOT schedule _load_in_sequence.
+        return []
 
     LoadComposableNodes.execute = _patched_lcn_execute
