@@ -10,12 +10,12 @@ generate_system_config.py with --launch-package / --launch-path instead.
 Usage
 -----
 # By package name (requires ament_index):
-python run_launch_unifier.py --launch-package autoware_launch \\
+python scripts/unify_launch.py --launch-package autoware_launch \\
     --launch-file autoware.launch.xml \\
     sensor_model:=aip_xx1 vehicle_model:=sample_vehicle
 
 # By absolute path:
-python run_launch_unifier.py \\
+python scripts/unify_launch.py \\
     --launch-path /path/to/my.launch.xml \\
     arg1:=value1
 """
@@ -24,10 +24,9 @@ import argparse
 import pathlib
 import sys
 
-# Patches must be applied before any launch entity class is instantiated.
-# They live in lib/unifier.py which handles the guard automatically.
-sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from lib.unifier import resolve_launch_path, unify_launch  # noqa: E402
+# Make the project root importable so pipeline/ can be found.
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+from pipeline.launch_runner import resolve_launch_path, unify_launch  # noqa: E402
 
 
 def _parse_args() -> argparse.Namespace:

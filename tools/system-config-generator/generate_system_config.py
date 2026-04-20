@@ -48,18 +48,14 @@ except ImportError:
     print("ERROR: lxml not found. Run: pip install lxml", file=sys.stderr)
     sys.exit(1)
 
-from lib.connection_resolver import resolve_connections
-from lib.emitter import (
+from pipeline.connection_resolver import resolve_connections
+from pipeline.emitter import (
     _collect_all_pub_sub,
     emit_module_yaml_from_tree,
     emit_parameter_set_yaml,
     emit_system_yaml_from_tree,
 )
-from lib.graph_parser import merge_graph_topics, parse_graph_json
-from lib.grouper import group_nodes
-from lib.launch_parser import parse_launch_xml
-from lib.namespace_tree import NamespaceNode, build_namespace_tree
-from lib.node_emitter import (
+from pipeline.emitter.node import (
     collect_nodes_by_entity,
     emit_node_yaml,
     find_defined_node_entities,
@@ -67,6 +63,9 @@ from lib.node_emitter import (
     load_package_map,
     namespace_for_entity,
 )
+from pipeline.graph_parser import merge_graph_topics, parse_graph_json
+from pipeline.launch_parser import parse_launch_xml
+from pipeline.namespace_tree import NamespaceNode, build_namespace_tree
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +325,7 @@ def _phase1_get_launch_xml(args: argparse.Namespace, out: Path, verbose: bool) -
         return launch_xml
 
     # Resolve the launch file path and run launch_unifier into <output-dir>/launch/.
-    from lib.unifier import resolve_launch_path, unify_launch
+    from pipeline.launch_runner import resolve_launch_path, unify_launch
 
     launch_file = resolve_launch_path(
         package=args.launch_package,
@@ -372,7 +371,7 @@ def _phase2_get_graph(args: argparse.Namespace, out_dir: Path, verbose: bool) ->
         return parse_graph_json(graph_path)
 
     if args.live_snapshot:
-        from lib.snapshot import capture_live_snapshot
+        from pipeline.graph_snapshot import capture_live_snapshot
 
         snapshot_path = out_dir / "snapshot" / "graph.json"
         if verbose:
@@ -459,8 +458,7 @@ def _generate_tree(args, nodes, containers, component_map, graph_data, out, verb
 
     all_pub, all_sub = _collect_all_pub_sub(list(top_nodes.values()))
 
-    groups = group_nodes(nodes, containers, depth=args.system_depth, overrides=component_map)
-    connections = resolve_connections(groups)
+    connections = resolve_connections(list(top_nodes.values()))
     if verbose:
         print(f"  Resolved {len(connections)} cross-component connections")
 

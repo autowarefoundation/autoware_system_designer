@@ -41,7 +41,7 @@ def capture_live_snapshot(
     if not _SNAPSHOT_SCRIPT.exists():
         raise FileNotFoundError(
             f"topology-analyzer snapshot script not found: {_SNAPSHOT_SCRIPT}\n"
-            "Ensure topology-analyzer/ is present alongside auto-system-config-generator/."
+            "Ensure topology-analyzer/ is present alongside system-config-generator/."
         )
 
     output_path = Path(output_path)

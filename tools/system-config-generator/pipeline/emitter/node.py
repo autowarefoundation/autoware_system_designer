@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING, Optional
 
 import yaml
 
-from .connection_resolver import _resolved_topic
-from .emitter import DESIGN_FORMAT, _node_to_instance_entity
+from ..connection_resolver import _resolved_topic
+from .module import DESIGN_FORMAT, _node_to_instance_entity
 
 if TYPE_CHECKING:
-    from .graph_parser import GraphNodeInfo
-    from .launch_parser import NodeRecord
-    from .namespace_tree import NamespaceNode
+    from ..graph_parser import GraphNodeInfo
+    from ..launch_parser import NodeRecord
+    from ..namespace_tree import NamespaceNode
 
 
 # ---------------------------------------------------------------------------
@@ -65,18 +65,6 @@ def collect_nodes_by_entity(
     return dict(result)
 
 
-def collect_nodes_by_entity_flat(
-    groups: list,  # list[ComponentGroup]
-) -> dict[str, list[NodeRecord]]:
-    """Collect NodeRecords grouped by entity name from flat ComponentGroups."""
-    result: dict[str, list[NodeRecord]] = defaultdict(list)
-    for group in groups:
-        for node in group.nodes:
-            entity = _node_to_instance_entity(node)
-            result[entity].append(node)
-    return dict(result)
-
-
 def _common_namespace(namespaces: list[str]) -> str:
     """Return the longest common namespace prefix across the given namespaces."""
     if not namespaces:
@@ -94,11 +82,7 @@ def _common_namespace(namespaces: list[str]) -> str:
 
 
 def namespace_for_entity(nodes: list[NodeRecord]) -> str:
-    """Return the common namespace path for a set of NodeRecords.
-
-    Used to determine the subdirectory under node/ where the generated
-    *.node.yaml should be placed.
-    """
+    """Return the common namespace path for a set of NodeRecords."""
     namespaces = [n.namespace for n in nodes if n.namespace]
     return _common_namespace(namespaces)
 
@@ -112,11 +96,7 @@ def find_defined_node_entities(
     package_map: dict[str, str],
     extra_search_dirs: Optional[list[Path]] = None,
 ) -> set[str]:
-    """Return entity names that already have .node.yaml files in known locations.
-
-    Searches each package's share directory under design/node/ and any
-    additional directories provided via extra_search_dirs.
-    """
+    """Return entity names that already have .node.yaml files in known locations."""
     defined: set[str] = set()
     search_dirs: list[Path] = list(extra_search_dirs or [])
 
@@ -129,7 +109,6 @@ def find_defined_node_entities(
         if not search_dir.exists():
             continue
         for yaml_file in search_dir.rglob("*.node.yaml"):
-            # SomeNode.node.yaml → stem = "SomeNode.node"
             entity = yaml_file.name[: -len(".yaml")]
             if entity in entity_names:
                 defined.add(entity)
@@ -162,16 +141,10 @@ def emit_node_yaml(
     nodes: list[NodeRecord],
     graph: Optional[dict[str, GraphNodeInfo]] = None,
 ) -> str:
-    """Generate a *.node.yaml for an entity represented by one or more NodeRecords.
-
-    When multiple NodeRecords share the same entity (different instances of the
-    same plugin), their ports are merged so the definition captures the full
-    interface of the node type.
-    """
+    """Generate a *.node.yaml for an entity represented by one or more NodeRecords."""
     canon = nodes[0]
 
-    # Merge ports across all instances; prefer entries that have a message type
-    sub_ports: dict[str, str] = {}  # port_name → msg_type
+    sub_ports: dict[str, str] = {}
     pub_ports: dict[str, str] = {}
 
     for node in nodes:
@@ -190,7 +163,6 @@ def emit_node_yaml(
                 if port not in pub_ports or (not pub_ports[port] and msg):
                     pub_ports[port] = msg
 
-    # Deduplicate param files across instances (preserve order of first appearance)
     seen_pf: set[str] = set()
     pf_entries: list[tuple[str, str]] = []
     for node in nodes:
