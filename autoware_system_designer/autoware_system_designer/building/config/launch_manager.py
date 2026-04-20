@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from ..runtime.execution import LaunchConfig, LaunchState
 
@@ -37,13 +37,15 @@ class LaunchManager:
         launch_config = LaunchConfig.from_config(config)
         return cls(launch_config=launch_config)
 
-    def update(self, container_target: str = "", use_intra_process_comms: bool = False):
-        """Update launch configuration with new container target and/or launch type."""
+    def update(
+        self, container_target: str = "", use_intra_process_comms: Optional[bool] = None
+    ):
+        """Update launch configuration with a new container target and/or IPC setting."""
         if container_target:
             self.launch_config.container_target = container_target
             self.launch_config.launch_state = LaunchState.COMPOSABLE_NODE
-        if use_intra_process_comms:
-            self.launch_config.use_intra_process_comms = True
+        if use_intra_process_comms is not None:
+            self.launch_config.use_intra_process_comms = use_intra_process_comms
 
     @property
     def package_name(self) -> str:

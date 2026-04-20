@@ -30,7 +30,7 @@ NODE_GROUP_CONTAINER_SPECS = {
             "type": "node_container",
         },
     },
-    "ros2_component_container_mt_icp": {
+    "ros2_component_container_mt_ipc": {
         "package_name": "rclcpp_components",
         "package_provider": "ros2",
         "launch": {
@@ -39,7 +39,7 @@ NODE_GROUP_CONTAINER_SPECS = {
             "use_intra_process_comms": True,
         },
     },
-    "ros2_component_container_icp": {
+    "ros2_component_container_ipc": {
         "package_name": "rclcpp_components",
         "package_provider": "ros2",
         "launch": {
