@@ -37,9 +37,7 @@ class LaunchManager:
         launch_config = LaunchConfig.from_config(config)
         return cls(launch_config=launch_config)
 
-    def update(
-        self, container_target: str = "", use_intra_process_comms: Optional[bool] = None
-    ):
+    def update(self, container_target: str = "", use_intra_process_comms: Optional[bool] = None):
         """Update launch configuration with a new container target and/or IPC setting."""
         if container_target:
             self.launch_config.container_target = container_target
