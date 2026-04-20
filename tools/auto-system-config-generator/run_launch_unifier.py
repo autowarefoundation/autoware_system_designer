@@ -1,40 +1,36 @@
 #!/usr/bin/env python3
-"""
-Standalone launch_unifier runner.
+"""Standalone launch_unifier runner.
 
 Flattens a ROS 2 launch file into output/generated.launch.xml (and a PlantUML
-diagram) without requiring a modified launch_ros installation.  Monkey-patches
-are applied at import time so the vendored launch_unifier module works against
-the unmodified system launch_ros package.
+diagram) without requiring a modified launch_ros installation.
+
+For the full pipeline (flatten + generate system config in one step) use
+generate_system_config.py with --launch-package / --launch-path instead.
 
 Usage
 -----
 # By package name (requires ament_index):
-python run_launch_unifier.py --package autoware_launch \
-    --file-name autoware.launch.xml \
+python run_launch_unifier.py --launch-package autoware_launch \\
+    --launch-file autoware.launch.xml \\
     sensor_model:=aip_xx1 vehicle_model:=sample_vehicle
 
 # By absolute path:
-python run_launch_unifier.py \
-    --launch-file /path/to/my.launch.xml \
+python run_launch_unifier.py \\
+    --launch-path /path/to/my.launch.xml \\
     arg1:=value1
 """
 
 import argparse
-import os
 import pathlib
 import sys
 
-# Allow importing the vendored launch_unifier package from this directory.
+# Patches must be applied before any launch entity class is instantiated.
+# They live in lib/unifier.py which handles the guard automatically.
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-
-# Apply patches FIRST — before any launch_ros class is instantiated.
-from launch_unifier.patches import apply_patches  # noqa: E402
-
-apply_patches()
+from lib.unifier import resolve_launch_path, unify_launch  # noqa: E402
 
 
-def _parse_args():
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Flatten a ROS 2 launch file to XML using vendored launch_unifier.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -42,19 +38,19 @@ def _parse_args():
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument(
-        "--package",
+        "--launch-package",
         metavar="PKG",
-        help="ROS 2 package that owns the launch file (use with --file-name).",
+        help="ROS 2 package that owns the launch file (use with --launch-file).",
     )
     source.add_argument(
-        "--launch-file",
+        "--launch-path",
         metavar="PATH",
         help="Absolute or relative path to the launch file.",
     )
     parser.add_argument(
-        "--file-name",
+        "--launch-file",
         metavar="FILE",
-        help="Launch file name inside the package share (required with --package).",
+        help="Launch file name inside the package share (required with --launch-package).",
     )
     parser.add_argument(
         "--output-dir",
@@ -75,68 +71,37 @@ def _parse_args():
     )
     args = parser.parse_args()
 
-    if args.package and not args.file_name:
-        parser.error("--file-name is required when --package is used.")
+    if args.launch_package and not args.launch_file:
+        parser.error("--launch-file is required when --launch-package is used.")
 
     return args
 
 
-def main():
+def main() -> None:
     args = _parse_args()
 
-    import launch
-
-    # Resolve launch file path.
-    if args.package:
-        from ros2launch.api.api import get_share_file_path_from_package
-
-        launch_file_path = get_share_file_path_from_package(package_name=args.package, file_name=args.file_name)
-    else:
-        launch_file_path = os.path.abspath(args.launch_file)
-
-    if not os.path.isfile(launch_file_path):
-        sys.exit(f"Launch file not found: {launch_file_path}")
-
-    # Parse key:=value launch arguments.
-    parsed_launch_arguments = []
+    parsed_args: list[tuple[str, str]] = []
     for arg in args.launch_arguments or []:
         if ":=" in arg:
             key, value = arg.split(":=", 1)
-            parsed_launch_arguments.append((key, value))
+            parsed_args.append((key, value))
         else:
-            sys.exit(f"Launch argument must be in key:=value form, got: {arg!r}")
+            sys.exit(f"Launch argument must be key:=value, got: {arg!r}")
 
-    root_entity = launch.actions.IncludeLaunchDescription(
-        launch.launch_description_sources.AnyLaunchDescriptionSource(launch_file_path),
-        launch_arguments=parsed_launch_arguments,
+    launch_file = resolve_launch_path(
+        package=args.launch_package,
+        file_name=args.launch_file,
+        launch_path=args.launch_path,
     )
 
-    launch_service = launch.LaunchService(
-        argv=[f"{k}:={v}" for k, v in parsed_launch_arguments],
-        noninteractive=True,
+    xml_path = unify_launch(
+        launch_file=launch_file,
+        launch_arguments=parsed_args,
+        output_dir=pathlib.Path(args.output_dir),
         debug=args.debug,
     )
 
-    from launch_unifier.filter import filter_entity_tree
-    from launch_unifier.launch_maker import generate_launch_file
-    from launch_unifier.parser import create_entity_tree
-    from launch_unifier.plantuml import generate_plantuml
-    from launch_unifier.serialization import make_entity_tree_serializable
-
-    output_dir = pathlib.Path(args.output_dir)
-    output_dir.mkdir(exist_ok=True, parents=True)
-
-    raw_tree = create_entity_tree(root_entity, launch_service)
-    filtered_tree = filter_entity_tree(raw_tree.copy())
-    serializable_tree = make_entity_tree_serializable(filtered_tree, launch_service.context)
-
-    generated_xml = generate_launch_file(serializable_tree)
-    plantuml_text = generate_plantuml(serializable_tree)
-
-    (output_dir / "generated.launch.xml").write_text(generated_xml)
-    (output_dir / "entity_tree.pu").write_text(plantuml_text)
-
-    print(f"Output written to {output_dir.resolve()}/")
+    print(f"Output written to {xml_path.parent.resolve()}/")
 
 
 if __name__ == "__main__":
