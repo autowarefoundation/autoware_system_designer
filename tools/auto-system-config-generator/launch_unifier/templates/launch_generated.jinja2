@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+
+{#
+This jinja2 template is for generating a launch file.
+#}
+
+{%- for entity in entities %}
+
+{%- if entity.type == "ComposableNodeContainer" %}
+  <!-- {{ entity.expanded_node_namespace }}/{{ entity.node_name }} -->
+  <node_container pkg="{{ entity.node_package }}"
+                  exec="{{ entity.node_executable }}"
+                  name="{{ entity.node_name }}"
+                  namespace="{{ entity.expanded_node_namespace }}"/>
+{% endif %}
+
+
+{%- if entity.type == "ComposableNode" %}
+  <!-- {{ entity.node_namespace }}/{{ entity.node_name }} -->
+  <load_composable_node target="{{ entity.target_container }}">
+    <composable_node pkg="{{ entity.package }}"
+                     plugin="{{ entity.node_plugin }}"
+                     name="{{ entity.node_name }}"
+                     namespace="{{ entity.node_namespace }}">
+      {%- if entity.remap_rules_global is defined %}
+
+      <!-- global remaps -->
+      {%- endif %}
+      {%- for remap_rule in entity.remap_rules_global %}
+      <remap from="{{ remap_rule[0] }}" to="{{ remap_rule[1] }}" />
+      {%- endfor %}
+
+
+      {%- if entity.remap_rules is defined %}
+
+      <!-- remaps -->
+      {%- endif %}
+      {%- for remap_rule in entity.remap_rules %}
+      <remap from="{{ remap_rule[0] }}" to="{{ remap_rule[1] }}" />
+      {%- endfor %}
+
+
+      {%- if entity.params_files is defined %}
+
+      <!-- parameter files -->
+      {%- for param_file_path in entity.params_files %}
+      <param from="{{ param_file_path }}" />
+      {%- endfor %}
+      {%- endif %}
+
+
+      {%- if entity.params_dicts is defined %}
+
+      <!-- parameter dictionary -->
+      {%- for params_dict in entity.params_dicts %}
+      {%- for param_name, value in params_dict.items() %}
+      <param name="{{ param_name }}" value="{{ value | format_param }}" />
+      {%- endfor %}
+      {%- endfor %}
+      {%- endif %}
+
+
+      {%- if entity.params_descs is defined %}
+
+      <!-- parameter descriptions -->
+      {%- for params_desc in entity.params_descs %}
+      {%- set param_name, value = params_desc %}
+      <param name="{{ param_name }}" value="{{ value | format_param }}" />
+      {%- endfor %}
+      {%- endif %}
+    </composable_node>
+  </load_composable_node>
+{% endif %}
+
+
+{%- if entity.type == "Node" %}
+  <!-- {{ entity.node_namespace }}/{{ entity.node_name }} -->
+  <node pkg="{{ entity.package }}"
+        exec="{{ entity.node_executable }}"
+        name="{{ entity.node_name }}"
+        namespace="{{ entity.node_namespace }}"
+        {%- if entity.arguments is defined %}
+        args="{{ entity.arguments | join(" ") }}"
+        {%- endif %}
+        >
+
+    {%- if entity.remap_rules_global is defined %}
+
+    <!-- global remaps -->
+    {%- endif %}
+    {%- for remap_rule in entity.remap_rules_global %}
+    <remap from="{{ remap_rule[0] }}" to="{{ remap_rule[1] }}" />
+    {%- endfor %}
+
+    {%- if entity.remap_rules is defined %}
+
+    <!-- remaps -->
+    {%- endif %}
+    {%- for remap_rule in entity.remap_rules %}
+    <remap from="{{ remap_rule[0] }}" to="{{ remap_rule[1] }}" />
+    {%- endfor %}
+
+
+    {%- if entity.params_global_files is defined %}
+
+    <!-- parameter files global -->
+    {%- for param_file_path in entity.params_global_files %}
+    <param from="{{ param_file_path }}" />
+    {%- endfor %}
+    {%- endif %}
+
+
+    {%- if entity.params_global_tuples is defined %}
+
+    <!-- parameter tuples global -->
+    {%- for param_tuple in entity.params_global_tuples %}
+    {%- set param_name, value = param_tuple %}
+    <param name="{{ param_name }}" value="{{ value | format_param }}" />
+    {%- endfor %}
+    {%- endif %}
+
+
+    {%- if entity.params_files is defined %}
+
+    <!-- parameter files -->
+    {%- for param_file_path in entity.params_files %}
+    <param from="{{ param_file_path }}" />
+    {%- endfor %}
+    {%- endif %}
+
+
+    {%- if entity.params_dicts is defined %}
+
+    <!-- parameter dictionary -->
+    {%- for params_dict in entity.params_dicts %}
+    {%- for param_name, value in params_dict.items() %}
+    <param name="{{ param_name }}" value="{{ value | format_param }}" />
+    {%- endfor %}
+    {%- endfor %}
+    {%- endif %}
+
+
+    {%- if entity.params_descs is defined %}
+
+    <!-- parameter descriptions -->
+    {%- for params_desc in entity.params_descs %}
+    {%- set param_name, value = params_desc %}
+    <param name="{{ param_name }}" value="{{ value | format_param }}" />
+    {%- endfor %}
+    {%- endif %}
+
+  </node>
+{% endif %}
+
+
+{%- endfor %}
+
+</launch>
