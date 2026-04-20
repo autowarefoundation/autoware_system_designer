@@ -58,9 +58,7 @@ def node_type_tokens(node: Dict) -> Set[str]:
     return tokens
 
 
-def param_info(
-    param_map: Dict[str, List[str]], fq: str
-) -> Tuple[Set[str], Optional[str]]:
+def param_info(param_map: Dict[str, List[str]], fq: str) -> Tuple[Set[str], Optional[str]]:
     if not param_map:
         return set(), None
     vals = param_map.get(fq)
@@ -78,9 +76,7 @@ def param_tokens(param_map: Dict[str, List[str]], fq: str) -> Set[str]:
     return {f"PRM:{n}" for n in names}
 
 
-def param_value_info(
-    param_values: Dict[str, Dict[str, str]], fq: str
-) -> Tuple[Dict[str, str], Optional[str]]:
+def param_value_info(param_values: Dict[str, Dict[str, str]], fq: str) -> Tuple[Dict[str, str], Optional[str]]:
     if not param_values:
         return {}, None
     vals = param_values.get(fq)
@@ -158,16 +154,20 @@ def match_nodes(
     for fq in sorted(set(old_by_fq.keys()) & set(new_by_fq.keys())):
         mapping[fq] = fq
         matched_new.add(fq)
-        evidence.append((
-            fq, fq,
-            match_score(
-                fq, fq,
-                old_type=node_type_tokens(old_by_fq[fq]),
-                new_type=node_type_tokens(new_by_fq[fq]),
-                old_param=param_tokens(old_params, fq),
-                new_param=param_tokens(new_params, fq),
-            ),
-        ))
+        evidence.append(
+            (
+                fq,
+                fq,
+                match_score(
+                    fq,
+                    fq,
+                    old_type=node_type_tokens(old_by_fq[fq]),
+                    new_type=node_type_tokens(new_by_fq[fq]),
+                    old_param=param_tokens(old_params, fq),
+                    new_param=param_tokens(new_params, fq),
+                ),
+            )
+        )
 
     # 1) Exact signature pairing where unambiguous.
     for sid, olds in sid_to_old.items():
@@ -189,10 +189,13 @@ def match_nodes(
                 continue
             mapping[ofq] = nfq
             matched_new.add(nfq)
-            evidence.append((
-                ofq, nfq,
-                jaccard(node_type_tokens(old_by_fq[ofq]), node_type_tokens(new_by_fq[nfq])),
-            ))
+            evidence.append(
+                (
+                    ofq,
+                    nfq,
+                    jaccard(node_type_tokens(old_by_fq[ofq]), node_type_tokens(new_by_fq[nfq])),
+                )
+            )
 
     # 1.7) Type-composition matching: same direction+type set, any topic names.
     # Catches nodes whose topics were renamed (namespace move, topic remapping) but
@@ -219,16 +222,20 @@ def match_nodes(
                 continue
             mapping[ofq] = nfq
             matched_new.add(nfq)
-            evidence.append((
-                ofq, nfq,
-                match_score(
-                    ofq, nfq,
-                    old_type=node_type_tokens(old_by_fq[ofq]),
-                    new_type=node_type_tokens(new_by_fq[nfq]),
-                    old_param=param_tokens(old_params, ofq),
-                    new_param=param_tokens(new_params, nfq),
-                ),
-            ))
+            evidence.append(
+                (
+                    ofq,
+                    nfq,
+                    match_score(
+                        ofq,
+                        nfq,
+                        old_type=node_type_tokens(old_by_fq[ofq]),
+                        new_type=node_type_tokens(new_by_fq[nfq]),
+                        old_param=param_tokens(old_params, ofq),
+                        new_param=param_tokens(new_params, nfq),
+                    ),
+                )
+            )
 
     # 1.8) Same-type-composition groups, M:N disambiguation by name.
     # Step 1.7 resolved 1:1 groups. Here we handle groups where M old and N new
@@ -289,16 +296,20 @@ def match_nodes(
             matched_new.add(nfq)
             used_old_g.add(ofq)
             used_new_g.add(nfq)
-            evidence.append((
-                ofq, nfq,
-                match_score(
-                    ofq, nfq,
-                    old_type=node_type_tokens(old_by_fq[ofq]),
-                    new_type=node_type_tokens(new_by_fq[nfq]),
-                    old_param=param_tokens(old_params, ofq),
-                    new_param=param_tokens(new_params, nfq),
-                ),
-            ))
+            evidence.append(
+                (
+                    ofq,
+                    nfq,
+                    match_score(
+                        ofq,
+                        nfq,
+                        old_type=node_type_tokens(old_by_fq[ofq]),
+                        new_type=node_type_tokens(new_by_fq[nfq]),
+                        old_param=param_tokens(old_params, ofq),
+                        new_param=param_tokens(new_params, nfq),
+                    ),
+                )
+            )
 
     rem_old = [fq for fq in old_by_fq.keys() if fq not in mapping]
     rem_new = [fq for fq in new_by_fq.keys() if fq not in matched_new]
@@ -320,9 +331,12 @@ def match_nodes(
         ot = old_type_cache[ofq]
         for nfq in rem_new:
             s = match_score(
-                ofq, nfq,
-                old_type=ot, new_type=new_type_cache[nfq],
-                old_param=old_param_cache[ofq], new_param=new_param_cache[nfq],
+                ofq,
+                nfq,
+                old_type=ot,
+                new_type=new_type_cache[nfq],
+                old_param=old_param_cache[ofq],
+                new_param=new_param_cache[nfq],
             )
             if s > best_s:
                 second_s = best_s
@@ -339,9 +353,12 @@ def match_nodes(
         nt = new_type_cache[nfq]
         for ofq in rem_old:
             s = match_score(
-                ofq, nfq,
-                old_type=old_type_cache[ofq], new_type=nt,
-                old_param=old_param_cache[ofq], new_param=new_param_cache[nfq],
+                ofq,
+                nfq,
+                old_type=old_type_cache[ofq],
+                new_type=nt,
+                old_param=old_param_cache[ofq],
+                new_param=new_param_cache[nfq],
             )
             if s > best_s:
                 best_s = s

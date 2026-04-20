@@ -6,7 +6,8 @@
 import os
 from typing import Dict, List, Optional, Set, Tuple
 
-from .graph import NodeGraphInfo, fq_name as _fq_name
+from .graph import NodeGraphInfo
+from .graph import fq_name as _fq_name
 
 # Maps component_container binary basename → ROS 2 executor type string.
 _CONTAINER_EXECUTOR: Dict[str, str] = {
@@ -86,9 +87,9 @@ def _parse_ros_remappings(cmdline: List[str]) -> Tuple[Optional[str], Optional[s
             remap = cmdline[i + 1]
             i += 2
             if remap.startswith("__node:="):
-                node_name = remap[len("__node:="):]
+                node_name = remap[len("__node:=") :]
             elif remap.startswith("__ns:="):
-                namespace = remap[len("__ns:="):]
+                namespace = remap[len("__ns:=") :]
         else:
             i += 1
     return node_name, namespace
@@ -116,9 +117,7 @@ def _package_from_exe(exe: str) -> Optional[str]:
     return None
 
 
-def _resolve_exe_and_pkg(
-    cmdline: List[str], exe: Optional[str]
-) -> Tuple[Optional[str], Optional[str]]:
+def _resolve_exe_and_pkg(cmdline: List[str], exe: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     """
     Return ``(effective_exe_path, package_name)``.
     For Python launchers (python3 …) the real script is ``cmdline[1]``.
@@ -150,9 +149,7 @@ def _load_ament_components(lib_prefixes: List[str]) -> Dict[str, List[str]]:
         if install_pfx in seen_roots:
             continue
         seen_roots.add(install_pfx)
-        idx_dir = os.path.join(
-            install_pfx, "share", "ament_index", "resource_index", "rclcpp_components"
-        )
+        idx_dir = os.path.join(install_pfx, "share", "ament_index", "resource_index", "rclcpp_components")
         if not os.path.isdir(idx_dir):
             continue
         try:
@@ -178,9 +175,7 @@ def _load_ament_components(lib_prefixes: List[str]) -> Dict[str, List[str]]:
     return comp_map
 
 
-def _component_classes_from_libs(
-    libraries: List[str], ament_components: Dict[str, List[str]]
-) -> List[str]:
+def _component_classes_from_libs(libraries: List[str], ament_components: Dict[str, List[str]]) -> List[str]:
     """Return the component class names whose plugin .so appears in *libraries*."""
     classes: List[str] = []
     for lib_path in libraries:
@@ -260,9 +255,7 @@ def _build_process_info_map(
     """
     # Build container-fq → pid index
     container_to_pid: Dict[str, int] = {
-        fq: e["pid"]
-        for fq, e in by_fq.items()
-        if os.path.basename(e.get("exe") or "") in _CONTAINER_EXECUTOR
+        fq: e["pid"] for fq, e in by_fq.items() if os.path.basename(e.get("exe") or "") in _CONTAINER_EXECUTOR
     }
 
     result: Dict[str, Optional[Dict]] = {}
@@ -273,9 +266,9 @@ def _build_process_info_map(
             pid = container_to_pid.get(comp.get("container", ""))
             if pid is not None and pid in by_pid:
                 e = dict(by_pid[pid])
-                e["component_classes"] = _component_classes_from_libs(
-                    e.get("ros_libraries", []), ament_components
-                ) or None
+                e["component_classes"] = (
+                    _component_classes_from_libs(e.get("ros_libraries", []), ament_components) or None
+                )
                 result[n.fq_name] = e
             else:
                 result[n.fq_name] = None
@@ -284,9 +277,7 @@ def _build_process_info_map(
             e = by_fq.get(n.fq_name)
             if e:
                 e = dict(e)
-                classes = _component_classes_from_libs(
-                    e.get("ros_libraries", []), ament_components
-                )
+                classes = _component_classes_from_libs(e.get("ros_libraries", []), ament_components)
                 # Non-empty only for container nodes themselves (ComponentManager).
                 e["component_classes"] = classes or None
                 result[n.fq_name] = e

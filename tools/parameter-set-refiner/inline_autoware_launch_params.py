@@ -110,9 +110,7 @@ def _find_workspace_src(start: Path) -> Path:
         if src.is_dir():
             return src
         candidate = candidate.parent
-    raise RuntimeError(
-        "Could not locate workspace src/ directory. Use --workspace-src."
-    )
+    raise RuntimeError("Could not locate workspace src/ directory. Use --workspace-src.")
 
 
 def _find_package_dir(pkg_name: str, workspace_src: Path) -> Optional[Path]:
@@ -128,9 +126,7 @@ def _find_package_dir(pkg_name: str, workspace_src: Path) -> Optional[Path]:
 # ---------------------------------------------------------------------------
 
 
-def _all_node_yamls_for_param_key(
-    param_key: str, workspace_src: Path
-) -> list[tuple[Path, dict]]:
+def _all_node_yamls_for_param_key(param_key: str, workspace_src: Path) -> list[tuple[Path, dict]]:
     """
     Return all (node_yaml_path, param_file_entry) pairs where the node declares *param_key*.
     """
@@ -191,17 +187,13 @@ def _pick_best_node_yaml(
     al_pkg_dir = _find_package_dir("autoware_launch", workspace_src) or al_config.parent
 
     # Priority 1 – exact filename match in declared default
-    exact = [
-        (ny, pf)
-        for ny, pf in candidates
-        if Path(pf.get("default", "")).name == al_name
-    ]
+    exact = [(ny, pf) for ny, pf in candidates if Path(pf.get("default", "")).name == al_name]
     if len(exact) == 1:
         return exact[0]
 
     # Priority 2 – package contains config/<al_name>
     pkg_has_file = []
-    for node_yaml, pf in (exact or candidates):
+    for node_yaml, pf in exact or candidates:
         try:
             nd = _load(node_yaml)
         except Exception:
@@ -285,7 +277,7 @@ def _resolve_al_path(ref: str, workspace_src: Path) -> Optional[Path]:
     prefix = "$(find-pkg-share autoware_launch)/"
     if not ref.startswith(prefix):
         return None
-    rel = ref[len(prefix):]
+    rel = ref[len(prefix) :]
     pkg_dir = _find_package_dir("autoware_launch", workspace_src)
     if pkg_dir is None:
         return None
@@ -384,18 +376,14 @@ def process(
 
             # --- find best matching node.yaml ---
             candidates = _all_node_yamls_for_param_key(al_key, workspace_src)
-            node_yaml_path, pf_entry = _pick_best_node_yaml(
-                candidates, al_config, workspace_src
-            )
+            node_yaml_path, pf_entry = _pick_best_node_yaml(candidates, al_config, workspace_src)
             if node_yaml_path is None:
                 print(f"  WARNING: no node.yaml declares '{al_key}' – skipping")
                 new_param_files.append(pf)
                 continue
 
             # --- resolve the default config file ---
-            default_config = _resolve_default_config(
-                node_yaml_path, pf_entry, al_config, workspace_src
-            )
+            default_config = _resolve_default_config(node_yaml_path, pf_entry, al_config, workspace_src)
             if default_config is None:
                 print("  WARNING: default config not resolved – skipping")
                 new_param_files.append(pf)
@@ -412,14 +400,10 @@ def process(
 
             if diffs:
                 print(f"  Differences    : {list(diffs.keys())}")
-                existing_names = {
-                    pv.get("name") for pv in param_values if isinstance(pv, dict)
-                }
+                existing_names = {pv.get("name") for pv in param_values if isinstance(pv, dict)}
                 for k, v in diffs.items():
                     if k not in existing_names:
-                        entry = _ruamel.comments.CommentedMap(
-                            [("name", k), ("value", _prepare_value(_normalise(v)))]
-                        )
+                        entry = _ruamel.comments.CommentedMap([("name", k), ("value", _prepare_value(_normalise(v)))])
                         param_values.append(entry)
                         print(f"    + param_value  : {k} = {_normalise(v)}")
                     else:
@@ -456,9 +440,7 @@ def process(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("parameter_set", type=Path, help="*.parameter_set.yaml to process")
     parser.add_argument(
         "--workspace-src",

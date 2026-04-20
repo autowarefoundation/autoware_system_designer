@@ -12,7 +12,7 @@ from lxml import etree
 @dataclass
 class RemapEntry:
     from_topic: str  # e.g. ~/input/objects or input
-    to_topic: str    # e.g. /perception/object_recognition/objects
+    to_topic: str  # e.g. /perception/object_recognition/objects
 
     @property
     def direction(self) -> str:
@@ -37,15 +37,15 @@ class RemapEntry:
         """
         raw: Optional[str] = None
         if self.from_topic.startswith("~/input/"):
-            raw = self.from_topic[len("~/input/"):]
+            raw = self.from_topic[len("~/input/") :]
         elif self.from_topic.startswith("~/output/"):
-            raw = self.from_topic[len("~/output/"):]
+            raw = self.from_topic[len("~/output/") :]
         elif self.from_topic in ("input", "output"):
             topic = self.to_topic
             for ns in [group_namespace, node_namespace]:
                 ns = ns.rstrip("/")
                 if ns and topic.startswith(ns + "/"):
-                    topic = topic[len(ns) + 1:]
+                    topic = topic[len(ns) + 1 :]
                     break
             else:
                 topic = topic.lstrip("/")

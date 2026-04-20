@@ -96,14 +96,20 @@ def _extract_ns_module_interface(
                 port = remap.port_name(node.namespace, group_namespace=my_ns)
                 if not port:
                     continue
-                consumers = [r for r in all_sub.get(topic, [])
-                             if r.component != my_ns and not r.component.startswith(my_ns + "/")]
+                consumers = [
+                    r
+                    for r in all_sub.get(topic, [])
+                    if r.component != my_ns and not r.component.startswith(my_ns + "/")
+                ]
                 if consumers and port not in seen_pub:
                     seen_pub.add(port)
                     external_pub.append((port, topic))
             else:
-                producers = [r for r in all_pub.get(topic, [])
-                             if r.component != my_ns and not r.component.startswith(my_ns + "/")]
+                producers = [
+                    r
+                    for r in all_pub.get(topic, [])
+                    if r.component != my_ns and not r.component.startswith(my_ns + "/")
+                ]
                 if producers and topic not in seen_sub_topics:
                     seen_sub_topics.add(topic)
                     external_sub.append((topic.lstrip("/"), topic))
@@ -121,14 +127,12 @@ def _extract_ns_module_interface(
                     port = remap.port_name(node.namespace, group_namespace=child_ns)
                     if not port:
                         continue
-                    consumers = [r for r in all_sub.get(topic, [])
-                                 if not r.component.startswith(my_ns)]
+                    consumers = [r for r in all_sub.get(topic, []) if not r.component.startswith(my_ns)]
                     if consumers and port not in seen_pub:
                         seen_pub.add(port)
                         external_pub.append((port, topic))
                 else:
-                    producers = [r for r in all_pub.get(topic, [])
-                                 if not r.component.startswith(my_ns)]
+                    producers = [r for r in all_pub.get(topic, []) if not r.component.startswith(my_ns)]
                     if producers and topic not in seen_sub_topics:
                         seen_sub_topics.add(topic)
                         external_sub.append((topic.lstrip("/"), topic))
@@ -137,10 +141,8 @@ def _extract_ns_module_interface(
     seen_internal: set[tuple] = set()
 
     for topic in set(list(all_pub.keys()) + list(all_sub.keys())):
-        pubs = [r for r in all_pub.get(topic, [])
-                if r.component == my_ns or r.component.startswith(my_ns + "/")]
-        subs = [r for r in all_sub.get(topic, [])
-                if r.component == my_ns or r.component.startswith(my_ns + "/")]
+        pubs = [r for r in all_pub.get(topic, []) if r.component == my_ns or r.component.startswith(my_ns + "/")]
+        subs = [r for r in all_sub.get(topic, []) if r.component == my_ns or r.component.startswith(my_ns + "/")]
         for pub_ref in pubs:
             for sub_ref in subs:
                 if pub_ref.node_path == sub_ref.node_path:
@@ -151,10 +153,14 @@ def _extract_ns_module_interface(
                 if key in seen_internal:
                     continue
                 seen_internal.add(key)
-                internal.append((
-                    pub_ref.node_path, pub_ref.port,
-                    sub_ref.node_path, sub_ref.port,
-                ))
+                internal.append(
+                    (
+                        pub_ref.node_path,
+                        pub_ref.port,
+                        sub_ref.node_path,
+                        sub_ref.port,
+                    )
+                )
 
     return ModuleInterface(
         publishers=external_pub,

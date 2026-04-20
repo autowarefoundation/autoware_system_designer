@@ -3,7 +3,7 @@
 
 from typing import Dict, List
 
-from .common import TOOL_NODE_RE, PARAM_SVC_SUFFIXES, basename
+from .common import PARAM_SVC_SUFFIXES, TOOL_NODE_RE, basename
 
 
 def filter_transform_listener(nodes: List[Dict], *, include: bool) -> List[Dict]:

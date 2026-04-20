@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 # Package map
 # ---------------------------------------------------------------------------
 
+
 def load_package_map(path: Path) -> dict[str, str]:
     """Load _package_map.yaml → {pkg_name: share_dir_path}."""
     if not path.exists():
@@ -34,6 +35,7 @@ def find_package_map() -> Optional[Path]:
     """Locate _package_map.yaml via ament_index. Returns None if not found."""
     try:
         from ament_index_python.packages import get_package_share_path
+
         share = get_package_share_path("autoware_system_designer")
         p = Path(share) / "resource" / "_package_map.yaml"
         if p.exists():
@@ -46,6 +48,7 @@ def find_package_map() -> Optional[Path]:
 # ---------------------------------------------------------------------------
 # Node entity collection
 # ---------------------------------------------------------------------------
+
 
 def collect_nodes_by_entity(
     ns_nodes: list[NamespaceNode],
@@ -91,6 +94,7 @@ def namespace_for_entity(nodes: list[NodeRecord]) -> str:
 # Existing definition lookup
 # ---------------------------------------------------------------------------
 
+
 def find_defined_node_entities(
     entity_names: set[str],
     package_map: dict[str, str],
@@ -119,6 +123,7 @@ def find_defined_node_entities(
 # ---------------------------------------------------------------------------
 # Node YAML emitter
 # ---------------------------------------------------------------------------
+
 
 def _get_msg_type(
     node: NodeRecord,

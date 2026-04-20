@@ -55,9 +55,7 @@ def signature_from_node(node: Dict) -> Signature:
 
 def signature_id(sig: Signature) -> str:
     payload = {"pubs": sig.pubs, "subs": sig.subs, "srvs": sig.srvs, "clis": sig.clis}
-    b = json.dumps(
-        payload, separators=(",", ":"), ensure_ascii=False, sort_keys=True
-    ).encode("utf-8")
+    b = json.dumps(payload, separators=(",", ":"), ensure_ascii=False, sort_keys=True).encode("utf-8")
     return hashlib.sha256(b).hexdigest()[:12]
 
 

@@ -67,7 +67,6 @@ from pipeline.graph_parser import merge_graph_topics, parse_graph_json
 from pipeline.launch_parser import parse_launch_xml
 from pipeline.namespace_tree import NamespaceNode, build_namespace_tree
 
-
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
@@ -208,7 +207,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--live-snapshot",
         action="store_true",
         help="Capture a live graph snapshot from the running ROS 2 system "
-             "(requires rclpy and a sourced ROS 2 environment).",
+        "(requires rclpy and a sourced ROS 2 environment).",
     )
     snap.add_argument(
         "--snapshot-spin-seconds",
@@ -250,14 +249,14 @@ def _build_parser() -> argparse.ArgumentParser:
         default=1,
         metavar="N",
         help="Namespace depth for system.yaml components (default: 1). "
-             "Sub-modules below this depth are generated recursively.",
+        "Sub-modules below this depth are generated recursively.",
     )
     gen.add_argument(
         "--component-map",
         default=None,
         metavar="FILE",
         help="YAML file mapping namespaces to name/entity overrides "
-             "(default: config/component_map.yaml next to this script).",
+        "(default: config/component_map.yaml next to this script).",
     )
     gen.add_argument(
         "--no-modules",
@@ -279,7 +278,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="FILE",
         help="Path to _package_map.yaml used to detect already-defined node entities "
-             "(auto-discovered via ament_index when omitted).",
+        "(auto-discovered via ament_index when omitted).",
     )
     gen.add_argument(
         "--verbose",
@@ -296,10 +295,7 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     has_path = bool(args.launch_path)
 
     if not has_xml and not has_pkg and not has_path:
-        parser.error(
-            "Specify a launch source: --launch-xml, "
-            "--launch-package + --launch-file, or --launch-path."
-        )
+        parser.error("Specify a launch source: --launch-xml, " "--launch-package + --launch-file, or --launch-path.")
     if has_xml and (has_pkg or has_path):
         parser.error("--launch-xml cannot be combined with --launch-package or --launch-path.")
     if has_pkg and has_path:
@@ -424,10 +420,7 @@ def main(argv: list[str] | None = None) -> int:
     if graph_data is not None:
         added = merge_graph_topics(nodes, graph_data)
         if verbose:
-            print(
-                f"  Graph snapshot: {len(graph_data)} nodes, "
-                f"{added} synthetic remaps added"
-            )
+            print(f"  Graph snapshot: {len(graph_data)} nodes, " f"{added} synthetic remaps added")
 
     # ---- Phase 4: Load component map ------------------------------------
     if args.component_map:
@@ -448,7 +441,8 @@ def main(argv: list[str] | None = None) -> int:
 def _generate_tree(args, nodes, containers, component_map, graph_data, out, verbose):
     """Recursive tree-mode generation (default)."""
     top_nodes = build_namespace_tree(
-        nodes, containers,
+        nodes,
+        containers,
         overrides=component_map,
         top_depth=args.system_depth,
     )

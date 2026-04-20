@@ -129,10 +129,12 @@ def _finalize_node_groups(
                 seen.add(p)
                 unique_nodes.append(p)
 
-        result.append({
-            "name": name,
-            "type": group_type,
-            "nodes": sorted(unique_nodes),
-        })
+        result.append(
+            {
+                "name": name,
+                "type": group_type,
+                "nodes": sorted(unique_nodes),
+            }
+        )
 
     return result

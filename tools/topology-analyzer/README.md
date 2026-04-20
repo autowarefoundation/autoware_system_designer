@@ -60,15 +60,15 @@ Matches nodes between the two snapshots — name-agnostic, so nodes that were re
 
 ## Snapshot options (`ros2_graph_snapshot.py`)
 
-| Flag                           | Default                                         | Description                                                                                                                                                   |
-| ------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--out PATH`                   | `./ros2_graph_snapshots/<timestamp>/graph.json` | Output path                                                                                                                                                   |
-| `--spin-seconds N`             | `1.0`                                           | Seconds to wait for node discovery before snapshotting. Use 3–5 s for large or slow-starting systems                                                          |
-| `--params {none,names,values}` | `values`                                        | Parameter collection mode. `values` fetches current values (slowest, most informative). `names` lists names only. `none` disables parameter queries (fastest) |
-| `--filter REGEX`               | —                                               | Include only nodes whose fully-qualified name matches this regex, e.g. `'^/planning/'`                                                                        |
-| `--max-nodes N`                | `0` (unlimited)                                 | Cap the number of nodes processed                                                                                                                             |
-| `--sleep-per-node N`           | `0.0`                                           | Optional sleep between nodes to reduce CPU/network spikes on large graphs                                                                                     |
-| `--include-hidden`             | off                                             | Include hidden node names (those with `/_` in the path)                                                                                                       |
+| Flag                           | Default                                         | Description                                                                                                                                                                                                                                   |
+| ------------------------------ | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--out PATH`                   | `./ros2_graph_snapshots/<timestamp>/graph.json` | Output path                                                                                                                                                                                                                                   |
+| `--spin-seconds N`             | `1.0`                                           | Seconds to wait for node discovery before snapshotting. Use 3–5 s for large or slow-starting systems                                                                                                                                          |
+| `--params {none,names,values}` | `values`                                        | Parameter collection mode. `values` fetches current values (slowest, most informative). `names` lists names only. `none` disables parameter queries (fastest)                                                                                 |
+| `--filter REGEX`               | —                                               | Include only nodes whose fully-qualified name matches this regex, e.g. `'^/planning/'`                                                                                                                                                        |
+| `--max-nodes N`                | `0` (unlimited)                                 | Cap the number of nodes processed                                                                                                                                                                                                             |
+| `--sleep-per-node N`           | `0.0`                                           | Optional sleep between nodes to reduce CPU/network spikes on large graphs                                                                                                                                                                     |
+| `--include-hidden`             | off                                             | Include hidden node names (those with `/_` in the path)                                                                                                                                                                                       |
 | `--no-process`                 | off (process info is **on** by default)         | Skip OS process / executor discovery. By default every node is enriched with PID, binary path, package, executor type, loaded ROS 2 libraries, and resolved plugin class names. Use when `/proc` is unavailable or a lean snapshot is needed. |
 
 ### Snapshot JSON format
@@ -79,22 +79,38 @@ Matches nodes between the two snapshots — name-agnostic, so nodes that were re
   "node_count": 208,
   "duplicates": [],
   "errors": {},
-  "param_names":  { "/some/node": ["param_a", "param_b"] },
+  "param_names": { "/some/node": ["param_a", "param_b"] },
   "param_values": { "/some/node": { "param_a": "1.0" } },
   "nodes": [
     {
       "fq_name": "/sensing/lidar/top/ring_outlier_filter",
-      "publishers":  { "/sensing/lidar/top/pointcloud":                          ["sensor_msgs/msg/PointCloud2"] },
-      "subscribers": { "/sensing/lidar/top/distortion_corrector_node/pointcloud": ["sensor_msgs/msg/PointCloud2"] },
+      "publishers": {
+        "/sensing/lidar/top/pointcloud": ["sensor_msgs/msg/PointCloud2"]
+      },
+      "subscribers": {
+        "/sensing/lidar/top/distortion_corrector_node/pointcloud": [
+          "sensor_msgs/msg/PointCloud2"
+        ]
+      },
       "services": { "...": ["..."] },
       "clients": {},
-      "component_info": { "container": "/sensing/lidar/top/pointcloud_container", "component_id": 3 },
+      "component_info": {
+        "container": "/sensing/lidar/top/pointcloud_container",
+        "component_id": 3
+      },
       "process": {
         "pid": 12345,
         "exe": "/opt/ros/humble/lib/rclcpp_components/component_container_mt",
         "package": "rclcpp_components",
         "executor_type": "multi_threaded",
-        "cmdline": ["component_container_mt", "--ros-args", "-r", "__node:=pointcloud_container", "-r", "__ns:=/sensing/lidar/top"],
+        "cmdline": [
+          "component_container_mt",
+          "--ros-args",
+          "-r",
+          "__node:=pointcloud_container",
+          "-r",
+          "__ns:=/sensing/lidar/top"
+        ],
         "ros_libraries": [
           "/opt/ros/humble/lib/librcl.so.4",
           "/opt/ros/humble/lib/librclcpp.so.16",
@@ -108,7 +124,7 @@ Matches nodes between the two snapshots — name-agnostic, so nodes that were re
     },
     {
       "fq_name": "/localization/pose_estimator/ndt_scan_matcher",
-      "publishers":  { "...": ["..."] },
+      "publishers": { "...": ["..."] },
       "subscribers": { "...": ["..."] },
       "services": {},
       "clients": {},
@@ -118,7 +134,14 @@ Matches nodes between the two snapshots — name-agnostic, so nodes that were re
         "exe": "/workspace/install/ndt_scan_matcher/lib/ndt_scan_matcher/ndt_scan_matcher",
         "package": "ndt_scan_matcher",
         "executor_type": null,
-        "cmdline": ["ndt_scan_matcher", "--ros-args", "-r", "__node:=ndt_scan_matcher", "-r", "__ns:=/localization/pose_estimator"],
+        "cmdline": [
+          "ndt_scan_matcher",
+          "--ros-args",
+          "-r",
+          "__node:=ndt_scan_matcher",
+          "-r",
+          "__ns:=/localization/pose_estimator"
+        ],
         "ros_libraries": ["/opt/ros/humble/lib/librcl.so.4", "..."],
         "component_classes": null
       }
@@ -129,15 +152,15 @@ Matches nodes between the two snapshots — name-agnostic, so nodes that were re
 
 #### `process` field details
 
-| Field               | Type             | Description                                                                                                                                                 |
-| ------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pid`               | int              | OS process ID                                                                                                                                               |
-| `exe`               | string \| null   | Absolute path to the executable binary (or Python script for Python nodes)                                                                                  |
-| `package`           | string \| null   | ROS 2 package name derived from the install-space path (`<prefix>/lib/<package>/<exec>`)                                                                    |
-| `executor_type`     | string \| null   | `"single_threaded"`, `"multi_threaded"`, or `"isolated"` for component containers; `null` for standalone nodes (executor is internal to the process)        |
-| `cmdline`           | list of strings  | Full command line as seen in `/proc/<pid>/cmdline`                                                                                                          |
-| `ros_libraries`     | list of strings  | ROS 2 / workspace `.so` files mapped into the process (from `/proc/<pid>/maps`), filtered to paths under `AMENT_PREFIX_PATH`                                |
-| `component_classes` | list \| null     | For component containers: every `rclcpp_components` plugin class whose library is loaded, resolved from the ament index. `null` for standalone nodes.       |
+| Field               | Type            | Description                                                                                                                                           |
+| ------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pid`               | int             | OS process ID                                                                                                                                         |
+| `exe`               | string \| null  | Absolute path to the executable binary (or Python script for Python nodes)                                                                            |
+| `package`           | string \| null  | ROS 2 package name derived from the install-space path (`<prefix>/lib/<package>/<exec>`)                                                              |
+| `executor_type`     | string \| null  | `"single_threaded"`, `"multi_threaded"`, or `"isolated"` for component containers; `null` for standalone nodes (executor is internal to the process)  |
+| `cmdline`           | list of strings | Full command line as seen in `/proc/<pid>/cmdline`                                                                                                    |
+| `ros_libraries`     | list of strings | ROS 2 / workspace `.so` files mapped into the process (from `/proc/<pid>/maps`), filtered to paths under `AMENT_PREFIX_PATH`                          |
+| `component_classes` | list \| null    | For component containers: every `rclcpp_components` plugin class whose library is loaded, resolved from the ament index. `null` for standalone nodes. |
 
 `process` is `null` when the node's process could not be matched (e.g. running on a remote host, or launched without explicit `--ros-args -r __node:=` remapping). Use `--no-process` to omit this field entirely.
 
@@ -218,12 +241,12 @@ Quick overview of which namespaces have activity:
 
 Each changed node entry is tagged with the kinds of differences found:
 
-| Tag             | Meaning                                                                                     |
-| --------------- | ------------------------------------------------------------------------------------------- |
-| `[structural]`  | Publishers, subscribers, service servers, or clients were added or removed                  |
-| `[remapped]`    | The node or its topics were renamed/moved to a different namespace; message types unchanged |
-| `[param-name]`  | Parameter names were added or removed                                                       |
-| `[param-value]` | Parameter values changed                                                                    |
+| Tag             | Meaning                                                                                            |
+| --------------- | -------------------------------------------------------------------------------------------------- |
+| `[structural]`  | Publishers, subscribers, service servers, or clients were added or removed                         |
+| `[remapped]`    | The node or its topics were renamed/moved to a different namespace; message types unchanged        |
+| `[param-name]`  | Parameter names were added or removed                                                              |
+| `[param-value]` | Parameter values changed                                                                           |
 | `[container]`   | The composable container the node runs in changed, or the node moved between standalone/composable |
 
 Example:
@@ -274,7 +297,7 @@ Edges are pub→sub connections through a topic. Three categories:
 **Plugin class resolution uses the ament index, not the live DDS graph.**
 The ROS 2 graph API does not expose the C++ plugin class name at runtime.
 The snapshot resolves plugin classes by cross-referencing the loaded `.so` files in the container process (`/proc/<pid>/maps`) against the ament resource index (`share/ament_index/resource_index/rclcpp_components`).
-This correctly identifies *which classes are registered in the loaded libraries* but cannot determine *which specific instance of a duplicate class* a given composable node represents when multiple nodes of the same type run inside the same container.
+This correctly identifies _which classes are registered in the loaded libraries_ but cannot determine _which specific instance of a duplicate class_ a given composable node represents when multiple nodes of the same type run inside the same container.
 `component_classes` on a composable node entry lists all classes available in the container process — not just the one backing that particular node.
 
 **Nodes without `--ros-args` remappings have `process: null`.**

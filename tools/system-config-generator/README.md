@@ -1,4 +1,4 @@
-# auto-system-config-generator
+# system-config-generator
 
 Unified pipeline that turns a ROS 2 launch file into skeleton **Autoware System Designer** YAML configs:
 

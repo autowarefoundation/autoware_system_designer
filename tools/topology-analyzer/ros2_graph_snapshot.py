@@ -9,12 +9,11 @@ from dataclasses import asdict
 from datetime import datetime
 
 import rclpy
-from rclpy.node import Node
-
 from lib.snapshot.components import detect_components
 from lib.snapshot.graph import NodeGraphInfo, as_type_map, compile_filter, fq_name
 from lib.snapshot.params import collect_node_params
 from lib.snapshot.proc import scan_processes
+from rclpy.node import Node
 
 
 def _print_progress(done: int, total: int) -> None:
@@ -169,9 +168,7 @@ def main() -> int:
                         if args.params == "values":
                             param_values[fq] = {"<skipped: duplicate node name>": ""}
                     else:
-                        names_list, values_dict = collect_node_params(
-                            node, fq, args.params, AsyncParametersClient
-                        )
+                        names_list, values_dict = collect_node_params(node, fq, args.params, AsyncParametersClient)
                         param_names[fq] = names_list
                         if args.params == "values":
                             param_values[fq] = values_dict

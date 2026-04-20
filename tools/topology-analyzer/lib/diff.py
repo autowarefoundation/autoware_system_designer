@@ -49,9 +49,7 @@ def diff_maps(
         a_by_base.setdefault(base, set()).add(tys)
     for base, tys in b_norm.keys():
         b_by_base.setdefault(base, set()).add(tys)
-    changed: Set[str] = {
-        base for base in set(a_by_base) & set(b_by_base) if a_by_base[base] != b_by_base[base]
-    }
+    changed: Set[str] = {base for base in set(a_by_base) & set(b_by_base) if a_by_base[base] != b_by_base[base]}
 
     # Rename detection: same type-set, similar name, mutual-best + margin.
     renames: List[Tuple[str, str]] = []
@@ -148,9 +146,7 @@ def diff_maps(
     return removed, added, changed, renames
 
 
-def edge_set(
-    nodes: List[Dict], *, ignored_topics: Set[str] = frozenset()
-) -> Set[Tuple[str, str, str]]:
+def edge_set(nodes: List[Dict], *, ignored_topics: Set[str] = frozenset()) -> Set[Tuple[str, str, str]]:
     """Build the set of (publisher_fq, subscriber_fq, topic) edges."""
     publishers_by_topic: Dict[str, Set[str]] = {}
     subscribers_by_topic: Dict[str, Set[str]] = {}
@@ -172,9 +168,7 @@ def edge_set(
     return edges
 
 
-def remap_old_edges(
-    edges: Set[Tuple[str, str, str]], mapping: Dict[str, str]
-) -> Set[Tuple[str, str, str]]:
+def remap_old_edges(edges: Set[Tuple[str, str, str]], mapping: Dict[str, str]) -> Set[Tuple[str, str, str]]:
     """Translate old node names in edges via the node mapping."""
     return {(mapping.get(p, p), mapping.get(s, s), t) for p, s, t in edges}
 

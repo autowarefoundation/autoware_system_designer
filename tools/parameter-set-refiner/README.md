@@ -41,11 +41,11 @@ python3 inline_autoware_launch_params.py <parameter_set.yaml> [OPTIONS]
 
 ### Options
 
-| Option | Description |
-|--------|-------------|
+| Option                | Description                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------- |
 | `--workspace-src DIR` | Root of the colcon `src/` tree. Auto-detected from the input file path if omitted. |
-| `--dry-run` | Print what would change without writing the file. |
-| `--output FILE` | Write the result to `FILE` instead of modifying in place. |
+| `--dry-run`           | Print what would change without writing the file.                                  |
+| `--output FILE`       | Write the result to `FILE` instead of modifying in place.                          |
 
 ### Example
 
@@ -75,14 +75,16 @@ For each `param_files` entry referencing `$(find-pkg-share autoware_launch)/...`
 - Scalars: `value: true` / `value: 0.5`
 - Arrays: inline flow style `value: [0.098, 0.147, 0.078]`
 - Nested dicts: block mapping under the dotted-path name, e.g.:
+
   ```yaml
   - name: association.can_assign.unknown
-    value: [polygon_tracker, multi_vehicle_tracker, pedestrian_and_bicycle_tracker]
+    value:
+      [polygon_tracker, multi_vehicle_tracker, pedestrian_and_bicycle_tracker]
   ```
 
 ## Requirements
 
-```
+```text
 ruamel.yaml
 ```
 

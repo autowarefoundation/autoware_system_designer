@@ -20,7 +20,6 @@ from .filters import is_param_svc_rename
 from .matching import param_info, param_value_info
 from .process import build_container_map, build_process_groups
 
-
 # ---------- Shared helpers ----------
 
 
@@ -291,8 +290,10 @@ def render_diff(
                 p_removed = []
                 p_added = []
             param_diff = {
-                "removed": p_removed, "added": p_added,
-                "old_status": o_param_status, "new_status": n_param_status,
+                "removed": p_removed,
+                "added": p_added,
+                "old_status": o_param_status,
+                "new_status": n_param_status,
             }
 
         value_diff = None
@@ -309,7 +310,8 @@ def render_diff(
                 val_changed = []
             value_diff = {
                 "changed": val_changed,
-                "old_status": o_val_status, "new_status": n_val_status,
+                "old_status": o_val_status,
+                "new_status": n_val_status,
             }
 
         component_diff = diff_component_info(o.get("component_info"), n.get("component_info"))
@@ -317,18 +319,33 @@ def render_diff(
 
         has_diff = (
             any(pubs[i] or subs[i] or srvs[i] or clis[i] for i in range(4))
-            or (param_diff and (param_diff["removed"] or param_diff["added"] or param_diff["old_status"] != param_diff["new_status"]))
+            or (
+                param_diff
+                and (
+                    param_diff["removed"] or param_diff["added"] or param_diff["old_status"] != param_diff["new_status"]
+                )
+            )
             or (value_diff and (value_diff["changed"] or value_diff["old_status"] != value_diff["new_status"]))
             or component_diff
             or process_diff
         )
         if has_diff:
-            changed_nodes.append((ofq, nfq, {
-                "publishers": pubs, "subscribers": subs,
-                "services": srvs, "clients": clis,
-                "parameters": param_diff, "parameter_values": value_diff,
-                "component": component_diff, "process": process_diff,
-            }))
+            changed_nodes.append(
+                (
+                    ofq,
+                    nfq,
+                    {
+                        "publishers": pubs,
+                        "subscribers": subs,
+                        "services": srvs,
+                        "clients": clis,
+                        "parameters": param_diff,
+                        "parameter_values": value_diff,
+                        "component": component_diff,
+                        "process": process_diff,
+                    },
+                )
+            )
 
     # --- Compute edge-level diffs ---
     old_edges = remap_old_edges(edge_set(old_nodes, ignored_topics=ignored_topics), mapping)
@@ -484,9 +501,13 @@ def render_diff(
             proc_lost.append(ofq)
         else:
             if "executor_type" in pd:
-                proc_exec_changes.append((ofq, nfq, pd["executor_type"]["old"] or "none", pd["executor_type"]["new"] or "none"))
+                proc_exec_changes.append(
+                    (ofq, nfq, pd["executor_type"]["old"] or "none", pd["executor_type"]["new"] or "none")
+                )
             if "package" in pd:
-                proc_pkg_changes.append((ofq, nfq, pd["package"]["old"] or "<unknown>", pd["package"]["new"] or "<unknown>"))
+                proc_pkg_changes.append(
+                    (ofq, nfq, pd["package"]["old"] or "<unknown>", pd["package"]["new"] or "<unknown>")
+                )
 
     if process_enabled and (proc_exec_changes or proc_pkg_changes or proc_gained or proc_lost):
         lines.append("## Process Changes\n")
@@ -586,7 +607,9 @@ def render_diff(
                 if value_diff.get("new_status"):
                     lines.append(f"  - new: {value_diff['new_status']}")
                 for k, ov, nv in value_diff.get("changed", [])[:30]:
-                    lines.append(f"  - changed: {k} :: {'<unset>' if ov is None else ov} -> {'<unset>' if nv is None else nv}")
+                    lines.append(
+                        f"  - changed: {k} :: {'<unset>' if ov is None else ov} -> {'<unset>' if nv is None else nv}"
+                    )
             comp_diff = diffs.get("component")
             if comp_diff:
                 lines.append("- component:")

@@ -19,9 +19,9 @@ def _name_to_pascal(name: str) -> str:
 
 @dataclass
 class NamespaceNode:
-    namespace: str                              # e.g. "/perception/object_recognition"
-    name: str                                   # snake_case leaf e.g. "object_recognition"
-    entity_name: str                            # PascalCase e.g. "ObjectRecognition"
+    namespace: str  # e.g. "/perception/object_recognition"
+    name: str  # snake_case leaf e.g. "object_recognition"
+    entity_name: str  # PascalCase e.g. "ObjectRecognition"
     direct_nodes: list[NodeRecord] = field(default_factory=list)
     children: dict[str, "NamespaceNode"] = field(default_factory=dict)
     containers: list[ContainerRecord] = field(default_factory=list)

@@ -156,8 +156,7 @@ def make_entity_tree_serializable(
     d["entity"] = _make_entity_serializable(tree["entity"], context=context, output_dir=output_dir)
     if isinstance(tree["children"], list):
         d["children"] = [
-            make_entity_tree_serializable(child, context, output_dir=output_dir)
-            for child in tree["children"]
+            make_entity_tree_serializable(child, context, output_dir=output_dir) for child in tree["children"]
         ]
 
     return d

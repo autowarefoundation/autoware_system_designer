@@ -41,7 +41,7 @@ def _is_infra(topic: str) -> bool:
 class GraphNodeInfo:
     fq_name: str
     namespace: str
-    publishers: dict[str, list[str]] = field(default_factory=dict)   # topic → [msg_type]
+    publishers: dict[str, list[str]] = field(default_factory=dict)  # topic → [msg_type]
     subscribers: dict[str, list[str]] = field(default_factory=dict)  # topic → [msg_type]
     package: Optional[str] = None
 
@@ -63,16 +63,8 @@ def parse_graph_json(path: str | Path) -> dict[str, GraphNodeInfo]:
         if pkg == "rclcpp_components":
             pkg = None
 
-        pubs = {
-            t: v
-            for t, v in (node.get("publishers") or {}).items()
-            if not _is_infra(t)
-        }
-        subs = {
-            t: v
-            for t, v in (node.get("subscribers") or {}).items()
-            if not _is_infra(t)
-        }
+        pubs = {t: v for t, v in (node.get("publishers") or {}).items() if not _is_infra(t)}
+        subs = {t: v for t, v in (node.get("subscribers") or {}).items() if not _is_infra(t)}
 
         result[fq] = GraphNodeInfo(
             fq_name=fq,
@@ -93,7 +85,7 @@ def _derive_port_name(topic: str, node_namespace: str) -> str:
     """
     ns = node_namespace.rstrip("/")
     if ns and topic.startswith(ns + "/"):
-        return topic[len(ns) + 1:]
+        return topic[len(ns) + 1 :]
     return topic.lstrip("/")
 
 
@@ -130,9 +122,7 @@ def merge_graph_topics(
             if topic in covered:
                 continue
             port = _derive_port_name(topic, node.namespace)
-            node.remaps.append(
-                RemapEntry(from_topic=f"~/output/{port}", to_topic=topic)
-            )
+            node.remaps.append(RemapEntry(from_topic=f"~/output/{port}", to_topic=topic))
             covered.add(topic)
             added += 1
 
@@ -140,9 +130,7 @@ def merge_graph_topics(
             if topic in covered:
                 continue
             port = _derive_port_name(topic, node.namespace)
-            node.remaps.append(
-                RemapEntry(from_topic=f"~/input/{port}", to_topic=topic)
-            )
+            node.remaps.append(RemapEntry(from_topic=f"~/input/{port}", to_topic=topic))
             covered.add(topic)
             added += 1
 

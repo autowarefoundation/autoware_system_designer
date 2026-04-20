@@ -26,9 +26,7 @@ _INFRA_SUFFIXES = (
     "/_supported_types",
 )
 
-_INFRA_PREFIXES = (
-    "/diagnostics",
-)
+_INFRA_PREFIXES = ("/diagnostics",)
 
 
 def _is_infra(topic: str) -> bool:
@@ -45,16 +43,16 @@ def _is_infra(topic: str) -> bool:
 
 @dataclass
 class PortRef:
-    component: str   # component name in system.yaml
-    port: str        # port name (relative to the component's module)
-    node_path: str   # full ROS node path
+    component: str  # component name in system.yaml
+    port: str  # port name (relative to the component's module)
+    node_path: str  # full ROS node path
 
 
 @dataclass
 class TopicConnection:
     publisher: PortRef
     subscriber: PortRef
-    topic: str       # resolved ROS topic
+    topic: str  # resolved ROS topic
 
     def as_system_yaml_pair(self) -> tuple[str, str]:
         return (
@@ -118,9 +116,7 @@ def resolve_connections(top_nodes: list[NamespaceNode]) -> list[TopicConnection]
                 if key in seen:
                     continue
                 seen.add(key)
-                connections.append(
-                    TopicConnection(publisher=pub, subscriber=sub, topic=topic)
-                )
+                connections.append(TopicConnection(publisher=pub, subscriber=sub, topic=topic))
 
     return connections
 
@@ -128,6 +124,7 @@ def resolve_connections(top_nodes: list[NamespaceNode]) -> list[TopicConnection]
 @dataclass
 class ModuleInterface:
     """External ports and internal connections for a single namespace level."""
-    publishers: list[tuple[str, str]]     # (port_name, topic)
-    subscribers: list[tuple[str, str]]    # (port_name, topic)
+
+    publishers: list[tuple[str, str]]  # (port_name, topic)
+    subscribers: list[tuple[str, str]]  # (port_name, topic)
     internal_connections: list[tuple[str, str, str, str]]  # (pub_node_path, pub_port, sub_node_path, sub_port)

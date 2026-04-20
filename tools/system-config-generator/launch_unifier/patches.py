@@ -317,9 +317,8 @@ def _patch_load_composable_nodes():
             container_name = target.node_name
         else:
             from launch.utilities import normalize_to_list_of_substitutions, perform_substitutions  # noqa: PLC0415
-            container_name = perform_substitutions(
-                context, normalize_to_list_of_substitutions(target)
-            )
+
+            container_name = perform_substitutions(context, normalize_to_list_of_substitutions(target))
 
         self._LoadComposableNodes__final_target_container_name = container_name
 

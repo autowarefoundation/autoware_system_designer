@@ -38,9 +38,7 @@ def param_value_to_string(val: object) -> str:
     return str(val)
 
 
-def _list_parameters_fallback(
-    node, target_fq: str
-) -> Tuple[Optional[List[str]], Optional[str]]:
+def _list_parameters_fallback(node, target_fq: str) -> Tuple[Optional[List[str]], Optional[str]]:
     import rclpy
 
     try:
@@ -62,9 +60,7 @@ def _list_parameters_fallback(
     return names_list, None
 
 
-def _get_parameters_fallback(
-    node, target_fq: str, names: List[str]
-) -> Tuple[Optional[Dict[str, str]], Optional[str]]:
+def _get_parameters_fallback(node, target_fq: str, names: List[str]) -> Tuple[Optional[Dict[str, str]], Optional[str]]:
     import rclpy
 
     try:

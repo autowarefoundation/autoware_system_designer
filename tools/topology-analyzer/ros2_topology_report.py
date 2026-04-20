@@ -11,7 +11,7 @@ import os
 from typing import Set
 
 from lib.common import load_graph
-from lib.filters import filter_transform_listener, filter_tool_nodes
+from lib.filters import filter_tool_nodes, filter_transform_listener
 from lib.matching import match_nodes
 from lib.render import render_diff, render_single, write_report
 
@@ -38,16 +38,42 @@ def main() -> int:
         help="Output report path. Default: alongside graph_json as topology.md / topology_diff.md. Use '-' to write to stdout.",
     )
     ap.add_argument("--max-groups", type=int, default=50, help="Max signature groups to print in detail (0=no limit).")
-    ap.add_argument("--max-nodes-per-group", type=int, default=10, help="Max node fq_names to show per signature group.")
+    ap.add_argument(
+        "--max-nodes-per-group", type=int, default=10, help="Max node fq_names to show per signature group."
+    )
     ap.add_argument("--topic-focus", default=None, help="Regex filter for topics in the topic index section.")
-    ap.add_argument("--min-similarity", type=float, default=0.70, help="Min Jaccard similarity for fuzzy node matching (diff mode).")
-    ap.add_argument("--min-margin", type=float, default=0.10, help="Min margin vs 2nd-best candidate for uniqueness (diff mode).")
-    ap.add_argument("--include-transform-listener", action="store_true", help="Include transform_listener* nodes (default: ignored).")
-    ap.add_argument("--include-parameter-events", action="store_true", help="Include /parameter_events in matching and diffs (default: ignored).")
-    ap.add_argument("--include-tool-nodes", action="store_true", help="Include /graph_snapshot and /launch_ros_* nodes (default: ignored).")
-    ap.add_argument("--include-common-topics", action="store_true", help="Show /rosout, /clock, /parameter_events in single-report group display (default: hidden).")
-    ap.add_argument("--max-match-summary", type=int, default=100, help="Max matched pairs shown in diff summary (0=no limit).")
-    ap.add_argument("--max-changed-nodes", type=int, default=200, help="Max changed node entries shown in diff (0=no limit).")
+    ap.add_argument(
+        "--min-similarity", type=float, default=0.70, help="Min Jaccard similarity for fuzzy node matching (diff mode)."
+    )
+    ap.add_argument(
+        "--min-margin", type=float, default=0.10, help="Min margin vs 2nd-best candidate for uniqueness (diff mode)."
+    )
+    ap.add_argument(
+        "--include-transform-listener",
+        action="store_true",
+        help="Include transform_listener* nodes (default: ignored).",
+    )
+    ap.add_argument(
+        "--include-parameter-events",
+        action="store_true",
+        help="Include /parameter_events in matching and diffs (default: ignored).",
+    )
+    ap.add_argument(
+        "--include-tool-nodes",
+        action="store_true",
+        help="Include /graph_snapshot and /launch_ros_* nodes (default: ignored).",
+    )
+    ap.add_argument(
+        "--include-common-topics",
+        action="store_true",
+        help="Show /rosout, /clock, /parameter_events in single-report group display (default: hidden).",
+    )
+    ap.add_argument(
+        "--max-match-summary", type=int, default=100, help="Max matched pairs shown in diff summary (0=no limit)."
+    )
+    ap.add_argument(
+        "--max-changed-nodes", type=int, default=200, help="Max changed node entries shown in diff (0=no limit)."
+    )
 
     args = ap.parse_args()
 
@@ -64,7 +90,8 @@ def main() -> int:
 
         out_path = args.out or _default_out(args.graph_json[0], "topology.md")
         lines = render_single(
-            data, nodes,
+            data,
+            nodes,
             ignored_topics=ignored_topics,
             src_path=args.graph_json[0],
             include_transform_listener=args.include_transform_listener,
@@ -95,7 +122,8 @@ def main() -> int:
     new_param_values = new_data.get("param_values", {}) or {}
 
     mapping, evidence = match_nodes(
-        old_nodes, new_nodes,
+        old_nodes,
+        new_nodes,
         min_similarity=args.min_similarity,
         min_margin=args.min_margin,
         old_params=old_params,
@@ -104,9 +132,12 @@ def main() -> int:
 
     out_path = args.out or _default_out(new_path, "topology_diff.md")
     lines = render_diff(
-        old_path, new_path,
-        old_data, new_data,
-        old_nodes, new_nodes,
+        old_path,
+        new_path,
+        old_data,
+        new_data,
+        old_nodes,
+        new_nodes,
         mapping=mapping,
         evidence=evidence,
         old_params=old_params,

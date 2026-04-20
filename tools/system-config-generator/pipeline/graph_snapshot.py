@@ -10,9 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_SNAPSHOT_SCRIPT = (
-    Path(__file__).parent.parent.parent / "topology-analyzer" / "ros2_graph_snapshot.py"
-)
+_SNAPSHOT_SCRIPT = Path(__file__).parent.parent.parent / "topology-analyzer" / "ros2_graph_snapshot.py"
 
 
 def capture_live_snapshot(
@@ -51,9 +49,12 @@ def capture_live_snapshot(
         [
             sys.executable,
             str(_SNAPSHOT_SCRIPT),
-            "--out", str(output_path),
-            "--spin-seconds", str(spin_seconds),
-            "--params", params,
+            "--out",
+            str(output_path),
+            "--spin-seconds",
+            str(spin_seconds),
+            "--params",
+            params,
         ],
         check=True,
     )
