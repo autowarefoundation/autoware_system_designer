@@ -197,6 +197,7 @@ def _patch_composable_node():
             self.params_files = None
             self.params_dicts = None
             self.params_descs = []
+            self.extra_arguments = None
 
     ComposableNode.FinalAttributes = FinalAttributes
 
@@ -279,6 +280,17 @@ def _patch_load_composable_nodes():
                         fa.params_dicts.append(params)
                     elif isinstance(params, Parameter):
                         fa.params_descs.append(params.evaluate(context))
+            except Exception:
+                pass
+
+        # --- Extra arguments (use_intra_process_comms, etc.) ---
+        if composable_node_description.extra_arguments is not None:
+            try:
+                for params in evaluate_parameters(context, composable_node_description.extra_arguments):
+                    if isinstance(params, dict):
+                        if fa.extra_arguments is None:
+                            fa.extra_arguments = []
+                        fa.extra_arguments.append(params)
             except Exception:
                 pass
 

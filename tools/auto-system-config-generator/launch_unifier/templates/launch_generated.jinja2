@@ -69,6 +69,17 @@ This jinja2 template is for generating a launch file.
       <param name="{{ param_name }}" value="{{ value | format_param }}" />
       {%- endfor %}
       {%- endif %}
+
+
+      {%- if entity.extra_arguments is defined %}
+
+      <!-- extra arguments -->
+      {%- for extra_arg_dict in entity.extra_arguments %}
+      {%- for name, value in extra_arg_dict.items() %}
+      <extra_arg name="{{ name }}" value="{{ value | format_param }}" />
+      {%- endfor %}
+      {%- endfor %}
+      {%- endif %}
     </composable_node>
   </load_composable_node>
 {% endif %}

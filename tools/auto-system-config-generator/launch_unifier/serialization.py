@@ -77,6 +77,9 @@ def _make_entity_serializable(entity: launch.LaunchDescriptionEntity, context: l
             for i, remap in enumerate(entity.final_attributes.remap_rules_global):
                 d["remap_rules_global"].append(remap)
 
+        if entity.final_attributes.extra_arguments is not None:
+            d["extra_arguments"] = entity.final_attributes.extra_arguments
+
     if type(entity) is launch_ros.actions.Node:
         assert isinstance(entity, launch_ros.actions.Node)
         d["package"] = entity.final_attributes.package
