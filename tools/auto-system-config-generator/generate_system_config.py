@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -50,10 +51,8 @@ except ImportError:
 from lib.connection_resolver import resolve_connections
 from lib.emitter import (
     _collect_all_pub_sub,
-    emit_module_yaml,
     emit_module_yaml_from_tree,
     emit_parameter_set_yaml,
-    emit_system_yaml,
     emit_system_yaml_from_tree,
 )
 from lib.graph_parser import merge_graph_topics, parse_graph_json
@@ -62,7 +61,6 @@ from lib.launch_parser import parse_launch_xml
 from lib.namespace_tree import NamespaceNode, build_namespace_tree
 from lib.node_emitter import (
     collect_nodes_by_entity,
-    collect_nodes_by_entity_flat,
     emit_node_yaml,
     find_defined_node_entities,
     find_package_map,
@@ -256,13 +254,6 @@ def _build_parser() -> argparse.ArgumentParser:
              "Sub-modules below this depth are generated recursively.",
     )
     gen.add_argument(
-        "--group-depth",
-        type=int,
-        default=None,
-        metavar="N",
-        help="(Legacy) Fixed-depth flat grouping. If set, recursive tree mode is disabled.",
-    )
-    gen.add_argument(
         "--component-map",
         default=None,
         metavar="FILE",
@@ -275,14 +266,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Skip generating per-component module YAML files.",
     )
     gen.add_argument(
+        "--no-node-configs",
+        action="store_true",
+        help="Skip generating *.node.yaml files for node entities not already defined in any package.",
+    )
+    gen.add_argument(
         "--parameter-sets",
         action="store_true",
         help="Generate parameter_set YAML files for each top-level component.",
-    )
-    gen.add_argument(
-        "--node-configs",
-        action="store_true",
-        help="Generate *.node.yaml files for node entities not already defined in any package.",
     )
     gen.add_argument(
         "--package-map",
@@ -413,8 +404,10 @@ def main(argv: list[str] | None = None) -> int:
 
     verbose = args.verbose
 
-    out = Path(args.output_dir)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out = Path(args.output_dir) / timestamp
     out.mkdir(parents=True, exist_ok=True)
+    print(f"Output directory: {out}")
 
     # ---- Phase 1: Resolve launch XML ------------------------------------
     launch_xml = _phase1_get_launch_xml(args, out, verbose)
@@ -445,66 +438,12 @@ def main(argv: list[str] | None = None) -> int:
     component_map = load_component_map(map_path)
 
     # ---- Phase 5: Generate configs --------------------------------------
-    flat_mode = args.group_depth is not None
     sdf = out / "system_design_files"
     sdf.mkdir(parents=True, exist_ok=True)
 
-    if flat_mode:
-        _generate_flat(args, nodes, containers, component_map, graph_data, sdf, verbose)
-    else:
-        _generate_tree(args, nodes, containers, component_map, graph_data, sdf, verbose)
+    _generate_tree(args, nodes, containers, component_map, graph_data, sdf, verbose)
 
     return 0
-
-
-def _generate_flat(args, nodes, containers, component_map, graph_data, out, verbose):
-    """Legacy flat-mode generation."""
-    depth = args.group_depth
-    groups = group_nodes(nodes, containers, depth=depth, overrides=component_map)
-    if verbose:
-        for g in groups:
-            print(f"  Group '{g.name}' ({g.namespace}): {len(g.nodes)} nodes")
-
-    connections = resolve_connections(groups)
-    if verbose:
-        print(f"  Resolved {len(connections)} cross-component connections")
-
-    system_yaml = emit_system_yaml(
-        system_name=args.system_name,
-        groups=groups,
-        all_containers=containers,
-        connections=connections,
-        compute_unit=args.compute_unit,
-    )
-    system_dir = out / "system"
-    system_dir.mkdir(parents=True, exist_ok=True)
-    system_file = system_dir / f"{args.system_name}.system.yaml"
-    system_file.write_text(system_yaml)
-    print(f"Written: {system_file}")
-
-    if not args.no_modules:
-        module_dir = out / "module"
-        module_dir.mkdir(parents=True, exist_ok=True)
-        for group in groups:
-            if not group.nodes:
-                continue
-            module_yaml = emit_module_yaml(group, groups)
-            safe_entity = group.entity_name if group.namespace != "(root)" else "RosSystem"
-            module_file = module_dir / f"{safe_entity}.module.yaml"
-            module_file.write_text(module_yaml)
-            if verbose:
-                print(f"Written: {module_file}")
-        module_count = sum(1 for g in groups if g.nodes)
-        print(f"Written: {module_count} module YAML file(s) in {module_dir}/")
-
-    if args.node_configs:
-        _emit_node_configs(
-            nodes_by_entity=collect_nodes_by_entity_flat(groups),
-            graph=graph_data,
-            out_dir=out,
-            package_map_path=Path(args.package_map) if args.package_map else find_package_map(),
-            verbose=verbose,
-        )
 
 
 def _generate_tree(args, nodes, containers, component_map, graph_data, out, verbose):
@@ -557,7 +496,7 @@ def _generate_tree(args, nodes, containers, component_map, graph_data, out, verb
             total_modules += _emit_recursive_modules(ns_node, all_pub, all_sub, out, verbose)
         print(f"Written: {total_modules} module YAML file(s) in {out / 'module'}/")
 
-    if args.node_configs:
+    if not args.no_node_configs:
         _emit_node_configs(
             nodes_by_entity=collect_nodes_by_entity(list(top_nodes.values())),
             graph=graph_data,
