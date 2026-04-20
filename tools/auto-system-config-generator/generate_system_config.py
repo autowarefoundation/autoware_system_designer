@@ -192,13 +192,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Launch arguments forwarded to the launch file as space-separated key:=value pairs.",
     )
     launch_src.add_argument(
-        "--unifier-output-dir",
-        metavar="DIR",
-        default="./output",
-        help="Directory for launch_unifier output when --launch-package/--launch-path is used "
-             "(default: ./output).",
-    )
-    launch_src.add_argument(
         "--launch-debug",
         action="store_true",
         help="Enable launch debug logging during launch_unifier step.",
@@ -332,7 +325,7 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
 # ---------------------------------------------------------------------------
 
 
-def _phase1_get_launch_xml(args: argparse.Namespace, verbose: bool) -> Path:
+def _phase1_get_launch_xml(args: argparse.Namespace, out: Path, verbose: bool) -> Path:
     """Return the path to a flattened launch XML, running launch_unifier if needed."""
     if args.launch_xml:
         launch_xml = Path(args.launch_xml)
@@ -341,7 +334,7 @@ def _phase1_get_launch_xml(args: argparse.Namespace, verbose: bool) -> Path:
             sys.exit(1)
         return launch_xml
 
-    # Resolve the launch file path and run launch_unifier.
+    # Resolve the launch file path and run launch_unifier into <output-dir>/launch/.
     from lib.unifier import resolve_launch_path, unify_launch
 
     launch_file = resolve_launch_path(
@@ -353,7 +346,7 @@ def _phase1_get_launch_xml(args: argparse.Namespace, verbose: bool) -> Path:
     parsed_args: list[tuple[str, str]] = []
     for raw in args.launch_args:
         if ":=" not in raw:
-            print(f"ERROR: --launch-arg must be key:=value, got: {raw!r}", file=sys.stderr)
+            print(f"ERROR: --launch-args entries must be key:=value, got: {raw!r}", file=sys.stderr)
             sys.exit(1)
         k, v = raw.split(":=", 1)
         parsed_args.append((k, v))
@@ -366,7 +359,7 @@ def _phase1_get_launch_xml(args: argparse.Namespace, verbose: bool) -> Path:
     xml_path = unify_launch(
         launch_file=launch_file,
         launch_arguments=parsed_args,
-        output_dir=Path(args.unifier_output_dir),
+        output_dir=out / "unified_launch",
         debug=args.launch_debug,
     )
 
@@ -390,7 +383,7 @@ def _phase2_get_graph(args: argparse.Namespace, out_dir: Path, verbose: bool) ->
     if args.live_snapshot:
         from lib.snapshot import capture_live_snapshot
 
-        snapshot_path = out_dir / "graph.json"
+        snapshot_path = out_dir / "snapshot" / "graph.json"
         if verbose:
             print(
                 f"Capturing live ROS 2 graph snapshot "
@@ -420,8 +413,11 @@ def main(argv: list[str] | None = None) -> int:
 
     verbose = args.verbose
 
+    out = Path(args.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
     # ---- Phase 1: Resolve launch XML ------------------------------------
-    launch_xml = _phase1_get_launch_xml(args, verbose)
+    launch_xml = _phase1_get_launch_xml(args, out, verbose)
 
     if verbose:
         print(f"Parsing {launch_xml} ...")
@@ -430,9 +426,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Found {len(nodes)} nodes, {len(containers)} containers")
 
     # ---- Phase 2: Resolve graph snapshot --------------------------------
-    out = Path(args.output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-
     graph_data = _phase2_get_graph(args, out, verbose)
 
     # ---- Phase 3: Merge snapshot topics into node records ---------------
@@ -453,11 +446,13 @@ def main(argv: list[str] | None = None) -> int:
 
     # ---- Phase 5: Generate configs --------------------------------------
     flat_mode = args.group_depth is not None
+    sdf = out / "system_design_files"
+    sdf.mkdir(parents=True, exist_ok=True)
 
     if flat_mode:
-        _generate_flat(args, nodes, containers, component_map, graph_data, out, verbose)
+        _generate_flat(args, nodes, containers, component_map, graph_data, sdf, verbose)
     else:
-        _generate_tree(args, nodes, containers, component_map, graph_data, out, verbose)
+        _generate_tree(args, nodes, containers, component_map, graph_data, sdf, verbose)
 
     return 0
 
@@ -481,22 +476,26 @@ def _generate_flat(args, nodes, containers, component_map, graph_data, out, verb
         connections=connections,
         compute_unit=args.compute_unit,
     )
-    system_file = out / f"{args.system_name}.system.yaml"
+    system_dir = out / "system"
+    system_dir.mkdir(parents=True, exist_ok=True)
+    system_file = system_dir / f"{args.system_name}.system.yaml"
     system_file.write_text(system_yaml)
     print(f"Written: {system_file}")
 
     if not args.no_modules:
+        module_dir = out / "module"
+        module_dir.mkdir(parents=True, exist_ok=True)
         for group in groups:
             if not group.nodes:
                 continue
             module_yaml = emit_module_yaml(group, groups)
             safe_entity = group.entity_name if group.namespace != "(root)" else "RosSystem"
-            module_file = out / f"{safe_entity}.module.yaml"
+            module_file = module_dir / f"{safe_entity}.module.yaml"
             module_file.write_text(module_yaml)
             if verbose:
                 print(f"Written: {module_file}")
         module_count = sum(1 for g in groups if g.nodes)
-        print(f"Written: {module_count} module YAML file(s) in {out}/")
+        print(f"Written: {module_count} module YAML file(s) in {module_dir}/")
 
     if args.node_configs:
         _emit_node_configs(
@@ -556,7 +555,7 @@ def _generate_tree(args, nodes, containers, component_map, graph_data, out, verb
         total_modules = 0
         for ns_node in top_nodes.values():
             total_modules += _emit_recursive_modules(ns_node, all_pub, all_sub, out, verbose)
-        print(f"Written: {total_modules} module YAML file(s) in {out}/module/")
+        print(f"Written: {total_modules} module YAML file(s) in {out / 'module'}/")
 
     if args.node_configs:
         _emit_node_configs(

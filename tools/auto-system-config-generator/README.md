@@ -128,7 +128,6 @@ python3 run_launch_unifier.py \
 | `--launch-file FILE` | Launch file name inside the package share |
 | `--launch-path PATH` | Absolute path to a launch file (alternative to `--launch-package`) |
 | `--launch-args key:=val ...` | Space-separated launch arguments forwarded to the launch file |
-| `--unifier-output-dir DIR` | Directory for launch_unifier output (default: `./output`) |
 | `--launch-debug` | Enable launch debug logging |
 
 ### Runtime snapshot (optional)
@@ -160,18 +159,25 @@ python3 run_launch_unifier.py \
 
 ## Output layout
 
+All output is contained under a single `--output-dir`:
+
 ```
 <output-dir>/
-├── system/
-│   └── <SystemName>.system.yaml
-├── module/
-│   ├── <top_ns>/<Entity>.module.yaml
-│   └── <top_ns>/<sub_ns>/<Entity>.module.yaml   (recursive)
-├── parameter_set/                               (only with --parameter-sets)
-│   └── <SystemName>_<component>.parameter_set.yaml
-├── node/                                        (only with --node-configs)
-│   └── <ns>/<Entity>.yaml
-└── graph.json                                   (only with --live-snapshot)
+├── unified_launch/                              (only when launch_unifier runs)
+│   ├── generated.launch.xml
+│   └── entity_tree.pu
+├── snapshot/                                    (only with --live-snapshot)
+│   └── graph.json
+└── system_design_files/
+    ├── system/
+    │   └── <SystemName>.system.yaml
+    ├── module/
+    │   ├── <top_ns>/<Entity>.module.yaml
+    │   └── <top_ns>/<sub_ns>/<Entity>.module.yaml   (recursive)
+    ├── parameter_set/                           (only with --parameter-sets)
+    │   └── <SystemName>_<component>.parameter_set.yaml
+    └── node/                                    (only with --node-configs)
+        └── <ns>/<Entity>.yaml
 ```
 
 ---

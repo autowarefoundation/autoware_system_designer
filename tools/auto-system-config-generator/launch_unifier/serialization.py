@@ -23,7 +23,11 @@ logger = get_logger("launch2json")
 from typing import Text
 
 
-def _make_entity_serializable(entity: launch.LaunchDescriptionEntity, context: launch.LaunchContext):
+def _make_entity_serializable(
+    entity: launch.LaunchDescriptionEntity,
+    context: launch.LaunchContext,
+    output_dir: pathlib.Path | None = None,
+):
     import re
 
     d = {}
@@ -100,15 +104,14 @@ def _make_entity_serializable(entity: launch.LaunchDescriptionEntity, context: l
                         continue
                     if "xml version=" in value:
                         xml_content = value
-                        xml_file_path = "output/xml_file.xml"  # Adjust the path and filename as necessary
+                        dest_dir = output_dir if output_dir is not None else pathlib.Path("output")
+                        dest_dir.mkdir(parents=True, exist_ok=True)
+                        xml_file_path = dest_dir / "xml_file.xml"
 
-                        # 1. Write the XML into a file
-                        with open(xml_file_path, "w") as xml_file:
-                            xml_file.write(xml_content)
-                        import os
+                        xml_file_path.write_text(xml_content)
 
-                        # 2. Put the location of the file into the `param_dict`
-                        param_dict[key] = os.path.abspath(xml_file_path)
+                        # Replace inline XML with the absolute path to the written file.
+                        param_dict[key] = str(xml_file_path.resolve())
 
             d["params_dicts"] = entity.final_attributes.params_dicts
 
@@ -141,13 +144,20 @@ def _make_entity_serializable(entity: launch.LaunchDescriptionEntity, context: l
     return d
 
 
-def make_entity_tree_serializable(tree: dict | object, context: launch.LaunchContext):
+def make_entity_tree_serializable(
+    tree: dict | object,
+    context: launch.LaunchContext,
+    output_dir: pathlib.Path | None = None,
+):
     if not isinstance(tree, dict):
-        return _make_entity_serializable(tree, context=context)
+        return _make_entity_serializable(tree, context=context, output_dir=output_dir)
 
     d = {}
-    d["entity"] = _make_entity_serializable(tree["entity"], context=context)
+    d["entity"] = _make_entity_serializable(tree["entity"], context=context, output_dir=output_dir)
     if isinstance(tree["children"], list):
-        d["children"] = [make_entity_tree_serializable(child, context) for child in tree["children"]]
+        d["children"] = [
+            make_entity_tree_serializable(child, context, output_dir=output_dir)
+            for child in tree["children"]
+        ]
 
     return d

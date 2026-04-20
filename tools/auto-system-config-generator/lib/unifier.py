@@ -93,7 +93,7 @@ def unify_launch(
 
     raw_tree = create_entity_tree(root_entity, launch_service)
     filtered_tree = filter_entity_tree(raw_tree.copy())
-    serializable_tree = make_entity_tree_serializable(filtered_tree, launch_service.context)
+    serializable_tree = make_entity_tree_serializable(filtered_tree, launch_service.context, output_dir=output_dir)
 
     xml_path = output_dir / "generated.launch.xml"
     xml_path.write_text(generate_launch_file(serializable_tree))
