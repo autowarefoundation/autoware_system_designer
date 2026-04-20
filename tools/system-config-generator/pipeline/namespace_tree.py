@@ -106,6 +106,13 @@ def build_namespace_tree(
         ns_node = get_or_create(ns)
         ns_node.containers.append(container)
 
+    # Move nodes whose full_path matches a child namespace into that namespace to avoid duplicate instances.
+    for ns_node in list(ns_map.values()):
+        to_move = [n for n in ns_node.direct_nodes if n.full_path in ns_map]
+        for node in to_move:
+            ns_node.direct_nodes.remove(node)
+            ns_map[node.full_path].direct_nodes.append(node)
+
     # Collect top-level nodes: namespaces at the given depth from root
     top: dict[str, NamespaceNode] = {}
     for ns, ns_node in ns_map.items():
