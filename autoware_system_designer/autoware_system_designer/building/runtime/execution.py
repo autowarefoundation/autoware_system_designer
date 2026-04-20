@@ -83,7 +83,6 @@ class LaunchConfig:
         executable = launch.get("executable", "")
         container_target = launch.get("container_target", launch.get("container_name", ""))
         launch_state = LaunchState.from_config(launch)
-        use_intra_process_comms = bool(launch.get("use_intra_process_comms", False))
 
         return cls(
             package_name=package_name,
@@ -94,7 +93,6 @@ class LaunchConfig:
             executable=executable,
             container_target=container_target,
             launch_state=launch_state,
-            use_intra_process_comms=use_intra_process_comms,
         )
 
     def apply_override(self, override: Dict[str, Any]) -> None:
@@ -109,8 +107,6 @@ class LaunchConfig:
             self.args = override["args"]
         if "container_target" in override:
             self.container_target = override["container_target"]
-        if "use_intra_process_comms" in override:
-            self.use_intra_process_comms = bool(override["use_intra_process_comms"])
 
         override_launch_state: Optional[LaunchState] = self.launch_state
         if "launch_state" in override and override["launch_state"] in LaunchState._value2member_map_:
