@@ -458,29 +458,45 @@ class LogicDiagramModule extends DiagramBase {
   clearHighlights() {
     this.container.querySelectorAll(".highlighted").forEach((el) => {
       el.classList.remove("highlighted");
-      el.querySelectorAll("polygon, ellipse, path").forEach((shape) => {
+      el.querySelectorAll("polygon, ellipse, path, rect").forEach((shape) => {
         shape.style.stroke = "";
         shape.style.strokeWidth = "";
         shape.style.fill = "";
+      });
+      el.querySelectorAll("text").forEach((textEl) => {
+        textEl.style.fontWeight = "";
       });
     });
   }
 
   _applyNodeHighlight(nodeEl, color) {
     nodeEl.classList.add("highlighted");
-    const shape = nodeEl.querySelector("polygon, ellipse");
-    if (shape) shape.style.stroke = color;
+    const shape = nodeEl.querySelector("polygon, ellipse, rect");
+    if (shape) {
+      shape.style.stroke = color;
+      shape.style.strokeWidth = "3";
+    }
+    nodeEl.querySelectorAll("text").forEach((textEl) => {
+      textEl.style.fontWeight = "700";
+    });
   }
 
   _applyEdgeHighlight(edgeEl, color) {
     edgeEl.classList.add("highlighted");
     const path = edgeEl.querySelector("path");
-    if (path) path.style.stroke = color;
+    if (path) {
+      path.style.stroke = color;
+      path.style.strokeWidth = "3";
+    }
     const arrowhead = edgeEl.querySelector("polygon");
     if (arrowhead) {
       arrowhead.style.fill = color;
       arrowhead.style.stroke = color;
+      arrowhead.style.strokeWidth = "3";
     }
+    edgeEl.querySelectorAll("text").forEach((textEl) => {
+      textEl.style.fontWeight = "700";
+    });
   }
 
   highlightNodeAndConnections(nodeEl) {
@@ -559,6 +575,15 @@ class LogicDiagramModule extends DiagramBase {
     this.clearHighlights();
 
     element.classList.add("highlighted");
+
+    element
+      .querySelectorAll("polygon, ellipse, path, rect")
+      .forEach((shape) => {
+        shape.style.strokeWidth = "3";
+      });
+    element.querySelectorAll("text").forEach((textEl) => {
+      textEl.style.fontWeight = "700";
+    });
 
     const title = element.querySelector("title");
     const label = element.querySelector("text") || element;

@@ -607,21 +607,6 @@ body {
 .logic-diagram-container svg:active {
   cursor: grabbing;
 }
-.logic-diagram-node:hover,
-.logic-diagram-edge:hover,
-.logic-diagram-cluster:hover {
-  stroke-width: 2px !important;
-}
-[data-theme="dark"] .logic-diagram-node:hover,
-[data-theme="dark"] .logic-diagram-edge:hover,
-[data-theme="dark"] .logic-diagram-cluster:hover {
-  stroke: #ffffff !important;
-}
-[data-theme="light"] .logic-diagram-node:hover,
-[data-theme="light"] .logic-diagram-edge:hover,
-[data-theme="light"] .logic-diagram-cluster:hover {
-  stroke: #007bff !important;
-}
 
 /* Highlighting - stroke color set by inline styles, width by CSS */
 .highlighted {
