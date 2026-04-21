@@ -55,7 +55,7 @@ source ~/workspace/awf/autoware/install/setup.bash
 Run launch_unifier and generate configs in one command:
 
 ```bash
-cd src/core/autoware_system_designer/tools/auto-system-config-generator
+cd tools/system-config-generator
 
 python3 generate_system_config.py \
   --launch-package autoware_launch \
