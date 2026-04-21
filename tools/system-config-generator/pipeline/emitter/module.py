@@ -12,6 +12,7 @@ from ..connection_resolver import (
 )
 from ..launch_parser import NodeRecord
 from ..namespace_tree import NamespaceNode
+from ..port_utils import shorten_port_names
 
 DESIGN_FORMAT = "0.3.1"
 
@@ -161,6 +162,14 @@ def _extract_ns_module_interface(
                         sub_ref.port,
                     )
                 )
+
+    if external_pub:
+        pub_short = shorten_port_names([p for p, _ in external_pub])
+        external_pub = [(pub_short[p], t) for p, t in external_pub]
+
+    if external_sub:
+        sub_short = shorten_port_names([p for p, _ in external_sub])
+        external_sub = [(sub_short[p], t) for p, t in external_sub]
 
     return ModuleInterface(
         publishers=external_pub,

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from .launch_parser import RemapEntry  # noqa: F401 — used by callers via star-import
 from .namespace_tree import NamespaceNode
+from .port_utils import shorten_port_names
 
 # Topics that carry no domain-level information
 _INFRA_EXACT = {
@@ -103,6 +104,25 @@ def resolve_connections(top_nodes: list[NamespaceNode]) -> list[TopicConnection]
                     ref = PortRef(component=ns_node.name, port=canonical, node_path=node.full_path)
                     subscribers[topic].append(ref)
 
+    # Build per-component shortening maps from cross-component ports only.
+    # Internal-only ports are excluded so they can't cause false collisions.
+    comp_pub_raw: dict[str, set[str]] = defaultdict(set)
+    comp_sub_raw: dict[str, set[str]] = defaultdict(set)
+    for topic, pubs in publishers.items():
+        subs_for_topic = subscribers.get(topic, [])
+        for pub in pubs:
+            for sub in subs_for_topic:
+                if pub.component != sub.component:
+                    comp_pub_raw[pub.component].add(pub.port)
+                    comp_sub_raw[sub.component].add(sub.port)
+
+    comp_pub_short: dict[str, dict[str, str]] = {
+        c: shorten_port_names(list(ports)) for c, ports in comp_pub_raw.items()
+    }
+    comp_sub_short: dict[str, dict[str, str]] = {
+        c: shorten_port_names(list(ports)) for c, ports in comp_sub_raw.items()
+    }
+
     connections: list[TopicConnection] = []
     seen: set[tuple] = set()
 
@@ -112,11 +132,19 @@ def resolve_connections(top_nodes: list[NamespaceNode]) -> list[TopicConnection]
             for sub in subs:
                 if pub.component == sub.component:
                     continue  # internal – handled in module.yaml
-                key = (pub.component, pub.port, sub.component, sub.port)
+                pub_port = comp_pub_short.get(pub.component, {}).get(pub.port, pub.port)
+                sub_port = comp_sub_short.get(sub.component, {}).get(sub.port, sub.port)
+                key = (pub.component, pub_port, sub.component, sub_port)
                 if key in seen:
                     continue
                 seen.add(key)
-                connections.append(TopicConnection(publisher=pub, subscriber=sub, topic=topic))
+                connections.append(
+                    TopicConnection(
+                        publisher=PortRef(pub.component, pub_port, pub.node_path),
+                        subscriber=PortRef(sub.component, sub_port, sub.node_path),
+                        topic=topic,
+                    )
+                )
 
     return connections
 
