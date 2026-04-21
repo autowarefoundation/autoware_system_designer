@@ -308,15 +308,17 @@ This is uncommon in production launch configurations (where remappings are alway
 
 ## Node matching algorithm (diff mode)
 
-Nodes are matched across the two snapshots in four passes, in priority order:
+Nodes are matched across the two snapshots in ordered passes, from strongest evidence to weakest:
 
 1. **Same fully-qualified name** — exact name match; fast path
-2. **Exact signature** — same pub/sub/service/client topic set and types (catches simple node renames)
-3. **Normalized signature** — same basename+type set, ignoring namespace prefix (catches namespace moves)
-4. **Fuzzy similarity** — weighted blend: message-type Jaccard (50%), endpoint Jaccard (30%), name similarity (15%), parameter name overlap (5%); requires mutual best match and a minimum margin over the second-best candidate
+2. **Exact interface/signature match** — identical pub/sub/service/client interface sets and types (catches simple node renames)
+3. **Normalized/interface-derived match** — compares normalized names and interface structure to catch namespace moves and similar refactors
+4. **Type-composition / interface-composition match** — uses the mix of endpoint types and interface makeup to pair nodes that remain structurally the same even when names changed more substantially
+5. **Fuzzy similarity fallback** — only after the stronger deterministic passes fail, the matcher scores remaining candidates using a weighted combination of name and interface-overlap signals, then requires a mutual best match with sufficient separation from the next-best candidate
 
-Nodes matched in pass 1 are not re-examined. Topology changes in shared nodes are always reported.
+Nodes matched in an earlier pass are not reconsidered by later passes. Topology changes in matched nodes are still reported.
 
+The exact pass order, scoring weights, and tie-break thresholds are implementation details of `lib/matching.py`; if you need to interpret a borderline match precisely, treat the code as the source of truth rather than the simplified summary above.
 Standard ROS 2 parameter management services (`describe_parameters`, `get_parameters`, etc.) are suppressed from the services diff when the node itself was renamed, since those renames are purely derivative.
 
 ---
