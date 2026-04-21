@@ -208,6 +208,7 @@ class NodeDiagramModule extends DiagramBase {
     this.container.appendChild(svgRoot);
 
     this.setupZoomPan(svgRoot, svg);
+    this.updateTransform(svg);
 
     const computedStyle = getComputedStyle(document.documentElement);
 
@@ -265,6 +266,9 @@ class NodeDiagramModule extends DiagramBase {
   }
 
   setupZoomPan(svgRoot, svg) {
+    if (this._mouseMoveHandler) window.removeEventListener("mousemove", this._mouseMoveHandler);
+    if (this._mouseUpHandler) window.removeEventListener("mouseup", this._mouseUpHandler);
+
     svgRoot.addEventListener("wheel", (e) => {
       e.preventDefault();
       const zoomIntensity = 0.1;
@@ -294,7 +298,7 @@ class NodeDiagramModule extends DiagramBase {
       };
     });
 
-    window.addEventListener("mousemove", (e) => {
+    this._mouseMoveHandler = (e) => {
       if (!this.isDragging) return;
       e.preventDefault();
       const dx = e.clientX - this.dragStartRaw.x;
@@ -303,12 +307,14 @@ class NodeDiagramModule extends DiagramBase {
       this.transform.x = e.clientX - this.startPoint.x;
       this.transform.y = e.clientY - this.startPoint.y;
       this.updateTransform(svg);
-    });
+    };
+    window.addEventListener("mousemove", this._mouseMoveHandler);
 
-    window.addEventListener("mouseup", () => {
+    this._mouseUpHandler = () => {
       this.isDragging = false;
       svgRoot.style.cursor = "grab";
-    });
+    };
+    window.addEventListener("mouseup", this._mouseUpHandler);
   }
 
   updateTransform(svg) {
