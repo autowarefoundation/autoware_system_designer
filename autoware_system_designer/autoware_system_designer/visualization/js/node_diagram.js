@@ -501,7 +501,11 @@ class NodeDiagramModule extends DiagramBase {
       e.stopPropagation();
       this.updateInfoPanel(userData, "Node");
       this.clearHighlights();
-      g.classList.add("highlighted");
+      if (node.children?.length) {
+        this.highlightModule(node, g);
+      } else {
+        g.classList.add("highlighted");
+      }
 
       const outwardInPortIds = (userData.in_ports || [])
         .filter((p) => p.unique_id && p.is_outward !== false)
