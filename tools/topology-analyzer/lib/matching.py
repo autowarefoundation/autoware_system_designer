@@ -13,10 +13,6 @@ from .common import (
     signature_id,
 )
 
-_RENAME_SIM_THRESHOLD = 0.70
-_RENAME_SIM_MARGIN = 0.12
-
-
 def normalized_signature(node: Dict, *, ignored_topics: Set[str] = frozenset()) -> Signature:
     """Name-insensitive signature: compare by endpoint basename + type list."""
 

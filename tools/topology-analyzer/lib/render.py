@@ -4,6 +4,7 @@
 # write_report handles file I/O; pass '-' as out_path to write to stdout.
 
 import os
+import re
 import sys
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple
@@ -223,6 +224,9 @@ def render_single(
             lines.append("")
 
     lines.append("## Topic Index (publishers/subscribers counts)\n")
+    if topic_focus is not None:
+        lines.append(f"- Filter: topic regex '{topic_focus}'")
+        t_idx = {tp: ps for tp, ps in t_idx.items() if re.search(topic_focus, tp)}
     for tp, ps in sorted(t_idx.items()):
         pubs = ps.get("publishers", [])
         subs = ps.get("subscribers", [])

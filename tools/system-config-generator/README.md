@@ -93,7 +93,7 @@ python3 generate_system_config.py \
 
 ### Option B — From a pre-generated launch XML
 
-If you already have a `generated.launch.xml` from a previous run or from the standalone `run_launch_unifier.py`:
+If you already have a `generated.launch.xml` from a previous run or from the standalone `scripts/unify_launch.py`:
 
 ```bash
 python3 generate_system_config.py \
@@ -108,7 +108,7 @@ python3 generate_system_config.py \
 To produce only the flattened XML without generating configs:
 
 ```bash
-python3 run_launch_unifier.py \
+python3 scripts/unify_launch.py \
   --launch-package autoware_launch \
   --launch-file    autoware.launch.xml \
   vehicle_model:=$VEHICLE_MODEL \

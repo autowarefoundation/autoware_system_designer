@@ -106,7 +106,12 @@ def _make_entity_serializable(
                         xml_content = value
                         dest_dir = output_dir if output_dir is not None else pathlib.Path("output")
                         dest_dir.mkdir(parents=True, exist_ok=True)
-                        xml_file_path = dest_dir / "xml_file.xml"
+                        slug = re.sub(
+                            r"[^a-zA-Z0-9_-]+",
+                            "_",
+                            f"{entity.final_attributes.node_namespace}_{entity.final_attributes.node_name}_{key}",
+                        ).strip("_")
+                        xml_file_path = dest_dir / f"{slug}.xml"
 
                         xml_file_path.write_text(xml_content)
 
