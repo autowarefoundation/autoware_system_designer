@@ -13,6 +13,7 @@ from .common import (
     signature_id,
 )
 
+
 def normalized_signature(node: Dict, *, ignored_topics: Set[str] = frozenset()) -> Signature:
     """Name-insensitive signature: compare by endpoint basename + type list."""
 

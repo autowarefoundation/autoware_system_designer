@@ -54,7 +54,9 @@ class NodeDiagramModule extends DiagramBase {
       if (!window.systemDesignData?.[this.options.mode]) {
         throw new Error(`No data available for mode: ${this.options.mode}`);
       }
-      const elkGraph = this.transformDataToElk(window.systemDesignData[this.options.mode]);
+      const elkGraph = this.transformDataToElk(
+        window.systemDesignData[this.options.mode],
+      );
       await this.layoutAndRenderNodeDiagram(elkGraph);
     } catch (error) {
       console.error("Error loading node diagram:", error);
@@ -76,11 +78,13 @@ class NodeDiagramModule extends DiagramBase {
           width: 10,
           height: 10,
           properties: { "org.eclipse.elk.port.side": side },
-          labels: [{
-            text: port.name || "Port",
-            width: (port.name?.length || 4) * 6,
-            height: 10,
-          }],
+          labels: [
+            {
+              text: port.name || "Port",
+              width: (port.name?.length || 4) * 6,
+              height: 10,
+            },
+          ],
         });
       });
     };
@@ -96,7 +100,10 @@ class NodeDiagramModule extends DiagramBase {
         (instance.in_ports || []).length,
         (instance.out_ports || []).length,
       );
-      const nodeHeight = Math.max(100, 80 + maxPorts * 25 + (containerTarget ? 22 : 0));
+      const nodeHeight = Math.max(
+        100,
+        80 + maxPorts * 25 + (containerTarget ? 22 : 0),
+      );
 
       const node = {
         id: nodeId,
@@ -143,7 +150,12 @@ class NodeDiagramModule extends DiagramBase {
             if (!this.portToEdges.has(toId)) this.portToEdges.set(toId, []);
             this.portToEdges.get(toId).push(edgeId);
 
-            return { id: edgeId, sources: [fromId], targets: [toId], properties: {} };
+            return {
+              id: edgeId,
+              sources: [fromId],
+              targets: [toId],
+              properties: {},
+            };
           })
           .filter(Boolean);
       }
@@ -218,32 +230,37 @@ class NodeDiagramModule extends DiagramBase {
         edge: computedStyle.getPropertyValue("--highlight").trim() || "#0d6efd",
         port: computedStyle.getPropertyValue("--highlight").trim() || "#0d6efd",
       },
-      red:    { name: "red",    edge: "#dc3545", port: "#dc3545" },
-      green:  { name: "green",  edge: "#28a745", port: "#28a745" },
+      red: { name: "red", edge: "#dc3545", port: "#dc3545" },
+      green: { name: "green", edge: "#28a745", port: "#28a745" },
       orange: { name: "orange", edge: "#fd7e14", port: "#fd7e14" },
       purple: { name: "purple", edge: "#6f42c1", port: "#6f42c1" },
-      teal:   { name: "teal",   edge: "#20c997", port: "#20c997" },
+      teal: { name: "teal", edge: "#20c997", port: "#20c997" },
     };
 
     this.styleDefaults = {
       dark: {
-        bg:     computedStyle.getPropertyValue("--bg-secondary").trim() || "#2d2d2d",
-        nodeBg: computedStyle.getPropertyValue("--bg-secondary").trim() || "#2d2d2d",
-        stroke: computedStyle.getPropertyValue("--text-muted").trim()   || "#666",
-        text:   computedStyle.getPropertyValue("--text-primary").trim() || "#e9ecef",
+        bg:
+          computedStyle.getPropertyValue("--bg-secondary").trim() || "#2d2d2d",
+        nodeBg:
+          computedStyle.getPropertyValue("--bg-secondary").trim() || "#2d2d2d",
+        stroke: computedStyle.getPropertyValue("--text-muted").trim() || "#666",
+        text:
+          computedStyle.getPropertyValue("--text-primary").trim() || "#e9ecef",
         rootBg: "#1e1e1e",
       },
       light: {
-        bg:     computedStyle.getPropertyValue("--bg-secondary").trim() || "#ffffff",
-        nodeBg: computedStyle.getPropertyValue("--bg-secondary").trim() || "#ffffff",
+        bg:
+          computedStyle.getPropertyValue("--bg-secondary").trim() || "#ffffff",
+        nodeBg:
+          computedStyle.getPropertyValue("--bg-secondary").trim() || "#ffffff",
         stroke: "#333",
-        text:   computedStyle.getPropertyValue("--text-primary").trim() || "#333",
+        text: computedStyle.getPropertyValue("--text-primary").trim() || "#333",
         rootBg: "#f5f5f5",
       },
     };
 
     const arrowColor = this.isDarkMode()
-      ? computedStyle.getPropertyValue("--text-muted").trim()   || "#6c757d"
+      ? computedStyle.getPropertyValue("--text-muted").trim() || "#6c757d"
       : computedStyle.getPropertyValue("--border-hover").trim() || "#adb5bd";
 
     const defs = document.createElementNS(SVG_NS, "defs");
@@ -252,10 +269,12 @@ class NodeDiagramModule extends DiagramBase {
         <polygon points="0 0, 10 3.5, 0 7" fill="${arrowColor}" />
       </marker>`;
     const presetMarkers = Object.keys(this.colorPresets)
-      .map((preset) => `
+      .map(
+        (preset) => `
         <marker id="arrowhead-highlighted-${preset}" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
           <polygon points="0 0, 10 3.5, 0 7" fill="${this.colorPresets[preset].edge}" />
-        </marker>`)
+        </marker>`,
+      )
       .join("");
     defs.innerHTML = defaultMarker + presetMarkers;
     svgRoot.insertBefore(defs, svg);
@@ -266,8 +285,10 @@ class NodeDiagramModule extends DiagramBase {
   }
 
   setupZoomPan(svgRoot, svg) {
-    if (this._mouseMoveHandler) window.removeEventListener("mousemove", this._mouseMoveHandler);
-    if (this._mouseUpHandler) window.removeEventListener("mouseup", this._mouseUpHandler);
+    if (this._mouseMoveHandler)
+      window.removeEventListener("mousemove", this._mouseMoveHandler);
+    if (this._mouseUpHandler)
+      window.removeEventListener("mouseup", this._mouseUpHandler);
 
     svgRoot.addEventListener("wheel", (e) => {
       e.preventDefault();
@@ -333,8 +354,12 @@ class NodeDiagramModule extends DiagramBase {
         el.style.strokeWidth = "";
       }
     });
-    document.querySelectorAll(".module-highlighted").forEach((el) => el.classList.remove("module-highlighted"));
-    document.querySelectorAll(".child-highlighted").forEach((el) => el.classList.remove("child-highlighted"));
+    document
+      .querySelectorAll(".module-highlighted")
+      .forEach((el) => el.classList.remove("module-highlighted"));
+    document
+      .querySelectorAll(".child-highlighted")
+      .forEach((el) => el.classList.remove("child-highlighted"));
     document.querySelectorAll(".port-highlighted").forEach((el) => {
       el.classList.remove("port-highlighted");
       el.style.fill = "";
@@ -356,7 +381,10 @@ class NodeDiagramModule extends DiagramBase {
     const edgePath = document.getElementById(id);
     if (!edgePath) return;
     edgePath.classList.add("highlighted");
-    edgePath.setAttribute("marker-end", `url(#arrowhead-highlighted-${colorPreset})`);
+    edgePath.setAttribute(
+      "marker-end",
+      `url(#arrowhead-highlighted-${colorPreset})`,
+    );
     edgePath.style.stroke = this.colorPresets[colorPreset].edge;
     edgePath.style.strokeWidth = "3px";
     if (edgePath.parentNode) edgePath.parentNode.appendChild(edgePath);
@@ -380,11 +408,18 @@ class NodeDiagramModule extends DiagramBase {
 
     let fillColor, strokeColor;
     if (this.isDarkMode()) {
-      fillColor = visGuide.dark_background_color || visGuide.background_color || defaults.dark.bg;
+      fillColor =
+        visGuide.dark_background_color ||
+        visGuide.background_color ||
+        defaults.dark.bg;
       if (userData.entity_type === "node") {
-        fillColor = visGuide.dark_medium_color || visGuide.medium_color || defaults.dark.nodeBg;
+        fillColor =
+          visGuide.dark_medium_color ||
+          visGuide.medium_color ||
+          defaults.dark.nodeBg;
       }
-      strokeColor = visGuide.dark_color || visGuide.color || defaults.dark.stroke;
+      strokeColor =
+        visGuide.dark_color || visGuide.color || defaults.dark.stroke;
       if (depth === 0) fillColor = defaults.dark.rootBg;
     } else {
       fillColor = visGuide.background_color || defaults.light.bg;
@@ -417,8 +452,10 @@ class NodeDiagramModule extends DiagramBase {
         .filter((p) => p.unique_id && p.is_outward !== false)
         .map((p) => String(p.unique_id));
 
-      if (outwardInPortIds.length > 0)  this.highlightBoundaryChain(outwardInPortIds,  "upstream",   "green");
-      if (outwardOutPortIds.length > 0) this.highlightBoundaryChain(outwardOutPortIds, "downstream", "orange");
+      if (outwardInPortIds.length > 0)
+        this.highlightBoundaryChain(outwardInPortIds, "upstream", "green");
+      if (outwardOutPortIds.length > 0)
+        this.highlightBoundaryChain(outwardOutPortIds, "downstream", "orange");
     };
 
     g.appendChild(rect);
@@ -570,7 +607,10 @@ class NodeDiagramModule extends DiagramBase {
     moduleGroup.classList.add("module-highlighted");
 
     Array.from(moduleGroup.children)
-      .filter((child) => child.tagName === "path" && child.classList.contains("edge-path"))
+      .filter(
+        (child) =>
+          child.tagName === "path" && child.classList.contains("edge-path"),
+      )
       .forEach((path) => path.classList.add("highlighted"));
 
     if (node.children?.length > 0) {
@@ -593,7 +633,12 @@ class NodeDiagramModule extends DiagramBase {
    * @param {boolean} clearExisting
    * @param {string} colorPreset - 'default', 'red', 'green', 'orange', 'purple', 'teal'
    */
-  highlightConnected(startIds, type, clearExisting = true, colorPreset = "default") {
+  highlightConnected(
+    startIds,
+    type,
+    clearExisting = true,
+    colorPreset = "default",
+  ) {
     if (!this.colorPresets[colorPreset]) colorPreset = "default";
     if (!Array.isArray(startIds)) startIds = [startIds];
     if (clearExisting) this.clearHighlights();
@@ -622,10 +667,14 @@ class NodeDiagramModule extends DiagramBase {
       } else if (data.from_port && data.to_port) {
         this._applyEdgeHighlight(currentId, colorPreset);
 
-        const fromId = data.from_port?.unique_id ?? (typeof data.from_port === "string" ? data.from_port : null);
-        const toId   = data.to_port?.unique_id   ?? (typeof data.to_port   === "string" ? data.to_port   : null);
+        const fromId =
+          data.from_port?.unique_id ??
+          (typeof data.from_port === "string" ? data.from_port : null);
+        const toId =
+          data.to_port?.unique_id ??
+          (typeof data.to_port === "string" ? data.to_port : null);
         if (fromId) queue.push(String(fromId));
-        if (toId)   queue.push(String(toId));
+        if (toId) queue.push(String(toId));
       }
     }
   }
@@ -658,16 +707,24 @@ class NodeDiagramModule extends DiagramBase {
           if (visited.has(edgeId)) return;
           const edgeData = this.elementData.get(edgeId);
           if (!edgeData) return;
-          const fromId = String(edgeData.from_port?.unique_id ?? edgeData.from_port ?? "");
-          const toId   = String(edgeData.to_port?.unique_id   ?? edgeData.to_port   ?? "");
-          if (direction === "upstream"   && toId   === currentId) queue.push(edgeId);
-          if (direction === "downstream" && fromId === currentId) queue.push(edgeId);
+          const fromId = String(
+            edgeData.from_port?.unique_id ?? edgeData.from_port ?? "",
+          );
+          const toId = String(
+            edgeData.to_port?.unique_id ?? edgeData.to_port ?? "",
+          );
+          if (direction === "upstream" && toId === currentId)
+            queue.push(edgeId);
+          if (direction === "downstream" && fromId === currentId)
+            queue.push(edgeId);
         });
       } else if (data.from_port && data.to_port) {
         this._applyEdgeHighlight(currentId, colorPreset);
 
         if (direction === "upstream") {
-          const fromId = String(data.from_port?.unique_id ?? data.from_port ?? "");
+          const fromId = String(
+            data.from_port?.unique_id ?? data.from_port ?? "",
+          );
           if (fromId && !visited.has(fromId)) queue.push(fromId);
         } else {
           const toId = String(data.to_port?.unique_id ?? data.to_port ?? "");
@@ -691,8 +748,12 @@ class NodeDiagramModule extends DiagramBase {
     );
 
     this.transform.k = Math.min(scale, 1);
-    this.transform.x = (containerRect.width  - bbox.width  * this.transform.k) / 2 - bbox.x * this.transform.k;
-    this.transform.y = (containerRect.height - bbox.height * this.transform.k) / 2 - bbox.y * this.transform.k;
+    this.transform.x =
+      (containerRect.width - bbox.width * this.transform.k) / 2 -
+      bbox.x * this.transform.k;
+    this.transform.y =
+      (containerRect.height - bbox.height * this.transform.k) / 2 -
+      bbox.y * this.transform.k;
     this.updateTransform(svg);
   }
 
