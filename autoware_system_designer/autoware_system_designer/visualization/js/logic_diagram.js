@@ -5,6 +5,8 @@ class LogicDiagramModule extends DiagramBase {
   constructor(container, options = {}) {
     super(container, options);
     this.panZoomInstance = null;
+    this.nodeMap = new Map();     // svgTitle → <g class="node"> element
+    this.edgesByNode = new Map(); // svgTitle → [{edge, srcId, tgtId}]
     this.init();
   }
 
@@ -428,23 +430,112 @@ class LogicDiagramModule extends DiagramBase {
     }
   }
 
+  buildElementMaps(svgElement) {
+    this.nodeMap.clear();
+    this.edgesByNode.clear();
+
+    svgElement.querySelectorAll("g.node").forEach((node) => {
+      const titleEl = node.querySelector("title");
+      if (!titleEl) return;
+      this.nodeMap.set(titleEl.textContent.trim(), node);
+    });
+
+    svgElement.querySelectorAll("g.edge").forEach((edge) => {
+      const titleEl = edge.querySelector("title");
+      if (!titleEl) return;
+      const parts = titleEl.textContent.split("->");
+      if (parts.length < 2) return;
+      const srcId = parts[0].trim();
+      const tgtId = parts[1].trim();
+      const entry = { edge, srcId, tgtId };
+      if (!this.edgesByNode.has(srcId)) this.edgesByNode.set(srcId, []);
+      this.edgesByNode.get(srcId).push(entry);
+      if (!this.edgesByNode.has(tgtId)) this.edgesByNode.set(tgtId, []);
+      this.edgesByNode.get(tgtId).push(entry);
+    });
+  }
+
+  clearHighlights() {
+    this.container.querySelectorAll(".highlighted").forEach((el) => {
+      el.classList.remove("highlighted");
+      el.querySelectorAll("polygon, ellipse, path").forEach((shape) => {
+        shape.style.stroke = "";
+        shape.style.strokeWidth = "";
+        shape.style.fill = "";
+      });
+    });
+  }
+
+  _applyNodeHighlight(nodeEl, color) {
+    nodeEl.classList.add("highlighted");
+    const shape = nodeEl.querySelector("polygon, ellipse");
+    if (shape) shape.style.stroke = color;
+  }
+
+  _applyEdgeHighlight(edgeEl, color) {
+    edgeEl.classList.add("highlighted");
+    const path = edgeEl.querySelector("path");
+    if (path) path.style.stroke = color;
+    const arrowhead = edgeEl.querySelector("polygon");
+    if (arrowhead) {
+      arrowhead.style.fill = color;
+      arrowhead.style.stroke = color;
+    }
+  }
+
+  highlightNodeAndConnections(nodeEl) {
+    const titleEl = nodeEl.querySelector("title");
+    if (!titleEl) return;
+    const nodeId = titleEl.textContent.trim();
+
+    this.clearHighlights();
+
+    const highlightColor =
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--highlight")
+        .trim() || "#0d6efd";
+
+    this._applyNodeHighlight(nodeEl, highlightColor);
+
+    const connectedEdges = this.edgesByNode.get(nodeId) || [];
+    connectedEdges.forEach(({ edge, srcId, tgtId }) => {
+      const isIncoming = tgtId === nodeId;
+      const edgeColor = isIncoming ? "#28a745" : "#fd7e14";
+      this._applyEdgeHighlight(edge, edgeColor);
+      const otherId = isIncoming ? srcId : tgtId;
+      const otherNode = this.nodeMap.get(otherId);
+      if (otherNode && otherNode !== nodeEl) {
+        this._applyNodeHighlight(otherNode, edgeColor);
+      }
+    });
+  }
+
   addInteractionHandlers(svgElement) {
-    // Add click handlers to nodes and edges
+    this.buildElementMaps(svgElement);
+
     const nodes = svgElement.querySelectorAll(".node");
     const edges = svgElement.querySelectorAll(".edge");
     const clusters = svgElement.querySelectorAll(".cluster");
 
-    // Handle node clicks
     nodes.forEach((node) => {
       node.classList.add("logic-diagram-node");
       node.style.cursor = "pointer";
       node.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.handleElementClick(node, "Node");
+        const titleEl = node.querySelector("title");
+        const label = node.querySelector("text") || node;
+        this.updateInfoPanel(
+          {
+            type: "Node",
+            label: label ? label.textContent : "Unknown",
+            title: titleEl ? titleEl.textContent : "",
+          },
+          "Node",
+        );
+        this.highlightNodeAndConnections(node);
       });
     });
 
-    // Handle edge clicks
     edges.forEach((edge) => {
       edge.classList.add("logic-diagram-edge");
       edge.style.cursor = "pointer";
@@ -454,7 +545,6 @@ class LogicDiagramModule extends DiagramBase {
       });
     });
 
-    // Handle cluster clicks
     clusters.forEach((cluster) => {
       cluster.classList.add("logic-diagram-cluster");
       cluster.style.cursor = "pointer";
@@ -466,25 +556,20 @@ class LogicDiagramModule extends DiagramBase {
   }
 
   handleElementClick(element, type) {
-    // Remove previous highlights
-    this.container.querySelectorAll(".highlighted").forEach((el) => {
-      el.classList.remove("highlighted");
-    });
+    this.clearHighlights();
 
-    // Highlight clicked element
     element.classList.add("highlighted");
 
-    // Extract element information
     const title = element.querySelector("title");
     const label = element.querySelector("text") || element;
-    const elementInfo = {
-      type: type,
-      label: label ? label.textContent : "Unknown",
-      title: title ? title.textContent : "",
-    };
-
-    // Update info panel
-    this.updateInfoPanel(elementInfo, type);
+    this.updateInfoPanel(
+      {
+        type: type,
+        label: label ? label.textContent : "Unknown",
+        title: title ? title.textContent : "",
+      },
+      type,
+    );
   }
 
   initPanZoom(svg) {
