@@ -75,7 +75,7 @@ def serialize_event(event) -> EventData | None:
     }
 
 
-def serialize_port(port) -> PortData:
+def serialize_port(port, is_outward: bool = True) -> PortData:
     data = {
         "unique_id": port.unique_id,
         "name": port.name,
@@ -86,6 +86,7 @@ def serialize_port(port) -> PortData:
         "remap_target": port.remap_target,
         "port_path": port.port_path,
         "event": serialize_event(port.event),
+        "is_outward": is_outward,
     }
 
     # Add connected_ids for graph traversal
@@ -158,12 +159,12 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
 
 def _collect_in_ports(instance: "Instance") -> list[PortData]:
     """Collect and serialize all input ports."""
-    return [serialize_port(p) for p in instance.link_manager.get_all_in_ports()]
+    return [serialize_port(p, is_outward=True) for p in instance.link_manager.get_all_in_ports()]
 
 
 def _collect_out_ports(instance: "Instance") -> list[PortData]:
     """Collect and serialize all output ports."""
-    return [serialize_port(p) for p in instance.link_manager.get_all_out_ports()]
+    return [serialize_port(p, is_outward=True) for p in instance.link_manager.get_all_out_ports()]
 
 
 def _collect_children(instance: "Instance") -> list[InstanceData]:
@@ -178,13 +179,15 @@ def _collect_links(instance: "Instance") -> list[Dict[str, Any]]:
     if not hasattr(instance.link_manager, "links"):
         return []
 
+    boundary_path = instance.resolved_path
     return [
         {
             "unique_id": link.unique_id,
-            "from_port": serialize_port(link.from_port),
-            "to_port": serialize_port(link.to_port),
+            "from_port": serialize_port(link.from_port, is_outward=(link.from_port.namespace == boundary_path)),
+            "to_port": serialize_port(link.to_port, is_outward=(link.to_port.namespace == boundary_path)),
             "msg_type": link.msg_type,
             "topic": link.topic,
+            "connection_type": link.connection_type.name,
         }
         for link in instance.link_manager.get_all_links()
     ]

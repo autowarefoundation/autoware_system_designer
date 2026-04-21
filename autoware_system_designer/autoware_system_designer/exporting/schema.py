@@ -44,6 +44,7 @@ class PortData(TypedDict, total=False):
     port_path: str
     event: Optional[EventData]
     connected_ids: List[str]
+    is_outward: bool
 
 
 class ParameterData(TypedDict, total=False):
@@ -103,6 +104,7 @@ class LinkData(TypedDict, total=False):
     to_port: PortData
     msg_type: Optional[str]
     topic: Optional[str]
+    connection_type: str
 
 
 class InstanceData(TypedDict, total=False):

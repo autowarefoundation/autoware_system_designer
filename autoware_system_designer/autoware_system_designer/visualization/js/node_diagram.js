@@ -540,33 +540,33 @@ class NodeDiagramModule extends DiagramBase {
         g.classList.add("highlighted");
       }
 
-      // Highlight in-ports and out-ports with different colors
-      const inPortIds = [];
-      const outPortIds = [];
+      // Highlight outward boundary ports and their external chains
+      const outwardInPortIds = [];
+      const outwardOutPortIds = [];
 
       if (userData.in_ports) {
         userData.in_ports.forEach((port) => {
-          if (port.unique_id) {
-            inPortIds.push(String(port.unique_id));
+          if (port.unique_id && port.is_outward !== false) {
+            outwardInPortIds.push(String(port.unique_id));
           }
         });
       }
       if (userData.out_ports) {
         userData.out_ports.forEach((port) => {
-          if (port.unique_id) {
-            outPortIds.push(String(port.unique_id));
+          if (port.unique_id && port.is_outward !== false) {
+            outwardOutPortIds.push(String(port.unique_id));
           }
         });
       }
 
-      // Highlight in-ports with green color
-      if (inPortIds.length > 0) {
-        this.highlightConnected(inPortIds, "Port", false, "green");
+      // Outward in-ports: highlight upstream chain (external publisher → boundary in-port)
+      if (outwardInPortIds.length > 0) {
+        this.highlightBoundaryChain(outwardInPortIds, "upstream", "green");
       }
 
-      // Highlight out-ports with orange color
-      if (outPortIds.length > 0) {
-        this.highlightConnected(outPortIds, "Port", false, "orange");
+      // Outward out-ports: highlight the port + downstream chain (boundary out-port → external consumers)
+      if (outwardOutPortIds.length > 0) {
+        this.highlightBoundaryChain(outwardOutPortIds, "downstream", "orange");
       }
     };
 
@@ -899,6 +899,98 @@ class NodeDiagramModule extends DiagramBase {
             data.to_port.unique_id ||
             (typeof data.to_port === "string" ? data.to_port : null);
           if (toId) queue.push(String(toId));
+        }
+      }
+    }
+  }
+
+  /**
+   * Highlights outward boundary ports and their external link chains.
+   * "upstream"  – for in-ports:  highlights external publisher(s) → boundary in-port
+   * "downstream"– for out-ports: highlights boundary out-port → external consumer(s)
+   * Internal (non-outward) ports are highlighted as part of the link chain but not
+   * independently traversed further, keeping the view focused on the external edges.
+   */
+  highlightBoundaryChain(startIds, direction, colorPreset = "default") {
+    if (!this.colorPresets[colorPreset]) colorPreset = "default";
+    if (!Array.isArray(startIds)) startIds = [startIds];
+
+    const queue = [...startIds];
+    const visited = new Set();
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+
+      const data = this.elementData.get(currentId);
+      if (!data) continue;
+
+      // --- Port ---
+      if (data.msg_type && !data.from_port) {
+        const portGroup = document.getElementById(currentId);
+        if (portGroup) {
+          const rect = portGroup.querySelector(".port-rect");
+          if (rect) {
+            rect.classList.add("port-highlighted");
+            rect.style.fill = this.colorPresets[colorPreset].port;
+            rect.style.stroke = this.colorPresets[colorPreset].port;
+          }
+        }
+
+        // Traverse only visual edges in the requested direction.
+        // upstream   – follow edges where this port is the to_port  (find publisher)
+        // downstream – follow edges where this port is the from_port (find subscribers)
+        // connected_ids is intentionally NOT followed: it fans out to all topic
+        // subscribers and causes an explosion of unrelated highlights.
+        const visibleEdges = this.portToEdges.get(currentId) || [];
+        visibleEdges.forEach((edgeId) => {
+          if (visited.has(edgeId)) return;
+          const edgeData = this.elementData.get(edgeId);
+          if (!edgeData) return;
+          const fromId = String(
+            edgeData.from_port?.unique_id ?? edgeData.from_port ?? "",
+          );
+          const toId = String(
+            edgeData.to_port?.unique_id ?? edgeData.to_port ?? "",
+          );
+          if (direction === "upstream" && toId === currentId) {
+            queue.push(edgeId);
+          } else if (direction === "downstream" && fromId === currentId) {
+            queue.push(edgeId);
+          }
+        });
+      }
+      // --- Link ---
+      else if (data.from_port && data.to_port) {
+        const edgePath =
+          document.getElementById(currentId) ||
+          (this.container
+            ? this.container.querySelector(`path[id="${currentId}"]`)
+            : null);
+
+        if (edgePath) {
+          edgePath.classList.add("highlighted");
+          edgePath.setAttribute(
+            "marker-end",
+            `url(#arrowhead-highlighted-${colorPreset})`,
+          );
+          edgePath.style.stroke = this.colorPresets[colorPreset].edge;
+          edgePath.style.strokeWidth = "3px";
+          if (edgePath.parentNode) edgePath.parentNode.appendChild(edgePath);
+        }
+
+        // Enqueue the port on the traversal side.
+        if (direction === "upstream") {
+          const fromId = String(
+            data.from_port?.unique_id ?? data.from_port ?? "",
+          );
+          if (fromId && !visited.has(fromId)) queue.push(fromId);
+        } else {
+          const toId = String(
+            data.to_port?.unique_id ?? data.to_port ?? "",
+          );
+          if (toId && !visited.has(toId)) queue.push(toId);
         }
       }
     }
