@@ -5,7 +5,7 @@ class LogicDiagramModule extends DiagramBase {
   constructor(container, options = {}) {
     super(container, options);
     this.panZoomInstance = null;
-    this.nodeMap = new Map();     // svgTitle → <g class="node"> element
+    this.nodeMap = new Map(); // svgTitle → <g class="node"> element
     this.edgesByNode = new Map(); // svgTitle → [{edge, srcId, tgtId}]
     this.init();
   }
