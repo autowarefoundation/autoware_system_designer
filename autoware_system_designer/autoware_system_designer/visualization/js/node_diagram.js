@@ -352,7 +352,10 @@ class NodeDiagramModule extends DiagramBase {
   clearHighlights() {
     this.nodeConnectionDirections.clear();
 
-    document.querySelectorAll(".highlighted").forEach((el) => {
+    const scope = this.currentSvgRoot || this.container;
+    if (!scope) return;
+
+    scope.querySelectorAll(".highlighted").forEach((el) => {
       el.classList.remove("highlighted");
       if (el.tagName === "path") {
         el.setAttribute("marker-end", "url(#arrowhead)");
@@ -360,18 +363,18 @@ class NodeDiagramModule extends DiagramBase {
         el.style.strokeWidth = "";
       }
     });
-    document
+    scope
       .querySelectorAll(".module-highlighted")
       .forEach((el) => el.classList.remove("module-highlighted"));
-    document
+    scope
       .querySelectorAll(".child-highlighted")
       .forEach((el) => el.classList.remove("child-highlighted"));
-    document.querySelectorAll(".port-highlighted").forEach((el) => {
+    scope.querySelectorAll(".port-highlighted").forEach((el) => {
       el.classList.remove("port-highlighted");
       el.style.fill = "";
       el.style.stroke = "";
     });
-    document.querySelectorAll(".node-connection-highlight").forEach((el) => {
+    scope.querySelectorAll(".node-connection-highlight").forEach((el) => {
       el.classList.remove("node-connection-highlight");
       el.style.stroke = "";
       el.style.strokeWidth = "";
