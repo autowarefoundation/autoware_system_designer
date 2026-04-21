@@ -117,8 +117,10 @@ class LogicDiagramModule extends DiagramBase {
         "--text-primary",
         isDark ? "#e9ecef" : "#333333",
       ),
-      input: isDark ? "#004085" : "#e0f7ff",
-      output: isDark ? "#856404" : "#fff4e0",
+      input: isDark ? "#1e5228" : "#d4edda",
+      inputBorder: isDark ? "#1e5228" : "#28a745",
+      output: isDark ? "#7d4500" : "#ffe8cc",
+      outputBorder: isDark ? "#7d4500" : "#fd7e14",
       cloud: this.getComputedStyleValue(
         "--border-hover",
         isDark ? "#adb5bd" : "gray",
@@ -190,7 +192,7 @@ class LogicDiagramModule extends DiagramBase {
                 ? port.event.frequency
                 : "unknown";
             dotLines.push(
-              `\t\t${port.unique_id} [label="input/${port.name}\\n#${eventType}\\n@${eventFreq}", shape=ellipse, fillcolor="${colors.input}", fontcolor="${colors.text}"];`,
+              `\t\t${port.unique_id} [label="input/${port.name}\\n#${eventType}\\n@${eventFreq}", shape=box, style="filled", fillcolor="${colors.input}", color="${colors.inputBorder}", penwidth=2, fontcolor="${colors.text}"];`,
             );
           }
         });
@@ -201,7 +203,7 @@ class LogicDiagramModule extends DiagramBase {
         instance.out_ports.forEach((port) => {
           if (port && port.unique_id && port.name) {
             dotLines.push(
-              `\t\t${port.unique_id} [label="output/${port.name}", shape=ellipse, fillcolor="${colors.output}", fontcolor="${colors.text}"];`,
+              `\t\t${port.unique_id} [label="output/${port.name}", shape=box, style="filled", fillcolor="${colors.output}", color="${colors.outputBorder}", penwidth=2, fontcolor="${colors.text}"];`,
             );
           }
         });
