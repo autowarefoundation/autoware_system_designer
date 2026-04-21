@@ -10,6 +10,8 @@ class NodeDiagramModule extends DiagramBase {
     this.startPoint = { x: 0, y: 0 };
     this.elementData = new Map();
     this.portToEdges = new Map();
+    this.portToNode = new Map();
+    this.nodeConnectionDirections = new Map();
     this.colorPresets = null;
 
     this.init();
@@ -67,12 +69,14 @@ class NodeDiagramModule extends DiagramBase {
   transformDataToElk(root) {
     this.elementData.clear();
     this.portToEdges.clear();
+    this.portToNode.clear();
 
     const addPorts = (node, ports, side) => {
       (ports || []).forEach((port) => {
         if (!port.unique_id) return;
         const portId = String(port.unique_id);
         this.elementData.set(portId, port);
+        this.portToNode.set(portId, node.id);
         node.ports.push({
           id: portId,
           width: 10,
@@ -346,6 +350,8 @@ class NodeDiagramModule extends DiagramBase {
   }
 
   clearHighlights() {
+    this.nodeConnectionDirections.clear();
+
     document.querySelectorAll(".highlighted").forEach((el) => {
       el.classList.remove("highlighted");
       if (el.tagName === "path") {
@@ -365,9 +371,65 @@ class NodeDiagramModule extends DiagramBase {
       el.style.fill = "";
       el.style.stroke = "";
     });
+    document.querySelectorAll(".node-connection-highlight").forEach((el) => {
+      el.classList.remove("node-connection-highlight");
+      el.style.stroke = "";
+      el.style.strokeWidth = "";
+    });
   }
 
-  _applyPortHighlight(id, colorPreset) {
+  _getPortDirection(portId) {
+    const nodeId = this.portToNode.get(String(portId));
+    if (!nodeId) return null;
+
+    const nodeData = this.elementData.get(nodeId);
+    if (!nodeData) return null;
+
+    const pid = String(portId);
+    if ((nodeData.in_ports || []).some((p) => String(p.unique_id) === pid)) {
+      return "upstream";
+    }
+    if ((nodeData.out_ports || []).some((p) => String(p.unique_id) === pid)) {
+      return "downstream";
+    }
+    return null;
+  }
+
+  _applyNodeConnectionHighlight(portId, directionHint = null) {
+    const nodeId = this.portToNode.get(String(portId));
+    if (!nodeId) return;
+
+    const nodeData = this.elementData.get(nodeId);
+    if (!nodeData || nodeData.entity_type !== "node") return;
+
+    const direction = directionHint || this._getPortDirection(portId);
+    if (direction !== "upstream" && direction !== "downstream") return;
+
+    const nodeGroup = document.getElementById(nodeId);
+    if (!nodeGroup) return;
+    const rect = nodeGroup.querySelector(".node-rect");
+    if (!rect) return;
+
+    const state = this.nodeConnectionDirections.get(nodeId) || {
+      upstream: false,
+      downstream: false,
+    };
+    state[direction] = true;
+    this.nodeConnectionDirections.set(nodeId, state);
+
+    let strokeColor = this.colorPresets.orange.edge;
+    if (state.upstream && state.downstream) {
+      strokeColor = this.colorPresets.purple.edge;
+    } else if (state.upstream) {
+      strokeColor = this.colorPresets.green.edge;
+    }
+
+    rect.classList.add("node-connection-highlight");
+    rect.style.stroke = strokeColor;
+    rect.style.strokeWidth = "3px";
+  }
+
+  _applyPortHighlight(id, colorPreset, directionHint = null) {
     const portGroup = document.getElementById(id);
     if (!portGroup) return;
     const rect = portGroup.querySelector(".port-rect");
@@ -375,6 +437,7 @@ class NodeDiagramModule extends DiagramBase {
     rect.classList.add("port-highlighted");
     rect.style.fill = this.colorPresets[colorPreset].port;
     rect.style.stroke = this.colorPresets[colorPreset].port;
+    this._applyNodeConnectionHighlight(id, directionHint);
   }
 
   _applyEdgeHighlight(id, colorPreset) {
@@ -438,12 +501,7 @@ class NodeDiagramModule extends DiagramBase {
       e.stopPropagation();
       this.updateInfoPanel(userData, "Node");
       this.clearHighlights();
-
-      if (node.children?.length > 0) {
-        this.highlightModule(node, g);
-      } else {
-        g.classList.add("highlighted");
-      }
+      g.classList.add("highlighted");
 
       const outwardInPortIds = (userData.in_ports || [])
         .filter((p) => p.unique_id && p.is_outward !== false)
@@ -701,7 +759,7 @@ class NodeDiagramModule extends DiagramBase {
       if (!data) continue;
 
       if (data.msg_type && !data.from_port) {
-        this._applyPortHighlight(currentId, colorPreset);
+        this._applyPortHighlight(currentId, colorPreset, direction);
 
         (this.portToEdges.get(currentId) || []).forEach((edgeId) => {
           if (visited.has(edgeId)) return;
