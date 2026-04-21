@@ -3,48 +3,25 @@
 import argparse
 import json
 import os
-import re
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
 
 import rclpy
+from lib.snapshot.components import detect_components
+from lib.snapshot.graph import NodeGraphInfo, as_type_map, compile_filter, fq_name
+from lib.snapshot.params import collect_node_params
+from lib.snapshot.proc import scan_processes
 from rclpy.node import Node
 
 
-@dataclass(frozen=True)
-class NodeGraphInfo:
-    name: str
-    namespace: str
-    fq_name: str
-    publishers: Dict[str, List[str]]
-    subscribers: Dict[str, List[str]]
-    services: Dict[str, List[str]]
-    clients: Dict[str, List[str]]
-
-
-def _fq_name(name: str, namespace: str) -> str:
-    if namespace == "/":
-        return f"/{name}" if not name.startswith("/") else name
-    namespace = namespace if namespace.startswith("/") else f"/{namespace}"
-    namespace = namespace.rstrip("/")
-    return f"{namespace}/{name}" if not name.startswith("/") else name
-
-
-def _as_type_map(pairs: List[Tuple[str, List[str]]]) -> Dict[str, List[str]]:
-    # Pairs come from rclpy graph APIs: List[Tuple[name, List[types]]]
-    result: Dict[str, List[str]] = {}
-    for topic_or_srv, types in pairs:
-        result[topic_or_srv] = list(types)
-    return result
-
-
-def _compile_filter(pattern: Optional[str]) -> Optional[re.Pattern]:
-    if not pattern:
-        return None
-    return re.compile(pattern)
+def _print_progress(done: int, total: int) -> None:
+    width = 30
+    filled = int(width * done / total) if total else width
+    bar = "#" * filled + "-" * (width - filled)
+    sys.stderr.write(f"\r[snapshot] [{bar}] {done}/{total}")
+    sys.stderr.flush()
 
 
 def main() -> int:
@@ -87,7 +64,18 @@ def main() -> int:
         action="store_true",
         help="Include hidden node names if exposed by the graph APIs.",
     )
-
+    parser.add_argument(
+        "--no-process",
+        action="store_true",
+        help=(
+            "Skip OS process / executor discovery. "
+            "By default the snapshot enriches every node with its PID, "
+            "binary path, originating package, executor type, loaded ROS 2 "
+            "libraries, and (for component containers) resolved plugin class "
+            "names from the ament index. Use this flag when /proc is "
+            "unavailable or a lean snapshot is preferred."
+        ),
+    )
     parser.add_argument(
         "--params",
         choices=["none", "names", "values"],
@@ -106,19 +94,20 @@ def main() -> int:
 
     try:
         # Let discovery settle.
+        print(f"[snapshot] Waiting {args.spin_seconds}s for graph discovery...", file=sys.stderr)
         end_t = time.time() + max(0.0, args.spin_seconds)
         while time.time() < end_t:
             rclpy.spin_once(node, timeout_sec=0.1)
 
-        node_filter = _compile_filter(args.filter)
+        node_filter = compile_filter(args.filter)
 
         # rclpy returns (name, namespace) tuples.
         all_nodes = node.get_node_names_and_namespaces()
 
         # Build a list with fq names for filtering & duplicate reporting.
-        entries: List[Tuple[str, str, str]] = []
+        entries = []
         for name, namespace in all_nodes:
-            fq = _fq_name(name, namespace)
+            fq = fq_name(name, namespace)
             if (not args.include_hidden) and "/_" in fq:
                 continue
             if node_filter and not node_filter.search(fq):
@@ -130,16 +119,18 @@ def main() -> int:
         if args.max_nodes and args.max_nodes > 0:
             entries = entries[: args.max_nodes]
 
+        print(f"[snapshot] Found {len(entries)} node(s). Collecting graph info...", file=sys.stderr)
+
         # Track duplicates (same fq name appearing multiple times).
-        fq_counts: Dict[str, int] = {}
+        fq_counts = {}
         for _, _, fq in entries:
             fq_counts[fq] = fq_counts.get(fq, 0) + 1
-        duplicates = sorted([fq for fq, c in fq_counts.items() if c > 1])
+        duplicates = sorted(fq for fq, c in fq_counts.items() if c > 1)
 
-        graph: List[NodeGraphInfo] = []
-        errors: Dict[str, str] = {}
-        param_names: Dict[str, List[str]] = {}
-        param_values: Dict[str, Dict[str, str]] = {}
+        graph = []
+        errors = {}
+        param_names = {}
+        param_values = {}
 
         # Optional parameter-service access (fallback if rclpy.parameter_client is unavailable).
         try:
@@ -147,76 +138,10 @@ def main() -> int:
         except ModuleNotFoundError:
             AsyncParametersClient = None  # type: ignore
 
-        def _param_value_to_string(val: object) -> str:
-            try:
-                from rcl_interfaces.msg import ParameterType
-            except Exception:  # noqa: BLE001
-                return str(val)
-            if hasattr(val, "type"):
-                t = val.type
-                if t == ParameterType.PARAMETER_NOT_SET:
-                    return "<not set>"
-                if t == ParameterType.PARAMETER_BOOL:
-                    return str(getattr(val, "bool_value", False)).lower()
-                if t == ParameterType.PARAMETER_INTEGER:
-                    return str(getattr(val, "integer_value", 0))
-                if t == ParameterType.PARAMETER_DOUBLE:
-                    return repr(getattr(val, "double_value", 0.0))
-                if t == ParameterType.PARAMETER_STRING:
-                    return str(getattr(val, "string_value", ""))
-                if t == ParameterType.PARAMETER_BYTE_ARRAY:
-                    return json.dumps(list(getattr(val, "byte_array_value", [])))
-                if t == ParameterType.PARAMETER_BOOL_ARRAY:
-                    return json.dumps(list(getattr(val, "bool_array_value", [])))
-                if t == ParameterType.PARAMETER_INTEGER_ARRAY:
-                    return json.dumps(list(getattr(val, "integer_array_value", [])))
-                if t == ParameterType.PARAMETER_DOUBLE_ARRAY:
-                    return json.dumps(list(getattr(val, "double_array_value", [])))
-                if t == ParameterType.PARAMETER_STRING_ARRAY:
-                    return json.dumps(list(getattr(val, "string_array_value", [])))
-            if hasattr(val, "value"):
-                return str(getattr(val, "value"))
-            return str(val)
+        total = len(entries)
+        _print_progress(0, total)
 
-        def list_parameters_fallback(target_fq: str) -> Tuple[Optional[List[str]], Optional[str]]:
-            try:
-                from rcl_interfaces.srv import ListParameters
-            except Exception as exc:  # noqa: BLE001
-                return None, f"<error: {type(exc).__name__}: {exc}>"
-            client = node.create_client(ListParameters, f"{target_fq}/list_parameters")
-            if not client.wait_for_service(timeout_sec=0.5):
-                return None, "<no parameter service>"
-            req = ListParameters.Request()
-            req.prefixes = []
-            req.depth = 0
-            future = client.call_async(req)
-            rclpy.spin_until_future_complete(node, future, timeout_sec=1.0)
-            if future.result() is None:
-                return None, "<timeout listing parameters>"
-            names_list = list(future.result().result.names)
-            names_list.sort()
-            return names_list, None
-
-        def get_parameters_fallback(target_fq: str, names: List[str]) -> Tuple[Optional[Dict[str, str]], Optional[str]]:
-            try:
-                from rcl_interfaces.srv import GetParameters
-            except Exception as exc:  # noqa: BLE001
-                return None, f"<error: {type(exc).__name__}: {exc}>"
-            client = node.create_client(GetParameters, f"{target_fq}/get_parameters")
-            if not client.wait_for_service(timeout_sec=0.5):
-                return None, "<no parameter service>"
-            req = GetParameters.Request()
-            req.names = names
-            future = client.call_async(req)
-            rclpy.spin_until_future_complete(node, future, timeout_sec=1.0)
-            if future.result() is None:
-                return None, "<timeout getting parameters>"
-            values: Dict[str, str] = {}
-            for name, val in zip(names, future.result().values):
-                values[name] = _param_value_to_string(val)
-            return values, None
-
-        for name, namespace, fq in entries:
+        for done, (name, namespace, fq) in enumerate(entries, 1):
             try:
                 pubs = node.get_publisher_names_and_types_by_node(name, namespace)
                 subs = node.get_subscriber_names_and_types_by_node(name, namespace)
@@ -228,10 +153,10 @@ def main() -> int:
                         name=name,
                         namespace=namespace,
                         fq_name=fq,
-                        publishers=_as_type_map(pubs),
-                        subscribers=_as_type_map(subs),
-                        services=_as_type_map(srvs),
-                        clients=_as_type_map(clis),
+                        publishers=as_type_map(pubs),
+                        subscribers=as_type_map(subs),
+                        services=as_type_map(srvs),
+                        clients=as_type_map(clis),
                     )
                 )
 
@@ -243,64 +168,36 @@ def main() -> int:
                         if args.params == "values":
                             param_values[fq] = {"<skipped: duplicate node name>": ""}
                     else:
-                        try:
-                            if AsyncParametersClient is not None:
-                                client = AsyncParametersClient(node, fq)
-                                if not client.wait_for_service(timeout_sec=0.5):
-                                    param_names[fq] = ["<no parameter service>"]
-                                    if args.params == "values":
-                                        param_values[fq] = {"<no parameter service>": ""}
-                                else:
-                                    future = client.list_parameters(prefixes=[], depth=0)
-                                    rclpy.spin_until_future_complete(node, future, timeout_sec=1.0)
-                                    if future.result() is None:
-                                        param_names[fq] = ["<timeout listing parameters>"]
-                                        if args.params == "values":
-                                            param_values[fq] = {"<timeout listing parameters>": ""}
-                                    else:
-                                        # list_parameters returns ListParameters.Response
-                                        names_list = list(future.result().result.names)
-                                        names_list.sort()
-                                        param_names[fq] = names_list
-                                        if args.params == "values":
-                                            if not names_list:
-                                                param_values[fq] = {}
-                                            else:
-                                                future_vals = client.get_parameters(names_list)
-                                                rclpy.spin_until_future_complete(node, future_vals, timeout_sec=1.0)
-                                                if future_vals.result() is None:
-                                                    param_values[fq] = {"<timeout getting parameters>": ""}
-                                                else:
-                                                    values: Dict[str, str] = {}
-                                                    for name, val in zip(names_list, future_vals.result().values):
-                                                        values[name] = _param_value_to_string(val)
-                                                    param_values[fq] = values
-                            else:
-                                names_list, status = list_parameters_fallback(fq)
-                                if status:
-                                    param_names[fq] = [status]
-                                    if args.params == "values":
-                                        param_values[fq] = {status: ""}
-                                else:
-                                    param_names[fq] = names_list or []
-                                    if args.params == "values":
-                                        if not names_list:
-                                            param_values[fq] = {}
-                                        else:
-                                            values, v_status = get_parameters_fallback(fq, names_list)
-                                            if v_status:
-                                                param_values[fq] = {v_status: ""}
-                                            else:
-                                                param_values[fq] = values or {}
-                        except Exception as exc:  # noqa: BLE001
-                            param_names[fq] = [f"<error: {type(exc).__name__}: {exc}>"]
-                            if args.params == "values":
-                                param_values[fq] = {f"<error: {type(exc).__name__}: {exc}>": ""}
+                        names_list, values_dict = collect_node_params(node, fq, args.params, AsyncParametersClient)
+                        param_names[fq] = names_list
+                        if args.params == "values":
+                            param_values[fq] = values_dict
+
             except Exception as exc:  # noqa: BLE001
                 errors[fq] = f"{type(exc).__name__}: {exc}"
 
+            _print_progress(done, total)
+
             if args.sleep_per_node and args.sleep_per_node > 0.0:
                 time.sleep(args.sleep_per_node)
+
+        sys.stderr.write("\n")
+        sys.stderr.flush()
+
+        # --- Component container detection ---
+        print("[snapshot] Detecting component containers...", file=sys.stderr)
+        component_info_map, comp_err = detect_components(node, graph)
+        if comp_err:
+            errors["__component_detection__"] = comp_err
+
+        # --- Process / executor discovery ---
+        process_info_map = {}
+        if not args.no_process:
+            print("[snapshot] Scanning processes...", file=sys.stderr)
+            try:
+                process_info_map = scan_processes(graph, component_info_map)
+            except Exception as exc:  # noqa: BLE001
+                errors["__process_discovery__"] = f"{type(exc).__name__}: {exc}"
 
         payload = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -311,7 +208,14 @@ def main() -> int:
             "errors": errors,
             "param_names": param_names,
             "param_values": param_values,
-            "nodes": [asdict(n) for n in graph],
+            "nodes": [
+                {
+                    **asdict(n),
+                    "component_info": component_info_map.get(n.fq_name),
+                    "process": process_info_map.get(n.fq_name),
+                }
+                for n in graph
+            ],
         }
 
         if args.out:
@@ -326,6 +230,7 @@ def main() -> int:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, sort_keys=False)
 
+        print(f"[snapshot] Done. Written to: {out_path}", file=sys.stderr)
         print(out_path)
         return 0
     finally:

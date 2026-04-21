@@ -1,0 +1,23 @@
+@startuml
+
+{% for entity in entities -%}
+{{ get_component_kind(entity) }} {{ get_component_id(entity) }} {{ get_component_style(entity) }} [
+{{ entity.type }}
+===
+{% for k, v in entity.items() -%}
+{% if k not in ["type"] -%}
+{{ k }}: "{{ v|replace("[", "\[")|replace("]", "\]") }}"
+---
+{% endif -%}
+{% endfor -%}
+]
+
+{% endfor %}
+
+{% for entity in entities -%}
+{% for child in get_children(index_map, entity) -%}
+{{ get_component_id(entity) }} -down-> {{ get_component_id(child) }}
+{% endfor %}
+{% endfor %}
+
+@enduml
