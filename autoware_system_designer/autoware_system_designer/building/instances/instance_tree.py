@@ -190,10 +190,14 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
             )
 
         child_name = cfg_node.get("name")
+        name_parts = child_name.split("/")
+        actual_name = name_parts[-1]
+        extra_ns = name_parts[:-1]
+        effective_ns = list(instance.resolved_path) + extra_ns
         child_instance = _create_child_instance(
-            child_name,
+            actual_name,
             instance.compute_unit,
-            instance.resolved_path,
+            effective_ns,
             instance,
             layer_delta=1,
         )
@@ -208,11 +212,11 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
             )
         except Exception as e:
             # add the instance to the children dict for debugging
-            instance.children[child_instance.name] = child_instance
+            instance.children[child_name] = child_instance
             raise ValidationError(
-                f"Error in setting child instance {child_instance.name} : {e}, at {instance.configuration.file_path}"
+                f"Error in setting child instance {child_name} : {e}, at {instance.configuration.file_path}"
             )
-        instance.children[child_instance.name] = child_instance
+        instance.children[child_name] = child_instance
 
 
 def run_module_configuration(instance: "Instance") -> None:

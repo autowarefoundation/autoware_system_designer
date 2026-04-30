@@ -467,12 +467,12 @@ class LinkManager:
         port_list_to: Dict[str, _PortInfo] = {}
 
         # ports from children instances
-        for child_instance in self.instance.children.values():
+        for child_key, child_instance in self.instance.children.items():
             for port_name, port in child_instance.link_manager.in_ports.items():
-                idx = f"{child_instance.name}.{port_name}"
+                idx = f"{child_key}.{port_name}"
                 port_list_to[idx] = _PortInfo(port_name=port_name, instance=child_instance, port=port)
             for port_name, port in child_instance.link_manager.out_ports.items():
-                idx = f"{child_instance.name}.{port_name}"
+                idx = f"{child_key}.{port_name}"
                 port_list_from[idx] = _PortInfo(port_name=port_name, instance=child_instance, port=port)
 
         # ports from external interfaces
