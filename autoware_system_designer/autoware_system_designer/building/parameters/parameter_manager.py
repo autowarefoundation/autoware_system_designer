@@ -187,6 +187,7 @@ class ParameterManager:
                     {
                         "name": param.name,
                         "value": param.value,
+                        "type": param.data_type,
                         "parameter_type": parameter_type_to_str(param.parameter_type),
                     }
                 )
@@ -579,13 +580,26 @@ class ParameterManager:
                 if parameter_sources and idx < len(parameter_sources):
                     p_source = parameter_sources[idx]
                 param_name = param.get("name")
-                param_type = param.get("type", "string")
                 param_value = param.get("value")
+                explicit_type = param.get("type")
 
                 # Resolve parameter value if resolver is available
                 if self.parameter_resolver:
                     param_value = self.parameter_resolver.resolve_parameter_value(param_value, source=p_source)
 
+                # When no type is declared, re-parse resolved strings via YAML so that
+                # values like "-1.1" or "true" coming from $(var ...) substitutions
+                # recover their proper Python type (mirrors ROS 2 XML launch behaviour).
+                if not explicit_type and isinstance(param_value, str) and not param_value.startswith("$("):
+                    import yaml as _yaml
+                    try:
+                        _parsed = _yaml.safe_load(param_value)
+                        if isinstance(_parsed, (bool, int, float)):
+                            param_value = _parsed
+                    except Exception:
+                        pass
+
+                param_type = explicit_type or self._infer_ros_param_type(param_value)
                 param_value = self._normalize_parameter_value(param_value, param_type, p_source)
 
                 target_instance.parameter_manager.parameters.set_parameter(

@@ -34,6 +34,58 @@ if TYPE_CHECKING:
 
 _SCIENTIFIC_NOTATION_PATTERN = re.compile(r"^[+-]?\d+(\.\d+)?[eE][+-]?\d+$")
 
+_TYPE_ALIASES: dict[str, str] = {
+    "str": "string",
+    "boolean": "bool",
+    "float": "double",
+    "float32": "double",
+    "float64": "double",
+    "integer": "int",
+    "int8": "int",
+    "int16": "int",
+    "int32": "int",
+    "int64": "int",
+    "uint8": "int",
+    "uint16": "int",
+    "uint32": "int",
+    "uint64": "int",
+    "short": "int",
+    "long": "int",
+    "array": "string_array",
+    "directory": "string",
+}
+
+
+def _canonical_type(data_type: str | None, value: Any) -> str:
+    """Return a canonical ROS 2 parameter type name.
+
+    Falls back to inferring from the Python value when data_type is absent or
+    still the generic "string" default despite the value being a non-string type.
+    """
+    normalized = (data_type or "").strip().lower()
+    normalized = _TYPE_ALIASES.get(normalized, normalized)
+
+    # If data_type is absent or is the generic default, infer from value.
+    if not normalized or (normalized == "string" and not isinstance(value, str)):
+        if isinstance(value, bool):
+            return "bool"
+        if isinstance(value, int):
+            return "int"
+        if isinstance(value, float):
+            return "double"
+        if isinstance(value, list):
+            if not value:
+                return "string_array"
+            if isinstance(value[0], bool):
+                return "bool_array"
+            if isinstance(value[0], int):
+                return "int_array"
+            if isinstance(value[0], float):
+                return "double_array"
+            return "string_array"
+
+    return normalized or "string"
+
 
 def _float_to_decimal_str(value: float) -> str:
     """Convert a float to a decimal string without scientific notation."""
@@ -205,7 +257,7 @@ def _collect_parameters(instance: "Instance") -> list[ParameterData]:
         ParameterData(
             name=p.name,
             value=_resolve_scientific_notation(p.value),
-            type=p.data_type,
+            type=_canonical_type(p.data_type, p.value),
             parameter_type=parameter_type_to_str(p.parameter_type),
             source=serialize_source(p.source),
         )
