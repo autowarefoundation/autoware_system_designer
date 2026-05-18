@@ -146,6 +146,7 @@ class Link:
                     # Global output: preserve the global topic; propagate it to the external port
                     topic_parts = reference_port.topic
                     self.to_port.set_topic(topic_parts[:-1], topic_parts[-1])
+                    self.to_port.is_global = True
                 else:
                     reference_port.set_topic(self.to_port.namespace, self.to_port.name)
 
