@@ -399,6 +399,10 @@ class LinkManager:
 
             from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
 
+            if isinstance(to_port, InPort) and to_port.is_global:
+                logger.debug(f"Skipping wildcard connection to global input port '{to_port.port_path}'")
+                continue
+
             self._create_link_from_ports(from_port, to_port, connection.type)
 
     def _check_and_deduplicate_connections(self, connection_list: List[Connection]) -> List[Connection]:
@@ -550,6 +554,9 @@ class LinkManager:
                     continue
 
                 from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
+                if isinstance(to_port, InPort) and to_port.is_global:
+                    logger.debug(f"Skipping connection to global input port '{to_port.port_path}'")
+                    continue
                 self._create_link_from_ports(from_port, to_port, connection.type)
 
         # Create external ports after links are set
@@ -665,7 +672,7 @@ class LinkManager:
         ports: List[LauncherPortData] = []
 
         for port in self.in_ports.values():
-            if port.is_global or port.get_topic() == "":
+            if not port.is_global and port.get_topic() == "":
                 continue
             ports.append(
                 {
@@ -676,8 +683,6 @@ class LinkManager:
             )
 
         for port in self.out_ports.values():
-            if port.is_global:
-                continue
             ports.append(
                 {
                     "name": port.name,
