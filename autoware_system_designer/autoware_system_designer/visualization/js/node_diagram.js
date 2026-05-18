@@ -595,12 +595,20 @@ class NodeDiagramModule extends DiagramBase {
         pg.setAttribute("id", port.id);
         pg.setAttribute("transform", `translate(${port.x},${port.y})`);
 
-        const prect = document.createElementNS(SVG_NS, "rect");
-        prect.setAttribute("width", port.width);
-        prect.setAttribute("height", port.height);
+        const portData = this.elementData.get(port.id) || {};
+        const isGlobal = portData.is_global === true;
+
+        let prect;
+        if (isGlobal) {
+          prect = document.createElementNS(SVG_NS, "polygon");
+          prect.setAttribute("points", "5,-2 12,5 5,12 -2,5");
+        } else {
+          prect = document.createElementNS(SVG_NS, "rect");
+          prect.setAttribute("width", port.width);
+          prect.setAttribute("height", port.height);
+        }
         prect.classList.add("port-rect");
 
-        const portData = this.elementData.get(port.id) || {};
         const title = document.createElementNS(SVG_NS, "title");
         title.textContent = portData.name || "Port";
         prect.appendChild(title);
