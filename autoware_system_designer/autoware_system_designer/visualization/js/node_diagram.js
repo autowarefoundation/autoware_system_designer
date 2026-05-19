@@ -86,7 +86,10 @@ class NodeDiagramModule extends DiagramBase {
           labels: [
             {
               text: port.name || "Port",
-              width: (port.name?.length || 4) * style.portCharW,
+              width: this.measureTextWidth(
+                port.name || "Port",
+                style.portLabelFontSz,
+              ),
               height: style.portSize,
             },
           ],
@@ -122,7 +125,7 @@ class NodeDiagramModule extends DiagramBase {
           { text: instance.name || nodeId || "Unnamed" },
         ],
         namespace: instance.namespace || "",
-        width: style.nodeWidth,
+        width: this.calculateNodeWidth(instance, style),
         height: nodeHeight,
         children: [],
         ports: [],
@@ -217,7 +220,6 @@ class NodeDiagramModule extends DiagramBase {
       nodeWidth:       Math.round(120 * s),
       nodeBaseH:       Math.round(44 * s),
       portSize:        Math.round(5 * s),
-      portCharW:       Math.round(3 * s),
       portSpacing:     Math.round(4 * s),
       nodeSpacing:     Math.round(20 * s),
       elkPadding:      Math.round(20 * s),
@@ -231,6 +233,38 @@ class NodeDiagramModule extends DiagramBase {
       badgeCharW:      Math.round(3 * s),
       badgeFontSz:     Math.round(4 * s),
     };
+  }
+
+  measureTextWidth(text, fontSize) {
+    if (!this._measureCanvas) {
+      this._measureCanvas = document.createElement("canvas");
+    }
+    const ctx = this._measureCanvas.getContext("2d");
+    const fontFamily =
+      getComputedStyle(this.container).fontFamily || "sans-serif";
+    ctx.font = `${fontSize}px ${fontFamily}`;
+    return ctx.measureText(text).width;
+  }
+
+  calculateNodeWidth(instance, style) {
+    const maxWestLabelW = (instance.in_ports || []).reduce(
+      (max, p) =>
+        Math.max(max, this.measureTextWidth(p.name || "Port", style.portLabelFontSz)),
+      0,
+    );
+    const maxEastLabelW = (instance.out_ports || []).reduce(
+      (max, p) =>
+        Math.max(max, this.measureTextWidth(p.name || "Port", style.portLabelFontSz)),
+      0,
+    );
+    const titleName = instance.name || String(instance.unique_id) || "";
+    const titleW = this.measureTextWidth(titleName, style.fontSize);
+    const innerPad = style.portSize * 3;
+    return Math.max(
+      style.nodeWidth,
+      maxWestLabelW + maxEastLabelW + innerPad,
+      titleW + innerPad,
+    );
   }
 
   async layoutAndRenderNodeDiagram(graphData) {
@@ -503,9 +537,7 @@ class NodeDiagramModule extends DiagramBase {
   }
 
   _wrapSVGText(textEl, text, x, maxWidth, fontSize) {
-    const charWidth = fontSize * 0.58;
-    const charsPerLine = Math.max(4, Math.floor(maxWidth / charWidth));
-    if (text.length <= charsPerLine) {
+    if (this.measureTextWidth(text, fontSize) <= maxWidth) {
       textEl.textContent = text;
       return 1;
     }
@@ -513,12 +545,23 @@ class NodeDiagramModule extends DiagramBase {
     const lines = [];
     let remaining = text;
     while (remaining.length > 0) {
-      if (remaining.length <= charsPerLine) {
+      if (this.measureTextWidth(remaining, fontSize) <= maxWidth) {
         lines.push(remaining);
         break;
       }
-      let breakIdx = charsPerLine;
-      for (let i = charsPerLine; i >= Math.ceil(charsPerLine * 0.5); i--) {
+      // Binary search for max chars that fit
+      let lo = 1, hi = remaining.length - 1;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (this.measureTextWidth(remaining.slice(0, mid), fontSize) <= maxWidth) {
+          lo = mid;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      // Prefer breaking at / or _ near the fit point
+      let breakIdx = lo;
+      for (let i = lo; i >= Math.ceil(lo * 0.5); i--) {
         if (remaining[i] === "/" || remaining[i] === "_") {
           breakIdx = i + 1;
           break;
@@ -539,10 +582,21 @@ class NodeDiagramModule extends DiagramBase {
   }
 
   _truncateSVGText(textEl, text, maxWidth, fontSize) {
-    const charWidth = fontSize * 0.52;
-    const maxChars = Math.max(4, Math.floor(maxWidth / charWidth));
-    textEl.textContent =
-      text.length <= maxChars ? text : text.slice(0, maxChars - 1) + "…";
+    if (this.measureTextWidth(text, fontSize) <= maxWidth) {
+      textEl.textContent = text;
+      return;
+    }
+    // Binary search for max chars that fit including the ellipsis
+    let lo = 0, hi = text.length - 1;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (this.measureTextWidth(text.slice(0, mid) + "…", fontSize) <= maxWidth) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    textEl.textContent = lo > 0 ? text.slice(0, lo) + "…" : "…";
   }
 
   renderNode(node, parentGroup, depth = 0) {
