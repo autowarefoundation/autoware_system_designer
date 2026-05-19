@@ -529,8 +529,8 @@ class NodeDiagramModule extends DiagramBase {
     const badgeH = style.badgeH;
     const badgePad = style.badgePad;
     const badgeWidth = Math.min(
-      node.width - badgePad,
-      Math.max(badgeH * 2, badgeText.length * style.badgeCharW),
+      node.width - badgePad * 2,
+      Math.max(badgeH * 2, this.measureTextWidth(badgeText, style.badgeFontSz) + badgePad * 2),
     );
     const badgeX = (node.width - badgeWidth) / 2;
     const badgeY = node.height - badgeH - badgePad;
