@@ -163,8 +163,7 @@ class NodeDiagramModule extends DiagramBase {
             const fromId = String(link.from_port.unique_id);
             const toId = String(link.to_port.unique_id);
 
-            if (!this.portToEdges.has(fromId))
-              this.portToEdges.set(fromId, []);
+            if (!this.portToEdges.has(fromId)) this.portToEdges.set(fromId, []);
             this.portToEdges.get(fromId).push(edgeId);
             if (!this.portToEdges.has(toId)) this.portToEdges.set(toId, []);
             this.portToEdges.get(toId).push(edgeId);
@@ -217,21 +216,23 @@ class NodeDiagramModule extends DiagramBase {
   getLayerStyle(depth) {
     const s = this.getLayerScale(depth);
     return {
-      nodeWidth:       Math.round(120 * s),
-      nodeBaseH:       Math.round(44 * s),
-      portSize:        Math.round(5 * s),
-      portSpacing:     Math.round(4 * s),
-      nodeSpacing:     Math.round(20 * s),
-      elkPadding:      Math.round(20 * s),
-      fontSize:        Math.round(8 * s),
-      nsSize:          Math.round(5 * s),
-      cornerR:         Math.max(1, Math.round(2 * s)),
-      borderW:         Math.max(0.5, +(0.5 * s).toFixed(1)),
+      nodeWidth: Math.round(120 * s),
+      nodeBaseH: Math.round(44 * s),
+      portSize: Math.round(5 * s),
+      portSpacing: Math.round(4 * s),
+      nodeSpacing: Math.round(20 * s),
+      elkPadding: Math.round(20 * s),
+      fontSize: Math.round(8 * s),
+      nsSize: Math.round(5 * s),
+      cornerR: Math.max(1, Math.round(2 * s)),
+      borderW: Math.max(0.5, +(0.5 * s).toFixed(1)),
       portLabelFontSz: Math.round(5 * s),
-      badgeH:          Math.round(8 * s),
-      badgePad:        Math.round(3 * s),
-      badgeCharW:      Math.round(3 * s),
-      badgeFontSz:     Math.round(4 * s),
+      badgeH: Math.round(8 * s),
+      badgePad: Math.round(3 * s),
+      badgeCharW: Math.round(3 * s),
+      badgeFontSz: Math.round(4 * s),
+      arrowW: (2 * s).toFixed(1),
+      arrowH: (1.4 * s).toFixed(1),
     };
   }
 
@@ -249,12 +250,18 @@ class NodeDiagramModule extends DiagramBase {
   calculateNodeWidth(instance, style) {
     const maxWestLabelW = (instance.in_ports || []).reduce(
       (max, p) =>
-        Math.max(max, this.measureTextWidth(p.name || "Port", style.portLabelFontSz)),
+        Math.max(
+          max,
+          this.measureTextWidth(p.name || "Port", style.portLabelFontSz),
+        ),
       0,
     );
     const maxEastLabelW = (instance.out_ports || []).reduce(
       (max, p) =>
-        Math.max(max, this.measureTextWidth(p.name || "Port", style.portLabelFontSz)),
+        Math.max(
+          max,
+          this.measureTextWidth(p.name || "Port", style.portLabelFontSz),
+        ),
       0,
     );
     const titleName = instance.name || String(instance.unique_id) || "";
@@ -348,19 +355,25 @@ class NodeDiagramModule extends DiagramBase {
       : computedStyle.getPropertyValue("--border-hover").trim() || "#adb5bd";
 
     const defs = document.createElementNS(SVG_NS, "defs");
-    const defaultMarker = `
-      <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-        <polygon points="0 0, 10 3.5, 0 7" fill="${arrowColor}" />
-      </marker>`;
-    const presetMarkers = Object.keys(this.colorPresets)
-      .map(
-        (preset) => `
-        <marker id="arrowhead-highlighted-${preset}" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-          <polygon points="0 0, 10 3.5, 0 7" fill="${this.colorPresets[preset].edge}" />
-        </marker>`,
-      )
-      .join("");
-    defs.innerHTML = defaultMarker + presetMarkers;
+    const maxDepth = this.maxDepth || 0;
+    const depthMarkers = Array.from({ length: maxDepth + 1 }, (_, d) => {
+      const { arrowW: mw, arrowH: mh } = this.getLayerStyle(d);
+      const rx = mw;
+      const ry = +(mh / 2).toFixed(2);
+      const presets = Object.keys(this.colorPresets)
+        .map(
+          (preset) =>
+            `<marker id="arrowhead-highlighted-${preset}-depth-${d}" markerWidth="${mw}" markerHeight="${mh}" refX="${rx}" refY="${ry}" orient="auto">` +
+            `<polygon points="0 0, ${mw} ${ry}, 0 ${mh}" fill="${this.colorPresets[preset].edge}" /></marker>`,
+        )
+        .join("");
+      return (
+        `<marker id="arrowhead-depth-${d}" markerWidth="${mw}" markerHeight="${mh}" refX="${rx}" refY="${ry}" orient="auto">` +
+        `<polygon points="0 0, ${mw} ${ry}, 0 ${mh}" fill="${arrowColor}" /></marker>` +
+        presets
+      );
+    }).join("");
+    defs.innerHTML = depthMarkers;
     svgRoot.insertBefore(defs, svg);
 
     this.renderNode(graph, svg);
@@ -438,7 +451,8 @@ class NodeDiagramModule extends DiagramBase {
     scope.querySelectorAll(".highlighted").forEach((el) => {
       el.classList.remove("highlighted");
       if (el.tagName === "path") {
-        el.setAttribute("marker-end", "url(#arrowhead)");
+        const d = parseInt(el.getAttribute("data-depth") || "0", 10);
+        el.setAttribute("marker-end", `url(#arrowhead-depth-${d})`);
         el.style.stroke = "";
         el.style.strokeWidth = "";
       }
@@ -527,9 +541,10 @@ class NodeDiagramModule extends DiagramBase {
     const edgePath = document.getElementById(id);
     if (!edgePath) return;
     edgePath.classList.add("highlighted");
+    const depth = parseInt(edgePath.getAttribute("data-depth") || "0", 10);
     edgePath.setAttribute(
       "marker-end",
-      `url(#arrowhead-highlighted-${colorPreset})`,
+      `url(#arrowhead-highlighted-${colorPreset}-depth-${depth})`,
     );
     edgePath.style.stroke = this.colorPresets[colorPreset].edge;
     edgePath.style.strokeWidth = "3px";
@@ -550,10 +565,13 @@ class NodeDiagramModule extends DiagramBase {
         break;
       }
       // Binary search for max chars that fit
-      let lo = 1, hi = remaining.length - 1;
+      let lo = 1,
+        hi = remaining.length - 1;
       while (lo < hi) {
         const mid = Math.ceil((lo + hi) / 2);
-        if (this.measureTextWidth(remaining.slice(0, mid), fontSize) <= maxWidth) {
+        if (
+          this.measureTextWidth(remaining.slice(0, mid), fontSize) <= maxWidth
+        ) {
           lo = mid;
         } else {
           hi = mid - 1;
@@ -587,10 +605,13 @@ class NodeDiagramModule extends DiagramBase {
       return;
     }
     // Binary search for max chars that fit including the ellipsis
-    let lo = 0, hi = text.length - 1;
+    let lo = 0,
+      hi = text.length - 1;
     while (lo < hi) {
       const mid = Math.ceil((lo + hi) / 2);
-      if (this.measureTextWidth(text.slice(0, mid) + "…", fontSize) <= maxWidth) {
+      if (
+        this.measureTextWidth(text.slice(0, mid) + "…", fontSize) <= maxWidth
+      ) {
         lo = mid;
       } else {
         hi = mid - 1;
@@ -602,7 +623,7 @@ class NodeDiagramModule extends DiagramBase {
   renderNode(node, parentGroup, depth = 0) {
     // const isLeaf = !node.children?.length;
     // const style = this.getLayerStyle(isLeaf ? depth + 1 : depth);
-    const style = this.getLayerStyle(depth); 
+    const style = this.getLayerStyle(depth);
     const g = document.createElementNS(SVG_NS, "g");
     g.setAttribute("transform", `translate(${node.x},${node.y})`);
     g.setAttribute("id", node.id);
@@ -689,7 +710,10 @@ class NodeDiagramModule extends DiagramBase {
       badgeRect.setAttribute("y", badgeY);
       badgeRect.setAttribute("width", badgeWidth);
       badgeRect.setAttribute("height", badgeH);
-      badgeRect.setAttribute("rx", Math.max(1, Math.round(style.cornerR * 0.6)));
+      badgeRect.setAttribute(
+        "rx",
+        Math.max(1, Math.round(style.cornerR * 0.6)),
+      );
       badgeRect.setAttribute("stroke-width", style.borderW);
       badgeRect.style.fill = this.isDarkMode() ? "rgba(0,0,0,0.25)" : "#e9ecef";
       badgeRect.style.stroke = this.isDarkMode() ? "#6c757d" : "#adb5bd";
@@ -823,7 +847,8 @@ class NodeDiagramModule extends DiagramBase {
         });
         path.setAttribute("d", d);
         path.classList.add("edge-path");
-        path.setAttribute("marker-end", "url(#arrowhead)");
+        path.setAttribute("data-depth", String(depth));
+        path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
 
         const edgeData = this.elementData.get(edge.id) || {};
         path.onclick = (e) => {
