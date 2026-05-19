@@ -111,7 +111,7 @@ class NodeDiagramModule extends DiagramBase {
       const nodeHeight = Math.max(
         style.nodeBaseH,
         style.nodeBaseH +
-          maxPorts * (style.portSize + style.portSpacing) +
+          maxPorts * (style.portSpacing * 3) +
           (containerTarget ? style.badgeH + style.badgePad : 0),
       );
 
@@ -121,6 +121,7 @@ class NodeDiagramModule extends DiagramBase {
           { text: instance.namespace || "" },
           { text: instance.name || nodeId || "Unnamed" },
         ],
+        namespace: instance.namespace || "",
         width: style.nodeWidth,
         height: nodeHeight,
         children: [],
@@ -228,7 +229,7 @@ class NodeDiagramModule extends DiagramBase {
       badgeH:          Math.round(8 * s),
       badgePad:        Math.round(3 * s),
       badgeCharW:      Math.round(3 * s),
-      badgeFontSz:     Math.round(6 * s),
+      badgeFontSz:     Math.round(4 * s),
     };
   }
 
@@ -501,6 +502,49 @@ class NodeDiagramModule extends DiagramBase {
     if (edgePath.parentNode) edgePath.parentNode.appendChild(edgePath);
   }
 
+  _wrapSVGText(textEl, text, x, maxWidth, fontSize) {
+    const charWidth = fontSize * 0.58;
+    const charsPerLine = Math.max(4, Math.floor(maxWidth / charWidth));
+    if (text.length <= charsPerLine) {
+      textEl.textContent = text;
+      return 1;
+    }
+    textEl.textContent = "";
+    const lines = [];
+    let remaining = text;
+    while (remaining.length > 0) {
+      if (remaining.length <= charsPerLine) {
+        lines.push(remaining);
+        break;
+      }
+      let breakIdx = charsPerLine;
+      for (let i = charsPerLine; i >= Math.ceil(charsPerLine * 0.5); i--) {
+        if (remaining[i] === "/" || remaining[i] === "_") {
+          breakIdx = i + 1;
+          break;
+        }
+      }
+      lines.push(remaining.slice(0, breakIdx));
+      remaining = remaining.slice(breakIdx);
+    }
+    const lineSpacing = fontSize + 2;
+    lines.forEach((line, i) => {
+      const tspan = document.createElementNS(SVG_NS, "tspan");
+      tspan.setAttribute("x", x);
+      if (i > 0) tspan.setAttribute("dy", lineSpacing + "px");
+      tspan.textContent = line;
+      textEl.appendChild(tspan);
+    });
+    return lines.length;
+  }
+
+  _truncateSVGText(textEl, text, maxWidth, fontSize) {
+    const charWidth = fontSize * 0.52;
+    const maxChars = Math.max(4, Math.floor(maxWidth / charWidth));
+    textEl.textContent =
+      text.length <= maxChars ? text : text.slice(0, maxChars - 1) + "…";
+  }
+
   renderNode(node, parentGroup, depth = 0) {
     // const isLeaf = !node.children?.length;
     // const style = this.getLayerStyle(isLeaf ? depth + 1 : depth);
@@ -580,8 +624,8 @@ class NodeDiagramModule extends DiagramBase {
       const badgeH = style.badgeH;
       const badgeText = String(containerTarget);
       const badgeWidth = Math.min(
-        node.width - 2 * badgePad,
-        Math.max(badgeH * 4, badgeText.length * style.badgeCharW + badgePad * 2),
+        node.width - badgePad,
+        Math.max(badgeH * 2, badgeText.length * style.badgeCharW),
       );
       const badgeX = (node.width - badgeWidth) / 2;
       const badgeY = node.height - badgeH - badgePad;
@@ -600,7 +644,12 @@ class NodeDiagramModule extends DiagramBase {
       const badgeLabel = document.createElementNS(SVG_NS, "text");
       badgeLabel.setAttribute("x", node.width / 2);
       badgeLabel.setAttribute("y", badgeY + badgeH / 2 + 0.5);
-      badgeLabel.textContent = badgeText;
+      this._truncateSVGText(
+        badgeLabel,
+        badgeText,
+        badgeWidth - style.badgePad * 2,
+        style.badgeFontSz,
+      );
       badgeLabel.classList.add("node-label");
       badgeLabel.style.fontSize = style.badgeFontSz + "px";
       badgeLabel.style.fill = this.isDarkMode() ? "#dee2e6" : "#495057";
@@ -615,14 +664,20 @@ class NodeDiagramModule extends DiagramBase {
         const nsText = document.createElementNS(SVG_NS, "text");
         nsText.setAttribute("x", node.width / 2);
         nsText.setAttribute("y", yOffset);
-        nsText.textContent = node.labels[0].text + "/";
         nsText.classList.add("node-label");
         nsText.style.fontSize = style.nsSize + "px";
         nsText.style.fill = this.isDarkMode()
           ? visGuide.dark_text_color || "#adb5bd"
           : visGuide.text_color || "#6c757d";
+        const nsLines = this._wrapSVGText(
+          nsText,
+          node.namespace,
+          node.width / 2,
+          node.width - style.badgePad * 2,
+          style.nsSize,
+        );
         g.appendChild(nsText);
-        yOffset += style.nsSize + 2;
+        yOffset += (style.nsSize + 2) * nsLines;
       }
 
       const nameText = document.createElementNS(SVG_NS, "text");
