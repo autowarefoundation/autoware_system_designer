@@ -71,7 +71,7 @@ class NodeDiagramModule extends DiagramBase {
     this.portToEdges.clear();
     this.portToNode.clear();
 
-    const addPorts = (node, ports, side, style) => {
+    const addPorts = (node, ports, side) => {
       (ports || []).forEach((port) => {
         if (!port.unique_id) return;
         const portId = String(port.unique_id);
@@ -79,24 +79,23 @@ class NodeDiagramModule extends DiagramBase {
         this.portToNode.set(portId, node.id);
         node.ports.push({
           id: portId,
-          width: style.portSize,
-          height: style.portSize,
+          width: 10,
+          height: 10,
           properties: { "org.eclipse.elk.port.side": side },
           labels: [
             {
               text: port.name || "Port",
-              width: (port.name?.length || 4) * style.portCharW,
-              height: style.portSize,
+              width: (port.name?.length || 4) * 6,
+              height: 10,
             },
           ],
         });
       });
     };
 
-    const convertNode = (instance, depth = 0) => {
+    const convertNode = (instance) => {
       if (!instance?.unique_id) return null;
 
-      const style = this.getLayerStyle(depth);
       const nodeId = String(instance.unique_id);
       this.elementData.set(nodeId, instance);
 
@@ -106,18 +105,17 @@ class NodeDiagramModule extends DiagramBase {
         (instance.out_ports || []).length,
       );
       const nodeHeight = Math.max(
-        Math.round(style.nodeBaseH * 1.25),
-        style.nodeBaseH + maxPorts * style.portPerRow + (containerTarget ? 22 : 0),
+        100,
+        80 + maxPorts * 25 + (containerTarget ? 22 : 0),
       );
 
-      const p = style.elkPadding;
       const node = {
         id: nodeId,
         labels: [
           { text: instance.namespace || "" },
           { text: instance.name || nodeId || "Unnamed" },
         ],
-        width: style.nodeWidth,
+        width: 300,
         height: nodeHeight,
         children: [],
         ports: [],
@@ -126,16 +124,15 @@ class NodeDiagramModule extends DiagramBase {
           "org.eclipse.elk.nodeLabels.placement": "H_CENTER V_TOP",
           "org.eclipse.elk.portLabels.placement": "INSIDE",
           "org.eclipse.elk.portAlignment.default": "CENTER",
-          "org.eclipse.elk.spacing.portPort": String(style.portSpacing),
-          "org.eclipse.elk.padding": `[top=${p},left=${p},bottom=${p},right=${p}]`,
+          "org.eclipse.elk.spacing.portPort": "15",
         },
       };
 
-      addPorts(node, instance.in_ports, "WEST", style);
-      addPorts(node, instance.out_ports, "EAST", style);
+      addPorts(node, instance.in_ports, "WEST");
+      addPorts(node, instance.out_ports, "EAST");
 
       if (instance.children?.length > 0) {
-        node.children = instance.children.map((child) => convertNode(child, depth + 1)).filter(Boolean);
+        node.children = instance.children.map(convertNode).filter(Boolean);
         if (node.children.length > 0) {
           delete node.width;
           delete node.height;
@@ -179,29 +176,6 @@ class NodeDiagramModule extends DiagramBase {
     return rootNode;
   }
 
-  getLayerStyle(depth) {
-    const s = Math.pow(0.3, depth);
-    return {
-      nodeWidth:   Math.round(Math.max(160, 300 * s)),
-      nodeBaseH:   Math.round(Math.max(50,   80 * s)),
-      portPerRow:  Math.round(Math.max(14,   25 * s)),
-      portSize:    Math.max(6, Math.round(10 * s)),
-      portCharW:   Math.max(4, 6 * s),
-      portSpacing: Math.max(6, Math.round(15 * s)),
-      elkPadding:  Math.round(Math.max(10, 1 / s)),
-      fontSize:    Math.max(10, Math.round(36 - depth * 4)),
-      nsSize:      Math.max(4,  Math.round(7 - depth * 0.5)),
-      cornerR:     Math.max(2,  Math.round(8 - depth)),
-      borderW:          Math.max(1,  +(3 - depth * 0.4).toFixed(1)),
-      portLabelFontSz:  Math.max(5, Math.round(9 * s)),
-      bold:        depth <= 1,
-      badgeH:      Math.max(10, Math.round(14 * s)),
-      badgePad:    Math.max(3,  Math.round(6  * s)),
-      badgeCharW:  Math.max(4,  6 * s),
-      badgeFontSz: Math.max(7,  Math.round(9  * s)),
-    };
-  }
-
   getContainerTarget(data) {
     if (!data) return "";
     return (
@@ -226,6 +200,7 @@ class NodeDiagramModule extends DiagramBase {
         "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": "30",
         "org.eclipse.elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
         "org.eclipse.elk.layered.layering.strategy": "INTERACTIVE",
+        "org.eclipse.elk.padding": "[top=50,left=50,bottom=50,right=50]",
       },
     });
 
@@ -482,8 +457,6 @@ class NodeDiagramModule extends DiagramBase {
   }
 
   renderNode(node, parentGroup, depth = 0) {
-    const style = this.getLayerStyle(depth);
-
     const g = document.createElementNS(SVG_NS, "g");
     g.setAttribute("transform", `translate(${node.x},${node.y})`);
     g.setAttribute("id", node.id);
@@ -492,8 +465,7 @@ class NodeDiagramModule extends DiagramBase {
     const rect = document.createElementNS(SVG_NS, "rect");
     rect.setAttribute("width", node.width);
     rect.setAttribute("height", node.height);
-    rect.setAttribute("rx", style.cornerR);
-    rect.style.strokeWidth = style.borderW + 'px';
+    rect.setAttribute("rx", 4);
     rect.classList.add("node-rect");
 
     const userData = this.elementData.get(node.id) || {};
@@ -555,12 +527,12 @@ class NodeDiagramModule extends DiagramBase {
 
     const containerTarget = this.getContainerTarget(userData);
     if (containerTarget) {
-      const badgePadding = style.badgePad;
-      const badgeHeight = style.badgeH;
+      const badgePadding = 6;
+      const badgeHeight = 14;
       const badgeText = String(containerTarget);
       const badgeWidth = Math.min(
         node.width - 2 * badgePadding,
-        Math.max(48, badgeText.length * style.badgeCharW + 12),
+        Math.max(48, badgeText.length * 6 + 12),
       );
       const badgeX = (node.width - badgeWidth) / 2;
       const badgeY = node.height - badgeHeight - badgePadding;
@@ -581,13 +553,13 @@ class NodeDiagramModule extends DiagramBase {
       badgeLabel.setAttribute("y", badgeY + badgeHeight / 2 + 0.5);
       badgeLabel.textContent = badgeText;
       badgeLabel.classList.add("node-label");
-      badgeLabel.style.fontSize = `${style.badgeFontSz}px`;
+      badgeLabel.style.fontSize = "9px";
       badgeLabel.style.fill = this.isDarkMode() ? "#dee2e6" : "#495057";
       g.appendChild(badgeLabel);
     }
 
     if (node.labels?.length > 0) {
-      const fontSize = style.fontSize;
+      const fontSize = Math.max(12, 36 - depth * 5);
       let yOffset = 10;
 
       if (node.labels.length > 1 && node.labels[0].text) {
@@ -596,7 +568,7 @@ class NodeDiagramModule extends DiagramBase {
         nsText.setAttribute("y", yOffset);
         nsText.textContent = node.labels[0].text + "/";
         nsText.classList.add("node-label");
-        nsText.style.fontSize = `${style.nsSize}px`;
+        nsText.style.fontSize = "5px";
         nsText.style.fill = this.isDarkMode()
           ? visGuide.dark_text_color || "#adb5bd"
           : visGuide.text_color || "#6c757d";
@@ -613,7 +585,7 @@ class NodeDiagramModule extends DiagramBase {
       nameText.style.fill = this.isDarkMode()
         ? visGuide.dark_text_color || "#e9ecef"
         : visGuide.text_color || "#333";
-      if (style.bold) nameText.style.fontWeight = "bold";
+      if (depth <= 1) nameText.style.fontWeight = "bold";
       g.appendChild(nameText);
     }
 
@@ -657,7 +629,6 @@ class NodeDiagramModule extends DiagramBase {
             text.setAttribute("y", (label.y || 0) + (label.height || 0) / 2);
             text.textContent = label.text;
             text.classList.add("port-label");
-            text.style.fontSize = style.portLabelFontSz + 'px';
             text.style.fill = this.isDarkMode()
               ? visGuide.dark_text_color || "#e9ecef"
               : visGuide.text_color || "#333";
