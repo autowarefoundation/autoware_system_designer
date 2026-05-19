@@ -247,14 +247,22 @@ class NodeDiagramModule extends DiagramBase {
   }
 
   measureTextWidth(text, fontSize) {
-    if (!this._measureCanvas) {
-      this._measureCanvas = document.createElement("canvas");
+    if (!this._measureCtx) {
+      this._measureCtx = document.createElement("canvas").getContext("2d");
+      this._textMeasureCache = new Map();
+      this._measureFontFamily = null;
     }
-    const ctx = this._measureCanvas.getContext("2d");
-    const fontFamily =
-      getComputedStyle(this.container).fontFamily || "sans-serif";
-    ctx.font = `${fontSize}px ${fontFamily}`;
-    return ctx.measureText(text).width;
+    if (!this._measureFontFamily) {
+      this._measureFontFamily =
+        getComputedStyle(this.container).fontFamily || "sans-serif";
+    }
+    const key = `${fontSize}|${text}`;
+    if (this._textMeasureCache.has(key)) return this._textMeasureCache.get(key);
+    const font = `${fontSize}px ${this._measureFontFamily}`;
+    if (this._measureCtx.font !== font) this._measureCtx.font = font;
+    const width = this._measureCtx.measureText(text).width;
+    this._textMeasureCache.set(key, width);
+    return width;
   }
 
   calculateNodeWidth(instance, style) {
@@ -339,6 +347,13 @@ class NodeDiagramModule extends DiagramBase {
   }
 
   _computeThemeStyles() {
+    const newFontFamily =
+      getComputedStyle(this.container).fontFamily || "sans-serif";
+    if (newFontFamily !== this._measureFontFamily) {
+      this._measureFontFamily = newFontFamily;
+      this._textMeasureCache?.clear();
+    }
+
     const cs = getComputedStyle(document.documentElement);
 
     this.colorPresets = {
