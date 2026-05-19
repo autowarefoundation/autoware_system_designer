@@ -399,6 +399,19 @@ class LinkManager:
 
             from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
 
+            if isinstance(to_port, InPort) and to_port.is_global:
+                msg = (
+                    "[E_WILDCARD_GLOBAL_INPUT] Wildcard connection targets a global input port and "
+                    f"cannot create a link: '{connection.from_instance}.{connection.from_port_name}' -> "
+                    f"'{connection.to_instance}.{connection.to_port_name}' "
+                    f"(resolved target port: '{to_port.port_path}')"
+                )
+                if self.instance.entity_type in ("module", "system"):
+                    raise ValidationError(msg)
+
+                logger.warning(msg)
+                continue
+
             self._create_link_from_ports(from_port, to_port, connection.type)
 
     def _check_and_deduplicate_connections(self, connection_list: List[Connection]) -> List[Connection]:
@@ -550,6 +563,13 @@ class LinkManager:
                     continue
 
                 from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
+                if isinstance(to_port, InPort) and to_port.is_global:
+                    logger.warning(
+                        "Skipping connection targeting global input port "
+                        f"'{to_port.port_path}'; Connection: '{from_key}' -> '{to_key}'"
+                        + format_source(getattr(connection, "source", None))
+                    )
+                    continue
                 self._create_link_from_ports(from_port, to_port, connection.type)
 
         # Create external ports after links are set
@@ -665,7 +685,7 @@ class LinkManager:
         ports: List[LauncherPortData] = []
 
         for port in self.in_ports.values():
-            if port.is_global or port.get_topic() == "":
+            if not port.is_global and port.get_topic() == "":
                 continue
             ports.append(
                 {
@@ -676,8 +696,6 @@ class LinkManager:
             )
 
         for port in self.out_ports.values():
-            if port.is_global:
-                continue
             ports.append(
                 {
                     "name": port.name,

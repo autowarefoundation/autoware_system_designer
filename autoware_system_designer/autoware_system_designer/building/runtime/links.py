@@ -119,9 +119,15 @@ class Link:
                 to_port_ref.set_servers(from_port_list)
 
             # determine the topic, set it to the from-ports to publish and to-ports to subscribe
-            from_port_ref.set_topic(self.from_port.namespace, self.from_port.name)
-            for to_port_ref in to_port_list:
-                to_port_ref.set_topic(self.from_port.namespace, self.from_port.name)
+            if getattr(from_port_ref, "is_global", False) and from_port_ref.topic:
+                # Global output: preserve the global topic; propagate it to subscribers
+                topic_parts = from_port_ref.topic
+                for to_port_ref in to_port_list:
+                    to_port_ref.set_topic(topic_parts[:-1], topic_parts[-1])
+            else:
+                from_port_ref.set_topic(self.from_port.namespace, self.from_port.name)
+                for to_port_ref in to_port_list:
+                    to_port_ref.set_topic(self.from_port.namespace, self.from_port.name)
 
             # set the trigger event of the to-port
             for to_port_ref in to_port_list:
@@ -136,7 +142,13 @@ class Link:
             self.to_port.set_references(reference_port_list)
             # set the topic name to the external output, whether it is connected or not
             for reference_port in reference_port_list:
-                reference_port.set_topic(self.to_port.namespace, self.to_port.name)
+                if getattr(reference_port, "is_global", False) and reference_port.topic:
+                    # Global output: preserve the global topic; propagate it to the external port
+                    topic_parts = reference_port.topic
+                    self.to_port.set_topic(topic_parts[:-1], topic_parts[-1])
+                    self.to_port.is_global = True
+                else:
+                    reference_port.set_topic(self.to_port.namespace, self.to_port.name)
 
         # case 3: from external input to internal input
         elif not is_from_port_internal and is_to_port_internal:
