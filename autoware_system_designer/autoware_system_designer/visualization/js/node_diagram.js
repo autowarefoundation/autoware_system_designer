@@ -454,7 +454,8 @@ class NodeDiagramModule extends DiagramBase {
           visGuide.medium_color ||
           defaults.dark.nodeBg;
       }
-      strokeColor = visGuide.dark_color || visGuide.color || defaults.dark.stroke;
+      strokeColor =
+        visGuide.dark_color || visGuide.color || defaults.dark.stroke;
       if (depth === 0) fillColor = defaults.dark.rootBg;
     } else {
       fillColor = visGuide.background_color || defaults.light.bg;
@@ -684,7 +685,9 @@ class NodeDiagramModule extends DiagramBase {
         hi = remaining.length - 1;
       while (lo < hi) {
         const mid = Math.ceil((lo + hi) / 2);
-        if (this.measureTextWidth(remaining.slice(0, mid), fontSize) <= maxWidth) {
+        if (
+          this.measureTextWidth(remaining.slice(0, mid), fontSize) <= maxWidth
+        ) {
           lo = mid;
         } else {
           hi = mid - 1;
@@ -720,7 +723,9 @@ class NodeDiagramModule extends DiagramBase {
       hi = text.length - 1;
     while (lo < hi) {
       const mid = Math.ceil((lo + hi) / 2);
-      if (this.measureTextWidth(text.slice(0, mid) + "…", fontSize) <= maxWidth) {
+      if (
+        this.measureTextWidth(text.slice(0, mid) + "…", fontSize) <= maxWidth
+      ) {
         lo = mid;
       } else {
         hi = mid - 1;
@@ -952,7 +957,8 @@ class NodeDiagramModule extends DiagramBase {
           const toId = String(
             edgeData.to_port?.unique_id ?? edgeData.to_port ?? "",
           );
-          if (direction === "upstream" && toId === currentId) queue.push(edgeId);
+          if (direction === "upstream" && toId === currentId)
+            queue.push(edgeId);
           if (direction === "downstream" && fromId === currentId)
             queue.push(edgeId);
         });
