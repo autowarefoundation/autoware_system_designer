@@ -70,8 +70,9 @@ class NodeDiagramModule extends DiagramBase {
     this.elementData.clear();
     this.portToEdges.clear();
     this.portToNode.clear();
+    this.maxDepth = this.findMaxDepth(root);
 
-    const addPorts = (node, ports, side) => {
+    const addPorts = (node, ports, side, style) => {
       (ports || []).forEach((port) => {
         if (!port.unique_id) return;
         const portId = String(port.unique_id);
@@ -79,23 +80,26 @@ class NodeDiagramModule extends DiagramBase {
         this.portToNode.set(portId, node.id);
         node.ports.push({
           id: portId,
-          width: 10,
-          height: 10,
+          width: style.portSize,
+          height: style.portSize,
           properties: { "org.eclipse.elk.port.side": side },
           labels: [
             {
               text: port.name || "Port",
-              width: (port.name?.length || 4) * 6,
-              height: 10,
+              width: (port.name?.length || 4) * style.portCharW,
+              height: style.portSize,
             },
           ],
         });
       });
     };
 
-    const convertNode = (instance) => {
+    const convertNode = (instance, depth = 0) => {
       if (!instance?.unique_id) return null;
 
+      // const isLeaf = !instance.children?.length;
+      // const style = this.getLayerStyle(isLeaf ? depth + 1 : depth);
+      const style = this.getLayerStyle(depth);
       const nodeId = String(instance.unique_id);
       this.elementData.set(nodeId, instance);
 
@@ -105,8 +109,10 @@ class NodeDiagramModule extends DiagramBase {
         (instance.out_ports || []).length,
       );
       const nodeHeight = Math.max(
-        100,
-        80 + maxPorts * 25 + (containerTarget ? 22 : 0),
+        style.nodeBaseH,
+        style.nodeBaseH +
+          maxPorts * (style.portSize + style.portSpacing) +
+          (containerTarget ? style.badgeH + style.badgePad : 0),
       );
 
       const node = {
@@ -115,7 +121,7 @@ class NodeDiagramModule extends DiagramBase {
           { text: instance.namespace || "" },
           { text: instance.name || nodeId || "Unnamed" },
         ],
-        width: 300,
+        width: style.nodeWidth,
         height: nodeHeight,
         children: [],
         ports: [],
@@ -124,15 +130,19 @@ class NodeDiagramModule extends DiagramBase {
           "org.eclipse.elk.nodeLabels.placement": "H_CENTER V_TOP",
           "org.eclipse.elk.portLabels.placement": "INSIDE",
           "org.eclipse.elk.portAlignment.default": "CENTER",
-          "org.eclipse.elk.spacing.portPort": "15",
+          "org.eclipse.elk.spacing.portPort": String(style.portSpacing),
+          "org.eclipse.elk.spacing.nodeNode": String(style.nodeSpacing),
+          "org.eclipse.elk.padding": `[top=${style.elkPadding},left=${style.elkPadding},bottom=${style.elkPadding},right=${style.elkPadding}]`,
         },
       };
 
-      addPorts(node, instance.in_ports, "WEST");
-      addPorts(node, instance.out_ports, "EAST");
+      addPorts(node, instance.in_ports, "WEST", style);
+      addPorts(node, instance.out_ports, "EAST", style);
 
       if (instance.children?.length > 0) {
-        node.children = instance.children.map(convertNode).filter(Boolean);
+        node.children = instance.children
+          .map((child) => convertNode(child, depth + 1))
+          .filter(Boolean);
         if (node.children.length > 0) {
           delete node.width;
           delete node.height;
@@ -149,7 +159,8 @@ class NodeDiagramModule extends DiagramBase {
             const fromId = String(link.from_port.unique_id);
             const toId = String(link.to_port.unique_id);
 
-            if (!this.portToEdges.has(fromId)) this.portToEdges.set(fromId, []);
+            if (!this.portToEdges.has(fromId))
+              this.portToEdges.set(fromId, []);
             this.portToEdges.get(fromId).push(edgeId);
             if (!this.portToEdges.has(toId)) this.portToEdges.set(toId, []);
             this.portToEdges.get(toId).push(edgeId);
@@ -185,6 +196,40 @@ class NodeDiagramModule extends DiagramBase {
       data.launcher?.container_target ||
       ""
     );
+  }
+
+  findMaxDepth(instance, depth = 0) {
+    if (!instance?.children?.length) return depth;
+    return Math.max(
+      ...instance.children.map((c) => this.findMaxDepth(c, depth + 1)),
+    );
+  }
+
+  getLayerScale(depth) {
+    const SCALE_RATIO = 1.8;
+    return Math.pow(SCALE_RATIO, this.maxDepth - depth);
+  }
+
+  getLayerStyle(depth) {
+    const s = this.getLayerScale(depth);
+    return {
+      nodeWidth:       Math.round(120 * s),
+      nodeBaseH:       Math.round(44 * s),
+      portSize:        Math.round(5 * s),
+      portCharW:       Math.round(3 * s),
+      portSpacing:     Math.round(4 * s),
+      nodeSpacing:     Math.round(20 * s),
+      elkPadding:      Math.round(20 * s),
+      fontSize:        Math.round(8 * s),
+      nsSize:          Math.round(5 * s),
+      cornerR:         Math.max(1, Math.round(2 * s)),
+      borderW:         Math.max(0.5, +(0.5 * s).toFixed(1)),
+      portLabelFontSz: Math.round(5 * s),
+      badgeH:          Math.round(8 * s),
+      badgePad:        Math.round(3 * s),
+      badgeCharW:      Math.round(3 * s),
+      badgeFontSz:     Math.round(6 * s),
+    };
   }
 
   async layoutAndRenderNodeDiagram(graphData) {
@@ -457,6 +502,9 @@ class NodeDiagramModule extends DiagramBase {
   }
 
   renderNode(node, parentGroup, depth = 0) {
+    // const isLeaf = !node.children?.length;
+    // const style = this.getLayerStyle(isLeaf ? depth + 1 : depth);
+    const style = this.getLayerStyle(depth); 
     const g = document.createElementNS(SVG_NS, "g");
     g.setAttribute("transform", `translate(${node.x},${node.y})`);
     g.setAttribute("id", node.id);
@@ -465,7 +513,7 @@ class NodeDiagramModule extends DiagramBase {
     const rect = document.createElementNS(SVG_NS, "rect");
     rect.setAttribute("width", node.width);
     rect.setAttribute("height", node.height);
-    rect.setAttribute("rx", 4);
+    rect.setAttribute("rx", style.cornerR);
     rect.classList.add("node-rect");
 
     const userData = this.elementData.get(node.id) || {};
@@ -498,6 +546,7 @@ class NodeDiagramModule extends DiagramBase {
 
     rect.setAttribute("fill", fillColor);
     rect.setAttribute("stroke", strokeColor);
+    rect.setAttribute("stroke-width", style.borderW);
 
     rect.onclick = (e) => {
       if (this.hasDragged) return;
@@ -527,40 +576,40 @@ class NodeDiagramModule extends DiagramBase {
 
     const containerTarget = this.getContainerTarget(userData);
     if (containerTarget) {
-      const badgePadding = 6;
-      const badgeHeight = 14;
+      const badgePad = style.badgePad;
+      const badgeH = style.badgeH;
       const badgeText = String(containerTarget);
       const badgeWidth = Math.min(
-        node.width - 2 * badgePadding,
-        Math.max(48, badgeText.length * 6 + 12),
+        node.width - 2 * badgePad,
+        Math.max(badgeH * 4, badgeText.length * style.badgeCharW + badgePad * 2),
       );
       const badgeX = (node.width - badgeWidth) / 2;
-      const badgeY = node.height - badgeHeight - badgePadding;
+      const badgeY = node.height - badgeH - badgePad;
 
       const badgeRect = document.createElementNS(SVG_NS, "rect");
       badgeRect.setAttribute("x", badgeX);
       badgeRect.setAttribute("y", badgeY);
       badgeRect.setAttribute("width", badgeWidth);
-      badgeRect.setAttribute("height", badgeHeight);
-      badgeRect.setAttribute("rx", 3);
+      badgeRect.setAttribute("height", badgeH);
+      badgeRect.setAttribute("rx", Math.max(1, Math.round(style.cornerR * 0.6)));
+      badgeRect.setAttribute("stroke-width", style.borderW);
       badgeRect.style.fill = this.isDarkMode() ? "rgba(0,0,0,0.25)" : "#e9ecef";
       badgeRect.style.stroke = this.isDarkMode() ? "#6c757d" : "#adb5bd";
-      badgeRect.style.strokeWidth = "1";
       g.appendChild(badgeRect);
 
       const badgeLabel = document.createElementNS(SVG_NS, "text");
       badgeLabel.setAttribute("x", node.width / 2);
-      badgeLabel.setAttribute("y", badgeY + badgeHeight / 2 + 0.5);
+      badgeLabel.setAttribute("y", badgeY + badgeH / 2 + 0.5);
       badgeLabel.textContent = badgeText;
       badgeLabel.classList.add("node-label");
-      badgeLabel.style.fontSize = "9px";
+      badgeLabel.style.fontSize = style.badgeFontSz + "px";
       badgeLabel.style.fill = this.isDarkMode() ? "#dee2e6" : "#495057";
       g.appendChild(badgeLabel);
     }
 
     if (node.labels?.length > 0) {
-      const fontSize = Math.max(12, 36 - depth * 5);
-      let yOffset = 10;
+      const fontSize = style.fontSize;
+      let yOffset = Math.round(fontSize * 0.8);
 
       if (node.labels.length > 1 && node.labels[0].text) {
         const nsText = document.createElementNS(SVG_NS, "text");
@@ -568,12 +617,12 @@ class NodeDiagramModule extends DiagramBase {
         nsText.setAttribute("y", yOffset);
         nsText.textContent = node.labels[0].text + "/";
         nsText.classList.add("node-label");
-        nsText.style.fontSize = "5px";
+        nsText.style.fontSize = style.nsSize + "px";
         nsText.style.fill = this.isDarkMode()
           ? visGuide.dark_text_color || "#adb5bd"
           : visGuide.text_color || "#6c757d";
         g.appendChild(nsText);
-        yOffset += 8;
+        yOffset += style.nsSize + 2;
       }
 
       const nameText = document.createElementNS(SVG_NS, "text");
@@ -601,7 +650,12 @@ class NodeDiagramModule extends DiagramBase {
         let prect;
         if (isGlobal) {
           prect = document.createElementNS(SVG_NS, "polygon");
-          prect.setAttribute("points", "5,-2 12,5 5,12 -2,5");
+          const ps = port.width;
+          const h = ps / 2;
+          prect.setAttribute(
+            "points",
+            `${h},${-h * 0.4} ${ps + h * 0.4},${h} ${h},${ps + h * 0.4} ${-h * 0.4},${h}`,
+          );
         } else {
           prect = document.createElementNS(SVG_NS, "rect");
           prect.setAttribute("width", port.width);
@@ -629,6 +683,7 @@ class NodeDiagramModule extends DiagramBase {
             text.setAttribute("y", (label.y || 0) + (label.height || 0) / 2);
             text.textContent = label.text;
             text.classList.add("port-label");
+            text.style.fontSize = style.portLabelFontSz + "px";
             text.style.fill = this.isDarkMode()
               ? visGuide.dark_text_color || "#e9ecef"
               : visGuide.text_color || "#333";
