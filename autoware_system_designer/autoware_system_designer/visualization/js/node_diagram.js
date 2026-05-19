@@ -221,7 +221,7 @@ class NodeDiagramModule extends DiagramBase {
   // ── Styling / metrics ────────────────────────────────────────────────────────
 
   getLayerScale(depth) {
-    const SCALE_RATIO = 1.85;
+    const SCALE_RATIO = 1.9;
     return Math.pow(SCALE_RATIO, this.maxDepth - depth);
   }
 
@@ -232,16 +232,16 @@ class NodeDiagramModule extends DiagramBase {
       nodeBaseH: Math.round(44 * s),
       portSize: Math.round(5 * s),
       portSpacing: Math.round(4 * s),
-      nodeSpacing: Math.round(20 * s),
-      edgeNodeSpacing: Math.round(5 * s),
-      edgeNodeBetweenLayers: Math.round(10 * s),
-      edgeEdgeSpacing: Math.round(5 * s),
-      edgeEdgeBetweenLayers: Math.round(7 * s),
+      nodeSpacing: Math.round(5 * s),
+      edgeNodeSpacing: Math.round(3 * s),
+      edgeNodeBetweenLayers: Math.round(3 * s),
+      edgeEdgeSpacing: Math.round(4 * s),
+      edgeEdgeBetweenLayers: Math.round(4 * s),
       elkPadding: Math.round(20 * s),
       fontSize: Math.round(8 * s),
       nsSize: Math.round(5 * s),
       cornerR: Math.max(1, Math.round(2 * s)),
-      borderW: (0.5 * s).toFixed(1),
+      borderW: (1.5 * s).toFixed(1),
       edgeW: (0.3 * s).toFixed(1),
       portLabelFontSz: Math.round(5 * s),
       portLabelOffset: Math.round(3 * s),
@@ -863,12 +863,15 @@ class NodeDiagramModule extends DiagramBase {
         el.style.strokeWidth = "";
       }
     });
-    scope
-      .querySelectorAll(".module-highlighted")
-      .forEach((el) => el.classList.remove("module-highlighted"));
-    scope
-      .querySelectorAll(".child-highlighted")
-      .forEach((el) => el.classList.remove("child-highlighted"));
+    scope.querySelectorAll(".module-highlighted").forEach((el) => {
+      el.classList.remove("module-highlighted");
+      const rect = el.querySelector(":scope > .node-rect");
+      if (rect) rect.style.strokeWidth = "";
+    });
+    scope.querySelectorAll(".child-highlighted").forEach((el) => {
+      el.classList.remove("child-highlighted");
+      el.style.strokeWidth = "";
+    });
     scope.querySelectorAll(".port-highlighted").forEach((el) => {
       el.classList.remove("port-highlighted");
       el.style.fill = "";
@@ -884,6 +887,12 @@ class NodeDiagramModule extends DiagramBase {
   highlightModule(node, moduleGroup) {
     moduleGroup.classList.add("module-highlighted");
 
+    const moduleRect = moduleGroup.querySelector(":scope > .node-rect");
+    if (moduleRect) {
+      const currentBorderW = parseFloat(moduleRect.getAttribute("stroke-width") || "1");
+      moduleRect.style.strokeWidth = (currentBorderW * 2).toFixed(1) + "px";
+    }
+
     Array.from(moduleGroup.children)
       .filter(
         (child) =>
@@ -892,7 +901,7 @@ class NodeDiagramModule extends DiagramBase {
       .forEach((path) => {
         path.classList.add("highlighted");
         const d = parseInt(path.getAttribute("data-depth") || "0", 10);
-        path.style.strokeWidth = this.getLayerStyle(d).edgeW + "px";
+        path.style.strokeWidth = (parseFloat(this.getLayerStyle(d).edgeW) * 2).toFixed(1) + "px";
       });
 
     if (node.children?.length > 0) {
@@ -903,7 +912,12 @@ class NodeDiagramModule extends DiagramBase {
             child.classList.contains("node-group") &&
             child.id === childNode.id,
         );
-        childGroup?.querySelector("rect")?.classList.add("child-highlighted");
+        const childRect = childGroup?.querySelector(".node-rect");
+        if (childRect) {
+          childRect.classList.add("child-highlighted");
+          const currentBorderW = parseFloat(childRect.getAttribute("stroke-width") || "1");
+          childRect.style.strokeWidth = (currentBorderW * 2).toFixed(1) + "px";
+        }
       });
     }
   }
@@ -1052,7 +1066,8 @@ class NodeDiagramModule extends DiagramBase {
 
     rect.classList.add("node-connection-highlight");
     rect.style.stroke = strokeColor;
-    rect.style.strokeWidth = "3px";
+    const currentBorderW = parseFloat(rect.getAttribute("stroke-width") || "1");
+    rect.style.strokeWidth = (currentBorderW * 2).toFixed(1) + "px";
   }
 
   _applyPortHighlight(id, colorPreset, directionHint = null) {
