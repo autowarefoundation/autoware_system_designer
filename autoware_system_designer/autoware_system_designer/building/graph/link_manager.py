@@ -564,7 +564,11 @@ class LinkManager:
 
                 from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
                 if isinstance(to_port, InPort) and to_port.is_global:
-                    logger.debug(f"Skipping connection to global input port '{to_port.port_path}'")
+                    logger.warning(
+                        "Skipping connection targeting global input port "
+                        f"'{to_port.port_path}'; Connection: '{from_key}' -> '{to_key}'"
+                        + format_source(getattr(connection, "source", None))
+                    )
                     continue
                 self._create_link_from_ports(from_port, to_port, connection.type)
 
