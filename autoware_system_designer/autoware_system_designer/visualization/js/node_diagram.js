@@ -1,18 +1,24 @@
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 class NodeDiagramModule extends DiagramBase {
+  // ── Initialization ──────────────────────────────────────────────────────────
+
   constructor(container, options = {}) {
     super(container, options);
 
     this.currentGraph = null;
+    this.currentSvgRoot = null;
     this.transform = { x: 0, y: 0, k: 1 };
     this.isDragging = false;
+    this.hasDragged = false;
+    this.dragStartRaw = null;
     this.startPoint = { x: 0, y: 0 };
     this.elementData = new Map();
     this.portToEdges = new Map();
     this.portToNode = new Map();
     this.nodeConnectionDirections = new Map();
     this.colorPresets = null;
+    this.styleDefaults = null;
 
     this.init();
   }
@@ -66,6 +72,8 @@ class NodeDiagramModule extends DiagramBase {
     }
   }
 
+  // ── Data transformation ─────────────────────────────────────────────────────
+
   transformDataToElk(root) {
     this.elementData.clear();
     this.portToEdges.clear();
@@ -100,8 +108,6 @@ class NodeDiagramModule extends DiagramBase {
     const convertNode = (instance, depth = 0) => {
       if (!instance?.unique_id) return null;
 
-      // const isLeaf = !instance.children?.length;
-      // const style = this.getLayerStyle(isLeaf ? depth + 1 : depth);
       const style = this.getLayerStyle(depth);
       const nodeId = String(instance.unique_id);
       this.elementData.set(nodeId, instance);
@@ -190,6 +196,13 @@ class NodeDiagramModule extends DiagramBase {
     return rootNode;
   }
 
+  findMaxDepth(instance, depth = 0) {
+    if (!instance?.children?.length) return depth;
+    return Math.max(
+      ...instance.children.map((c) => this.findMaxDepth(c, depth + 1)),
+    );
+  }
+
   getContainerTarget(data) {
     if (!data) return "";
     return (
@@ -201,12 +214,7 @@ class NodeDiagramModule extends DiagramBase {
     );
   }
 
-  findMaxDepth(instance, depth = 0) {
-    if (!instance?.children?.length) return depth;
-    return Math.max(
-      ...instance.children.map((c) => this.findMaxDepth(c, depth + 1)),
-    );
-  }
+  // ── Styling / metrics ────────────────────────────────────────────────────────
 
   getLayerScale(depth) {
     const SCALE_RATIO = 1.85;
@@ -275,6 +283,8 @@ class NodeDiagramModule extends DiagramBase {
     );
   }
 
+  // ── Layout + render ──────────────────────────────────────────────────────────
+
   async layoutAndRenderNodeDiagram(graphData) {
     if (!this.elk) throw new Error("ELK instance not initialized");
 
@@ -313,14 +323,28 @@ class NodeDiagramModule extends DiagramBase {
 
     this.setupZoomPan(svgRoot, svg);
     this.updateTransform(svg);
+    this._computeThemeStyles();
 
     const computedStyle = getComputedStyle(document.documentElement);
+    const arrowColor = this.isDarkMode()
+      ? computedStyle.getPropertyValue("--text-muted").trim() || "#6c757d"
+      : computedStyle.getPropertyValue("--border-hover").trim() || "#adb5bd";
+
+    svgRoot.insertBefore(this._buildArrowDefs(arrowColor), svg);
+
+    this.renderNode(graph, svg);
+    this.currentGraph = graph;
+    this.currentSvgRoot = svgRoot;
+  }
+
+  _computeThemeStyles() {
+    const cs = getComputedStyle(document.documentElement);
 
     this.colorPresets = {
       default: {
         name: "default",
-        edge: computedStyle.getPropertyValue("--highlight").trim() || "#0d6efd",
-        port: computedStyle.getPropertyValue("--highlight").trim() || "#0d6efd",
+        edge: cs.getPropertyValue("--highlight").trim() || "#0d6efd",
+        port: cs.getPropertyValue("--highlight").trim() || "#0d6efd",
       },
       red: { name: "red", edge: "#dc3545", port: "#dc3545" },
       green: { name: "green", edge: "#28a745", port: "#28a745" },
@@ -331,37 +355,31 @@ class NodeDiagramModule extends DiagramBase {
 
     this.styleDefaults = {
       dark: {
-        bg:
-          computedStyle.getPropertyValue("--bg-secondary").trim() || "#2d2d2d",
-        nodeBg:
-          computedStyle.getPropertyValue("--bg-secondary").trim() || "#2d2d2d",
-        stroke: computedStyle.getPropertyValue("--text-muted").trim() || "#666",
-        text:
-          computedStyle.getPropertyValue("--text-primary").trim() || "#e9ecef",
+        bg: cs.getPropertyValue("--bg-secondary").trim() || "#2d2d2d",
+        nodeBg: cs.getPropertyValue("--bg-secondary").trim() || "#2d2d2d",
+        stroke: cs.getPropertyValue("--text-muted").trim() || "#666",
+        text: cs.getPropertyValue("--text-primary").trim() || "#e9ecef",
         rootBg: "#1e1e1e",
       },
       light: {
-        bg:
-          computedStyle.getPropertyValue("--bg-secondary").trim() || "#ffffff",
-        nodeBg:
-          computedStyle.getPropertyValue("--bg-secondary").trim() || "#ffffff",
+        bg: cs.getPropertyValue("--bg-secondary").trim() || "#ffffff",
+        nodeBg: cs.getPropertyValue("--bg-secondary").trim() || "#ffffff",
         stroke: "#333",
-        text: computedStyle.getPropertyValue("--text-primary").trim() || "#333",
+        text: cs.getPropertyValue("--text-primary").trim() || "#333",
         rootBg: "#f5f5f5",
       },
     };
+  }
 
-    const arrowColor = this.isDarkMode()
-      ? computedStyle.getPropertyValue("--text-muted").trim() || "#6c757d"
-      : computedStyle.getPropertyValue("--border-hover").trim() || "#adb5bd";
-
+  _buildArrowDefs(arrowColor) {
     const defs = document.createElementNS(SVG_NS, "defs");
     const maxDepth = this.maxDepth || 0;
-    const depthMarkers = Array.from({ length: maxDepth + 1 }, (_, d) => {
+
+    const markup = Array.from({ length: maxDepth + 1 }, (_, d) => {
       const { arrowW: mw, arrowH: mh } = this.getLayerStyle(d);
       const rx = mw;
       const ry = +(mh / 2).toFixed(2);
-      const presets = Object.keys(this.colorPresets)
+      const coloredMarkers = Object.keys(this.colorPresets)
         .map(
           (preset) =>
             `<marker id="arrowhead-highlighted-${preset}-depth-${d}" markerWidth="${mw}" markerHeight="${mh}" refX="${rx}" refY="${ry}" orient="auto" markerUnits="userSpaceOnUse">` +
@@ -371,16 +389,344 @@ class NodeDiagramModule extends DiagramBase {
       return (
         `<marker id="arrowhead-depth-${d}" markerWidth="${mw}" markerHeight="${mh}" refX="${rx}" refY="${ry}" orient="auto" markerUnits="userSpaceOnUse">` +
         `<polygon points="0 0, ${mw} ${ry}, 0 ${mh}" fill="${arrowColor}" /></marker>` +
-        presets
+        coloredMarkers
       );
     }).join("");
-    defs.innerHTML = depthMarkers;
-    svgRoot.insertBefore(defs, svg);
 
-    this.renderNode(graph, svg);
-    this.currentGraph = graph;
-    this.currentSvgRoot = svgRoot;
+    defs.innerHTML = markup;
+    return defs;
   }
+
+  renderNode(node, parentGroup, depth = 0) {
+    const style = this.getLayerStyle(depth);
+    const userData = this.elementData.get(node.id) || {};
+
+    const g = document.createElementNS(SVG_NS, "g");
+    g.setAttribute("transform", `translate(${node.x},${node.y})`);
+    g.setAttribute("id", node.id);
+    g.classList.add("node-group");
+
+    g.appendChild(this._buildNodeRect(node, depth, userData, style));
+
+    const containerTarget = this.getContainerTarget(userData);
+    if (containerTarget) {
+      this._appendBadge(g, node, style, containerTarget);
+    }
+
+    if (node.labels?.length > 0) {
+      this._appendLabels(g, node, userData, style, depth);
+    }
+
+    if (node.ports) {
+      node.ports.forEach((port) =>
+        g.appendChild(this._buildPortGroup(port, userData, style)),
+      );
+    }
+
+    if (node.children) {
+      node.children.forEach((child) => this.renderNode(child, g, depth + 1));
+    }
+
+    if (node.edges) {
+      node.edges.forEach((edge) => {
+        if (!edge.sections) return;
+        g.appendChild(this._buildEdgePath(edge, depth, style));
+      });
+    }
+
+    parentGroup.appendChild(g);
+  }
+
+  _buildNodeRect(node, depth, userData, style) {
+    const visGuide = userData.vis_guide || {};
+    const defaults = this.styleDefaults;
+
+    let fillColor, strokeColor;
+    if (this.isDarkMode()) {
+      fillColor =
+        visGuide.dark_background_color ||
+        visGuide.background_color ||
+        defaults.dark.bg;
+      if (userData.entity_type === "node") {
+        fillColor =
+          visGuide.dark_medium_color ||
+          visGuide.medium_color ||
+          defaults.dark.nodeBg;
+      }
+      strokeColor = visGuide.dark_color || visGuide.color || defaults.dark.stroke;
+      if (depth === 0) fillColor = defaults.dark.rootBg;
+    } else {
+      fillColor = visGuide.background_color || defaults.light.bg;
+      if (userData.entity_type === "node") {
+        fillColor = visGuide.medium_color || defaults.light.nodeBg;
+      }
+      strokeColor = visGuide.color || defaults.light.stroke;
+      if (depth === 0) fillColor = defaults.light.rootBg;
+    }
+
+    const rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("width", node.width);
+    rect.setAttribute("height", node.height);
+    rect.setAttribute("rx", style.cornerR);
+    rect.setAttribute("fill", fillColor);
+    rect.setAttribute("stroke", strokeColor);
+    rect.setAttribute("stroke-width", style.borderW);
+    rect.classList.add("node-rect");
+
+    rect.onclick = (e) => {
+      if (this.hasDragged) return;
+      e.stopPropagation();
+      this.updateInfoPanel(userData, "Node");
+      this.clearHighlights();
+
+      const nodeGroup = document.getElementById(node.id);
+      if (node.children?.length) {
+        this.highlightModule(node, nodeGroup);
+      } else {
+        nodeGroup?.classList.add("highlighted");
+      }
+
+      const outwardInPortIds = (userData.in_ports || [])
+        .filter((p) => p.unique_id && p.is_outward !== false)
+        .map((p) => String(p.unique_id));
+      const outwardOutPortIds = (userData.out_ports || [])
+        .filter((p) => p.unique_id && p.is_outward !== false)
+        .map((p) => String(p.unique_id));
+
+      if (outwardInPortIds.length > 0)
+        this.highlightBoundaryChain(outwardInPortIds, "upstream", "green");
+      if (outwardOutPortIds.length > 0)
+        this.highlightBoundaryChain(outwardOutPortIds, "downstream", "orange");
+    };
+
+    return rect;
+  }
+
+  _appendBadge(g, node, style, containerTarget) {
+    const badgeText = String(containerTarget);
+    const badgeH = style.badgeH;
+    const badgePad = style.badgePad;
+    const badgeWidth = Math.min(
+      node.width - badgePad,
+      Math.max(badgeH * 2, badgeText.length * style.badgeCharW),
+    );
+    const badgeX = (node.width - badgeWidth) / 2;
+    const badgeY = node.height - badgeH - badgePad;
+
+    const badgeRect = document.createElementNS(SVG_NS, "rect");
+    badgeRect.setAttribute("x", badgeX);
+    badgeRect.setAttribute("y", badgeY);
+    badgeRect.setAttribute("width", badgeWidth);
+    badgeRect.setAttribute("height", badgeH);
+    badgeRect.setAttribute("rx", Math.max(1, Math.round(style.cornerR * 0.6)));
+    badgeRect.setAttribute("stroke-width", style.borderW);
+    badgeRect.style.fill = this.isDarkMode() ? "rgba(0,0,0,0.25)" : "#e9ecef";
+    badgeRect.style.stroke = this.isDarkMode() ? "#6c757d" : "#adb5bd";
+    g.appendChild(badgeRect);
+
+    const badgeLabel = document.createElementNS(SVG_NS, "text");
+    badgeLabel.setAttribute("x", node.width / 2);
+    badgeLabel.setAttribute("y", badgeY + badgeH / 2 + 0.5);
+    this._truncateSVGText(
+      badgeLabel,
+      badgeText,
+      badgeWidth - badgePad * 2,
+      style.badgeFontSz,
+    );
+    badgeLabel.classList.add("node-label");
+    badgeLabel.style.fontSize = style.badgeFontSz + "px";
+    badgeLabel.style.fill = this.isDarkMode() ? "#dee2e6" : "#495057";
+    g.appendChild(badgeLabel);
+  }
+
+  _appendLabels(g, node, userData, style, depth) {
+    const visGuide = userData.vis_guide || {};
+    const fontSize = style.fontSize;
+    let yOffset = Math.round(fontSize * 0.8);
+
+    if (node.labels.length > 1 && node.labels[0].text) {
+      const nsText = document.createElementNS(SVG_NS, "text");
+      nsText.setAttribute("x", node.width / 2);
+      nsText.setAttribute("y", yOffset);
+      nsText.classList.add("node-label");
+      nsText.style.fontSize = style.nsSize + "px";
+      nsText.style.fill = this.isDarkMode()
+        ? visGuide.dark_text_color || "#adb5bd"
+        : visGuide.text_color || "#6c757d";
+      const nsLines = this._wrapSVGText(
+        nsText,
+        node.namespace,
+        node.width / 2,
+        node.width - style.badgePad * 2,
+        style.nsSize,
+      );
+      g.appendChild(nsText);
+      yOffset += (style.nsSize + 2) * nsLines;
+    }
+
+    const nameText = document.createElementNS(SVG_NS, "text");
+    nameText.setAttribute("x", node.width / 2);
+    nameText.setAttribute("y", yOffset + fontSize / 2);
+    nameText.textContent = node.labels[node.labels.length - 1].text;
+    nameText.classList.add("node-label");
+    nameText.style.fontSize = `${fontSize}px`;
+    nameText.style.fill = this.isDarkMode()
+      ? visGuide.dark_text_color || "#e9ecef"
+      : visGuide.text_color || "#333";
+    if (depth <= 1) nameText.style.fontWeight = "bold";
+    g.appendChild(nameText);
+  }
+
+  _buildPortGroup(port, userData, style) {
+    const portData = this.elementData.get(port.id) || {};
+    const isGlobal = portData.is_global === true;
+    const visGuide = userData.vis_guide || {};
+
+    let prect;
+    if (isGlobal) {
+      prect = document.createElementNS(SVG_NS, "polygon");
+      const ps = port.width;
+      const h = ps / 2;
+      prect.setAttribute(
+        "points",
+        `${h},${-h * 0.4} ${ps + h * 0.4},${h} ${h},${ps + h * 0.4} ${-h * 0.4},${h}`,
+      );
+    } else {
+      prect = document.createElementNS(SVG_NS, "rect");
+      prect.setAttribute("width", port.width);
+      prect.setAttribute("height", port.height);
+    }
+    prect.classList.add("port-rect");
+
+    const title = document.createElementNS(SVG_NS, "title");
+    title.textContent = portData.name || "Port";
+    prect.appendChild(title);
+
+    const pg = document.createElementNS(SVG_NS, "g");
+    pg.setAttribute("id", port.id);
+    pg.setAttribute("transform", `translate(${port.x},${port.y})`);
+    pg.style.cursor = "pointer";
+    pg.appendChild(prect);
+
+    pg.onclick = (e) => {
+      if (this.hasDragged) return;
+      e.stopPropagation();
+      this.updateInfoPanel(portData, "Port");
+      this.highlightConnected(port.id);
+    };
+
+    if (port.labels) {
+      port.labels.forEach((label) => {
+        const text = document.createElementNS(SVG_NS, "text");
+        text.setAttribute("x", (label.x || 0) + (label.width || 0) / 2);
+        text.setAttribute("y", (label.y || 0) + (label.height || 0) / 2);
+        text.textContent = label.text;
+        text.classList.add("port-label");
+        text.style.fontSize = style.portLabelFontSz + "px";
+        text.style.fill = this.isDarkMode()
+          ? visGuide.dark_text_color || "#e9ecef"
+          : visGuide.text_color || "#333";
+        pg.appendChild(text);
+      });
+    }
+
+    return pg;
+  }
+
+  _buildEdgePath(edge, depth, style) {
+    let d = "";
+    edge.sections.forEach((section) => {
+      d += `M ${section.startPoint.x} ${section.startPoint.y} `;
+      if (section.bendPoints) {
+        section.bendPoints.forEach((bp) => (d += `L ${bp.x} ${bp.y} `));
+      }
+      d += `L ${section.endPoint.x} ${section.endPoint.y} `;
+    });
+
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("id", edge.id);
+    path.setAttribute("d", d);
+    path.classList.add("edge-path");
+    path.setAttribute("data-depth", String(depth));
+    path.setAttribute("stroke-width", style.edgeW);
+    path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
+
+    const edgeData = this.elementData.get(edge.id) || {};
+    path.onclick = (e) => {
+      if (this.hasDragged) return;
+      e.stopPropagation();
+      this.updateInfoPanel(edgeData, "Link");
+      this.highlightConnected(edge.id);
+    };
+
+    return path;
+  }
+
+  // ── Text utilities ────────────────────────────────────────────────────────────
+
+  _wrapSVGText(textEl, text, x, maxWidth, fontSize) {
+    if (this.measureTextWidth(text, fontSize) <= maxWidth) {
+      textEl.textContent = text;
+      return 1;
+    }
+    textEl.textContent = "";
+    const lines = [];
+    let remaining = text;
+    while (remaining.length > 0) {
+      if (this.measureTextWidth(remaining, fontSize) <= maxWidth) {
+        lines.push(remaining);
+        break;
+      }
+      let lo = 1,
+        hi = remaining.length - 1;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (this.measureTextWidth(remaining.slice(0, mid), fontSize) <= maxWidth) {
+          lo = mid;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      let breakIdx = lo;
+      for (let i = lo; i >= Math.ceil(lo * 0.5); i--) {
+        if (remaining[i] === "/" || remaining[i] === "_") {
+          breakIdx = i + 1;
+          break;
+        }
+      }
+      lines.push(remaining.slice(0, breakIdx));
+      remaining = remaining.slice(breakIdx);
+    }
+    const lineSpacing = fontSize + 2;
+    lines.forEach((line, i) => {
+      const tspan = document.createElementNS(SVG_NS, "tspan");
+      tspan.setAttribute("x", x);
+      if (i > 0) tspan.setAttribute("dy", lineSpacing + "px");
+      tspan.textContent = line;
+      textEl.appendChild(tspan);
+    });
+    return lines.length;
+  }
+
+  _truncateSVGText(textEl, text, maxWidth, fontSize) {
+    if (this.measureTextWidth(text, fontSize) <= maxWidth) {
+      textEl.textContent = text;
+      return;
+    }
+    let lo = 0,
+      hi = text.length - 1;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (this.measureTextWidth(text.slice(0, mid) + "…", fontSize) <= maxWidth) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    textEl.textContent = lo > 0 ? text.slice(0, lo) + "…" : "…";
+  }
+
+  // ── Viewport / navigation ─────────────────────────────────────────────────────
 
   setupZoomPan(svgRoot, svg) {
     if (this._mouseMoveHandler)
@@ -443,6 +789,37 @@ class NodeDiagramModule extends DiagramBase {
     );
   }
 
+  fitToScreen() {
+    const svg = this.container.querySelector("#zoom-layer");
+    if (!svg) return;
+
+    const bbox = svg.getBBox();
+    if (bbox.width === 0 || bbox.height === 0) return;
+
+    const containerRect = this.container.getBoundingClientRect();
+    const scale = Math.min(
+      (containerRect.width - 40) / bbox.width,
+      (containerRect.height - 40) / bbox.height,
+    );
+
+    this.transform.k = Math.min(scale, 1);
+    this.transform.x =
+      (containerRect.width - bbox.width * this.transform.k) / 2 -
+      bbox.x * this.transform.k;
+    this.transform.y =
+      (containerRect.height - bbox.height * this.transform.k) / 2 -
+      bbox.y * this.transform.k;
+    this.updateTransform(svg);
+  }
+
+  updateTheme() {
+    if (this.currentGraph && this.currentSvgRoot) {
+      this.renderNodeDiagram(this.currentGraph);
+    }
+  }
+
+  // ── Highlighting ──────────────────────────────────────────────────────────────
+
   clearHighlights() {
     this.nodeConnectionDirections.clear();
 
@@ -476,6 +853,130 @@ class NodeDiagramModule extends DiagramBase {
     });
   }
 
+  highlightModule(node, moduleGroup) {
+    moduleGroup.classList.add("module-highlighted");
+
+    Array.from(moduleGroup.children)
+      .filter(
+        (child) =>
+          child.tagName === "path" && child.classList.contains("edge-path"),
+      )
+      .forEach((path) => {
+        path.classList.add("highlighted");
+        const d = parseInt(path.getAttribute("data-depth") || "0", 10);
+        path.style.strokeWidth = this.getLayerStyle(d).edgeW + "px";
+      });
+
+    if (node.children?.length > 0) {
+      node.children.forEach((childNode) => {
+        const childGroup = Array.from(moduleGroup.children).find(
+          (child) =>
+            child.tagName === "g" &&
+            child.classList.contains("node-group") &&
+            child.id === childNode.id,
+        );
+        childGroup?.querySelector("rect")?.classList.add("child-highlighted");
+      });
+    }
+  }
+
+  highlightConnected(startIds, clearExisting = true, colorPreset = "default") {
+    if (!this.colorPresets[colorPreset]) colorPreset = "default";
+    if (!Array.isArray(startIds)) startIds = [startIds];
+    if (clearExisting) this.clearHighlights();
+
+    const queue = [...startIds];
+    const visited = new Set();
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+
+      const data = this.elementData.get(currentId);
+      if (!data) continue;
+
+      if (this._isPort(data)) {
+        this._applyPortHighlight(currentId, colorPreset);
+        (this.portToEdges.get(currentId) || []).forEach((edgeId) => {
+          if (!visited.has(edgeId)) queue.push(edgeId);
+        });
+        data.connected_ids?.forEach((connectedId) => {
+          if (!visited.has(connectedId)) queue.push(connectedId);
+        });
+      } else if (this._isEdge(data)) {
+        this._applyEdgeHighlight(currentId, colorPreset);
+        const fromId =
+          data.from_port?.unique_id ??
+          (typeof data.from_port === "string" ? data.from_port : null);
+        const toId =
+          data.to_port?.unique_id ??
+          (typeof data.to_port === "string" ? data.to_port : null);
+        if (fromId) queue.push(String(fromId));
+        if (toId) queue.push(String(toId));
+      }
+    }
+  }
+
+  // "upstream"  – in-ports:  external publisher → boundary in-port
+  // "downstream"– out-ports: boundary out-port → external consumer
+  // connected_ids is intentionally not followed here to avoid fan-out across unrelated topic subscribers.
+  highlightBoundaryChain(startIds, direction, colorPreset = "default") {
+    if (!this.colorPresets[colorPreset]) colorPreset = "default";
+    if (!Array.isArray(startIds)) startIds = [startIds];
+
+    const queue = [...startIds];
+    const visited = new Set();
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+
+      const data = this.elementData.get(currentId);
+      if (!data) continue;
+
+      if (this._isPort(data)) {
+        this._applyPortHighlight(currentId, colorPreset, direction);
+
+        (this.portToEdges.get(currentId) || []).forEach((edgeId) => {
+          if (visited.has(edgeId)) return;
+          const edgeData = this.elementData.get(edgeId);
+          if (!edgeData) return;
+          const fromId = String(
+            edgeData.from_port?.unique_id ?? edgeData.from_port ?? "",
+          );
+          const toId = String(
+            edgeData.to_port?.unique_id ?? edgeData.to_port ?? "",
+          );
+          if (direction === "upstream" && toId === currentId) queue.push(edgeId);
+          if (direction === "downstream" && fromId === currentId)
+            queue.push(edgeId);
+        });
+      } else if (this._isEdge(data)) {
+        this._applyEdgeHighlight(currentId, colorPreset);
+
+        if (direction === "upstream") {
+          const fromId = String(
+            data.from_port?.unique_id ?? data.from_port ?? "",
+          );
+          if (fromId && !visited.has(fromId)) queue.push(fromId);
+        } else {
+          const toId = String(data.to_port?.unique_id ?? data.to_port ?? "");
+          if (toId && !visited.has(toId)) queue.push(toId);
+        }
+      }
+    }
+  }
+
+  _isPort(data) {
+    return !!(data.msg_type && !data.from_port);
+  }
+
+  _isEdge(data) {
+    return !!(data.from_port && data.to_port);
+  }
+
   _getPortDirection(portId) {
     const nodeId = this.portToNode.get(String(portId));
     if (!nodeId) return null;
@@ -484,12 +985,10 @@ class NodeDiagramModule extends DiagramBase {
     if (!nodeData) return null;
 
     const pid = String(portId);
-    if ((nodeData.in_ports || []).some((p) => String(p.unique_id) === pid)) {
+    if ((nodeData.in_ports || []).some((p) => String(p.unique_id) === pid))
       return "upstream";
-    }
-    if ((nodeData.out_ports || []).some((p) => String(p.unique_id) === pid)) {
+    if ((nodeData.out_ports || []).some((p) => String(p.unique_id) === pid))
       return "downstream";
-    }
     return null;
   }
 
@@ -515,12 +1014,12 @@ class NodeDiagramModule extends DiagramBase {
     state[direction] = true;
     this.nodeConnectionDirections.set(nodeId, state);
 
-    let strokeColor = this.colorPresets.orange.edge;
-    if (state.upstream && state.downstream) {
-      strokeColor = this.colorPresets.purple.edge;
-    } else if (state.upstream) {
-      strokeColor = this.colorPresets.green.edge;
-    }
+    const strokeColor =
+      state.upstream && state.downstream
+        ? this.colorPresets.purple.edge
+        : state.upstream
+          ? this.colorPresets.green.edge
+          : this.colorPresets.orange.edge;
 
     rect.classList.add("node-connection-highlight");
     rect.style.stroke = strokeColor;
@@ -551,485 +1050,6 @@ class NodeDiagramModule extends DiagramBase {
     edgePath.style.strokeWidth =
       (parseFloat(this.getLayerStyle(depth).edgeW) * 2).toFixed(1) + "px";
     if (edgePath.parentNode) edgePath.parentNode.appendChild(edgePath);
-  }
-
-  _wrapSVGText(textEl, text, x, maxWidth, fontSize) {
-    if (this.measureTextWidth(text, fontSize) <= maxWidth) {
-      textEl.textContent = text;
-      return 1;
-    }
-    textEl.textContent = "";
-    const lines = [];
-    let remaining = text;
-    while (remaining.length > 0) {
-      if (this.measureTextWidth(remaining, fontSize) <= maxWidth) {
-        lines.push(remaining);
-        break;
-      }
-      // Binary search for max chars that fit
-      let lo = 1,
-        hi = remaining.length - 1;
-      while (lo < hi) {
-        const mid = Math.ceil((lo + hi) / 2);
-        if (
-          this.measureTextWidth(remaining.slice(0, mid), fontSize) <= maxWidth
-        ) {
-          lo = mid;
-        } else {
-          hi = mid - 1;
-        }
-      }
-      // Prefer breaking at / or _ near the fit point
-      let breakIdx = lo;
-      for (let i = lo; i >= Math.ceil(lo * 0.5); i--) {
-        if (remaining[i] === "/" || remaining[i] === "_") {
-          breakIdx = i + 1;
-          break;
-        }
-      }
-      lines.push(remaining.slice(0, breakIdx));
-      remaining = remaining.slice(breakIdx);
-    }
-    const lineSpacing = fontSize + 2;
-    lines.forEach((line, i) => {
-      const tspan = document.createElementNS(SVG_NS, "tspan");
-      tspan.setAttribute("x", x);
-      if (i > 0) tspan.setAttribute("dy", lineSpacing + "px");
-      tspan.textContent = line;
-      textEl.appendChild(tspan);
-    });
-    return lines.length;
-  }
-
-  _truncateSVGText(textEl, text, maxWidth, fontSize) {
-    if (this.measureTextWidth(text, fontSize) <= maxWidth) {
-      textEl.textContent = text;
-      return;
-    }
-    // Binary search for max chars that fit including the ellipsis
-    let lo = 0,
-      hi = text.length - 1;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi) / 2);
-      if (
-        this.measureTextWidth(text.slice(0, mid) + "…", fontSize) <= maxWidth
-      ) {
-        lo = mid;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    textEl.textContent = lo > 0 ? text.slice(0, lo) + "…" : "…";
-  }
-
-  renderNode(node, parentGroup, depth = 0) {
-    // const isLeaf = !node.children?.length;
-    // const style = this.getLayerStyle(isLeaf ? depth + 1 : depth);
-    const style = this.getLayerStyle(depth);
-    const g = document.createElementNS(SVG_NS, "g");
-    g.setAttribute("transform", `translate(${node.x},${node.y})`);
-    g.setAttribute("id", node.id);
-    g.classList.add("node-group");
-
-    const rect = document.createElementNS(SVG_NS, "rect");
-    rect.setAttribute("width", node.width);
-    rect.setAttribute("height", node.height);
-    rect.setAttribute("rx", style.cornerR);
-    rect.classList.add("node-rect");
-
-    const userData = this.elementData.get(node.id) || {};
-    const visGuide = userData.vis_guide || {};
-    const defaults = this.styleDefaults;
-
-    let fillColor, strokeColor;
-    if (this.isDarkMode()) {
-      fillColor =
-        visGuide.dark_background_color ||
-        visGuide.background_color ||
-        defaults.dark.bg;
-      if (userData.entity_type === "node") {
-        fillColor =
-          visGuide.dark_medium_color ||
-          visGuide.medium_color ||
-          defaults.dark.nodeBg;
-      }
-      strokeColor =
-        visGuide.dark_color || visGuide.color || defaults.dark.stroke;
-      if (depth === 0) fillColor = defaults.dark.rootBg;
-    } else {
-      fillColor = visGuide.background_color || defaults.light.bg;
-      if (userData.entity_type === "node") {
-        fillColor = visGuide.medium_color || defaults.light.nodeBg;
-      }
-      strokeColor = visGuide.color || defaults.light.stroke;
-      if (depth === 0) fillColor = defaults.light.rootBg;
-    }
-
-    rect.setAttribute("fill", fillColor);
-    rect.setAttribute("stroke", strokeColor);
-    rect.setAttribute("stroke-width", style.borderW);
-
-    rect.onclick = (e) => {
-      if (this.hasDragged) return;
-      e.stopPropagation();
-      this.updateInfoPanel(userData, "Node");
-      this.clearHighlights();
-      if (node.children?.length) {
-        this.highlightModule(node, g);
-      } else {
-        g.classList.add("highlighted");
-      }
-
-      const outwardInPortIds = (userData.in_ports || [])
-        .filter((p) => p.unique_id && p.is_outward !== false)
-        .map((p) => String(p.unique_id));
-      const outwardOutPortIds = (userData.out_ports || [])
-        .filter((p) => p.unique_id && p.is_outward !== false)
-        .map((p) => String(p.unique_id));
-
-      if (outwardInPortIds.length > 0)
-        this.highlightBoundaryChain(outwardInPortIds, "upstream", "green");
-      if (outwardOutPortIds.length > 0)
-        this.highlightBoundaryChain(outwardOutPortIds, "downstream", "orange");
-    };
-
-    g.appendChild(rect);
-
-    const containerTarget = this.getContainerTarget(userData);
-    if (containerTarget) {
-      const badgePad = style.badgePad;
-      const badgeH = style.badgeH;
-      const badgeText = String(containerTarget);
-      const badgeWidth = Math.min(
-        node.width - badgePad,
-        Math.max(badgeH * 2, badgeText.length * style.badgeCharW),
-      );
-      const badgeX = (node.width - badgeWidth) / 2;
-      const badgeY = node.height - badgeH - badgePad;
-
-      const badgeRect = document.createElementNS(SVG_NS, "rect");
-      badgeRect.setAttribute("x", badgeX);
-      badgeRect.setAttribute("y", badgeY);
-      badgeRect.setAttribute("width", badgeWidth);
-      badgeRect.setAttribute("height", badgeH);
-      badgeRect.setAttribute(
-        "rx",
-        Math.max(1, Math.round(style.cornerR * 0.6)),
-      );
-      badgeRect.setAttribute("stroke-width", style.borderW);
-      badgeRect.style.fill = this.isDarkMode() ? "rgba(0,0,0,0.25)" : "#e9ecef";
-      badgeRect.style.stroke = this.isDarkMode() ? "#6c757d" : "#adb5bd";
-      g.appendChild(badgeRect);
-
-      const badgeLabel = document.createElementNS(SVG_NS, "text");
-      badgeLabel.setAttribute("x", node.width / 2);
-      badgeLabel.setAttribute("y", badgeY + badgeH / 2 + 0.5);
-      this._truncateSVGText(
-        badgeLabel,
-        badgeText,
-        badgeWidth - style.badgePad * 2,
-        style.badgeFontSz,
-      );
-      badgeLabel.classList.add("node-label");
-      badgeLabel.style.fontSize = style.badgeFontSz + "px";
-      badgeLabel.style.fill = this.isDarkMode() ? "#dee2e6" : "#495057";
-      g.appendChild(badgeLabel);
-    }
-
-    if (node.labels?.length > 0) {
-      const fontSize = style.fontSize;
-      let yOffset = Math.round(fontSize * 0.8);
-
-      if (node.labels.length > 1 && node.labels[0].text) {
-        const nsText = document.createElementNS(SVG_NS, "text");
-        nsText.setAttribute("x", node.width / 2);
-        nsText.setAttribute("y", yOffset);
-        nsText.classList.add("node-label");
-        nsText.style.fontSize = style.nsSize + "px";
-        nsText.style.fill = this.isDarkMode()
-          ? visGuide.dark_text_color || "#adb5bd"
-          : visGuide.text_color || "#6c757d";
-        const nsLines = this._wrapSVGText(
-          nsText,
-          node.namespace,
-          node.width / 2,
-          node.width - style.badgePad * 2,
-          style.nsSize,
-        );
-        g.appendChild(nsText);
-        yOffset += (style.nsSize + 2) * nsLines;
-      }
-
-      const nameText = document.createElementNS(SVG_NS, "text");
-      nameText.setAttribute("x", node.width / 2);
-      nameText.setAttribute("y", yOffset + fontSize / 2);
-      nameText.textContent = node.labels[node.labels.length - 1].text;
-      nameText.classList.add("node-label");
-      nameText.style.fontSize = `${fontSize}px`;
-      nameText.style.fill = this.isDarkMode()
-        ? visGuide.dark_text_color || "#e9ecef"
-        : visGuide.text_color || "#333";
-      if (depth <= 1) nameText.style.fontWeight = "bold";
-      g.appendChild(nameText);
-    }
-
-    if (node.ports) {
-      node.ports.forEach((port) => {
-        const pg = document.createElementNS(SVG_NS, "g");
-        pg.setAttribute("id", port.id);
-        pg.setAttribute("transform", `translate(${port.x},${port.y})`);
-
-        const portData = this.elementData.get(port.id) || {};
-        const isGlobal = portData.is_global === true;
-
-        let prect;
-        if (isGlobal) {
-          prect = document.createElementNS(SVG_NS, "polygon");
-          const ps = port.width;
-          const h = ps / 2;
-          prect.setAttribute(
-            "points",
-            `${h},${-h * 0.4} ${ps + h * 0.4},${h} ${h},${ps + h * 0.4} ${-h * 0.4},${h}`,
-          );
-        } else {
-          prect = document.createElementNS(SVG_NS, "rect");
-          prect.setAttribute("width", port.width);
-          prect.setAttribute("height", port.height);
-        }
-        prect.classList.add("port-rect");
-
-        const title = document.createElementNS(SVG_NS, "title");
-        title.textContent = portData.name || "Port";
-        prect.appendChild(title);
-
-        pg.onclick = (e) => {
-          if (this.hasDragged) return;
-          e.stopPropagation();
-          this.updateInfoPanel(portData, "Port");
-          this.highlightConnected(port.id, "Port");
-        };
-        pg.style.cursor = "pointer";
-        pg.appendChild(prect);
-
-        if (port.labels) {
-          port.labels.forEach((label) => {
-            const text = document.createElementNS(SVG_NS, "text");
-            text.setAttribute("x", (label.x || 0) + (label.width || 0) / 2);
-            text.setAttribute("y", (label.y || 0) + (label.height || 0) / 2);
-            text.textContent = label.text;
-            text.classList.add("port-label");
-            text.style.fontSize = style.portLabelFontSz + "px";
-            text.style.fill = this.isDarkMode()
-              ? visGuide.dark_text_color || "#e9ecef"
-              : visGuide.text_color || "#333";
-            pg.appendChild(text);
-          });
-        }
-
-        g.appendChild(pg);
-      });
-    }
-
-    if (node.children) {
-      node.children.forEach((child) => this.renderNode(child, g, depth + 1));
-    }
-
-    if (node.edges) {
-      node.edges.forEach((edge) => {
-        if (!edge.sections) return;
-        const path = document.createElementNS(SVG_NS, "path");
-        path.setAttribute("id", edge.id);
-        let d = "";
-        edge.sections.forEach((section) => {
-          d += `M ${section.startPoint.x} ${section.startPoint.y} `;
-          if (section.bendPoints) {
-            section.bendPoints.forEach((bp) => (d += `L ${bp.x} ${bp.y} `));
-          }
-          d += `L ${section.endPoint.x} ${section.endPoint.y} `;
-        });
-        path.setAttribute("d", d);
-        path.classList.add("edge-path");
-        path.setAttribute("data-depth", String(depth));
-        path.setAttribute("stroke-width", style.edgeW);
-        path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
-
-        const edgeData = this.elementData.get(edge.id) || {};
-        path.onclick = (e) => {
-          if (this.hasDragged) return;
-          e.stopPropagation();
-          this.updateInfoPanel(edgeData, "Link");
-          this.highlightConnected(edge.id, "Link");
-        };
-
-        g.appendChild(path);
-      });
-    }
-
-    parentGroup.appendChild(g);
-  }
-
-  highlightModule(node, moduleGroup) {
-    moduleGroup.classList.add("module-highlighted");
-
-    Array.from(moduleGroup.children)
-      .filter(
-        (child) =>
-          child.tagName === "path" && child.classList.contains("edge-path"),
-      )
-      .forEach((path) => {
-        path.classList.add("highlighted");
-        const d = parseInt(path.getAttribute("data-depth") || "0", 10);
-        path.style.strokeWidth = this.getLayerStyle(d).edgeW + "px";
-      });
-
-    if (node.children?.length > 0) {
-      node.children.forEach((childNode) => {
-        const childGroup = Array.from(moduleGroup.children).find(
-          (child) =>
-            child.tagName === "g" &&
-            child.classList.contains("node-group") &&
-            child.id === childNode.id,
-        );
-        childGroup?.querySelector("rect")?.classList.add("child-highlighted");
-      });
-    }
-  }
-
-  /**
-   * Highlights connected elements starting from the given IDs.
-   * @param {string|string[]} startIds
-   * @param {string} type - 'Port', 'Link', etc.
-   * @param {boolean} clearExisting
-   * @param {string} colorPreset - 'default', 'red', 'green', 'orange', 'purple', 'teal'
-   */
-  highlightConnected(
-    startIds,
-    type,
-    clearExisting = true,
-    colorPreset = "default",
-  ) {
-    if (!this.colorPresets[colorPreset]) colorPreset = "default";
-    if (!Array.isArray(startIds)) startIds = [startIds];
-    if (clearExisting) this.clearHighlights();
-
-    const queue = [...startIds];
-    const visited = new Set();
-
-    while (queue.length > 0) {
-      const currentId = queue.shift();
-      if (visited.has(currentId)) continue;
-      visited.add(currentId);
-
-      const data = this.elementData.get(currentId);
-      if (!data) continue;
-
-      if (data.msg_type && !data.from_port) {
-        this._applyPortHighlight(currentId, colorPreset);
-
-        (this.portToEdges.get(currentId) || []).forEach((edgeId) => {
-          if (!visited.has(edgeId)) queue.push(edgeId);
-        });
-
-        data.connected_ids?.forEach((connectedId) => {
-          if (!visited.has(connectedId)) queue.push(connectedId);
-        });
-      } else if (data.from_port && data.to_port) {
-        this._applyEdgeHighlight(currentId, colorPreset);
-
-        const fromId =
-          data.from_port?.unique_id ??
-          (typeof data.from_port === "string" ? data.from_port : null);
-        const toId =
-          data.to_port?.unique_id ??
-          (typeof data.to_port === "string" ? data.to_port : null);
-        if (fromId) queue.push(String(fromId));
-        if (toId) queue.push(String(toId));
-      }
-    }
-  }
-
-  /**
-   * Highlights outward boundary ports and their external link chains.
-   * "upstream"  – in-ports:  external publisher → boundary in-port
-   * "downstream"– out-ports: boundary out-port → external consumer
-   * connected_ids is not followed to avoid fan-out across unrelated topic subscribers.
-   */
-  highlightBoundaryChain(startIds, direction, colorPreset = "default") {
-    if (!this.colorPresets[colorPreset]) colorPreset = "default";
-    if (!Array.isArray(startIds)) startIds = [startIds];
-
-    const queue = [...startIds];
-    const visited = new Set();
-
-    while (queue.length > 0) {
-      const currentId = queue.shift();
-      if (visited.has(currentId)) continue;
-      visited.add(currentId);
-
-      const data = this.elementData.get(currentId);
-      if (!data) continue;
-
-      if (data.msg_type && !data.from_port) {
-        this._applyPortHighlight(currentId, colorPreset, direction);
-
-        (this.portToEdges.get(currentId) || []).forEach((edgeId) => {
-          if (visited.has(edgeId)) return;
-          const edgeData = this.elementData.get(edgeId);
-          if (!edgeData) return;
-          const fromId = String(
-            edgeData.from_port?.unique_id ?? edgeData.from_port ?? "",
-          );
-          const toId = String(
-            edgeData.to_port?.unique_id ?? edgeData.to_port ?? "",
-          );
-          if (direction === "upstream" && toId === currentId)
-            queue.push(edgeId);
-          if (direction === "downstream" && fromId === currentId)
-            queue.push(edgeId);
-        });
-      } else if (data.from_port && data.to_port) {
-        this._applyEdgeHighlight(currentId, colorPreset);
-
-        if (direction === "upstream") {
-          const fromId = String(
-            data.from_port?.unique_id ?? data.from_port ?? "",
-          );
-          if (fromId && !visited.has(fromId)) queue.push(fromId);
-        } else {
-          const toId = String(data.to_port?.unique_id ?? data.to_port ?? "");
-          if (toId && !visited.has(toId)) queue.push(toId);
-        }
-      }
-    }
-  }
-
-  fitToScreen() {
-    const svg = this.container.querySelector("#zoom-layer");
-    if (!svg) return;
-
-    const bbox = svg.getBBox();
-    if (bbox.width === 0 || bbox.height === 0) return;
-
-    const containerRect = this.container.getBoundingClientRect();
-    const scale = Math.min(
-      (containerRect.width - 40) / bbox.width,
-      (containerRect.height - 40) / bbox.height,
-    );
-
-    this.transform.k = Math.min(scale, 1);
-    this.transform.x =
-      (containerRect.width - bbox.width * this.transform.k) / 2 -
-      bbox.x * this.transform.k;
-    this.transform.y =
-      (containerRect.height - bbox.height * this.transform.k) / 2 -
-      bbox.y * this.transform.k;
-    this.updateTransform(svg);
-  }
-
-  updateTheme() {
-    if (this.currentGraph && this.currentSvgRoot) {
-      this.renderNodeDiagram(this.currentGraph);
-    }
   }
 }
 
