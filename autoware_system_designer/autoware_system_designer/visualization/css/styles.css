@@ -265,7 +265,7 @@ body {
 }
 
 .node-rect {
-  stroke-width: 1.5px;
+  /* stroke-width set per-depth by JS via SVG attribute (getLayerStyle().borderW) */
   transition: all 0.2s;
 }
 
@@ -295,7 +295,7 @@ body {
 .edge-path {
   fill: none;
   stroke: var(--text-secondary);
-  stroke-width: 1.5px;
+  /* stroke-width set per-depth by JS via SVG attribute (getLayerStyle().edgeW) */
   transition: all 0.2s;
 }
 
@@ -311,43 +311,38 @@ body {
 
 .node-group.highlighted > .node-rect {
   stroke: var(--highlight) !important;
-  stroke-width: 2.5px !important;
+  /* stroke-width set by JS inline style (_applyNodeConnectionHighlight / leaf click) */
 }
 
 .node-group.highlighted > .edge-path {
-  /* stroke color set by inline styles, only set width */
-  stroke-width: 2.5px !important;
+  /* stroke color and width set by JS inline style (_applyEdgeHighlight) */
 }
 
 .node-group.highlighted > g > .edge-arrow {
   fill: var(--highlight) !important;
-  stroke-width: 2.5px !important;
 }
 
 .edge-path.highlighted {
-  /* stroke color set by inline styles, only set width */
-  stroke-width: 2.5px;
+  /* stroke color and width set by JS inline style (_applyEdgeHighlight / highlightModule) */
 }
 
 .highlighted .edge-arrow {
   fill: var(--highlight) !important;
-  stroke-width: 2.5px;
 }
 
 /* Module highlighting - only direct children, not descendants */
 .module-highlighted > .node-rect {
   stroke: var(--highlight) !important;
-  stroke-width: 2.5px;
+  /* stroke-width set by JS inline style via highlightModule() */
 }
 
 .module-highlighted > .edge-path {
   stroke: var(--highlight) !important;
-  stroke-width: 2.5px;
+  /* stroke-width set by JS inline style via highlightModule() */
 }
 
 .module-highlighted > g > .edge-arrow {
   fill: var(--highlight) !important;
-  stroke-width: 2.5px;
 }
 
 /* Child highlighting - only the boundary, not edges */
@@ -608,18 +603,15 @@ body {
   cursor: grabbing;
 }
 
-/* Highlighting - stroke color set by inline styles, width by CSS */
-.highlighted {
-  /* stroke color set by inline styles */
+/* Logic diagram highlighting — scoped to avoid clobbering node_diagram inline styles */
+.logic-diagram-container .highlighted {
   stroke-width: 3px !important;
 }
-g.node.highlighted polygon,
-g.node.highlighted ellipse {
-  /* stroke color set by inline styles */
+.logic-diagram-container g.node.highlighted polygon,
+.logic-diagram-container g.node.highlighted ellipse {
   stroke-width: 3px !important;
 }
-g.edge.highlighted path {
-  /* stroke color set by inline styles */
+.logic-diagram-container g.edge.highlighted path {
   stroke-width: 3px !important;
 }
 

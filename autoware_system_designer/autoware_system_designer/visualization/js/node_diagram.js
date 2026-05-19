@@ -209,7 +209,7 @@ class NodeDiagramModule extends DiagramBase {
   }
 
   getLayerScale(depth) {
-    const SCALE_RATIO = 1.8;
+    const SCALE_RATIO = 1.85;
     return Math.pow(SCALE_RATIO, this.maxDepth - depth);
   }
 
@@ -225,7 +225,8 @@ class NodeDiagramModule extends DiagramBase {
       fontSize: Math.round(8 * s),
       nsSize: Math.round(5 * s),
       cornerR: Math.max(1, Math.round(2 * s)),
-      borderW: Math.max(0.5, +(0.5 * s).toFixed(1)),
+      borderW: (0.5 * s).toFixed(1),
+      edgeW: (0.3 * s).toFixed(1),
       portLabelFontSz: Math.round(5 * s),
       badgeH: Math.round(8 * s),
       badgePad: Math.round(3 * s),
@@ -363,12 +364,12 @@ class NodeDiagramModule extends DiagramBase {
       const presets = Object.keys(this.colorPresets)
         .map(
           (preset) =>
-            `<marker id="arrowhead-highlighted-${preset}-depth-${d}" markerWidth="${mw}" markerHeight="${mh}" refX="${rx}" refY="${ry}" orient="auto">` +
+            `<marker id="arrowhead-highlighted-${preset}-depth-${d}" markerWidth="${mw}" markerHeight="${mh}" refX="${rx}" refY="${ry}" orient="auto" markerUnits="userSpaceOnUse">` +
             `<polygon points="0 0, ${mw} ${ry}, 0 ${mh}" fill="${this.colorPresets[preset].edge}" /></marker>`,
         )
         .join("");
       return (
-        `<marker id="arrowhead-depth-${d}" markerWidth="${mw}" markerHeight="${mh}" refX="${rx}" refY="${ry}" orient="auto">` +
+        `<marker id="arrowhead-depth-${d}" markerWidth="${mw}" markerHeight="${mh}" refX="${rx}" refY="${ry}" orient="auto" markerUnits="userSpaceOnUse">` +
         `<polygon points="0 0, ${mw} ${ry}, 0 ${mh}" fill="${arrowColor}" /></marker>` +
         presets
       );
@@ -547,7 +548,8 @@ class NodeDiagramModule extends DiagramBase {
       `url(#arrowhead-highlighted-${colorPreset}-depth-${depth})`,
     );
     edgePath.style.stroke = this.colorPresets[colorPreset].edge;
-    edgePath.style.strokeWidth = "3px";
+    edgePath.style.strokeWidth =
+      (parseFloat(this.getLayerStyle(depth).edgeW) * 2).toFixed(1) + "px";
     if (edgePath.parentNode) edgePath.parentNode.appendChild(edgePath);
   }
 
@@ -848,6 +850,7 @@ class NodeDiagramModule extends DiagramBase {
         path.setAttribute("d", d);
         path.classList.add("edge-path");
         path.setAttribute("data-depth", String(depth));
+        path.setAttribute("stroke-width", style.edgeW);
         path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
 
         const edgeData = this.elementData.get(edge.id) || {};
@@ -873,7 +876,11 @@ class NodeDiagramModule extends DiagramBase {
         (child) =>
           child.tagName === "path" && child.classList.contains("edge-path"),
       )
-      .forEach((path) => path.classList.add("highlighted"));
+      .forEach((path) => {
+        path.classList.add("highlighted");
+        const d = parseInt(path.getAttribute("data-depth") || "0", 10);
+        path.style.strokeWidth = this.getLayerStyle(d).edgeW + "px";
+      });
 
     if (node.children?.length > 0) {
       node.children.forEach((childNode) => {
