@@ -236,6 +236,7 @@ class NodeDiagramModule extends DiagramBase {
       borderW: (0.5 * s).toFixed(1),
       edgeW: (0.3 * s).toFixed(1),
       portLabelFontSz: Math.round(5 * s),
+      portLabelOffset: Math.round(3 * s),
       badgeH: Math.round(8 * s),
       badgePad: Math.round(3 * s),
       badgeCharW: Math.round(3 * s),
@@ -618,7 +619,9 @@ class NodeDiagramModule extends DiagramBase {
     if (port.labels) {
       port.labels.forEach((label) => {
         const text = document.createElementNS(SVG_NS, "text");
-        text.setAttribute("x", (label.x || 0) + (label.width || 0) / 2);
+        const lx = (label.x || 0) + (label.width || 0) / 2;
+        const offsetDir = lx >= 0 ? 1 : -1;
+        text.setAttribute("x", lx + offsetDir * style.portLabelOffset);
         text.setAttribute("y", (label.y || 0) + (label.height || 0) / 2);
         text.textContent = label.text;
         text.classList.add("port-label");
