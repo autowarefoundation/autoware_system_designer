@@ -143,9 +143,13 @@ class NodeDiagramModule extends DiagramBase {
           "org.eclipse.elk.spacing.portPort": String(style.portSpacing),
           "org.eclipse.elk.spacing.nodeNode": String(style.nodeSpacing),
           "org.eclipse.elk.spacing.edgeNode": String(style.edgeNodeSpacing),
-          "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": String(style.edgeNodeBetweenLayers),
+          "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": String(
+            style.edgeNodeBetweenLayers,
+          ),
           "org.eclipse.elk.spacing.edgeEdge": String(style.edgeEdgeSpacing),
-          "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": String(style.edgeEdgeBetweenLayers),
+          "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": String(
+            style.edgeEdgeBetweenLayers,
+          ),
           "org.eclipse.elk.padding": `[top=${style.elkPadding},left=${style.elkPadding},bottom=${style.elkPadding},right=${style.elkPadding}]`,
         },
       };
@@ -530,7 +534,10 @@ class NodeDiagramModule extends DiagramBase {
     const badgePad = style.badgePad;
     const badgeWidth = Math.min(
       node.width - badgePad * 2,
-      Math.max(badgeH * 2, this.measureTextWidth(badgeText, style.badgeFontSz) + badgePad * 2),
+      Math.max(
+        badgeH * 2,
+        this.measureTextWidth(badgeText, style.badgeFontSz) + badgePad * 2,
+      ),
     );
     const badgeX = (node.width - badgeWidth) / 2;
     const badgeY = node.height - badgeH - badgePad;
@@ -889,7 +896,9 @@ class NodeDiagramModule extends DiagramBase {
 
     const moduleRect = moduleGroup.querySelector(":scope > .node-rect");
     if (moduleRect) {
-      const currentBorderW = parseFloat(moduleRect.getAttribute("stroke-width") || "1");
+      const currentBorderW = parseFloat(
+        moduleRect.getAttribute("stroke-width") || "1",
+      );
       moduleRect.style.strokeWidth = (currentBorderW * 2).toFixed(1) + "px";
     }
 
@@ -901,7 +910,8 @@ class NodeDiagramModule extends DiagramBase {
       .forEach((path) => {
         path.classList.add("highlighted");
         const d = parseInt(path.getAttribute("data-depth") || "0", 10);
-        path.style.strokeWidth = (parseFloat(this.getLayerStyle(d).edgeW) * 2).toFixed(1) + "px";
+        path.style.strokeWidth =
+          (parseFloat(this.getLayerStyle(d).edgeW) * 2).toFixed(1) + "px";
       });
 
     if (node.children?.length > 0) {
@@ -915,7 +925,9 @@ class NodeDiagramModule extends DiagramBase {
         const childRect = childGroup?.querySelector(".node-rect");
         if (childRect) {
           childRect.classList.add("child-highlighted");
-          const currentBorderW = parseFloat(childRect.getAttribute("stroke-width") || "1");
+          const currentBorderW = parseFloat(
+            childRect.getAttribute("stroke-width") || "1",
+          );
           childRect.style.strokeWidth = (currentBorderW * 2).toFixed(1) + "px";
         }
       });
