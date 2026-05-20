@@ -608,11 +608,20 @@ class NodeDiagramModule extends DiagramBase {
 
   _buildPortGroup(port, userData, style) {
     const portData = this.elementData.get(port.id) || {};
+    const isRemapped = portData.is_remapped === true;
     const isGlobal = portData.is_global === true;
     const visGuide = userData.vis_guide || {};
 
     let prect;
-    if (isGlobal) {
+    if (isRemapped) {
+      // Circle: topic overridden by a module/system remap entry
+      prect = document.createElementNS(SVG_NS, "circle");
+      const r = port.width / 2;
+      prect.setAttribute("cx", r);
+      prect.setAttribute("cy", r);
+      prect.setAttribute("r", r);
+    } else if (isGlobal) {
+      // Diamond: topic fixed by node-level global key
       prect = document.createElementNS(SVG_NS, "polygon");
       const ps = port.width;
       const h = ps / 2;
@@ -627,8 +636,14 @@ class NodeDiagramModule extends DiagramBase {
     }
     prect.classList.add("port-rect");
 
+    const topicHint = portData.topic?.length
+      ? " → /" + portData.topic.join("/")
+      : "";
+    const titlePrefix = isRemapped ? "[remap]" : isGlobal ? "[global]" : "";
     const title = document.createElementNS(SVG_NS, "title");
-    title.textContent = portData.name || "Port";
+    title.textContent = titlePrefix
+      ? `${titlePrefix} ${portData.name || "Port"}${topicHint}`
+      : portData.name || "Port";
     prect.appendChild(title);
 
     const pg = document.createElementNS(SVG_NS, "g");

@@ -399,10 +399,11 @@ class LinkManager:
 
             from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
 
-            if isinstance(to_port, InPort) and to_port.is_global:
+            if isinstance(to_port, InPort) and (to_port.is_remapped or to_port.is_global):
                 msg = (
-                    "[E_WILDCARD_GLOBAL_INPUT] Wildcard connection targets a global input port and "
-                    f"cannot create a link: '{connection.from_instance}.{connection.from_port_name}' -> "
+                    "[E_WILDCARD_PRESET_INPUT] Wildcard connection targets a preset input port "
+                    "(remapped or global) and cannot create a link: "
+                    f"'{connection.from_instance}.{connection.from_port_name}' -> "
                     f"'{connection.to_instance}.{connection.to_port_name}' "
                     f"(resolved target port: '{to_port.port_path}')"
                 )
@@ -497,6 +498,10 @@ class LinkManager:
         for ext_output in outputs:
             port_list_to[f".{ext_output.name}"] = _PortInfo(port_name=ext_output.name, instance=None, port=None)
 
+        # Apply remap entries before creating links so that link resolution in
+        # links.py sees is_remapped=True and preserves the overridden topic.
+        self.apply_remaps()
+
         # Establish links based on connection type
         for connection in connection_list:
             wildcard_fields = [
@@ -563,9 +568,9 @@ class LinkManager:
                     continue
 
                 from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
-                if isinstance(to_port, InPort) and to_port.is_global:
+                if isinstance(to_port, InPort) and (to_port.is_remapped or to_port.is_global):
                     logger.warning(
-                        "Skipping connection targeting global input port "
+                        "Skipping connection targeting preset input port (remapped or global) "
                         f"'{to_port.port_path}'; Connection: '{from_key}' -> '{to_key}'"
                         + format_source(getattr(connection, "source", None))
                     )
@@ -574,6 +579,66 @@ class LinkManager:
 
         # Create external ports after links are set
         self._create_external_ports()
+
+    def apply_remaps(self):
+        """Apply topic remap entries from module/system config to child ports.
+
+        Remaps override node-level global topics.  When a lower (closer to
+        the system root) layer re-declares the same port the lower layer wins,
+        which is achieved naturally because system.set_links() calls this method
+        after module.set_links() has already run.
+
+        Back-propagation through the reference chain ensures that the node's own
+        port (used for launch-file remap args) also reflects the new topic.
+        """
+        remaps = getattr(self.instance.configuration, "remaps", None) or []
+        for entry in remaps:
+            parts = entry.source.split(".")
+            if len(parts) != 3:
+                raise ValidationError(
+                    f"[E_REMAP_SOURCE] Invalid remap source '{entry.source}': "
+                    "expected format '{instance}.{port_type}.{port_name}'"
+                )
+            instance_name, port_type, port_name = parts
+
+            child_instance = self.instance.children.get(instance_name)
+            if child_instance is None:
+                raise ValidationError(
+                    f"[E_REMAP_INSTANCE] Remap source instance '{instance_name}' not found. "
+                    f"Available: {list(self.instance.children.keys())}"
+                )
+
+            if port_type in ("publisher", "server"):
+                port = child_instance.link_manager.out_ports.get(port_name)
+            elif port_type in ("subscriber", "client"):
+                port = child_instance.link_manager.in_ports.get(port_name)
+            else:
+                raise ValidationError(
+                    f"[E_REMAP_PORT_TYPE] Invalid port type '{port_type}' in remap source "
+                    f"'{entry.source}'. Expected: publisher, subscriber, server, client"
+                )
+
+            if port is None:
+                if port_type in ("publisher", "server"):
+                    available = list(child_instance.link_manager.out_ports.keys())
+                else:
+                    available = list(child_instance.link_manager.in_ports.keys())
+                raise ValidationError(
+                    f"[E_REMAP_PORT] Port '{port_name}' not found in {port_type} ports of "
+                    f"'{instance_name}'. Available: {available}"
+                )
+
+            topic = entry.topic.lstrip("/")
+            topic_parts = topic.split("/")
+            self._force_remap_port(port, topic_parts)
+
+    @staticmethod
+    def _force_remap_port(port, topic_parts: list):
+        """Force-set a remapped topic on a port and back-propagate through its reference chain."""
+        port.is_remapped = True
+        port.topic = list(topic_parts)
+        for ref_port in port.reference:
+            LinkManager._force_remap_port(ref_port, topic_parts)
 
     def _create_external_ports(self):
         """Create external ports based on link list."""
@@ -685,7 +750,7 @@ class LinkManager:
         ports: List[LauncherPortData] = []
 
         for port in self.in_ports.values():
-            if not port.is_global and port.get_topic() == "":
+            if port.get_topic() == "":
                 continue
             ports.append(
                 {
