@@ -630,8 +630,18 @@ class LinkManager:
                     f"'{instance_name}'. Available: {available}"
                 )
 
+            if not entry.topic.startswith("/"):
+                raise ValidationError(
+                    f"[E_REMAP_TOPIC] Remap topic '{entry.topic}' must be an absolute ROS topic "
+                    f"starting with '/'"
+                )
             topic = entry.topic.lstrip("/")
             topic_parts = topic.split("/")
+            if not all(topic_parts):
+                raise ValidationError(
+                    f"[E_REMAP_TOPIC] Remap topic '{entry.topic}' contains empty segments; "
+                    "must be a valid absolute ROS topic (e.g. '/foo/bar')"
+                )
             self._force_remap_port(port, topic_parts)
 
     @staticmethod
