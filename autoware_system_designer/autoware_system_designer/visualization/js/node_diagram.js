@@ -201,6 +201,7 @@ class NodeDiagramModule extends DiagramBase {
       delete rootNode.height;
       if (!rootNode.id) rootNode.id = "root";
     }
+    this._injectRemapHub(rootNode);
     return rootNode;
   }
 
@@ -220,6 +221,126 @@ class NodeDiagramModule extends DiagramBase {
       data.launcher?.container_target ||
       ""
     );
+  }
+
+  _injectRemapHub(rootNode) {
+    // Only collect boundary ports of top-level modules — inner ports also receive
+    // is_remapped=true via _force_remap_port reference-chain propagation, so we
+    // must restrict to ports whose parent node is a direct child of rootNode.
+    const topLevelNodeIds = new Set((rootNode?.children || []).map((c) => c.id));
+    const remappedPortEntries = [];
+    for (const [id, data] of this.elementData) {
+      if (
+        data.is_remapped === true &&
+        topLevelNodeIds.has(this.portToNode.get(id))
+      ) {
+        remappedPortEntries.push({ id, data });
+      }
+    }
+    if (remappedPortEntries.length === 0 || !rootNode) return;
+
+    const style = this.getLayerStyle(1);
+    const remapNodeId = "__remap_hub__";
+
+    this.elementData.set(remapNodeId, {
+      unique_id: remapNodeId,
+      name: "Remap Hub",
+      namespace: "System Remaps",
+      entity_type: "remap_hub",
+    });
+
+    const hubNode = {
+      id: remapNodeId,
+      labels: [{ text: "System Remaps" }, { text: "Remap Hub" }],
+      namespace: "System Remaps",
+      width: 0,
+      height: 0,
+      children: [],
+      ports: [],
+      properties: {
+        "org.eclipse.elk.portConstraints": "FIXED_SIDE",
+        "org.eclipse.elk.nodeLabels.placement": "H_CENTER V_TOP",
+        "org.eclipse.elk.portLabels.placement": "INSIDE",
+        "org.eclipse.elk.portAlignment.default": "CENTER",
+        "org.eclipse.elk.spacing.portPort": String(style.portSpacing),
+        "org.eclipse.elk.spacing.nodeNode": String(style.nodeSpacing),
+        "org.eclipse.elk.padding": `[top=${style.elkPadding},left=${style.elkPadding},bottom=${style.elkPadding},right=${style.elkPadding}]`,
+      },
+    };
+
+    let maxTopicW = 0;
+    remappedPortEntries.forEach(({ id, data }) => {
+      const direction = this._getPortDirection(id) ?? "downstream";
+      const hubPortId = `__remap_hub_port__${id}`;
+      const topicName = data.topic?.length
+        ? "/" + data.topic.join("/")
+        : data.name || "unknown";
+      maxTopicW = Math.max(
+        maxTopicW,
+        this.measureTextWidth(topicName, style.portLabelFontSz),
+      );
+
+      // publisher out_port (downstream) → hub WEST; subscriber in_port (upstream) → hub EAST
+      const side = direction === "downstream" ? "WEST" : "EAST";
+      this.elementData.set(hubPortId, {
+        unique_id: hubPortId,
+        name: topicName,
+        is_remap_hub_port: true,
+        original_port_id: id,
+        topic: data.topic,
+        msg_type: data.msg_type || "remap",
+      });
+      this.portToNode.set(hubPortId, remapNodeId);
+
+      hubNode.ports.push({
+        id: hubPortId,
+        width: style.portSize,
+        height: style.portSize,
+        properties: { "org.eclipse.elk.port.side": side },
+        labels: [
+          {
+            text: topicName,
+            width: this.measureTextWidth(topicName, style.portLabelFontSz),
+            height: style.portSize,
+          },
+        ],
+      });
+    });
+
+    const innerPad = style.portSize * 3;
+    hubNode.width = Math.max(
+      style.nodeWidth,
+      maxTopicW + innerPad,
+      this.measureTextWidth("Remap Hub", style.fontSize) + innerPad,
+    );
+    hubNode.height = Math.max(
+      style.nodeBaseH,
+      style.nodeBaseH + remappedPortEntries.length * style.portSpacing * 3,
+    );
+
+    if (!rootNode.children) rootNode.children = [];
+    rootNode.children.push(hubNode);
+
+    if (!rootNode.edges) rootNode.edges = [];
+    remappedPortEntries.forEach(({ id }) => {
+      const direction = this._getPortDirection(id) ?? "downstream";
+      const hubPortId = `__remap_hub_port__${id}`;
+      const edgeId = `__remap_edge__${id}`;
+      const [sources, targets] =
+        direction === "downstream" ? [[id], [hubPortId]] : [[hubPortId], [id]];
+
+      this.elementData.set(edgeId, {
+        unique_id: edgeId,
+        from_port: { unique_id: sources[0] },
+        to_port: { unique_id: targets[0] },
+        is_remap_edge: true,
+      });
+      [sources[0], targets[0]].forEach((portId) => {
+        if (!this.portToEdges.has(portId)) this.portToEdges.set(portId, []);
+        this.portToEdges.get(portId).push(edgeId);
+      });
+      rootNode.edges.push({ id: edgeId, sources, targets, properties: {} });
+    });
   }
 
   // ── Styling / metrics ────────────────────────────────────────────────────────
@@ -490,6 +611,11 @@ class NodeDiagramModule extends DiagramBase {
       if (depth === 0) fillColor = defaults.light.rootBg;
     }
 
+    if (userData.entity_type === "remap_hub") {
+      fillColor = this.isDarkMode() ? "#2a1800" : "#fff8e1";
+      strokeColor = "#fd7e14";
+    }
+
     const rect = document.createElementNS(SVG_NS, "rect");
     rect.setAttribute("width", node.width);
     rect.setAttribute("height", node.height);
@@ -497,15 +623,39 @@ class NodeDiagramModule extends DiagramBase {
     rect.setAttribute("fill", fillColor);
     rect.setAttribute("stroke", strokeColor);
     rect.setAttribute("stroke-width", style.borderW);
+    if (userData.entity_type === "remap_hub") {
+      const dw = parseFloat(style.borderW);
+      rect.setAttribute("stroke-dasharray", `${dw * 5} ${dw * 2.5}`);
+    }
     rect.classList.add("node-rect");
 
     rect.onclick = (e) => {
       if (this.hasDragged) return;
       e.stopPropagation();
       this.updateInfoPanel(userData, "Node");
+      if (depth === 0) return;
       this.clearHighlights();
 
       const nodeGroup = document.getElementById(node.id);
+
+      if (userData.entity_type === "remap_hub") {
+        nodeGroup?.classList.add("highlighted");
+        for (const [portId, nodeId] of this.portToNode) {
+          if (nodeId !== node.id) continue;
+          this._applyPortHighlight(portId, "orange");
+          for (const edgeId of this.portToEdges.get(portId) || []) {
+            const edgeData = this.elementData.get(edgeId);
+            if (!edgeData?.is_remap_edge) continue;
+            this._applyEdgeHighlight(edgeId, "orange");
+            const fromId = String(edgeData.from_port?.unique_id ?? "");
+            const toId = String(edgeData.to_port?.unique_id ?? "");
+            const originalPortId = fromId === portId ? toId : fromId;
+            if (originalPortId) this._applyPortHighlight(originalPortId, "orange");
+          }
+        }
+        return;
+      }
+
       if (node.children?.length) {
         this.highlightModule(node, nodeGroup);
       } else {
@@ -608,12 +758,19 @@ class NodeDiagramModule extends DiagramBase {
 
   _buildPortGroup(port, userData, style) {
     const portData = this.elementData.get(port.id) || {};
+    const isRemapHub = portData.is_remap_hub_port === true;
     const isRemapped = portData.is_remapped === true;
     const isGlobal = portData.is_global === true;
     const visGuide = userData.vis_guide || {};
 
     let prect;
-    if (isRemapped) {
+    if (isRemapHub) {
+      // Right-facing triangle: port on the remap hub block
+      prect = document.createElementNS(SVG_NS, "polygon");
+      const ps = port.width;
+      const h = ps / 2;
+      prect.setAttribute("points", `0,0 ${ps},${h} 0,${ps}`);
+    } else if (isRemapped) {
       // Circle: topic overridden by a module/system remap entry
       prect = document.createElementNS(SVG_NS, "circle");
       const r = port.width / 2;
@@ -635,11 +792,21 @@ class NodeDiagramModule extends DiagramBase {
       prect.setAttribute("height", port.height);
     }
     prect.classList.add("port-rect");
+    if (isRemapHub) {
+      prect.style.fill = "#fd7e14";
+      prect.style.stroke = "#fd7e14";
+    }
 
     const topicHint = portData.topic?.length
       ? " → /" + portData.topic.join("/")
       : "";
-    const titlePrefix = isRemapped ? "[remap]" : isGlobal ? "[global]" : "";
+    const titlePrefix = isRemapHub
+      ? "[remap-topic]"
+      : isRemapped
+        ? "[remap]"
+        : isGlobal
+          ? "[global]"
+          : "";
     const title = document.createElementNS(SVG_NS, "title");
     title.textContent = titlePrefix
       ? `${titlePrefix} ${portData.name || "Port"}${topicHint}`
@@ -689,15 +856,27 @@ class NodeDiagramModule extends DiagramBase {
       d += `L ${section.endPoint.x} ${section.endPoint.y} `;
     });
 
+    const edgeData = this.elementData.get(edge.id) || {};
+
     const path = document.createElementNS(SVG_NS, "path");
     path.setAttribute("id", edge.id);
     path.setAttribute("d", d);
     path.classList.add("edge-path");
     path.setAttribute("data-depth", String(depth));
     path.setAttribute("stroke-width", style.edgeW);
-    path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
 
-    const edgeData = this.elementData.get(edge.id) || {};
+    if (edgeData.is_remap_edge) {
+      path.style.stroke = "#fd7e14";
+      const ew = parseFloat(style.edgeW);
+      path.setAttribute("stroke-dasharray", `${ew * 6} ${ew * 3}`);
+      path.setAttribute(
+        "marker-end",
+        `url(#arrowhead-highlighted-orange-depth-${depth})`,
+      );
+    } else {
+      path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
+    }
+
     path.onclick = (e) => {
       if (this.hasDragged) return;
       e.stopPropagation();
@@ -880,8 +1059,14 @@ class NodeDiagramModule extends DiagramBase {
       el.classList.remove("highlighted");
       if (el.tagName === "path") {
         const d = parseInt(el.getAttribute("data-depth") || "0", 10);
-        el.setAttribute("marker-end", `url(#arrowhead-depth-${d})`);
-        el.style.stroke = "";
+        const edgeData = this.elementData.get(el.id);
+        if (edgeData?.is_remap_edge) {
+          el.setAttribute("marker-end", `url(#arrowhead-highlighted-orange-depth-${d})`);
+          el.style.stroke = "#fd7e14";
+        } else {
+          el.setAttribute("marker-end", `url(#arrowhead-depth-${d})`);
+          el.style.stroke = "";
+        }
         el.style.strokeWidth = "";
       }
     });
