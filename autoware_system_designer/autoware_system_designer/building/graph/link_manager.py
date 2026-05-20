@@ -399,10 +399,10 @@ class LinkManager:
 
             from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
 
-            if isinstance(to_port, InPort) and (to_port.is_remapped or to_port.is_global):
+            if isinstance(to_port, InPort) and to_port.is_global:
                 msg = (
-                    "[E_WILDCARD_PRESET_INPUT] Wildcard connection targets a preset input port "
-                    "(remapped or global) and cannot create a link: "
+                    "[E_WILDCARD_PRESET_INPUT] Wildcard connection targets a global input port "
+                    "and cannot create a link: "
                     f"'{connection.from_instance}.{connection.from_port_name}' -> "
                     f"'{connection.to_instance}.{connection.to_port_name}' "
                     f"(resolved target port: '{to_port.port_path}')"
@@ -568,9 +568,9 @@ class LinkManager:
                     continue
 
                 from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
-                if isinstance(to_port, InPort) and (to_port.is_remapped or to_port.is_global):
+                if isinstance(to_port, InPort) and to_port.is_global:
                     logger.warning(
-                        "Skipping connection targeting preset input port (remapped or global) "
+                        "Skipping connection targeting global input port "
                         f"'{to_port.port_path}'; Connection: '{from_key}' -> '{to_key}'"
                         + format_source(getattr(connection, "source", None))
                     )
