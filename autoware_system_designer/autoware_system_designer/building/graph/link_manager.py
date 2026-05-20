@@ -635,12 +635,26 @@ class LinkManager:
             self._force_remap_port(port, topic_parts)
 
     @staticmethod
-    def _force_remap_port(port, topic_parts: list):
+    def _force_remap_port(port, topic_parts: list, visited: set = None):
         """Force-set a remapped topic on a port and back-propagate through its reference chain."""
+        if visited is None:
+            visited = set()
+        port_id = id(port)
+        if port_id in visited:
+            return
+        visited.add(port_id)
+
         port.is_remapped = True
-        port.topic = list(topic_parts)
+        # Use set_topic() so OutPort propagates the new topic to its users (InPorts).
+        # Guard for single-segment topics where namespace is empty.
+        if len(topic_parts) == 1:
+            port.set_topic([], topic_parts[0])
+        else:
+            port.set_topic(topic_parts[:-1], topic_parts[-1])
+        # InPort.set_topic() already recurses into references, but the visited guard prevents
+        # double-processing and ensures is_remapped is set on every port in the chain.
         for ref_port in port.reference:
-            LinkManager._force_remap_port(ref_port, topic_parts)
+            LinkManager._force_remap_port(ref_port, topic_parts, visited)
 
     def _create_external_ports(self):
         """Create external ports based on link list."""
