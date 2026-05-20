@@ -163,7 +163,7 @@
         "additionalProperties": true
       }
     },
-    "remap": {
+    "remaps": {
       "type": "array",
       "items": {
         "type": "object",

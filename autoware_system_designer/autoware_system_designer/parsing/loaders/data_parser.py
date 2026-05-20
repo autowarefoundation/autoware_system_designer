@@ -321,7 +321,7 @@ class ConfigParser:
                         mode_configs[mode_name] = config[mode_name]
                         logger.debug(f"Found mode-specific configuration for mode '{mode_name}'")
 
-            raw_remaps = config.get("remap") or []
+            raw_remaps = config.get("remaps") or []
             return SystemConfig(
                 **base_data,
                 base=base_name,

@@ -165,10 +165,11 @@ class VariantResolver:
         for spec in remove_specs:
             field = spec["field"]
             key_field = spec["key_field"]
+            yaml_key = spec.get("yaml_key", field)
 
-            if field in remove_config:
+            if yaml_key in remove_config:
                 target_list = getattr(config_object, field)
-                remove_items = remove_config[field]
+                remove_items = remove_config[yaml_key]
 
                 result_list = self._remove_list(target_list, remove_items, key_field)
                 setattr(config_object, field, result_list)
@@ -198,7 +199,6 @@ class SystemVariantResolver(VariantResolver):
             {"field": "node_groups", "key_field": "name"},
             {
                 "field": "remaps",
-                "yaml_key": "remap",
                 "key_field": "source",
                 "converter": RemapEntry.from_dict,
             },
@@ -236,6 +236,7 @@ class SystemVariantResolver(VariantResolver):
             {"field": "variables", "key_field": "name"},
             {"field": "connections", "key_field": None},
             {"field": "node_groups", "key_field": "name"},
+            {"field": "remaps", "key_field": "source"},
         ]
         self._resolve_removals(system_config, remove_config, remove_specs)
 
