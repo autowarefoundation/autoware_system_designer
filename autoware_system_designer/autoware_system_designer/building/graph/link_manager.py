@@ -581,7 +581,7 @@ class LinkManager:
         self._create_external_ports()
 
     def apply_remaps(self):
-        """Apply topic remap entries from module/system config to child ports.
+        """Apply topic remap entries from system config to child ports.
 
         Remaps override node-level global topics.  When a lower (closer to
         the system root) layer re-declares the same port the lower layer wins,
@@ -591,7 +591,9 @@ class LinkManager:
         Back-propagation through the reference chain ensures that the node's own
         port (used for launch-file remap args) also reflects the new topic.
         """
-        remaps = getattr(self.instance.configuration, "remaps", None) or []
+        remaps = getattr(self.instance.configuration, "remaps", None)
+        if not remaps:
+            return
         for entry in remaps:
             parts = entry.source.split(".")
             if len(parts) != 3:

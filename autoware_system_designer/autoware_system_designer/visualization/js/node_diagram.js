@@ -272,7 +272,6 @@ class NodeDiagramModule extends DiagramBase {
 
     let maxTopicW = 0;
     remappedPortEntries.forEach(({ id, data }) => {
-      const direction = this._getPortDirection(id) ?? "downstream";
       const hubPortId = `__remap_hub_port__${id}`;
       const topicName = data.topic?.length
         ? "/" + data.topic.join("/")
@@ -282,8 +281,6 @@ class NodeDiagramModule extends DiagramBase {
         this.measureTextWidth(topicName, style.portLabelFontSz),
       );
 
-      // publisher out_port (downstream) → hub WEST; subscriber in_port (upstream) → hub EAST
-      const side = direction === "downstream" ? "WEST" : "EAST";
       this.elementData.set(hubPortId, {
         unique_id: hubPortId,
         name: topicName,
@@ -298,7 +295,7 @@ class NodeDiagramModule extends DiagramBase {
         id: hubPortId,
         width: style.portSize,
         height: style.portSize,
-        properties: { "org.eclipse.elk.port.side": side },
+        properties: { "org.eclipse.elk.port.side": "WEST" },
         labels: [
           {
             text: topicName,
@@ -317,7 +314,7 @@ class NodeDiagramModule extends DiagramBase {
     );
     hubNode.height = Math.max(
       style.nodeBaseH,
-      style.nodeBaseH + remappedPortEntries.length * style.portSpacing * 3,
+      style.nodeBaseH + remappedPortEntries.length * (style.portSpacing * 3),
     );
 
     if (!rootNode.children) rootNode.children = [];
@@ -325,11 +322,10 @@ class NodeDiagramModule extends DiagramBase {
 
     if (!rootNode.edges) rootNode.edges = [];
     remappedPortEntries.forEach(({ id }) => {
-      const direction = this._getPortDirection(id) ?? "downstream";
       const hubPortId = `__remap_hub_port__${id}`;
       const edgeId = `__remap_edge__${id}`;
-      const [sources, targets] =
-        direction === "downstream" ? [[id], [hubPortId]] : [[hubPortId], [id]];
+      const sources = [id];
+      const targets = [hubPortId];
 
       this.elementData.set(edgeId, {
         unique_id: edgeId,
@@ -770,13 +766,7 @@ class NodeDiagramModule extends DiagramBase {
     const visGuide = userData.vis_guide || {};
 
     let prect;
-    if (isRemapHub) {
-      // Right-facing triangle: port on the remap hub block
-      prect = document.createElementNS(SVG_NS, "polygon");
-      const ps = port.width;
-      const h = ps / 2;
-      prect.setAttribute("points", `0,0 ${ps},${h} 0,${ps}`);
-    } else if (isRemapped) {
+    if (isRemapped) {
       // Circle: topic overridden by a module/system remap entry
       prect = document.createElementNS(SVG_NS, "circle");
       const r = port.width / 2;
@@ -798,10 +788,6 @@ class NodeDiagramModule extends DiagramBase {
       prect.setAttribute("height", port.height);
     }
     prect.classList.add("port-rect");
-    if (isRemapHub) {
-      prect.style.fill = "#fd7e14";
-      prect.style.stroke = "#fd7e14";
-    }
 
     const topicHint = portData.topic?.length
       ? " → /" + portData.topic.join("/")
@@ -871,13 +857,11 @@ class NodeDiagramModule extends DiagramBase {
     path.setAttribute("data-depth", String(depth));
     path.setAttribute("stroke-width", style.edgeW);
 
+    path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
     if (edgeData.is_remap_edge) {
       const ew = parseFloat(style.edgeW);
       path.setAttribute("stroke-dasharray", `${ew} ${ew * 6}`);
       path.setAttribute("stroke-linecap", "round");
-      path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
-    } else {
-      path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
     }
 
     path.onclick = (e) => {
@@ -1062,7 +1046,6 @@ class NodeDiagramModule extends DiagramBase {
       el.classList.remove("highlighted");
       if (el.tagName === "path") {
         const d = parseInt(el.getAttribute("data-depth") || "0", 10);
-        const edgeData = this.elementData.get(el.id);
         el.setAttribute("marker-end", `url(#arrowhead-depth-${d})`);
         el.style.stroke = "";
         el.style.strokeWidth = "";
