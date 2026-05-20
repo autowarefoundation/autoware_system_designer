@@ -767,7 +767,7 @@ class NodeDiagramModule extends DiagramBase {
 
     let prect;
     if (isRemapped) {
-      // Circle: topic overridden by a module/system remap entry
+      // Circle: topic overridden by a system remap entry
       prect = document.createElementNS(SVG_NS, "circle");
       const r = port.width / 2;
       prect.setAttribute("cx", r);
@@ -789,9 +789,10 @@ class NodeDiagramModule extends DiagramBase {
     }
     prect.classList.add("port-rect");
 
-    const topicHint = portData.topic?.length
-      ? " → /" + portData.topic.join("/")
-      : "";
+    const topicHint =
+      !isRemapHub && portData.topic?.length
+        ? " → /" + portData.topic.join("/")
+        : "";
     const titlePrefix = isRemapHub
       ? "[remap-topic]"
       : isRemapped

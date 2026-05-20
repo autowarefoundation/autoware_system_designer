@@ -56,7 +56,7 @@ class Port:
         self.topic: List[str] = []
         self.event = None
         self.is_global = False
-        self.is_remapped = False  # True when topic is set by a module/system remap entry
+        self.is_remapped = False  # True when topic is set by a system remap entry
         self.remap_target = remap_target
 
     @property

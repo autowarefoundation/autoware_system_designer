@@ -21,7 +21,7 @@ from .domain import ParameterFileDefinition, ParameterValueDefinition, PortDefin
 
 @dataclass
 class RemapEntry:
-    """A single topic remap directive from module/system YAML."""
+    """A single topic remap directive from system YAML."""
 
     source: str  # '{instance}.{port_type}.{port_name}', e.g. 'vehicle_cmd_gate.publisher.engage'
     topic: str  # absolute ROS topic, e.g. '/api/autoware/get/engage'
