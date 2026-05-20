@@ -227,7 +227,9 @@ class NodeDiagramModule extends DiagramBase {
     // Only collect boundary ports of top-level modules — inner ports also receive
     // is_remapped=true via _force_remap_port reference-chain propagation, so we
     // must restrict to ports whose parent node is a direct child of rootNode.
-    const topLevelNodeIds = new Set((rootNode?.children || []).map((c) => c.id));
+    const topLevelNodeIds = new Set(
+      (rootNode?.children || []).map((c) => c.id),
+    );
     const remappedPortEntries = [];
     for (const [id, data] of this.elementData) {
       if (
@@ -613,7 +615,9 @@ class NodeDiagramModule extends DiagramBase {
 
     if (userData.entity_type === "remap_hub") {
       fillColor = this.isDarkMode() ? "#2a1800" : "#fff8e1";
-      strokeColor = "#fd7e14";
+      strokeColor = this.isDarkMode()
+        ? defaults.dark.stroke
+        : defaults.light.stroke;
     }
 
     const rect = document.createElementNS(SVG_NS, "rect");
@@ -626,6 +630,7 @@ class NodeDiagramModule extends DiagramBase {
     if (userData.entity_type === "remap_hub") {
       const dw = parseFloat(style.borderW);
       rect.setAttribute("stroke-dasharray", `${dw * 5} ${dw * 2.5}`);
+      rect.setAttribute("stroke-linecap", "round");
     }
     rect.classList.add("node-rect");
 
@@ -650,7 +655,8 @@ class NodeDiagramModule extends DiagramBase {
             const fromId = String(edgeData.from_port?.unique_id ?? "");
             const toId = String(edgeData.to_port?.unique_id ?? "");
             const originalPortId = fromId === portId ? toId : fromId;
-            if (originalPortId) this._applyPortHighlight(originalPortId, "orange");
+            if (originalPortId)
+              this._applyPortHighlight(originalPortId, "orange");
           }
         }
         return;
@@ -866,13 +872,10 @@ class NodeDiagramModule extends DiagramBase {
     path.setAttribute("stroke-width", style.edgeW);
 
     if (edgeData.is_remap_edge) {
-      path.style.stroke = "#fd7e14";
       const ew = parseFloat(style.edgeW);
-      path.setAttribute("stroke-dasharray", `${ew * 6} ${ew * 3}`);
-      path.setAttribute(
-        "marker-end",
-        `url(#arrowhead-highlighted-orange-depth-${depth})`,
-      );
+      path.setAttribute("stroke-dasharray", `${ew} ${ew * 6}`);
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
     } else {
       path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
     }
@@ -1060,13 +1063,8 @@ class NodeDiagramModule extends DiagramBase {
       if (el.tagName === "path") {
         const d = parseInt(el.getAttribute("data-depth") || "0", 10);
         const edgeData = this.elementData.get(el.id);
-        if (edgeData?.is_remap_edge) {
-          el.setAttribute("marker-end", `url(#arrowhead-highlighted-orange-depth-${d})`);
-          el.style.stroke = "#fd7e14";
-        } else {
-          el.setAttribute("marker-end", `url(#arrowhead-depth-${d})`);
-          el.style.stroke = "";
-        }
+        el.setAttribute("marker-end", `url(#arrowhead-depth-${d})`);
+        el.style.stroke = "";
         el.style.strokeWidth = "";
       }
     });
