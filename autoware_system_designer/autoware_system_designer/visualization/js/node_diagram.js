@@ -638,8 +638,8 @@ class NodeDiagramModule extends DiagramBase {
       if (this.hasDragged) return;
       e.stopPropagation();
       this.updateInfoPanel(userData, "Node");
-      if (depth === 0) return;
       this.clearHighlights();
+      if (depth === 0) return;
 
       const nodeGroup = document.getElementById(node.id);
 
