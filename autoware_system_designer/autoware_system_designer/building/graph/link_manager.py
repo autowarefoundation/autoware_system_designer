@@ -581,12 +581,13 @@ class LinkManager:
         self._create_external_ports()
 
     def apply_remaps(self):
-        """Apply topic remap entries from system config to child ports.
+        """Apply topic remap entries from system config to child out-ports.
 
-        Remaps override node-level global topics.  When a lower (closer to
-        the system root) layer re-declares the same port the lower layer wins,
-        which is achieved naturally because system.set_links() calls this method
-        after module.set_links() has already run.
+        Only out-port types (publisher, server) may be remapped. Remaps override
+        node-level global topics. When a lower (closer to the system root) layer
+        re-declares the same port the lower layer wins, which is achieved naturally
+        because system.set_links() calls this method after module.set_links() has
+        already run.
 
         Back-propagation through the reference chain ensures that the node's own
         port (used for launch-file remap args) also reflects the new topic.
@@ -610,21 +611,15 @@ class LinkManager:
                     f"Available: {list(self.instance.children.keys())}"
                 )
 
-            if port_type in ("publisher", "server"):
-                port = child_instance.link_manager.out_ports.get(port_name)
-            elif port_type in ("subscriber", "client"):
-                port = child_instance.link_manager.in_ports.get(port_name)
-            else:
+            if port_type not in ("publisher", "server"):
                 raise ValidationError(
                     f"[E_REMAP_PORT_TYPE] Invalid port type '{port_type}' in remap source "
-                    f"'{entry.source}'. Expected: publisher, subscriber, server, client"
+                    f"'{entry.source}'. Only out-port types are allowed: publisher, server"
                 )
+            port = child_instance.link_manager.out_ports.get(port_name)
 
             if port is None:
-                if port_type in ("publisher", "server"):
-                    available = list(child_instance.link_manager.out_ports.keys())
-                else:
-                    available = list(child_instance.link_manager.in_ports.keys())
+                available = list(child_instance.link_manager.out_ports.keys())
                 raise ValidationError(
                     f"[E_REMAP_PORT] Port '{port_name}' not found in {port_type} ports of "
                     f"'{instance_name}'. Available: {available}"
@@ -645,26 +640,18 @@ class LinkManager:
             self._force_remap_port(port, topic_parts)
 
     @staticmethod
-    def _force_remap_port(port, topic_parts: list, visited: set = None):
-        """Force-set a remapped topic on a port and back-propagate through its reference chain."""
-        if visited is None:
-            visited = set()
-        port_id = id(port)
-        if port_id in visited:
-            return
-        visited.add(port_id)
+    def _force_remap_port(port: OutPort, topic_parts: list[str]):
+        """Force-set a remapped topic on an OutPort and back-propagate through its reference chain.
 
+        set_topic() propagates the topic to subscribed InPorts.
+        """
         port.is_remapped = True
-        # Use set_topic() so OutPort propagates the new topic to its users (InPorts).
-        # Guard for single-segment topics where namespace is empty.
         if len(topic_parts) == 1:
             port.set_topic([], topic_parts[0])
         else:
             port.set_topic(topic_parts[:-1], topic_parts[-1])
-        # InPort.set_topic() already recurses into references, but the visited guard prevents
-        # double-processing and ensures is_remapped is set on every port in the chain.
         for ref_port in port.reference:
-            LinkManager._force_remap_port(ref_port, topic_parts, visited)
+            LinkManager._force_remap_port(ref_port, topic_parts)
 
     def _create_external_ports(self):
         """Create external ports based on link list."""
