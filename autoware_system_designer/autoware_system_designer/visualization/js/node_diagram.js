@@ -314,7 +314,8 @@ class NodeDiagramModule extends DiagramBase {
     );
     hubNode.height = Math.max(
       style.nodeBaseH,
-      style.nodeBaseH + remappedPortEntries.length * (style.portSize + style.portSpacing * 2),
+      style.nodeBaseH +
+        remappedPortEntries.length * (style.portSize + style.portSpacing * 2),
     );
 
     if (!rootNode.children) rootNode.children = [];

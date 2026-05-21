@@ -627,8 +627,7 @@ class LinkManager:
 
             if not entry.topic.startswith("/"):
                 raise ValidationError(
-                    f"[E_REMAP_TOPIC] Remap topic '{entry.topic}' must be an absolute ROS topic "
-                    f"starting with '/'"
+                    f"[E_REMAP_TOPIC] Remap topic '{entry.topic}' must be an absolute ROS topic " f"starting with '/'"
                 )
             topic = entry.topic.lstrip("/")
             topic_parts = topic.split("/")
