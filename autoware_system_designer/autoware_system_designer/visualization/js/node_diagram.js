@@ -120,7 +120,7 @@ class NodeDiagramModule extends DiagramBase {
       const nodeHeight = Math.max(
         style.nodeBaseH,
         style.nodeBaseH +
-          maxPorts * (style.portSpacing * 3) +
+          maxPorts * (style.portSize + style.portSpacing * 2) +
           (containerTarget ? style.badgeH + style.badgePad : 0),
       );
 
@@ -314,7 +314,7 @@ class NodeDiagramModule extends DiagramBase {
     );
     hubNode.height = Math.max(
       style.nodeBaseH,
-      style.nodeBaseH + remappedPortEntries.length * (style.portSpacing * 3),
+      style.nodeBaseH + remappedPortEntries.length * (style.portSize + style.portSpacing * 2),
     );
 
     if (!rootNode.children) rootNode.children = [];
@@ -354,12 +354,12 @@ class NodeDiagramModule extends DiagramBase {
       nodeWidth: Math.round(120 * s),
       nodeBaseH: Math.round(44 * s),
       portSize: Math.round(5 * s),
-      portSpacing: Math.round(4 * s),
+      portSpacing: Math.round(2.5 * s),
       nodeSpacing: Math.round(5 * s),
-      edgeNodeSpacing: Math.round(3 * s),
-      edgeNodeBetweenLayers: Math.round(3 * s),
-      edgeEdgeSpacing: Math.round(4 * s),
-      edgeEdgeBetweenLayers: Math.round(4 * s),
+      edgeNodeSpacing: Math.round(2 * s),
+      edgeNodeBetweenLayers: Math.round(2 * s),
+      edgeEdgeSpacing: Math.round(3 * s),
+      edgeEdgeBetweenLayers: Math.round(3 * s),
       elkPadding: Math.round(20 * s),
       fontSize: Math.round(8 * s),
       nsSize: Math.round(5 * s),
