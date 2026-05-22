@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Iterable, List, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
 
@@ -36,17 +36,7 @@ def flatten_for_fqn(
     yaml_paths: Iterable[str],
     node_fqn: str,
 ) -> "dict[str, Any]":
-    """Read each YAML and merge the params that apply to *node_fqn*.
-
-    Matching rules (in order, later overrides earlier):
-
-    1. ``/**`` — applies to every node.
-    2. Ancestor wildcards: ``/foo/**``, ``/foo/bar/**`` — applies to any
-       descendant.
-    3. Exact FQN match.
-
-    *node_fqn* must be a full ROS node name (``/ns/node``).
-    """
+    """Read YAMLs, merge params that match *node_fqn* from ``/**`` → wildcard → exact."""
     merged: "dict[str, Any]" = {}
     for path in yaml_paths:
         try:
@@ -74,14 +64,9 @@ def flatten_for_fqn(
     return merged
 
 
-def _match_order(node_fqn: str, candidate_keys) -> List[str]:
-    """Return the ordered list of candidate_keys that match *node_fqn*.
-
-    Order is from least specific (``/**``) to most specific (exact match),
-    so later writes override earlier ones when merged.
-    """
+def _match_order(node_fqn: str, candidate_keys) -> list[str]:
     keys = list(candidate_keys)
-    matches: List[tuple] = []  # (specificity, key)
+    matches: list[tuple] = []  # (specificity, key)
 
     for key in keys:
         if key == "/**":
@@ -102,18 +87,7 @@ def _match_order(node_fqn: str, candidate_keys) -> List[str]:
 
 
 def _walk(node, prefix: str):
-    """Yield (dotted_key, leaf_value) pairs from a nested dict.
-
-    ROS 2 parameter YAML uses nested mappings as a namespace shorthand:
-
-    .. code-block:: yaml
-
-        ros__parameters:
-          mygroup:
-            mykey: 5
-
-    becomes ``"mygroup.mykey": 5``. Sequences are leaf values.
-    """
+    """Yield (dotted_key, leaf_value) pairs; nested dicts become dotted keys."""
     if isinstance(node, Mapping):
         for key, val in node.items():
             child_prefix = f"{prefix}.{key}" if prefix else str(key)
@@ -126,11 +100,7 @@ def _walk(node, prefix: str):
 
 
 def to_parameter_msgs(values: "Mapping[str, Any]") -> "list":
-    """Convert a flat dict to ``rcl_interfaces/Parameter[]``.
-
-    Import is local so this module stays importable without ROS during
-    unit testing of the YAML-flattening logic alone.
-    """
+    """Convert flat dict to ``rcl_interfaces/Parameter[]``; ROS imports deferred for testability."""
     from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
 
     out = []

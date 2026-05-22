@@ -28,10 +28,10 @@ Public surface:
 - :class:`ActorConfig` carries per-actor settings (respawn, output dir).
 """
 
-from .builder import populate_builder
-from .config import ActorConfig
-from .container_actor import RosWorker
-from .coordinator import Coordinator, CoordinatorBuilder, MemberHandle, ensure_output_dir
+from ._impl.builder import populate_builder
+from ._impl.config import ActorConfig
+from ._impl.container_actor import RosWorker
+from ._impl.coordinator import Coordinator, CoordinatorBuilder, MemberHandle, ensure_output_dir
 
 __all__ = [
     "populate_builder",

@@ -28,7 +28,7 @@ avoid build-time import errors in the colcon workspace.
 
 Invoked by builder.include_cmdline() as:
 
-    python3 -m autoware_system_designer.runtime.launch_runner \\
+    python3 -m autoware_system_designer.runtime.ros2_launch_runner \\
         --pkg <package> --file <launch_file.py> \\
         [--launch-arg key:=value ...] \\
         [--global-params-file /path/to/vehicle_info.param.yaml ...]
@@ -38,10 +38,9 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Dict, List, Tuple
 
 
-def _parse_kv(s: str) -> Tuple[str, str]:
+def _parse_kv(s: str) -> tuple[str, str]:
     if ":=" not in s:
         raise argparse.ArgumentTypeError(f"Expected KEY:=VALUE, got {s!r}")
     k, v = s.split(":=", 1)
@@ -88,9 +87,10 @@ def main() -> None:
 def _run(
     package: str,
     launch_file: str,
-    launch_args: Dict[str, str],
-    global_params_files: List[str],
+    launch_args: dict[str, str],
+    global_params_files: list[str],
 ) -> int:
+    import signal
     from pathlib import Path
 
     from ament_index_python.packages import get_package_share_directory
@@ -105,12 +105,8 @@ def _run(
     for params_file in global_params_files:
         actions.extend(_set_params_from_yaml(params_file))
 
-    # Inject undeclared launch args as SetParameter so they reach nodes even
-    # when the included file does not declare them as <arg>.  Args that ARE
-    # declared are consumed by the launch file as configuration variables and
-    # must NOT become SetParameter (they may name node params with a different
-    # type, causing crashes — e.g. localization's initial_pose:=[] is a launch
-    # configuration list, not the node's initial_pose pose parameter).
+    # Undeclared args become SetParameter; declared args are launch-config variables
+    # that must NOT be SetParameter (type conflict can crash nodes, e.g. initial_pose:=[]).
     declared = _declared_args(full_path)
     actions.extend(_undeclared_args_as_set_params(launch_args, declared))
 
@@ -125,19 +121,19 @@ def _run(
 
     ls = LaunchService()
     ls.include_launch_description(LaunchDescription(actions))
+
+    # SIGTERM triggers graceful shutdown so LaunchService waits for all children.
+    signal.signal(signal.SIGTERM, lambda sig, frame: ls.shutdown())
+
     return ls.run()
 
 
 def _declared_args(launch_file_path: str) -> set:
-    """Return the set of argument names declared at the top level of an XML launch file.
-
-    Only XML files are introspected; Python launch files return an empty set so
-    all args fall through as SetParameter (Python wrappers are rare in Autoware
-    and typically don't conflict).
-    """
+    """Return arg names declared at the top level of an XML launch file; empty for non-XML."""
     if not launch_file_path.endswith(".xml"):
         return set()
     import xml.etree.ElementTree as ET
+
     try:
         root = ET.parse(launch_file_path).getroot()
         return {el.get("name") for el in root.findall("arg") if el.get("name")}
@@ -146,21 +142,11 @@ def _declared_args(launch_file_path: str) -> set:
         return set()
 
 
-def _undeclared_args_as_set_params(launch_args: Dict[str, str], declared: set) -> list:
-    """Return SetParameter actions for args not declared by the included launch file.
-
-    Declared args are launch-time configuration variables consumed by the file's
-    own conditional logic.  Undeclared args are global ROS 2 node parameters
-    (e.g. use_sim_time, vehicle dimensions) that must propagate to every node in
-    the LaunchService context via SetParameter.
-    """
+def _undeclared_args_as_set_params(launch_args: dict[str, str], declared: set) -> list:
+    """Return SetParameter actions for args not declared by the launch file."""
     from launch_ros.actions import SetParameter
 
-    return [
-        SetParameter(name=key, value=_coerce(raw))
-        for key, raw in launch_args.items()
-        if key not in declared
-    ]
+    return [SetParameter(name=key, value=_coerce(raw)) for key, raw in launch_args.items() if key not in declared]
 
 
 def _coerce(raw: str) -> object:
@@ -182,13 +168,7 @@ def _coerce(raw: str) -> object:
 
 
 def _set_params_from_yaml(yaml_path: str) -> list:
-    """Return SetParameter actions for every param found in a ROS 2 YAML file.
-
-    Parameters under any namespace key (e.g. ``/**``, ``/my_node``) are
-    collected from their ``ros__parameters`` sub-dict and emitted as
-    ``SetParameter`` actions so they propagate to all nodes in this
-    LaunchService context before the included launch file starts.
-    """
+    """Return SetParameter actions for all params under ros__parameters in a YAML file."""
     import yaml
     from launch_ros.actions import SetParameter
 

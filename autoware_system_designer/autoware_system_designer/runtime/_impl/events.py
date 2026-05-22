@@ -24,13 +24,7 @@ from typing import Optional
 
 from .state import BlockReason
 
-
 # ---- Control events (coordinator → actor) -------------------------------
-
-
-@dataclass
-class Start:
-    pass
 
 
 @dataclass
@@ -51,9 +45,6 @@ class KillSignal:
 @dataclass
 class ToggleRespawn:
     enabled: bool
-
-
-ControlEvent = "Start | Stop | Restart | KillSignal | ToggleRespawn"
 
 
 # ---- State events (actor → coordinator) ---------------------------------
@@ -111,9 +102,3 @@ class LoadFailed:
 class Blocked:
     name: str
     reason: BlockReason
-
-
-StateEvent = (
-    "Started | Exited | Respawning | Terminated | Failed | "
-    "LoadStarted | LoadSucceeded | LoadFailed | Blocked"
-)

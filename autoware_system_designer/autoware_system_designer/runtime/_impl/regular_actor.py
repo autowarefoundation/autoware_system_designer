@@ -78,6 +78,7 @@ class RegularNodeActor:
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._respawn_enabled = config.respawn_enabled
         self._first_running_signaled = False
+        self._respawn_count: int = 0
 
     @property
     def name(self) -> str:
@@ -101,7 +102,14 @@ class RegularNodeActor:
                 elif isinstance(self._state, NodeRespawning):
                     await self._handle_respawning()
         finally:
-            await self._emit(ev.Terminated(name=self.name))
+            # put_nowait fallback: CancelledError must not silently drop the Terminated event.
+            try:
+                await self._emit(ev.Terminated(name=self.name))
+            except (asyncio.CancelledError, Exception):
+                try:
+                    self._state_tx.put_nowait(ev.Terminated(name=self.name))
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # State handlers
@@ -111,6 +119,14 @@ class RegularNodeActor:
         if self._shutdown.is_set():
             self._transition_stopped(None)
             return
+
+        # Drain stale Stop commands that arrived while we were not Running.
+        while not self._control_rx.empty():
+            cmd = self._control_rx.get_nowait()
+            if isinstance(cmd, ev.Stop):
+                self._transition_stopped(None)
+                return
+            # All other commands (Restart, KillSignal, …) are irrelevant before spawn.
 
         node_dir = self._config.output_dir / _slug(self.name)
         node_dir.mkdir(parents=True, exist_ok=True)
@@ -135,7 +151,7 @@ class RegularNodeActor:
                 await self._emit(ev.Failed(name=self.name, error=f"spawn failed: {e}"))
                 self._state = NodeFailed(error=str(e))
             else:
-                await self._transition_respawning(None, 0)
+                await self._transition_respawning(None)
             return
 
         pid = self._proc.pid
@@ -166,14 +182,19 @@ class RegularNodeActor:
 
         if wait_task in done:
             exit_code = wait_task.result()
+            # Requeue a simultaneous control command; don't discard it on process exit.
+            if ctrl_task in done:
+                self._control_rx.put_nowait(ctrl_task.result())
             await self._emit(ev.Exited(name=self.name, exit_code=exit_code))
             if self._respawn_enabled and not self._shutdown.is_set():
-                await self._transition_respawning(exit_code, 0)
+                await self._transition_respawning(exit_code)
             else:
                 self._transition_stopped(exit_code)
             return
 
         if shutdown_task in done:
+            if ctrl_task in done:
+                self._control_rx.put_nowait(ctrl_task.result())
             await self._stop_proc()
             return
 
@@ -190,15 +211,31 @@ class RegularNodeActor:
                 delay=self._config.respawn_delay,
             )
         )
+        delay_task = asyncio.create_task(asyncio.sleep(self._config.respawn_delay))
+        ctrl_task = asyncio.create_task(self._control_rx.get())
+        shutdown_task = asyncio.create_task(self._shutdown.wait())
         try:
-            await asyncio.wait_for(self._shutdown.wait(), timeout=self._config.respawn_delay)
-            # Shutdown signaled during delay
+            done, _ = await asyncio.wait(
+                {delay_task, ctrl_task, shutdown_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            for t in (delay_task, ctrl_task, shutdown_task):
+                if not t.done():
+                    t.cancel()
+
+        if shutdown_task in done:
             self._transition_stopped(self._state.exit_code)
             return
-        except asyncio.TimeoutError:
-            pass  # delay elapsed; proceed to spawn
 
-        # Re-enter Pending to spawn again
+        if ctrl_task in done:
+            cmd = ctrl_task.result()
+            if isinstance(cmd, ev.Stop):
+                self._transition_stopped(self._state.exit_code)
+                return
+            # Other commands (Restart, KillSignal, …) — proceed to spawn.
+
+        # Delay elapsed or non-Stop command received; re-enter Pending to spawn.
         self._state = NodePending()
 
     # ------------------------------------------------------------------
@@ -209,14 +246,12 @@ class RegularNodeActor:
         if isinstance(cmd, ev.Stop):
             await self._stop_proc()
         elif isinstance(cmd, ev.Restart):
+            self._respawn_count = 0  # user-initiated restart resets the counter
             await self._stop_proc(then_respawn=True)
         elif isinstance(cmd, ev.ToggleRespawn):
             self._respawn_enabled = cmd.enabled
         elif isinstance(cmd, ev.KillSignal):
             await self._send_signal(cmd.signum)
-        elif isinstance(cmd, ev.Start):
-            # Already running, no-op
-            pass
         else:
             logger.debug("[%s] ignoring control %r in Running", self.name, cmd)
 
@@ -239,7 +274,7 @@ class RegularNodeActor:
         )
         await self._emit(ev.Exited(name=self.name, exit_code=exit_code))
         if then_respawn and not self._shutdown.is_set():
-            await self._transition_respawning(exit_code, 0)
+            await self._transition_respawning(exit_code)
         else:
             self._transition_stopped(exit_code)
 
@@ -250,14 +285,15 @@ class RegularNodeActor:
     def _transition_stopped(self, exit_code: Optional[int]) -> None:
         self._state = NodeStopped(exit_code=exit_code)
 
-    async def _transition_respawning(self, exit_code: Optional[int], attempt: int) -> None:
+    async def _transition_respawning(self, exit_code: Optional[int]) -> None:
         max_attempts = self._config.max_respawn_attempts
-        if max_attempts is not None and attempt >= max_attempts:
+        if max_attempts is not None and self._respawn_count >= max_attempts:
             err = f"max respawn attempts ({max_attempts}) reached"
             await self._emit(ev.Failed(name=self.name, error=err))
             self._state = NodeFailed(error=err)
             return
-        self._state = NodeRespawning(exit_code=exit_code, attempt=attempt)
+        self._state = NodeRespawning(exit_code=exit_code, attempt=self._respawn_count)
+        self._respawn_count += 1
 
     async def _emit(self, event) -> None:
         try:
@@ -267,11 +303,7 @@ class RegularNodeActor:
 
 
 def _slug(name: str) -> str:
-    """Sanitize a member name into a filesystem-safe slug.
-
-    Mirrors play_launch's per-node log directory layout: one folder per
-    member, named by a sanitized form of its name.
-    """
+    """Sanitize a member name into a filesystem-safe path segment."""
     safe = []
     for ch in name:
         if ch.isalnum() or ch in ("_", "-", "."):

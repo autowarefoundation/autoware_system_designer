@@ -31,10 +31,10 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from ..runtime.builder import populate_builder
-from ..runtime.config import ActorConfig
-from ..runtime.coordinator import ensure_output_dir
-from ..runtime.stdin_console import run_console
+from ._impl.builder import populate_builder
+from ._impl.config import ActorConfig
+from ._impl.coordinator import ensure_output_dir
+from ._impl.stdin_console import run_console
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -67,32 +67,35 @@ def launch_from_json(
     async def _run() -> int:
         builder, worker = populate_builder(data["data"], ecu=ecu, config=config)
         coord = builder.build()
-        worker.start()
         console_task = None
         try:
+            await worker.start()
             if interactive:
                 console_task = asyncio.ensure_future(run_console(coord))
             return await coord.run()
         finally:
             if console_task is not None and not console_task.done():
                 console_task.cancel()
-            worker.stop()
+                try:
+                    await asyncio.wait_for(console_task, timeout=0.5)
+                except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                    pass
+            await worker.stop()
 
     try:
         return asyncio.run(_run())
     except KeyboardInterrupt:
+        logger.info("shutdown via KeyboardInterrupt (signal arrived before actor runtime was ready)")
         return 130
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Launch an Autoware system from a system_structure JSON file "
-        "under per-process supervision."
+        description="Launch an Autoware system from a system_structure JSON file " "under per-process supervision."
     )
     parser.add_argument(
         "json_file",
-        help="Path to system_structure JSON "
-        "(e.g. .../system_structure/LoggingSimulation.json)",
+        help="Path to system_structure JSON " "(e.g. .../system_structure/LoggingSimulation.json)",
     )
     parser.add_argument(
         "--ecu",
@@ -128,14 +131,12 @@ def main() -> None:
         "--graceful-shutdown-timeout",
         type=float,
         default=5.0,
-        help="Seconds to wait after SIGTERM before escalating to SIGKILL "
-        "(default: 5.0).",
+        help="Seconds to wait after SIGTERM before escalating to SIGKILL " "(default: 5.0).",
     )
     parser.add_argument(
         "--interactive",
         action="store_true",
-        help="Read commands from stdin while running: status, stop <name>, "
-        "restart <name>, kill <name>, quit.",
+        help="Read commands from stdin while running: status, stop <name>, " "restart <name>, kill <name>, quit.",
     )
     parser.add_argument(
         "--log-level",

@@ -12,15 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Actor state machines.
-
-Mirrors play_launch's ``src/play_launch/src/member_actor/state.rs``:
-
-- :class:`NodeState` for regular nodes and containers.
-- :class:`ComposableState` for composable nodes loaded into a container.
-- :class:`ContainerStatus` for the supervisor's view of a container.
-- :class:`BlockReason` annotates why a composable is Blocked.
-"""
+"""Actor state types for regular nodes, containers, and composable nodes."""
 
 from __future__ import annotations
 
@@ -62,9 +54,6 @@ class NodeFailed:
     error: str
 
 
-NodeState = "NodePending | NodeRunning | NodeRespawning | NodeStopped | NodeFailed"
-
-
 def is_terminal_node(state) -> bool:
     return isinstance(state, (NodeStopped, NodeFailed))
 
@@ -92,22 +81,3 @@ class ComposableLoaded:
 @dataclass
 class ComposableFailed:
     error: str
-
-
-ComposableState = (
-    "ComposableBlocked | ComposableUnloaded | ComposableLoading | "
-    "ComposableLoaded | ComposableFailed"
-)
-
-
-def is_terminal_composable(state) -> bool:
-    return isinstance(state, ComposableBlocked) and state.reason == BlockReason.SHUTDOWN
-
-
-class ContainerStatus(str, Enum):
-    """Coarse status used by composable actors to gate load requests."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    STOPPED = "stopped"
-    FAILED = "failed"

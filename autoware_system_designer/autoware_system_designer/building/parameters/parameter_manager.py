@@ -592,6 +592,7 @@ class ParameterManager:
                 # recover their proper Python type (mirrors ROS 2 XML launch behaviour).
                 if not explicit_type and isinstance(param_value, str) and not param_value.startswith("$("):
                     import yaml as _yaml
+
                     try:
                         _parsed = _yaml.safe_load(param_value)
                         if isinstance(_parsed, (bool, int, float)):

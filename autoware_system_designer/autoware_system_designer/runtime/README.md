@@ -63,7 +63,7 @@ autoware-system-designer-launch SYSTEM.json \
 
 With `--interactive`, the launcher reads commands from stdin while running:
 
-```
+```text
 [console] type 'status', 'stop <name>', 'restart <name>', 'kill <name>', 'quit'
 status
   /perception/object_recognition/detector_a1/node_filter#single_node
@@ -85,7 +85,7 @@ natural targets (`stop /perception` stops everything under that subtree).
 
 Each member gets its own directory under `--log-dir`:
 
-```
+```text
 /tmp/autoware_system_designer_logs/20260521_153012/
 └── <member-slug>/
     ├── cmdline        full argv used to spawn the process
@@ -101,7 +101,7 @@ subdirectory is created per run unless `--log-dir` overrides it.
 
 ## Architecture
 
-```
+```text
                       ┌────────────────────────────────────────┐
                       │  Coordinator (asyncio main loop)       │
                       │   - signal handlers (SIGINT → Stop)    │
@@ -127,26 +127,28 @@ subdirectory is created per run unless `--log-dir` overrides it.
                                                            worker thread)
 ```
 
-| File | Role |
-| --- | --- |
-| `state.py` | Enums for `NodeState`, `ComposableState`, `ContainerStatus`, `BlockReason` |
-| `events.py` | `ControlEvent` / `StateEvent` dataclasses |
-| `config.py` | `ActorConfig` (respawn, output dir, shutdown timeout) |
-| `process.py` | `spawn_pgrp()` + `graceful_kill()` (pgid-aware) |
-| `regular_actor.py` | One asyncio task per regular node / container |
-| `composable_actor.py` | One task per composable; awaits container ready + calls `LoadNode` |
-| `container_actor.py` | `RosWorker` — owns the shared rclpy node + service clients |
-| `params.py` | YAML param flattening (`/**`, FQN, `*` wildcards) → `rcl_interfaces.Parameter[]` |
-| `coordinator.py` | `CoordinatorBuilder`, `Coordinator`, `MemberHandle` |
-| `builder.py` | system_structure JSON → populated `CoordinatorBuilder` |
-| `stdin_console.py` | Optional stdin REPL |
-| `__init__.py` | Public re-exports |
+| File                        | Role                                                                             |
+| --------------------------- | -------------------------------------------------------------------------------- |
+| `__init__.py`               | Public re-exports (`populate_builder`, `ActorConfig`, `Coordinator`, …)          |
+| `direct_launcher.py`        | CLI entry point (`autoware-system-designer-launch`)                              |
+| `launch_runner.py`          | Subprocess entry point for `ros2_launch_file` wrapper units                      |
+| `_impl/state.py`            | Enums for `NodeState`, `ComposableState`, `ContainerStatus`, `BlockReason`       |
+| `_impl/events.py`           | `ControlEvent` / `StateEvent` dataclasses                                        |
+| `_impl/config.py`           | `ActorConfig` (respawn, output dir, shutdown timeout)                            |
+| `_impl/process.py`          | `spawn_pgrp()` + `graceful_kill()` (pgid-aware)                                  |
+| `_impl/regular_actor.py`    | One asyncio task per regular node / container                                    |
+| `_impl/composable_actor.py` | One task per composable; awaits container ready + calls `LoadNode`               |
+| `_impl/container_actor.py`  | `RosWorker` — owns the shared rclpy node + service clients                       |
+| `_impl/params.py`           | YAML param flattening (`/**`, FQN, `*` wildcards) → `rcl_interfaces.Parameter[]` |
+| `_impl/coordinator.py`      | `CoordinatorBuilder`, `Coordinator`, `MemberHandle`                              |
+| `_impl/builder.py`          | system_structure JSON → populated `CoordinatorBuilder`                           |
+| `_impl/stdin_console.py`    | Optional stdin REPL                                                              |
 
 ---
 
 ## Library use
 
-The CLI in `ros2_launcher/direct_launcher.py` is one consumer of `runtime/`.
+The CLI in `runtime/direct_launcher.py` is one consumer of `runtime/`.
 For programmatic use:
 
 ```python
@@ -198,18 +200,18 @@ recommended pattern is to wrap the coordinator instead.
 
 ## Comparison with `play_launch`
 
-| Concept | play_launch (Rust) | this runtime (Python) |
-| --- | --- | --- |
-| Actor | `RegularNodeActor` / `ContainerActor` / `ComposableNodeActor` | same names, asyncio tasks |
-| Coordinator | `MemberCoordinator{Builder,Runner,Handle}` | `Coordinator{Builder,Handle}` |
-| Process kill | SIGTERM → 5s → SIGKILL on pgid | `process.py::graceful_kill` (identical) |
-| Composable load | direct LoadNode service call | identical, via `composition_interfaces/srv/LoadNode` |
-| YAML param inlining | `LoadNodeRecord` builder strips params_files | `params.flatten_for_fqn` |
-| Input format | `record.json` | `system_structure.json` (Autoware-native) |
-| Web UI / SSE / REST | yes | **no** (explicitly out of scope) |
-| Resource monitoring | yes (CSV per-node) | **no** |
-| LD_PRELOAD interception | yes | **no** |
-| Container isolation modes | yes (`stock`/`observable`/`isolated`) | **no** (uses whatever container is in the JSON) |
+| Concept                   | play_launch (Rust)                                            | this runtime (Python)                                |
+| ------------------------- | ------------------------------------------------------------- | ---------------------------------------------------- |
+| Actor                     | `RegularNodeActor` / `ContainerActor` / `ComposableNodeActor` | same names, asyncio tasks                            |
+| Coordinator               | `MemberCoordinator{Builder,Runner,Handle}`                    | `Coordinator{Builder,Handle}`                        |
+| Process kill              | SIGTERM → 5s → SIGKILL on pgid                                | `process.py::graceful_kill` (identical)              |
+| Composable load           | direct LoadNode service call                                  | identical, via `composition_interfaces/srv/LoadNode` |
+| YAML param inlining       | `LoadNodeRecord` builder strips params_files                  | `params.flatten_for_fqn`                             |
+| Input format              | `record.json`                                                 | `system_structure.json` (Autoware-native)            |
+| Web UI / SSE / REST       | yes                                                           | **no** (explicitly out of scope)                     |
+| Resource monitoring       | yes (CSV per-node)                                            | **no**                                               |
+| LD_PRELOAD interception   | yes                                                           | **no**                                               |
+| Container isolation modes | yes (`stock`/`observable`/`isolated`)                         | **no** (uses whatever container is in the JSON)      |
 
 The two systems share the design pattern but not code. When play_launch's
 parser-side behavior is needed, run that tool directly; this runtime exists
@@ -224,7 +226,7 @@ to keep autoware_system_designer's runtime layer self-contained.
   Slow containers will need a higher timeout (configurable in
   `ComposableNodeActor.__init__`).
 - **`ros2_launch_file` entities** are wrapped as a single `ros2 launch …`
-  subprocess. You lose per-leaf-node visibility *inside* the include — by
+  subprocess. You lose per-leaf-node visibility _inside_ the include — by
   design (mirrors play_launch's NodeRecord behavior).
 - **Empty / placeholder nodes** (single_node entries whose `executable` is
   empty) are silently skipped during build; check the log at startup.

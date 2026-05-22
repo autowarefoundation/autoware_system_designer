@@ -39,12 +39,7 @@ async def spawn_pgrp(
     stdout_path: Optional[Path] = None,
     stderr_path: Optional[Path] = None,
 ) -> asyncio.subprocess.Process:
-    """Spawn *cmd* as the leader of a fresh process group.
-
-    Using ``start_new_session=True`` makes the child its own session leader
-    and process-group leader (pgid == pid). All descendants inherit that
-    group, so we can kill the entire tree with a single ``killpg``.
-    """
+    """Spawn *cmd* in a new session (pgid == pid) so the entire tree is killable via killpg."""
     stdout_file = open(stdout_path, "ab", buffering=0) if stdout_path else asyncio.subprocess.DEVNULL
     stderr_file = open(stderr_path, "ab", buffering=0) if stderr_path else asyncio.subprocess.DEVNULL
 
@@ -69,10 +64,7 @@ async def spawn_pgrp(
 
 
 def _killpg(pid: int, sig: int) -> None:
-    """Send *sig* to the process group led by *pid*.
-
-    Tolerates ESRCH (group already gone) silently; logs everything else.
-    """
+    """Send *sig* to process group; tolerates ESRCH (already gone) silently."""
     try:
         os.killpg(pid, sig)
     except ProcessLookupError:
@@ -111,7 +103,10 @@ async def graceful_kill(
         )
         _killpg(pid, signal.SIGKILL)
         try:
-            return await proc.wait()
+            return await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.error("[%s] survived SIGKILL (pgid=%d), giving up", name, pid)
+            return None
         except Exception as e:  # noqa: BLE001
             logger.warning("[%s] wait after SIGKILL failed: %s", name, e)
             return None

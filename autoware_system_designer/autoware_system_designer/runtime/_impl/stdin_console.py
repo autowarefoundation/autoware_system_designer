@@ -30,35 +30,53 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import select
 import shlex
 import signal
 import sys
-from typing import List
+from typing import Optional
 
 from .coordinator import Coordinator
 
 logger = logging.getLogger(__name__)
 
+_POLL_TIMEOUT = 0.1  # select() poll interval; shorter = faster shutdown response
+
 
 async def run_console(coord: Coordinator) -> None:
     """Loop reading commands from stdin until shutdown or ``quit``."""
     if not sys.stdin.isatty():
-        logger.debug("stdin is not a TTY, skipping console")
+        logger.warning("--interactive: stdin is not a TTY — interactive console disabled")
         return
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     print("[console] type 'status', 'stop <name>', 'restart <name>', 'kill <name>', 'quit'")
-    while not coord.shutdown_event.is_set():
-        try:
-            line = await loop.run_in_executor(None, sys.stdin.readline)
-        except (asyncio.CancelledError, KeyboardInterrupt):
-            return
-        if not line:  # EOF
-            return
-        line = line.strip()
-        if not line:
-            continue
-        await _dispatch(coord, line)
+    try:
+        while not coord.shutdown_event.is_set():
+            line = await _readline(loop)
+            if line is None:
+                continue  # poll timeout — re-check shutdown_event
+            if not line:  # EOF (Ctrl+D, SSH disconnect, pipe close)
+                logger.info("[console] stdin closed, requesting shutdown")
+                coord.request_shutdown()
+                return
+            await _dispatch(coord, line.strip())
+    except asyncio.CancelledError:
+        pass
+
+
+async def _readline(loop: asyncio.AbstractEventLoop) -> Optional[str]:
+    """Return next stdin line, ``""`` on EOF, ``None`` on poll timeout."""
+    try:
+        ready = await loop.run_in_executor(
+            None,
+            lambda: select.select([sys.stdin], [], [], _POLL_TIMEOUT)[0],
+        )
+    except (OSError, ValueError):
+        return ""  # stdin became invalid (e.g. closed fd)
+    if not ready:
+        return None  # timeout — caller re-checks shutdown_event
+    return sys.stdin.readline()
 
 
 async def _dispatch(coord: Coordinator, line: str) -> None:
@@ -104,5 +122,5 @@ async def _dispatch(coord: Coordinator, line: str) -> None:
     print(f"[console] unknown command {op!r}")
 
 
-def _match(names: List[str], pattern: str) -> List[str]:
+def _match(names: list[str], pattern: str) -> list[str]:
     return [n for n in names if pattern in n]

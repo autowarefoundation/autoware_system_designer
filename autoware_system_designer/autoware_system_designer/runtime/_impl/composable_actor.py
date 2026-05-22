@@ -12,13 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Composable-node actor — gates a :class:`LoadNode` service call.
-
-Mirrors ``src/play_launch/src/member_actor/composable_node_actor.rs`` (the
-Blocked→Unloaded→Loading→Loaded|Failed state machine), with the load
-performed via a real :mod:`composition_interfaces` client running on the
-shared rclpy worker thread.
-"""
+"""Composable-node actor: Blocked → Unloaded → Loading → Loaded|Failed."""
 
 from __future__ import annotations
 
@@ -26,7 +20,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional, Sequence, Tuple
+from typing import Any, Mapping, Optional, Sequence
 
 from . import events as ev
 from .params import flatten_for_fqn, to_parameter_msgs
@@ -52,7 +46,7 @@ class ComposableSpec:
     node_name: str
     namespace: str
     target_container_fqn: str
-    remap_rules: Sequence[Tuple[str, str]] = field(default_factory=list)
+    remap_rules: Sequence[tuple[str, str]] = field(default_factory=list)
     parameter_files: Sequence[str] = field(default_factory=list)
     inline_parameters: Mapping[str, Any] = field(default_factory=dict)
     extra_arguments: Mapping[str, Any] = field(default_factory=dict)
@@ -60,16 +54,7 @@ class ComposableSpec:
 
 
 class ComposableNodeActor:
-    """Loads one composable node into its container.
-
-    Lifecycle (single-shot — no auto-retry on failure):
-
-    1. Wait for the container's ready future (resolved when its process
-       enters Running).
-    2. Wait for the container's ``/_container/load_node`` service.
-    3. Submit the LoadNode request on the rclpy worker thread.
-    4. Emit ``LoadSucceeded`` or ``LoadFailed``; terminate.
-    """
+    """Loads one composable node into its container (single-shot, no retry)."""
 
     def __init__(
         self,
@@ -156,8 +141,7 @@ class ComposableNodeActor:
     # ---- internals -------------------------------------------------------
 
     async def _wait_for_container(self) -> None:
-        # container_ready is an asyncio.Future on this loop; race it against
-        # shutdown so a Ctrl-C during start-up doesn't hang the actor.
+        # Race container_ready against shutdown so Ctrl-C doesn't hang start-up.
         shutdown_task = asyncio.create_task(self._shutdown.wait())
         try:
             await asyncio.wait(
@@ -211,4 +195,3 @@ def _join_fqn(namespace: str, node_name: str) -> str:
     if node_name.startswith("/"):
         return node_name
     return f"{ns}/{node_name}" if ns else f"/{node_name}"
-
