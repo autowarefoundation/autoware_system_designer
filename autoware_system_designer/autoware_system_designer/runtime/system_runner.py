@@ -27,6 +27,7 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -37,6 +38,22 @@ from ._impl.coordinator import ensure_output_dir
 from ._impl.stdin_console import run_console
 
 logger = logging.getLogger("autoware_system_designer")
+
+
+_NODE_PREFIX = re.compile(r"^\[([^\]]+)\] (.*)", re.DOTALL)
+
+
+class _ShortNameFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        m = _NODE_PREFIX.match(msg)
+        if m:
+            record.short_name = f"Autoware Runtime {m.group(1)}"
+            record.msg = m.group(2)
+            record.args = ()
+        else:
+            record.short_name = "Autoware Runtime"
+        return True
 
 
 def launch_from_json(
@@ -145,10 +162,14 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    short_name_filter = _ShortNameFilter()
+    handler = logging.StreamHandler()
+    handler.addFilter(short_name_filter)
+    handler.setFormatter(
+        logging.Formatter("[%(asctime)s] %(short_name)s - %(message)s", datefmt="%H:%M:%S")
     )
+    logging.root.setLevel(getattr(logging, args.log_level))
+    logging.root.addHandler(handler)
 
     sys.exit(
         launch_from_json(

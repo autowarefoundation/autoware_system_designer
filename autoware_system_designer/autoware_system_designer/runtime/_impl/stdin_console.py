@@ -75,17 +75,21 @@ async def run_console(coord: Coordinator) -> None:
         logger.warning("--interactive: stdin is not a TTY — interactive console disabled")
         return
 
-    # Replace root StreamHandlers with the sticky variant (same formatter).
+    # Replace root StreamHandlers with the sticky variant (same formatter + filters).
     fmt: Optional[logging.Formatter] = None
+    filters: list[logging.Filter] = []
     replaced: list[logging.Handler] = []
     for h in list(logging.root.handlers):
         if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
             fmt = fmt or h.formatter
+            filters = filters or list(h.filters)
             logging.root.removeHandler(h)
             replaced.append(h)
     sticky = _StickyHandler()
     if fmt:
         sticky.setFormatter(fmt)
+    for f in filters:
+        sticky.addFilter(f)
     logging.root.addHandler(sticky)
 
     try:
