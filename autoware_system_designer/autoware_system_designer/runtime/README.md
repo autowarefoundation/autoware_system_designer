@@ -32,7 +32,7 @@ member is a first-class task with:
 
 ```bash
 cd ~/workspace/awf/autoware
-aw build aw system_designer
+colcon build --packages-up-to autoware_system_designer autoware_system_design_examples autoware_sample_designs
 source install/setup.bash
 ```
 
