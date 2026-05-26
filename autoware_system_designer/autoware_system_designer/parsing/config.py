@@ -19,6 +19,18 @@ from typing import Any, Dict, List, Optional, TypedDict, Union
 from .domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
 
 
+@dataclass
+class RemapEntry:
+    """A single topic remap directive from system YAML."""
+
+    source: str  # '{instance}.{port_type}.{port_name}', port_type must be 'publisher' or 'server'
+    topic: str  # absolute ROS topic, e.g. '/api/autoware/get/engage'
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "RemapEntry":
+        return cls(source=d["source"], topic=d["topic"])
+
+
 class LaunchConfigDict(TypedDict, total=False):
     plugin: str
     executable: str
@@ -175,3 +187,4 @@ class SystemConfig(Config):
     variables: Optional[List[VariableDict]] = None
     variable_files: Optional[List[VariableFileDict]] = None
     node_groups: Optional[List[NodeGroupDict]] = None
+    remaps: Optional[List[RemapEntry]] = None

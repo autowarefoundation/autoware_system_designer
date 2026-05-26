@@ -401,8 +401,9 @@ class LinkManager:
 
             if isinstance(to_port, InPort) and to_port.is_global:
                 msg = (
-                    "[E_WILDCARD_GLOBAL_INPUT] Wildcard connection targets a global input port and "
-                    f"cannot create a link: '{connection.from_instance}.{connection.from_port_name}' -> "
+                    "[E_WILDCARD_PRESET_INPUT] Wildcard connection targets a global input port "
+                    "and cannot create a link: "
+                    f"'{connection.from_instance}.{connection.from_port_name}' -> "
                     f"'{connection.to_instance}.{connection.to_port_name}' "
                     f"(resolved target port: '{to_port.port_path}')"
                 )
@@ -497,6 +498,10 @@ class LinkManager:
         for ext_output in outputs:
             port_list_to[f".{ext_output.name}"] = _PortInfo(port_name=ext_output.name, instance=None, port=None)
 
+        # Apply remap entries before creating links so that link resolution in
+        # links.py sees is_remapped=True and preserves the overridden topic.
+        self.apply_remaps()
+
         # Establish links based on connection type
         for connection in connection_list:
             wildcard_fields = [
@@ -574,6 +579,78 @@ class LinkManager:
 
         # Create external ports after links are set
         self._create_external_ports()
+
+    def apply_remaps(self):
+        """Apply topic remap entries from system config to child out-ports.
+
+        Only out-port types (publisher, server) may be remapped. Remaps override
+        node-level global topics. When a lower (closer to the system root) layer
+        re-declares the same port the lower layer wins, which is achieved naturally
+        because system.set_links() calls this method after module.set_links() has
+        already run.
+
+        Back-propagation through the reference chain ensures that the node's own
+        port (used for launch-file remap args) also reflects the new topic.
+        """
+        remaps = getattr(self.instance.configuration, "remaps", None)
+        if not remaps:
+            return
+        for entry in remaps:
+            parts = entry.source.split(".")
+            if len(parts) != 3:
+                raise ValidationError(
+                    f"[E_REMAP_SOURCE] Invalid remap source '{entry.source}': "
+                    "expected format '{instance}.{port_type}.{port_name}'"
+                )
+            instance_name, port_type, port_name = parts
+
+            child_instance = self.instance.children.get(instance_name)
+            if child_instance is None:
+                raise ValidationError(
+                    f"[E_REMAP_INSTANCE] Remap source instance '{instance_name}' not found. "
+                    f"Available: {list(self.instance.children.keys())}"
+                )
+
+            if port_type not in ("publisher", "server"):
+                raise ValidationError(
+                    f"[E_REMAP_PORT_TYPE] Invalid port type '{port_type}' in remap source "
+                    f"'{entry.source}'. Only out-port types are allowed: publisher, server"
+                )
+            port = child_instance.link_manager.out_ports.get(port_name)
+
+            if port is None:
+                available = list(child_instance.link_manager.out_ports.keys())
+                raise ValidationError(
+                    f"[E_REMAP_PORT] Port '{port_name}' not found in {port_type} ports of "
+                    f"'{instance_name}'. Available: {available}"
+                )
+
+            if not entry.topic.startswith("/"):
+                raise ValidationError(
+                    f"[E_REMAP_TOPIC] Remap topic '{entry.topic}' must be an absolute ROS topic " f"starting with '/'"
+                )
+            topic = entry.topic.lstrip("/")
+            topic_parts = topic.split("/")
+            if not all(topic_parts):
+                raise ValidationError(
+                    f"[E_REMAP_TOPIC] Remap topic '{entry.topic}' contains empty segments; "
+                    "must be a valid absolute ROS topic (e.g. '/foo/bar')"
+                )
+            self._force_remap_port(port, topic_parts)
+
+    @staticmethod
+    def _force_remap_port(port: OutPort, topic_parts: list[str]):
+        """Force-set a remapped topic on an OutPort and back-propagate through its reference chain.
+
+        set_topic() propagates the topic to subscribed InPorts.
+        """
+        port.is_remapped = True
+        if len(topic_parts) == 1:
+            port.set_topic([], topic_parts[0])
+        else:
+            port.set_topic(topic_parts[:-1], topic_parts[-1])
+        for ref_port in port.reference:
+            LinkManager._force_remap_port(ref_port, topic_parts)
 
     def _create_external_ports(self):
         """Create external ports based on link list."""
@@ -685,7 +762,7 @@ class LinkManager:
         ports: List[LauncherPortData] = []
 
         for port in self.in_ports.values():
-            if not port.is_global and port.get_topic() == "":
+            if port.get_topic() == "":
                 continue
             ports.append(
                 {

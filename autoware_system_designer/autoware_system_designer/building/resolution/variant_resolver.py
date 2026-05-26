@@ -15,7 +15,7 @@
 import logging
 from typing import Any, Callable, Dict, List, Optional, TypeVar
 
-from ...parsing.config import ModuleConfig, NodeConfig, SystemConfig
+from ...parsing.config import ModuleConfig, NodeConfig, RemapEntry, SystemConfig
 from ...parsing.domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
 from .connection_resolver import filter_connections_by_removed_entities
 
@@ -131,18 +131,21 @@ class VariantResolver:
             {'field': 'connections', 'key_field': None}
         ]
         The optional 'converter' callable converts override dict items to the appropriate typed object.
+        The optional 'yaml_key' overrides the YAML key used to look up the field in the override config
+        (defaults to 'field' when omitted).
         """
         override_config = config_yaml.get("override", {})
         for spec in merge_specs:
             field = spec["field"]
             key_field = spec["key_field"]
+            yaml_key = spec.get("yaml_key", field)
             converter: Optional[Callable] = spec.get("converter")
 
             # Get current list from object
             base_list = getattr(config_object, field)
 
             # Get override list from yaml (raw dicts)
-            override_list = override_config.get(field, [])
+            override_list = override_config.get(yaml_key, [])
 
             # Convert override items to typed objects if a converter is provided
             if converter and override_list:
@@ -162,10 +165,11 @@ class VariantResolver:
         for spec in remove_specs:
             field = spec["field"]
             key_field = spec["key_field"]
+            yaml_key = spec.get("yaml_key", field)
 
-            if field in remove_config:
+            if yaml_key in remove_config:
                 target_list = getattr(config_object, field)
-                remove_items = remove_config[field]
+                remove_items = remove_config[yaml_key]
 
                 result_list = self._remove_list(target_list, remove_items, key_field)
                 setattr(config_object, field, result_list)
@@ -193,6 +197,11 @@ class SystemVariantResolver(VariantResolver):
             {"field": "components", "key_field": "name"},
             {"field": "connections", "key_field": None},
             {"field": "node_groups", "key_field": "name"},
+            {
+                "field": "remaps",
+                "key_field": "source",
+                "converter": RemapEntry.from_dict,
+            },
         ]
         self._resolve_merges(system_config, config_yaml, merge_specs)
 
@@ -227,6 +236,7 @@ class SystemVariantResolver(VariantResolver):
             {"field": "variables", "key_field": "name"},
             {"field": "connections", "key_field": None},
             {"field": "node_groups", "key_field": "name"},
+            {"field": "remaps", "key_field": "source"},
         ]
         self._resolve_removals(system_config, remove_config, remove_specs)
 

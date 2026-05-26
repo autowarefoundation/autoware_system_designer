@@ -119,8 +119,8 @@ class Link:
                 to_port_ref.set_servers(from_port_list)
 
             # determine the topic, set it to the from-ports to publish and to-ports to subscribe
-            if getattr(from_port_ref, "is_global", False) and from_port_ref.topic:
-                # Global output: preserve the global topic; propagate it to subscribers
+            if (from_port_ref.is_remapped or from_port_ref.is_global) and from_port_ref.topic:
+                # Preset topic (remap takes priority over global): propagate to subscribers
                 topic_parts = from_port_ref.topic
                 for to_port_ref in to_port_list:
                     to_port_ref.set_topic(topic_parts[:-1], topic_parts[-1])
@@ -142,11 +142,14 @@ class Link:
             self.to_port.set_references(reference_port_list)
             # set the topic name to the external output, whether it is connected or not
             for reference_port in reference_port_list:
-                if getattr(reference_port, "is_global", False) and reference_port.topic:
-                    # Global output: preserve the global topic; propagate it to the external port
+                if (reference_port.is_remapped or reference_port.is_global) and reference_port.topic:
+                    # Preset topic (remap or global): propagate to the external port
                     topic_parts = reference_port.topic
                     self.to_port.set_topic(topic_parts[:-1], topic_parts[-1])
-                    self.to_port.is_global = True
+                    if reference_port.is_remapped:
+                        self.to_port.is_remapped = True
+                    else:
+                        self.to_port.is_global = True
                 else:
                     reference_port.set_topic(self.to_port.namespace, self.to_port.name)
 

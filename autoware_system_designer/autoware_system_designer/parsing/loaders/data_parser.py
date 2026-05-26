@@ -26,6 +26,7 @@ from ..config import (
     ModuleConfig,
     NodeConfig,
     ParameterSetConfig,
+    RemapEntry,
     SystemConfig,
 )
 from ..domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
@@ -320,6 +321,7 @@ class ConfigParser:
                         mode_configs[mode_name] = config[mode_name]
                         logger.debug(f"Found mode-specific configuration for mode '{mode_name}'")
 
+            raw_remaps = config.get("remaps") or []
             return SystemConfig(
                 **base_data,
                 base=base_name,
@@ -333,6 +335,7 @@ class ConfigParser:
                 variables=config.get("variables"),
                 variable_files=config.get("variable_files"),
                 node_groups=config.get("node_groups"),
+                remaps=[RemapEntry.from_dict(r) for r in raw_remaps],
             )
         else:
             raise ValidationError(f"Unknown entity type: {entity_type}")
