@@ -68,23 +68,6 @@ def node_fqn(name: str, namespace: Any) -> str:
     return f"{parent}/{name}" if parent else f"/{name}"
 
 
-_BOOL_TYPES = {"bool", "boolean"}
-_INT_TYPES = {
-    "int",
-    "integer",
-    "int8",
-    "int16",
-    "int32",
-    "int64",
-    "uint8",
-    "uint16",
-    "uint32",
-    "uint64",
-    "short",
-    "long",
-}
-_FLOAT_TYPES = {"float", "double", "float32", "float64"}
-
 # Matches ROS 2 launch $(command '<shell-cmd>' ['<on_error>']) substitution.
 _COMMAND_SUB = re.compile(r"^\$\(command\s+'(.+?)'(?:\s+'[^']*')?\s*\)$", re.DOTALL)
 
@@ -149,14 +132,14 @@ def resolve_value(value: Any, type_hint: Optional[str] = None) -> Any:
         return ""
     hint = (type_hint or "").strip().lower()
 
-    if hint in _BOOL_TYPES:
+    if hint == "bool":
         return s.lower() not in ("false", "0", "no", "off", "")
-    if hint in _INT_TYPES:
+    if hint == "int":
         try:
             return int(s)
         except ValueError:
             pass
-    if hint in _FLOAT_TYPES:
+    if hint == "double":
         try:
             return float(s)
         except ValueError:

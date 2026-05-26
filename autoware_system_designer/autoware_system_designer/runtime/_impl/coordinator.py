@@ -218,17 +218,13 @@ class Coordinator:
                         )
 
                     time_left = shutdown_deadline - loop.time()
-                    if time_left <= 0:
-                        remaining = sorted(set(actor_names) - terminated)
-                        logger.warning(
-                            "shutdown timed out; %d actor(s) did not terminate: %s",
-                            len(remaining),
-                            remaining,
-                        )
-                        break
-                    try:
-                        event = await asyncio.wait_for(self._state_q.get(), timeout=time_left)
-                    except asyncio.TimeoutError:
+                    timed_out = time_left <= 0
+                    if not timed_out:
+                        try:
+                            event = await asyncio.wait_for(self._state_q.get(), timeout=time_left)
+                        except asyncio.TimeoutError:
+                            timed_out = True
+                    if timed_out:
                         remaining = sorted(set(actor_names) - terminated)
                         logger.warning(
                             "shutdown timed out; %d actor(s) did not terminate: %s",

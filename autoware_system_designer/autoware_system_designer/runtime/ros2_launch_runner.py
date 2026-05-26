@@ -153,9 +153,7 @@ def _declared_args(launch_file_path: str) -> set:
                     func_name = (
                         func.id
                         if isinstance(func, ast.Name)
-                        else func.attr
-                        if isinstance(func, ast.Attribute)
-                        else None
+                        else func.attr if isinstance(func, ast.Attribute) else None
                     )
                     if func_name == "DeclareLaunchArgument" and node.args:
                         first = node.args[0]
