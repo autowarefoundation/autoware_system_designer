@@ -133,10 +133,12 @@ class Coordinator:
         self._post_start_hooks = post_start_hooks
         self._state_q: asyncio.Queue = asyncio.Queue()
         self._shutdown = asyncio.Event()
+        self._launch_ready = asyncio.Event()
         self._actor_tasks: list[asyncio.Task] = []
         self._extra_tasks: list[asyncio.Task] = []
         self._actor_pids: dict[str, int] = {}
         self._had_failure: bool = False
+        self._started_count: int = 0
 
     # ---- public control surface ------------------------------------------
 
@@ -166,6 +168,11 @@ class Coordinator:
     @property
     def shutdown_event(self) -> asyncio.Event:
         return self._shutdown
+
+    @property
+    def launch_ready(self) -> asyncio.Event:
+        """Set once every registered actor has reported its first ``Started`` event."""
+        return self._launch_ready
 
     # ---- main loop -------------------------------------------------------
 
@@ -294,6 +301,9 @@ class Coordinator:
         if isinstance(event, ev.Started):
             logger.info("[%s] started pid=%d", event.name, event.pid)
             self._actor_pids[event.name] = event.pid
+            self._started_count += 1
+            if self._started_count >= len(self._entries):
+                self._launch_ready.set()
         elif isinstance(event, ev.Exited):
             logger.info("[%s] exited code=%s", event.name, event.exit_code)
             self._actor_pids.pop(event.name, None)

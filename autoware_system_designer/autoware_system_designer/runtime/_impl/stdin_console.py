@@ -16,6 +16,7 @@
 
 Supported commands (one per line)::
 
+    help / ?                 show command reference
     status                   list every member and its current state
     stop    <name|prefix>    send Stop to matching members
     restart <name|prefix>    send Restart to matching members
@@ -24,23 +25,48 @@ Supported commands (one per line)::
 
 Names are matched as prefix substrings, so ``stop /perception`` stops
 everything under that namespace.
+
+Output while the user is typing is handled by ``_StickyHandler``: each log
+record erases the current prompt line (``\\r\\033[K``), prints the message,
+then redraws the prompt + partial input so the prompt stays at the bottom.
+``readline`` is activated by import so arrow-key editing and history work.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import select
+import readline  # noqa: F401 — activates readline line editing for input()
 import shlex
 import signal
 import sys
+import threading
 from typing import Optional
 
 from .coordinator import Coordinator
 
 logger = logging.getLogger(__name__)
 
-_POLL_TIMEOUT = 0.1  # select() poll interval; shorter = faster shutdown response
+_PROMPT = "autoware runtime [? for help] > "
+_output_lock = threading.Lock()
+
+
+def _write_above(text: str) -> None:
+    """Erase the current prompt line, print *text*, redraw the prompt."""
+    buf = readline.get_line_buffer()
+    with _output_lock:
+        sys.stdout.write(f"\r\033[K{text}\n{_PROMPT}{buf}")
+        sys.stdout.flush()
+
+
+class _StickyHandler(logging.Handler):
+    """Logging handler that keeps the prompt pinned at the bottom of the terminal."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            _write_above(self.format(record))
+        except Exception:  # noqa: BLE001
+            self.handleError(record)
 
 
 async def run_console(coord: Coordinator) -> None:
@@ -49,34 +75,66 @@ async def run_console(coord: Coordinator) -> None:
         logger.warning("--interactive: stdin is not a TTY — interactive console disabled")
         return
 
-    loop = asyncio.get_running_loop()
-    print("[console] type 'status', 'stop <name>', 'restart <name>', 'kill <name>', 'quit'")
+    # Replace root StreamHandlers with the sticky variant (same formatter).
+    fmt: Optional[logging.Formatter] = None
+    replaced: list[logging.Handler] = []
+    for h in list(logging.root.handlers):
+        if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+            fmt = fmt or h.formatter
+            logging.root.removeHandler(h)
+            replaced.append(h)
+    sticky = _StickyHandler()
+    if fmt:
+        sticky.setFormatter(fmt)
+    logging.root.addHandler(sticky)
+
+    try:
+        await coord.launch_ready.wait()
+    except asyncio.CancelledError:
+        return
+
     try:
         while not coord.shutdown_event.is_set():
-            line = await _readline(loop)
-            if line is None:
-                continue  # poll timeout — re-check shutdown_event
-            if not line:  # EOF (Ctrl+D, SSH disconnect, pipe close)
+            try:
+                line = await _input_or_shutdown(coord)
+            except EOFError:
                 logger.info("[console] stdin closed, requesting shutdown")
                 coord.request_shutdown()
                 return
+            except KeyboardInterrupt:
+                continue
+            except asyncio.CancelledError:
+                return
+            if line is None:  # shutdown fired while waiting for input
+                return
             await _dispatch(coord, line.strip())
-    except asyncio.CancelledError:
-        pass
+    finally:
+        logging.root.removeHandler(sticky)
+        for h in replaced:
+            logging.root.addHandler(h)
 
 
-async def _readline(loop: asyncio.AbstractEventLoop) -> Optional[str]:
-    """Return next stdin line, ``""`` on EOF, ``None`` on poll timeout."""
+async def _input_or_shutdown(coord: Coordinator) -> Optional[str]:
+    """Return the next input line, or ``None`` if shutdown fired first.
+
+    The executor thread blocking in ``input()`` is left running if shutdown
+    wins the race; it will unblock when the user next presses Enter or when
+    the process exits.
+    """
+    input_future = asyncio.get_running_loop().run_in_executor(None, input, _PROMPT)
+    shutdown_task = asyncio.ensure_future(coord.shutdown_event.wait())
     try:
-        ready = await loop.run_in_executor(
-            None,
-            lambda: select.select([sys.stdin], [], [], _POLL_TIMEOUT)[0],
+        done, _ = await asyncio.wait(
+            {input_future, shutdown_task},
+            return_when=asyncio.FIRST_COMPLETED,
         )
-    except (OSError, ValueError):
-        return ""  # stdin became invalid (e.g. closed fd)
-    if not ready:
-        return None  # timeout — caller re-checks shutdown_event
-    return sys.stdin.readline()
+        shutdown_task.cancel()
+        if shutdown_task in done:
+            return None
+        return input_future.result()  # re-raises EOFError / KeyboardInterrupt
+    except asyncio.CancelledError:
+        shutdown_task.cancel()
+        raise
 
 
 async def _dispatch(coord: Coordinator, line: str) -> None:
@@ -90,6 +148,18 @@ async def _dispatch(coord: Coordinator, line: str) -> None:
 
     op = parts[0].lower()
     arg = parts[1] if len(parts) > 1 else None
+
+    if op in ("help", "?"):
+        print(
+            "  status              — list all members and their current state\n"
+            "  stop    <name>      — send Stop to matching members\n"
+            "  restart <name>      — send Restart to matching members\n"
+            "  kill    <name>      — send SIGKILL to matching members\n"
+            "  quit                — request graceful shutdown\n"
+            "  help / ?            — show this message\n"
+            "  Names are matched as substrings, e.g. 'stop /perception'."
+        )
+        return
 
     if op == "status":
         for name in coord.names():
