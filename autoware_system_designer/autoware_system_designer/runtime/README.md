@@ -3,7 +3,7 @@
 A Python actor runtime that **runs** an Autoware system_structure JSON directly: each
 node (regular, container, composable, ros2_launch_file include) becomes a supervised
 subprocess with its own state machine. Inspired by
-[play_launch](https://github.com/tier4/play_launch), reimplemented in Python with no
+[play_launch](https://github.com/NEWSLabNTU/play_launch), reimplemented in Python with no
 play_launch import and no external binary.
 
 Each member is a first-class task: you can inspect, stop, and restart nodes
