@@ -130,8 +130,8 @@ subdirectory is created per run unless `--log-dir` overrides it.
 | File                        | Role                                                                             |
 | --------------------------- | -------------------------------------------------------------------------------- |
 | `__init__.py`               | Public re-exports (`populate_builder`, `ActorConfig`, `Coordinator`, …)          |
-| `direct_launcher.py`        | CLI entry point (`autoware-system-designer-launch`)                              |
-| `launch_runner.py`          | Subprocess entry point for `ros2_launch_file` wrapper units                      |
+| `system_runner.py`          | CLI entry point (`autoware-system-designer-launch`)                              |
+| `ros2_launch_runner.py`     | Subprocess entry point for `ros2_launch_file` wrapper units                      |
 | `_impl/state.py`            | Enums for `NodeState`, `ComposableState`, `ContainerStatus`, `BlockReason`       |
 | `_impl/events.py`           | `ControlEvent` / `StateEvent` dataclasses                                        |
 | `_impl/config.py`           | `ActorConfig` (respawn, output dir, shutdown timeout)                            |
@@ -148,7 +148,7 @@ subdirectory is created per run unless `--log-dir` overrides it.
 
 ## Library use
 
-The CLI in `runtime/direct_launcher.py` is one consumer of `runtime/`.
+The CLI in `runtime/system_runner.py` is one consumer of `runtime/`.
 For programmatic use:
 
 ```python

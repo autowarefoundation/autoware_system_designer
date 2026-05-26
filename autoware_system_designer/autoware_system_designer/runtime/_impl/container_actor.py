@@ -42,6 +42,7 @@ class RosWorker:
         self._clients: "dict[str, object]" = {}
         self._clients_lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._init_error: Optional[Exception] = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -58,6 +59,8 @@ class RosWorker:
         ok = await loop.run_in_executor(None, self._ready.wait, 10.0)
         if not ok:
             raise RuntimeError("rclpy worker failed to initialize within 10s")
+        if self._init_error is not None:
+            raise RuntimeError(f"rclpy worker failed to start: {self._init_error}") from self._init_error
 
     async def stop(self) -> None:
         if self._thread is None:
@@ -78,6 +81,7 @@ class RosWorker:
             from rclpy.executors import SingleThreadedExecutor
         except ImportError as e:
             logger.error("rclpy not available: %s", e)
+            self._init_error = RuntimeError(f"rclpy not available: {e}")
             self._ready.set()
             return
 
@@ -91,8 +95,9 @@ class RosWorker:
 
             while not self._stop.is_set():
                 self._executor.spin_once(timeout_sec=0.1)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             logger.exception("ros worker crashed")
+            self._init_error = exc
             self._ready.set()
         finally:
             try:

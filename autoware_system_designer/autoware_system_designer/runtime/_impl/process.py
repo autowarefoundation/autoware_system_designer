@@ -40,10 +40,11 @@ async def spawn_pgrp(
     stderr_path: Optional[Path] = None,
 ) -> asyncio.subprocess.Process:
     """Spawn *cmd* in a new session (pgid == pid) so the entire tree is killable via killpg."""
-    stdout_file = open(stdout_path, "ab", buffering=0) if stdout_path else asyncio.subprocess.DEVNULL
-    stderr_file = open(stderr_path, "ab", buffering=0) if stderr_path else asyncio.subprocess.DEVNULL
-
+    stdout_file = None
+    stderr_file = None
     try:
+        stdout_file = open(stdout_path, "ab", buffering=0) if stdout_path else asyncio.subprocess.DEVNULL
+        stderr_file = open(stderr_path, "ab", buffering=0) if stderr_path else asyncio.subprocess.DEVNULL
         return await asyncio.create_subprocess_exec(
             *cmd,
             cwd=str(cwd) if cwd else None,

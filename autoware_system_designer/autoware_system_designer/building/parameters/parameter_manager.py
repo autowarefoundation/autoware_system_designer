@@ -590,7 +590,15 @@ class ParameterManager:
                 # When no type is declared, re-parse resolved strings via YAML so that
                 # values like "-1.1" or "true" coming from $(var ...) substitutions
                 # recover their proper Python type (mirrors ROS 2 XML launch behaviour).
-                if not explicit_type and isinstance(param_value, str) and not param_value.startswith("$("):
+                # Exclude YAML 1.1 boolean spellings ("on"/"off"/"yes"/"no") that
+                # safe_load coerces to bool but are intentionally untyped strings here.
+                _YAML11_BOOL_STRINGS = frozenset({"yes", "no", "on", "off", "y", "n"})
+                if (
+                    not explicit_type
+                    and isinstance(param_value, str)
+                    and not param_value.startswith("$(")
+                    and param_value.strip().lower() not in _YAML11_BOOL_STRINGS
+                ):
                     import yaml as _yaml
 
                     try:

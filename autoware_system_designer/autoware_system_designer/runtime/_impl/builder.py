@@ -22,6 +22,7 @@ Entry point is :func:`populate_builder`.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import subprocess
@@ -307,7 +308,8 @@ def include_cmdline(spec: Mapping[str, Any], global_files: Optional[list[str]] =
         if v is None or v == "":
             logger.debug("skipping empty launch arg %r for %s", k, launcher["ros2_launch_file"])
             continue
-        cmd += ["--launch-arg", f"{k}:={v}"]
+        v_str = json.dumps(v) if isinstance(v, list) else str(v)
+        cmd += ["--launch-arg", f"{k}:={v_str}"]
     for f in global_files or []:
         cmd += ["--global-params-file", f]
     return cmd

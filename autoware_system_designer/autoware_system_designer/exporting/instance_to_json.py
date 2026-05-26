@@ -65,8 +65,8 @@ def _canonical_type(data_type: str | None, value: Any) -> str:
     normalized = (data_type or "").strip().lower()
     normalized = _TYPE_ALIASES.get(normalized, normalized)
 
-    # If data_type is absent or is the generic default, infer from value.
-    if not normalized or (normalized == "string" and not isinstance(value, str)):
+    # If data_type is absent, infer from value.
+    if not normalized:
         if isinstance(value, bool):
             return "bool"
         if isinstance(value, int):
@@ -76,11 +76,11 @@ def _canonical_type(data_type: str | None, value: Any) -> str:
         if isinstance(value, list):
             if not value:
                 return "string_array"
-            if isinstance(value[0], bool):
+            if all(isinstance(e, bool) for e in value):
                 return "bool_array"
-            if isinstance(value[0], int):
+            if all(isinstance(e, int) for e in value):
                 return "int_array"
-            if isinstance(value[0], float):
+            if all(isinstance(e, float) for e in value):
                 return "double_array"
             return "string_array"
 

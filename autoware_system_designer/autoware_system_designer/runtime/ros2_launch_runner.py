@@ -129,17 +129,44 @@ def _run(
 
 
 def _declared_args(launch_file_path: str) -> set:
-    """Return arg names declared at the top level of an XML launch file; empty for non-XML."""
-    if not launch_file_path.endswith(".xml"):
-        return set()
-    import xml.etree.ElementTree as ET
+    """Return arg names declared at the top level of an XML or Python launch file."""
+    if launch_file_path.endswith(".xml"):
+        import xml.etree.ElementTree as ET
 
-    try:
-        root = ET.parse(launch_file_path).getroot()
-        return {el.get("name") for el in root.findall("arg") if el.get("name")}
-    except Exception as exc:
-        print(f"launch_runner: warning: cannot parse {launch_file_path}: {exc}", file=sys.stderr)
-        return set()
+        try:
+            root = ET.parse(launch_file_path).getroot()
+            return {el.get("name") for el in root.findall("arg") if el.get("name")}
+        except Exception as exc:
+            print(f"launch_runner: warning: cannot parse {launch_file_path}: {exc}", file=sys.stderr)
+            return set()
+
+    if launch_file_path.endswith(".py"):
+        import ast
+
+        try:
+            with open(launch_file_path) as f:
+                tree = ast.parse(f.read(), filename=launch_file_path)
+            names: set = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    func = node.func
+                    func_name = (
+                        func.id
+                        if isinstance(func, ast.Name)
+                        else func.attr
+                        if isinstance(func, ast.Attribute)
+                        else None
+                    )
+                    if func_name == "DeclareLaunchArgument" and node.args:
+                        first = node.args[0]
+                        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                            names.add(first.value)
+            return names
+        except Exception as exc:
+            print(f"launch_runner: warning: cannot parse {launch_file_path}: {exc}", file=sys.stderr)
+            return set()
+
+    return set()
 
 
 def _undeclared_args_as_set_params(launch_args: dict[str, str], declared: set) -> list:
@@ -151,11 +178,16 @@ def _undeclared_args_as_set_params(launch_args: dict[str, str], declared: set) -
 
 def _coerce(raw: str) -> object:
     """Coerce a CLI string value to the natural Python type for SetParameter."""
-    low = raw.strip().lower()
-    if low in ("true", "1", "yes"):
-        return True
-    if low in ("false", "0", "no"):
-        return False
+    stripped = raw.strip()
+    # JSON array serialized by builder.include_cmdline for list-typed params.
+    if stripped.startswith("["):
+        import json
+
+        try:
+            return json.loads(stripped)
+        except (ValueError, ImportError):
+            pass
+    # Numeric parsing before bool-string check so "0"/"1" stay as integers.
     try:
         return int(raw)
     except ValueError:
@@ -164,6 +196,11 @@ def _coerce(raw: str) -> object:
         return float(raw)
     except ValueError:
         pass
+    low = stripped.lower()
+    if low in ("true", "yes"):
+        return True
+    if low in ("false", "no"):
+        return False
     return raw
 
 

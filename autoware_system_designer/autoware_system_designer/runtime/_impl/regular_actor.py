@@ -184,7 +184,10 @@ class RegularNodeActor:
             exit_code = wait_task.result()
             # Requeue a simultaneous control command; don't discard it on process exit.
             if ctrl_task in done:
-                self._control_rx.put_nowait(ctrl_task.result())
+                try:
+                    self._control_rx.put_nowait(ctrl_task.result())
+                except Exception:  # noqa: BLE001
+                    pass
             await self._emit(ev.Exited(name=self.name, exit_code=exit_code))
             if self._respawn_enabled and not self._shutdown.is_set():
                 await self._transition_respawning(exit_code)
@@ -194,7 +197,10 @@ class RegularNodeActor:
 
         if shutdown_task in done:
             if ctrl_task in done:
-                self._control_rx.put_nowait(ctrl_task.result())
+                try:
+                    self._control_rx.put_nowait(ctrl_task.result())
+                except Exception:  # noqa: BLE001
+                    pass
             await self._stop_proc()
             return
 
