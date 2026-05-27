@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Mini LaunchService runner for ros2_launch_file wrapper components.
+"""Command-line builder and runner for ros2_launch_file launch type.
 
 Each wrapper unit runs its own LaunchService so the actor supervisor can manage
 it as an independent process while still using the ROS 2 Python launch library
@@ -26,9 +26,9 @@ separate process from the global_parameter_loader.
 All imports from ``launch`` / ``launch_ros`` are deferred to function bodies to
 avoid build-time import errors in the colcon workspace.
 
-Invoked by launch_file/cmdline.py as:
+Invoked as:
 
-    python3 -m autoware_system_designer.runtime._impl.ros2.launch_file.runner \\
+    python3 -m autoware_system_designer.runtime._impl.ros2.launchers.launch_file \\
         --pkg <package> --file <launch_file.py> \\
         [--launch-arg key:=value ...] \\
         [--global-params-file /path/to/vehicle_info.param.yaml ...]
@@ -37,7 +37,43 @@ Invoked by launch_file/cmdline.py as:
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 import sys
+from typing import Mapping, Optional
+
+from ..common.params import params_dict
+
+logger = logging.getLogger(__name__)
+
+
+# ---- Command-line builder ---------------------------------------------------
+
+
+def include_cmdline(spec: Mapping, global_files: Optional[list[str]] = None) -> list[str]:
+    """Command to run a ros2_launch_file via this module with global param injection."""
+    launcher = spec["launcher"]
+    cmd = [
+        sys.executable,
+        "-m",
+        "autoware_system_designer.runtime._impl.ros2.launchers.launch_file",
+        "--pkg",
+        launcher["package"],
+        "--file",
+        launcher["ros2_launch_file"],
+    ]
+    for k, v in params_dict(spec.get("parameters", [])).items():
+        if v is None or v == "":
+            logger.debug("skipping empty launch arg %r for %s", k, launcher["ros2_launch_file"])
+            continue
+        v_str = json.dumps(v) if isinstance(v, list) else str(v)
+        cmd += ["--launch-arg", f"{k}:={v_str}"]
+    for f in global_files or []:
+        cmd += ["--global-params-file", f]
+    return cmd
+
+
+# ---- Runner (invoked as __main__) -------------------------------------------
 
 
 def _parse_kv(s: str) -> tuple[str, str]:
@@ -174,10 +210,10 @@ def _coerce(raw: str) -> object:
     """Coerce a CLI string value to the natural Python type for SetParameter."""
     stripped = raw.strip()
     if stripped.startswith("["):
-        import json
+        import json as _json
 
         try:
-            return json.loads(stripped)
+            return _json.loads(stripped)
         except (ValueError, ImportError):
             pass
     try:

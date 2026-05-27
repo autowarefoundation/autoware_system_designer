@@ -29,12 +29,10 @@ from ..core.coordinator import Coordinator, CoordinatorBuilder, _MemberEntry
 from ..core.regular_actor import NodeSpec
 from .common.namespace import node_fqn, unique_node_name
 from .common.params import params_dict
-from .composable.actor import ComposableNodeActor, ComposableSpec
-from .composable.spec import composable_spec, glog_spec_for
-from .container.cmdline import container_cmdline
-from .container.worker import RosWorker
-from .launch_file.cmdline import include_cmdline
-from .single_node.cmdline import node_cmdline
+from .launchers.composable import ComposableNodeActor, ComposableSpec, composable_spec, glog_spec_for
+from .launchers.container import RosWorker, container_cmdline
+from .launchers.launch_file import include_cmdline
+from .launchers.single_node import node_cmdline
 
 logger = logging.getLogger(__name__)
 

@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""ROS worker — shared rclpy node + LoadNode service clients.
+"""Command-line builder and ROS worker for node_container launch type.
 
-rclpy runs on a dedicated thread; ``load_node()`` bridges to asyncio.
+RosWorker owns the rclpy node and serves LoadNode requests on a dedicated
+thread. rclpy runs on a dedicated thread; ``load_node()`` bridges to asyncio.
 This is the only module that imports ``rclpy`` / ``composition_interfaces``.
 """
 
@@ -23,9 +24,24 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import Iterable, Optional
+from typing import Iterable, Mapping, Optional
+
+from ..common.params import _ros_args, build_cmd
 
 logger = logging.getLogger(__name__)
+
+
+def container_cmdline(spec: Mapping) -> list[str]:
+    launcher = spec["launcher"]
+    cmd = build_cmd(launcher)
+    cmd += _ros_args(
+        name=spec["name"],
+        namespace=spec["namespace"],
+        inline_params={},
+        param_files=[],
+        remaps=[],
+    )
+    return cmd
 
 
 class RosWorker:

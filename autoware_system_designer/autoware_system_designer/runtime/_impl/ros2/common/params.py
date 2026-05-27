@@ -93,11 +93,7 @@ def params_dict(params: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
 
 
 def parameter_files(node_spec: Mapping[str, Any]) -> list[str]:
-    return [
-        f["path"]
-        for f in node_spec.get("parameter_files_all", [])
-        if f.get("parameter_type") != "DEFAULT_FILE"
-    ]
+    return [f["path"] for f in node_spec.get("parameter_files_all", []) if f.get("parameter_type") != "DEFAULT_FILE"]
 
 
 def remap_pairs(ports: Iterable[Mapping[str, Any]]) -> list[tuple[str, str]]:
@@ -136,3 +132,32 @@ def _ros_args(
     for src, dst in remaps:
         args += ["-r", f"{src}:={dst}"]
     return args
+
+
+def _ros2_executable_path(package: str, executable: str) -> Optional[str]:
+    """Return the direct binary path for a ROS 2 executable, or None to fall back to ros2 run.
+
+    Direct spawn delivers SIGTERM to rclcpp, not to an intermediate Python wrapper.
+    """
+    try:
+        from ros2run.api import get_executable_path
+
+        path = get_executable_path(package_name=package, executable_name=executable)
+        if path:
+            return path
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("get_executable_path(%r, %r) failed: %s", package, executable, exc)
+    return None
+
+
+def build_cmd(launcher: Mapping[str, str]) -> list[str]:
+    """Return [binary_path] or ['ros2', 'run', pkg, exe] for a launcher spec."""
+    exec_path = _ros2_executable_path(launcher["package"], launcher["executable"])
+    if exec_path:
+        return [exec_path]
+    logger.warning(
+        "could not resolve executable path for %s/%s, falling back to ros2 run",
+        launcher["package"],
+        launcher["executable"],
+    )
+    return ["ros2", "run", launcher["package"], launcher["executable"]]
