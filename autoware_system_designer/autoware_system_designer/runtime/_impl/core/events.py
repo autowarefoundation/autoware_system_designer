@@ -19,10 +19,12 @@ Mirrors ``src/play_launch/src/member_actor/events.rs``.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from .state import BlockReason
+_logger = logging.getLogger(__name__)
 
 # ---- Control events (coordinator → actor) -------------------------------
 
@@ -98,7 +100,12 @@ class LoadFailed:
     error: str
 
 
-@dataclass
-class Blocked:
-    name: str
-    reason: BlockReason
+# ---- Shared emit helper --------------------------------------------------
+
+
+async def emit_event(state_tx: asyncio.Queue, name: str, event) -> None:
+    """Put *event* on *state_tx*; log a warning if the queue put fails."""
+    try:
+        await state_tx.put(event)
+    except Exception as e:  # noqa: BLE001
+        _logger.warning("[%s] state emit failed: %s", name, e)

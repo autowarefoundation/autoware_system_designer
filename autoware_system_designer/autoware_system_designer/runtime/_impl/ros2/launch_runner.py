@@ -195,9 +195,9 @@ def _coerce(raw: str) -> object:
     except ValueError:
         pass
     low = stripped.lower()
-    if low in ("true", "yes"):
+    if low in ("true", "yes", "on"):
         return True
-    if low in ("false", "no"):
+    if low in ("false", "no", "off"):
         return False
     return raw
 

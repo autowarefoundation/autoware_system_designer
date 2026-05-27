@@ -34,7 +34,7 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 from ..core.config import ActorConfig
 from ..core.coordinator import Coordinator, CoordinatorBuilder, _MemberEntry
 from ..core.regular_actor import NodeSpec
-from .composable_actor import ComposableNodeActor, ComposableSpec
+from .composable_actor import ComposableNodeActor, ComposableSpec, join_fqn
 from .container_actor import RosWorker
 
 logger = logging.getLogger(__name__)
@@ -64,12 +64,12 @@ def parent_namespace(ns: Any, name: Optional[str] = None) -> str:
 
 def node_fqn(name: str, namespace: Any) -> str:
     """Canonical ROS FQN: ``<parent_namespace>/<name>``."""
-    parent = parent_namespace(namespace, name).rstrip("/")
-    return f"{parent}/{name}" if parent else f"/{name}"
+    return join_fqn(parent_namespace(namespace, name), name)
 
 
-# Matches ROS 2 launch $(command '<shell-cmd>' ['<on_error>']) substitution.
-_COMMAND_SUB = re.compile(r"^\$\(command\s+'(.+?)'(?:\s+'[^']*')?\s*\)$", re.DOTALL)
+# Matches ROS 2 launch $(command '<shell-cmd>' ['<fallback>']) substitution.
+# Group 1: shell command; group 2: optional fallback value (used when the command fails).
+_COMMAND_SUB = re.compile(r"^\$\(command\s+'(.+?)'(?:\s+'([^']*)')?\s*\)$", re.DOTALL)
 
 
 # ---- system_structure traversal -----------------------------------------
@@ -117,6 +117,7 @@ def resolve_value(value: Any, type_hint: Optional[str] = None) -> Any:
     m = _COMMAND_SUB.match(s.strip())
     if m:
         cmd_str = m.group(1)
+        fallback = m.group(2) if m.group(2) is not None else ""
         try:
             result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, timeout=30)
             if result.returncode == 0:
@@ -129,7 +130,7 @@ def resolve_value(value: Any, type_hint: Optional[str] = None) -> Any:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("command substitution error: %s: %s", cmd_str, exc)
-        return ""
+        return fallback
     hint = (type_hint or "").strip().lower()
 
     if hint == "bool":
@@ -211,6 +212,19 @@ def _ros_args(
 # ---- Cmdline producers --------------------------------------------------
 
 
+def _build_cmd(launcher: Mapping[str, Any]) -> list[str]:
+    """Return [binary_path] or ['ros2', 'run', pkg, exe] for a launcher spec."""
+    exec_path = _ros2_executable_path(launcher["package"], launcher["executable"])
+    if exec_path:
+        return [exec_path]
+    logger.warning(
+        "could not resolve executable path for %s/%s, falling back to ros2 run",
+        launcher["package"],
+        launcher["executable"],
+    )
+    return ["ros2", "run", launcher["package"], launcher["executable"]]
+
+
 def _ros2_executable_path(package: str, executable: str) -> Optional[str]:
     """Return the direct binary path for a ROS 2 executable, or None to fall back to ros2 run.
 
@@ -231,16 +245,7 @@ def node_cmdline(spec: Mapping[str, Any], extra_param_files: Optional[list[str]]
     launcher = spec["launcher"]
     inline = params_dict(spec.get("parameters", []))
     extra_args = launcher.get("args", "")
-    exec_path = _ros2_executable_path(launcher["package"], launcher["executable"])
-    if exec_path:
-        cmd = [exec_path]
-    else:
-        logger.warning(
-            "could not resolve executable path for %s/%s, falling back to ros2 run",
-            launcher["package"],
-            launcher["executable"],
-        )
-        cmd = ["ros2", "run", launcher["package"], launcher["executable"]]
+    cmd = _build_cmd(launcher)
     if extra_args:
         cmd += extra_args.split()
     cmd += _ros_args(
@@ -255,16 +260,7 @@ def node_cmdline(spec: Mapping[str, Any], extra_param_files: Optional[list[str]]
 
 def container_cmdline(spec: Mapping[str, Any]) -> list[str]:
     launcher = spec["launcher"]
-    exec_path = _ros2_executable_path(launcher["package"], launcher["executable"])
-    if exec_path:
-        cmd = [exec_path]
-    else:
-        logger.warning(
-            "could not resolve executable path for %s/%s, falling back to ros2 run",
-            launcher["package"],
-            launcher["executable"],
-        )
-        cmd = ["ros2", "run", launcher["package"], launcher["executable"]]
+    cmd = _build_cmd(launcher)
     cmd += _ros_args(
         name=spec["name"],
         namespace=spec["namespace"],
@@ -336,6 +332,17 @@ def glog_spec_for(container_target_fqn: str) -> ComposableSpec:
 # ---- Top-level orchestration --------------------------------------------
 
 
+def _glog_available() -> bool:
+    """Return True if autoware_glog_component is installed in the ament index."""
+    try:
+        from ament_index_python.packages import get_package_share_directory
+
+        get_package_share_directory(_GLOG_PKG)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _global_param_files(nodes: list[dict[str, Any]]) -> list[str]:
     """Find the vehicle_info YAML for each global_parameter_loader node.
 
@@ -384,6 +391,7 @@ def populate_builder(
 
     composables_by_target: dict[str, list[dict[str, Any]]] = defaultdict(list)
     container_entries: dict[str, _MemberEntry] = {}
+    inject_glog = _glog_available()
 
     for n in nodes:
         state = n["launcher"]["launch_state"]
@@ -431,7 +439,7 @@ def populate_builder(
             )
             continue
 
-        load_specs: list[ComposableSpec] = [glog_spec_for(target_fqn)]
+        load_specs: list[ComposableSpec] = ([glog_spec_for(target_fqn)] if inject_glog else [])
         for m in members:
             load_specs.append(composable_spec(m, extra_param_files=global_files))
 

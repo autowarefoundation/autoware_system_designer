@@ -171,7 +171,9 @@ class Coordinator:
 
     @property
     def launch_ready(self) -> asyncio.Event:
-        """Set once every registered actor has reported its first ``Started`` event."""
+        """Set once every regular actor (single_node, node_container, ros2_launch_file)
+        has reported its first ``Started`` event. Composable nodes loaded via
+        ``schedule_task`` are not counted; they may still be loading when this fires."""
         return self._launch_ready
 
     # ---- main loop -------------------------------------------------------
@@ -246,6 +248,9 @@ class Coordinator:
                 if isinstance(event, ev.Failed):
                     self._had_failure = True
                     self._shutdown.set()  # cascade: one node failure shuts down everything
+                elif isinstance(event, ev.LoadFailed):
+                    self._had_failure = True
+                    self._shutdown.set()
                 elif isinstance(event, ev.Terminated) and event.name in actor_names:
                     terminated.add(event.name)
                     if self._shutdown.is_set():
@@ -314,8 +319,12 @@ class Coordinator:
                 event.attempt,
                 event.delay,
             )
+        elif isinstance(event, ev.Terminated):
+            logger.debug("[%s] terminated", event.name)
         elif isinstance(event, ev.Failed):
             logger.error("[%s] failed: %s", event.name, event.error)
+        elif isinstance(event, ev.LoadStarted):
+            logger.info("[%s] loading into container", event.name)
         elif isinstance(event, ev.LoadSucceeded):
             logger.info(
                 "[%s] loaded into container (unique_id=%d)",
@@ -324,8 +333,6 @@ class Coordinator:
             )
         elif isinstance(event, ev.LoadFailed):
             logger.error("[%s] load failed: %s", event.name, event.error)
-        elif isinstance(event, ev.Blocked):
-            logger.debug("[%s] blocked: %s", event.name, event.reason.value)
 
     async def _teardown(self) -> None:
         # Ensure shutdown is set on any exception path; actors wait on this event.

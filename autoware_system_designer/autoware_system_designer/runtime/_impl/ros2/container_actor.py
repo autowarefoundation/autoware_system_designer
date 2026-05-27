@@ -37,6 +37,7 @@ class RosWorker:
         self._thread: Optional[threading.Thread] = None
         self._ready = threading.Event()
         self._stop = threading.Event()
+        self._crashed = threading.Event()  # set if thread exits without _stop being set
         self._node = None  # rclpy.node.Node
         self._executor = None  # rclpy.executors.Executor
         self._clients: "dict[str, object]" = {}
@@ -108,6 +109,9 @@ class RosWorker:
                     rclpy.shutdown()
             except Exception:  # noqa: BLE001
                 pass
+            if not self._stop.is_set():
+                logger.error("ros worker exited unexpectedly")
+                self._crashed.set()
 
     # ------------------------------------------------------------------
     # LoadNode dispatch
@@ -128,6 +132,8 @@ class RosWorker:
         service_wait_timeout: float = 30.0,
         load_call_timeout: float = 30.0,
     ) -> int:
+        if self._crashed.is_set():
+            raise RuntimeError("ros worker has crashed")
         from composition_interfaces.srv import LoadNode
 
         # Build request on the calling thread (cheap, no ROS state involved).
@@ -146,6 +152,8 @@ class RosWorker:
         # Wait for the container's load_node service to come online.
         loop = asyncio.get_running_loop()
         ok = await loop.run_in_executor(None, client.wait_for_service, service_wait_timeout)
+        if self._crashed.is_set():
+            raise RuntimeError("ros worker crashed while waiting for service")
         if not ok:
             raise TimeoutError(
                 f"service {container_fqn}/_container/load_node " f"not available within {service_wait_timeout}s"

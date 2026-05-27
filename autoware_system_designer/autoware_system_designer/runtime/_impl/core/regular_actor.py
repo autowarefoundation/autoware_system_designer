@@ -27,8 +27,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Mapping, Optional, Sequence
+from typing import Optional, Sequence
 
 from . import events as ev
 from .config import ActorConfig
@@ -51,8 +50,6 @@ class NodeSpec:
 
     name: str  # unique, used for routing and log directory
     cmd: Sequence[str]
-    env: Optional[Mapping[str, str]] = None
-    cwd: Optional[Path] = None
     # Resolved with the PID the first time the process enters Running;
     # awaited by composable actors before submitting LoadNode.
     on_first_running: Optional["asyncio.Future[int]"] = field(default=None, repr=False)
@@ -135,8 +132,6 @@ class RegularNodeActor:
         try:
             self._proc = await spawn_pgrp(
                 self._spec.cmd,
-                cwd=self._spec.cwd,
-                env=self._spec.env,
                 stdout_path=node_dir / "out",
                 stderr_path=node_dir / "err",
             )
@@ -257,11 +252,11 @@ class RegularNodeActor:
         elif isinstance(cmd, ev.ToggleRespawn):
             self._respawn_enabled = cmd.enabled
         elif isinstance(cmd, ev.KillSignal):
-            await self._send_signal(cmd.signum)
+            self._send_signal(cmd.signum)
         else:
             logger.debug("[%s] ignoring control %r in Running", self.name, cmd)
 
-    async def _send_signal(self, signum: int) -> None:
+    def _send_signal(self, signum: int) -> None:
         if self._proc is None or self._proc.returncode is not None:
             return
         try:
@@ -302,10 +297,7 @@ class RegularNodeActor:
         self._respawn_count += 1
 
     async def _emit(self, event) -> None:
-        try:
-            await self._state_tx.put(event)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[%s] state emit failed: %s", self.name, e)
+        await ev.emit_event(self._state_tx, self.name, event)
 
 
 def _slug(name: str) -> str:

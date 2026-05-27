@@ -131,7 +131,7 @@ class ComposableNodeActor:
             await self._emit(
                 ev.LoadSucceeded(
                     name=self.name,
-                    full_node_name=_join_fqn(self._spec.namespace, self._spec.node_name),
+                    full_node_name=join_fqn(self._spec.namespace, self._spec.node_name),
                     unique_id=unique_id,
                 )
             )
@@ -155,7 +155,7 @@ class ComposableNodeActor:
     async def _load(self) -> int:
         # Flatten YAML params, then merge inline overrides on top.
         if self._spec.parameter_files:
-            target_fqn = _join_fqn(self._spec.namespace, self._spec.node_name)
+            target_fqn = join_fqn(self._spec.namespace, self._spec.node_name)
             flat = flatten_for_fqn(self._spec.parameter_files, target_fqn)
         else:
             flat = {}
@@ -181,13 +181,16 @@ class ComposableNodeActor:
         return unique_id
 
     async def _emit(self, event) -> None:
-        try:
-            await self._state_tx.put(event)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[%s] state emit failed: %s", self.name, e)
+        await ev.emit_event(self._state_tx, self.name, event)
 
 
-def _join_fqn(namespace: str, node_name: str) -> str:
+def join_fqn(namespace: str, node_name: str) -> str:
+    """Join a pre-resolved parent namespace string with a node name into a leading-slash FQN.
+
+    Unlike ``node_fqn`` in builder.py (which accepts raw JSON namespaces), this
+    function operates on already-resolved string namespaces. It is defined here
+    rather than in builder.py because builder imports this module, not the reverse.
+    """
     ns = namespace if namespace.startswith("/") else "/" + namespace
     ns = ns.rstrip("/")
     if not node_name:
