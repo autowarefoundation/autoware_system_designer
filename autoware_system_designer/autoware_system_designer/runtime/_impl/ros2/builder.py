@@ -439,7 +439,7 @@ def populate_builder(
             )
             continue
 
-        load_specs: list[ComposableSpec] = ([glog_spec_for(target_fqn)] if inject_glog else [])
+        load_specs: list[ComposableSpec] = [glog_spec_for(target_fqn)] if inject_glog else []
         for m in members:
             load_specs.append(composable_spec(m, extra_param_files=global_files))
 
