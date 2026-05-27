@@ -46,6 +46,15 @@ class NodeRespawning:
 
 @dataclass
 class NodeStopped:
+    """Suspended state: process exited or was stopped, but can be restarted."""
+
+    exit_code: Optional[int]
+
+
+@dataclass
+class NodeDone:
+    """True terminal state: shutdown fired while the actor was stopped."""
+
     exit_code: Optional[int]
 
 
@@ -55,7 +64,7 @@ class NodeFailed:
 
 
 def is_terminal_node(state) -> bool:
-    return isinstance(state, (NodeStopped, NodeFailed))
+    return isinstance(state, (NodeDone, NodeFailed))
 
 
 @dataclass

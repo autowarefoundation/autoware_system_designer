@@ -33,6 +33,7 @@ from . import events as ev
 from .config import ActorConfig
 from .process import graceful_kill, spawn_pgrp
 from .state import (
+    NodeDone,
     NodeFailed,
     NodePending,
     NodeRespawning,
@@ -98,6 +99,8 @@ class RegularNodeActor:
                     await self._handle_running()
                 elif isinstance(self._state, NodeRespawning):
                     await self._handle_respawning()
+                elif isinstance(self._state, NodeStopped):
+                    await self._handle_stopped()
         finally:
             # put_nowait fallback: CancelledError must not silently drop the Terminated event.
             try:
@@ -203,6 +206,37 @@ class RegularNodeActor:
         cmd = ctrl_task.result()
         await self._handle_control(cmd)
 
+    async def _handle_stopped(self) -> None:
+        """Suspended state: wait for Restart (→ Pending) or shutdown (→ Done)."""
+        assert isinstance(self._state, NodeStopped)
+        exit_code = self._state.exit_code
+
+        if self._shutdown.is_set():
+            self._state = NodeDone(exit_code=exit_code)
+            return
+
+        ctrl_task = asyncio.create_task(self._control_rx.get())
+        shutdown_task = asyncio.create_task(self._shutdown.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {ctrl_task, shutdown_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            for t in (ctrl_task, shutdown_task):
+                if not t.done():
+                    t.cancel()
+
+        if shutdown_task in done:
+            self._state = NodeDone(exit_code=exit_code)
+            return
+
+        cmd = ctrl_task.result()
+        if isinstance(cmd, ev.Restart):
+            self._respawn_count = 0
+            self._state = NodePending()
+        # Stop, KillSignal, etc. are no-ops without a live process.
+
     async def _handle_respawning(self) -> None:
         assert isinstance(self._state, NodeRespawning)
         await self._emit(
@@ -236,13 +270,12 @@ class RegularNodeActor:
                 return
             if isinstance(cmd, ev.ToggleRespawn):
                 self._respawn_enabled = cmd.enabled
+                if not self._respawn_enabled:
+                    self._transition_stopped(self._state.exit_code)
+                    return
             # Other commands (Restart, KillSignal, …) are irrelevant without a live process.
 
-        if not self._respawn_enabled:
-            self._transition_stopped(self._state.exit_code)
-            return
-
-        # Delay elapsed (or non-Stop command received); re-enter Pending to spawn.
+        # Delay elapsed (or irrelevant control command); re-enter Pending to spawn.
         self._state = NodePending()
 
     # ------------------------------------------------------------------
@@ -290,7 +323,10 @@ class RegularNodeActor:
     # ------------------------------------------------------------------
 
     def _transition_stopped(self, exit_code: Optional[int]) -> None:
-        self._state = NodeStopped(exit_code=exit_code)
+        if self._shutdown.is_set():
+            self._state = NodeDone(exit_code=exit_code)
+        else:
+            self._state = NodeStopped(exit_code=exit_code)
 
     async def _transition_respawning(self, exit_code: Optional[int]) -> None:
         max_attempts = self._config.max_respawn_attempts
