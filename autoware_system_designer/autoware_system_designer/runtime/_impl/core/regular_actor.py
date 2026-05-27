@@ -291,6 +291,7 @@ class RegularNodeActor:
         elif isinstance(cmd, ev.ToggleRespawn):
             self._respawn_enabled = cmd.enabled
         elif isinstance(cmd, ev.KillSignal):
+            self._respawn_enabled = False
             self._send_signal(cmd.signum)
         else:
             logger.debug("[%s] ignoring control %r in Running", self.name, cmd)

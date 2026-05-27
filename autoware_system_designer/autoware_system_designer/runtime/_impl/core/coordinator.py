@@ -331,6 +331,7 @@ class Coordinator:
             logger.debug("[%s] terminated", event.name)
         elif isinstance(event, ev.Failed):
             logger.error("[%s] failed: %s", event.name, event.error)
+            self._launch_ready.set()  # unblock console/waiters even on failure
         elif isinstance(event, ev.LoadStarted):
             logger.info("[%s] loading into container", event.name)
         elif isinstance(event, ev.LoadSucceeded):
@@ -341,6 +342,7 @@ class Coordinator:
             )
         elif isinstance(event, ev.LoadFailed):
             logger.error("[%s] load failed: %s", event.name, event.error)
+            self._launch_ready.set()  # unblock console/waiters even on load failure
 
     async def _teardown(self) -> None:
         # Ensure shutdown is set on any exception path; actors wait on this event.
