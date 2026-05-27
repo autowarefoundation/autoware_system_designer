@@ -207,7 +207,13 @@ def _undeclared_args_as_set_params(launch_args: dict[str, str], declared: set) -
 
 
 def _coerce(raw: str) -> object:
-    """Coerce a CLI string value to the natural Python type for SetParameter."""
+    """Coerce a CLI string value to the natural Python type for SetParameter.
+
+    Only called for args forwarded as SetParameter (undeclared by the launch
+    file); declared args are always passed as strings via launch_arguments.
+    Strings that look like integers but have leading zeros (e.g. "01") are
+    preserved as strings to avoid silent data loss.
+    """
     stripped = raw.strip()
     if stripped.startswith("["):
         import json as _json
@@ -217,11 +223,13 @@ def _coerce(raw: str) -> object:
         except (ValueError, ImportError):
             pass
     try:
-        return int(raw)
+        v = int(stripped)
+        if str(v) == stripped:  # reject "01", "+1" — preserve exact representation
+            return v
     except ValueError:
         pass
     try:
-        return float(raw)
+        return float(stripped)
     except ValueError:
         pass
     low = stripped.lower()

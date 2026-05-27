@@ -18,13 +18,13 @@ Supported commands (one per line)::
 
     help / ?                 show command reference
     status                   list every member and its current state
-    stop    <name|prefix>    send Stop to matching members
-    restart <name|prefix>    send Restart to matching members
-    kill    <name|prefix>    send SIGKILL to matching members
+    stop    <name>    send Stop to matching members
+    restart <name>    send Restart to matching members
+    kill    <name>    send SIGKILL to matching members
     quit                     request shutdown
 
-Names are matched as prefix substrings, so ``stop /perception`` stops
-everything under that namespace.
+Names are matched as substrings, so ``stop /perception`` stops everything
+under that namespace.
 
 Output while the user is typing is handled by ``_StickyHandler``: each log
 record erases the current prompt line (``\\r\\033[K``), prints the message,

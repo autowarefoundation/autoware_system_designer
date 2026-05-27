@@ -52,7 +52,8 @@ class _MemberEntry:
     control_q: asyncio.Queue = field(default_factory=asyncio.Queue)
     # Set when the underlying process first enters Running. Used by
     # composable-node actors to gate their LoadNode calls.
-    ready_signal: "asyncio.Future[int]" = field(default=None)  # type: ignore[assignment]
+    # Populated by Coordinator.run() once an event loop is running.
+    ready_signal: "Optional[asyncio.Future[int]]" = field(default=None)
 
 
 class MemberHandle:
@@ -102,13 +103,11 @@ class CoordinatorBuilder:
     ) -> _MemberEntry:
         if spec.name in self._entries:
             raise ValueError(f"duplicate member name: {spec.name!r}")
-        if spec.on_first_running is None:
-            spec.on_first_running = asyncio.get_running_loop().create_future()
         entry = _MemberEntry(
             name=spec.name,
             spec=spec,
             config=config or self._default_config,
-            ready_signal=spec.on_first_running,
+            ready_signal=spec.on_first_running,  # may be None; Coordinator.run() fills it in
         )
         self._entries[spec.name] = entry
         return entry
@@ -181,6 +180,16 @@ class Coordinator:
     async def run(self) -> int:
         self._install_signal_handlers()
 
+        # Create per-member ready-signal futures now that a loop is running.
+        # add_node() intentionally defers this so the builder can be called
+        # outside an async context.
+        loop = asyncio.get_running_loop()
+        for entry in self._entries.values():
+            if entry.ready_signal is None:
+                future: asyncio.Future[int] = loop.create_future()
+                entry.ready_signal = future
+                entry.spec.on_first_running = future
+
         # Spawn every actor first so each member has a queue to receive control.
         for entry in self._entries.values():
             actor = RegularNodeActor(
@@ -206,7 +215,6 @@ class Coordinator:
         terminated: set = set()
         total = len(self._actor_tasks)
         shutdown_deadline: Optional[float] = None
-        loop = asyncio.get_running_loop()
         try:
             while len(terminated) < total or self._extra_tasks_alive():
                 if not self._actor_tasks and not self._extra_tasks_alive():

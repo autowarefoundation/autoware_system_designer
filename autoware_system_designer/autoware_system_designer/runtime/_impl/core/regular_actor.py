@@ -234,9 +234,15 @@ class RegularNodeActor:
             if isinstance(cmd, ev.Stop):
                 self._transition_stopped(self._state.exit_code)
                 return
-            # Other commands (Restart, KillSignal, …) — proceed to spawn.
+            if isinstance(cmd, ev.ToggleRespawn):
+                self._respawn_enabled = cmd.enabled
+            # Other commands (Restart, KillSignal, …) are irrelevant without a live process.
 
-        # Delay elapsed or non-Stop command received; re-enter Pending to spawn.
+        if not self._respawn_enabled:
+            self._transition_stopped(self._state.exit_code)
+            return
+
+        # Delay elapsed (or non-Stop command received); re-enter Pending to spawn.
         self._state = NodePending()
 
     # ------------------------------------------------------------------
