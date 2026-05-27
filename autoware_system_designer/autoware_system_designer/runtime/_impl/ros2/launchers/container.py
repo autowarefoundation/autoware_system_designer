@@ -168,8 +168,7 @@ class RosWorker:
             raise RuntimeError("ros worker crashed while waiting for service")
         if not ok:
             raise TimeoutError(
-                f"service {container_fqn}/_container/load_node "
-                f"not available within {service_wait_timeout}s"
+                f"service {container_fqn}/_container/load_node " f"not available within {service_wait_timeout}s"
             )
 
         rcl_future = client.call_async(req)
@@ -189,8 +188,7 @@ class RosWorker:
             response = await asyncio.wait_for(aio_future, timeout=load_call_timeout)
         except asyncio.TimeoutError:
             raise TimeoutError(
-                f"LoadNode call for {node_namespace}/{node_name} "
-                f"timed out after {load_call_timeout}s"
+                f"LoadNode call for {node_namespace}/{node_name} " f"timed out after {load_call_timeout}s"
             )
 
         if not response.success:
