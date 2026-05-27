@@ -14,7 +14,12 @@
 
 """Autoware System Designer Package."""
 
-__version__ = "0.3.2"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("autoware_system_designer")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 # The autoware_system_design_format version supported by this tool.
 # YAML design files declare their format version via the
