@@ -51,9 +51,21 @@ _TYPE_ALIASES: dict[str, str] = {
     "uint64": "int",
     "short": "int",
     "long": "int",
-    "array": "string_array",
     "directory": "string",
 }
+
+
+def _infer_array_type(value: Any) -> str:
+    """Infer the most specific ROS 2 array type from a Python list value."""
+    if not isinstance(value, list) or not value:
+        return "string_array"
+    if all(isinstance(e, bool) for e in value):
+        return "bool_array"
+    if all(isinstance(e, int) for e in value):
+        return "int_array"
+    if all(isinstance(e, float) for e in value):
+        return "double_array"
+    return "string_array"
 
 
 def _canonical_type(data_type: str | None, value: Any) -> str:
@@ -65,6 +77,10 @@ def _canonical_type(data_type: str | None, value: Any) -> str:
     normalized = (data_type or "").strip().lower()
     normalized = _TYPE_ALIASES.get(normalized, normalized)
 
+    # "array" without a subtype qualifier: infer the element type from value.
+    if normalized == "array":
+        return _infer_array_type(value)
+
     # If data_type is absent, infer from value.
     if not normalized:
         if isinstance(value, bool):
@@ -74,15 +90,7 @@ def _canonical_type(data_type: str | None, value: Any) -> str:
         if isinstance(value, float):
             return "double"
         if isinstance(value, list):
-            if not value:
-                return "string_array"
-            if all(isinstance(e, bool) for e in value):
-                return "bool_array"
-            if all(isinstance(e, int) for e in value):
-                return "int_array"
-            if all(isinstance(e, float) for e in value):
-                return "double_array"
-            return "string_array"
+            return _infer_array_type(value)
 
     return normalized or "string"
 

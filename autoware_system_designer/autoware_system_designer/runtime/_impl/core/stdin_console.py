@@ -121,24 +121,54 @@ async def run_console(coord: Coordinator) -> None:
 async def _input_or_shutdown(coord: Coordinator) -> Optional[str]:
     """Return the next input line, or ``None`` if shutdown fired first.
 
-    The executor thread blocking in ``input()`` is left running if shutdown
-    wins the race; it will unblock when the user next presses Enter or when
-    the process exits.
+    A daemon thread is used so the blocked ``input()`` call does not prevent
+    process exit when shutdown wins the race.  The default executor is not
+    used because ``asyncio.run()`` joins it on cleanup, which would hang
+    until the user pressed Enter.
     """
-    input_future = asyncio.get_running_loop().run_in_executor(None, input, _PROMPT)
+    loop = asyncio.get_running_loop()
+    fut: asyncio.Future[str] = loop.create_future()
+
+    def _read() -> None:
+        try:
+            result = input(_PROMPT)
+        except EOFError:
+            loop.call_soon_threadsafe(_fut_resolve, fut, None, EOFError())
+            return
+        except BaseException as exc:
+            loop.call_soon_threadsafe(_fut_resolve, fut, None, exc)
+            return
+        loop.call_soon_threadsafe(_fut_resolve, fut, result, None)
+
+    threading.Thread(target=_read, daemon=True, name="stdin-input").start()
+
     shutdown_task = asyncio.ensure_future(coord.shutdown_event.wait())
     try:
         done, _ = await asyncio.wait(
-            {input_future, shutdown_task},
+            {fut, shutdown_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
         shutdown_task.cancel()
         if shutdown_task in done:
             return None
-        return input_future.result()  # re-raises EOFError / KeyboardInterrupt
+        return fut.result()  # re-raises EOFError / KeyboardInterrupt
     except asyncio.CancelledError:
         shutdown_task.cancel()
         raise
+
+
+def _fut_resolve(
+    fut: "asyncio.Future[str]",
+    result: Optional[str],
+    exc: Optional[BaseException],
+) -> None:
+    """Set *fut*'s result or exception; no-op if already done."""
+    if fut.done():
+        return
+    if exc is not None:
+        fut.set_exception(exc)
+    else:
+        fut.set_result(result)
 
 
 async def _dispatch(coord: Coordinator, line: str) -> None:
