@@ -28,7 +28,7 @@ avoid build-time import errors in the colcon workspace.
 
 Invoked by builder.include_cmdline() as:
 
-    python3 -m autoware_system_designer.runtime.ros2_launch_runner \\
+    python3 -m autoware_system_designer.runtime._impl.ros2.launch_runner \\
         --pkg <package> --file <launch_file.py> \\
         [--launch-arg key:=value ...] \\
         [--global-params-file /path/to/vehicle_info.param.yaml ...]

@@ -32,10 +32,10 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from ._impl.builder import populate_builder
-from ._impl.config import ActorConfig
-from ._impl.coordinator import ensure_output_dir
-from ._impl.stdin_console import run_console
+from ._impl.core.config import ActorConfig
+from ._impl.core.coordinator import ensure_output_dir
+from ._impl.core.stdin_console import run_console
+from ._impl.ros2.builder import populate_builder
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -165,9 +165,7 @@ def main() -> None:
     short_name_filter = _ShortNameFilter()
     handler = logging.StreamHandler()
     handler.addFilter(short_name_filter)
-    handler.setFormatter(
-        logging.Formatter("[%(asctime)s] %(short_name)s - %(message)s", datefmt="%H:%M:%S")
-    )
+    handler.setFormatter(logging.Formatter("[%(asctime)s] %(short_name)s - %(message)s", datefmt="%H:%M:%S"))
     logging.root.setLevel(getattr(logging, args.log_level))
     logging.root.addHandler(handler)
 

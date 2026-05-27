@@ -1,22 +1,15 @@
 # `runtime/` — Actor-based system supervisor
 
-A Python actor runtime that **runs** an Autoware system_structure JSON directly: each
-node (regular, container, composable, ros2_launch_file include) becomes a supervised
-subprocess with its own state machine. Inspired by
-[play_launch](https://github.com/NEWSLabNTU/play_launch), reimplemented in Python with no
-play_launch import and no external binary.
+A Python actor runtime that **runs** an Autoware system_structure JSON directly: each node (regular, container, composable, ros2_launch_file include) becomes a supervised subprocess with its own state machine. Inspired by [play_launch](https://github.com/NEWSLabNTU/play_launch), reimplemented in Python with no play_launch import and no external binary.
 
-Each member is a first-class task: you can inspect, stop, and restart nodes
-individually without tearing down the whole system.
+Each member is a first-class task: you can inspect, stop, and restart nodes individually without tearing down the whole system.
 
 ---
 
 ## Why
 
 `launch.LaunchService` hides every spawned process behind a single event loop.
-You cannot tell which node crashed, kill one without killing all, or restart a
-single component. This runtime mirrors play_launch's actor pattern so each
-member is a first-class task with:
+You cannot tell which node crashed, kill one without killing all, or restart a single component. This runtime mirrors play_launch's actor pattern so each member is a first-class task with:
 
 - explicit state (`Pending → Running → Stopped | Failed | Respawning`)
 - per-member control queue (`Stop`, `Restart`, `Kill`, `ToggleRespawn`)
@@ -76,8 +69,7 @@ restart /pointcloud_container
 quit
 ```
 
-`<name>` matches as a **substring of the member name** so namespace prefixes are
-natural targets (`stop /perception` stops everything under that subtree).
+`<name>` matches as a **substring of the member name** so namespace prefixes are natural targets (`stop /perception` stops everything under that subtree).
 
 ---
 
@@ -127,22 +119,22 @@ subdirectory is created per run unless `--log-dir` overrides it.
                                                            worker thread)
 ```
 
-| File                        | Role                                                                             |
-| --------------------------- | -------------------------------------------------------------------------------- |
-| `__init__.py`               | Public re-exports (`populate_builder`, `ActorConfig`, `Coordinator`, …)          |
-| `system_runner.py`          | CLI entry point (`autoware-system-designer-launch`)                              |
-| `ros2_launch_runner.py`     | Subprocess entry point for `ros2_launch_file` wrapper units                      |
-| `_impl/state.py`            | Enums for `NodeState`, `ComposableState`, `ContainerStatus`, `BlockReason`       |
-| `_impl/events.py`           | `ControlEvent` / `StateEvent` dataclasses                                        |
-| `_impl/config.py`           | `ActorConfig` (respawn, output dir, shutdown timeout)                            |
-| `_impl/process.py`          | `spawn_pgrp()` + `graceful_kill()` (pgid-aware)                                  |
-| `_impl/regular_actor.py`    | One asyncio task per regular node / container                                    |
-| `_impl/composable_actor.py` | One task per composable; awaits container ready + calls `LoadNode`               |
-| `_impl/container_actor.py`  | `RosWorker` — owns the shared rclpy node + service clients                       |
-| `_impl/params.py`           | YAML param flattening (`/**`, FQN, `*` wildcards) → `rcl_interfaces.Parameter[]` |
-| `_impl/coordinator.py`      | `CoordinatorBuilder`, `Coordinator`, `MemberHandle`                              |
-| `_impl/builder.py`          | system_structure JSON → populated `CoordinatorBuilder`                           |
-| `_impl/stdin_console.py`    | Optional stdin REPL                                                              |
+| File                             | Role                                                                             |
+| -------------------------------- | -------------------------------------------------------------------------------- |
+| `__init__.py`                    | Public re-exports (`populate_builder`, `ActorConfig`, `Coordinator`, …)          |
+| `system_runner.py`               | CLI entry point (`autoware-system-designer-launch`)                              |
+| `_impl/core/config.py`           | `ActorConfig` (respawn, output dir, shutdown timeout)                            |
+| `_impl/core/events.py`           | `ControlEvent` / `StateEvent` dataclasses                                        |
+| `_impl/core/state.py`            | Enums for `NodeState`, `ComposableState`, `ContainerStatus`, `BlockReason`       |
+| `_impl/core/process.py`          | `spawn_pgrp()` + `graceful_kill()` (pgid-aware)                                  |
+| `_impl/core/regular_actor.py`    | One asyncio task per regular node / container                                    |
+| `_impl/core/coordinator.py`      | `CoordinatorBuilder`, `Coordinator`, `MemberHandle`                              |
+| `_impl/core/stdin_console.py`    | Optional stdin REPL                                                              |
+| `_impl/ros2/builder.py`          | system_structure JSON → populated `CoordinatorBuilder` (ROS 2)                   |
+| `_impl/ros2/composable_actor.py` | One task per composable; awaits container ready + calls `LoadNode`               |
+| `_impl/ros2/container_actor.py`  | `RosWorker` — owns the shared rclpy node + service clients                       |
+| `_impl/ros2/params.py`           | YAML param flattening (`/**`, FQN, `*` wildcards) → `rcl_interfaces.Parameter[]` |
+| `_impl/ros2/launch_runner.py`    | Subprocess entry point for `ros2_launch_file` wrapper units                      |
 
 ---
 
@@ -191,10 +183,7 @@ await handle.set_respawn(False)    # disable auto-respawn for this one
 
 ### Consuming state events
 
-The coordinator drives its own state-event loop, but if you want a sidecar
-that taps the stream (e.g., to feed a UI), spawn a task that reads from
-`coord.state_queue` — be aware you'll race the coordinator's reader, so the
-recommended pattern is to wrap the coordinator instead.
+The coordinator drives its own state-event loop, but if you want a sidecar that taps the stream (e.g., to feed a UI), spawn a task that reads from `coord.state_queue` — be aware you'll race the coordinator's reader, so the recommended pattern is to wrap the coordinator instead.
 
 ---
 
@@ -213,24 +202,14 @@ recommended pattern is to wrap the coordinator instead.
 | LD_PRELOAD interception   | yes                                                           | **no**                                               |
 | Container isolation modes | yes (`stock`/`observable`/`isolated`)                         | **no** (uses whatever container is in the JSON)      |
 
-The two systems share the design pattern but not code. When play_launch's
-parser-side behavior is needed, run that tool directly; this runtime exists
-to keep autoware_system_designer's runtime layer self-contained.
+The two systems share the design pattern but not code. When play_launch's parser-side behavior is needed, run that tool directly; this runtime exists to keep autoware_system_designer's runtime layer self-contained.
 
 ---
 
 ## Caveats
 
-- **Composable params** are flattened from YAML in the actor; rclpy is on a
-  worker thread and the LoadNode service has a 30 s default timeout per call.
-  Slow containers will need a higher timeout (configurable in
-  `ComposableNodeActor.__init__`).
-- **`ros2_launch_file` entities** are wrapped as a single `ros2 launch …`
-  subprocess. You lose per-leaf-node visibility _inside_ the include — by
-  design (mirrors play_launch's NodeRecord behavior).
-- **Empty / placeholder nodes** (single_node entries whose `executable` is
-  empty) are silently skipped during build; check the log at startup.
-- **Namespace data convention**: system_structure stores `namespace` as the
-  full path of the entity (including its own name as the last segment when
-  the entity sits under a same-named module). The builder strips that last
-  segment iff it equals `name`. See `builder.parent_namespace()`.
+- **Composable params** are flattened from YAML in the actor; rclpy is on a worker thread and the LoadNode service has a 30 s default timeout per call.
+  Slow containers will need a higher timeout (configurable in `ComposableNodeActor.__init__`).
+- **`ros2_launch_file` entities** are wrapped as a single `ros2 launch …` subprocess. You lose per-leaf-node visibility _inside_ the include — by design (mirrors play_launch's NodeRecord behavior).
+- **Empty / placeholder nodes** (single_node entries whose `executable` is empty) are silently skipped during build; check the log at startup.
+- **Namespace data convention**: system_structure stores `namespace` as the full path of the entity (including its own name as the last segment when the entity sits under a same-named module). The builder strips that last segment if it equals `name`. See `builder.parent_namespace()`.

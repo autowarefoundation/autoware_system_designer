@@ -31,11 +31,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
+from ..core.config import ActorConfig
+from ..core.coordinator import Coordinator, CoordinatorBuilder, _MemberEntry
+from ..core.regular_actor import NodeSpec
 from .composable_actor import ComposableNodeActor, ComposableSpec
-from .config import ActorConfig
 from .container_actor import RosWorker
-from .coordinator import Coordinator, CoordinatorBuilder, _MemberEntry
-from .regular_actor import NodeSpec
 
 logger = logging.getLogger(__name__)
 
@@ -276,12 +276,12 @@ def container_cmdline(spec: Mapping[str, Any]) -> list[str]:
 
 
 def include_cmdline(spec: Mapping[str, Any], global_files: Optional[list[str]] = None) -> list[str]:
-    """Command to run a ros2_launch_file via ros2_launch_runner with global param injection."""
+    """Command to run a ros2_launch_file via launch_runner with global param injection."""
     launcher = spec["launcher"]
     cmd = [
         sys.executable,
         "-m",
-        "autoware_system_designer.runtime.ros2_launch_runner",
+        "autoware_system_designer.runtime._impl.ros2.launch_runner",
         "--pkg",
         launcher["package"],
         "--file",
