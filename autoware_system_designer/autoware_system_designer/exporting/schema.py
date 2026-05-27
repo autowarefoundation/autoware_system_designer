@@ -75,6 +75,7 @@ class LauncherPortData(TypedDict, total=False):
 class LauncherParamValueData(TypedDict, total=False):
     name: str
     value: Any
+    type: str
     parameter_type: str
 
 
