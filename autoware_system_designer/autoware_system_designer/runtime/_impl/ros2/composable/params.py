@@ -24,7 +24,6 @@ wildcards like ``/sensing/**``), flatten, and convert to
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
@@ -76,10 +75,8 @@ def _match_order(node_fqn: str, candidate_keys) -> list[str]:
             matches.append((3, key))
             continue
         if key.endswith("/**"):
-            # Wildcard at any namespace depth.
             base = key[:-3] or "/"
             if base == "/" or node_fqn.startswith(base.rstrip("/") + "/"):
-                # Depth of the namespace = specificity (more slashes = more specific).
                 matches.append((1 + base.count("/"), key))
 
     matches.sort(key=lambda t: t[0])
@@ -94,9 +91,6 @@ def _walk(node, prefix: str):
             yield from _walk(val, child_prefix)
     else:
         yield prefix, node
-
-
-# ---- Conversion to rcl_interfaces.msg.Parameter --------------------------
 
 
 def to_parameter_msgs(values: "Mapping[str, Any]") -> "list":
@@ -135,7 +129,6 @@ def _to_parameter_value(value, ParameterValue, ParameterType):
         return pv
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         return _seq_to_param_value(list(value), pv, ParameterType)
-    # Fallback: stringify
     pv.type = ParameterType.PARAMETER_STRING
     pv.string_value = str(value)
     return pv
@@ -143,7 +136,6 @@ def _to_parameter_value(value, ParameterValue, ParameterType):
 
 def _seq_to_param_value(items: list, pv, ParameterType):
     if not items:
-        # ROS 2 requires us to commit to a type; default to string array.
         pv.type = ParameterType.PARAMETER_STRING_ARRAY
         pv.string_array_value = []
         return pv

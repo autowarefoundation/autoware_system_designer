@@ -14,62 +14,29 @@
 
 """Translation from system_structure JSON to a populated CoordinatorBuilder.
 
-Owns cmdline construction for regular nodes, containers, and ros2_launch_file
-includes, and :class:`ComposableSpec` construction for composable nodes.
 Entry point is :func:`populate_builder`.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-import re
-import subprocess
-import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional
 
 from ..core.config import ActorConfig
 from ..core.coordinator import Coordinator, CoordinatorBuilder, _MemberEntry
 from ..core.regular_actor import NodeSpec
-from .composable_actor import ComposableNodeActor, ComposableSpec, join_fqn
-from .container_actor import RosWorker
+from .common.namespace import node_fqn, unique_node_name
+from .common.params import params_dict
+from .composable.actor import ComposableNodeActor, ComposableSpec
+from .composable.spec import composable_spec, glog_spec_for
+from .container.cmdline import container_cmdline
+from .container.worker import RosWorker
+from .launch_file.cmdline import include_cmdline
+from .single_node.cmdline import node_cmdline
 
 logger = logging.getLogger(__name__)
-
-_GLOG_PKG = "autoware_glog_component"
-_GLOG_PLUGIN = "autoware::glog_component::GlogComponent"
-_GLOG_NAME = "glog_component"
-
-
-def _ns_segments(ns: Any) -> list[str]:
-    if ns is None:
-        return []
-    if isinstance(ns, str):
-        return [s for s in ns.split("/") if s]
-    if isinstance(ns, (list, tuple)):
-        return [str(p).strip("/") for p in ns if p]
-    return []
-
-
-def parent_namespace(ns: Any, name: Optional[str] = None) -> str:
-    """Return parent ROS namespace, stripping the trailing segment when it equals *name*."""
-    segs = _ns_segments(ns)
-    if name and segs and segs[-1] == name:
-        segs = segs[:-1]
-    return "/" + "/".join(segs) if segs else "/"
-
-
-def node_fqn(name: str, namespace: Any) -> str:
-    """Canonical ROS FQN: ``<parent_namespace>/<name>``."""
-    return join_fqn(parent_namespace(namespace, name), name)
-
-
-# Matches ROS 2 launch $(command '<shell-cmd>' ['<fallback>']) substitution.
-# Group 1: shell command; group 2: optional fallback value (used when the command fails).
-_COMMAND_SUB = re.compile(r"^\$\(command\s+'(.+?)'(?:\s+'([^']*)')?\s*\)$", re.DOTALL)
 
 
 # ---- system_structure traversal -----------------------------------------
@@ -98,238 +65,7 @@ def _collect(entity: Mapping[str, Any], out: list[dict[str, Any]], ecu: Optional
         _collect(child, out, ecu)
 
 
-# ---- Parameter / value resolution ---------------------------------------
-
-
-def resolve_value(value: Any, type_hint: Optional[str] = None) -> Any:
-    """Coerce a JSON param value to a Python value using *type_hint*.
-
-    ``$(command '<cmd>' ...)`` substitutions are resolved by running the shell
-    command and using its stdout.
-    """
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float, list)):
-        return value
-
-    s = str(value)
-
-    m = _COMMAND_SUB.match(s.strip())
-    if m:
-        cmd_str = m.group(1)
-        fallback = m.group(2) if m.group(2) is not None else ""
-        try:
-            result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0:
-                return result.stdout.strip()
-            logger.warning(
-                "command substitution failed (rc=%d): %s\n%s",
-                result.returncode,
-                cmd_str,
-                result.stderr.strip(),
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("command substitution error: %s: %s", cmd_str, exc)
-        return fallback
-    hint = (type_hint or "").strip().lower()
-
-    if hint == "bool":
-        return s.lower() not in ("false", "0", "no", "off", "")
-    if hint == "int":
-        try:
-            return int(s)
-        except ValueError:
-            pass
-    if hint == "double":
-        try:
-            return float(s)
-        except ValueError:
-            pass
-
-    import yaml
-
-    try:
-        parsed = yaml.safe_load(s)
-        if isinstance(parsed, (bool, int, float, list)):
-            return parsed
-    except Exception:  # noqa: BLE001
-        pass
-    return s
-
-
-def params_dict(params: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
-    return {p["name"]: resolve_value(p["value"], p.get("type")) for p in params}
-
-
-def parameter_files(node_spec: Mapping[str, Any]) -> list[str]:
-    return [f["path"] for f in node_spec.get("parameter_files_all", []) if f.get("parameter_type") != "DEFAULT_FILE"]
-
-
-def remap_pairs(ports: Iterable[Mapping[str, Any]]) -> list[tuple[str, str]]:
-    return [(p["remap_target"], p["topic"]) for p in ports if p.get("remap_target") and p.get("topic")]
-
-
-# ---- ROS arg formatting -------------------------------------------------
-
-
-_VALID_PARAM_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_./]*$")
-
-
-def _ros_arg_for_param(name: str, value: Any) -> list[str]:
-    """Render ``-p name:=value`` in a yaml.safe_dump-typed form ROS 2 will accept."""
-    import yaml
-
-    if not _VALID_PARAM_KEY.match(name):
-        logger.warning("skipping unsafe param name %r", name)
-        return []
-    encoded = yaml.safe_dump(value, default_flow_style=True).strip()
-    return ["-p", f"{name}:={encoded}"]
-
-
-def _ros_args(
-    *,
-    name: str,
-    namespace: Any,
-    inline_params: Mapping[str, Any],
-    param_files: Sequence[str],
-    remaps: Sequence[tuple[str, str]],
-) -> list[str]:
-    args: list[str] = ["--ros-args"]
-    ns = parent_namespace(namespace, name)
-    if ns and ns != "/":
-        args += ["-r", f"__ns:={ns}"]
-    if name:
-        args += ["-r", f"__node:={name}"]
-    for k, v in inline_params.items():
-        args += _ros_arg_for_param(k, v)
-    for f in param_files:
-        args += ["--params-file", f]
-    for src, dst in remaps:
-        args += ["-r", f"{src}:={dst}"]
-    return args
-
-
-# ---- Cmdline producers --------------------------------------------------
-
-
-def _build_cmd(launcher: Mapping[str, Any]) -> list[str]:
-    """Return [binary_path] or ['ros2', 'run', pkg, exe] for a launcher spec."""
-    exec_path = _ros2_executable_path(launcher["package"], launcher["executable"])
-    if exec_path:
-        return [exec_path]
-    logger.warning(
-        "could not resolve executable path for %s/%s, falling back to ros2 run",
-        launcher["package"],
-        launcher["executable"],
-    )
-    return ["ros2", "run", launcher["package"], launcher["executable"]]
-
-
-def _ros2_executable_path(package: str, executable: str) -> Optional[str]:
-    """Return the direct binary path for a ROS 2 executable, or None to fall back to ros2 run.
-
-    Direct spawn delivers SIGTERM to rclcpp, not to an intermediate Python wrapper.
-    """
-    try:
-        from ros2run.api import get_executable_path
-
-        path = get_executable_path(package_name=package, executable_name=executable)
-        if path:
-            return path
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("get_executable_path(%r, %r) failed: %s", package, executable, exc)
-    return None
-
-
-def node_cmdline(spec: Mapping[str, Any], extra_param_files: Optional[list[str]] = None) -> list[str]:
-    launcher = spec["launcher"]
-    inline = params_dict(spec.get("parameters", []))
-    extra_args = launcher.get("args", "")
-    cmd = _build_cmd(launcher)
-    if extra_args:
-        cmd += extra_args.split()
-    cmd += _ros_args(
-        name=spec["name"],
-        namespace=spec["namespace"],
-        inline_params=inline,
-        param_files=parameter_files(spec) + (extra_param_files or []),
-        remaps=remap_pairs(launcher.get("ports", [])),
-    )
-    return cmd
-
-
-def container_cmdline(spec: Mapping[str, Any]) -> list[str]:
-    launcher = spec["launcher"]
-    cmd = _build_cmd(launcher)
-    cmd += _ros_args(
-        name=spec["name"],
-        namespace=spec["namespace"],
-        inline_params={},
-        param_files=[],
-        remaps=[],
-    )
-    return cmd
-
-
-def include_cmdline(spec: Mapping[str, Any], global_files: Optional[list[str]] = None) -> list[str]:
-    """Command to run a ros2_launch_file via launch_runner with global param injection."""
-    launcher = spec["launcher"]
-    cmd = [
-        sys.executable,
-        "-m",
-        "autoware_system_designer.runtime._impl.ros2.launch_runner",
-        "--pkg",
-        launcher["package"],
-        "--file",
-        launcher["ros2_launch_file"],
-    ]
-    for k, v in params_dict(spec.get("parameters", [])).items():
-        if v is None or v == "":
-            logger.debug("skipping empty launch arg %r for %s", k, launcher["ros2_launch_file"])
-            continue
-        v_str = json.dumps(v) if isinstance(v, list) else str(v)
-        cmd += ["--launch-arg", f"{k}:={v_str}"]
-    for f in global_files or []:
-        cmd += ["--global-params-file", f]
-    return cmd
-
-
-# ---- Composable specs ---------------------------------------------------
-
-
-def composable_spec(spec: Mapping[str, Any], extra_param_files: Optional[list[str]] = None) -> ComposableSpec:
-    launcher = spec["launcher"]
-    inline = params_dict(spec.get("parameters", []))
-    extra = {"use_intra_process_comms": True} if launcher.get("use_intra_process_comms") else {}
-    ns = parent_namespace(spec.get("namespace"), spec.get("name"))
-    return ComposableSpec(
-        name=_unique_name(spec),
-        package=launcher["package"],
-        plugin=launcher["plugin"],
-        node_name=spec["name"],
-        namespace=ns,
-        target_container_fqn=launcher.get("container_target", ""),
-        remap_rules=remap_pairs(launcher.get("ports", [])),
-        parameter_files=parameter_files(spec) + (extra_param_files or []),
-        inline_parameters=inline,
-        extra_arguments=extra,
-    )
-
-
-def glog_spec_for(container_target_fqn: str) -> ComposableSpec:
-    ns_parts = container_target_fqn.rsplit("/", 1)
-    container_ns = ns_parts[0] or "/"
-    return ComposableSpec(
-        name=f"{container_target_fqn}/{_GLOG_NAME}",
-        package=_GLOG_PKG,
-        plugin=_GLOG_PLUGIN,
-        node_name=_GLOG_NAME,
-        namespace=container_ns,
-        target_container_fqn=container_target_fqn,
-    )
-
-
-# ---- Top-level orchestration --------------------------------------------
+# ---- Global param file resolution ----------------------------------------
 
 
 def _glog_available() -> bool:
@@ -337,7 +73,7 @@ def _glog_available() -> bool:
     try:
         from ament_index_python.packages import get_package_share_directory
 
-        get_package_share_directory(_GLOG_PKG)
+        get_package_share_directory("autoware_glog_component")
         return True
     except Exception:  # noqa: BLE001
         return False
@@ -371,6 +107,9 @@ def _global_param_files(nodes: list[dict[str, Any]]) -> list[str]:
         except Exception as exc:  # noqa: BLE001
             logger.warning("cannot resolve vehicle_info for model %r: %s", vehicle_model, exc)
     return files
+
+
+# ---- Top-level orchestration --------------------------------------------
 
 
 def populate_builder(
@@ -407,28 +146,25 @@ def populate_builder(
         if state == "single_node":
             if not name or not n["launcher"].get("executable"):
                 continue
-            spec = NodeSpec(name=_unique_name(n), cmd=node_cmdline(n, extra_param_files=global_files))
+            spec = NodeSpec(name=unique_node_name(n), cmd=node_cmdline(n, extra_param_files=global_files))
             builder.add_node(spec)
 
         elif state == "node_container":
             if not name:
                 continue
-            spec = NodeSpec(name=_unique_name(n), cmd=container_cmdline(n))
+            spec = NodeSpec(name=unique_node_name(n), cmd=container_cmdline(n))
             entry = builder.add_node(spec)
-            # Key by FQN: container_target uses leading-slash FQN.
             container_entries[node_fqn(name, n.get("namespace"))] = entry
 
         elif state == "ros2_launch_file":
-            # Skip injecting global params into the loader unit that produces them.
             is_global_loader = n["launcher"].get("package") == "autoware_global_parameter_loader"
             extra_files = [] if is_global_loader else global_files
             cmd = include_cmdline(n, global_files=extra_files)
-            spec = NodeSpec(name=_unique_name(n), cmd=cmd)
+            spec = NodeSpec(name=unique_node_name(n), cmd=cmd)
             builder.add_node(spec)
 
         # composable_node: handled below by the container hook
 
-    # Composable-node orchestration: attach a post-start hook per container.
     for target_fqn, members in composables_by_target.items():
         entry = container_entries.get(target_fqn)
         if entry is None:
@@ -458,13 +194,3 @@ def populate_builder(
         builder.add_post_start_hook(_hook)
 
     return builder, worker
-
-
-def _unique_name(node: Mapping[str, Any]) -> str:
-    """Return a unique key: structural path, or FQN#launch_state as fallback."""
-    path = node.get("path")
-    if path:
-        return str(path)
-    fqn = node_fqn(node.get("name", "_unnamed_"), node.get("namespace"))
-    state = node.get("launcher", {}).get("launch_state", "")
-    return f"{fqn}#{state}" if state else fqn

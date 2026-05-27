@@ -37,7 +37,7 @@ class RosWorker:
         self._thread: Optional[threading.Thread] = None
         self._ready = threading.Event()
         self._stop = threading.Event()
-        self._crashed = threading.Event()  # set if thread exits without _stop being set
+        self._crashed = threading.Event()
         self._node = None  # rclpy.node.Node
         self._executor = None  # rclpy.executors.Executor
         self._clients: "dict[str, object]" = {}
@@ -56,7 +56,6 @@ class RosWorker:
         self._loop = loop
         self._thread = threading.Thread(target=self._run, name="ros-worker", daemon=True)
         self._thread.start()
-        # Wait for the rclpy node to come up without blocking the event loop.
         ok = await loop.run_in_executor(None, self._ready.wait, 10.0)
         if not ok:
             raise RuntimeError("rclpy worker failed to initialize within 10s")
@@ -104,7 +103,6 @@ class RosWorker:
             try:
                 if self._node is not None:
                     self._node.destroy_node()
-                # rclpy.shutdown() sends DDS goodbye immediately rather than waiting for the lease timeout.
                 if rclpy.ok():
                     rclpy.shutdown()
             except Exception:  # noqa: BLE001
@@ -136,7 +134,6 @@ class RosWorker:
             raise RuntimeError("ros worker has crashed")
         from composition_interfaces.srv import LoadNode
 
-        # Build request on the calling thread (cheap, no ROS state involved).
         req = LoadNode.Request()
         req.package_name = package
         req.plugin_name = plugin
@@ -149,17 +146,16 @@ class RosWorker:
 
         client = self._client_for(container_fqn)
 
-        # Wait for the container's load_node service to come online.
         loop = asyncio.get_running_loop()
         ok = await loop.run_in_executor(None, client.wait_for_service, service_wait_timeout)
         if self._crashed.is_set():
             raise RuntimeError("ros worker crashed while waiting for service")
         if not ok:
             raise TimeoutError(
-                f"service {container_fqn}/_container/load_node " f"not available within {service_wait_timeout}s"
+                f"service {container_fqn}/_container/load_node "
+                f"not available within {service_wait_timeout}s"
             )
 
-        # Bridge rclpy Future to asyncio.
         rcl_future = client.call_async(req)
         aio_future: "asyncio.Future" = loop.create_future()
 
@@ -177,7 +173,8 @@ class RosWorker:
             response = await asyncio.wait_for(aio_future, timeout=load_call_timeout)
         except asyncio.TimeoutError:
             raise TimeoutError(
-                f"LoadNode call for {node_namespace}/{node_name} " f"timed out after {load_call_timeout}s"
+                f"LoadNode call for {node_namespace}/{node_name} "
+                f"timed out after {load_call_timeout}s"
             )
 
         if not response.success:

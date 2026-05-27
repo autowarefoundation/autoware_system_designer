@@ -22,8 +22,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Sequence
 
-from ..core import events as ev
-from ..core.state import (
+from ...core import events as ev
+from ...core.state import (
     BlockReason,
     ComposableBlocked,
     ComposableFailed,
@@ -31,6 +31,7 @@ from ..core.state import (
     ComposableLoading,
     ComposableUnloaded,
 )
+from ..common.namespace import join_fqn
 from .params import flatten_for_fqn, to_parameter_msgs
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ class ComposableSpec:
     parameter_files: Sequence[str] = field(default_factory=list)
     inline_parameters: Mapping[str, Any] = field(default_factory=dict)
     extra_arguments: Mapping[str, Any] = field(default_factory=dict)
-    log_level: Optional[int] = None  # composition_interfaces uses uint8
+    log_level: Optional[int] = None
 
 
 class ComposableNodeActor:
@@ -95,8 +96,6 @@ class ComposableNodeActor:
             await self._emit(ev.LoadStarted(name=self.name))
             self._state = ComposableLoading(started_at=time.monotonic())
 
-            # Race the load against shutdown so Ctrl-C is not delayed by
-            # service-wait and LoadNode call timeouts (up to 30 s each).
             load_task = asyncio.ensure_future(self._load())
             shutdown_task = asyncio.create_task(self._shutdown.wait())
             try:
@@ -109,14 +108,13 @@ class ComposableNodeActor:
                     shutdown_task.cancel()
 
             if not load_task.done():
-                # Shutdown won the race — cancel the pending load and exit.
                 load_task.cancel()
                 try:
                     await load_task
                 except (asyncio.CancelledError, Exception):  # noqa: BLE001
                     pass
                 self._state = ComposableBlocked(reason=BlockReason.SHUTDOWN)
-                return  # run()'s finally block emits ev.Terminated
+                return
 
             try:
                 unique_id = load_task.result()
@@ -138,10 +136,7 @@ class ComposableNodeActor:
         finally:
             await self._emit(ev.Terminated(name=self.name))
 
-    # ---- internals -------------------------------------------------------
-
     async def _wait_for_container(self) -> None:
-        # Race container_ready against shutdown so Ctrl-C doesn't hang start-up.
         shutdown_task = asyncio.create_task(self._shutdown.wait())
         try:
             await asyncio.wait(
@@ -153,7 +148,6 @@ class ComposableNodeActor:
                 shutdown_task.cancel()
 
     async def _load(self) -> int:
-        # Flatten YAML params, then merge inline overrides on top.
         if self._spec.parameter_files:
             target_fqn = join_fqn(self._spec.namespace, self._spec.node_name)
             flat = flatten_for_fqn(self._spec.parameter_files, target_fqn)
@@ -182,19 +176,3 @@ class ComposableNodeActor:
 
     async def _emit(self, event) -> None:
         await ev.emit_event(self._state_tx, self.name, event)
-
-
-def join_fqn(namespace: str, node_name: str) -> str:
-    """Join a pre-resolved parent namespace string with a node name into a leading-slash FQN.
-
-    Unlike ``node_fqn`` in builder.py (which accepts raw JSON namespaces), this
-    function operates on already-resolved string namespaces. It is defined here
-    rather than in builder.py because builder imports this module, not the reverse.
-    """
-    ns = namespace if namespace.startswith("/") else "/" + namespace
-    ns = ns.rstrip("/")
-    if not node_name:
-        return ns or "/"
-    if node_name.startswith("/"):
-        return node_name
-    return f"{ns}/{node_name}" if ns else f"/{node_name}"

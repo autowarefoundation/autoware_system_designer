@@ -31,7 +31,7 @@ Public surface:
 from ._impl.core.config import ActorConfig
 from ._impl.core.coordinator import Coordinator, CoordinatorBuilder, MemberHandle, ensure_output_dir
 from ._impl.ros2.builder import populate_builder
-from ._impl.ros2.container_actor import RosWorker
+from ._impl.ros2.container.worker import RosWorker
 
 __all__ = [
     "populate_builder",

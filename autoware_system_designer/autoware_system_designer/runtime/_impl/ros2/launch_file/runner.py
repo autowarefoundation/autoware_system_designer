@@ -26,9 +26,9 @@ separate process from the global_parameter_loader.
 All imports from ``launch`` / ``launch_ros`` are deferred to function bodies to
 avoid build-time import errors in the colcon workspace.
 
-Invoked by builder.include_cmdline() as:
+Invoked by launch_file/cmdline.py as:
 
-    python3 -m autoware_system_designer.runtime._impl.ros2.launch_runner \\
+    python3 -m autoware_system_designer.runtime._impl.ros2.launch_file.runner \\
         --pkg <package> --file <launch_file.py> \\
         [--launch-arg key:=value ...] \\
         [--global-params-file /path/to/vehicle_info.param.yaml ...]
@@ -105,12 +105,9 @@ def _run(
     for params_file in global_params_files:
         actions.extend(_set_params_from_yaml(params_file))
 
-    # Undeclared args become SetParameter; declared args are launch-config variables
-    # that must NOT be SetParameter (type conflict can crash nodes, e.g. initial_pose:=[]).
     declared = _declared_args(full_path)
     actions.extend(_undeclared_args_as_set_params(launch_args, declared))
 
-    # Launch args are always strings in the ROS 2 launch system.
     str_args = {k: str(v) for k, v in launch_args.items()}
     actions.append(
         IncludeLaunchDescription(
@@ -122,7 +119,6 @@ def _run(
     ls = LaunchService()
     ls.include_launch_description(LaunchDescription(actions))
 
-    # SIGTERM triggers graceful shutdown so LaunchService waits for all children.
     signal.signal(signal.SIGTERM, lambda sig, frame: ls.shutdown())
 
     return ls.run()
@@ -177,7 +173,6 @@ def _undeclared_args_as_set_params(launch_args: dict[str, str], declared: set) -
 def _coerce(raw: str) -> object:
     """Coerce a CLI string value to the natural Python type for SetParameter."""
     stripped = raw.strip()
-    # JSON array serialized by builder.include_cmdline for list-typed params.
     if stripped.startswith("["):
         import json
 
@@ -185,7 +180,6 @@ def _coerce(raw: str) -> object:
             return json.loads(stripped)
         except (ValueError, ImportError):
             pass
-    # Numeric parsing before bool-string check so "0"/"1" stay as integers.
     try:
         return int(raw)
     except ValueError:
