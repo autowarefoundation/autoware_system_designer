@@ -30,7 +30,7 @@ from registry_manager import RegistryManager
 from validation_engine import ValidationEngine
 
 from autoware_system_designer.model.config import Config
-from autoware_system_designer.parser.data_parser import ConfigParser
+from autoware_system_designer.parser.config_parser import ConfigParser
 
 _DEBUG = "--debug" in sys.argv or os.environ.get("AUTOWARE_SYSTEM_DESIGNER_LSP_DEBUG") == "1"
 logging.basicConfig(

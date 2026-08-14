@@ -12,7 +12,7 @@ from utils.uri_utils import uri_to_path
 from validation_engine import ValidationEngine
 
 from autoware_system_designer.model.config import Config
-from autoware_system_designer.parser.data_parser import ConfigParser
+from autoware_system_designer.parser.config_parser import ConfigParser
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
 logger = logging.getLogger(__name__)

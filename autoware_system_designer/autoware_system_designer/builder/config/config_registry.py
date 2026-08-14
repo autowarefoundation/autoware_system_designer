@@ -44,8 +44,8 @@ from autoware_system_designer.model.config import (
     ParameterSetConfig,
     SystemConfig,
 )
-from autoware_system_designer.parser.data_parser import ConfigParser
-from autoware_system_designer.parser.data_validator import entity_name_decode
+from autoware_system_designer.parser.config_parser import ConfigParser
+from autoware_system_designer.parser.config_validator import entity_name_decode
 from autoware_system_designer.schema.format_version import check_format_version
 
 logger = logging.getLogger(__name__)

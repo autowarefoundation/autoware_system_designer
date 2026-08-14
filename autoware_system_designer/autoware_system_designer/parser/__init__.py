@@ -14,8 +14,8 @@
 
 """Parser layer - YAML loading, validation, and deployment file parsing."""
 
-from autoware_system_designer.parser.data_parser import ConfigParser
-from autoware_system_designer.parser.data_validator import (
+from autoware_system_designer.parser.config_parser import ConfigParser
+from autoware_system_designer.parser.config_validator import (
     BaseValidator,
     ModuleValidator,
     NodeValidator,

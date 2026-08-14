@@ -30,7 +30,7 @@ from autoware_system_designer.model.config import (
     SystemConfig,
 )
 from autoware_system_designer.model.domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
-from autoware_system_designer.parser.data_validator import ValidatorFactory, entity_name_decode
+from autoware_system_designer.parser.config_validator import ValidatorFactory, entity_name_decode
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
 logger = logging.getLogger(__name__)
