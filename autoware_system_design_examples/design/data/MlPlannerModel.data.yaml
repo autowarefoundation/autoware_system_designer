@@ -1,0 +1,17 @@
+autoware_system_design_format: 0.5.0
+
+name: MlPlannerModel.data
+
+category: ml_model
+description: ML planner model bundle consumed by MlPlanner.node (concept demo).
+
+# One directory per release; the manifest is deploy_metadata.yaml (the default,
+# so none is declared): it records the version and names the model files, which
+# differ across releases — each consumer declares the keys it requires.
+variants:
+  - name: model_release
+    values: [v4.0, v5.0]
+    sortable: true
+    default: latest
+
+path_pattern: diffusion_planner/$(var model_release)

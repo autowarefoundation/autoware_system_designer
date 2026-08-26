@@ -1,0 +1,10 @@
+/**:
+  ros__parameters:
+    version: v3.9
+    encoder_onnx_path: pts_voxel_encoder.onnx
+    head_onnx_path: pts_backbone_neck_head.onnx
+    class_remapper_param_path: detection_class_remapper.param.yaml
+    model_params:
+      class_names: [CAR, TRUCK, BUS, BICYCLE, PEDESTRIAN]
+      point_feature_size: 4
+      max_voxel_size: 40000

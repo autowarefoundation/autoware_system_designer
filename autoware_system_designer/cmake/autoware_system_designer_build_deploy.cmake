@@ -166,5 +166,13 @@ macro(autoware_system_designer_build_deploy project_name)
     COMMENT "Running build.py script ${_LOG_DESC}. PRINT_LEVEL=${_PRINT_LEVEL}, STRICT=${_STRICT_MODE} (env default=${AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT}); full log: ${LOG_FILE}"
   )
   add_dependencies(run_build_py_${_INPUT_NAME} ${_COLLECT_TARGET})
-  add_dependencies(${project_name} run_build_py_${_INPUT_NAME})
+
+  # Design-only packages have no target named after the project; skip the anchor.
+  if(TARGET ${project_name})
+    add_dependencies(${project_name} run_build_py_${_INPUT_NAME})
+  endif()
+
+  # Deploy target name for callers to order their own work against
+  # (e.g. staging data bundles that deployment generation scans).
+  set(AUTOWARE_SYSTEM_DESIGNER_DEPLOY_TARGET run_build_py_${_INPUT_NAME})
 endmacro()
