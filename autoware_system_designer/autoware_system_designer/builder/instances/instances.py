@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from autoware_system_designer.builder.config.launch_manager import LaunchManager
 from autoware_system_designer.builder.graph.event_manager import EventManager
@@ -50,6 +50,9 @@ class Instance:
 
         # launch (node instances only)
         self.launch_manager: Optional[LaunchManager] = None
+
+        # data bundles bound by system data: instances (node instances only)
+        self.data_bindings: List[Dict[str, Any]] = []
 
         # instance topology
         self.entity_type: str = None

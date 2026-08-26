@@ -4,6 +4,7 @@
       {
         "children": [],
         "compute_unit": "main_ecu",
+        "data_bindings": [],
         "entity_type": "node",
         "events": [
           {
@@ -109,6 +110,7 @@
       {
         "children": [],
         "compute_unit": "main_ecu",
+        "data_bindings": [],
         "entity_type": "node",
         "events": [
           {
