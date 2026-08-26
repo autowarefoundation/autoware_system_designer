@@ -39,6 +39,7 @@ from autoware_system_designer.model.config import (
     Config,
     ConfigSubType,
     ConfigType,
+    DataConfig,
     ModuleConfig,
     NodeConfig,
     ParameterSetConfig,
@@ -415,6 +416,10 @@ class ConfigRegistry:
             self.get_system,
         )
 
+    def get_data(self, name: str) -> DataConfig:
+        """Get a data entity by name."""
+        return self._get_entity_with_base(name, ConfigType.DATA, ValidationError)
+
     def get_entity_by_type(self, name: str, entity_type: str) -> Config:
         """Get an entity by name and type."""
         if entity_type == ConfigType.NODE:
@@ -425,6 +430,8 @@ class ConfigRegistry:
             return self.get_parameter_set(name)
         elif entity_type == ConfigType.SYSTEM:
             return self.get_system(name)
+        elif entity_type == ConfigType.DATA:
+            return self.get_data(name)
         else:
             raise ValidationError(f"Unknown entity type: {entity_type}")
 

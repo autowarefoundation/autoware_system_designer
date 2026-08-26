@@ -23,6 +23,7 @@ from autoware_system_designer.model.config import (
     Config,
     ConfigSubType,
     ConfigType,
+    DataConfig,
     ModuleConfig,
     NodeConfig,
     ParameterSetConfig,
@@ -273,6 +274,7 @@ class ConfigParser:
                 param_files=[ParameterFileDefinition.from_dict(p) for p in param_files] if param_files else None,
                 param_values=[ParameterValueDefinition.from_dict(p) for p in param_values] if param_values else None,
                 processes=config.get("processes"),
+                required_data=config.get("required_data"),
             )
         elif entity_type == ConfigType.MODULE:
             sub_type = ConfigSubType.VARIANT if base_name else ConfigSubType.BASE
@@ -330,6 +332,24 @@ class ConfigParser:
                 variable_files=config.get("variable_files"),
                 node_groups=config.get("node_groups"),
                 remaps=[RemapEntry.from_dict(r) for r in raw_remaps],
+                data=config.get("data"),
+            )
+        elif entity_type == ConfigType.DATA:
+            # Data entities do not support the base-variant pattern.
+            if base_name:
+                raise ValidationError(
+                    f"Data entity '{entity_name}' declares 'base'; data entities do not support "
+                    f"the base-variant pattern (use variant axes instead) at {file_path}"
+                )
+
+            return DataConfig(
+                **base_data,
+                sub_type=ConfigSubType.BASE,
+                category=config.get("category"),
+                variants=config.get("variants"),
+                path_pattern=config.get("path_pattern"),
+                manifest=config.get("manifest"),
+                scripts=config.get("scripts"),
             )
         else:
             raise ValidationError(f"Unknown entity type: {entity_type}")

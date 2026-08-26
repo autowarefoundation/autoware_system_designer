@@ -225,7 +225,7 @@ class NamingLinter:
         if isinstance(override, dict):
             self._lint_named_list(override.get("inputs"), result, "Override input")
             self._lint_named_list(override.get("outputs"), result, "Override output")
-            self._lint_named_list(override.get("param_values"), result, "Override parameter")
+            self._lint_parameter_names(override.get("param_values"), result, "Override parameter")
             self._lint_named_list(override.get("param_files"), result, "Override parameter file")
             self._lint_named_list(override.get("processes"), result, "Override process")
             self._lint_named_list(override.get("instances"), result, "Override instance", key="name")
@@ -239,7 +239,7 @@ class NamingLinter:
         if isinstance(remove, dict):
             self._lint_named_list(remove.get("inputs"), result, "Remove input")
             self._lint_named_list(remove.get("outputs"), result, "Remove output")
-            self._lint_named_list(remove.get("param_values"), result, "Remove parameter")
+            self._lint_parameter_names(remove.get("param_values"), result, "Remove parameter")
             self._lint_named_list(remove.get("param_files"), result, "Remove parameter file")
             self._lint_named_list(remove.get("processes"), result, "Remove process")
             self._lint_named_list(remove.get("instances"), result, "Remove instance", key="name")
@@ -264,3 +264,20 @@ class NamingLinter:
                 name_value = item[key]
                 if not self._is_snake_case(name_value):
                     result.add_error(f"{label} name '{name_value}' should be in snake_case format")
+
+    def _lint_parameter_names(
+        self,
+        items: Any,
+        result: LintResult,
+        label: str,
+    ):
+        """Lint parameter names: snake_case per dot-namespaced segment (e.g. model.type)."""
+        if not isinstance(items, list):
+            return
+
+        for item in items:
+            if isinstance(item, dict) and "name" in item:
+                name_value = item["name"]
+                segments = name_value.split(".") if isinstance(name_value, str) else [name_value]
+                if not all(self._is_snake_case(segment) for segment in segments):
+                    result.add_error(f"{label} name '{name_value}' should be dot-separated snake_case segments")

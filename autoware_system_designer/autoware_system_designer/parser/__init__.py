@@ -17,6 +17,7 @@
 from autoware_system_designer.parser.config_parser import ConfigParser
 from autoware_system_designer.parser.config_validator import (
     BaseValidator,
+    DataValidator,
     ModuleValidator,
     NodeValidator,
     ParameterSetValidator,
@@ -33,5 +34,6 @@ __all__ = [
     "ModuleValidator",
     "ParameterSetValidator",
     "SystemValidator",
+    "DataValidator",
     "ValidatorFactory",
 ]
