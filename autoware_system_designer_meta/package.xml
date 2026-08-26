@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>autoware_system_designer_meta</name>
-  <version>0.4.3</version>
+  <version>0.5.0</version>
   <description>Metapackage aggregating the Autoware System Designer packages</description>
 
   <maintainer email="taekjin.lee@tier4.jp">Taekjin Lee</maintainer>
