@@ -18,8 +18,8 @@ from pathlib import Path
 
 import yaml
 
-from autoware_system_designer.deploy import Deployment
 from autoware_system_designer.common.deployment_config import DeploymentConfig
+from autoware_system_designer.deploy import Deployment
 from autoware_system_designer.visualizer.visualization_index import update_index
 
 _logger = logging.getLogger(__name__)

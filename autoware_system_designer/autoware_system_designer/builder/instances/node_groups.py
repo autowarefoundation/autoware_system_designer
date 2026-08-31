@@ -1,8 +1,8 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.builder.config.launch_manager import LaunchManager
+from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.model.execution import LaunchConfig, LaunchState
 from autoware_system_designer.model.namespace import node_group_pattern_matches, resolve_common_namespace_from_paths
 

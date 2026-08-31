@@ -3,9 +3,13 @@ from typing import TYPE_CHECKING
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.source_location import format_source, source_from_config
-from autoware_system_designer.parser.data_validator import entity_name_decode
-from autoware_system_designer.model.namespace import is_root_namespace, namespace_path_is_descendant, resolve_common_namespace_from_paths
+from autoware_system_designer.model.namespace import (
+    is_root_namespace,
+    namespace_path_is_descendant,
+    resolve_common_namespace_from_paths,
+)
 from autoware_system_designer.model.parameters import ParameterType
+from autoware_system_designer.parser.data_validator import entity_name_decode
 
 if TYPE_CHECKING:
     from autoware_system_designer.builder.config.config_registry import ConfigRegistry

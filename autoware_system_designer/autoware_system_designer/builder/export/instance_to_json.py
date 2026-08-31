@@ -16,7 +16,6 @@ import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
 
-from autoware_system_designer.model.parameters import parameter_type_to_str
 from autoware_system_designer.common.source_location import SourceLocation
 from autoware_system_designer.model.export_schema import (
     SCHEMA_VERSION,
@@ -27,6 +26,7 @@ from autoware_system_designer.model.export_schema import (
     PortData,
     SystemStructurePayload,
 )
+from autoware_system_designer.model.parameters import parameter_type_to_str
 
 if TYPE_CHECKING:
     from autoware_system_designer.builder.instances import Instance

@@ -19,6 +19,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Type
 
+from autoware_system_designer.builder.resolution.variant_resolver import (
+    ModuleVariantResolver,
+    NodeVariantResolver,
+    SystemVariantResolver,
+    VariantResolver,
+)
 from autoware_system_designer.common.exceptions import (
     FormatVersionError,
     ModuleConfigurationError,
@@ -26,6 +32,7 @@ from autoware_system_designer.common.exceptions import (
     ParameterConfigurationError,
     ValidationError,
 )
+from autoware_system_designer.common.path_utils import canonical_path
 from autoware_system_designer.common.source_location import SourceLocation, format_source, source_from_config
 from autoware_system_designer.model.config import (
     Config,
@@ -39,13 +46,6 @@ from autoware_system_designer.model.config import (
 from autoware_system_designer.parser.data_parser import ConfigParser
 from autoware_system_designer.parser.data_validator import entity_name_decode
 from autoware_system_designer.schema.format_version import check_format_version
-from autoware_system_designer.common.path_utils import canonical_path
-from autoware_system_designer.builder.resolution.variant_resolver import (
-    ModuleVariantResolver,
-    NodeVariantResolver,
-    SystemVariantResolver,
-    VariantResolver,
-)
 
 logger = logging.getLogger(__name__)
 

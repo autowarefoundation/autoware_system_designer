@@ -17,10 +17,10 @@
 import re
 from pathlib import Path
 
+from autoware_system_designer.linter.report import LintResult
 from autoware_system_designer.model.config import ConfigType
 from autoware_system_designer.parser.data_validator import entity_name_decode
 from autoware_system_designer.parser.yaml_parser import yaml_parser
-from autoware_system_designer.linter.report import LintResult
 
 
 class FileLinter:

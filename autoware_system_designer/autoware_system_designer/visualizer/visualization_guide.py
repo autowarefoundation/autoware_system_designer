@@ -168,7 +168,9 @@ def build_vis_guide(namespace: List[str]) -> Dict[str, object]:
         "background_color": get_component_color(namespace, variant="bright"),
         "text_color": get_component_color(namespace, variant="darkest"),
         "dark_color": get_component_color(namespace, variant="fade"),
-        "dark_medium_color": get_component_color(namespace, variant="darkish"),  # Integrated dark+text variant for nodes
+        "dark_medium_color": get_component_color(
+            namespace, variant="darkish"
+        ),  # Integrated dark+text variant for nodes
         "dark_background_color": get_component_color(namespace, variant="dark"),  # Pure dark variant for modules
         "dark_text_color": get_component_color(namespace, variant="bright"),
         "position": get_component_position(namespace),

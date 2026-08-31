@@ -25,11 +25,11 @@ if str(PACKAGE_ROOT) not in sys.path:
 
 
 from autoware_system_designer.common.exceptions import ValidationError  # noqa: E402
-from autoware_system_designer.generator.ros2_launcher.generate_node_launcher import (  # noqa: E402
-    generate_node_launcher,
-)
 from autoware_system_designer.common.logging_utils import (  # noqa: E402
     configure_split_stream_logging,
+)
+from autoware_system_designer.generator.ros2_launcher.generate_node_launcher import (  # noqa: E402
+    generate_node_launcher,
 )
 
 

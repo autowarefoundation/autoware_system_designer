@@ -15,11 +15,11 @@
 import logging
 from typing import Callable, Dict
 
-from autoware_system_designer.common.exceptions import ValidationError
-from autoware_system_designer.model.config import SystemConfig
 from autoware_system_designer.builder.instances.instance_tree import set_instances
 from autoware_system_designer.builder.instances.instances import Instance
 from autoware_system_designer.builder.parameters.parameter_resolver import ParameterResolver
+from autoware_system_designer.common.exceptions import ValidationError
+from autoware_system_designer.model.config import SystemConfig
 from autoware_system_designer.model.namespace import Namespace
 
 logger = logging.getLogger(__name__)
