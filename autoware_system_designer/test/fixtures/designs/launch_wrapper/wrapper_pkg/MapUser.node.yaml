@@ -1,0 +1,30 @@
+autoware_system_design_format: 0.4.0
+
+name: MapUser.node
+
+description: Dummy consumer of the wrapped map topic.
+
+package:
+  name: wrapper_pkg
+  provider: dummy
+
+launch:
+  plugin: wrapper::MapUser
+  executable: map_user_node
+  node_output: screen
+
+subscribers:
+  - name: vector_map
+    message_type: autoware_map_msgs/msg/LaneletMapBin
+
+publishers: []
+
+param_files: []
+param_values: []
+
+processes:
+  - name: consume
+    trigger_conditions:
+      - or:
+          - on_input: vector_map
+    outcomes: []

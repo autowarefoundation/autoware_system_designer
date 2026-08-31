@@ -1,0 +1,306 @@
+{
+  "data": {
+    "children": [
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [
+              "id_3201bc3bcf81555e"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "scan",
+            "process_event": true,
+            "timeout": null,
+            "trigger_ids": [],
+            "type": "or",
+            "unique_id": "id_8080420635a63b8e",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [],
+        "launcher": {
+          "args": "",
+          "executable": "sensor_real_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "sensor_pkg",
+          "param_files": [],
+          "param_values": [
+            {
+              "name": "device_id",
+              "parameter_type": "DEFAULT",
+              "type": "string",
+              "value": "vehicle_y"
+            }
+          ],
+          "ports": [
+            {
+              "name": "scan",
+              "remap_target": "~/output/scan",
+              "topic": "/sensor/scan"
+            }
+          ]
+        },
+        "links": [],
+        "name": "sensor",
+        "namespace": "/",
+        "out_ports": [
+          {
+            "connected_ids": [
+              "id_b6a70d0602b75ceb"
+            ],
+            "event": {
+              "action_ids": [
+                "id_b6a70d0602b75ceb"
+              ],
+              "error_rate": null,
+              "frequency": null,
+              "name": "output_scan",
+              "process_event": false,
+              "timeout": null,
+              "trigger_ids": [
+                "id_8080420635a63b8e"
+              ],
+              "type": "to_output",
+              "unique_id": "id_3201bc3bcf81555e",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "sensor_msgs/msg/LaserScan",
+            "name": "scan",
+            "namespace": [
+              "sensor"
+            ],
+            "port_path": "/sensor/output/scan",
+            "remap_target": "~/output/scan",
+            "topic": [
+              "sensor",
+              "scan"
+            ],
+            "unique_id": "id_3201bc3bcf81555e"
+          }
+        ],
+        "package": "sensor_pkg",
+        "parameter_files_all": [],
+        "parameters": [
+          {
+            "name": "device_id",
+            "parameter_type": "DEFAULT",
+            "source": {
+              "column": 5,
+              "file_path": "<WS>/sensor_pkg/SensorReal.node.yaml",
+              "line": 25,
+              "yaml_path": "/param_values/0"
+            },
+            "type": "string",
+            "value": "vehicle_y"
+          }
+        ],
+        "path": "/sensor",
+        "source_file": "<WS>/sensor_pkg/SensorReal.node.yaml",
+        "unique_id": "id_47fa352d48773a37"
+      },
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [],
+            "error_rate": null,
+            "frequency": null,
+            "name": "consume",
+            "process_event": true,
+            "timeout": null,
+            "trigger_ids": [
+              "id_b6a70d0602b75ceb"
+            ],
+            "type": "on_input",
+            "unique_id": "id_daa4935c6400df48",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [
+          {
+            "connected_ids": [
+              "id_3201bc3bcf81555e"
+            ],
+            "event": {
+              "action_ids": [
+                "id_daa4935c6400df48"
+              ],
+              "error_rate": null,
+              "frequency": null,
+              "name": "input_scan",
+              "process_event": false,
+              "timeout": null,
+              "trigger_ids": [
+                "id_3201bc3bcf81555e"
+              ],
+              "type": "on_input",
+              "unique_id": "id_b6a70d0602b75ceb",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "sensor_msgs/msg/LaserScan",
+            "name": "scan",
+            "namespace": [
+              "consumer"
+            ],
+            "port_path": "/consumer/input/scan",
+            "remap_target": "~/input/scan",
+            "topic": [
+              "sensor",
+              "scan"
+            ],
+            "unique_id": "id_b6a70d0602b75ceb"
+          }
+        ],
+        "launcher": {
+          "args": "",
+          "executable": "consumer_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "sensor_pkg",
+          "param_files": [],
+          "param_values": [],
+          "ports": [
+            {
+              "name": "scan",
+              "remap_target": "~/input/scan",
+              "topic": "/sensor/scan"
+            }
+          ]
+        },
+        "links": [],
+        "name": "consumer",
+        "namespace": "/",
+        "out_ports": [],
+        "package": "sensor_pkg",
+        "parameter_files_all": [
+          {
+            "allow_substs": true,
+            "is_override": false,
+            "name": "map_param_path",
+            "parameter_type": "DEFAULT_FILE",
+            "path": "/opt/maps/vehicle_y/lanelet2_map.osm",
+            "source": {
+              "column": 5,
+              "file_path": "<WS>/sensor_pkg/Consumer.node.yaml",
+              "line": 23,
+              "yaml_path": "/param_files/0"
+            }
+          }
+        ],
+        "parameters": [],
+        "path": "/consumer",
+        "source_file": "<WS>/sensor_pkg/Consumer.node.yaml",
+        "unique_id": "id_31bad646a5220403"
+      }
+    ],
+    "compute_unit": "",
+    "entity_type": "system",
+    "events": [],
+    "in_ports": [],
+    "links": [
+      {
+        "connection_type": "INTERNAL_TO_INTERNAL",
+        "from_port": {
+          "connected_ids": [
+            "id_b6a70d0602b75ceb"
+          ],
+          "event": {
+            "action_ids": [
+              "id_b6a70d0602b75ceb"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "output_scan",
+            "process_event": false,
+            "timeout": null,
+            "trigger_ids": [
+              "id_8080420635a63b8e"
+            ],
+            "type": "to_output",
+            "unique_id": "id_3201bc3bcf81555e",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "sensor_msgs/msg/LaserScan",
+          "name": "scan",
+          "namespace": [
+            "sensor"
+          ],
+          "port_path": "/sensor/output/scan",
+          "remap_target": "~/output/scan",
+          "topic": [
+            "sensor",
+            "scan"
+          ],
+          "unique_id": "id_3201bc3bcf81555e"
+        },
+        "msg_type": "sensor_msgs/msg/LaserScan",
+        "to_port": {
+          "connected_ids": [
+            "id_3201bc3bcf81555e"
+          ],
+          "event": {
+            "action_ids": [
+              "id_daa4935c6400df48"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "input_scan",
+            "process_event": false,
+            "timeout": null,
+            "trigger_ids": [
+              "id_3201bc3bcf81555e"
+            ],
+            "type": "on_input",
+            "unique_id": "id_b6a70d0602b75ceb",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "sensor_msgs/msg/LaserScan",
+          "name": "scan",
+          "namespace": [
+            "consumer"
+          ],
+          "port_path": "/consumer/input/scan",
+          "remap_target": "~/input/scan",
+          "topic": [
+            "sensor",
+            "scan"
+          ],
+          "unique_id": "id_b6a70d0602b75ceb"
+        },
+        "topic": "/sensor/scan",
+        "unique_id": "id_257e7db834f29f8a"
+      }
+    ],
+    "name": "VehicleY_default",
+    "namespace": "/",
+    "out_ports": [],
+    "parameters": [],
+    "path": "/",
+    "source_file": "<WS>/variant_pkg/VehicleY.system.yaml",
+    "unique_id": "id_61ddb1b51e78f2f7"
+  },
+  "metadata": {
+    "mode": "default",
+    "system_name": "VehicleY"
+  },
+  "schema_version": "1.0"
+}

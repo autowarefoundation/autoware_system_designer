@@ -1,0 +1,20 @@
+autoware_system_design_format: 0.4.0
+
+name: Echo.node
+
+description: Duplicate-named dummy node declared by pkg_a.
+
+package:
+  name: pkg_a
+  provider: dummy
+
+launch:
+  plugin: pkg_a::Echo
+  executable: echo_node
+  node_output: screen
+
+subscribers: []
+publishers: []
+param_files: []
+param_values: []
+processes: []

@@ -1,0 +1,34 @@
+autoware_system_design_format: 0.4.0
+
+name: Consumer.node
+
+description: Dummy consumer of the sensor scan; map path composed from system variables.
+
+package:
+  name: sensor_pkg
+  provider: dummy
+
+launch:
+  plugin: sensors::Consumer
+  executable: consumer_node
+  node_output: screen
+
+subscribers:
+  - name: scan
+    message_type: sensor_msgs/msg/LaserScan
+
+publishers: []
+
+param_files:
+  - name: map_param_path
+    default: $(var map_path)/$(var map_file)
+    allow_substs: true
+
+param_values: []
+
+processes:
+  - name: consume
+    trigger_conditions:
+      - or:
+          - on_input: scan
+    outcomes: []

@@ -1,0 +1,21 @@
+autoware_system_design_format: 0.4.0
+
+name: Fleet.system
+
+description: Fleet base system deployed per vehicle via a deployments table.
+
+variables:
+  - name: vehicle_id
+    description: Set per deploy-list entry.
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+
+components:
+  - name: talker
+    entity: Talker.node
+    compute_unit: main_ecu
+
+connections: []

@@ -1,0 +1,45 @@
+autoware_system_design_format: 0.4.0
+
+name: Talker.node
+
+description: Dummy talker node publishing a status topic.
+
+package:
+  name: fleet_pkg
+  provider: dummy
+
+launch:
+  plugin: demo::Talker
+  executable: talker_node
+  node_output: screen
+
+subscribers: []
+
+publishers:
+  - name: status
+    message_type: std_msgs/msg/String
+    qos:
+      reliability: reliable
+      durability: transient_local
+
+param_files:
+  - name: talker_param_path
+    default: config/talker.param.yaml
+    allow_substs: true
+
+param_values:
+  - name: rate_hz
+    type: double
+    default: 10.0
+  - name: verbose
+    type: bool
+    default: false
+  - name: tiny_gain
+    type: double
+    default: 1.0e-05
+
+processes:
+  - name: publish
+    trigger_conditions: []
+    outcomes:
+      - to_output: status

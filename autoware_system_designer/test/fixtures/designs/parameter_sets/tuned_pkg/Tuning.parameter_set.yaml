@@ -1,0 +1,18 @@
+autoware_system_design_format: 0.4.0
+
+name: Tuning.parameter_set
+
+description: Parameter set overriding worker param files and values per instance.
+
+parameters:
+  - node: /app/duo/worker_a
+    param_files:
+      - worker_param_path: tuning/worker_a/worker_param_path.param.yaml
+    param_values:
+      - name: enabled
+        type: bool
+        value: false
+  - node: /app/duo/worker_b
+    param_files:
+      - worker_param_path: tuning/worker_b/worker_param_path.param.yaml
+    param_values: []

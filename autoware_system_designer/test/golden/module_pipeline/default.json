@@ -1,0 +1,1405 @@
+{
+  "data": {
+    "children": [
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [
+              "id_18f50af36c8979a4"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "capture",
+            "process_event": true,
+            "timeout": null,
+            "trigger_ids": [],
+            "type": "or",
+            "unique_id": "id_38242bb2b53cdf1e",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [],
+        "launcher": {
+          "args": "",
+          "executable": "source_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "pipeline_pkg",
+          "param_files": [],
+          "param_values": [],
+          "ports": [
+            {
+              "name": "pointcloud",
+              "remap_target": "~/output/pointcloud",
+              "topic": "/sensing/lidar/pointcloud"
+            }
+          ]
+        },
+        "links": [],
+        "name": "lidar",
+        "namespace": "/sensing",
+        "out_ports": [
+          {
+            "connected_ids": [
+              "id_c4b21ed742016d26",
+              "id_322c582a8701f017",
+              "id_f5ffc893ab0543ea"
+            ],
+            "event": {
+              "action_ids": [
+                "id_c4b21ed742016d26",
+                "id_322c582a8701f017",
+                "id_f5ffc893ab0543ea"
+              ],
+              "error_rate": null,
+              "frequency": null,
+              "name": "output_pointcloud",
+              "process_event": false,
+              "timeout": null,
+              "trigger_ids": [
+                "id_38242bb2b53cdf1e"
+              ],
+              "type": "to_output",
+              "unique_id": "id_18f50af36c8979a4",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "sensor_msgs/msg/PointCloud2",
+            "name": "pointcloud",
+            "namespace": [
+              "sensing",
+              "lidar"
+            ],
+            "port_path": "/sensing/lidar/output/pointcloud",
+            "remap_target": "~/output/pointcloud",
+            "topic": [
+              "sensing",
+              "lidar",
+              "pointcloud"
+            ],
+            "unique_id": "id_18f50af36c8979a4"
+          }
+        ],
+        "package": "pipeline_pkg",
+        "parameter_files_all": [],
+        "parameters": [],
+        "path": "/sensing/lidar",
+        "source_file": "<WS>/pipeline_pkg/Source.node.yaml",
+        "unique_id": "id_e390d25133386f60"
+      },
+      {
+        "children": [
+          {
+            "children": [],
+            "compute_unit": "main_ecu",
+            "entity_type": "node",
+            "events": [
+              {
+                "action_ids": [
+                  "id_2663caa227eef79c"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "detect",
+                "process_event": true,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_c4b21ed742016d26"
+                ],
+                "type": "on_input",
+                "unique_id": "id_748817e93f2d4436",
+                "warn_rate": null
+              }
+            ],
+            "in_ports": [
+              {
+                "connected_ids": [
+                  "id_18f50af36c8979a4"
+                ],
+                "event": {
+                  "action_ids": [
+                    "id_748817e93f2d4436"
+                  ],
+                  "error_rate": null,
+                  "frequency": null,
+                  "name": "input_pointcloud",
+                  "process_event": false,
+                  "timeout": null,
+                  "trigger_ids": [
+                    "id_18f50af36c8979a4"
+                  ],
+                  "type": "on_input",
+                  "unique_id": "id_c4b21ed742016d26",
+                  "warn_rate": null
+                },
+                "is_global": false,
+                "is_outward": true,
+                "is_remapped": false,
+                "msg_type": "sensor_msgs/msg/PointCloud2",
+                "name": "pointcloud",
+                "namespace": [
+                  "perception",
+                  "pipeline",
+                  "filter_primary"
+                ],
+                "port_path": "/perception/pipeline/filter_primary/input/pointcloud",
+                "remap_target": "~/input/pointcloud",
+                "topic": [
+                  "sensing",
+                  "lidar",
+                  "pointcloud"
+                ],
+                "unique_id": "id_c4b21ed742016d26"
+              }
+            ],
+            "launcher": {
+              "args": "",
+              "container_target": "/perception/pipeline/perception_container",
+              "launch_state": "composable_node",
+              "node_output": "screen",
+              "package": "pipeline_pkg",
+              "param_files": [],
+              "param_values": [
+                {
+                  "name": "score_threshold",
+                  "parameter_type": "DEFAULT",
+                  "type": "double",
+                  "value": "0.5"
+                }
+              ],
+              "plugin": "pipeline::Filter",
+              "ports": [
+                {
+                  "name": "pointcloud",
+                  "remap_target": "~/input/pointcloud",
+                  "topic": "/sensing/lidar/pointcloud"
+                },
+                {
+                  "name": "objects",
+                  "remap_target": "~/output/objects",
+                  "topic": "/perception/pipeline/filter_primary/objects"
+                }
+              ],
+              "use_intra_process_comms": false
+            },
+            "links": [],
+            "name": "filter_primary",
+            "namespace": "/perception/pipeline",
+            "out_ports": [
+              {
+                "connected_ids": [
+                  "id_ff267d71fa342146"
+                ],
+                "event": {
+                  "action_ids": [
+                    "id_ff267d71fa342146"
+                  ],
+                  "error_rate": null,
+                  "frequency": null,
+                  "name": "output_objects",
+                  "process_event": false,
+                  "timeout": null,
+                  "trigger_ids": [
+                    "id_748817e93f2d4436"
+                  ],
+                  "type": "to_output",
+                  "unique_id": "id_2663caa227eef79c",
+                  "warn_rate": null
+                },
+                "is_global": false,
+                "is_outward": true,
+                "is_remapped": false,
+                "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+                "name": "objects",
+                "namespace": [
+                  "perception",
+                  "pipeline",
+                  "filter_primary"
+                ],
+                "port_path": "/perception/pipeline/filter_primary/output/objects",
+                "remap_target": "~/output/objects",
+                "topic": [
+                  "perception",
+                  "pipeline",
+                  "filter_primary",
+                  "objects"
+                ],
+                "unique_id": "id_2663caa227eef79c"
+              }
+            ],
+            "package": "pipeline_pkg",
+            "parameter_files_all": [
+              {
+                "allow_substs": true,
+                "is_override": false,
+                "name": "filter_param_path",
+                "parameter_type": "DEFAULT_FILE",
+                "path": "config/filter.param.yaml",
+                "source": {
+                  "column": 5,
+                  "file_path": "<WS>/pipeline_pkg/Filter.node.yaml",
+                  "line": 25,
+                  "yaml_path": "/param_files/0"
+                }
+              }
+            ],
+            "parameters": [
+              {
+                "name": "score_threshold",
+                "parameter_type": "DEFAULT",
+                "source": {
+                  "column": 5,
+                  "file_path": "<WS>/pipeline_pkg/Filter.node.yaml",
+                  "line": 29,
+                  "yaml_path": "/param_values/0"
+                },
+                "type": "double",
+                "value": "0.5"
+              }
+            ],
+            "path": "/perception/pipeline/filter_primary",
+            "source_file": "<WS>/pipeline_pkg/Filter.node.yaml",
+            "unique_id": "id_69268c5ff42e2baf"
+          },
+          {
+            "children": [],
+            "compute_unit": "main_ecu",
+            "entity_type": "node",
+            "events": [
+              {
+                "action_ids": [
+                  "id_7897856f8263f415"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "detect",
+                "process_event": true,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_322c582a8701f017"
+                ],
+                "type": "on_input",
+                "unique_id": "id_7839d3dadf463b85",
+                "warn_rate": null
+              }
+            ],
+            "in_ports": [
+              {
+                "connected_ids": [
+                  "id_18f50af36c8979a4"
+                ],
+                "event": {
+                  "action_ids": [
+                    "id_7839d3dadf463b85"
+                  ],
+                  "error_rate": null,
+                  "frequency": null,
+                  "name": "input_pointcloud",
+                  "process_event": false,
+                  "timeout": null,
+                  "trigger_ids": [
+                    "id_18f50af36c8979a4"
+                  ],
+                  "type": "on_input",
+                  "unique_id": "id_322c582a8701f017",
+                  "warn_rate": null
+                },
+                "is_global": false,
+                "is_outward": true,
+                "is_remapped": false,
+                "msg_type": "sensor_msgs/msg/PointCloud2",
+                "name": "pointcloud",
+                "namespace": [
+                  "perception",
+                  "pipeline",
+                  "filter_secondary"
+                ],
+                "port_path": "/perception/pipeline/filter_secondary/input/pointcloud",
+                "remap_target": "~/input/pointcloud",
+                "topic": [
+                  "sensing",
+                  "lidar",
+                  "pointcloud"
+                ],
+                "unique_id": "id_322c582a8701f017"
+              }
+            ],
+            "launcher": {
+              "args": "",
+              "container_target": "/perception/pipeline/perception_container",
+              "launch_state": "composable_node",
+              "node_output": "screen",
+              "package": "pipeline_pkg",
+              "param_files": [],
+              "param_values": [
+                {
+                  "name": "score_threshold",
+                  "parameter_type": "DEFAULT",
+                  "type": "double",
+                  "value": "0.5"
+                }
+              ],
+              "plugin": "pipeline::Filter",
+              "ports": [
+                {
+                  "name": "pointcloud",
+                  "remap_target": "~/input/pointcloud",
+                  "topic": "/sensing/lidar/pointcloud"
+                },
+                {
+                  "name": "objects",
+                  "remap_target": "~/output/objects",
+                  "topic": "/perception/pipeline/filter_secondary/objects"
+                }
+              ],
+              "use_intra_process_comms": false
+            },
+            "links": [],
+            "name": "filter_secondary",
+            "namespace": "/perception/pipeline",
+            "out_ports": [
+              {
+                "connected_ids": [
+                  "id_5ca16973dbf6225f"
+                ],
+                "event": {
+                  "action_ids": [
+                    "id_5ca16973dbf6225f"
+                  ],
+                  "error_rate": null,
+                  "frequency": null,
+                  "name": "output_objects",
+                  "process_event": false,
+                  "timeout": null,
+                  "trigger_ids": [
+                    "id_7839d3dadf463b85"
+                  ],
+                  "type": "to_output",
+                  "unique_id": "id_7897856f8263f415",
+                  "warn_rate": null
+                },
+                "is_global": false,
+                "is_outward": true,
+                "is_remapped": false,
+                "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+                "name": "objects",
+                "namespace": [
+                  "perception",
+                  "pipeline",
+                  "filter_secondary"
+                ],
+                "port_path": "/perception/pipeline/filter_secondary/output/objects",
+                "remap_target": "~/output/objects",
+                "topic": [
+                  "perception",
+                  "pipeline",
+                  "filter_secondary",
+                  "objects"
+                ],
+                "unique_id": "id_7897856f8263f415"
+              }
+            ],
+            "package": "pipeline_pkg",
+            "parameter_files_all": [
+              {
+                "allow_substs": true,
+                "is_override": false,
+                "name": "filter_param_path",
+                "parameter_type": "DEFAULT_FILE",
+                "path": "config/filter.param.yaml",
+                "source": {
+                  "column": 5,
+                  "file_path": "<WS>/pipeline_pkg/Filter.node.yaml",
+                  "line": 25,
+                  "yaml_path": "/param_files/0"
+                }
+              }
+            ],
+            "parameters": [
+              {
+                "name": "score_threshold",
+                "parameter_type": "DEFAULT",
+                "source": {
+                  "column": 5,
+                  "file_path": "<WS>/pipeline_pkg/Filter.node.yaml",
+                  "line": 29,
+                  "yaml_path": "/param_values/0"
+                },
+                "type": "double",
+                "value": "0.5"
+              }
+            ],
+            "path": "/perception/pipeline/filter_secondary",
+            "source_file": "<WS>/pipeline_pkg/Filter.node.yaml",
+            "unique_id": "id_b2233f76ab77d21a"
+          },
+          {
+            "children": [],
+            "compute_unit": "main_ecu",
+            "entity_type": "node",
+            "events": [
+              {
+                "action_ids": [
+                  "id_740e3caab1cbd9ba"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "merge",
+                "process_event": true,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_ff267d71fa342146",
+                  "id_5ca16973dbf6225f"
+                ],
+                "type": "or",
+                "unique_id": "id_0f995ca16525da61",
+                "warn_rate": null
+              }
+            ],
+            "in_ports": [
+              {
+                "connected_ids": [
+                  "id_2663caa227eef79c"
+                ],
+                "event": {
+                  "action_ids": [
+                    "id_0f995ca16525da61"
+                  ],
+                  "error_rate": null,
+                  "frequency": null,
+                  "name": "input_objects1",
+                  "process_event": false,
+                  "timeout": null,
+                  "trigger_ids": [
+                    "id_2663caa227eef79c"
+                  ],
+                  "type": "on_input",
+                  "unique_id": "id_ff267d71fa342146",
+                  "warn_rate": null
+                },
+                "is_global": false,
+                "is_outward": true,
+                "is_remapped": false,
+                "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+                "name": "objects1",
+                "namespace": [
+                  "perception",
+                  "pipeline",
+                  "node_merger"
+                ],
+                "port_path": "/perception/pipeline/node_merger/input/objects1",
+                "remap_target": "~/input/objects1",
+                "topic": [
+                  "perception",
+                  "pipeline",
+                  "filter_primary",
+                  "objects"
+                ],
+                "unique_id": "id_ff267d71fa342146"
+              },
+              {
+                "connected_ids": [
+                  "id_7897856f8263f415"
+                ],
+                "event": {
+                  "action_ids": [
+                    "id_0f995ca16525da61"
+                  ],
+                  "error_rate": null,
+                  "frequency": null,
+                  "name": "input_objects2",
+                  "process_event": false,
+                  "timeout": null,
+                  "trigger_ids": [
+                    "id_7897856f8263f415"
+                  ],
+                  "type": "on_input",
+                  "unique_id": "id_5ca16973dbf6225f",
+                  "warn_rate": null
+                },
+                "is_global": false,
+                "is_outward": true,
+                "is_remapped": false,
+                "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+                "name": "objects2",
+                "namespace": [
+                  "perception",
+                  "pipeline",
+                  "node_merger"
+                ],
+                "port_path": "/perception/pipeline/node_merger/input/objects2",
+                "remap_target": "~/input/objects2",
+                "topic": [
+                  "perception",
+                  "pipeline",
+                  "filter_secondary",
+                  "objects"
+                ],
+                "unique_id": "id_5ca16973dbf6225f"
+              }
+            ],
+            "launcher": {
+              "args": "",
+              "container_target": "/perception/pipeline/perception_container",
+              "launch_state": "composable_node",
+              "node_output": "screen",
+              "package": "pipeline_pkg",
+              "param_files": [],
+              "param_values": [],
+              "plugin": "pipeline::Merger",
+              "ports": [
+                {
+                  "name": "objects1",
+                  "remap_target": "~/input/objects1",
+                  "topic": "/perception/pipeline/filter_primary/objects"
+                },
+                {
+                  "name": "objects2",
+                  "remap_target": "~/input/objects2",
+                  "topic": "/perception/pipeline/filter_secondary/objects"
+                },
+                {
+                  "name": "objects",
+                  "remap_target": "~/output/objects",
+                  "topic": "/perception/pipeline/objects"
+                }
+              ],
+              "use_intra_process_comms": false
+            },
+            "links": [],
+            "name": "node_merger",
+            "namespace": "/perception/pipeline",
+            "out_ports": [
+              {
+                "connected_ids": [
+                  "id_479e63bffcf97b31"
+                ],
+                "event": {
+                  "action_ids": [
+                    "id_479e63bffcf97b31"
+                  ],
+                  "error_rate": null,
+                  "frequency": null,
+                  "name": "output_objects",
+                  "process_event": false,
+                  "timeout": null,
+                  "trigger_ids": [
+                    "id_0f995ca16525da61"
+                  ],
+                  "type": "to_output",
+                  "unique_id": "id_740e3caab1cbd9ba",
+                  "warn_rate": null
+                },
+                "is_global": false,
+                "is_outward": true,
+                "is_remapped": false,
+                "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+                "name": "objects",
+                "namespace": [
+                  "perception",
+                  "pipeline",
+                  "node_merger"
+                ],
+                "port_path": "/perception/pipeline/node_merger/output/objects",
+                "remap_target": "~/output/objects",
+                "topic": [
+                  "perception",
+                  "pipeline",
+                  "objects"
+                ],
+                "unique_id": "id_740e3caab1cbd9ba"
+              }
+            ],
+            "package": "pipeline_pkg",
+            "parameter_files_all": [],
+            "parameters": [],
+            "path": "/perception/pipeline/node_merger",
+            "source_file": "<WS>/pipeline_pkg/Merger.node.yaml",
+            "unique_id": "id_a6a396bee9a5d363"
+          }
+        ],
+        "compute_unit": "main_ecu",
+        "entity_type": "module",
+        "events": [],
+        "in_ports": [
+          {
+            "connected_ids": [
+              "id_18f50af36c8979a4"
+            ],
+            "event": {
+              "action_ids": [],
+              "error_rate": null,
+              "frequency": null,
+              "name": "input_pointcloud",
+              "process_event": false,
+              "timeout": null,
+              "trigger_ids": [
+                "id_18f50af36c8979a4"
+              ],
+              "type": "on_input",
+              "unique_id": "id_f5ffc893ab0543ea",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "sensor_msgs/msg/PointCloud2",
+            "name": "pointcloud",
+            "namespace": [
+              "perception",
+              "pipeline"
+            ],
+            "port_path": "/perception/pipeline/input/pointcloud",
+            "remap_target": "~/input/pointcloud",
+            "topic": [
+              "sensing",
+              "lidar",
+              "pointcloud"
+            ],
+            "unique_id": "id_f5ffc893ab0543ea"
+          }
+        ],
+        "links": [
+          {
+            "connection_type": "EXTERNAL_TO_INTERNAL",
+            "from_port": {
+              "connected_ids": [
+                "id_18f50af36c8979a4"
+              ],
+              "event": {
+                "action_ids": [],
+                "error_rate": null,
+                "frequency": null,
+                "name": "input_pointcloud",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_18f50af36c8979a4"
+                ],
+                "type": "on_input",
+                "unique_id": "id_f5ffc893ab0543ea",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": true,
+              "is_remapped": false,
+              "msg_type": "sensor_msgs/msg/PointCloud2",
+              "name": "pointcloud",
+              "namespace": [
+                "perception",
+                "pipeline"
+              ],
+              "port_path": "/perception/pipeline/input/pointcloud",
+              "remap_target": "~/input/pointcloud",
+              "topic": [
+                "sensing",
+                "lidar",
+                "pointcloud"
+              ],
+              "unique_id": "id_f5ffc893ab0543ea"
+            },
+            "msg_type": "sensor_msgs/msg/PointCloud2",
+            "to_port": {
+              "connected_ids": [
+                "id_18f50af36c8979a4"
+              ],
+              "event": {
+                "action_ids": [
+                  "id_748817e93f2d4436"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "input_pointcloud",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_18f50af36c8979a4"
+                ],
+                "type": "on_input",
+                "unique_id": "id_c4b21ed742016d26",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": false,
+              "is_remapped": false,
+              "msg_type": "sensor_msgs/msg/PointCloud2",
+              "name": "pointcloud",
+              "namespace": [
+                "perception",
+                "pipeline",
+                "filter_primary"
+              ],
+              "port_path": "/perception/pipeline/filter_primary/input/pointcloud",
+              "remap_target": "~/input/pointcloud",
+              "topic": [
+                "sensing",
+                "lidar",
+                "pointcloud"
+              ],
+              "unique_id": "id_c4b21ed742016d26"
+            },
+            "topic": "/sensing/lidar/pointcloud",
+            "unique_id": "id_296bc0c8139d0e93"
+          },
+          {
+            "connection_type": "EXTERNAL_TO_INTERNAL",
+            "from_port": {
+              "connected_ids": [],
+              "event": {
+                "action_ids": [],
+                "error_rate": null,
+                "frequency": null,
+                "name": "input_pointcloud",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [],
+                "type": "on_input",
+                "unique_id": "id_f5ffc893ab0543ea",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": true,
+              "is_remapped": false,
+              "msg_type": "sensor_msgs/msg/PointCloud2",
+              "name": "pointcloud",
+              "namespace": [
+                "perception",
+                "pipeline"
+              ],
+              "port_path": "/perception/pipeline/input/pointcloud",
+              "remap_target": "~/input/pointcloud",
+              "topic": [],
+              "unique_id": "id_f5ffc893ab0543ea"
+            },
+            "msg_type": "sensor_msgs/msg/PointCloud2",
+            "to_port": {
+              "connected_ids": [
+                "id_18f50af36c8979a4"
+              ],
+              "event": {
+                "action_ids": [
+                  "id_7839d3dadf463b85"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "input_pointcloud",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_18f50af36c8979a4"
+                ],
+                "type": "on_input",
+                "unique_id": "id_322c582a8701f017",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": false,
+              "is_remapped": false,
+              "msg_type": "sensor_msgs/msg/PointCloud2",
+              "name": "pointcloud",
+              "namespace": [
+                "perception",
+                "pipeline",
+                "filter_secondary"
+              ],
+              "port_path": "/perception/pipeline/filter_secondary/input/pointcloud",
+              "remap_target": "~/input/pointcloud",
+              "topic": [
+                "sensing",
+                "lidar",
+                "pointcloud"
+              ],
+              "unique_id": "id_322c582a8701f017"
+            },
+            "topic": "/sensing/lidar/pointcloud",
+            "unique_id": "id_44ddfe077e1ee237"
+          },
+          {
+            "connection_type": "INTERNAL_TO_INTERNAL",
+            "from_port": {
+              "connected_ids": [
+                "id_ff267d71fa342146"
+              ],
+              "event": {
+                "action_ids": [
+                  "id_ff267d71fa342146"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "output_objects",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_748817e93f2d4436"
+                ],
+                "type": "to_output",
+                "unique_id": "id_2663caa227eef79c",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": false,
+              "is_remapped": false,
+              "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+              "name": "objects",
+              "namespace": [
+                "perception",
+                "pipeline",
+                "filter_primary"
+              ],
+              "port_path": "/perception/pipeline/filter_primary/output/objects",
+              "remap_target": "~/output/objects",
+              "topic": [
+                "perception",
+                "pipeline",
+                "filter_primary",
+                "objects"
+              ],
+              "unique_id": "id_2663caa227eef79c"
+            },
+            "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+            "to_port": {
+              "connected_ids": [
+                "id_2663caa227eef79c"
+              ],
+              "event": {
+                "action_ids": [
+                  "id_0f995ca16525da61"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "input_objects1",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_2663caa227eef79c"
+                ],
+                "type": "on_input",
+                "unique_id": "id_ff267d71fa342146",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": false,
+              "is_remapped": false,
+              "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+              "name": "objects1",
+              "namespace": [
+                "perception",
+                "pipeline",
+                "node_merger"
+              ],
+              "port_path": "/perception/pipeline/node_merger/input/objects1",
+              "remap_target": "~/input/objects1",
+              "topic": [
+                "perception",
+                "pipeline",
+                "filter_primary",
+                "objects"
+              ],
+              "unique_id": "id_ff267d71fa342146"
+            },
+            "topic": "/perception/pipeline/filter_primary/objects",
+            "unique_id": "id_de1026d3f9010c8a"
+          },
+          {
+            "connection_type": "INTERNAL_TO_INTERNAL",
+            "from_port": {
+              "connected_ids": [
+                "id_5ca16973dbf6225f"
+              ],
+              "event": {
+                "action_ids": [
+                  "id_5ca16973dbf6225f"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "output_objects",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_7839d3dadf463b85"
+                ],
+                "type": "to_output",
+                "unique_id": "id_7897856f8263f415",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": false,
+              "is_remapped": false,
+              "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+              "name": "objects",
+              "namespace": [
+                "perception",
+                "pipeline",
+                "filter_secondary"
+              ],
+              "port_path": "/perception/pipeline/filter_secondary/output/objects",
+              "remap_target": "~/output/objects",
+              "topic": [
+                "perception",
+                "pipeline",
+                "filter_secondary",
+                "objects"
+              ],
+              "unique_id": "id_7897856f8263f415"
+            },
+            "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+            "to_port": {
+              "connected_ids": [
+                "id_7897856f8263f415"
+              ],
+              "event": {
+                "action_ids": [
+                  "id_0f995ca16525da61"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "input_objects2",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_7897856f8263f415"
+                ],
+                "type": "on_input",
+                "unique_id": "id_5ca16973dbf6225f",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": false,
+              "is_remapped": false,
+              "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+              "name": "objects2",
+              "namespace": [
+                "perception",
+                "pipeline",
+                "node_merger"
+              ],
+              "port_path": "/perception/pipeline/node_merger/input/objects2",
+              "remap_target": "~/input/objects2",
+              "topic": [
+                "perception",
+                "pipeline",
+                "filter_secondary",
+                "objects"
+              ],
+              "unique_id": "id_5ca16973dbf6225f"
+            },
+            "topic": "/perception/pipeline/filter_secondary/objects",
+            "unique_id": "id_9d8bf01ca7cfab20"
+          },
+          {
+            "connection_type": "INTERNAL_TO_EXTERNAL",
+            "from_port": {
+              "connected_ids": [
+                "id_479e63bffcf97b31"
+              ],
+              "event": {
+                "action_ids": [
+                  "id_479e63bffcf97b31"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "output_objects",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_0f995ca16525da61"
+                ],
+                "type": "to_output",
+                "unique_id": "id_740e3caab1cbd9ba",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": false,
+              "is_remapped": false,
+              "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+              "name": "objects",
+              "namespace": [
+                "perception",
+                "pipeline",
+                "node_merger"
+              ],
+              "port_path": "/perception/pipeline/node_merger/output/objects",
+              "remap_target": "~/output/objects",
+              "topic": [
+                "perception",
+                "pipeline",
+                "objects"
+              ],
+              "unique_id": "id_740e3caab1cbd9ba"
+            },
+            "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+            "to_port": {
+              "connected_ids": [],
+              "event": {
+                "action_ids": [],
+                "error_rate": null,
+                "frequency": null,
+                "name": "output_objects",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [],
+                "type": "to_output",
+                "unique_id": "id_d6e16c6292f9d49c",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": true,
+              "is_remapped": false,
+              "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+              "name": "objects",
+              "namespace": [
+                "perception",
+                "pipeline"
+              ],
+              "port_path": "/perception/pipeline/output/objects",
+              "remap_target": "~/output/objects",
+              "topic": [
+                "perception",
+                "pipeline",
+                "objects"
+              ],
+              "unique_id": "id_d6e16c6292f9d49c"
+            },
+            "topic": "/perception/pipeline/objects",
+            "unique_id": "id_d95e64bd2c47ba95"
+          }
+        ],
+        "name": "pipeline",
+        "namespace": "/perception",
+        "out_ports": [
+          {
+            "connected_ids": [],
+            "event": {
+              "action_ids": [],
+              "error_rate": null,
+              "frequency": null,
+              "name": "output_objects",
+              "process_event": false,
+              "timeout": null,
+              "trigger_ids": [],
+              "type": "to_output",
+              "unique_id": "id_d6e16c6292f9d49c",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+            "name": "objects",
+            "namespace": [
+              "perception",
+              "pipeline"
+            ],
+            "port_path": "/perception/pipeline/output/objects",
+            "remap_target": "~/output/objects",
+            "topic": [
+              "perception",
+              "pipeline",
+              "objects"
+            ],
+            "unique_id": "id_d6e16c6292f9d49c"
+          }
+        ],
+        "parameters": [],
+        "path": "/perception/pipeline",
+        "source_file": "<WS>/pipeline_pkg/Pipeline.module.yaml",
+        "unique_id": "id_3a492730107871b9"
+      },
+      {
+        "children": [],
+        "compute_unit": "sub_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [],
+            "error_rate": null,
+            "frequency": null,
+            "name": "consume",
+            "process_event": true,
+            "timeout": null,
+            "trigger_ids": [
+              "id_479e63bffcf97b31"
+            ],
+            "type": "on_input",
+            "unique_id": "id_98bfa6ee123bc340",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [
+          {
+            "connected_ids": [
+              "id_740e3caab1cbd9ba"
+            ],
+            "event": {
+              "action_ids": [
+                "id_98bfa6ee123bc340"
+              ],
+              "error_rate": null,
+              "frequency": null,
+              "name": "input_objects",
+              "process_event": false,
+              "timeout": null,
+              "trigger_ids": [
+                "id_740e3caab1cbd9ba"
+              ],
+              "type": "on_input",
+              "unique_id": "id_479e63bffcf97b31",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+            "name": "objects",
+            "namespace": [
+              "sink"
+            ],
+            "port_path": "/sink/input/objects",
+            "remap_target": "~/input/objects",
+            "topic": [
+              "perception",
+              "pipeline",
+              "objects"
+            ],
+            "unique_id": "id_479e63bffcf97b31"
+          }
+        ],
+        "launcher": {
+          "args": "",
+          "executable": "sink_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "pipeline_pkg",
+          "param_files": [],
+          "param_values": [],
+          "ports": [
+            {
+              "name": "objects",
+              "remap_target": "~/input/objects",
+              "topic": "/perception/pipeline/objects"
+            }
+          ]
+        },
+        "links": [],
+        "name": "sink",
+        "namespace": "/",
+        "out_ports": [],
+        "package": "pipeline_pkg",
+        "parameter_files_all": [],
+        "parameters": [],
+        "path": "/sink",
+        "source_file": "<WS>/pipeline_pkg/Sink.node.yaml",
+        "unique_id": "id_6f5b1c3a9b038357"
+      },
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [],
+        "in_ports": [],
+        "launcher": {
+          "args": "",
+          "executable": "component_container_mt",
+          "launch_state": "node_container",
+          "node_output": "both",
+          "package": "rclcpp_components",
+          "param_files": [],
+          "param_values": [],
+          "ports": []
+        },
+        "links": [],
+        "name": "perception_container",
+        "namespace": "/perception/pipeline",
+        "out_ports": [],
+        "package": "rclcpp_components",
+        "parameter_files_all": [],
+        "parameters": [],
+        "path": "/perception/pipeline/perception_container",
+        "source_file": null,
+        "unique_id": "id_d9a673de65fd3243"
+      }
+    ],
+    "compute_unit": "",
+    "entity_type": "system",
+    "events": [],
+    "in_ports": [],
+    "links": [
+      {
+        "connection_type": "INTERNAL_TO_INTERNAL",
+        "from_port": {
+          "connected_ids": [
+            "id_c4b21ed742016d26",
+            "id_322c582a8701f017",
+            "id_f5ffc893ab0543ea"
+          ],
+          "event": {
+            "action_ids": [
+              "id_c4b21ed742016d26",
+              "id_322c582a8701f017",
+              "id_f5ffc893ab0543ea"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "output_pointcloud",
+            "process_event": false,
+            "timeout": null,
+            "trigger_ids": [
+              "id_38242bb2b53cdf1e"
+            ],
+            "type": "to_output",
+            "unique_id": "id_18f50af36c8979a4",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "sensor_msgs/msg/PointCloud2",
+          "name": "pointcloud",
+          "namespace": [
+            "sensing",
+            "lidar"
+          ],
+          "port_path": "/sensing/lidar/output/pointcloud",
+          "remap_target": "~/output/pointcloud",
+          "topic": [
+            "sensing",
+            "lidar",
+            "pointcloud"
+          ],
+          "unique_id": "id_18f50af36c8979a4"
+        },
+        "msg_type": "sensor_msgs/msg/PointCloud2",
+        "to_port": {
+          "connected_ids": [
+            "id_18f50af36c8979a4"
+          ],
+          "event": {
+            "action_ids": [],
+            "error_rate": null,
+            "frequency": null,
+            "name": "input_pointcloud",
+            "process_event": false,
+            "timeout": null,
+            "trigger_ids": [
+              "id_18f50af36c8979a4"
+            ],
+            "type": "on_input",
+            "unique_id": "id_f5ffc893ab0543ea",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "sensor_msgs/msg/PointCloud2",
+          "name": "pointcloud",
+          "namespace": [
+            "perception",
+            "pipeline"
+          ],
+          "port_path": "/perception/pipeline/input/pointcloud",
+          "remap_target": "~/input/pointcloud",
+          "topic": [
+            "sensing",
+            "lidar",
+            "pointcloud"
+          ],
+          "unique_id": "id_f5ffc893ab0543ea"
+        },
+        "topic": "/sensing/lidar/pointcloud",
+        "unique_id": "id_d11470e3c3c8e70a"
+      },
+      {
+        "connection_type": "INTERNAL_TO_INTERNAL",
+        "from_port": {
+          "connected_ids": [],
+          "event": {
+            "action_ids": [],
+            "error_rate": null,
+            "frequency": null,
+            "name": "output_objects",
+            "process_event": false,
+            "timeout": null,
+            "trigger_ids": [],
+            "type": "to_output",
+            "unique_id": "id_d6e16c6292f9d49c",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+          "name": "objects",
+          "namespace": [
+            "perception",
+            "pipeline"
+          ],
+          "port_path": "/perception/pipeline/output/objects",
+          "remap_target": "~/output/objects",
+          "topic": [
+            "perception",
+            "pipeline",
+            "objects"
+          ],
+          "unique_id": "id_d6e16c6292f9d49c"
+        },
+        "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+        "to_port": {
+          "connected_ids": [
+            "id_740e3caab1cbd9ba"
+          ],
+          "event": {
+            "action_ids": [
+              "id_98bfa6ee123bc340"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "input_objects",
+            "process_event": false,
+            "timeout": null,
+            "trigger_ids": [
+              "id_740e3caab1cbd9ba"
+            ],
+            "type": "on_input",
+            "unique_id": "id_479e63bffcf97b31",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
+          "name": "objects",
+          "namespace": [
+            "sink"
+          ],
+          "port_path": "/sink/input/objects",
+          "remap_target": "~/input/objects",
+          "topic": [
+            "perception",
+            "pipeline",
+            "objects"
+          ],
+          "unique_id": "id_479e63bffcf97b31"
+        },
+        "topic": "/perception/pipeline/objects",
+        "unique_id": "id_2f4a9b63705faa39"
+      }
+    ],
+    "name": "Chain_default",
+    "namespace": "/",
+    "out_ports": [],
+    "parameters": [],
+    "path": "/",
+    "source_file": "<WS>/pipeline_pkg/Chain.system.yaml",
+    "unique_id": "id_1a78337ae441e5ea"
+  },
+  "metadata": {
+    "mode": "default",
+    "system_name": "Chain"
+  },
+  "schema_version": "1.0"
+}

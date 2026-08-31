@@ -1,0 +1,20 @@
+autoware_system_design_format: 0.9.0
+
+name: Newer.node
+
+description: Declares a newer minor format version than the tool supports.
+
+package:
+  name: hint_pkg
+  provider: dummy
+
+launch:
+  plugin: hint::Newer
+  executable: newer_node
+  node_output: screen
+
+subscribers: []
+publishers: []
+param_files: []
+param_values: []
+processes: []

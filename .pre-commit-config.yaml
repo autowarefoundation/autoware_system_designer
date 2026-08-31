@@ -7,6 +7,9 @@
 #
 # Dependencies are automatically installed by pre-commit in isolated environments
 
+# Golden files are byte-exact pipeline outputs; no hook may rewrite them.
+exclude: ^autoware_system_designer/test/golden/
+
 repos:
   # Common linting
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -69,6 +72,7 @@ repos:
         entry: python3 autoware_system_designer/autoware_system_designer/linter/run_lint.py
         language: system
         files: \.(node|module|system|parameter_set)\.yaml$
+        exclude: ^autoware_system_designer/test/fixtures/
         pass_filenames: true
         require_serial: false
 

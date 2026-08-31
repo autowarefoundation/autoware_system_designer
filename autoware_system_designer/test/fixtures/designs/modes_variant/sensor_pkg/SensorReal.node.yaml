@@ -1,0 +1,33 @@
+autoware_system_design_format: 0.4.0
+
+name: SensorReal.node
+
+description: Dummy hardware sensor driver.
+
+package:
+  name: sensor_pkg
+  provider: dummy
+
+launch:
+  plugin: sensors::Real
+  executable: sensor_real_node
+  node_output: screen
+
+subscribers: []
+
+publishers:
+  - name: scan
+    message_type: sensor_msgs/msg/LaserScan
+
+param_files: []
+
+param_values:
+  - name: device_id
+    type: string
+    default: $(var vehicle_id)
+
+processes:
+  - name: scan
+    trigger_conditions: []
+    outcomes:
+      - to_output: scan

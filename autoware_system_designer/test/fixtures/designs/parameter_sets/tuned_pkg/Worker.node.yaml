@@ -1,0 +1,37 @@
+autoware_system_design_format: 0.4.0
+
+name: Worker.node
+
+description: Dummy worker with a tunable parameter file and value.
+
+package:
+  name: tuned_pkg
+  provider: dummy
+
+launch:
+  plugin: tuned::Worker
+  executable: worker_node
+  node_output: screen
+
+subscribers:
+  - name: input
+    message_type: std_msgs/msg/String
+
+publishers: []
+
+param_files:
+  - name: worker_param_path
+    default: config/worker.param.yaml
+    schema: schema/worker.schema.json
+
+param_values:
+  - name: enabled
+    type: bool
+    default: true
+
+processes:
+  - name: work
+    trigger_conditions:
+      - or:
+          - on_input: input
+    outcomes: []

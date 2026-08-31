@@ -1,0 +1,20 @@
+autoware_system_design_format: 0.4.0
+
+name: Hint.system
+
+description: Fails on a missing entity while a newer-minor file is present.
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+
+components:
+  - name: newer
+    entity: Newer.node
+    compute_unit: main_ecu
+  - name: ghost
+    entity: Ghost.node
+    compute_unit: main_ecu
+
+connections: []

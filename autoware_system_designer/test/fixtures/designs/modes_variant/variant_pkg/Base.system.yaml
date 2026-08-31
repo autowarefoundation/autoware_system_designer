@@ -1,0 +1,37 @@
+autoware_system_design_format: 0.4.0
+
+name: Base.system
+
+description: Base system with a simulation mode that swaps the sensor entity.
+
+variables:
+  - name: vehicle_id
+    description: Identifier of the target vehicle, set by the deployment.
+  - name: map_path
+  - name: map_file
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+  - name: simulation
+    description: Simulation mode
+
+components:
+  - name: sensor
+    entity: SensorReal.node
+    compute_unit: main_ecu
+  - name: consumer
+    entity: Consumer.node
+    compute_unit: main_ecu
+
+connections:
+  - - consumer.subscriber.scan
+    - sensor.publisher.scan
+
+simulation:
+  override:
+    components:
+      - name: sensor
+        entity: SensorSim.node
+        compute_unit: main_ecu

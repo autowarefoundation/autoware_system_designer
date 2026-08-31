@@ -1,0 +1,174 @@
+{
+  "data": {
+    "children": [
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [
+              "id_11899dc5d83f2896"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "publish",
+            "process_event": true,
+            "timeout": null,
+            "trigger_ids": [],
+            "type": "or",
+            "unique_id": "id_608583f5023b734e",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [],
+        "launcher": {
+          "args": "",
+          "executable": "talker_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "demo_pkg",
+          "param_files": [],
+          "param_values": [
+            {
+              "name": "rate_hz",
+              "parameter_type": "DEFAULT",
+              "type": "double",
+              "value": "10.0"
+            },
+            {
+              "name": "verbose",
+              "parameter_type": "DEFAULT",
+              "type": "bool",
+              "value": false
+            },
+            {
+              "name": "tiny_gain",
+              "parameter_type": "DEFAULT",
+              "type": "double",
+              "value": "0.00001"
+            }
+          ],
+          "ports": [
+            {
+              "name": "status",
+              "remap_target": "~/output/status",
+              "topic": "/talker/status"
+            }
+          ]
+        },
+        "links": [],
+        "name": "talker",
+        "namespace": "/",
+        "out_ports": [
+          {
+            "connected_ids": [],
+            "event": {
+              "action_ids": [],
+              "error_rate": null,
+              "frequency": null,
+              "name": "output_status",
+              "process_event": false,
+              "timeout": null,
+              "trigger_ids": [
+                "id_608583f5023b734e"
+              ],
+              "type": "to_output",
+              "unique_id": "id_11899dc5d83f2896",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "std_msgs/msg/String",
+            "name": "status",
+            "namespace": [
+              "talker"
+            ],
+            "port_path": "/talker/output/status",
+            "remap_target": "~/output/status",
+            "topic": [
+              "talker",
+              "status"
+            ],
+            "unique_id": "id_11899dc5d83f2896"
+          }
+        ],
+        "package": "demo_pkg",
+        "parameter_files_all": [
+          {
+            "allow_substs": true,
+            "is_override": false,
+            "name": "talker_param_path",
+            "parameter_type": "DEFAULT_FILE",
+            "path": "config/talker.param.yaml",
+            "source": {
+              "column": 5,
+              "file_path": "<WS>/demo_pkg/Talker.node.yaml",
+              "line": 26,
+              "yaml_path": "/param_files/0"
+            }
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rate_hz",
+            "parameter_type": "DEFAULT",
+            "source": {
+              "column": 5,
+              "file_path": "<WS>/demo_pkg/Talker.node.yaml",
+              "line": 31,
+              "yaml_path": "/param_values/0"
+            },
+            "type": "double",
+            "value": "10.0"
+          },
+          {
+            "name": "verbose",
+            "parameter_type": "DEFAULT",
+            "source": {
+              "column": 5,
+              "file_path": "<WS>/demo_pkg/Talker.node.yaml",
+              "line": 34,
+              "yaml_path": "/param_values/1"
+            },
+            "type": "bool",
+            "value": false
+          },
+          {
+            "name": "tiny_gain",
+            "parameter_type": "DEFAULT",
+            "source": {
+              "column": 5,
+              "file_path": "<WS>/demo_pkg/Talker.node.yaml",
+              "line": 37,
+              "yaml_path": "/param_values/2"
+            },
+            "type": "double",
+            "value": "0.00001"
+          }
+        ],
+        "path": "/talker",
+        "source_file": "<WS>/demo_pkg/Talker.node.yaml",
+        "unique_id": "id_cfc72b8f1438a23a"
+      }
+    ],
+    "compute_unit": "",
+    "entity_type": "system",
+    "events": [],
+    "in_ports": [],
+    "links": [],
+    "name": "Solo_default",
+    "namespace": "/",
+    "out_ports": [],
+    "parameters": [],
+    "path": "/",
+    "source_file": "<WS>/demo_pkg/Solo.system.yaml",
+    "unique_id": "id_f1cc35cb62494031"
+  },
+  "metadata": {
+    "mode": "default",
+    "system_name": "Solo"
+  },
+  "schema_version": "1.0"
+}

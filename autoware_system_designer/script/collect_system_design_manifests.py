@@ -6,6 +6,22 @@ from pathlib import Path
 
 import yaml
 
+# Directory markers that exclude a subtree from the scan, matching colcon semantics.
+IGNORE_MARKERS = ("COLCON_IGNORE", "AMENT_IGNORE")
+
+
+def is_ignored_path(path, root_dir):
+    """A path is ignored when any directory between root_dir and it holds an ignore marker."""
+    current = os.path.realpath(os.path.dirname(path) if os.path.isfile(path) else path)
+    root = os.path.realpath(root_dir)
+    while current.startswith(root):
+        if any(os.path.exists(os.path.join(current, marker)) for marker in IGNORE_MARKERS):
+            return True
+        if current == root:
+            break
+        current = os.path.dirname(current)
+    return False
+
 
 def get_package_name(path):
     xml_path = os.path.join(path, "package.xml")
@@ -23,6 +39,9 @@ def get_package_name(path):
 def find_packages(root_dir):
     packages = {}
     for dirpath, dirnames, filenames in os.walk(root_dir):
+        if any(marker in filenames for marker in IGNORE_MARKERS):
+            dirnames.clear()
+            continue
         if "package.xml" in filenames:
             name = get_package_name(dirpath)
             if name:
@@ -181,6 +200,9 @@ def main():
         yaml_file_abs = os.path.realpath(yaml_file)
 
         if not is_target_design_file(os.path.basename(yaml_file_abs)):
+            continue
+
+        if is_ignored_path(yaml_file_abs, workspace_root):
             continue
 
         # Check content first (it's a hard requirement)

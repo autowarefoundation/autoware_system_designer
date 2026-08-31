@@ -1,0 +1,13 @@
+autoware_system_design_format: 0.4.0
+
+name: Loop.module
+
+description: Module that instantiates itself.
+
+instances:
+  - name: inner
+    entity: Loop.module
+
+subscribers: []
+publishers: []
+connections: []

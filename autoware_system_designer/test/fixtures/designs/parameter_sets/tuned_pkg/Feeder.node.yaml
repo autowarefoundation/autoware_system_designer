@@ -1,0 +1,29 @@
+autoware_system_design_format: 0.4.0
+
+name: Feeder.node
+
+description: Dummy feeder publishing the duo input.
+
+package:
+  name: tuned_pkg
+  provider: dummy
+
+launch:
+  plugin: tuned::Feeder
+  executable: feeder_node
+  node_output: screen
+
+subscribers: []
+
+publishers:
+  - name: output
+    message_type: std_msgs/msg/String
+
+param_files: []
+param_values: []
+
+processes:
+  - name: feed
+    trigger_conditions: []
+    outcomes:
+      - to_output: output

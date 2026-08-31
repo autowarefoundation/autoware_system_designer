@@ -1,0 +1,24 @@
+autoware_system_design_format: 0.4.0
+
+name: Tuned.system
+
+description: Feeder driving the duo module with a parameter set applied.
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+
+components:
+  - name: feeder
+    entity: Feeder.node
+    compute_unit: main_ecu
+  - name: duo
+    entity: Duo.module
+    path: /app/duo
+    compute_unit: main_ecu
+    parameter_set: [Tuning.parameter_set]
+
+connections:
+  - - duo.subscriber.input
+    - feeder.publisher.output

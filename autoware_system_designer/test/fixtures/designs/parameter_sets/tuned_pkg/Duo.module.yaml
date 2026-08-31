@@ -1,0 +1,22 @@
+autoware_system_design_format: 0.4.0
+
+name: Duo.module
+
+description: Two workers fed from one boundary input.
+
+instances:
+  - name: worker_a
+    entity: Worker.node
+  - name: worker_b
+    entity: Worker.node
+
+subscribers:
+  - name: input
+
+publishers: []
+
+connections:
+  - - subscriber.input
+    - worker_a.subscriber.input
+  - - subscriber.input
+    - worker_b.subscriber.input

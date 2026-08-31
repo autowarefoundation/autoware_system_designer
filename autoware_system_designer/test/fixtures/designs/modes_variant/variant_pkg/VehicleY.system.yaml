@@ -1,0 +1,16 @@
+autoware_system_design_format: 0.4.0
+
+name: VehicleY.system
+
+description: Deployment of the Base system for vehicle_y with concrete variable values.
+
+base: Base.system
+
+override:
+  variables:
+    - name: vehicle_id
+      value: vehicle_y
+    - name: map_path
+      value: /opt/maps/vehicle_y
+    - name: map_file
+      value: lanelet2_map.osm

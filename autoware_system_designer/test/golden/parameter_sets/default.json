@@ -1,0 +1,680 @@
+{
+  "data": {
+    "children": [
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [
+              "id_84305ff8ee3fd5b8"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "feed",
+            "process_event": true,
+            "timeout": null,
+            "trigger_ids": [],
+            "type": "or",
+            "unique_id": "id_32139dc6fb3298db",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [],
+        "launcher": {
+          "args": "",
+          "executable": "feeder_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "tuned_pkg",
+          "param_files": [],
+          "param_values": [],
+          "ports": [
+            {
+              "name": "output",
+              "remap_target": "~/output/output",
+              "topic": "/feeder/output"
+            }
+          ]
+        },
+        "links": [],
+        "name": "feeder",
+        "namespace": "/",
+        "out_ports": [
+          {
+            "connected_ids": [
+              "id_63ab045c521e3470",
+              "id_a31b807e35cc996c",
+              "id_564b69da424ea0a7"
+            ],
+            "event": {
+              "action_ids": [
+                "id_63ab045c521e3470",
+                "id_a31b807e35cc996c",
+                "id_564b69da424ea0a7"
+              ],
+              "error_rate": null,
+              "frequency": null,
+              "name": "output_output",
+              "process_event": false,
+              "timeout": null,
+              "trigger_ids": [
+                "id_32139dc6fb3298db"
+              ],
+              "type": "to_output",
+              "unique_id": "id_84305ff8ee3fd5b8",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "std_msgs/msg/String",
+            "name": "output",
+            "namespace": [
+              "feeder"
+            ],
+            "port_path": "/feeder/output/output",
+            "remap_target": "~/output/output",
+            "topic": [
+              "feeder",
+              "output"
+            ],
+            "unique_id": "id_84305ff8ee3fd5b8"
+          }
+        ],
+        "package": "tuned_pkg",
+        "parameter_files_all": [],
+        "parameters": [],
+        "path": "/feeder",
+        "source_file": "<WS>/tuned_pkg/Feeder.node.yaml",
+        "unique_id": "id_72ec2432ce0ff9a1"
+      },
+      {
+        "children": [
+          {
+            "children": [],
+            "compute_unit": "main_ecu",
+            "entity_type": "node",
+            "events": [
+              {
+                "action_ids": [],
+                "error_rate": null,
+                "frequency": null,
+                "name": "work",
+                "process_event": true,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_63ab045c521e3470"
+                ],
+                "type": "on_input",
+                "unique_id": "id_d67b6cefe795ad75",
+                "warn_rate": null
+              }
+            ],
+            "in_ports": [
+              {
+                "connected_ids": [
+                  "id_84305ff8ee3fd5b8"
+                ],
+                "event": {
+                  "action_ids": [
+                    "id_d67b6cefe795ad75"
+                  ],
+                  "error_rate": null,
+                  "frequency": null,
+                  "name": "input_input",
+                  "process_event": false,
+                  "timeout": null,
+                  "trigger_ids": [
+                    "id_84305ff8ee3fd5b8"
+                  ],
+                  "type": "on_input",
+                  "unique_id": "id_63ab045c521e3470",
+                  "warn_rate": null
+                },
+                "is_global": false,
+                "is_outward": true,
+                "is_remapped": false,
+                "msg_type": "std_msgs/msg/String",
+                "name": "input",
+                "namespace": [
+                  "app",
+                  "duo",
+                  "worker_a"
+                ],
+                "port_path": "/app/duo/worker_a/input/input",
+                "remap_target": "~/input/input",
+                "topic": [
+                  "feeder",
+                  "output"
+                ],
+                "unique_id": "id_63ab045c521e3470"
+              }
+            ],
+            "launcher": {
+              "args": "",
+              "executable": "worker_node",
+              "launch_state": "single_node",
+              "node_output": "screen",
+              "package": "tuned_pkg",
+              "param_files": [
+                {
+                  "allow_substs": true,
+                  "name": "worker_param_path",
+                  "parameter_type": "OVERRIDE_FILE",
+                  "path": "tuning/worker_a/worker_param_path.param.yaml"
+                }
+              ],
+              "param_values": [
+                {
+                  "name": "enabled",
+                  "parameter_type": "OVERRIDE",
+                  "type": "bool",
+                  "value": false
+                }
+              ],
+              "ports": [
+                {
+                  "name": "input",
+                  "remap_target": "~/input/input",
+                  "topic": "/feeder/output"
+                }
+              ]
+            },
+            "links": [],
+            "name": "worker_a",
+            "namespace": "/app/duo",
+            "out_ports": [],
+            "package": "tuned_pkg",
+            "parameter_files_all": [
+              {
+                "allow_substs": true,
+                "is_override": false,
+                "name": "worker_param_path",
+                "parameter_type": "DEFAULT_FILE",
+                "path": "config/worker.param.yaml",
+                "source": {
+                  "column": 5,
+                  "file_path": "<WS>/tuned_pkg/Worker.node.yaml",
+                  "line": 23,
+                  "yaml_path": "/param_files/0"
+                }
+              },
+              {
+                "allow_substs": true,
+                "is_override": true,
+                "name": "worker_param_path",
+                "parameter_type": "OVERRIDE_FILE",
+                "path": "tuning/worker_a/worker_param_path.param.yaml",
+                "source": {
+                  "column": 9,
+                  "file_path": "<WS>/tuned_pkg/Tuning.parameter_set.yaml",
+                  "line": 10,
+                  "yaml_path": "/parameters/0/param_files/0"
+                }
+              }
+            ],
+            "parameters": [
+              {
+                "name": "enabled",
+                "parameter_type": "OVERRIDE",
+                "source": {
+                  "column": 9,
+                  "file_path": "<WS>/tuned_pkg/Tuning.parameter_set.yaml",
+                  "line": 12,
+                  "yaml_path": "/parameters/0/param_values/0"
+                },
+                "type": "bool",
+                "value": false
+              }
+            ],
+            "path": "/app/duo/worker_a",
+            "source_file": "<WS>/tuned_pkg/Worker.node.yaml",
+            "unique_id": "id_dbeb2ee1d4f36de2"
+          },
+          {
+            "children": [],
+            "compute_unit": "main_ecu",
+            "entity_type": "node",
+            "events": [
+              {
+                "action_ids": [],
+                "error_rate": null,
+                "frequency": null,
+                "name": "work",
+                "process_event": true,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_a31b807e35cc996c"
+                ],
+                "type": "on_input",
+                "unique_id": "id_7efe089f867903b2",
+                "warn_rate": null
+              }
+            ],
+            "in_ports": [
+              {
+                "connected_ids": [
+                  "id_84305ff8ee3fd5b8"
+                ],
+                "event": {
+                  "action_ids": [
+                    "id_7efe089f867903b2"
+                  ],
+                  "error_rate": null,
+                  "frequency": null,
+                  "name": "input_input",
+                  "process_event": false,
+                  "timeout": null,
+                  "trigger_ids": [
+                    "id_84305ff8ee3fd5b8"
+                  ],
+                  "type": "on_input",
+                  "unique_id": "id_a31b807e35cc996c",
+                  "warn_rate": null
+                },
+                "is_global": false,
+                "is_outward": true,
+                "is_remapped": false,
+                "msg_type": "std_msgs/msg/String",
+                "name": "input",
+                "namespace": [
+                  "app",
+                  "duo",
+                  "worker_b"
+                ],
+                "port_path": "/app/duo/worker_b/input/input",
+                "remap_target": "~/input/input",
+                "topic": [
+                  "feeder",
+                  "output"
+                ],
+                "unique_id": "id_a31b807e35cc996c"
+              }
+            ],
+            "launcher": {
+              "args": "",
+              "executable": "worker_node",
+              "launch_state": "single_node",
+              "node_output": "screen",
+              "package": "tuned_pkg",
+              "param_files": [
+                {
+                  "allow_substs": true,
+                  "name": "worker_param_path",
+                  "parameter_type": "OVERRIDE_FILE",
+                  "path": "tuning/worker_b/worker_param_path.param.yaml"
+                }
+              ],
+              "param_values": [
+                {
+                  "name": "enabled",
+                  "parameter_type": "DEFAULT",
+                  "type": "bool",
+                  "value": true
+                }
+              ],
+              "ports": [
+                {
+                  "name": "input",
+                  "remap_target": "~/input/input",
+                  "topic": "/feeder/output"
+                }
+              ]
+            },
+            "links": [],
+            "name": "worker_b",
+            "namespace": "/app/duo",
+            "out_ports": [],
+            "package": "tuned_pkg",
+            "parameter_files_all": [
+              {
+                "allow_substs": true,
+                "is_override": false,
+                "name": "worker_param_path",
+                "parameter_type": "DEFAULT_FILE",
+                "path": "config/worker.param.yaml",
+                "source": {
+                  "column": 5,
+                  "file_path": "<WS>/tuned_pkg/Worker.node.yaml",
+                  "line": 23,
+                  "yaml_path": "/param_files/0"
+                }
+              },
+              {
+                "allow_substs": true,
+                "is_override": true,
+                "name": "worker_param_path",
+                "parameter_type": "OVERRIDE_FILE",
+                "path": "tuning/worker_b/worker_param_path.param.yaml",
+                "source": {
+                  "column": 9,
+                  "file_path": "<WS>/tuned_pkg/Tuning.parameter_set.yaml",
+                  "line": 17,
+                  "yaml_path": "/parameters/1/param_files/0"
+                }
+              }
+            ],
+            "parameters": [
+              {
+                "name": "enabled",
+                "parameter_type": "DEFAULT",
+                "source": {
+                  "column": 5,
+                  "file_path": "<WS>/tuned_pkg/Worker.node.yaml",
+                  "line": 28,
+                  "yaml_path": "/param_values/0"
+                },
+                "type": "bool",
+                "value": true
+              }
+            ],
+            "path": "/app/duo/worker_b",
+            "source_file": "<WS>/tuned_pkg/Worker.node.yaml",
+            "unique_id": "id_4f1aa49222122cda"
+          }
+        ],
+        "compute_unit": "main_ecu",
+        "entity_type": "module",
+        "events": [],
+        "in_ports": [
+          {
+            "connected_ids": [
+              "id_84305ff8ee3fd5b8"
+            ],
+            "event": {
+              "action_ids": [],
+              "error_rate": null,
+              "frequency": null,
+              "name": "input_input",
+              "process_event": false,
+              "timeout": null,
+              "trigger_ids": [
+                "id_84305ff8ee3fd5b8"
+              ],
+              "type": "on_input",
+              "unique_id": "id_564b69da424ea0a7",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "std_msgs/msg/String",
+            "name": "input",
+            "namespace": [
+              "app",
+              "duo"
+            ],
+            "port_path": "/app/duo/input/input",
+            "remap_target": "~/input/input",
+            "topic": [
+              "feeder",
+              "output"
+            ],
+            "unique_id": "id_564b69da424ea0a7"
+          }
+        ],
+        "links": [
+          {
+            "connection_type": "EXTERNAL_TO_INTERNAL",
+            "from_port": {
+              "connected_ids": [
+                "id_84305ff8ee3fd5b8"
+              ],
+              "event": {
+                "action_ids": [],
+                "error_rate": null,
+                "frequency": null,
+                "name": "input_input",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_84305ff8ee3fd5b8"
+                ],
+                "type": "on_input",
+                "unique_id": "id_564b69da424ea0a7",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": true,
+              "is_remapped": false,
+              "msg_type": "std_msgs/msg/String",
+              "name": "input",
+              "namespace": [
+                "app",
+                "duo"
+              ],
+              "port_path": "/app/duo/input/input",
+              "remap_target": "~/input/input",
+              "topic": [
+                "feeder",
+                "output"
+              ],
+              "unique_id": "id_564b69da424ea0a7"
+            },
+            "msg_type": "std_msgs/msg/String",
+            "to_port": {
+              "connected_ids": [
+                "id_84305ff8ee3fd5b8"
+              ],
+              "event": {
+                "action_ids": [
+                  "id_d67b6cefe795ad75"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "input_input",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_84305ff8ee3fd5b8"
+                ],
+                "type": "on_input",
+                "unique_id": "id_63ab045c521e3470",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": false,
+              "is_remapped": false,
+              "msg_type": "std_msgs/msg/String",
+              "name": "input",
+              "namespace": [
+                "app",
+                "duo",
+                "worker_a"
+              ],
+              "port_path": "/app/duo/worker_a/input/input",
+              "remap_target": "~/input/input",
+              "topic": [
+                "feeder",
+                "output"
+              ],
+              "unique_id": "id_63ab045c521e3470"
+            },
+            "topic": "/feeder/output",
+            "unique_id": "id_0902f5e9a676e440"
+          },
+          {
+            "connection_type": "EXTERNAL_TO_INTERNAL",
+            "from_port": {
+              "connected_ids": [],
+              "event": {
+                "action_ids": [],
+                "error_rate": null,
+                "frequency": null,
+                "name": "input_input",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [],
+                "type": "on_input",
+                "unique_id": "id_564b69da424ea0a7",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": true,
+              "is_remapped": false,
+              "msg_type": "std_msgs/msg/String",
+              "name": "input",
+              "namespace": [
+                "app",
+                "duo"
+              ],
+              "port_path": "/app/duo/input/input",
+              "remap_target": "~/input/input",
+              "topic": [],
+              "unique_id": "id_564b69da424ea0a7"
+            },
+            "msg_type": "std_msgs/msg/String",
+            "to_port": {
+              "connected_ids": [
+                "id_84305ff8ee3fd5b8"
+              ],
+              "event": {
+                "action_ids": [
+                  "id_7efe089f867903b2"
+                ],
+                "error_rate": null,
+                "frequency": null,
+                "name": "input_input",
+                "process_event": false,
+                "timeout": null,
+                "trigger_ids": [
+                  "id_84305ff8ee3fd5b8"
+                ],
+                "type": "on_input",
+                "unique_id": "id_a31b807e35cc996c",
+                "warn_rate": null
+              },
+              "is_global": false,
+              "is_outward": false,
+              "is_remapped": false,
+              "msg_type": "std_msgs/msg/String",
+              "name": "input",
+              "namespace": [
+                "app",
+                "duo",
+                "worker_b"
+              ],
+              "port_path": "/app/duo/worker_b/input/input",
+              "remap_target": "~/input/input",
+              "topic": [
+                "feeder",
+                "output"
+              ],
+              "unique_id": "id_a31b807e35cc996c"
+            },
+            "topic": "/feeder/output",
+            "unique_id": "id_fcb4a1289fb15f75"
+          }
+        ],
+        "name": "duo",
+        "namespace": "/app",
+        "out_ports": [],
+        "parameters": [],
+        "path": "/app/duo",
+        "source_file": "<WS>/tuned_pkg/Duo.module.yaml",
+        "unique_id": "id_429e96ca1a28b2a3"
+      }
+    ],
+    "compute_unit": "",
+    "entity_type": "system",
+    "events": [],
+    "in_ports": [],
+    "links": [
+      {
+        "connection_type": "INTERNAL_TO_INTERNAL",
+        "from_port": {
+          "connected_ids": [
+            "id_63ab045c521e3470",
+            "id_a31b807e35cc996c",
+            "id_564b69da424ea0a7"
+          ],
+          "event": {
+            "action_ids": [
+              "id_63ab045c521e3470",
+              "id_a31b807e35cc996c",
+              "id_564b69da424ea0a7"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "output_output",
+            "process_event": false,
+            "timeout": null,
+            "trigger_ids": [
+              "id_32139dc6fb3298db"
+            ],
+            "type": "to_output",
+            "unique_id": "id_84305ff8ee3fd5b8",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "std_msgs/msg/String",
+          "name": "output",
+          "namespace": [
+            "feeder"
+          ],
+          "port_path": "/feeder/output/output",
+          "remap_target": "~/output/output",
+          "topic": [
+            "feeder",
+            "output"
+          ],
+          "unique_id": "id_84305ff8ee3fd5b8"
+        },
+        "msg_type": "std_msgs/msg/String",
+        "to_port": {
+          "connected_ids": [
+            "id_84305ff8ee3fd5b8"
+          ],
+          "event": {
+            "action_ids": [],
+            "error_rate": null,
+            "frequency": null,
+            "name": "input_input",
+            "process_event": false,
+            "timeout": null,
+            "trigger_ids": [
+              "id_84305ff8ee3fd5b8"
+            ],
+            "type": "on_input",
+            "unique_id": "id_564b69da424ea0a7",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "std_msgs/msg/String",
+          "name": "input",
+          "namespace": [
+            "app",
+            "duo"
+          ],
+          "port_path": "/app/duo/input/input",
+          "remap_target": "~/input/input",
+          "topic": [
+            "feeder",
+            "output"
+          ],
+          "unique_id": "id_564b69da424ea0a7"
+        },
+        "topic": "/feeder/output",
+        "unique_id": "id_e3d48344b15b723d"
+      }
+    ],
+    "name": "Tuned_default",
+    "namespace": "/",
+    "out_ports": [],
+    "parameters": [],
+    "path": "/",
+    "source_file": "<WS>/tuned_pkg/Tuned.system.yaml",
+    "unique_id": "id_efa5cecf69d60b61"
+  },
+  "metadata": {
+    "mode": "default",
+    "system_name": "Tuned"
+  },
+  "schema_version": "1.0"
+}

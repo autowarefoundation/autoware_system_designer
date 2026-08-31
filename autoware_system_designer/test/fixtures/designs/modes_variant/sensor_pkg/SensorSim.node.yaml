@@ -1,0 +1,33 @@
+autoware_system_design_format: 0.4.0
+
+name: SensorSim.node
+
+description: Dummy simulated sensor.
+
+package:
+  name: sensor_pkg
+  provider: dummy
+
+launch:
+  plugin: sensors::Sim
+  executable: sensor_sim_node
+  node_output: screen
+
+subscribers: []
+
+publishers:
+  - name: scan
+    message_type: sensor_msgs/msg/LaserScan
+
+param_files: []
+
+param_values:
+  - name: noise_stddev
+    type: double
+    default: 0.01
+
+processes:
+  - name: scan
+    trigger_conditions: []
+    outcomes:
+      - to_output: scan

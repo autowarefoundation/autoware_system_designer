@@ -1,0 +1,17 @@
+autoware_system_design_format: 0.4.0
+
+name: Broken.system
+
+description: References an entity that does not exist.
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+
+components:
+  - name: ghost
+    entity: Ghost.node
+    compute_unit: main_ecu
+
+connections: []

@@ -1,0 +1,30 @@
+autoware_system_design_format: 0.4.0
+
+name: Sink.node
+
+description: Dummy consumer of merged objects.
+
+package:
+  name: pipeline_pkg
+  provider: dummy
+
+launch:
+  plugin: pipeline::Sink
+  executable: sink_node
+  node_output: screen
+
+subscribers:
+  - name: objects
+    message_type: autoware_perception_msgs/msg/DetectedObjects
+
+publishers: []
+
+param_files: []
+param_values: []
+
+processes:
+  - name: consume
+    trigger_conditions:
+      - or:
+          - on_input: objects
+    outcomes: []

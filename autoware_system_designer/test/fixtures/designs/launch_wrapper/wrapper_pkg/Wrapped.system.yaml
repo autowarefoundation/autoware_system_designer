@@ -1,0 +1,22 @@
+autoware_system_design_format: 0.4.0
+
+name: Wrapped.system
+
+description: System mixing a ros2 launch file wrapper with a plugin node.
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+
+components:
+  - name: map
+    entity: MapWrapper.node
+    compute_unit: main_ecu
+  - name: user
+    entity: MapUser.node
+    compute_unit: main_ecu
+
+connections:
+  - - user.subscriber.vector_map
+    - map.publisher.vector_map

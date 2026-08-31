@@ -1,0 +1,292 @@
+{
+  "data": {
+    "children": [
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [
+              "id_b589da255604a9e8"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "load",
+            "process_event": true,
+            "timeout": null,
+            "trigger_ids": [],
+            "type": "or",
+            "unique_id": "id_ad4ed36b628371e3",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [],
+        "launcher": {
+          "args": "",
+          "launch_state": "ros2_launch_file",
+          "node_output": "screen",
+          "package": "wrapper_pkg",
+          "param_files": [],
+          "param_values": [
+            {
+              "name": "map_file",
+              "parameter_type": "DEFAULT",
+              "type": "string",
+              "value": "/opt/maps/lanelet2_map.osm"
+            }
+          ],
+          "ports": [
+            {
+              "name": "vector_map",
+              "remap_target": "~/output/vector_map",
+              "topic": "/map/vector_map"
+            }
+          ],
+          "ros2_launch_file": "map_loader.launch.xml"
+        },
+        "links": [],
+        "name": "map",
+        "namespace": "/",
+        "out_ports": [
+          {
+            "connected_ids": [
+              "id_0f747866032a06a9"
+            ],
+            "event": {
+              "action_ids": [
+                "id_0f747866032a06a9"
+              ],
+              "error_rate": null,
+              "frequency": null,
+              "name": "output_vector_map",
+              "process_event": false,
+              "timeout": null,
+              "trigger_ids": [
+                "id_ad4ed36b628371e3"
+              ],
+              "type": "to_output",
+              "unique_id": "id_b589da255604a9e8",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "autoware_map_msgs/msg/LaneletMapBin",
+            "name": "vector_map",
+            "namespace": [
+              "map"
+            ],
+            "port_path": "/map/output/vector_map",
+            "remap_target": "~/output/vector_map",
+            "topic": [
+              "map",
+              "vector_map"
+            ],
+            "unique_id": "id_b589da255604a9e8"
+          }
+        ],
+        "package": "wrapper_pkg",
+        "parameter_files_all": [],
+        "parameters": [
+          {
+            "name": "map_file",
+            "parameter_type": "DEFAULT",
+            "source": {
+              "column": 5,
+              "file_path": "<WS>/wrapper_pkg/MapWrapper.node.yaml",
+              "line": 23,
+              "yaml_path": "/param_values/0"
+            },
+            "type": "string",
+            "value": "/opt/maps/lanelet2_map.osm"
+          }
+        ],
+        "path": "/map",
+        "source_file": "<WS>/wrapper_pkg/MapWrapper.node.yaml",
+        "unique_id": "id_364a37e5ef09d30e"
+      },
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [],
+            "error_rate": null,
+            "frequency": null,
+            "name": "consume",
+            "process_event": true,
+            "timeout": null,
+            "trigger_ids": [
+              "id_0f747866032a06a9"
+            ],
+            "type": "on_input",
+            "unique_id": "id_ea6043f919d5a417",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [
+          {
+            "connected_ids": [
+              "id_b589da255604a9e8"
+            ],
+            "event": {
+              "action_ids": [
+                "id_ea6043f919d5a417"
+              ],
+              "error_rate": null,
+              "frequency": null,
+              "name": "input_vector_map",
+              "process_event": false,
+              "timeout": null,
+              "trigger_ids": [
+                "id_b589da255604a9e8"
+              ],
+              "type": "on_input",
+              "unique_id": "id_0f747866032a06a9",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "autoware_map_msgs/msg/LaneletMapBin",
+            "name": "vector_map",
+            "namespace": [
+              "user"
+            ],
+            "port_path": "/user/input/vector_map",
+            "remap_target": "~/input/vector_map",
+            "topic": [
+              "map",
+              "vector_map"
+            ],
+            "unique_id": "id_0f747866032a06a9"
+          }
+        ],
+        "launcher": {
+          "args": "",
+          "executable": "map_user_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "wrapper_pkg",
+          "param_files": [],
+          "param_values": [],
+          "ports": [
+            {
+              "name": "vector_map",
+              "remap_target": "~/input/vector_map",
+              "topic": "/map/vector_map"
+            }
+          ]
+        },
+        "links": [],
+        "name": "user",
+        "namespace": "/",
+        "out_ports": [],
+        "package": "wrapper_pkg",
+        "parameter_files_all": [],
+        "parameters": [],
+        "path": "/user",
+        "source_file": "<WS>/wrapper_pkg/MapUser.node.yaml",
+        "unique_id": "id_d0dd6e7c9a7cc08c"
+      }
+    ],
+    "compute_unit": "",
+    "entity_type": "system",
+    "events": [],
+    "in_ports": [],
+    "links": [
+      {
+        "connection_type": "INTERNAL_TO_INTERNAL",
+        "from_port": {
+          "connected_ids": [
+            "id_0f747866032a06a9"
+          ],
+          "event": {
+            "action_ids": [
+              "id_0f747866032a06a9"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "output_vector_map",
+            "process_event": false,
+            "timeout": null,
+            "trigger_ids": [
+              "id_ad4ed36b628371e3"
+            ],
+            "type": "to_output",
+            "unique_id": "id_b589da255604a9e8",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "autoware_map_msgs/msg/LaneletMapBin",
+          "name": "vector_map",
+          "namespace": [
+            "map"
+          ],
+          "port_path": "/map/output/vector_map",
+          "remap_target": "~/output/vector_map",
+          "topic": [
+            "map",
+            "vector_map"
+          ],
+          "unique_id": "id_b589da255604a9e8"
+        },
+        "msg_type": "autoware_map_msgs/msg/LaneletMapBin",
+        "to_port": {
+          "connected_ids": [
+            "id_b589da255604a9e8"
+          ],
+          "event": {
+            "action_ids": [
+              "id_ea6043f919d5a417"
+            ],
+            "error_rate": null,
+            "frequency": null,
+            "name": "input_vector_map",
+            "process_event": false,
+            "timeout": null,
+            "trigger_ids": [
+              "id_b589da255604a9e8"
+            ],
+            "type": "on_input",
+            "unique_id": "id_0f747866032a06a9",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "autoware_map_msgs/msg/LaneletMapBin",
+          "name": "vector_map",
+          "namespace": [
+            "user"
+          ],
+          "port_path": "/user/input/vector_map",
+          "remap_target": "~/input/vector_map",
+          "topic": [
+            "map",
+            "vector_map"
+          ],
+          "unique_id": "id_0f747866032a06a9"
+        },
+        "topic": "/map/vector_map",
+        "unique_id": "id_00df39b38c8f920a"
+      }
+    ],
+    "name": "Wrapped_default",
+    "namespace": "/",
+    "out_ports": [],
+    "parameters": [],
+    "path": "/",
+    "source_file": "<WS>/wrapper_pkg/Wrapped.system.yaml",
+    "unique_id": "id_1c1750855cfe35b7"
+  },
+  "metadata": {
+    "mode": "default",
+    "system_name": "Wrapped"
+  },
+  "schema_version": "1.0"
+}

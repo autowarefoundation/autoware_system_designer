@@ -1,0 +1,31 @@
+autoware_system_design_format: 0.4.0
+
+name: Source.node
+
+description: Dummy sensor driver publishing a point cloud.
+
+package:
+  name: pipeline_pkg
+  provider: dummy
+
+launch:
+  plugin: pipeline::Source
+  executable: source_node
+  node_output: screen
+
+subscribers: []
+
+publishers:
+  - name: pointcloud
+    message_type: sensor_msgs/msg/PointCloud2
+    qos:
+      reliability: best_effort
+
+param_files: []
+param_values: []
+
+processes:
+  - name: capture
+    trigger_conditions: []
+    outcomes:
+      - to_output: pointcloud

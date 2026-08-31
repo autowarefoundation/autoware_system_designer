@@ -19,6 +19,35 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--update-golden",
+        action="store_true",
+        default=False,
+        help="Rewrite golden files from the current pipeline output instead of comparing",
+    )
+
+
+@pytest.fixture
+def golden_check(request):
+    """Compare text against a golden file, or rewrite it under --update-golden."""
+    update = request.config.getoption("--update-golden")
+
+    def check(golden_path: Path, actual_text: str) -> None:
+        if update:
+            golden_path.parent.mkdir(parents=True, exist_ok=True)
+            golden_path.write_text(actual_text)
+            return
+        assert golden_path.is_file(), f"Missing golden file {golden_path}; run pytest with --update-golden to create it"
+        expected = golden_path.read_text()
+        assert actual_text == expected, (
+            f"Output differs from golden {golden_path}; " f"rerun with --update-golden if the change is intended"
+        )
+
+    return check
+
+
 NODE_TEMPLATE = """\
 autoware_system_design_format: 0.3.0
 

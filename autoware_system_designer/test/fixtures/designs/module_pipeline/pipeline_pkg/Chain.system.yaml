@@ -1,0 +1,35 @@
+autoware_system_design_format: 0.4.0
+
+name: Chain.system
+
+description: Source node feeding the pipeline module and a sink, with a component container over the pipeline nodes.
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+
+components:
+  - name: lidar
+    entity: Source.node
+    path: /sensing/lidar
+    compute_unit: main_ecu
+  - name: pipeline
+    entity: Pipeline.module
+    path: /perception/pipeline
+    compute_unit: main_ecu
+  - name: sink
+    entity: Sink.node
+    compute_unit: sub_ecu
+
+node_groups:
+  - name: perception_container
+    type: ros2_component_container_mt
+    nodes:
+      - /perception/pipeline/*
+
+connections:
+  - - pipeline.subscriber.pointcloud
+    - lidar.publisher.pointcloud
+  - - pipeline.publisher.objects
+    - sink.subscriber.objects

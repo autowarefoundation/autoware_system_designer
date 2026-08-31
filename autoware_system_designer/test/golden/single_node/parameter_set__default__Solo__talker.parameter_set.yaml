@@ -1,0 +1,14 @@
+autoware_system_design_format: 0.3.0
+
+name: Solo__talker.parameter_set
+parameters:
+  - node: /talker
+    param_files:
+      - talker_param_path: $(var config_path)/talker/talker_param_path.param.yaml
+    param_values:
+      - name: rate_hz
+        value: 10.0
+      - name: verbose
+        value: False
+      - name: tiny_gain
+        value: 0.00001

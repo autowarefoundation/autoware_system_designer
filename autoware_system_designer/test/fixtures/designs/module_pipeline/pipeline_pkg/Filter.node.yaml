@@ -1,0 +1,39 @@
+autoware_system_design_format: 0.4.0
+
+name: Filter.node
+
+description: Dummy detector producing objects from a point cloud.
+
+package:
+  name: pipeline_pkg
+  provider: dummy
+
+launch:
+  plugin: pipeline::Filter
+  executable: filter_node
+  node_output: screen
+
+subscribers:
+  - name: pointcloud
+    message_type: sensor_msgs/msg/PointCloud2
+
+publishers:
+  - name: objects
+    message_type: autoware_perception_msgs/msg/DetectedObjects
+
+param_files:
+  - name: filter_param_path
+    default: config/filter.param.yaml
+
+param_values:
+  - name: score_threshold
+    type: double
+    default: 0.5
+
+processes:
+  - name: detect
+    trigger_conditions:
+      - or:
+          - on_input: pointcloud
+    outcomes:
+      - to_output: objects

@@ -1,0 +1,13 @@
+- node: talker
+  mode: [online, logging_simulation, planning_simulation]
+  type: launch
+  args:
+    node_name_suffix: talker
+    topic: /talker/status
+    topic_type: std_msgs/msg/String
+    best_effort: false
+    transient_local: true
+    warn_rate: None
+    error_rate: None
+    timeout: None
+

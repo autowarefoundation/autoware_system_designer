@@ -1,0 +1,17 @@
+autoware_system_design_format: 0.4.0
+
+name: Major.system
+
+description: Uses the future-format node.
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+
+components:
+  - name: future
+    entity: Future.node
+    compute_unit: main_ecu
+
+connections: []

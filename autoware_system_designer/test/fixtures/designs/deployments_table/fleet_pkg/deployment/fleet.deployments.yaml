@@ -1,0 +1,11 @@
+base: Fleet.system
+
+deploy_list:
+  - name: vehicle_a
+    arguments:
+      - name: vehicle_id
+        value: veh_a
+  - name: vehicle_b
+    arguments:
+      - name: vehicle_id
+        value: veh_b
