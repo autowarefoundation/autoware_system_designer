@@ -101,7 +101,8 @@ def write_manifests(workspace: Path, manifest_dir: Path) -> None:
     """Fabricate the manifest tree the CMake collector produces.
 
     Every immediate subdirectory of *workspace* is one design package.
-    Paths are written absolute; the package map carries no workspace_root.
+    Paths are written absolute; the recorded workspace_root is the temp root
+    covering both the design tree and the export output.
     """
     manifest_dir.mkdir(parents=True, exist_ok=True)
     package_map: Dict[str, str] = {}
@@ -115,7 +116,9 @@ def write_manifests(workspace: Path, manifest_dir: Path) -> None:
             entries.append({"path": str(design_file), "type": dtype})
         manifest = {"package_name": pkg_dir.name, "deploy_config_files": entries}
         (manifest_dir / f"{pkg_dir.name}.yaml").write_text(yaml.safe_dump(manifest))
-    (manifest_dir / "_package_map.yaml").write_text(yaml.safe_dump({"package_map": package_map}))
+    (manifest_dir / "_package_map.yaml").write_text(
+        yaml.safe_dump({"package_map": package_map, "workspace_root": str(workspace.parent)})
+    )
 
 
 def run_pipeline(

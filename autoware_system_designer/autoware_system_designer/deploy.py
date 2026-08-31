@@ -42,8 +42,13 @@ from autoware_system_designer.common.exceptions import DeploymentError, Validati
 from autoware_system_designer.common.export_layout import ExportLayout
 from autoware_system_designer.common.path_utils import (
     PACKAGE_MAP_FILENAME,
+    WORKSPACE_ROOT_ENV,
     WORKSPACE_ROOT_KEY,
     canonical_path,
+    contract_workspace_paths,
+    derive_workspace_root,
+    expand_workspace_paths,
+    has_workspace_token,
     resolve_manifest_path,
 )
 from autoware_system_designer.common.source_location import SourceLocation, format_source
@@ -81,6 +86,9 @@ class BuildArtifacts:
     file_package_map: Dict[str, str] = field(default_factory=dict)
     package_resolution_by_name: Dict[str, Optional[str]] = field(default_factory=dict)
     packages_without_provider: List[str] = field(default_factory=list)
+    # Base for tokenized paths in the export files; kept out of the manifest and
+    # re-derived on load so exports stay machine-independent.
+    workspace_root: Optional[str] = field(default=None, metadata={"exclude": True})
     # Build-time diagnostics; absent when artifacts are loaded from a manifest.
     config_registry: Any = field(default=None, metadata={"exclude": True})
     system_structure_snapshots: Dict[str, Dict[str, Any]] = field(default_factory=dict, metadata={"exclude": True})
@@ -94,6 +102,7 @@ def save_artifacts_manifest(artifacts: BuildArtifacts) -> str:
     """Write the artifacts manifest that makes the export self-describing."""
     path = os.path.join(artifacts.layout.system_structure_dir, ARTIFACTS_FILENAME)
     payload = {"schema_version": SCHEMA_VERSION, **serde.dump(artifacts)}
+    payload = contract_workspace_paths(payload, artifacts.workspace_root)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         json.dump(payload, f, indent=2, ensure_ascii=True)
@@ -106,8 +115,16 @@ def load_build_artifacts(output_root_dir: str, system_name: str) -> BuildArtifac
     path = os.path.join(layout.system_structure_dir, ARTIFACTS_FILENAME)
     with open(path) as f:
         payload = json.load(f)
+    workspace_root = derive_workspace_root(output_root_dir, payload.get("deployment_package_path", ""))
+    if workspace_root is None and has_workspace_token(payload):
+        raise DeploymentError(
+            f"Cannot locate the workspace root for tokenized paths in {path}; "
+            f"set {WORKSPACE_ROOT_ENV} to the workspace root directory."
+        )
+    payload = expand_workspace_paths(payload, workspace_root)
     return BuildArtifacts(
         layout=layout,
+        workspace_root=workspace_root,
         system_file=payload["system_file"],
         deployment_package_path=payload["deployment_package_path"],
         deployment_package_name=payload.get("deployment_package_name"),
@@ -128,6 +145,7 @@ class DeploymentBuilder:
         self.deploy_config = deploy_config
         self.config_registry: Optional[ConfigRegistry] = None
         self._package_paths: Dict[str, str] = {}
+        self._workspace_root: Optional[str] = None
 
     def build(self) -> BuildArtifacts:
         try:
@@ -207,6 +225,7 @@ class DeploymentBuilder:
         layout = ExportLayout(self.deploy_config.output_root_dir, system_config.name)
         return BuildArtifacts(
             layout=layout,
+            workspace_root=self._workspace_root,
             system_file=str(system_config.file_path),
             deployment_package_path=str(Path(self.deploy_config.output_root_dir).resolve()),
             deployment_package_name=getattr(self.config_registry, "deployment_package_name", None),
@@ -240,25 +259,26 @@ class DeploymentBuilder:
         return str(Path(canonical_path(input_path)).parent) if path.is_file() else None
 
     @staticmethod
-    def _read_manifest_anchor(manifest_dir: str) -> str:
-        """Base directory for anchor-relative manifest paths; the manifest directory when unrecorded."""
+    def _read_workspace_root(manifest_dir: str) -> Optional[str]:
+        """Workspace root recorded alongside the package map; None when unrecorded or gone."""
         package_map_file = os.path.join(manifest_dir, PACKAGE_MAP_FILENAME)
         if not os.path.isfile(package_map_file):
-            return manifest_dir
+            return None
         try:
             recorded = yaml_parser.load_config(package_map_file).get(WORKSPACE_ROOT_KEY)
         except Exception as e:
             logger.warning(f"Failed to read manifest anchor from {package_map_file}: {e}")
-            return manifest_dir
+            return None
         if not recorded:
-            return manifest_dir
+            return None
         if not os.path.isdir(recorded):
             logger.warning(
                 f"Recorded workspace root '{recorded}' does not exist; "
                 f"resolving relative manifest paths against {manifest_dir}"
             )
-            return manifest_dir
-        return recorded
+            return None
+        # Canonical form so the export base matches the root re-derived on load.
+        return canonical_path(recorded)
 
     def _get_system_list(self, deploy_config: DeploymentConfig) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
         system_list: list[str] = []
@@ -268,7 +288,8 @@ class DeploymentBuilder:
         if not os.path.isdir(manifest_dir):
             raise ValidationError(f"System design manifest directory not found or not a directory: {manifest_dir}")
 
-        anchor = self._read_manifest_anchor(manifest_dir)
+        self._workspace_root = self._read_workspace_root(manifest_dir)
+        anchor = self._workspace_root or manifest_dir
 
         for entry in sorted(os.listdir(manifest_dir)):
             if not entry.endswith(".yaml"):
@@ -326,7 +347,13 @@ class DeploymentBuilder:
         def snapshot_callback(step: str, error: Exception | None = None) -> None:
             snapshot_path = os.path.join(artifacts.layout.system_structure_dir, f"{mode_key}_{step}.json")
             payload = save_system_structure_snapshot(
-                snapshot_path, deploy_instance, artifacts.name, mode_key, step, error
+                snapshot_path,
+                deploy_instance,
+                artifacts.name,
+                mode_key,
+                step,
+                error,
+                workspace_root=artifacts.workspace_root,
             )
             snapshot_store[step] = payload
 
@@ -361,7 +388,7 @@ class DeploymentBuilder:
         """Serialize one mode's DeploymentInstance to the system-structure JSON."""
         structure_payload = collect_system_structure(deploy_instance, artifacts.name, mode_key)
         structure_path = os.path.join(artifacts.layout.system_structure_dir, f"{mode_key}.json")
-        save_system_structure(structure_path, structure_payload)
+        save_system_structure(structure_path, structure_payload, workspace_root=artifacts.workspace_root)
 
     def _build_modes(self, system_config: SystemConfig, artifacts: BuildArtifacts) -> None:
         mode_names, default_mode = select_modes(system_config)
@@ -444,7 +471,9 @@ def build_deployment(deploy_config: DeploymentConfig) -> BuildArtifacts:
 
 
 def _iter_mode_data(artifacts: BuildArtifacts):
-    return iter_mode_data(artifacts.mode_keys, artifacts.layout.system_structure_dir)
+    return iter_mode_data(
+        artifacts.mode_keys, artifacts.layout.system_structure_dir, workspace_root=artifacts.workspace_root
+    )
 
 
 def _collect_deploy_variable_names(artifacts: BuildArtifacts) -> List[str]:
@@ -528,6 +557,7 @@ def generate_launchers(artifacts: BuildArtifacts) -> None:
             deployment_package_path=artifacts.deployment_package_path,
             system_name=artifacts.name,
             deploy_variants=artifacts.deploy_variants,
+            workspace_root=artifacts.workspace_root,
         )
 
     web_dir = os.path.join(artifacts.layout.visualization_dir, "web")

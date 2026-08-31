@@ -18,6 +18,7 @@ from pathlib import Path
 
 import yaml
 
+from autoware_system_designer.common import path_utils
 from autoware_system_designer.common.path_utils import canonical_path, resolve_manifest_path
 from autoware_system_designer.deploy import DeploymentBuilder
 
@@ -74,20 +75,65 @@ def _write_package_map(manifest_dir: Path, workspace_root):
     (manifest_dir / "_package_map.yaml").write_text(yaml.safe_dump(payload))
 
 
-def test_read_manifest_anchor_returns_recorded_root(tmp_path):
+def test_read_workspace_root_returns_recorded_root(tmp_path):
     manifest_dir = tmp_path / "resource"
     _write_package_map(manifest_dir, str(tmp_path))
-    assert DeploymentBuilder._read_manifest_anchor(str(manifest_dir)) == str(tmp_path)
+    assert DeploymentBuilder._read_workspace_root(str(manifest_dir)) == canonical_path(str(tmp_path))
 
 
-def test_read_manifest_anchor_falls_back_when_root_is_stale(tmp_path):
+def test_read_workspace_root_none_when_root_is_stale(tmp_path):
     manifest_dir = tmp_path / "resource"
     _write_package_map(manifest_dir, "/nonexistent/build/machine/ws")
-    assert DeploymentBuilder._read_manifest_anchor(str(manifest_dir)) == str(manifest_dir)
+    assert DeploymentBuilder._read_workspace_root(str(manifest_dir)) is None
 
 
-def test_read_manifest_anchor_falls_back_when_unrecorded(tmp_path):
+def test_read_workspace_root_none_when_unrecorded(tmp_path):
     manifest_dir = tmp_path / "resource"
     _write_package_map(manifest_dir, None)
-    assert DeploymentBuilder._read_manifest_anchor(str(manifest_dir)) == str(manifest_dir)
-    assert DeploymentBuilder._read_manifest_anchor(str(tmp_path / "missing")) == str(tmp_path / "missing")
+    assert DeploymentBuilder._read_workspace_root(str(manifest_dir)) is None
+    assert DeploymentBuilder._read_workspace_root(str(tmp_path / "missing")) is None
+
+
+def test_contract_expand_round_trip(tmp_path):
+    root = str(tmp_path)
+    payload = {
+        f"{root}/src/pkg/design/A.node.yaml": "pkg",
+        "cmd": f"$(command 'xacro {root}/install/pkg/share/pkg/vehicle.xacro')",
+        "nested": [{"path": f"{root}/install/pkg/share/pkg/config/a.param.yaml"}],
+        "outside": "/opt/elsewhere/x.yaml",
+        "exact": root,
+    }
+    contracted = path_utils.contract_workspace_paths(payload, root)
+    text = str(contracted)
+    assert root not in text
+    assert path_utils.WORKSPACE_ROOT_TOKEN in text
+    assert contracted["outside"] == "/opt/elsewhere/x.yaml"
+    assert contracted["exact"] == path_utils.WORKSPACE_ROOT_TOKEN
+    assert path_utils.expand_workspace_paths(contracted, root) == payload
+
+
+def test_contract_matches_symlinked_root_spelling(tmp_path):
+    real_root = tmp_path / "real"
+    (real_root / "src").mkdir(parents=True)
+    link_root = tmp_path / "link"
+    link_root.symlink_to(real_root)
+    payload = {"a": str(real_root / "src" / "x.yaml")}
+    contracted = path_utils.contract_workspace_paths(payload, str(link_root))
+    assert contracted["a"] == f"{path_utils.WORKSPACE_ROOT_TOKEN}/src/x.yaml"
+
+
+def test_derive_workspace_root_matches_relative_tail(tmp_path):
+    out_root = tmp_path / "install" / "pkg" / "share" / "pkg"
+    out_root.mkdir(parents=True)
+    tokenized = f"{path_utils.WORKSPACE_ROOT_TOKEN}/install/pkg/share/pkg"
+    assert path_utils.derive_workspace_root(str(out_root), tokenized) == canonical_path(str(tmp_path))
+
+
+def test_derive_workspace_root_none_on_mismatch_or_absolute(tmp_path):
+    assert path_utils.derive_workspace_root(str(tmp_path), f"{path_utils.WORKSPACE_ROOT_TOKEN}/other/tail") is None
+    assert path_utils.derive_workspace_root(str(tmp_path), "/absolute/never/tokenized") is None
+
+
+def test_derive_workspace_root_env_override(tmp_path, monkeypatch):
+    monkeypatch.setenv(path_utils.WORKSPACE_ROOT_ENV, str(tmp_path))
+    assert path_utils.derive_workspace_root("/anywhere", "/absolute") == canonical_path(str(tmp_path))

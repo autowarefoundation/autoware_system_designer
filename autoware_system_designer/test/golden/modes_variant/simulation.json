@@ -94,7 +94,7 @@
             "parameter_type": "DEFAULT",
             "source": {
               "column": 5,
-              "file_path": "<WS>/sensor_pkg/SensorSim.node.yaml",
+              "file_path": "${workspace_root}/ws/sensor_pkg/SensorSim.node.yaml",
               "line": 25,
               "yaml_path": "/param_values/0"
             },
@@ -103,7 +103,7 @@
           }
         ],
         "path": "/sensor",
-        "source_file": "<WS>/sensor_pkg/SensorSim.node.yaml",
+        "source_file": "${workspace_root}/ws/sensor_pkg/SensorSim.node.yaml",
         "unique_id": "id_47fa352d48773a37"
       },
       {
@@ -194,7 +194,7 @@
             "path": "/opt/maps/vehicle_y/lanelet2_map.osm",
             "source": {
               "column": 5,
-              "file_path": "<WS>/sensor_pkg/Consumer.node.yaml",
+              "file_path": "${workspace_root}/ws/sensor_pkg/Consumer.node.yaml",
               "line": 23,
               "yaml_path": "/param_files/0"
             }
@@ -202,7 +202,7 @@
         ],
         "parameters": [],
         "path": "/consumer",
-        "source_file": "<WS>/sensor_pkg/Consumer.node.yaml",
+        "source_file": "${workspace_root}/ws/sensor_pkg/Consumer.node.yaml",
         "unique_id": "id_31bad646a5220403"
       }
     ],
@@ -295,7 +295,7 @@
     "out_ports": [],
     "parameters": [],
     "path": "/",
-    "source_file": "<WS>/variant_pkg/VehicleY.system.yaml",
+    "source_file": "${workspace_root}/ws/variant_pkg/VehicleY.system.yaml",
     "unique_id": "id_8f66010c474b64b8"
   },
   "metadata": {

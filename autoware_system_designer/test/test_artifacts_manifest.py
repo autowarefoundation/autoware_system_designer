@@ -60,3 +60,21 @@ def test_generators_rerun_from_manifest_alone(tmp_path):
 
     after = {name: _tree(d) for name, d in (("l", launcher_dir), ("m", monitor_dir), ("s", scripts_dir))}
     assert after == before
+
+
+def test_export_json_holds_no_absolute_workspace_paths(tmp_path):
+    """system_structure files carry the workspace token, never machine paths."""
+    workspace = stage_case("single_node", tmp_path)
+    run = run_pipeline(workspace, "demo_pkg/Solo.system.yaml", tmp_path)
+
+    structure_dir = run.exports_dir / "system_structure"
+    json_files = sorted(structure_dir.glob("*.json"))
+    assert json_files
+    for json_file in json_files:
+        text = json_file.read_text()
+        for spelling in {str(tmp_path), str(tmp_path.resolve())}:
+            assert spelling not in text, f"absolute workspace path leaked into {json_file.name}"
+
+    artifacts = load_build_artifacts(str(run.out_root), run.system_name)
+    assert artifacts.workspace_root == str(tmp_path.resolve())
+    assert artifacts.system_file.startswith(str(tmp_path.resolve()))

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Tuple
 
 from autoware_system_designer.builder.export.instance_to_json import collect_system_structure
+from autoware_system_designer.common.path_utils import contract_workspace_paths, expand_workspace_paths
 from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.model.export_schema import (
     InstanceData,
@@ -60,21 +61,22 @@ def save_system_structure_snapshot(
     mode: str,
     step: str,
     error: Exception | None = None,
+    workspace_root: str | None = None,
 ) -> SystemStructurePayload:
     """Build and save a system structure snapshot payload to JSON."""
 
     payload = build_system_structure_snapshot(instance, system_name, mode, step, error)
-    save_system_structure(output_path, payload)
+    save_system_structure(output_path, payload, workspace_root=workspace_root)
     return payload
 
 
-def save_system_structure(output_path: str, payload: SystemStructurePayload) -> None:
-    """Save system structure payload to JSON."""
+def save_system_structure(output_path: str, payload: SystemStructurePayload, workspace_root: str | None = None) -> None:
+    """Save system structure payload to JSON; workspace paths are stored tokenized."""
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     try:
         with open(output_path, "w") as f:
-            json.dump(payload, f, indent=2, ensure_ascii=True)
+            json.dump(contract_workspace_paths(payload, workspace_root), f, indent=2, ensure_ascii=True)
         logger.info(f"Saved system structure JSON: {output_path}")
     except Exception as e:
         src = SourceLocation(file_path=Path(output_path))
@@ -82,12 +84,12 @@ def save_system_structure(output_path: str, payload: SystemStructurePayload) -> 
         raise
 
 
-def load_system_structure(input_path: str) -> SystemStructurePayload:
-    """Load system structure payload from JSON."""
+def load_system_structure(input_path: str, workspace_root: str | None = None) -> SystemStructurePayload:
+    """Load system structure payload from JSON; tokenized workspace paths are expanded."""
 
     try:
         with open(input_path, "r") as f:
-            return json.load(f)
+            return expand_workspace_paths(json.load(f), workspace_root)
     except Exception as e:
         src = SourceLocation(file_path=Path(input_path))
         logger.error(f"Failed to load system structure JSON: {input_path}: {e}{format_source(src)}")
@@ -107,11 +109,12 @@ def extract_system_structure_data(
 def iter_mode_data(
     mode_keys: List[str],
     system_structure_dir: str,
+    workspace_root: str | None = None,
 ) -> Iterator[Tuple[str, Dict[str, Any], Dict[str, Any]]]:
     """Yield (mode_key, extracted_data) for each mode."""
 
     for mode_key in mode_keys:
         structure_path = os.path.join(system_structure_dir, f"{mode_key}.json")
-        payload = load_system_structure(structure_path)
+        payload = load_system_structure(structure_path, workspace_root=workspace_root)
         data, _ = extract_system_structure_data(payload)
         yield mode_key, data

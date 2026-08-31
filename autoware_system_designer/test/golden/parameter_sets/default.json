@@ -87,7 +87,7 @@
         "parameter_files_all": [],
         "parameters": [],
         "path": "/feeder",
-        "source_file": "<WS>/tuned_pkg/Feeder.node.yaml",
+        "source_file": "${workspace_root}/ws/tuned_pkg/Feeder.node.yaml",
         "unique_id": "id_72ec2432ce0ff9a1"
       },
       {
@@ -196,7 +196,7 @@
                 "path": "config/worker.param.yaml",
                 "source": {
                   "column": 5,
-                  "file_path": "<WS>/tuned_pkg/Worker.node.yaml",
+                  "file_path": "${workspace_root}/ws/tuned_pkg/Worker.node.yaml",
                   "line": 23,
                   "yaml_path": "/param_files/0"
                 }
@@ -209,7 +209,7 @@
                 "path": "tuning/worker_a/worker_param_path.param.yaml",
                 "source": {
                   "column": 9,
-                  "file_path": "<WS>/tuned_pkg/Tuning.parameter_set.yaml",
+                  "file_path": "${workspace_root}/ws/tuned_pkg/Tuning.parameter_set.yaml",
                   "line": 10,
                   "yaml_path": "/parameters/0/param_files/0"
                 }
@@ -221,7 +221,7 @@
                 "parameter_type": "OVERRIDE",
                 "source": {
                   "column": 9,
-                  "file_path": "<WS>/tuned_pkg/Tuning.parameter_set.yaml",
+                  "file_path": "${workspace_root}/ws/tuned_pkg/Tuning.parameter_set.yaml",
                   "line": 12,
                   "yaml_path": "/parameters/0/param_values/0"
                 },
@@ -230,7 +230,7 @@
               }
             ],
             "path": "/app/duo/worker_a",
-            "source_file": "<WS>/tuned_pkg/Worker.node.yaml",
+            "source_file": "${workspace_root}/ws/tuned_pkg/Worker.node.yaml",
             "unique_id": "id_dbeb2ee1d4f36de2"
           },
           {
@@ -337,7 +337,7 @@
                 "path": "config/worker.param.yaml",
                 "source": {
                   "column": 5,
-                  "file_path": "<WS>/tuned_pkg/Worker.node.yaml",
+                  "file_path": "${workspace_root}/ws/tuned_pkg/Worker.node.yaml",
                   "line": 23,
                   "yaml_path": "/param_files/0"
                 }
@@ -350,7 +350,7 @@
                 "path": "tuning/worker_b/worker_param_path.param.yaml",
                 "source": {
                   "column": 9,
-                  "file_path": "<WS>/tuned_pkg/Tuning.parameter_set.yaml",
+                  "file_path": "${workspace_root}/ws/tuned_pkg/Tuning.parameter_set.yaml",
                   "line": 17,
                   "yaml_path": "/parameters/1/param_files/0"
                 }
@@ -362,7 +362,7 @@
                 "parameter_type": "DEFAULT",
                 "source": {
                   "column": 5,
-                  "file_path": "<WS>/tuned_pkg/Worker.node.yaml",
+                  "file_path": "${workspace_root}/ws/tuned_pkg/Worker.node.yaml",
                   "line": 28,
                   "yaml_path": "/param_values/0"
                 },
@@ -371,7 +371,7 @@
               }
             ],
             "path": "/app/duo/worker_b",
-            "source_file": "<WS>/tuned_pkg/Worker.node.yaml",
+            "source_file": "${workspace_root}/ws/tuned_pkg/Worker.node.yaml",
             "unique_id": "id_4f1aa49222122cda"
           }
         ],
@@ -573,7 +573,7 @@
         "out_ports": [],
         "parameters": [],
         "path": "/app/duo",
-        "source_file": "<WS>/tuned_pkg/Duo.module.yaml",
+        "source_file": "${workspace_root}/ws/tuned_pkg/Duo.module.yaml",
         "unique_id": "id_429e96ca1a28b2a3"
       }
     ],
@@ -669,7 +669,7 @@
     "out_ports": [],
     "parameters": [],
     "path": "/",
-    "source_file": "<WS>/tuned_pkg/Tuned.system.yaml",
+    "source_file": "${workspace_root}/ws/tuned_pkg/Tuned.system.yaml",
     "unique_id": "id_efa5cecf69d60b61"
   },
   "metadata": {

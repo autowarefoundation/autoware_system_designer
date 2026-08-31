@@ -32,6 +32,7 @@ def generate_deploy_launchers(
     deployment_package_path: str,
     system_name: str,
     deploy_variants: List[Dict[str, Any]],
+    workspace_root: str | None = None,
 ) -> None:
     """Generate wrapper launch files for each deploy-variant (per mode and compute unit)."""
 
@@ -39,7 +40,7 @@ def generate_deploy_launchers(
 
     for mode_key in mode_keys:
         structure_path = os.path.join(system_structure_dir, f"{mode_key}.json")
-        payload = load_system_structure(structure_path)
+        payload = load_system_structure(structure_path, workspace_root=workspace_root)
         data, _ = extract_system_structure_data(payload)
 
         compute_units = sorted(

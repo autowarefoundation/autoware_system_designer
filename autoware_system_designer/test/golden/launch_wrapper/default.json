@@ -94,7 +94,7 @@
             "parameter_type": "DEFAULT",
             "source": {
               "column": 5,
-              "file_path": "<WS>/wrapper_pkg/MapWrapper.node.yaml",
+              "file_path": "${workspace_root}/ws/wrapper_pkg/MapWrapper.node.yaml",
               "line": 23,
               "yaml_path": "/param_values/0"
             },
@@ -103,7 +103,7 @@
           }
         ],
         "path": "/map",
-        "source_file": "<WS>/wrapper_pkg/MapWrapper.node.yaml",
+        "source_file": "${workspace_root}/ws/wrapper_pkg/MapWrapper.node.yaml",
         "unique_id": "id_364a37e5ef09d30e"
       },
       {
@@ -188,7 +188,7 @@
         "parameter_files_all": [],
         "parameters": [],
         "path": "/user",
-        "source_file": "<WS>/wrapper_pkg/MapUser.node.yaml",
+        "source_file": "${workspace_root}/ws/wrapper_pkg/MapUser.node.yaml",
         "unique_id": "id_d0dd6e7c9a7cc08c"
       }
     ],
@@ -281,7 +281,7 @@
     "out_ports": [],
     "parameters": [],
     "path": "/",
-    "source_file": "<WS>/wrapper_pkg/Wrapped.system.yaml",
+    "source_file": "${workspace_root}/ws/wrapper_pkg/Wrapped.system.yaml",
     "unique_id": "id_1c1750855cfe35b7"
   },
   "metadata": {

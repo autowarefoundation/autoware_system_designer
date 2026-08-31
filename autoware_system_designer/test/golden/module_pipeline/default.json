@@ -89,7 +89,7 @@
         "parameter_files_all": [],
         "parameters": [],
         "path": "/sensing/lidar",
-        "source_file": "<WS>/pipeline_pkg/Source.node.yaml",
+        "source_file": "${workspace_root}/ws/pipeline_pkg/Source.node.yaml",
         "unique_id": "id_e390d25133386f60"
       },
       {
@@ -242,7 +242,7 @@
                 "path": "config/filter.param.yaml",
                 "source": {
                   "column": 5,
-                  "file_path": "<WS>/pipeline_pkg/Filter.node.yaml",
+                  "file_path": "${workspace_root}/ws/pipeline_pkg/Filter.node.yaml",
                   "line": 25,
                   "yaml_path": "/param_files/0"
                 }
@@ -254,7 +254,7 @@
                 "parameter_type": "DEFAULT",
                 "source": {
                   "column": 5,
-                  "file_path": "<WS>/pipeline_pkg/Filter.node.yaml",
+                  "file_path": "${workspace_root}/ws/pipeline_pkg/Filter.node.yaml",
                   "line": 29,
                   "yaml_path": "/param_values/0"
                 },
@@ -263,7 +263,7 @@
               }
             ],
             "path": "/perception/pipeline/filter_primary",
-            "source_file": "<WS>/pipeline_pkg/Filter.node.yaml",
+            "source_file": "${workspace_root}/ws/pipeline_pkg/Filter.node.yaml",
             "unique_id": "id_69268c5ff42e2baf"
           },
           {
@@ -414,7 +414,7 @@
                 "path": "config/filter.param.yaml",
                 "source": {
                   "column": 5,
-                  "file_path": "<WS>/pipeline_pkg/Filter.node.yaml",
+                  "file_path": "${workspace_root}/ws/pipeline_pkg/Filter.node.yaml",
                   "line": 25,
                   "yaml_path": "/param_files/0"
                 }
@@ -426,7 +426,7 @@
                 "parameter_type": "DEFAULT",
                 "source": {
                   "column": 5,
-                  "file_path": "<WS>/pipeline_pkg/Filter.node.yaml",
+                  "file_path": "${workspace_root}/ws/pipeline_pkg/Filter.node.yaml",
                   "line": 29,
                   "yaml_path": "/param_values/0"
                 },
@@ -435,7 +435,7 @@
               }
             ],
             "path": "/perception/pipeline/filter_secondary",
-            "source_file": "<WS>/pipeline_pkg/Filter.node.yaml",
+            "source_file": "${workspace_root}/ws/pipeline_pkg/Filter.node.yaml",
             "unique_id": "id_b2233f76ab77d21a"
           },
           {
@@ -619,7 +619,7 @@
             "parameter_files_all": [],
             "parameters": [],
             "path": "/perception/pipeline/node_merger",
-            "source_file": "<WS>/pipeline_pkg/Merger.node.yaml",
+            "source_file": "${workspace_root}/ws/pipeline_pkg/Merger.node.yaml",
             "unique_id": "id_a6a396bee9a5d363"
           }
         ],
@@ -1107,7 +1107,7 @@
         ],
         "parameters": [],
         "path": "/perception/pipeline",
-        "source_file": "<WS>/pipeline_pkg/Pipeline.module.yaml",
+        "source_file": "${workspace_root}/ws/pipeline_pkg/Pipeline.module.yaml",
         "unique_id": "id_3a492730107871b9"
       },
       {
@@ -1193,7 +1193,7 @@
         "parameter_files_all": [],
         "parameters": [],
         "path": "/sink",
-        "source_file": "<WS>/pipeline_pkg/Sink.node.yaml",
+        "source_file": "${workspace_root}/ws/pipeline_pkg/Sink.node.yaml",
         "unique_id": "id_6f5b1c3a9b038357"
       },
       {
@@ -1394,7 +1394,7 @@
     "out_ports": [],
     "parameters": [],
     "path": "/",
-    "source_file": "<WS>/pipeline_pkg/Chain.system.yaml",
+    "source_file": "${workspace_root}/ws/pipeline_pkg/Chain.system.yaml",
     "unique_id": "id_1a78337ae441e5ea"
   },
   "metadata": {

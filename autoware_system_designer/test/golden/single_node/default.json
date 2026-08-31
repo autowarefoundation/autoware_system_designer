@@ -104,7 +104,7 @@
             "path": "config/talker.param.yaml",
             "source": {
               "column": 5,
-              "file_path": "<WS>/demo_pkg/Talker.node.yaml",
+              "file_path": "${workspace_root}/ws/demo_pkg/Talker.node.yaml",
               "line": 26,
               "yaml_path": "/param_files/0"
             }
@@ -116,7 +116,7 @@
             "parameter_type": "DEFAULT",
             "source": {
               "column": 5,
-              "file_path": "<WS>/demo_pkg/Talker.node.yaml",
+              "file_path": "${workspace_root}/ws/demo_pkg/Talker.node.yaml",
               "line": 31,
               "yaml_path": "/param_values/0"
             },
@@ -128,7 +128,7 @@
             "parameter_type": "DEFAULT",
             "source": {
               "column": 5,
-              "file_path": "<WS>/demo_pkg/Talker.node.yaml",
+              "file_path": "${workspace_root}/ws/demo_pkg/Talker.node.yaml",
               "line": 34,
               "yaml_path": "/param_values/1"
             },
@@ -140,7 +140,7 @@
             "parameter_type": "DEFAULT",
             "source": {
               "column": 5,
-              "file_path": "<WS>/demo_pkg/Talker.node.yaml",
+              "file_path": "${workspace_root}/ws/demo_pkg/Talker.node.yaml",
               "line": 37,
               "yaml_path": "/param_values/2"
             },
@@ -149,7 +149,7 @@
           }
         ],
         "path": "/talker",
-        "source_file": "<WS>/demo_pkg/Talker.node.yaml",
+        "source_file": "${workspace_root}/ws/demo_pkg/Talker.node.yaml",
         "unique_id": "id_cfc72b8f1438a23a"
       }
     ],
@@ -163,7 +163,7 @@
     "out_ports": [],
     "parameters": [],
     "path": "/",
-    "source_file": "<WS>/demo_pkg/Solo.system.yaml",
+    "source_file": "${workspace_root}/ws/demo_pkg/Solo.system.yaml",
     "unique_id": "id_f1cc35cb62494031"
   },
   "metadata": {
