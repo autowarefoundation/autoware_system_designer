@@ -15,7 +15,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from autoware_system_designer.building.config.config_registry import (
+from autoware_system_designer.builder.config.config_registry import (
     _UNRANKED,
     EntityGroup,
     SelectionPolicy,

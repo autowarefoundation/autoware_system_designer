@@ -12,7 +12,7 @@ from validation_engine import ValidationEngine
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.model.config import Config
-from autoware_system_designer.parsing.loaders.data_parser import ConfigParser
+from autoware_system_designer.parser.data_parser import ConfigParser
 
 logger = logging.getLogger(__name__)
 

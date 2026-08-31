@@ -51,10 +51,10 @@ include = ["autoware_system_designer*"]
 [tool.setuptools.package-data]
 autoware_system_designer = [
     "schema/**/*.json",
-    "template/**/*",
-    "ros2_launcher/templates/**/*",
-    "visualization/templates/**/*",
-    "visualization/*.html",
-    "visualization/js/*.js",
-    "visualization/css/*.css",
+    "generator/templates/**/*",
+    "generator/ros2_launcher/templates/**/*",
+    "visualizer/templates/**/*",
+    "visualizer/*.html",
+    "visualizer/js/*.js",
+    "visualizer/css/*.css",
 ]

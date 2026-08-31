@@ -18,7 +18,7 @@ from pathlib import Path
 
 import yaml
 
-from autoware_system_designer.deploy import Deployment
+from autoware_system_designer.builder.deploy import Deployment
 from autoware_system_designer.common.path_utils import canonical_path, resolve_manifest_path
 
 _COLLECTOR_PATH = Path(__file__).resolve().parents[1] / "script" / "collect_system_design_manifests.py"

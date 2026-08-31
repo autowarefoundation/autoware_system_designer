@@ -19,8 +19,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 from autoware_system_designer.model.config import ConfigType
-from autoware_system_designer.parsing.loaders.data_validator import entity_name_decode
-from autoware_system_designer.parsing.loaders.yaml_parser import yaml_parser
+from autoware_system_designer.parser.data_validator import entity_name_decode
+from autoware_system_designer.parser.yaml_parser import yaml_parser
 from autoware_system_designer.linter.report import LintResult
 
 

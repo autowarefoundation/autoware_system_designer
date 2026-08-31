@@ -12,23 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Autoware System Designer Package."""
-
-# The autoware_system_design_format version supported by this tool.
-# YAML design files declare their format version via the
-# ``autoware_system_design_format`` field (e.g. ``0.2.0``).
-# The tool accepts files whose *major* version matches and whose
-# *minor* version is less-than-or-equal-to the version below.
-DESIGN_FORMAT_VERSION = "0.4.0"
-
-__all__ = [
-    "common",
-    "schema",
-    "model",
-    "parser",
-    "builder",
-    "generator",
-    "visualizer",
-    "linter",
-    "DESIGN_FORMAT_VERSION",
-]
+"""Instance graph to system structure JSON serialization and I/O."""

@@ -11,13 +11,13 @@ if str(system_designer_root) not in sys.path:
     sys.path.insert(0, str(system_designer_root))
 
 try:
-    from autoware_system_designer.visualization.visualization_index import update_index
+    from autoware_system_designer.visualizer.visualization_index import update_index
 except ImportError:
     # Fallback if path setup failed or running from installed location
     try:
-        from autoware_system_designer.visualization.visualization_index import update_index
+        from autoware_system_designer.visualizer.visualization_index import update_index
     except ImportError:
-        print("Error: Could not import autoware_system_designer.visualization.visualization_index")
+        print("Error: Could not import autoware_system_designer.visualizer.visualization_index")
         sys.exit(1)
 
 if __name__ == "__main__":

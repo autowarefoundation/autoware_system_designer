@@ -18,9 +18,9 @@ from pathlib import Path
 
 import yaml
 
-from autoware_system_designer.deploy import Deployment
+from autoware_system_designer.builder.deploy import Deployment
 from autoware_system_designer.common.deployment_config import DeploymentConfig
-from autoware_system_designer.visualization.visualization_index import update_index
+from autoware_system_designer.visualizer.visualization_index import update_index
 
 _logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ def _emit_duplicate_hint(deployment, exc):
     duplicates = registry.used_duplicates()
     if not duplicates:
         return
-    from autoware_system_designer.building.config.config_registry import format_duplicate_report
+    from autoware_system_designer.builder.config.config_registry import format_duplicate_report
 
     _logger.error(
         f"Note: {len(duplicates)} duplicated entity name(s) are used by this deployment. "
@@ -132,7 +132,7 @@ def _emit_minor_version_hint(deployment, exc):
     files = getattr(registry, "minor_version_mismatch_files", [])
     if not files:
         return
-    from autoware_system_designer.building.config.config_registry import _format_mismatch_hint
+    from autoware_system_designer.builder.config.config_registry import _format_mismatch_hint
 
     _logger.error(_format_mismatch_hint(files))
 

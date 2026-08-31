@@ -20,7 +20,7 @@ import pytest
 import yaml
 from conftest import write_node, write_system
 
-from autoware_system_designer.deploy import Deployment
+from autoware_system_designer.builder.deploy import Deployment
 from autoware_system_designer.common.deployment_config import DeploymentConfig
 
 _PROCESS_PATH = Path(__file__).resolve().parents[1] / "script" / "deployment_process.py"

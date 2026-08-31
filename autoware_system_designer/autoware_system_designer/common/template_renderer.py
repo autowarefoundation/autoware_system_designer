@@ -16,13 +16,13 @@ def _get_template_directories() -> list[str]:
     Supports both source checkout and installed site-packages layouts.
     """
 
-    # Base dir is .../autoware_system_designer/file_io
+    # Base dir is .../autoware_system_designer/common
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Templates bundled in-package
-    core_template_dir = os.path.abspath(os.path.join(base_dir, "../template"))
-    visualization_template_dir = os.path.abspath(os.path.join(base_dir, "../visualization/templates"))
-    ros2_launcher_template_dir = os.path.abspath(os.path.join(base_dir, "../ros2_launcher/templates"))
+    core_template_dir = os.path.abspath(os.path.join(base_dir, "../generator/templates"))
+    visualization_template_dir = os.path.abspath(os.path.join(base_dir, "../visualizer/templates"))
+    ros2_launcher_template_dir = os.path.abspath(os.path.join(base_dir, "../generator/ros2_launcher/templates"))
 
     template_dirs: list[str] = []
 
@@ -43,9 +43,9 @@ def _get_template_directories() -> list[str]:
         from ament_index_python.packages import get_package_share_directory
 
         share_dir = get_package_share_directory("autoware_system_designer")
-        share_template_dir = os.path.join(share_dir, "template")
-        share_visualization_template_dir = os.path.join(share_dir, "visualization", "templates")
-        share_ros2_launcher_template_dir = os.path.join(share_dir, "ros2_launcher", "templates")
+        share_template_dir = os.path.join(share_dir, "generator", "templates")
+        share_visualization_template_dir = os.path.join(share_dir, "visualizer", "templates")
+        share_ros2_launcher_template_dir = os.path.join(share_dir, "generator", "ros2_launcher", "templates")
 
         if os.path.exists(share_template_dir):
             template_dirs.append(share_template_dir)
