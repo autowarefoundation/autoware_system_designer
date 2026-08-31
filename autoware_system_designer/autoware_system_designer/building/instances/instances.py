@@ -16,14 +16,14 @@ from typing import Dict, List, Optional
 
 from autoware_system_designer.deployment.deployment_config import deploy_config
 from autoware_system_designer.exceptions import ValidationError
-from autoware_system_designer.parsing.config import ModuleConfig, NodeConfig, ParameterSetConfig, SystemConfig
+from autoware_system_designer.model.config import ModuleConfig, NodeConfig, ParameterSetConfig, SystemConfig
 from autoware_system_designer.utils.naming import generate_unique_id
 from autoware_system_designer.visualization.visualization_guide import get_component_color, get_component_position
 from autoware_system_designer.building.config.launch_manager import LaunchManager
 from autoware_system_designer.building.graph.event_manager import EventManager
 from autoware_system_designer.building.graph.link_manager import LinkManager
 from autoware_system_designer.building.parameters.parameter_manager import ParameterManager
-from autoware_system_designer.building.runtime.namespace import Namespace
+from autoware_system_designer.model.namespace import Namespace
 
 
 class Instance:

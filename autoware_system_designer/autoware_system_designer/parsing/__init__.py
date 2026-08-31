@@ -15,7 +15,7 @@
 """Parsing module - YAML to Config data flow."""
 
 # Config classes
-from autoware_system_designer.parsing.config import (
+from autoware_system_designer.model.config import (
     Config,
     ConfigSubType,
     ConfigType,
@@ -26,7 +26,7 @@ from autoware_system_designer.parsing.config import (
 )
 
 # Domain types
-from autoware_system_designer.parsing.domain import (
+from autoware_system_designer.model.domain import (
     ParameterFileDefinition,
     ParameterType,
     ParameterValueDefinition,

@@ -16,9 +16,9 @@ import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
 
-from autoware_system_designer.building.runtime.parameters import parameter_type_to_str
+from autoware_system_designer.model.parameters import parameter_type_to_str
 from autoware_system_designer.file_io.source_location import SourceLocation
-from autoware_system_designer.exporting.schema import (
+from autoware_system_designer.model.export_schema import (
     SCHEMA_VERSION,
     EventData,
     InstanceData,

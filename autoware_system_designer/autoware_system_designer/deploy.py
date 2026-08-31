@@ -32,7 +32,7 @@ from autoware_system_designer.exporting.json_io import (
 )
 from autoware_system_designer.file_io.source_location import SourceLocation, format_source
 from autoware_system_designer.file_io.template_renderer import TemplateRenderer
-from autoware_system_designer.parsing.config import NodeConfig, SystemConfig
+from autoware_system_designer.model.config import NodeConfig, SystemConfig
 from autoware_system_designer.parsing.loaders.yaml_parser import yaml_parser
 from autoware_system_designer.ros2_launcher.generate_module_launcher import generate_module_launch_file
 from autoware_system_designer.template.parameter_template_generator import ParameterTemplateGenerator

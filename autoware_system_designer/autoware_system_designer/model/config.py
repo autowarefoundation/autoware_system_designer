@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict, Union
 
-from autoware_system_designer.parsing.domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
+from autoware_system_designer.model.domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
 
 
 @dataclass

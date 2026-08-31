@@ -9,7 +9,7 @@ from resolution_service import ResolutionService
 from utils.uri_utils import uri_to_path
 from validation_engine import ValidationEngine
 
-from autoware_system_designer.parsing.config import Config, ConfigType
+from autoware_system_designer.model.config import Config, ConfigType
 
 
 class CompletionProvider:

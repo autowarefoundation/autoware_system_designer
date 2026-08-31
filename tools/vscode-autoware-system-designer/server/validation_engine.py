@@ -9,8 +9,8 @@ from lsprotocol import types as lsp
 from registry_manager import RegistryManager
 from resolution_service import ResolutionService
 
-from autoware_system_designer.parsing.config import Config, ConfigType
-from autoware_system_designer.parsing.domain import PortDefinition
+from autoware_system_designer.model.config import Config, ConfigType
+from autoware_system_designer.model.domain import PortDefinition
 
 logger = logging.getLogger(__name__)
 

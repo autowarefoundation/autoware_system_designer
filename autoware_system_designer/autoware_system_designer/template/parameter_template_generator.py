@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-from autoware_system_designer.building.runtime.parameters import ParameterType
+from autoware_system_designer.model.parameters import ParameterType
 from autoware_system_designer.file_io.source_location import SourceLocation, format_source
 
 logger = logging.getLogger(__name__)

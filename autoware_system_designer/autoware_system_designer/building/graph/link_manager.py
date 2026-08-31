@@ -19,10 +19,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from autoware_system_designer.exceptions import ValidationError
-from autoware_system_designer.exporting.schema import LauncherPortData
+from autoware_system_designer.model.export_schema import LauncherPortData
 from autoware_system_designer.file_io.source_location import format_source, source_from_config
-from autoware_system_designer.building.runtime.links import Connection, ConnectionType, Link
-from autoware_system_designer.building.runtime.ports import InPort, OutPort
+from autoware_system_designer.model.links import Connection, ConnectionType, Link
+from autoware_system_designer.model.ports import InPort, OutPort
 
 if TYPE_CHECKING:
     from autoware_system_designer.building.instances.instances import Instance

@@ -3,8 +3,8 @@ from typing import TYPE_CHECKING, Any
 
 from autoware_system_designer.exceptions import ValidationError
 from autoware_system_designer.building.config.launch_manager import LaunchManager
-from autoware_system_designer.building.runtime.execution import LaunchConfig, LaunchState
-from autoware_system_designer.building.runtime.namespace import node_group_pattern_matches, resolve_common_namespace_from_paths
+from autoware_system_designer.model.execution import LaunchConfig, LaunchState
+from autoware_system_designer.model.namespace import node_group_pattern_matches, resolve_common_namespace_from_paths
 
 if TYPE_CHECKING:
     from autoware_system_designer.building.instances.instances import Instance

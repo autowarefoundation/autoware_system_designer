@@ -19,7 +19,7 @@ from typing import Any, Dict
 from autoware_system_designer.exceptions import ValidationError
 from autoware_system_designer.file_io.source_location import SourceLocation, format_source, lookup_source
 from autoware_system_designer.utils.parameter_types import coerce_numeric_value, normalize_type_name
-from autoware_system_designer.parsing.config import (
+from autoware_system_designer.model.config import (
     Config,
     ConfigSubType,
     ConfigType,
@@ -29,7 +29,7 @@ from autoware_system_designer.parsing.config import (
     RemapEntry,
     SystemConfig,
 )
-from autoware_system_designer.parsing.domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
+from autoware_system_designer.model.domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
 from autoware_system_designer.parsing.loaders.data_validator import ValidatorFactory, entity_name_decode
 from autoware_system_designer.parsing.loaders.yaml_parser import yaml_parser
 

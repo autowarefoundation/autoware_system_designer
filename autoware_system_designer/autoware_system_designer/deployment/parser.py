@@ -20,7 +20,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from autoware_system_designer.exceptions import ValidationError
 from autoware_system_designer.exporting.json_io import extract_system_structure_data, load_system_structure
-from autoware_system_designer.parsing.config import SystemConfig
+from autoware_system_designer.model.config import SystemConfig
 from autoware_system_designer.parsing.loaders.data_validator import entity_name_decode
 from autoware_system_designer.parsing.loaders.yaml_parser import yaml_parser
 from autoware_system_designer.utils.path_utils import canonical_path

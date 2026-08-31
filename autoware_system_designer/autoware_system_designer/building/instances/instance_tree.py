@@ -6,8 +6,8 @@ from autoware_system_designer.file_io.source_location import format_source, sour
 from autoware_system_designer.parsing.loaders.data_validator import entity_name_decode
 from autoware_system_designer.building.config.launch_manager import LaunchManager
 from autoware_system_designer.building.parameters.parameter_set_applier import apply_parameter_set
-from autoware_system_designer.building.runtime.namespace import Namespace
-from autoware_system_designer.building.runtime.parameters import ParameterType
+from autoware_system_designer.model.namespace import Namespace
+from autoware_system_designer.model.parameters import ParameterType
 from autoware_system_designer.building.instances.node_groups import apply_node_groups
 
 if TYPE_CHECKING:

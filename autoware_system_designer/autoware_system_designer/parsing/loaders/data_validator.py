@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Tuple
 
 from autoware_system_designer.exceptions import ValidationError
-from autoware_system_designer.parsing.config import ConfigType
+from autoware_system_designer.model.config import ConfigType
 from autoware_system_designer.parsing.yaml_schema import get_semantic_checks, validate_against_schema
 
 

@@ -11,7 +11,7 @@ from utils.uri_utils import uri_to_path
 from validation_engine import ValidationEngine
 
 from autoware_system_designer.exceptions import ValidationError
-from autoware_system_designer.parsing.config import Config
+from autoware_system_designer.model.config import Config
 from autoware_system_designer.parsing.loaders.data_parser import ConfigParser
 
 logger = logging.getLogger(__name__)

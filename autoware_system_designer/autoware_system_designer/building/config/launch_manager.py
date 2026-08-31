@@ -14,7 +14,7 @@
 
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from autoware_system_designer.building.runtime.execution import LaunchConfig, LaunchState
+from autoware_system_designer.model.execution import LaunchConfig, LaunchState
 
 if TYPE_CHECKING:
     from autoware_system_designer.building.instances.instances import Instance

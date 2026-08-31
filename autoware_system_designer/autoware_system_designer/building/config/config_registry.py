@@ -27,7 +27,7 @@ from autoware_system_designer.exceptions import (
     ValidationError,
 )
 from autoware_system_designer.file_io.source_location import SourceLocation, format_source, source_from_config
-from autoware_system_designer.parsing.config import (
+from autoware_system_designer.model.config import (
     Config,
     ConfigSubType,
     ConfigType,

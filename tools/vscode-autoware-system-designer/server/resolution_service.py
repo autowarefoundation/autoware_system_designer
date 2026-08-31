@@ -5,8 +5,8 @@ from typing import List, Optional, Set, Tuple
 
 from registry_manager import RegistryManager
 
-from autoware_system_designer.parsing.config import Config, ConfigType
-from autoware_system_designer.parsing.domain import PortDefinition
+from autoware_system_designer.model.config import Config, ConfigType
+from autoware_system_designer.model.domain import PortDefinition
 
 logger = logging.getLogger(__name__)
 

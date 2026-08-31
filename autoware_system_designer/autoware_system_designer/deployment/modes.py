@@ -20,7 +20,7 @@ from typing import List, Tuple
 
 from autoware_system_designer.building.resolution.variant_resolver import SystemVariantResolver
 from autoware_system_designer.file_io.source_location import format_source, source_from_config
-from autoware_system_designer.parsing.config import SystemConfig
+from autoware_system_designer.model.config import SystemConfig
 
 logger = logging.getLogger(__name__)
 
