@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
 
 from autoware_system_designer.model.parameters import parameter_type_to_str
-from autoware_system_designer.file_io.source_location import SourceLocation
+from autoware_system_designer.common.source_location import SourceLocation
 from autoware_system_designer.model.export_schema import (
     SCHEMA_VERSION,
     EventData,
@@ -200,7 +200,6 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
         "namespace": instance.namespace.to_string(),
         "path": instance.path,
         "compute_unit": instance.compute_unit,
-        "vis_guide": instance.vis_guide,
         "source_file": instance.source_file,
         "in_ports": _collect_in_ports(instance),
         "out_ports": _collect_out_ports(instance),

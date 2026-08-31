@@ -36,7 +36,7 @@ def load_package_map(path: Path) -> dict[str, str]:
 def _resolve(share: str, anchor: Path) -> str:
     """Manifest paths are anchor-relative; absolute entries pass through unchanged.
 
-    Standalone mirror of autoware_system_designer.utils.path_utils.resolve_manifest_path;
+    Standalone mirror of autoware_system_designer.common.path_utils.resolve_manifest_path;
     this tool imports no designer package code.
     """
     p = Path(share)

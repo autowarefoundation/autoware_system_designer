@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from autoware_system_designer import DESIGN_FORMAT_VERSION
-from autoware_system_designer.exceptions import FormatVersionError
+from autoware_system_designer.common.exceptions import FormatVersionError
 
 # ---- version string → tuple ------------------------------------------------
 

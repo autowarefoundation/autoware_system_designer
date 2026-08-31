@@ -14,11 +14,10 @@
 
 from typing import Dict, List, Optional
 
-from autoware_system_designer.deployment.deployment_config import deploy_config
-from autoware_system_designer.exceptions import ValidationError
+from autoware_system_designer.common.deployment_config import deploy_config
+from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.model.config import ModuleConfig, NodeConfig, ParameterSetConfig, SystemConfig
-from autoware_system_designer.utils.naming import generate_unique_id
-from autoware_system_designer.visualization.visualization_guide import get_component_color, get_component_position
+from autoware_system_designer.common.naming import generate_unique_id
 from autoware_system_designer.building.config.launch_manager import LaunchManager
 from autoware_system_designer.building.graph.event_manager import EventManager
 from autoware_system_designer.building.graph.link_manager import LinkManager
@@ -103,25 +102,6 @@ class Instance:
     @property
     def unique_id(self):
         return generate_unique_id(self.path, "instance", self.compute_unit, self.layer, self.name)
-
-    @property
-    def vis_guide(self) -> dict:
-        """Get visualization guide including colors."""
-        return {
-            "color": get_component_color(self.path_list, variant="base"),
-            "medium_color": get_component_color(self.path_list, variant="medium"),
-            "background_color": get_component_color(self.path_list, variant="bright"),
-            "text_color": get_component_color(self.path_list, variant="darkest"),
-            "dark_color": get_component_color(self.path_list, variant="fade"),
-            "dark_medium_color": get_component_color(
-                self.path_list, variant="darkish"
-            ),  # Integrated dark+text variant for nodes
-            "dark_background_color": get_component_color(
-                self.path_list, variant="dark"
-            ),  # Pure dark variant for modules
-            "dark_text_color": get_component_color(self.path_list, variant="bright"),
-            "position": get_component_position(self.path_list),
-        }
 
     def get_child(self, name: str):
         if name in self.children:

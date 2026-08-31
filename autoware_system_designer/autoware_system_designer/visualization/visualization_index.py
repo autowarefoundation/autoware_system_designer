@@ -4,8 +4,8 @@ import os
 import shutil
 from pathlib import Path
 
-from autoware_system_designer.file_io.source_location import SourceLocation, format_source
-from autoware_system_designer.file_io.template_renderer import TemplateRenderer
+from autoware_system_designer.common.source_location import SourceLocation, format_source
+from autoware_system_designer.common.template_renderer import TemplateRenderer
 
 logger = logging.getLogger(__name__)
 

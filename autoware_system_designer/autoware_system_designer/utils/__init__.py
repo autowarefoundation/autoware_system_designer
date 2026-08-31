@@ -15,6 +15,5 @@
 """Utilities."""
 
 from autoware_system_designer.utils.build_script_generator import generate_build_scripts
-from autoware_system_designer.utils.naming import pascal_to_snake, snake_to_pascal
 
-__all__ = ["pascal_to_snake", "snake_to_pascal", "generate_build_scripts"]
+__all__ = ["generate_build_scripts"]

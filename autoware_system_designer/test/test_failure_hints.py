@@ -21,7 +21,7 @@ import yaml
 from conftest import write_node, write_system
 
 from autoware_system_designer.deploy import Deployment
-from autoware_system_designer.deployment.deployment_config import DeploymentConfig
+from autoware_system_designer.common.deployment_config import DeploymentConfig
 
 _PROCESS_PATH = Path(__file__).resolve().parents[1] / "script" / "deployment_process.py"
 _spec = importlib.util.spec_from_file_location("deployment_process", _PROCESS_PATH)

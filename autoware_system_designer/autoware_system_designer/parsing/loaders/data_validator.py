@@ -17,9 +17,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Tuple
 
-from autoware_system_designer.exceptions import ValidationError
+from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.model.config import ConfigType
-from autoware_system_designer.parsing.yaml_schema import get_semantic_checks, validate_against_schema
+from autoware_system_designer.schema.yaml_schema import get_semantic_checks, validate_against_schema
 
 
 def entity_name_decode(entity_name: str) -> Tuple[str, str]:

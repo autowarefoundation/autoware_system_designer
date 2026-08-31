@@ -15,9 +15,9 @@
 from enum import Enum
 from typing import List, Optional
 
-from autoware_system_designer.exceptions import DeploymentError, ValidationError
-from autoware_system_designer.file_io.source_location import SourceLocation
-from autoware_system_designer.utils.naming import generate_unique_id
+from autoware_system_designer.common.exceptions import DeploymentError, ValidationError
+from autoware_system_designer.common.source_location import SourceLocation
+from autoware_system_designer.common.naming import generate_unique_id
 from autoware_system_designer.model.ports import InPort, OutPort, Port
 
 

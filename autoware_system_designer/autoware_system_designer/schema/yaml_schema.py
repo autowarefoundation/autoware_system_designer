@@ -6,9 +6,9 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 import jsonschema
 from jsonschema.exceptions import ValidationError
 
-from autoware_system_designer.utils.format_version import check_format_version
-from autoware_system_designer.utils.parameter_types import is_supported_parameter_type, normalize_type_name
-from autoware_system_designer.parsing.json_schema_loader import load_schema
+from autoware_system_designer.schema.format_version import check_format_version
+from autoware_system_designer.common.parameter_types import is_supported_parameter_type, normalize_type_name
+from autoware_system_designer.schema.json_schema_loader import load_schema
 
 JsonPointer = str
 

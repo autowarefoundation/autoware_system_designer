@@ -1,8 +1,8 @@
 import logging
 from typing import TYPE_CHECKING
 
-from autoware_system_designer.exceptions import ValidationError
-from autoware_system_designer.file_io.source_location import format_source, source_from_config
+from autoware_system_designer.common.exceptions import ValidationError
+from autoware_system_designer.common.source_location import format_source, source_from_config
 from autoware_system_designer.parsing.loaders.data_validator import entity_name_decode
 from autoware_system_designer.building.config.launch_manager import LaunchManager
 from autoware_system_designer.building.parameters.parameter_set_applier import apply_parameter_set

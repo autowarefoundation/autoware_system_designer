@@ -34,7 +34,7 @@ from autoware_system_designer.model.domain import (
 )
 
 # YAML schema and validation
-from autoware_system_designer.parsing.json_schema_loader import (
+from autoware_system_designer.schema.json_schema_loader import (
     clear_cache,
     get_schema_path,
     load_schema,
@@ -52,7 +52,7 @@ from autoware_system_designer.parsing.loaders import (
     ValidatorFactory,
     YamlParser,
 )
-from autoware_system_designer.parsing.yaml_schema import (
+from autoware_system_designer.schema.yaml_schema import (
     SchemaIssue,
     get_semantic_checks,
     validate_against_schema,

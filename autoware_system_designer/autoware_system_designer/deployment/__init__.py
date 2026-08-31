@@ -13,6 +13,4 @@
 # limitations under the License.
 
 
-from autoware_system_designer.deployment.deployment_config import DeploymentConfig, deploy_config
-
-__all__ = ["DeploymentConfig", "deploy_config"]
+"""Deployment file parsing and mode handling."""

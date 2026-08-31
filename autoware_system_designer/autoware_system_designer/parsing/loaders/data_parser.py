@@ -16,9 +16,9 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
-from autoware_system_designer.exceptions import ValidationError
-from autoware_system_designer.file_io.source_location import SourceLocation, format_source, lookup_source
-from autoware_system_designer.utils.parameter_types import coerce_numeric_value, normalize_type_name
+from autoware_system_designer.common.exceptions import ValidationError
+from autoware_system_designer.common.source_location import SourceLocation, format_source, lookup_source
+from autoware_system_designer.common.parameter_types import coerce_numeric_value, normalize_type_name
 from autoware_system_designer.model.config import (
     Config,
     ConfigSubType,

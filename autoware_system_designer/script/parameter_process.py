@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
-from autoware_system_designer.utils.logging_utils import configure_split_stream_logging
+from autoware_system_designer.common.logging_utils import configure_split_stream_logging
 
 
 class CustomDumper(yaml.SafeDumper):

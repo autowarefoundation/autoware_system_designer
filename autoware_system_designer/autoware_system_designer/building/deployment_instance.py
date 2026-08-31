@@ -15,7 +15,7 @@
 import logging
 from typing import Callable, Dict
 
-from autoware_system_designer.exceptions import ValidationError
+from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.model.config import SystemConfig
 from autoware_system_designer.building.instances.instance_tree import set_instances
 from autoware_system_designer.building.instances.instances import Instance

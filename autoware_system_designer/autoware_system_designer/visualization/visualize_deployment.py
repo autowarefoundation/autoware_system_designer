@@ -20,9 +20,10 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from autoware_system_designer.model.export_schema import DeploymentDataByMode
-from autoware_system_designer.file_io.source_location import SourceLocation, format_source
-from autoware_system_designer.file_io.template_renderer import TemplateRenderer
+from autoware_system_designer.common.source_location import SourceLocation, format_source
+from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.visualization.visualization_index import get_install_root
+from autoware_system_designer.visualization.visualization_guide import inject_vis_guides
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,7 @@ def visualize_deployment(
 
     # Generate visualization for each mode
     for mode_key, data in deploy_data.items():
+        inject_vis_guides(data)
         _generate_js_data(renderer, mode_key, data, web_data_dir)
         logger.info(f"Generated visualization for mode: {mode_key}")
 

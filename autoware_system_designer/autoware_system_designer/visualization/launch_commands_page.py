@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from autoware_system_designer.file_io.template_renderer import TemplateRenderer
+from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.visualization.visualization_index import get_install_root
 
 logger = logging.getLogger(__name__)

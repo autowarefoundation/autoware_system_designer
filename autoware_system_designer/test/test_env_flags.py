@@ -14,7 +14,7 @@
 
 import pytest
 
-from autoware_system_designer.utils.env import env_flag
+from autoware_system_designer.common.env import env_flag
 
 VAR = "AUTOWARE_SYSTEM_DESIGNER_TEST_FLAG"
 

@@ -10,7 +10,7 @@ from registry_manager import RegistryManager
 from utils.uri_utils import uri_to_path
 from validation_engine import ValidationEngine
 
-from autoware_system_designer.exceptions import ValidationError
+from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.model.config import Config
 from autoware_system_designer.parsing.loaders.data_parser import ConfigParser
 

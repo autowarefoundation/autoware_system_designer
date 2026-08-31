@@ -117,7 +117,7 @@ class InstanceData(TypedDict, total=False):
     resolved_path: str
     path: str
     compute_unit: Optional[str]
-    vis_guide: Optional[Dict[str, Any]]
+    vis_guide: Optional[Dict[str, Any]]  # populated by the visualizer, absent in exported JSON
     source_file: Optional[str]
     in_ports: List[PortData]
     out_ports: List[PortData]

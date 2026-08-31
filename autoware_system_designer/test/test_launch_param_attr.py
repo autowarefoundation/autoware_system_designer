@@ -14,8 +14,8 @@
 
 import yaml
 
-from autoware_system_designer.file_io.template_renderer import TemplateRenderer
-from autoware_system_designer.utils.parameter_types import to_launch_param_attr
+from autoware_system_designer.common.template_renderer import TemplateRenderer
+from autoware_system_designer.common.parameter_types import to_launch_param_attr
 
 
 def test_null_like_strings_stay_strings():

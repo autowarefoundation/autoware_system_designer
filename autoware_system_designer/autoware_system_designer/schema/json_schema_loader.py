@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from typing import Dict, Optional
 
-from autoware_system_designer.utils.format_version import SemanticVersion, parse_format_version
+from autoware_system_designer.schema.format_version import SemanticVersion, parse_format_version
 
 # Schema cache to avoid reloading files
 _SCHEMA_CACHE: Dict[str, dict] = {}
@@ -35,7 +35,7 @@ def get_schema_path(entity_type: str, version: str) -> Path:
         Path to the schema file
     """
     # Get the directory containing this module
-    schema_dir = Path(__file__).parent.parent / "schema"
+    schema_dir = Path(__file__).parent
     return schema_dir / version / f"{entity_type}.json"
 
 
@@ -68,7 +68,7 @@ def resolve_schema_version(entity_type: str, version: str) -> str:
         return version
 
     # Find all available schema files for this entity type and major version
-    schema_dir = Path(__file__).parent.parent / "schema"
+    schema_dir = Path(__file__).parent
     available_versions = []
 
     # Look for all version directories

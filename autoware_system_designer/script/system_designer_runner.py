@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import List
 
 
-# Accepted set matches autoware_system_designer.utils.env.env_flag; this wrapper stays stdlib-only.
+# Accepted set matches autoware_system_designer.common.env.env_flag; this wrapper stays stdlib-only.
 def _truthy(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "on", "yes", "y"}
 

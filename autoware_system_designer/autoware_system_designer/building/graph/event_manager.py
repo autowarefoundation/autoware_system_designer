@@ -15,7 +15,7 @@
 import logging
 from typing import TYPE_CHECKING, List
 
-from autoware_system_designer.file_io.source_location import format_source, source_from_config
+from autoware_system_designer.common.source_location import format_source, source_from_config
 from autoware_system_designer.model.events import Event, Process
 
 if TYPE_CHECKING:

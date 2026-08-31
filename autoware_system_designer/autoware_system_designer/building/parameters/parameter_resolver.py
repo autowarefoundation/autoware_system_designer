@@ -18,7 +18,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from autoware_system_designer.file_io.source_location import SourceLocation, format_source
+from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.parsing.loaders.yaml_parser import yaml_parser
 
 logger = logging.getLogger(__name__)

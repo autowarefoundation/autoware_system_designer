@@ -14,7 +14,7 @@
 
 from typing import Any, Dict, List, Optional
 
-from autoware_system_designer.file_io.source_location import SourceLocation
+from autoware_system_designer.common.source_location import SourceLocation
 from autoware_system_designer.model.domain import ParameterType
 
 

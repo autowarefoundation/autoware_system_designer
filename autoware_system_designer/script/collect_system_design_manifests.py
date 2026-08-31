@@ -66,7 +66,7 @@ def is_target_design_file(filename):
 def to_manifest_path(path, anchor):
     """Manifest entry for a path: anchor-relative when inside the anchor, absolute otherwise.
 
-    Inverse of autoware_system_designer.utils.path_utils.resolve_manifest_path; kept local so
+    Inverse of autoware_system_designer.common.path_utils.resolve_manifest_path; kept local so
     the collector runs stdlib-only at install time.
     """
     if not anchor:

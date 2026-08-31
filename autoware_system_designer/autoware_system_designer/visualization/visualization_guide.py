@@ -158,3 +158,27 @@ def get_component_position(namespace: List[str]) -> Optional[List[int]]:
             break
 
     return last_found_pos
+
+
+def build_vis_guide(namespace: List[str]) -> Dict[str, object]:
+    """Build the color/position guide for a component namespace path."""
+    return {
+        "color": get_component_color(namespace, variant="base"),
+        "medium_color": get_component_color(namespace, variant="medium"),
+        "background_color": get_component_color(namespace, variant="bright"),
+        "text_color": get_component_color(namespace, variant="darkest"),
+        "dark_color": get_component_color(namespace, variant="fade"),
+        "dark_medium_color": get_component_color(namespace, variant="darkish"),  # Integrated dark+text variant for nodes
+        "dark_background_color": get_component_color(namespace, variant="dark"),  # Pure dark variant for modules
+        "dark_text_color": get_component_color(namespace, variant="bright"),
+        "position": get_component_position(namespace),
+    }
+
+
+def inject_vis_guides(instance_data: Dict) -> None:
+    """Attach vis_guide to every instance of an exported structure tree, in place."""
+    path = instance_data.get("path", "/")
+    namespace = [part for part in path.strip("/").split("/") if part]
+    instance_data["vis_guide"] = build_vis_guide(namespace)
+    for child in instance_data.get("children", []):
+        inject_vis_guides(child)

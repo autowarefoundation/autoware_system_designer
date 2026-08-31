@@ -17,8 +17,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-from autoware_system_designer.file_io.source_location import SourceLocation, format_source
-from autoware_system_designer.file_io.template_renderer import TemplateRenderer
+from autoware_system_designer.common.source_location import SourceLocation, format_source
+from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.ros2_launcher.component_map import (
     build_serialized_system_component_maps,
     collect_component_nodes,

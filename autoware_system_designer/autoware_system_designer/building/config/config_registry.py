@@ -19,14 +19,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Type
 
-from autoware_system_designer.exceptions import (
+from autoware_system_designer.common.exceptions import (
     FormatVersionError,
     ModuleConfigurationError,
     NodeConfigurationError,
     ParameterConfigurationError,
     ValidationError,
 )
-from autoware_system_designer.file_io.source_location import SourceLocation, format_source, source_from_config
+from autoware_system_designer.common.source_location import SourceLocation, format_source, source_from_config
 from autoware_system_designer.model.config import (
     Config,
     ConfigSubType,
@@ -38,8 +38,8 @@ from autoware_system_designer.model.config import (
 )
 from autoware_system_designer.parsing.loaders.data_parser import ConfigParser
 from autoware_system_designer.parsing.loaders.data_validator import entity_name_decode
-from autoware_system_designer.utils.format_version import check_format_version
-from autoware_system_designer.utils.path_utils import canonical_path
+from autoware_system_designer.schema.format_version import check_format_version
+from autoware_system_designer.common.path_utils import canonical_path
 from autoware_system_designer.building.resolution.variant_resolver import (
     ModuleVariantResolver,
     NodeVariantResolver,
