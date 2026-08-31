@@ -15,7 +15,7 @@
 from pathlib import Path
 
 from autoware_system_designer.builder.config.config_registry import ConfigRegistry, _package_distance
-from autoware_system_designer.builder.deploy import Deployment
+from autoware_system_designer.deploy import Deployment
 
 
 def _registry(workspace, anchor_dir=None):

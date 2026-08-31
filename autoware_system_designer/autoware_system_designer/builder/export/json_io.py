@@ -16,7 +16,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Iterator, List, Tuple
 
 from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.builder.export.instance_to_json import collect_system_structure
@@ -102,3 +102,16 @@ def extract_system_structure_data(
     if isinstance(payload, dict) and "schema_version" in payload and "data" in payload:
         return payload.get("data", {}), payload.get("metadata", {})
     return payload, {}
+
+
+def iter_mode_data(
+    mode_keys: List[str],
+    system_structure_dir: str,
+) -> Iterator[Tuple[str, Dict[str, Any], Dict[str, Any]]]:
+    """Yield (mode_key, extracted_data) for each mode."""
+
+    for mode_key in mode_keys:
+        structure_path = os.path.join(system_structure_dir, f"{mode_key}.json")
+        payload = load_system_structure(structure_path)
+        data, _ = extract_system_structure_data(payload)
+        yield mode_key, data

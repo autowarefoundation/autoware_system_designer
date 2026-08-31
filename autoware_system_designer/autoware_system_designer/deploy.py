@@ -22,8 +22,9 @@ from autoware_system_designer.builder.config.config_registry import ConfigRegist
 from autoware_system_designer.builder.deployment_instance import DeploymentInstance
 from autoware_system_designer.generator.deploy_launchers import generate_deploy_launchers
 from autoware_system_designer.common.deployment_config import DeploymentConfig
-from autoware_system_designer.parser.modes import apply_mode_configuration, select_modes
-from autoware_system_designer.parser.deployment_parser import iter_mode_data, peek_target_system_name, resolve_input_target
+from autoware_system_designer.builder.modes import apply_mode_configuration, select_modes
+from autoware_system_designer.builder.export.json_io import iter_mode_data
+from autoware_system_designer.parser.deployment_parser import peek_target_system_name, resolve_input_target
 from autoware_system_designer.common.exceptions import DeploymentError, ValidationError
 from autoware_system_designer.builder.export.instance_to_json import collect_system_structure
 from autoware_system_designer.builder.export.json_io import (
