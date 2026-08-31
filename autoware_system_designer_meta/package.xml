@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>autoware_system_designer_meta</name>
+  <version>0.4.2</version>
+  <description>Metapackage aggregating the Autoware System Designer packages</description>
+
+  <maintainer email="taekjin.lee@tier4.jp">Taekjin Lee</maintainer>
+  <license>Apache License 2.0</license>
+  <author email="taekjin.lee@tier4.jp">Taekjin Lee</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>autoware_system_designer</exec_depend>
+  <exec_depend>autoware_system_designer_runtime</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <metapackage/>
+  </export>
+</package>

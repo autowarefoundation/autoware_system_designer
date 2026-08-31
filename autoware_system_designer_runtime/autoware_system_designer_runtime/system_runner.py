@@ -16,7 +16,7 @@
 
 The XML LaunchService backend and ``build_launch_description`` have been
 replaced by the actor coordinator in
-:mod:`autoware_system_designer.runtime`. Each member of the system runs
+:mod:`autoware_system_designer_runtime`. Each member of the system runs
 as its own supervised subprocess, with composable nodes loaded directly
 via the ``composition_interfaces/srv/LoadNode`` service.
 """

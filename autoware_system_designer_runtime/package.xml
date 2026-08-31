@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>autoware_system_designer_runtime</name>
+  <version>0.4.2</version>
+  <description>Launch-time runner supervising system_structure node processes</description>
+
+  <maintainer email="taekjin.lee@tier4.jp">Taekjin Lee</maintainer>
+  <license>Apache License 2.0</license>
+  <author email="taekjin.lee@tier4.jp">Taekjin Lee</author>
+
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>composition_interfaces</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>ros2run</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

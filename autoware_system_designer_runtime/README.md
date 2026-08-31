@@ -148,7 +148,7 @@ For programmatic use:
 ```python
 import asyncio
 import json
-from autoware_system_designer.runtime import (
+from autoware_system_designer_runtime import (
     populate_builder, ActorConfig, ensure_output_dir,
 )
 
