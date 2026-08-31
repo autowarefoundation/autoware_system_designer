@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
-from autoware_system_designer.common.exceptions import ValidationError
+from autoware_system_designer.common.exceptions import ValidationError, error_context
 from autoware_system_designer.common.parameter_types import coerce_numeric_value, normalize_type_name
 from autoware_system_designer.common.source_location import SourceLocation, format_source, lookup_source
 from autoware_system_designer.model.config import (
@@ -148,11 +148,8 @@ class ConfigParser:
         file_entity_name, file_entity_type = entity_name_decode(file_path.stem)
 
         # Load configuration from string (+ source map for better diagnostics)
-        try:
+        with error_context(f"parsing content for {file_path}"):
             config, source_map = yaml_parser.load_config_from_string_with_source(content)
-        except Exception as e:
-            logger.error(f"Failed to parse content for {file_path}: {e}")
-            raise ValidationError(f"Error parsing YAML content: {e}")
 
         # Parse entity name and type
         full_name = config.get("name")
@@ -199,11 +196,8 @@ class ConfigParser:
 
     def _load_config_with_source(self, file_path: Path) -> tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
         """Load YAML configuration file and return (config, source_map)."""
-        try:
+        with error_context(f"parsing YAML file {file_path}"):
             return yaml_parser.load_config_with_source(str(file_path))
-        except Exception as e:
-            logger.error(f"Failed to load config from {file_path}: {e}")
-            raise ValidationError(f"Error parsing YAML file {file_path}: {e}")
 
     def _create_entity_data(
         self,

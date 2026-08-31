@@ -1,7 +1,7 @@
 import logging
 from typing import TYPE_CHECKING
 
-from autoware_system_designer.common.exceptions import ValidationError
+from autoware_system_designer.common.exceptions import ValidationError, error_context
 from autoware_system_designer.common.source_location import format_source, source_from_config
 from autoware_system_designer.model.namespace import (
     is_root_namespace,
@@ -53,7 +53,7 @@ def apply_parameter_set(
 
     # Apply each parameter set sequentially
     for param_set_id in parameter_set_list:
-        try:
+        with error_context(f"applying parameter set '{param_set_id}' to instance '{target_instance.name}'"):
             param_set_name, entity_type = entity_name_decode(param_set_id)
             if entity_type != "parameter_set":
                 raise ValidationError(
@@ -181,7 +181,3 @@ def apply_parameter_set(
                     logger.debug(
                         f"Applied parameters to node '{node_namespace}' from set '{param_set_name}' files={len(param_files)} configs={len(param_values)}"
                     )
-        except Exception as e:
-            raise ValidationError(
-                f"Error in applying parameter set '{param_set_name}' to instance '{target_instance.name}': {e}"
-            )

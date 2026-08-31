@@ -31,6 +31,7 @@ from autoware_system_designer.common.exceptions import (
     NodeConfigurationError,
     ParameterConfigurationError,
     ValidationError,
+    annotate_error,
 )
 from autoware_system_designer.common.path_utils import canonical_path
 from autoware_system_designer.common.source_location import SourceLocation, format_source, source_from_config
@@ -50,7 +51,7 @@ from autoware_system_designer.schema.format_version import check_format_version
 logger = logging.getLogger(__name__)
 
 
-def _format_mismatch_hint(mismatch_files: list) -> str:
+def format_mismatch_hint(mismatch_files: list) -> str:
     """Build a human-readable hint listing files with version mismatches.
 
     Each entry in *mismatch_files* is ``(file_path, file_version, supported_version)``.
@@ -270,15 +271,13 @@ class ConfigRegistry:
 
             except Exception as e:
                 src = SourceLocation(file_path=Path(file_path))
-                logger.error(f"Failed to load entity from {file_path}: {e}{format_source(src)}")
-
-                # If any files loaded so far had a newer minor format
-                # version, surface that alongside the real error so the
-                # user knows it may be related.
+                error = annotate_error(e, f"loading design file {file_path}", src)
+                # Newer-minor files loaded so far may be related to the failure.
                 if self.minor_version_mismatch_files:
-                    hint = _format_mismatch_hint(self.minor_version_mismatch_files)
-                    raise type(e)(f"{e}\n{hint}") from e
-                raise
+                    error.add_hint(format_mismatch_hint(self.minor_version_mismatch_files))
+                if error is e:
+                    raise
+                raise error from e
 
     def iter_used_configs(self) -> Iterator[Config]:
         """The memoized selection of every group this deployment resolved."""

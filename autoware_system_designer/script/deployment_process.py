@@ -19,10 +19,12 @@ from pathlib import Path
 import yaml
 
 from autoware_system_designer.common.deployment_config import DeploymentConfig
+from autoware_system_designer.common.exceptions import SystemDesignerError, render_error
 from autoware_system_designer.deploy import Deployment
 from autoware_system_designer.visualizer.visualization_index import update_index
 
-_logger = logging.getLogger(__name__)
+# Stable name whether imported or executed as a script.
+_logger = logging.getLogger("autoware_system_designer.deployment_process")
 
 
 # build the deployment
@@ -92,11 +94,11 @@ def build(deployment_file: str, manifest_dir: str, output_root_dir: str, workspa
         update_index(output_root_dir)
 
         logger.info("Autoware System Designer: Done!")
-    except Exception as exc:
-        # Construction failures carry the registry on the exception; hints
-        # surface duplicate and minor-version context alongside the error.
-        _emit_minor_version_hint(deployment, exc)
-        _emit_duplicate_hint(deployment, exc)
+    except SystemDesignerError as exc:
+        # The process boundary reports once: hints attach to the error and the
+        # whole block (message, context frames, hints) renders in one log entry.
+        _attach_registry_hints(deployment, exc)
+        _logger.error(render_error(exc))
         raise
 
 
@@ -108,33 +110,25 @@ def _find_registry(deployment, exc):
     return getattr(deployment, "config_registry", None) if deployment else None
 
 
-def _emit_duplicate_hint(deployment, exc):
-    """Log the duplicated names the deployment reached, if any."""
+def _attach_registry_hints(deployment, exc: SystemDesignerError) -> None:
+    """Attach duplicate-name and minor-version hints recorded by the registry."""
     registry = _find_registry(deployment, exc)
     if registry is None:
         return
-    duplicates = registry.used_duplicates()
-    if not duplicates:
-        return
-    from autoware_system_designer.builder.config.config_registry import format_duplicate_report
-
-    _logger.error(
-        f"Note: {len(duplicates)} duplicated entity name(s) are used by this deployment. "
-        f"This may have contributed to the error:\n" + format_duplicate_report(duplicates)
+    from autoware_system_designer.builder.config.config_registry import (
+        format_duplicate_report,
+        format_mismatch_hint,
     )
 
-
-def _emit_minor_version_hint(deployment, exc):
-    """Log minor-version mismatch files if any were recorded."""
-    registry = _find_registry(deployment, exc)
-    if registry is None:
-        return
+    duplicates = registry.used_duplicates()
+    if duplicates:
+        exc.add_hint(
+            f"Note: {len(duplicates)} duplicated entity name(s) are used by this deployment. "
+            f"This may have contributed to the error:\n" + format_duplicate_report(duplicates)
+        )
     files = getattr(registry, "minor_version_mismatch_files", [])
-    if not files:
-        return
-    from autoware_system_designer.builder.config.config_registry import _format_mismatch_hint
-
-    _logger.error(_format_mismatch_hint(files))
+    if files:
+        exc.add_hint(format_mismatch_hint(files))
 
 
 if __name__ == "__main__":
@@ -148,4 +142,8 @@ if __name__ == "__main__":
     output_root_dir = sys.argv[3]
     workspace_yaml = sys.argv[4] if len(sys.argv) > 4 else None
 
-    build(deployment_file, manifest_dir, output_root_dir, workspace_yaml)
+    try:
+        build(deployment_file, manifest_dir, output_root_dir, workspace_yaml)
+    except SystemDesignerError:
+        # Already rendered by the boundary handler; a traceback would repeat it.
+        raise SystemExit(1)

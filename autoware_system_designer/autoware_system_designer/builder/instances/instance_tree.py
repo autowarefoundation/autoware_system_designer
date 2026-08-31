@@ -1,11 +1,12 @@
 import logging
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 
 from autoware_system_designer.builder.config.launch_manager import LaunchManager
 from autoware_system_designer.builder.instances.node_groups import apply_node_groups
 from autoware_system_designer.builder.parameters.parameter_set_applier import apply_parameter_set
-from autoware_system_designer.common.exceptions import ValidationError
-from autoware_system_designer.common.source_location import format_source, source_from_config
+from autoware_system_designer.common.exceptions import ValidationError, error_context
+from autoware_system_designer.common.source_location import SourceLocation, format_source, source_from_config
 from autoware_system_designer.model.namespace import Namespace
 from autoware_system_designer.model.parameters import ParameterType
 from autoware_system_designer.parser.data_validator import entity_name_decode
@@ -42,7 +43,8 @@ def set_instances(
     entity_id: str,
     config_registry: "ConfigRegistry",
 ) -> None:
-    try:
+    source = _config_source(instance)
+    with error_context(f"setting instances for {entity_id}", source=source):
         entity_name, entity_type = entity_name_decode(entity_id)
         if entity_type == "system":
             set_system_instances(instance, config_registry)
@@ -50,9 +52,12 @@ def set_instances(
             set_module_instances(instance, entity_id, entity_name, config_registry)
         elif entity_type == "node":
             set_node_instances(instance, entity_id, entity_name, config_registry)
-    except Exception as e:
-        location = f", at {instance.configuration.file_path}" if instance.configuration else ""
-        raise ValidationError(f"Error setting instances for {entity_id}{location}: {e}") from e
+
+
+def _config_source(instance: "Instance") -> Optional[SourceLocation]:
+    if instance.configuration is None or instance.configuration.file_path is None:
+        return None
+    return SourceLocation(file_path=Path(instance.configuration.file_path))
 
 
 def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry") -> None:
@@ -78,14 +83,13 @@ def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry"
         child_instance = _create_child_instance(instance_name, compute_unit_name, namespace, instance)
         child_instance.set_resolved_path(resolved_path)
 
-        try:
-            set_instances(child_instance, entity_id, config_registry)
-        except Exception as e:
-            # add the instance to the children dict for debugging
-            instance.children[instance_name] = child_instance
-            raise ValidationError(
-                f"Error in setting component instance '{instance_name}', at {instance.configuration.file_path}: {e}"
-            ) from e
+        with error_context(f"setting component instance '{instance_name}'", source=_config_source(instance)):
+            try:
+                set_instances(child_instance, entity_id, config_registry)
+            except Exception:
+                # keep the failed child visible for debugging
+                instance.children[instance_name] = child_instance
+                raise
 
         instance.children[instance_name] = child_instance
         logger.debug(
@@ -205,18 +209,17 @@ def create_module_children(instance: "Instance", config_registry: "ConfigRegistr
         child_instance.parent_module_list = instance.parent_module_list.copy()
 
         # recursive call of set_instances
-        try:
-            set_instances(
-                child_instance,
-                cfg_node.get("entity"),
-                config_registry,
-            )
-        except Exception as e:
-            # add the instance to the children dict for debugging
-            instance.children[child_name] = child_instance
-            raise ValidationError(
-                f"Error in setting child instance {child_name} : {e}, at {instance.configuration.file_path}"
-            ) from e
+        with error_context(f"setting child instance '{child_name}'", source=_config_source(instance)):
+            try:
+                set_instances(
+                    child_instance,
+                    cfg_node.get("entity"),
+                    config_registry,
+                )
+            except Exception:
+                # keep the failed child visible for debugging
+                instance.children[child_name] = child_instance
+                raise
         instance.children[child_name] = child_instance
 
 

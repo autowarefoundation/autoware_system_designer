@@ -62,3 +62,29 @@ def test_minor_version_hint_surfaces_on_failure(tmp_path, capfd):
         run_pipeline(workspace, "hint_pkg/Hint.system.yaml", tmp_path)
     stderr = capfd.readouterr().err
     assert "newer minor format version" in stderr, "expected the minor-version hint on stderr"
+
+
+def test_error_reported_once_with_context_frames(tmp_path):
+    """The leaf message appears exactly once; enclosing layers add frames, not re-wraps."""
+    from autoware_system_designer.common.exceptions import render_error
+
+    workspace = stage_case("errors_circular", tmp_path)
+    with pytest.raises(SystemDesignerError) as excinfo:
+        run_pipeline(workspace, "loop_pkg/Loopy.system.yaml", tmp_path)
+    exc = excinfo.value
+
+    leaf = "avoid circular reference"
+    assert str(exc).count(leaf) == 1
+    rendered = render_error(exc)
+    assert rendered.count(leaf) == 1
+    assert rendered.count("while:") == 1
+    # system -> component -> module -> child recursion leaves at least four frames
+    assert len(exc.context) >= 4
+
+
+def test_minor_version_hint_attached_as_data(tmp_path):
+    workspace = stage_case("errors_minor_hint", tmp_path)
+    with pytest.raises(SystemDesignerError) as excinfo:
+        run_pipeline(workspace, "hint_pkg/Hint.system.yaml", tmp_path)
+    hints = "\n".join(excinfo.value.hints)
+    assert "newer minor format version" in hints

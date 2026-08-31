@@ -28,7 +28,7 @@ from autoware_system_designer.builder.export.json_io import (
 )
 from autoware_system_designer.builder.modes import apply_mode_configuration, select_modes
 from autoware_system_designer.common.deployment_config import DeploymentConfig
-from autoware_system_designer.common.exceptions import DeploymentError, ValidationError
+from autoware_system_designer.common.exceptions import DeploymentError, ValidationError, annotate_error
 from autoware_system_designer.common.path_utils import (
     PACKAGE_MAP_FILENAME,
     WORKSPACE_ROOT_KEY,
@@ -345,14 +345,15 @@ class Deployment:
                 self.system_structure_snapshots[mode_key] = snapshot_store
                 # try to visualize the system to show error status
                 self.visualize()
-                details = []
-                if mode_key == default_mode:
-                    details.append("default")
+                default_note = " (default)" if mode_key == default_mode else ""
                 system_path = getattr(system_config, "file_path", None)
-                if system_path:
-                    details.append(f"system= {system_path} ")
-                details_str = f" ({', '.join(details)})" if details else ""
-                raise DeploymentError(f"Error while building deploy for mode '{mode_key}'{details_str}: {e}") from e
+                source = SourceLocation(file_path=Path(system_path)) if system_path else None
+                error = annotate_error(
+                    e, f"building deployment for mode '{mode_key}'{default_note}", source, wrap=DeploymentError
+                )
+                if error is e:
+                    raise
+                raise error from e
 
         self._check_used_duplicates()
 
