@@ -16,7 +16,7 @@
 
 # Import only schema to avoid circular imports
 # (file_io/__init__.py imports from exporting)
-from .schema import (
+from autoware_system_designer.exporting.schema import (
     SCHEMA_VERSION,
     EventData,
     InstanceData,

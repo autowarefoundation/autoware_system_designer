@@ -17,10 +17,10 @@
 from pathlib import Path
 from typing import List
 
-from .file_linter import FileLinter
-from .naming_linter import NamingLinter
-from .report import LintResult
-from .structure_linter import StructureLinter
+from autoware_system_designer.linter.file_linter import FileLinter
+from autoware_system_designer.linter.naming_linter import NamingLinter
+from autoware_system_designer.linter.report import LintResult
+from autoware_system_designer.linter.structure_linter import StructureLinter
 
 __all__ = ["lint_files", "LintResult"]
 

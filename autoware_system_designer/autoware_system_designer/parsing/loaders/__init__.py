@@ -14,8 +14,8 @@
 
 """Loaders module - YAML parsing and data validation."""
 
-from .data_parser import ConfigParser
-from .data_validator import (
+from autoware_system_designer.parsing.loaders.data_parser import ConfigParser
+from autoware_system_designer.parsing.loaders.data_validator import (
     BaseValidator,
     ModuleValidator,
     NodeValidator,
@@ -23,7 +23,7 @@ from .data_validator import (
     SystemValidator,
     ValidatorFactory,
 )
-from .yaml_parser import YamlParser
+from autoware_system_designer.parsing.loaders.yaml_parser import YamlParser
 
 __all__ = [
     "YamlParser",

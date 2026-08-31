@@ -18,10 +18,10 @@ import re
 from pathlib import Path
 from typing import Any, Dict
 
-from ..parsing.config import ConfigType
-from ..parsing.loaders.data_validator import entity_name_decode
-from ..parsing.loaders.yaml_parser import yaml_parser
-from .report import LintResult
+from autoware_system_designer.parsing.config import ConfigType
+from autoware_system_designer.parsing.loaders.data_validator import entity_name_decode
+from autoware_system_designer.parsing.loaders.yaml_parser import yaml_parser
+from autoware_system_designer.linter.report import LintResult
 
 
 class NamingLinter:

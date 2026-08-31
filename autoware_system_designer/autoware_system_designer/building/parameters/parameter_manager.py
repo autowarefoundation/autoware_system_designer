@@ -18,20 +18,20 @@ import re
 import shutil
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from ...exceptions import ParameterConfigurationError, ValidationError
-from ...exporting.schema import LauncherParamFileData, LauncherParamValueData
-from ...file_io.source_location import SourceLocation, format_source, source_from_config
-from ...parsing.loaders.yaml_parser import yaml_parser
-from ...utils.parameter_types import coerce_numeric_value, normalize_type_name
-from ..runtime.execution import LaunchState
-from ..runtime.namespace import (
+from autoware_system_designer.exceptions import ParameterConfigurationError, ValidationError
+from autoware_system_designer.exporting.schema import LauncherParamFileData, LauncherParamValueData
+from autoware_system_designer.file_io.source_location import SourceLocation, format_source, source_from_config
+from autoware_system_designer.parsing.loaders.yaml_parser import yaml_parser
+from autoware_system_designer.utils.parameter_types import coerce_numeric_value, normalize_type_name
+from autoware_system_designer.building.runtime.execution import LaunchState
+from autoware_system_designer.building.runtime.namespace import (
     is_root_namespace,
     namespace_path_is_descendant,
     namespace_paths_equal,
     node_group_pattern_matches,
     resolve_common_namespace_from_paths,
 )
-from ..runtime.parameters import (
+from autoware_system_designer.building.runtime.parameters import (
     Parameter,
     ParameterFile,
     ParameterFileList,
@@ -41,8 +41,8 @@ from ..runtime.parameters import (
 )
 
 if TYPE_CHECKING:
-    from ..config.config_registry import ConfigRegistry
-    from ..instances.instances import Instance
+    from autoware_system_designer.building.config.config_registry import ConfigRegistry
+    from autoware_system_designer.building.instances.instances import Instance
 
 logger = logging.getLogger(__name__)
 _SYSTEM_ARG_PATTERN = re.compile(r"\$\(var\s+([^)]+)\)")

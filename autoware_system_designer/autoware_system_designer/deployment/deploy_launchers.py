@@ -18,8 +18,8 @@ import logging
 import os
 from typing import Any, Dict, List
 
-from ..exporting.json_io import extract_system_structure_data, load_system_structure
-from ..file_io.template_renderer import TemplateRenderer
+from autoware_system_designer.exporting.json_io import extract_system_structure_data, load_system_structure
+from autoware_system_designer.file_io.template_renderer import TemplateRenderer
 
 logger = logging.getLogger(__name__)
 

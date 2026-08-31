@@ -15,9 +15,9 @@
 import logging
 from typing import Any, Callable, Dict, List, Optional, TypeVar
 
-from ...parsing.config import ModuleConfig, NodeConfig, RemapEntry, SystemConfig
-from ...parsing.domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
-from .connection_resolver import filter_connections_by_removed_entities
+from autoware_system_designer.parsing.config import ModuleConfig, NodeConfig, RemapEntry, SystemConfig
+from autoware_system_designer.parsing.domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
+from autoware_system_designer.building.resolution.connection_resolver import filter_connections_by_removed_entities
 
 logger = logging.getLogger(__name__)
 

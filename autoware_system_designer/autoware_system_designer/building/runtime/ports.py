@@ -15,9 +15,9 @@
 import logging
 from typing import List
 
-from ...exceptions import ValidationError
-from ...utils.naming import generate_unique_id
-from .events import Event
+from autoware_system_designer.exceptions import ValidationError
+from autoware_system_designer.utils.naming import generate_unique_id
+from autoware_system_designer.building.runtime.events import Event
 
 logger = logging.getLogger(__name__)
 

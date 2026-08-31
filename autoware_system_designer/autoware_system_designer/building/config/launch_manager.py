@@ -14,10 +14,10 @@
 
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from ..runtime.execution import LaunchConfig, LaunchState
+from autoware_system_designer.building.runtime.execution import LaunchConfig, LaunchState
 
 if TYPE_CHECKING:
-    from ..instances.instances import Instance
+    from autoware_system_designer.building.instances.instances import Instance
 
 
 class LaunchManager:

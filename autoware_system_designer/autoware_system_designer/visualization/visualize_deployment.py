@@ -19,10 +19,10 @@ import shutil
 from pathlib import Path
 from typing import Dict, Optional
 
-from ..exporting.schema import DeploymentDataByMode
-from ..file_io.source_location import SourceLocation, format_source
-from ..file_io.template_renderer import TemplateRenderer
-from .visualization_index import get_install_root
+from autoware_system_designer.exporting.schema import DeploymentDataByMode
+from autoware_system_designer.file_io.source_location import SourceLocation, format_source
+from autoware_system_designer.file_io.template_renderer import TemplateRenderer
+from autoware_system_designer.visualization.visualization_index import get_install_root
 
 logger = logging.getLogger(__name__)
 

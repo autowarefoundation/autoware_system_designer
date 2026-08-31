@@ -15,11 +15,11 @@
 import logging
 from typing import TYPE_CHECKING, List
 
-from ...file_io.source_location import format_source, source_from_config
-from ..runtime.events import Event, Process
+from autoware_system_designer.file_io.source_location import format_source, source_from_config
+from autoware_system_designer.building.runtime.events import Event, Process
 
 if TYPE_CHECKING:
-    from ..instances.instances import Instance
+    from autoware_system_designer.building.instances.instances import Instance
 
 logger = logging.getLogger(__name__)
 

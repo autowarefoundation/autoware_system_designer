@@ -14,7 +14,7 @@
 
 from typing import Any, Dict, List, Tuple
 
-from ..building.parameters.parameter_manager import ParameterManager
+from autoware_system_designer.building.parameters.parameter_manager import ParameterManager
 
 
 def _extract_node_data(node_instance: Dict[str, Any], namespace: str) -> Dict[str, Any]:

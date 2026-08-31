@@ -1,13 +1,13 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ...exceptions import ValidationError
-from ..config.launch_manager import LaunchManager
-from ..runtime.execution import LaunchConfig, LaunchState
-from ..runtime.namespace import node_group_pattern_matches, resolve_common_namespace_from_paths
+from autoware_system_designer.exceptions import ValidationError
+from autoware_system_designer.building.config.launch_manager import LaunchManager
+from autoware_system_designer.building.runtime.execution import LaunchConfig, LaunchState
+from autoware_system_designer.building.runtime.namespace import node_group_pattern_matches, resolve_common_namespace_from_paths
 
 if TYPE_CHECKING:
-    from .instances import Instance
+    from autoware_system_designer.building.instances.instances import Instance
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +212,7 @@ def _create_group_container_node(
 def _create_container_node_instance(
     parent_instance: "Instance", group_name: str, group_type: str, compute_unit: str, namespace: list[str]
 ) -> "Instance":
-    from .instances import Instance
+    from autoware_system_designer.building.instances.instances import Instance
 
     container_spec = NODE_GROUP_CONTAINER_SPECS[group_type]
     launch_spec = container_spec["launch"]

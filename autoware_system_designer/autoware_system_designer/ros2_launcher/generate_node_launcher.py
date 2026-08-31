@@ -17,12 +17,12 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Optional
 
-from ..building.runtime.execution import LaunchState
-from ..exceptions import ValidationError
-from ..file_io.template_renderer import TemplateRenderer
-from ..parsing.config import ConfigType, NodeConfig
-from ..parsing.loaders.data_parser import ConfigParser
-from ..utils import pascal_to_snake
+from autoware_system_designer.building.runtime.execution import LaunchState
+from autoware_system_designer.exceptions import ValidationError
+from autoware_system_designer.file_io.template_renderer import TemplateRenderer
+from autoware_system_designer.parsing.config import ConfigType, NodeConfig
+from autoware_system_designer.parsing.loaders.data_parser import ConfigParser
+from autoware_system_designer.utils import pascal_to_snake
 
 
 def _process_parameter_path(path: Any, package_name: Optional[str]) -> Any:

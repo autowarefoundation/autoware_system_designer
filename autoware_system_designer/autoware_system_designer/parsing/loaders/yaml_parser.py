@@ -21,8 +21,8 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 import yaml
 
-from ...deployment.deployment_config import deploy_config
-from ...exceptions import ValidationError
+from autoware_system_designer.deployment.deployment_config import deploy_config
+from autoware_system_designer.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 

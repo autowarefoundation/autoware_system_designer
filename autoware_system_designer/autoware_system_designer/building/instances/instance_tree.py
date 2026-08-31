@@ -1,18 +1,18 @@
 import logging
 from typing import TYPE_CHECKING
 
-from ...exceptions import ValidationError
-from ...file_io.source_location import format_source, source_from_config
-from ...parsing.loaders.data_validator import entity_name_decode
-from ..config.launch_manager import LaunchManager
-from ..parameters.parameter_set_applier import apply_parameter_set
-from ..runtime.namespace import Namespace
-from ..runtime.parameters import ParameterType
-from .node_groups import apply_node_groups
+from autoware_system_designer.exceptions import ValidationError
+from autoware_system_designer.file_io.source_location import format_source, source_from_config
+from autoware_system_designer.parsing.loaders.data_validator import entity_name_decode
+from autoware_system_designer.building.config.launch_manager import LaunchManager
+from autoware_system_designer.building.parameters.parameter_set_applier import apply_parameter_set
+from autoware_system_designer.building.runtime.namespace import Namespace
+from autoware_system_designer.building.runtime.parameters import ParameterType
+from autoware_system_designer.building.instances.node_groups import apply_node_groups
 
 if TYPE_CHECKING:
-    from ..config.config_registry import ConfigRegistry
-    from .instances import Instance
+    from autoware_system_designer.building.config.config_registry import ConfigRegistry
+    from autoware_system_designer.building.instances.instances import Instance
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +262,7 @@ def _create_child_instance(
     parent_instance: "Instance",
     layer_delta: int = 0,
 ) -> "Instance":
-    from .instances import Instance
+    from autoware_system_designer.building.instances.instances import Instance
 
     child_instance = Instance(name, compute_unit, namespace, parent_instance.layer + layer_delta)
     child_instance.parent = parent_instance

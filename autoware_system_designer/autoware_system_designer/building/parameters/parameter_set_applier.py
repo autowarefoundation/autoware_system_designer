@@ -1,15 +1,15 @@
 import logging
 from typing import TYPE_CHECKING
 
-from ...exceptions import ValidationError
-from ...file_io.source_location import format_source, source_from_config
-from ...parsing.loaders.data_validator import entity_name_decode
-from ..runtime.namespace import is_root_namespace, namespace_path_is_descendant, resolve_common_namespace_from_paths
-from ..runtime.parameters import ParameterType
+from autoware_system_designer.exceptions import ValidationError
+from autoware_system_designer.file_io.source_location import format_source, source_from_config
+from autoware_system_designer.parsing.loaders.data_validator import entity_name_decode
+from autoware_system_designer.building.runtime.namespace import is_root_namespace, namespace_path_is_descendant, resolve_common_namespace_from_paths
+from autoware_system_designer.building.runtime.parameters import ParameterType
 
 if TYPE_CHECKING:
-    from ..config.config_registry import ConfigRegistry
-    from ..instances.instances import Instance
+    from autoware_system_designer.building.config.config_registry import ConfigRegistry
+    from autoware_system_designer.building.instances.instances import Instance
 
 logger = logging.getLogger(__name__)
 

@@ -18,9 +18,9 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-from ..file_io.source_location import SourceLocation, format_source
-from .instance_to_json import collect_system_structure
-from .schema import (
+from autoware_system_designer.file_io.source_location import SourceLocation, format_source
+from autoware_system_designer.exporting.instance_to_json import collect_system_structure
+from autoware_system_designer.exporting.schema import (
     InstanceData,
     SystemStructureMetadata,
     SystemStructurePayload,

@@ -14,6 +14,6 @@
 
 """Configuration management module."""
 
-from .config_registry import ConfigRegistry
+from autoware_system_designer.building.config.config_registry import ConfigRegistry
 
 __all__ = ["ConfigRegistry"]

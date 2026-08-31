@@ -19,8 +19,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from ..utils.env import env_flag
-from ..utils.logging_utils import configure_split_stream_logging
+from autoware_system_designer.utils.env import env_flag
+from autoware_system_designer.utils.logging_utils import configure_split_stream_logging
 
 
 @dataclass

@@ -4,8 +4,8 @@ This package groups small modules that primarily deal with reading/writing files
 formatting file-backed diagnostics.
 """
 
-from .source_location import SourceLocation, format_source, lookup_source, source_from_config
-from .template_renderer import TemplateRenderer
+from autoware_system_designer.file_io.source_location import SourceLocation, format_source, lookup_source, source_from_config
+from autoware_system_designer.file_io.template_renderer import TemplateRenderer
 
 __all__ = [
     "SourceLocation",

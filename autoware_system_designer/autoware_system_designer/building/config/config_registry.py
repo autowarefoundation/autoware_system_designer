@@ -19,15 +19,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Type
 
-from ...exceptions import (
+from autoware_system_designer.exceptions import (
     FormatVersionError,
     ModuleConfigurationError,
     NodeConfigurationError,
     ParameterConfigurationError,
     ValidationError,
 )
-from ...file_io.source_location import SourceLocation, format_source, source_from_config
-from ...parsing.config import (
+from autoware_system_designer.file_io.source_location import SourceLocation, format_source, source_from_config
+from autoware_system_designer.parsing.config import (
     Config,
     ConfigSubType,
     ConfigType,
@@ -36,11 +36,11 @@ from ...parsing.config import (
     ParameterSetConfig,
     SystemConfig,
 )
-from ...parsing.loaders.data_parser import ConfigParser
-from ...parsing.loaders.data_validator import entity_name_decode
-from ...utils.format_version import check_format_version
-from ...utils.path_utils import canonical_path
-from ..resolution.variant_resolver import (
+from autoware_system_designer.parsing.loaders.data_parser import ConfigParser
+from autoware_system_designer.parsing.loaders.data_validator import entity_name_decode
+from autoware_system_designer.utils.format_version import check_format_version
+from autoware_system_designer.utils.path_utils import canonical_path
+from autoware_system_designer.building.resolution.variant_resolver import (
     ModuleVariantResolver,
     NodeVariantResolver,
     SystemVariantResolver,
@@ -218,7 +218,7 @@ class ConfigRegistry:
 
     def _load_entities(self, config_yaml_file_paths: List[str]) -> None:
         """Load entities from configuration files."""
-        from ...parsing.loaders.yaml_parser import yaml_parser as _yaml_parser
+        from autoware_system_designer.parsing.loaders.yaml_parser import yaml_parser as _yaml_parser
 
         for file_path in config_yaml_file_paths:
             logger.debug(f"Loading entity from: {file_path}")

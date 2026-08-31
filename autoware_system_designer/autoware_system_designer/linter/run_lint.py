@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import List
 
 try:
-    from . import LintResult, lint_files
+    from autoware_system_designer.linter import LintResult, lint_files
 except ImportError:  # pragma: no cover
     # Allow direct execution: `python path/to/run_lint.py ...`
     SCRIPT_DIR = Path(__file__).resolve().parent

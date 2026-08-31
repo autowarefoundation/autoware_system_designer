@@ -15,7 +15,7 @@
 import logging
 from typing import List
 
-from ...utils.naming import generate_unique_id
+from autoware_system_designer.utils.naming import generate_unique_id
 
 logger = logging.getLogger(__name__)
 

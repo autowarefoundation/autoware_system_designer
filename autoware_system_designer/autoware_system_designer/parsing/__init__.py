@@ -15,7 +15,7 @@
 """Parsing module - YAML to Config data flow."""
 
 # Config classes
-from .config import (
+from autoware_system_designer.parsing.config import (
     Config,
     ConfigSubType,
     ConfigType,
@@ -26,7 +26,7 @@ from .config import (
 )
 
 # Domain types
-from .domain import (
+from autoware_system_designer.parsing.domain import (
     ParameterFileDefinition,
     ParameterType,
     ParameterValueDefinition,
@@ -34,7 +34,7 @@ from .domain import (
 )
 
 # YAML schema and validation
-from .json_schema_loader import (
+from autoware_system_designer.parsing.json_schema_loader import (
     clear_cache,
     get_schema_path,
     load_schema,
@@ -42,7 +42,7 @@ from .json_schema_loader import (
 )
 
 # Loaders - YAML parsing and validation
-from .loaders import (
+from autoware_system_designer.parsing.loaders import (
     BaseValidator,
     ConfigParser,
     ModuleValidator,
@@ -52,7 +52,7 @@ from .loaders import (
     ValidatorFactory,
     YamlParser,
 )
-from .yaml_schema import (
+from autoware_system_designer.parsing.yaml_schema import (
     SchemaIssue,
     get_semantic_checks,
     validate_against_schema,

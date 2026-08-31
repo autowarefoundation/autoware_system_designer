@@ -15,10 +15,10 @@
 from enum import Enum
 from typing import List, Optional
 
-from ...exceptions import DeploymentError, ValidationError
-from ...file_io.source_location import SourceLocation
-from ...utils.naming import generate_unique_id
-from .ports import InPort, OutPort, Port
+from autoware_system_designer.exceptions import DeploymentError, ValidationError
+from autoware_system_designer.file_io.source_location import SourceLocation
+from autoware_system_designer.utils.naming import generate_unique_id
+from autoware_system_designer.building.runtime.ports import InPort, OutPort, Port
 
 
 class ConnectionType(int, Enum):

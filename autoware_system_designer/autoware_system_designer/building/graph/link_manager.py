@@ -18,14 +18,14 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from ...exceptions import ValidationError
-from ...exporting.schema import LauncherPortData
-from ...file_io.source_location import format_source, source_from_config
-from ..runtime.links import Connection, ConnectionType, Link
-from ..runtime.ports import InPort, OutPort
+from autoware_system_designer.exceptions import ValidationError
+from autoware_system_designer.exporting.schema import LauncherPortData
+from autoware_system_designer.file_io.source_location import format_source, source_from_config
+from autoware_system_designer.building.runtime.links import Connection, ConnectionType, Link
+from autoware_system_designer.building.runtime.ports import InPort, OutPort
 
 if TYPE_CHECKING:
-    from ..instances.instances import Instance
+    from autoware_system_designer.building.instances.instances import Instance
 
 
 @dataclass

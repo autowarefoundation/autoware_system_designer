@@ -7,7 +7,7 @@ import os
 
 from jinja2 import Environment, FileSystemLoader
 
-from ..utils.parameter_types import to_launch_param_attr
+from autoware_system_designer.utils.parameter_types import to_launch_param_attr
 
 
 def _get_template_directories() -> list[str]:

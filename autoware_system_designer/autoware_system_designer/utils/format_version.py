@@ -29,8 +29,8 @@ import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from .. import DESIGN_FORMAT_VERSION
-from ..exceptions import FormatVersionError
+from autoware_system_designer import DESIGN_FORMAT_VERSION
+from autoware_system_designer.exceptions import FormatVersionError
 
 # ---- version string → tuple ------------------------------------------------
 

@@ -18,33 +18,33 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .building.config.config_registry import ConfigRegistry, format_duplicate_report
-from .building.deployment_instance import DeploymentInstance
-from .deployment.deploy_launchers import generate_deploy_launchers
-from .deployment.deployment_config import DeploymentConfig
-from .deployment.modes import apply_mode_configuration, select_modes
-from .deployment.parser import iter_mode_data, peek_target_system_name, resolve_input_target
-from .exceptions import DeploymentError, ValidationError
-from .exporting.instance_to_json import collect_system_structure
-from .exporting.json_io import (
+from autoware_system_designer.building.config.config_registry import ConfigRegistry, format_duplicate_report
+from autoware_system_designer.building.deployment_instance import DeploymentInstance
+from autoware_system_designer.deployment.deploy_launchers import generate_deploy_launchers
+from autoware_system_designer.deployment.deployment_config import DeploymentConfig
+from autoware_system_designer.deployment.modes import apply_mode_configuration, select_modes
+from autoware_system_designer.deployment.parser import iter_mode_data, peek_target_system_name, resolve_input_target
+from autoware_system_designer.exceptions import DeploymentError, ValidationError
+from autoware_system_designer.exporting.instance_to_json import collect_system_structure
+from autoware_system_designer.exporting.json_io import (
     save_system_structure,
     save_system_structure_snapshot,
 )
-from .file_io.source_location import SourceLocation, format_source
-from .file_io.template_renderer import TemplateRenderer
-from .parsing.config import NodeConfig, SystemConfig
-from .parsing.loaders.yaml_parser import yaml_parser
-from .ros2_launcher.generate_module_launcher import generate_module_launch_file
-from .template.parameter_template_generator import ParameterTemplateGenerator
-from .utils import generate_build_scripts
-from .utils.path_utils import (
+from autoware_system_designer.file_io.source_location import SourceLocation, format_source
+from autoware_system_designer.file_io.template_renderer import TemplateRenderer
+from autoware_system_designer.parsing.config import NodeConfig, SystemConfig
+from autoware_system_designer.parsing.loaders.yaml_parser import yaml_parser
+from autoware_system_designer.ros2_launcher.generate_module_launcher import generate_module_launch_file
+from autoware_system_designer.template.parameter_template_generator import ParameterTemplateGenerator
+from autoware_system_designer.utils import generate_build_scripts
+from autoware_system_designer.utils.path_utils import (
     PACKAGE_MAP_FILENAME,
     WORKSPACE_ROOT_KEY,
     canonical_path,
     resolve_manifest_path,
 )
-from .visualization.launch_commands_page import generate_launch_commands_page
-from .visualization.visualize_deployment import visualize_deployment
+from autoware_system_designer.visualization.launch_commands_page import generate_launch_commands_page
+from autoware_system_designer.visualization.visualize_deployment import visualize_deployment
 
 logger = logging.getLogger(__name__)
 

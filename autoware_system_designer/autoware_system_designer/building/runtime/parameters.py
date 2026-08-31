@@ -14,8 +14,8 @@
 
 from typing import Any, Dict, List, Optional
 
-from ...file_io.source_location import SourceLocation
-from ...parsing.domain import ParameterType
+from autoware_system_designer.file_io.source_location import SourceLocation
+from autoware_system_designer.parsing.domain import ParameterType
 
 
 def parameter_type_to_str(value) -> str:

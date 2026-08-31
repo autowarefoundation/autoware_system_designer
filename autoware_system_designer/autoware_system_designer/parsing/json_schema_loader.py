@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from typing import Dict, Optional
 
-from ..utils.format_version import SemanticVersion, parse_format_version
+from autoware_system_designer.utils.format_version import SemanticVersion, parse_format_version
 
 # Schema cache to avoid reloading files
 _SCHEMA_CACHE: Dict[str, dict] = {}
