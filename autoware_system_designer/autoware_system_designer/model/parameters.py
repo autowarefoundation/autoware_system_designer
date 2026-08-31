@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from autoware_system_designer.common.source_location import SourceLocation
@@ -27,26 +29,109 @@ def parameter_type_to_str(value) -> str:
     return str(value)
 
 
-class Parameter:
-    """Represents a single parameter with its value and metadata."""
+_SCIENTIFIC_NOTATION_PATTERN = re.compile(r"^[+-]?\d+(\.\d+)?[eE][+-]?\d+$")
 
-    def __init__(
-        self,
-        name: str,
-        value: Any,
-        data_type: str = "string",
-        schema_path: Optional[str] = None,
-        allow_substs: bool = True,
-        parameter_type: ParameterType = ParameterType.DEFAULT,
-        source: Optional[SourceLocation] = None,
-    ):
-        self.name = name
-        self.value = value
-        self.data_type = data_type  # string, bool, int, float, etc.
-        self.schema_path = schema_path  # path to the schema file if available
-        self.allow_substs = allow_substs  # whether to allow substitutions in ROS launch
-        self.parameter_type = parameter_type  # Parameter type with priority
-        self.source = source
+_TYPE_ALIASES: Dict[str, str] = {
+    "str": "string",
+    "boolean": "bool",
+    "float": "double",
+    "float32": "double",
+    "float64": "double",
+    "integer": "int",
+    "int8": "int",
+    "int16": "int",
+    "int32": "int",
+    "int64": "int",
+    "uint8": "int",
+    "uint16": "int",
+    "uint32": "int",
+    "uint64": "int",
+    "short": "int",
+    "long": "int",
+    "directory": "string",
+}
+
+
+def _infer_array_type(value: Any) -> str:
+    """Infer the most specific ROS 2 array type from a Python list value."""
+    if not isinstance(value, list) or not value:
+        return "string_array"
+    if all(isinstance(e, bool) for e in value):
+        return "bool_array"
+    if all(isinstance(e, int) for e in value):
+        return "int_array"
+    if all(isinstance(e, float) for e in value):
+        return "double_array"
+    return "string_array"
+
+
+def canonical_parameter_type(data_type: Optional[str], value: Any) -> str:
+    """Canonical ROS 2 parameter type name; inferred from the value when absent."""
+    normalized = (data_type or "").strip().lower()
+    normalized = _TYPE_ALIASES.get(normalized, normalized)
+
+    # "array" without a subtype qualifier: infer the element type from value.
+    if normalized == "array":
+        return _infer_array_type(value)
+
+    if not normalized:
+        if isinstance(value, bool):
+            return "bool"
+        if isinstance(value, int):
+            return "int"
+        if isinstance(value, float):
+            return "double"
+        if isinstance(value, list):
+            return _infer_array_type(value)
+
+    return normalized or "string"
+
+
+def _float_to_decimal_str(value: float) -> str:
+    """Convert a float to a decimal string without scientific notation."""
+    s = repr(value)
+    if "e" in s or "E" in s:
+        return f"{value:.15f}".rstrip("0").rstrip(".")
+    return s
+
+
+def normalize_parameter_value(value: Any) -> Any:
+    """Render floats and scientific-notation strings as plain decimal strings.
+
+    Handles two cases:
+    - float: Python's YAML parser converts unquoted '1e-3' to float 0.001,
+      which json.dumps may re-serialize as '1e-05' for very small values.
+    - str: quoted '1e-3' remains a string and must be expanded to '0.001'.
+    """
+    if isinstance(value, float):
+        return _float_to_decimal_str(value)
+    if isinstance(value, str) and _SCIENTIFIC_NOTATION_PATTERN.match(value.strip()):
+        return _float_to_decimal_str(float(value))
+    return value
+
+
+@dataclass(eq=False)
+class Parameter:
+    """A single parameter; values and type names are stored in canonical export form."""
+
+    name: str
+    value: Any
+    data_type: str = field(default="string", metadata={"alias": "type"})
+    # path to the schema file if available
+    schema_path: Optional[str] = field(default=None, metadata={"exclude": True})
+    # whether to allow substitutions in ROS launch
+    allow_substs: bool = field(default=True, metadata={"exclude": True})
+    # Parameter type with priority
+    parameter_type: ParameterType = ParameterType.DEFAULT
+    source: Optional[SourceLocation] = None
+
+    def __post_init__(self):
+        self.assign(self.value, self.data_type)
+
+    def assign(self, value: Any, data_type: Optional[str]) -> None:
+        """Store a value with its canonical type name and normalized rendering."""
+        self.data_type = canonical_parameter_type(data_type, value)
+        self.value = normalize_parameter_value(value)
 
 
 class ParameterList:
@@ -99,8 +184,7 @@ class ParameterList:
             if parameter.name == parameter_name:
                 # Only update if the new parameter has equal or higher priority
                 if parameter_type.value >= parameter.parameter_type.value:
-                    parameter.value = parameter_value
-                    parameter.data_type = data_type
+                    parameter.assign(parameter_value, data_type)
                     parameter.schema_path = schema_path
                     parameter.allow_substs = allow_substs
                     parameter.parameter_type = parameter_type
@@ -123,26 +207,20 @@ class ParameterList:
         )
 
 
+@dataclass(eq=False)
 class ParameterFile:
     """Represents a parameter file reference."""
 
-    def __init__(
-        self,
-        name: str,
-        path: str,
-        schema_path: Optional[str] = None,
-        allow_substs: bool = True,
-        is_override: bool = False,
-        parameter_type: ParameterType = ParameterType.DEFAULT_FILE,
-        source: Optional[SourceLocation] = None,
-    ):
-        self.name = name
-        self.path = path
-        self.schema_path = schema_path  # path to the schema file if available
-        self.allow_substs = allow_substs  # whether to allow substitutions in ROS launch
-        self.is_override = is_override  # True for override parameter files, False for default
-        self.parameter_type = parameter_type
-        self.source = source
+    name: str
+    path: str
+    # path to the schema file if available
+    schema_path: Optional[str] = field(default=None, metadata={"exclude": True})
+    # whether to allow substitutions in ROS launch
+    allow_substs: bool = True
+    # True for override parameter files, False for default
+    is_override: bool = False
+    parameter_type: ParameterType = ParameterType.DEFAULT_FILE
+    source: Optional[SourceLocation] = None
 
 
 class ParameterFileList:

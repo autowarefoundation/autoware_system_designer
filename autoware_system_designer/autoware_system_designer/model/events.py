@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import logging
-from typing import List
+from dataclasses import dataclass, field
+from typing import ClassVar, List, Optional
 
 from autoware_system_designer.common.naming import generate_unique_id
 
@@ -21,34 +22,53 @@ logger = logging.getLogger(__name__)
 
 
 # classes for deployment
+@dataclass(init=False, eq=False, repr=False)
 class Event:
+    # on_input: activate the event when the input is received
+    # on_trigger: activate the event when the trigger is activated
+    # once: fulfill the condition if the input is received once
+    # periodic: periodically activate this event
+    type_list: ClassVar[List[str]] = [
+        "on_input",
+        "on_trigger",
+        "once",
+        "periodic",
+        "to_trigger",
+        "to_output",
+    ]
+
+    name: str
+    namespace: List[str] = field(metadata={"exclude": True})
+    type: Optional[str] = None
+    process_event: bool = False
+    # children triggers
+    triggers: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "trigger_ids"})
+    # events to trigger when this event is activated
+    actions: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "action_ids"})
+    trigger_root_ids: List[str] = field(default_factory=list, metadata={"exclude": True})
+    frequency: Optional[float] = None
+    warn_rate: Optional[float] = None
+    error_rate: Optional[float] = None
+    timeout: Optional[float] = None
+    is_set: bool = field(default=False, metadata={"exclude": True})
+
+    __serde_computed__: ClassVar[tuple] = (("unique_id", "unique_id"),)
+
     def __init__(self, name: str, namespace: List[str], is_process_event=False):
         self.name = name
         self.namespace = namespace
-        self.type_list = [
-            "on_input",
-            "on_trigger",
-            "once",
-            "periodic",
-            "to_trigger",
-            "to_output",
-        ]
-        # on_input: activate the event when the input is received
-        # on_trigger: activate the event when the trigger is activated
-        # once: fulfill the condition if the input is received once
-        # periodic: periodically activate this event
-        self.type: str = None
-        self.process_event: bool = is_process_event
+        self.type = None
+        self.process_event = is_process_event
 
-        self.triggers: List["Event"] = []  # children triggers
-        self.actions: List["Event"] = []  # event to trigger when this event is activated
-        self.trigger_root_ids: List[str] = []  # trigger root ids
+        self.triggers = []
+        self.actions = []
+        self.trigger_root_ids = []
 
-        self.frequency: float = None
-        self.warn_rate: float = None
-        self.error_rate: float = None
-        self.timeout: float = None
-        self.is_set: bool = False
+        self.frequency = None
+        self.warn_rate = None
+        self.error_rate = None
+        self.timeout = None
+        self.is_set = False
 
     @property
     def unique_id(self):

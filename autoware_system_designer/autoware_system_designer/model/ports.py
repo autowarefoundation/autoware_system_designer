@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import logging
-from typing import List
+from dataclasses import dataclass, field
+from typing import ClassVar, List, Optional
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.naming import generate_unique_id
@@ -28,10 +29,14 @@ def generate_port_path(namespace: List[str], name: str) -> str:
     return "/" + name
 
 
+@dataclass(init=False, eq=False, repr=False)
 class PortEvent(Event):
+    direction: str = field(default="", metadata={"exclude": True})  # "input" or "output"
+    port_name: str = field(default="", metadata={"exclude": True})
+
     def __init__(self, name: str, namespace: List[str], direction: str, port_name: str):
         super().__init__(name, namespace)
-        self.direction = direction  # "input" or "output"
+        self.direction = direction
         self.port_name = port_name
 
     @property
@@ -44,19 +49,33 @@ class PortEvent(Event):
         return True
 
 
+@dataclass(init=False, eq=False, repr=False)
 class Port:
+    name: str
+    msg_type: str
+    namespace: List[str] = field(default_factory=list)
+    # Reference list: ports that this port points to (for hierarchical port connections).
+    # OutPort (publisher) can have at most 1 reference (one topic published by one node).
+    # InPort (subscriber) can have multiple references (one topic subscribed by multiple nodes).
+    reference: List["Port"] = field(default_factory=list, metadata={"exclude": True})
+    topic: List[str] = field(default_factory=list)
+    event: Optional[Event] = None
+    is_global: bool = False
+    # True when topic is set by a system remap entry
+    is_remapped: bool = False
+    remap_target: Optional[str] = None
+
+    __serde_computed__: ClassVar[tuple] = (("unique_id", "unique_id"), ("port_path", "port_path"))
+
     def __init__(self, name: str, msg_type: str, namespace: List[str] = [], remap_target: str = None):
         self.name = name
         self.msg_type = msg_type
         self.namespace = namespace
-        # Reference list: ports that this port points to (for hierarchical port connections).
-        # OutPort (publisher) can have at most 1 reference (one topic published by one node).
-        # InPort (subscriber) can have multiple references (one topic subscribed by multiple nodes).
-        self.reference: List["Port"] = []
-        self.topic: List[str] = []
+        self.reference = []
+        self.topic = []
         self.event = None
         self.is_global = False
-        self.is_remapped = False  # True when topic is set by a system remap entry
+        self.is_remapped = False
         self.remap_target = remap_target
 
     @property
@@ -96,13 +115,17 @@ class Port:
         return "/" + "/".join(self.topic)
 
 
+@dataclass(init=False, eq=False, repr=False)
 class InPort(Port):
+    is_required: bool = field(default=True, metadata={"exclude": True})
+    # Servers list: ports that this port is subscribed to (for hierarchical port connections).
+    # InPort (subscriber) can have multiple servers (one topic subscribed by multiple nodes).
+    servers: List[Port] = field(default_factory=list, metadata={"ref": True, "alias": "connected_ids"})
+
     def __init__(self, name, msg_type, namespace: List[str] = [], remap_target: str = None):
         super().__init__(name, msg_type, namespace, remap_target)
         self.is_required = True
-        # Servers list: ports that this port is subscribed to (for hierarchical port connections).
-        # InPort (subscriber) can have multiple servers (one topic subscribed by multiple nodes).
-        self.servers: List[Port] = []
+        self.servers = []
         self.event = PortEvent("input_" + name, namespace, "input", name)
         self.event.set_type("on_input")
 
@@ -139,14 +162,19 @@ class InPort(Port):
             ref_port.set_topic(topic_namespace, topic_name)
 
 
+@dataclass(init=False, eq=False, repr=False)
 class OutPort(Port):
+    frequency: float = field(default=0.0, metadata={"exclude": True})
+    is_monitored: bool = field(default=False, metadata={"exclude": True})
+    # Users list: ports subscribed to this port (for hierarchical port connections).
+    # OutPort (publisher) can have multiple users (one topic subscribed by multiple nodes).
+    users: List[Port] = field(default_factory=list, metadata={"ref": True, "alias": "connected_ids"})
+
     def __init__(self, name, msg_type, namespace: List[str] = [], remap_target: str = None):
         super().__init__(name, msg_type, namespace, remap_target)
         self.frequency = 0.0
         self.is_monitored = False
-        self.users: List[Port] = []
-        # Users list: ports that this port is subscribed to (for hierarchical port connections).
-        # OutPort (publisher) can have multiple users (one topic subscribed by multiple nodes).
+        self.users = []
         self.event = PortEvent("output_" + name, namespace, "output", name)
         self.event.set_type("to_output")
 

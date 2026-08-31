@@ -12,11 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import re
+"""Projection of the in-memory Instance graph to the system-structure payload.
+
+Field-level serialization is generic (model.serde reads the record schema off
+the model dataclasses); this module owns only what a record cannot know about
+itself: boundary-relative direction (is_outward) and tree assembly across the
+instance's managers.
+"""
+
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
 
-from autoware_system_designer.common.source_location import SourceLocation
 from autoware_system_designer.model.export_schema import (
     SCHEMA_VERSION,
     EventData,
@@ -26,151 +32,24 @@ from autoware_system_designer.model.export_schema import (
     PortData,
     SystemStructurePayload,
 )
-from autoware_system_designer.model.parameters import parameter_type_to_str
+from autoware_system_designer.model.serde import dump
 
 if TYPE_CHECKING:
     from autoware_system_designer.builder.instances import Instance
 
 
-_SCIENTIFIC_NOTATION_PATTERN = re.compile(r"^[+-]?\d+(\.\d+)?[eE][+-]?\d+$")
-
-_TYPE_ALIASES: dict[str, str] = {
-    "str": "string",
-    "boolean": "bool",
-    "float": "double",
-    "float32": "double",
-    "float64": "double",
-    "integer": "int",
-    "int8": "int",
-    "int16": "int",
-    "int32": "int",
-    "int64": "int",
-    "uint8": "int",
-    "uint16": "int",
-    "uint32": "int",
-    "uint64": "int",
-    "short": "int",
-    "long": "int",
-    "directory": "string",
-}
-
-
-def _infer_array_type(value: Any) -> str:
-    """Infer the most specific ROS 2 array type from a Python list value."""
-    if not isinstance(value, list) or not value:
-        return "string_array"
-    if all(isinstance(e, bool) for e in value):
-        return "bool_array"
-    if all(isinstance(e, int) for e in value):
-        return "int_array"
-    if all(isinstance(e, float) for e in value):
-        return "double_array"
-    return "string_array"
-
-
-def _canonical_type(data_type: str | None, value: Any) -> str:
-    """Return a canonical ROS 2 parameter type name.
-
-    Falls back to inferring from the Python value when data_type is absent or
-    still the generic "string" default despite the value being a non-string type.
-    """
-    normalized = (data_type or "").strip().lower()
-    normalized = _TYPE_ALIASES.get(normalized, normalized)
-
-    # "array" without a subtype qualifier: infer the element type from value.
-    if normalized == "array":
-        return _infer_array_type(value)
-
-    # If data_type is absent, infer from value.
-    if not normalized:
-        if isinstance(value, bool):
-            return "bool"
-        if isinstance(value, int):
-            return "int"
-        if isinstance(value, float):
-            return "double"
-        if isinstance(value, list):
-            return _infer_array_type(value)
-
-    return normalized or "string"
-
-
-def _float_to_decimal_str(value: float) -> str:
-    """Convert a float to a decimal string without scientific notation."""
-    s = repr(value)
-    if "e" in s or "E" in s:
-        return f"{value:.15f}".rstrip("0").rstrip(".")
-    return s
-
-
-def _resolve_scientific_notation(value: Any) -> Any:
-    """Convert scientific notation to decimal string representation.
-
-    Handles two cases:
-    - float: Python's YAML parser converts unquoted '1e-3' to float 0.001,
-      which json.dumps may re-serialize as '1e-05' for very small values.
-    - str: quoted '1e-3' remains a string and must be expanded to '0.001'.
-    """
-    if isinstance(value, float):
-        return _float_to_decimal_str(value)
-    if isinstance(value, str) and _SCIENTIFIC_NOTATION_PATTERN.match(value.strip()):
-        return _float_to_decimal_str(float(value))
-    return value
-
-
 def serialize_event(event) -> EventData | None:
     if not event:
         return None
-    return {
-        "unique_id": event.unique_id,
-        "name": event.name,
-        "type": event.type,
-        "process_event": event.process_event,
-        "frequency": event.frequency,
-        "warn_rate": event.warn_rate,
-        "error_rate": event.error_rate,
-        "timeout": event.timeout,
-        "trigger_ids": [t.unique_id for t in event.triggers],
-        "action_ids": [a.unique_id for a in event.actions],
-    }
+    return dump(event)
 
 
 def serialize_port(port, is_outward: bool = True) -> PortData:
-    data = {
-        "unique_id": port.unique_id,
-        "name": port.name,
-        "msg_type": port.msg_type,
-        "namespace": port.namespace,
-        "topic": port.topic,
-        "is_global": port.is_global,
-        "is_remapped": port.is_remapped,
-        "remap_target": port.remap_target,
-        "port_path": port.port_path,
-        "event": serialize_event(port.event),
-        "is_outward": is_outward,
-    }
-
-    # Add connected_ids for graph traversal
-    connected_ids = []
-    if hasattr(port, "servers"):  # InPort
-        connected_ids = [p.unique_id for p in port.servers]
-    elif hasattr(port, "users"):  # OutPort
-        connected_ids = [p.unique_id for p in port.users]
-    data["connected_ids"] = connected_ids
-
+    data = dump(port)
+    # Base ports carry no server/user references.
+    data.setdefault("connected_ids", [])
+    data["is_outward"] = is_outward
     return data
-
-
-def serialize_source(source: SourceLocation | None) -> Dict[str, Any] | None:
-    if source is None:
-        return None
-
-    return {
-        "file_path": str(source.file_path) if source.file_path is not None else None,
-        "yaml_path": source.yaml_path,
-        "line": source.line,
-        "column": source.column,
-    }
 
 
 def collect_launcher_data(instance: "Instance") -> Dict[str, Any]:
@@ -179,20 +58,13 @@ def collect_launcher_data(instance: "Instance") -> Dict[str, Any]:
         return {}
 
     if getattr(instance, "launch_manager", None) is not None:
-        data = instance.launch_manager.get_launcher_data(instance)
-        for param in data.get("param_values", []):
-            param["value"] = _resolve_scientific_notation(param["value"])
-        return data
+        return instance.launch_manager.get_launcher_data(instance)
 
     return {}
 
 
 def collect_instance_data(instance: "Instance") -> InstanceData:
-    """Convert Instance to InstanceData TypedDict.
-
-    Explicit conversion of in-memory Instance graph to typed JSON structure.
-    Ensures all InstanceData fields are populated with appropriate defaults.
-    """
+    """Assemble the instance tree payload from the instance and its managers."""
     data: InstanceData = {
         "name": instance.name,
         "unique_id": instance.unique_id,
@@ -235,22 +107,18 @@ def _collect_children(instance: "Instance") -> list[InstanceData]:
 
 
 def _collect_links(instance: "Instance") -> list[Dict[str, Any]]:
-    """Collect and serialize all links."""
+    """Collect and serialize all links; port direction is boundary-relative."""
     if not hasattr(instance.link_manager, "links"):
         return []
 
     boundary_path = instance.resolved_path
-    return [
-        {
-            "unique_id": link.unique_id,
-            "from_port": serialize_port(link.from_port, is_outward=(link.from_port.namespace == boundary_path)),
-            "to_port": serialize_port(link.to_port, is_outward=(link.to_port.namespace == boundary_path)),
-            "msg_type": link.msg_type,
-            "topic": link.topic,
-            "connection_type": link.connection_type.name,
-        }
-        for link in instance.link_manager.get_all_links()
-    ]
+    result = []
+    for link in instance.link_manager.get_all_links():
+        data = dump(link)
+        data["from_port"] = serialize_port(link.from_port, is_outward=(link.from_port.namespace == boundary_path))
+        data["to_port"] = serialize_port(link.to_port, is_outward=(link.to_port.namespace == boundary_path))
+        result.append(data)
+    return result
 
 
 def _collect_events(instance: "Instance") -> list[EventData | None]:
@@ -260,31 +128,12 @@ def _collect_events(instance: "Instance") -> list[EventData | None]:
 
 def _collect_parameters(instance: "Instance") -> list[ParameterData]:
     """Collect and serialize all parameters."""
-    return [
-        ParameterData(
-            name=p.name,
-            value=_resolve_scientific_notation(p.value),
-            type=_canonical_type(p.data_type, p.value),
-            parameter_type=parameter_type_to_str(p.parameter_type),
-            source=serialize_source(p.source),
-        )
-        for p in instance.parameter_manager.get_all_parameters()
-    ]
+    return [dump(p) for p in instance.parameter_manager.get_all_parameters()]
 
 
 def _collect_parameter_files(instance: "Instance") -> list[ParameterFileData]:
     """Collect and serialize all parameter files."""
-    return [
-        ParameterFileData(
-            name=pf.name,
-            path=pf.path,
-            allow_substs=pf.allow_substs,
-            is_override=pf.is_override,
-            parameter_type=parameter_type_to_str(pf.parameter_type),
-            source=serialize_source(pf.source),
-        )
-        for pf in instance.parameter_manager.get_all_parameter_files()
-    ]
+    return [dump(pf) for pf in instance.parameter_manager.get_all_parameter_files()]
 
 
 def collect_system_structure(instance: "Instance", system_name: str, mode: str) -> SystemStructurePayload:

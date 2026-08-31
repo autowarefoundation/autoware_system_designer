@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
+from typing import ClassVar, List, Optional
 
 from autoware_system_designer.common.exceptions import DeploymentError, ValidationError
 from autoware_system_designer.common.naming import generate_unique_id
@@ -28,8 +29,18 @@ class ConnectionType(int, Enum):
     INTERNAL_TO_EXTERNAL = 3
 
 
+@dataclass(init=False, eq=False, repr=False)
 class Link:
     # Link is a connection between two ports
+    msg_type: Optional[str] = None
+    # from-port and to-port connection; exported boundary-relative by the serializer
+    from_port: Optional[Port] = field(default=None, metadata={"exclude": True})
+    to_port: Optional[Port] = field(default=None, metadata={"exclude": True})
+    namespace: List[str] = field(default_factory=list, metadata={"exclude": True})
+    connection_type: ConnectionType = ConnectionType.UNDEFINED
+
+    __serde_computed__: ClassVar[tuple] = (("unique_id", "unique_id"), ("topic", "topic"))
+
     def __init__(
         self,
         msg_type: str,
@@ -38,14 +49,11 @@ class Link:
         namespace: List[str] = [],
         connection_type: ConnectionType = ConnectionType.UNDEFINED,
     ):
-        self.msg_type: str = msg_type
-        # from-port and to-port connection
-        self.from_port: Port = from_port
-        self.to_port: Port = to_port
-        # namespace
-        self.namespace: List[str] = namespace
-        # connection type
-        self.connection_type: ConnectionType = connection_type
+        self.msg_type = msg_type
+        self.from_port = from_port
+        self.to_port = to_port
+        self.namespace = namespace
+        self.connection_type = connection_type
         # early validation to avoid AttributeError later and provide clearer configuration error
         if self.from_port is None or self.to_port is None:
             # build contextual details safely
