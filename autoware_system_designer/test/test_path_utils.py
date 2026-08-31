@@ -19,7 +19,7 @@ from pathlib import Path
 import yaml
 
 from autoware_system_designer.common.path_utils import canonical_path, resolve_manifest_path
-from autoware_system_designer.deploy import Deployment
+from autoware_system_designer.deploy import DeploymentBuilder
 
 _COLLECTOR_PATH = Path(__file__).resolve().parents[1] / "script" / "collect_system_design_manifests.py"
 _spec = importlib.util.spec_from_file_location("collect_system_design_manifests", _COLLECTOR_PATH)
@@ -77,17 +77,17 @@ def _write_package_map(manifest_dir: Path, workspace_root):
 def test_read_manifest_anchor_returns_recorded_root(tmp_path):
     manifest_dir = tmp_path / "resource"
     _write_package_map(manifest_dir, str(tmp_path))
-    assert Deployment._read_manifest_anchor(str(manifest_dir)) == str(tmp_path)
+    assert DeploymentBuilder._read_manifest_anchor(str(manifest_dir)) == str(tmp_path)
 
 
 def test_read_manifest_anchor_falls_back_when_root_is_stale(tmp_path):
     manifest_dir = tmp_path / "resource"
     _write_package_map(manifest_dir, "/nonexistent/build/machine/ws")
-    assert Deployment._read_manifest_anchor(str(manifest_dir)) == str(manifest_dir)
+    assert DeploymentBuilder._read_manifest_anchor(str(manifest_dir)) == str(manifest_dir)
 
 
 def test_read_manifest_anchor_falls_back_when_unrecorded(tmp_path):
     manifest_dir = tmp_path / "resource"
     _write_package_map(manifest_dir, None)
-    assert Deployment._read_manifest_anchor(str(manifest_dir)) == str(manifest_dir)
-    assert Deployment._read_manifest_anchor(str(tmp_path / "missing")) == str(tmp_path / "missing")
+    assert DeploymentBuilder._read_manifest_anchor(str(manifest_dir)) == str(manifest_dir)
+    assert DeploymentBuilder._read_manifest_anchor(str(tmp_path / "missing")) == str(tmp_path / "missing")

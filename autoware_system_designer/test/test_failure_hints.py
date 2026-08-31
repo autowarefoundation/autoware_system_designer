@@ -21,7 +21,7 @@ import yaml
 from conftest import write_node, write_system
 
 from autoware_system_designer.common.deployment_config import DeploymentConfig
-from autoware_system_designer.deploy import Deployment
+from autoware_system_designer.deploy import DeploymentBuilder
 
 _PROCESS_PATH = Path(__file__).resolve().parents[1] / "script" / "deployment_process.py"
 _spec = importlib.util.spec_from_file_location("deployment_process", _PROCESS_PATH)
@@ -53,7 +53,7 @@ def test_construction_failure_carries_registry_on_exception(tmp_path):
     config.output_root_dir = str(tmp_path / "out")
 
     with pytest.raises(Exception) as excinfo:
-        Deployment(config)
+        DeploymentBuilder(config).build()
     assert getattr(excinfo.value, "config_registry", None) is not None
 
 

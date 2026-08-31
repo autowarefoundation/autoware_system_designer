@@ -15,7 +15,7 @@
 from pathlib import Path
 
 from autoware_system_designer.builder.config.config_registry import ConfigRegistry, _package_distance
-from autoware_system_designer.deploy import Deployment
+from autoware_system_designer.deploy import DeploymentBuilder
 
 
 def _registry(workspace, anchor_dir=None):
@@ -101,7 +101,7 @@ def test_system_group_accepts_short_and_full_names(duplicate_workspace):
 def test_finalize_selection_policy_pins_anchor_and_package_for_bare_names(duplicate_workspace):
     registry = _registry(duplicate_workspace)
     assert registry.anchor_dir is None
-    Deployment._finalize_selection_policy("Tiny.system", registry, duplicate_workspace["file_package_map"])
+    DeploymentBuilder._finalize_selection_policy("Tiny.system", registry, duplicate_workspace["file_package_map"])
     assert registry.anchor_dir == str(Path(str(duplicate_workspace["files"]["system_a"])).parent)
     assert registry.deployment_package_name == "pkg_a"
     node = registry.get_node("Demo")
@@ -110,6 +110,6 @@ def test_finalize_selection_policy_pins_anchor_and_package_for_bare_names(duplic
 
 def test_finalize_selection_policy_leaves_unknown_targets_untouched(duplicate_workspace):
     registry = _registry(duplicate_workspace)
-    Deployment._finalize_selection_policy("Missing.system", registry, duplicate_workspace["file_package_map"])
+    DeploymentBuilder._finalize_selection_policy("Missing.system", registry, duplicate_workspace["file_package_map"])
     assert registry.anchor_dir is None
     assert registry.deployment_package_name is None
