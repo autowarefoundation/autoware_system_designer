@@ -125,10 +125,12 @@ def _ros_args(
         args += ["-r", f"__ns:={ns}"]
     if name:
         args += ["-r", f"__node:={name}"]
-    for k, v in inline_params.items():
-        args += _ros_arg_for_param(k, v)
+    # Param files precede inline params; rcl is last-wins, so explicit values
+    # override file contents, matching the exported XML launchers.
     for f in param_files:
         args += ["--params-file", f]
+    for k, v in inline_params.items():
+        args += _ros_arg_for_param(k, v)
     for src, dst in remaps:
         args += ["-r", f"{src}:={dst}"]
     return args
