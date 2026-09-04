@@ -180,8 +180,26 @@ class ParameterManager:
         # sort by its priority. larger enum value is lower priority, comes earlier in the launcher
         self.parameters.list.sort(key=lambda x: x.parameter_type.value)
 
+        # ROS parameter files cannot represent empty arrays; an empty-list value
+        # crashes the rcl parser at node startup. Entries with empty-list values
+        # are never emitted, and when the effective (highest-priority) value of a
+        # name is empty, every entry of that name is omitted so the node's
+        # declared default applies.
+        def _is_empty_list(value: Any) -> bool:
+            return isinstance(value, (list, tuple)) and len(value) == 0
+
+        effective: Dict[str, Any] = {}
+        for param in self.parameters.list:
+            if param.value is not None:
+                effective[param.name] = param.value
+        omitted_names = {name for name, value in effective.items() if _is_empty_list(value)}
+        for name in omitted_names:
+            logger.debug(f"Parameter '{name}' resolves to an empty list; omitted so the node default applies.")
+
         # Add regular parameters
         for param in self.parameters.list:
+            if param.name in omitted_names or _is_empty_list(param.value):
+                continue
             if param.value is not None:
                 result.append(
                     {

@@ -11,12 +11,12 @@
   <include file="$(var root_dir)/lidar/lidar.launch.xml">
   </include>
 
-  <!-- Include component perception_container -->
-  <include file="$(var root_dir)/perception_container/perception_container.launch.xml">
-  </include>
-
   <!-- Include component pipeline -->
   <include file="$(var root_dir)/pipeline/pipeline.launch.xml">
+  </include>
+
+  <!-- Include component perception_container -->
+  <include file="$(var root_dir)/perception_container/perception_container.launch.xml">
   </include>
 
 </launch>

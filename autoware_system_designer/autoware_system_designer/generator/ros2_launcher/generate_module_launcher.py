@@ -94,8 +94,10 @@ def _generate_compute_unit_launcher(
     launcher_file = os.path.join(compute_unit_dir, f"{compute_unit.lower()}.launch.xml")
     logger.debug(f"Creating compute unit launcher: {launcher_file}")
 
+    # Components are included in system-design declaration order; global
+    # parameter setters must run before the nodes that read them.
     components_data = []
-    for component in sorted(components, key=lambda c: c.get("name", "")):
+    for component in components:
         component_name = component.get("name", "")
         args_for_component = (component_forward_args or {}).get(component_name, [])
         components_data.append({"component": component_name, "args": args_for_component})
