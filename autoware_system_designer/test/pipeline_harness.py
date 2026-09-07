@@ -127,16 +127,18 @@ def run_pipeline(
     tmp_path: Path,
     strict: bool = False,
     workspace_yaml: Optional[str] = None,
+    out_root: Optional[Path] = None,
 ) -> PipelineRun:
     """Run the full pipeline (build, export, generate, visualize) in-process.
 
     *target* is a path relative to *workspace* (deployment/system/deployments file)
-    or an absolute path / bare entity name passed through unchanged.
+    or an absolute path / bare entity name passed through unchanged. *out_root*
+    defaults inside the recorded workspace root; pass it to export elsewhere.
     """
     from autoware_system_designer.parser.yaml_parser import yaml_parser
 
     manifest_dir = tmp_path / "manifests"
-    out_root = tmp_path / "out"
+    out_root = out_root or tmp_path / "out"
     write_manifests(workspace, manifest_dir)
 
     target_path = workspace / target

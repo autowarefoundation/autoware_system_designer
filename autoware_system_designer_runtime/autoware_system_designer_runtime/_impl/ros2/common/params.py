@@ -64,8 +64,9 @@ def resolve_value(value: Any, type_hint: Optional[str] = None) -> Any:
 
     hint = (type_hint or "").strip().lower()
 
-    if hint == "bool":
-        return s.lower() not in ("false", "0", "no", "off", "")
+    # An empty value carries no truth: it falls through rather than reading as False.
+    if hint == "bool" and s != "":
+        return s.lower() not in ("false", "0", "no", "off")
     if hint == "int":
         try:
             return int(s)

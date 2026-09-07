@@ -78,10 +78,10 @@ repos:
 
       - id: check-version-sync
         name: check version sync
-        description: Ensure version in pyproject.toml and package.xml are identical
+        description: Ensure version in pyproject.toml, package.xml and setup.py are identical
         entry: python3 tools/check-version-sync.py
         language: system
-        files: (pyproject\.toml|package\.xml)$
+        files: (pyproject\.toml|package\.xml|setup\.py)$
         pass_filenames: false
 
       - id: build-example-systems

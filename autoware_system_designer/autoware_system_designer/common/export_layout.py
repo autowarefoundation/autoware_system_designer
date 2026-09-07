@@ -17,6 +17,9 @@
 import os
 from dataclasses import dataclass
 
+# Artifacts manifest; sits beside the per-mode directories so no mode name can claim it.
+ARTIFACTS_FILENAME = "deployment.json"
+
 
 @dataclass(frozen=True)
 class ExportLayout:
@@ -48,3 +51,7 @@ class ExportLayout:
     @property
     def system_structure_dir(self) -> str:
         return os.path.join(self.exports_dir, "system_structure/")
+
+    @property
+    def artifacts_manifest(self) -> str:
+        return os.path.join(self.exports_dir, ARTIFACTS_FILENAME)

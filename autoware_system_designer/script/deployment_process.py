@@ -100,8 +100,15 @@ def build(deployment_file: str, manifest_dir: str, output_root_dir: str, workspa
     except SystemDesignerError as exc:
         # The process boundary reports once: hints attach to the error and the
         # whole block (message, context frames, hints) renders in one log entry.
-        _attach_registry_hints(artifacts, exc)
+        for hint in _registry_hints(artifacts, exc):
+            exc.add_hint(hint)
         _logger.error(render_error(exc))
+        raise
+    except Exception as exc:
+        # An unexpected failure keeps its traceback; the hints still apply, and
+        # they matter most where the error itself names no design entity.
+        for hint in _registry_hints(artifacts, exc):
+            _logger.error(hint)
         raise
 
 
@@ -113,25 +120,27 @@ def _find_registry(artifacts, exc):
     return getattr(artifacts, "config_registry", None) if artifacts else None
 
 
-def _attach_registry_hints(artifacts, exc: SystemDesignerError) -> None:
-    """Attach duplicate-name and minor-version hints recorded by the registry."""
+def _registry_hints(artifacts, exc) -> list:
+    """Duplicate-name and minor-version hints recorded by the registry."""
     registry = _find_registry(artifacts, exc)
     if registry is None:
-        return
+        return []
     from autoware_system_designer.builder.config.config_registry import (
         format_duplicate_report,
         format_mismatch_hint,
     )
 
+    hints = []
     duplicates = registry.used_duplicates()
     if duplicates:
-        exc.add_hint(
+        hints.append(
             f"Note: {len(duplicates)} duplicated entity name(s) are used by this deployment. "
             f"This may have contributed to the error:\n" + format_duplicate_report(duplicates)
         )
     files = getattr(registry, "minor_version_mismatch_files", [])
     if files:
-        exc.add_hint(format_mismatch_hint(files))
+        hints.append(format_mismatch_hint(files))
+    return hints
 
 
 if __name__ == "__main__":

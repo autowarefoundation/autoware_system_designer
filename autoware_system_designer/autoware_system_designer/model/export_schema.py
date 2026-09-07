@@ -24,7 +24,8 @@ from __future__ import annotations
 from typing import Any, Dict
 
 # Version for the on-disk system structure JSON payload.
-SCHEMA_VERSION = "1.0"
+# 1.1: parameter types are canonical ROS 2 names; presentation data (vis_guide) is not exported.
+SCHEMA_VERSION = "1.1"
 
 # Serialized record shapes (JSON objects), keyed as written by model.serde.
 EventData = Dict[str, Any]

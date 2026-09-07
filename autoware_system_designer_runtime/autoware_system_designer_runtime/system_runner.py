@@ -55,7 +55,8 @@ def _derive_workspace_root(json_path: Path) -> Optional[str]:
     env_root = os.environ.get(_WORKSPACE_ROOT_ENV)
     if env_root:
         return os.path.realpath(env_root)
-    manifest = json_path.parent / _ARTIFACTS_FILENAME
+    # <output_root>/exports/<system>/deployment.json, beside the system_structure dir.
+    manifest = json_path.parent.parent / _ARTIFACTS_FILENAME
     try:
         tokenized = json.loads(manifest.read_text()).get("deployment_package_path", "")
     except (OSError, ValueError):

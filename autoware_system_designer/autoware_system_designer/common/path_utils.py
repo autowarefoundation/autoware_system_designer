@@ -38,6 +38,13 @@ def resolve_manifest_path(path: str, anchor: str) -> str:
     return canonical_path(path if os.path.isabs(path) else os.path.join(anchor, path))
 
 
+def is_within(path: str, root: str) -> bool:
+    """True when *path* resolves inside *root*, both in canonical form."""
+    root_c = canonical_path(root).rstrip(os.sep)
+    path_c = canonical_path(path).rstrip(os.sep)
+    return path_c == root_c or path_c.startswith(root_c + os.sep)
+
+
 def _map_strings(value: Any, convert) -> Any:
     """Copy of a JSON payload with *convert* applied to every string, dict keys included."""
     if isinstance(value, str):

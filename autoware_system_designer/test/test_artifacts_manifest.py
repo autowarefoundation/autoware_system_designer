@@ -22,6 +22,7 @@ import shutil
 
 from pipeline_harness import run_pipeline, stage_case
 
+from autoware_system_designer.common.path_utils import WORKSPACE_ROOT_TOKEN
 from autoware_system_designer.deploy import (
     _collect_deploy_variable_names,
     generate_build_scripts,
@@ -78,3 +79,39 @@ def test_export_json_holds_no_absolute_workspace_paths(tmp_path):
     artifacts = load_build_artifacts(str(run.out_root), run.system_name)
     assert artifacts.workspace_root == str(tmp_path.resolve())
     assert artifacts.system_file.startswith(str(tmp_path.resolve()))
+
+
+def test_mode_named_deployment_keeps_its_structure_export(tmp_path):
+    """The manifest lives outside the mode namespace, so no mode name can claim its file."""
+    workspace = stage_case("modes_variant", tmp_path)
+    system_file = workspace / "variant_pkg" / "Base.system.yaml"
+    system_file.write_text(system_file.read_text().replace("simulation", "deployment"))
+
+    run = run_pipeline(workspace, "variant_pkg/VehicleY.system.yaml", tmp_path)
+
+    structure = run.structure("deployment")
+    assert structure["data"], "the mode export must survive the artifacts manifest write"
+    assert (run.exports_dir / "deployment.json").is_file()
+
+    artifacts = load_build_artifacts(str(run.out_root), run.system_name)
+    assert "deployment" in artifacts.mode_keys
+
+
+def test_export_outside_workspace_stays_absolute(tmp_path):
+    """An export outside the workspace cannot re-derive the root, so it carries no token."""
+    workspace = stage_case("single_node", tmp_path)
+    # The harness records tmp_path as the workspace root; export beside it, not under it.
+    out_root = tmp_path.parent / f"{tmp_path.name}_external_export"
+    shutil.rmtree(out_root, ignore_errors=True)
+    try:
+        run = run_pipeline(workspace, "demo_pkg/Solo.system.yaml", tmp_path, out_root=out_root)
+
+        for json_file in sorted(run.exports_dir.rglob("*.json")):
+            assert WORKSPACE_ROOT_TOKEN not in json_file.read_text(), f"{json_file.name} is unresolvable here"
+
+        artifacts = load_build_artifacts(str(run.out_root), run.system_name)
+        assert artifacts.workspace_root is None
+        assert artifacts.system_file.startswith(str(tmp_path.resolve()))
+        generate_launchers(artifacts)
+    finally:
+        shutil.rmtree(out_root, ignore_errors=True)

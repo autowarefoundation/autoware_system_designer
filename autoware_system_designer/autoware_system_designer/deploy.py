@@ -49,6 +49,7 @@ from autoware_system_designer.common.path_utils import (
     derive_workspace_root,
     expand_workspace_paths,
     has_workspace_token,
+    is_within,
     resolve_manifest_path,
 )
 from autoware_system_designer.common.source_location import SourceLocation, format_source
@@ -66,9 +67,6 @@ from autoware_system_designer.visualizer.launch_commands_page import generate_la
 from autoware_system_designer.visualizer.visualize_deployment import visualize_deployment
 
 logger = logging.getLogger(__name__)
-
-# Artifacts manifest inside the system_structure directory.
-ARTIFACTS_FILENAME = "deployment.json"
 
 
 @dataclass
@@ -100,7 +98,7 @@ class BuildArtifacts:
 
 def save_artifacts_manifest(artifacts: BuildArtifacts) -> str:
     """Write the artifacts manifest that makes the export self-describing."""
-    path = os.path.join(artifacts.layout.system_structure_dir, ARTIFACTS_FILENAME)
+    path = artifacts.layout.artifacts_manifest
     payload = {"schema_version": SCHEMA_VERSION, **serde.dump(artifacts)}
     payload = contract_workspace_paths(payload, artifacts.workspace_root)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -112,7 +110,7 @@ def save_artifacts_manifest(artifacts: BuildArtifacts) -> str:
 def load_build_artifacts(output_root_dir: str, system_name: str) -> BuildArtifacts:
     """Reconstruct artifacts from an exported manifest (no registry, no snapshots)."""
     layout = ExportLayout(output_root_dir, system_name)
-    path = os.path.join(layout.system_structure_dir, ARTIFACTS_FILENAME)
+    path = layout.artifacts_manifest
     with open(path) as f:
         payload = json.load(f)
     workspace_root = derive_workspace_root(output_root_dir, payload.get("deployment_package_path", ""))
@@ -225,7 +223,7 @@ class DeploymentBuilder:
         layout = ExportLayout(self.deploy_config.output_root_dir, system_config.name)
         return BuildArtifacts(
             layout=layout,
-            workspace_root=self._workspace_root,
+            workspace_root=self._export_workspace_root(),
             system_file=str(system_config.file_path),
             deployment_package_path=str(Path(self.deploy_config.output_root_dir).resolve()),
             deployment_package_name=getattr(self.config_registry, "deployment_package_name", None),
@@ -234,6 +232,21 @@ class DeploymentBuilder:
             file_package_map=self.config_registry.file_package_map,
             config_registry=self.config_registry,
         )
+
+    def _export_workspace_root(self) -> Optional[str]:
+        """Token base for exported paths; None when the export tree sits outside the workspace.
+
+        The root is re-derived on load from where the export tree resides, which only
+        works while the tree is under the root; otherwise paths are exported absolute.
+        """
+        root = self._workspace_root
+        if root and not is_within(self.deploy_config.output_root_dir, root):
+            logger.info(
+                f"Export directory '{self.deploy_config.output_root_dir}' is outside the workspace root "
+                f"'{root}'; exporting absolute paths."
+            )
+            return None
+        return root
 
     @staticmethod
     def _collect_system_argument_names(system_config: SystemConfig) -> List[str]:
@@ -507,9 +520,7 @@ def generate_visualization(artifacts: BuildArtifacts) -> None:
 
 def generate_system_monitor_config(artifacts: BuildArtifacts) -> None:
     """Generate system monitor configuration from the exported JSON."""
-    template_dir = os.path.join(os.path.dirname(__file__), "template")
-    topics_template_path = os.path.join(template_dir, "sys_monitor_topics.yaml.jinja2")
-    template_name = os.path.basename(topics_template_path)
+    template_name = "sys_monitor_topics.yaml.jinja2"
 
     renderer = TemplateRenderer()
     for mode_key, data in _iter_mode_data(artifacts):
