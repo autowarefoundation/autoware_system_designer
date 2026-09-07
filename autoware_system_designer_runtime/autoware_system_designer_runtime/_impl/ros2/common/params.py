@@ -108,6 +108,11 @@ def _ros_arg_for_param(name: str, value: Any) -> list[str]:
     if not _VALID_PARAM_KEY.match(name):
         logger.warning("skipping unsafe param name %r", name)
         return []
+    # An empty sequence carries no element type, so rcl rejects it; the name is
+    # left unset and the node's declared default applies.
+    if isinstance(value, (list, tuple)) and not value:
+        logger.debug("param %r resolves to an empty list; omitted so the node default applies", name)
+        return []
     encoded = yaml.safe_dump(value, default_flow_style=True).strip()
     return ["-p", f"{name}:={encoded}"]
 

@@ -217,14 +217,15 @@ def composable_spec(spec: Mapping, extra_param_files: Optional[list[str]] = None
 
 
 def glog_spec_for(container_target_fqn: str) -> ComposableSpec:
-    ns_parts = container_target_fqn.rsplit("/", 1)
-    container_ns = ns_parts[0] or "/"
+    """Glog companion for one container, named after it so siblings sharing a namespace stay distinct."""
+    container_ns, _, container_name = container_target_fqn.rpartition("/")
+    node_name = f"{_GLOG_NAME}_{container_name}"
     return ComposableSpec(
-        name=f"{container_target_fqn}/{_GLOG_NAME}",
+        name=f"{container_ns}/{node_name}",
         package=_GLOG_PKG,
         plugin=_GLOG_PLUGIN,
-        node_name=_GLOG_NAME,
-        namespace=container_ns,
+        node_name=node_name,
+        namespace=container_ns or "/",
         target_container_fqn=container_target_fqn,
     )
 
