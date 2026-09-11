@@ -49,6 +49,7 @@
       this.gateIds = new Set();
       this.groups = new Map(); // instanceId → <g>
       this.groupDepth = new Map();
+      this.eventDepth = new Map(); // eventId → depth of the layer it is drawn in
       this.currentGraph = null;
       this.showUnlinked = false;
       this.traceMode = "both";
@@ -421,6 +422,7 @@
       this.container.classList.add("logic-diagram-container");
       this.groups.clear();
       this.groupDepth.clear();
+      this.eventDepth.clear();
       this.selectedId = null;
 
       this.renderInstance(graph, layer, 0);
@@ -444,12 +446,14 @@
         this.appendInstanceLabels(g, node, instance, style, depth);
       }
 
-      (node.ports || []).forEach((port) =>
-        g.appendChild(this.buildEventPort(port, instance, node, style)),
-      );
+      (node.ports || []).forEach((port) => {
+        this.eventDepth.set(port.id, depth);
+        g.appendChild(this.buildEventPort(port, instance, node, style));
+      });
 
       (node.children || []).forEach((child) => {
         if (this.gateIds.has(child.id)) {
+          this.eventDepth.set(child.id, depth + 1);
           g.appendChild(this.buildGate(child, instance, depth + 1));
         } else {
           this.renderInstance(child, g, depth + 1);
@@ -691,7 +695,17 @@
       });
     }
 
-    buildEdgePath(laidEdge, depth) {
+    // The finest event an edge touches sets its line weight, so a line never
+    // outgrows the port or gate it lands on.
+    endpointDepth(laidEdge, containerDepth) {
+      const ends = [laidEdge.sources?.[0], laidEdge.targets?.[0]]
+        .map((id) => this.eventDepth.get(id))
+        .filter((d) => d !== undefined);
+      return ends.length ? Math.max(...ends) : containerDepth;
+    }
+
+    buildEdgePath(laidEdge, containerDepth) {
+      const depth = this.endpointDepth(laidEdge, containerDepth);
       const style = this.getLayerStyle(depth);
       let d = "";
       laidEdge.sections.forEach((section) => {
