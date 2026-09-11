@@ -4,6 +4,12 @@
   const FIT_SCALE_CAP = 1;
   const MAX_ZOOM = 5;
 
+  // Topic stars span the whole graph, so they are sized in screen pixels and
+  // redrawn against the live zoom instead of a layer scale.
+  const STAR_LINE_WIDTH = 1.4;
+  const STAR_HUB_RADIUS = 7;
+  const STAR_FONT_SIZE = 11;
+
   class NodeDiagramModule extends DiagramBase {
     // ── Initialization ──────────────────────────────────────────────────────────
 
@@ -22,6 +28,10 @@
       this.portToEdges = new Map();
       this.portToNode = new Map();
       this.nodeConnectionDirections = new Map();
+      this.globalTopics = new Map();
+      this.portAbsPos = new Map();
+      this.globalOverlay = null;
+      this.activeGlobalTopic = null;
       this.colorPresets = null;
       this.styleDefaults = null;
 
@@ -199,7 +209,54 @@
         if (!rootNode.id) rootNode.id = "root";
       }
       this._injectRemapHub(rootNode);
+      this._buildGlobalTopicIndex();
       return rootNode;
+    }
+
+    // Global ports carry no link, so the topic name is the only thing that groups
+    // them. Ports that inherited is_global through a reference chain are members
+    // of the group, but only node-owned ports are endpoints of the topic star.
+    _buildGlobalTopicIndex() {
+      this.globalTopics.clear();
+
+      for (const [id, data] of this.elementData) {
+        if (!this._isGlobalPort(data)) continue;
+        if (!this.portToNode.has(id)) continue;
+
+        const topicKey = "/" + data.topic.join("/");
+        let entry = this.globalTopics.get(topicKey);
+        if (!entry) {
+          entry = {
+            topic: topicKey,
+            members: [],
+            publishers: [],
+            subscribers: [],
+          };
+          this.globalTopics.set(topicKey, entry);
+        }
+        entry.members.push(id);
+
+        const owner = this.elementData.get(this.portToNode.get(id));
+        if (owner?.entity_type !== "node") continue;
+        const direction = this._getPortDirection(id);
+        if (direction === "downstream") entry.publishers.push(id);
+        else if (direction === "upstream") entry.subscribers.push(id);
+      }
+    }
+
+    // A remap owns the topic of the port it rewrites, so it takes the global key's
+    // place; those ports belong to the remap hub instead.
+    _isGlobalPort(portData) {
+      return (
+        portData?.is_global === true &&
+        portData.is_remapped !== true &&
+        portData.topic?.length > 0
+      );
+    }
+
+    _globalTopicOf(portData) {
+      if (!this._isGlobalPort(portData)) return null;
+      return this.globalTopics.get("/" + portData.topic.join("/")) || null;
     }
 
     findMaxDepth(instance, depth = 0) {
@@ -453,6 +510,8 @@
 
     renderNodeDiagram(graph) {
       this.container.innerHTML = "";
+      this.globalOverlay = null;
+      this.activeGlobalTopic = null;
 
       const svgRoot = document.createElementNS(SVG_NS, "svg");
       svgRoot.setAttribute("width", "100%");
@@ -477,7 +536,16 @@
 
       svgRoot.insertBefore(this._buildArrowDefs(arrowColor), svg);
 
+      this.portAbsPos.clear();
       this.renderNode(graph, svg);
+
+      // Topic stars are drawn last so straight lines cross over the boxes they
+      // connect; the layer never takes pointer events.
+      this.globalOverlay = document.createElementNS(SVG_NS, "g");
+      this.globalOverlay.setAttribute("id", "global-topic-overlay");
+      this.globalOverlay.setAttribute("pointer-events", "none");
+      svg.appendChild(this.globalOverlay);
+
       this.currentGraph = graph;
       this.currentSvgRoot = svgRoot;
     }
@@ -545,13 +613,26 @@
         );
       }).join("");
 
-      defs.innerHTML = markup;
+      // Scaled by the line width, which the star keeps constant on screen.
+      const globalMarkers = Object.keys(this.colorPresets)
+        .map(
+          (preset) =>
+            `<marker id="arrowhead-global-${preset}" markerWidth="4" markerHeight="3" refX="4" refY="1.5" orient="auto" markerUnits="strokeWidth">` +
+            `<polygon points="0 0, 4 1.5, 0 3" fill="${this.colorPresets[preset].edge}" /></marker>`,
+        )
+        .join("");
+
+      defs.innerHTML = markup + globalMarkers;
       return defs;
     }
 
-    renderNode(node, parentGroup, depth = 0) {
+    renderNode(node, parentGroup, depth = 0, originX = 0, originY = 0) {
       const style = this.getLayerStyle(depth);
       const userData = this.elementData.get(node.id) || {};
+      // ELK coordinates are parent-relative; the topic star draws straight lines
+      // across the hierarchy and needs them in the zoom layer's own space.
+      const absX = originX + (node.x || 0);
+      const absY = originY + (node.y || 0);
 
       const g = document.createElementNS(SVG_NS, "g");
       g.setAttribute("transform", `translate(${node.x},${node.y})`);
@@ -570,13 +651,22 @@
       }
 
       if (node.ports) {
-        node.ports.forEach((port) =>
-          g.appendChild(this._buildPortGroup(port, userData, style)),
-        );
+        node.ports.forEach((port) => {
+          const cx = (port.x || 0) + port.width / 2;
+          this.portAbsPos.set(port.id, {
+            x: absX + cx,
+            y: absY + (port.y || 0) + port.height / 2,
+            r: port.width / 2,
+            side: cx > (node.width || 0) / 2 ? "EAST" : "WEST",
+          });
+          g.appendChild(this._buildPortGroup(port, userData, style));
+        });
       }
 
       if (node.children) {
-        node.children.forEach((child) => this.renderNode(child, g, depth + 1));
+        node.children.forEach((child) =>
+          this.renderNode(child, g, depth + 1, absX, absY),
+        );
       }
 
       if (node.edges) {
@@ -803,6 +893,7 @@
         prect.setAttribute("height", port.height);
       }
       prect.classList.add("port-rect");
+      if (isGlobal && !isRemapped) prect.classList.add("port-global");
 
       const topicHint =
         !isRemapHub && portData.topic?.length
@@ -830,8 +921,18 @@
       pg.onclick = (e) => {
         if (this.hasDragged) return;
         e.stopPropagation();
-        this.updateInfoPanel(portData, "Port");
+        const topicEntry = this._globalTopicOf(portData);
+        this.updateInfoPanel(
+          topicEntry
+            ? {
+                ...portData,
+                global_topic: this._describeGlobalTopic(topicEntry),
+              }
+            : portData,
+          "Port",
+        );
         this.highlightConnected(port.id);
+        if (topicEntry) this.highlightGlobalTopic(topicEntry);
       };
 
       if (port.labels) {
@@ -1035,6 +1136,9 @@
         "transform",
         `translate(${this.transform.x},${this.transform.y}) scale(${this.transform.k})`,
       );
+      if (this.activeGlobalTopic) {
+        this._drawGlobalTopicStar(this.activeGlobalTopic);
+      }
     }
 
     fitToScreen() {
@@ -1080,6 +1184,8 @@
 
     clearHighlights() {
       this.nodeConnectionDirections.clear();
+      this.activeGlobalTopic = null;
+      if (this.globalOverlay) this.globalOverlay.replaceChildren();
 
       const scope = this.currentSvgRoot || this.container;
       if (!scope) return;
@@ -1250,6 +1356,187 @@
           }
         }
       }
+    }
+
+    // ── Global topics ─────────────────────────────────────────────────────────────
+
+    _describeGlobalTopic(entry) {
+      const describe = (id) => {
+        const port = this.elementData.get(id) || {};
+        return { name: port.name || "Port", path: port.port_path || "" };
+      };
+      return {
+        topic: entry.topic,
+        publishers: entry.publishers.map(describe),
+        subscribers: entry.subscribers.map(describe),
+      };
+    }
+
+    // Publisher and subscriber sides keep the diagram's direction colors:
+    // an output feeding the topic is orange, an input reading it is green.
+    _globalSideColor(direction) {
+      if (direction === "downstream") return "orange";
+      if (direction === "upstream") return "green";
+      return "teal";
+    }
+
+    highlightGlobalTopic(entry) {
+      entry.members.forEach((id) =>
+        this._applyPortHighlight(
+          id,
+          this._globalSideColor(this._getPortDirection(id)),
+        ),
+      );
+      this.activeGlobalTopic = entry;
+      this._drawGlobalTopicStar(entry);
+    }
+
+    // Members of a global topic share no link, so the star is drawn on demand
+    // between the member ports and one representative point. Redrawn on every
+    // viewport change, which is what keeps its stroke and label screen-sized.
+    _drawGlobalTopicStar(entry) {
+      const overlay = this.globalOverlay;
+      if (!overlay) return;
+      overlay.replaceChildren();
+
+      const positions = (ids) =>
+        ids.map((id) => this.portAbsPos.get(id)).filter(Boolean);
+      const publishers = positions(entry.publishers);
+      const subscribers = positions(entry.subscribers);
+      const members = publishers.concat(subscribers);
+      if (members.length === 0) return;
+
+      const metrics = this._globalStarMetrics();
+      const hub = this._globalHubPoint(members, metrics);
+      const gap = metrics.hubRadius + metrics.lineWidth;
+
+      publishers.forEach((port) =>
+        overlay.appendChild(
+          this._globalTopicLine(
+            this._pointAlong(port, hub, port.r * 1.5),
+            this._pointAlong(hub, port, gap),
+            metrics,
+            "orange",
+          ),
+        ),
+      );
+      subscribers.forEach((port) =>
+        overlay.appendChild(
+          this._globalTopicLine(
+            this._pointAlong(hub, port, gap),
+            this._pointAlong(port, hub, port.r * 1.5),
+            metrics,
+            "green",
+          ),
+        ),
+      );
+
+      // One-sided topics reach a producer or consumer outside the system.
+      const oneSided = publishers.length === 0 || subscribers.length === 0;
+      this._appendGlobalHub(overlay, entry.topic, hub, metrics, oneSided);
+    }
+
+    _globalStarMetrics() {
+      const scale = this.transform.k || 1;
+      return {
+        lineWidth: STAR_LINE_WIDTH / scale,
+        hubRadius: STAR_HUB_RADIUS / scale,
+        fontSize: STAR_FONT_SIZE / scale,
+      };
+    }
+
+    _globalHubPoint(members, metrics) {
+      if (members.length === 1) {
+        const only = members[0];
+        return {
+          x:
+            only.x +
+            (only.side === "WEST" ? -1 : 1) *
+              Math.max(metrics.hubRadius * 6, only.r * 20),
+          y: only.y,
+        };
+      }
+      const sum = members.reduce(
+        (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
+        { x: 0, y: 0 },
+      );
+      return { x: sum.x / members.length, y: sum.y / members.length };
+    }
+
+    // Point at `distance` from `from`, on the segment towards `to`.
+    _pointAlong(from, to, distance) {
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const ratio = Math.min(1, distance / length);
+      return { x: from.x + dx * ratio, y: from.y + dy * ratio };
+    }
+
+    _globalTopicLine(from, to, metrics, colorPreset) {
+      const width = metrics.lineWidth;
+      const line = document.createElementNS(SVG_NS, "line");
+      line.setAttribute("x1", from.x);
+      line.setAttribute("y1", from.y);
+      line.setAttribute("x2", to.x);
+      line.setAttribute("y2", to.y);
+      line.classList.add("global-topic-line");
+      line.style.stroke = this.colorPresets[colorPreset].edge;
+      line.style.strokeWidth = width + "px";
+      line.setAttribute("stroke-dasharray", `${width * 4} ${width * 2.5}`);
+      line.setAttribute("marker-end", `url(#arrowhead-global-${colorPreset})`);
+      return line;
+    }
+
+    _appendGlobalHub(overlay, topic, hub, metrics, oneSided) {
+      const color = this.colorPresets.teal.edge;
+      const background = this.isDarkMode()
+        ? this.styleDefaults.dark.rootBg
+        : this.styleDefaults.light.rootBg;
+      const strokeW = metrics.lineWidth;
+      const radius = metrics.hubRadius;
+
+      const circle = document.createElementNS(SVG_NS, "circle");
+      circle.setAttribute("cx", hub.x);
+      circle.setAttribute("cy", hub.y);
+      circle.setAttribute("r", radius);
+      circle.classList.add("global-topic-hub");
+      circle.style.fill = background;
+      circle.style.stroke = color;
+      circle.style.strokeWidth = strokeW + "px";
+      if (oneSided) {
+        circle.setAttribute(
+          "stroke-dasharray",
+          `${strokeW * 2} ${strokeW * 1.5}`,
+        );
+      }
+      overlay.appendChild(circle);
+
+      const fontSize = metrics.fontSize;
+      const pad = fontSize * 0.4;
+      const boxWidth = this.measureTextWidth(topic, fontSize) + pad * 2;
+      const boxHeight = fontSize + pad * 2;
+      const boxY = hub.y - radius - pad - boxHeight;
+
+      const box = document.createElementNS(SVG_NS, "rect");
+      box.setAttribute("x", hub.x - boxWidth / 2);
+      box.setAttribute("y", boxY);
+      box.setAttribute("width", boxWidth);
+      box.setAttribute("height", boxHeight);
+      box.setAttribute("rx", pad);
+      box.classList.add("global-topic-label-box");
+      box.style.fill = background;
+      box.style.stroke = color;
+      box.style.strokeWidth = strokeW + "px";
+      overlay.appendChild(box);
+
+      const label = document.createElementNS(SVG_NS, "text");
+      label.setAttribute("x", hub.x);
+      label.setAttribute("y", boxY + boxHeight / 2);
+      label.textContent = topic;
+      label.classList.add("global-topic-label");
+      label.style.fontSize = fontSize + "px";
+      label.style.fill = color;
+      overlay.appendChild(label);
     }
 
     _isPort(data) {

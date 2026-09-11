@@ -22,6 +22,7 @@
     "out_ports",
     "parameters",
     "topic",
+    "global_topic",
   ]);
 
   // Parameter source -> badge label; the matching colors live in css/styles.css.
@@ -93,6 +94,32 @@
       group.appendChild(entry);
     });
     return group;
+  }
+
+  // Ports reaching the same global topic; they carry no link of their own.
+  function globalTopicCard(globalTopic) {
+    const groups = [];
+    const peerGroup = (title, peers) => {
+      const group = element("div", "info-group");
+      group.appendChild(element("div", "info-subtitle", title));
+      peers.forEach((peer) => {
+        const entry = element("div", "port-entry");
+        entry.appendChild(element("div", "port-name", peer.name));
+        if (peer.path)
+          entry.appendChild(element("div", "port-type", peer.path));
+        group.appendChild(entry);
+      });
+      return group;
+    };
+
+    if (globalTopic.publishers.length) {
+      groups.push(peerGroup("Publishers", globalTopic.publishers));
+    }
+    if (globalTopic.subscribers.length) {
+      groups.push(peerGroup("Subscribers", globalTopic.subscribers));
+    }
+    if (!groups.length) return null;
+    return card(`Global Topic ${globalTopic.topic}`, ...groups);
   }
 
   function interfaceCard(data) {
@@ -177,6 +204,7 @@
 
     const cards = [
       data.topic ? topicCard(data.topic) : null,
+      data.global_topic ? globalTopicCard(data.global_topic) : null,
       infoCard(data),
       interfaceCard(data),
       parameterCard(data.parameters),

@@ -295,6 +295,24 @@ body {
   dominant-baseline: middle;
 }
 
+/* Port whose topic is fixed by a node-level global key */
+.port-global {
+  stroke: #20c997;
+  fill: rgba(32, 201, 151, 0.3);
+}
+
+/* Global topic star: shown only while one of its ports is selected.
+   Stroke and fill are set by JS so they follow the diagram color presets. */
+.global-topic-line {
+  fill: none;
+}
+
+.global-topic-label {
+  font-family: "Segoe UI", sans-serif;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
 .edge-path {
   fill: none;
   stroke: var(--text-secondary);
