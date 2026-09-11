@@ -434,8 +434,18 @@ class NodeDiagramModule extends DiagramBase {
         algorithm: "layered",
         "org.eclipse.elk.direction": "RIGHT",
         "org.eclipse.elk.edgeRouting": "ORTHOGONAL",
-        "org.eclipse.elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
-        "org.eclipse.elk.layered.layering.strategy": "INTERACTIVE",
+        // Layer assignment and in-layer placement both minimize total edge
+        // length, so connected boxes stay adjacent instead of being spread
+        // apart to keep edges straight.
+        "org.eclipse.elk.layered.layering.strategy": "NETWORK_SIMPLEX",
+        "org.eclipse.elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+        // Horizontal compaction pass over the placed graph. SCANLINE
+        // constraints reject this graph's hitboxes.
+        "org.eclipse.elk.layered.compaction.postCompaction.strategy": "LEFT",
+        "org.eclipse.elk.layered.compaction.postCompaction.constraints": "QUADRATIC",
+        // Crossing-reduction passes; fewer crossings mean fewer long detours,
+        // at roughly 5x the layout time on a full system graph.
+        "org.eclipse.elk.layered.thoroughness": "15",
         "org.eclipse.elk.padding": "[top=50,left=50,bottom=50,right=50]",
       },
     });
