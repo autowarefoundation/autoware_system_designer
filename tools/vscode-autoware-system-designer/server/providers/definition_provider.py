@@ -4,6 +4,7 @@ from typing import Optional
 
 from lsprotocol import types as lsp
 from registry_manager import RegistryManager
+from utils.source_map_utils import source_map_line
 from utils.text_utils import get_word_at_position
 from utils.uri_utils import path_to_uri, uri_to_path
 
@@ -28,19 +29,7 @@ class DefinitionProvider:
 
         # Check if it's an entity name
         if word in self.registry_manager.entity_registry:
-            config = self.registry_manager.entity_registry[word]
-            # Use source_map to find the exact line of the 'name' field
-            line_num = 0
-            if hasattr(config, "source_map") and config.source_map and "name" in config.source_map:
-                # source_map['name'] is (line, column) tuple; YAML lines are 0-indexed
-                line_num = config.source_map["name"][0]
-            return lsp.Location(
-                uri=path_to_uri(str(config.file_path)),
-                range=lsp.Range(
-                    start=lsp.Position(line=line_num, character=0),
-                    end=lsp.Position(line=line_num + 1, character=0),
-                ),
-            )
+            return self._entity_location(self.registry_manager.entity_registry[word])
 
         # Check if it's a connection reference that points to another entity
         current_file_path = uri_to_path(params.text_document.uri)
@@ -52,6 +41,17 @@ class DefinitionProvider:
                 return location
 
         return None
+
+    def _entity_location(self, config: Config) -> lsp.Location:
+        """Point at the 'name' field of an entity file."""
+        line_num = source_map_line(getattr(config, "source_map", None), "/name") or 0
+        return lsp.Location(
+            uri=path_to_uri(str(config.file_path)),
+            range=lsp.Range(
+                start=lsp.Position(line=line_num, character=0),
+                end=lsp.Position(line=line_num + 1, character=0),
+            ),
+        )
 
     def _find_definition_in_connection(self, word: str, config: Config) -> Optional[lsp.Location]:
         """Find definition for connection references."""
@@ -72,22 +72,7 @@ class DefinitionProvider:
                         if instance.get("name") == instance_name:
                             entity_name = instance.get("entity")
                             if entity_name in self.registry_manager.entity_registry:
-                                entity_config = self.registry_manager.entity_registry[entity_name]
-                                # Use source_map for precise line of 'name' field
-                                line_num = 0
-                                if (
-                                    hasattr(entity_config, "source_map")
-                                    and entity_config.source_map
-                                    and "name" in entity_config.source_map
-                                ):
-                                    line_num = entity_config.source_map["name"][0]
-                                return lsp.Location(
-                                    uri=path_to_uri(str(entity_config.file_path)),
-                                    range=lsp.Range(
-                                        start=lsp.Position(line=line_num, character=0),
-                                        end=lsp.Position(line=line_num + 1, character=0),
-                                    ),
-                                )
+                                return self._entity_location(self.registry_manager.entity_registry[entity_name])
 
             elif config.entity_type == ConfigType.SYSTEM:
                 # Handle system connections: component.direction.port_name
@@ -100,21 +85,6 @@ class DefinitionProvider:
                         if component.get("name") == component_name:
                             component_entity = component.get("entity")
                             if component_entity in self.registry_manager.entity_registry:
-                                entity_config = self.registry_manager.entity_registry[component_entity]
-                                # Use source_map for precise line of 'name' field
-                                line_num = 0
-                                if (
-                                    hasattr(entity_config, "source_map")
-                                    and entity_config.source_map
-                                    and "name" in entity_config.source_map
-                                ):
-                                    line_num = entity_config.source_map["name"][0]
-                                return lsp.Location(
-                                    uri=path_to_uri(str(entity_config.file_path)),
-                                    range=lsp.Range(
-                                        start=lsp.Position(line=line_num, character=0),
-                                        end=lsp.Position(line=line_num + 1, character=0),
-                                    ),
-                                )
+                                return self._entity_location(self.registry_manager.entity_registry[component_entity])
 
         return None

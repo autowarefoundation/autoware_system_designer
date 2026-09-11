@@ -2,17 +2,41 @@
 
 import logging
 import re
-from typing import List, Optional, Set, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Set, Tuple
 
 import yaml
 from lsprotocol import types as lsp
 from registry_manager import RegistryManager
 from resolution_service import ResolutionService
+from utils.source_map_utils import source_map_range
 
+from autoware_system_designer.builder.graph.link_manager import match_and_pair_wildcard_ports
 from autoware_system_designer.model.config import Config, ConfigType
 from autoware_system_designer.model.domain import PortDefinition
+from autoware_system_designer.model.links import Connection
 
 logger = logging.getLogger(__name__)
+
+# Wildcard characters a connection reference may use; each one captures independently.
+_WILDCARD_CHARS = "*^+"
+
+# A resolved port entry: the entity owning the port, its direction, and the port itself.
+_PortEntry = Tuple[Config, str, PortDefinition]
+
+
+@dataclass
+class _ConnectionGraph:
+    """Port key space of one module or system, keyed as ``instance.port``.
+
+    External declarations of the entity itself use an empty instance name, so they
+    are keyed as ``.port``.
+    """
+
+    outputs: Dict[str, _PortEntry] = field(default_factory=dict)
+    inputs: Dict[str, _PortEntry] = field(default_factory=dict)
+    child_names: List[str] = field(default_factory=list)
+    unresolved: Dict[str, Optional[str]] = field(default_factory=dict)
 
 
 class ValidationEngine:
@@ -83,7 +107,7 @@ class ValidationEngine:
                     diagnostics.append(
                         lsp.Diagnostic(
                             range=name_range,
-                            message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
+                            message=self._name_mismatch_message(name_from_content, actual_filename),
                             severity=lsp.DiagnosticSeverity.Error,
                         )
                     )
@@ -95,7 +119,7 @@ class ValidationEngine:
                                 start=lsp.Position(line=0, character=0),
                                 end=lsp.Position(line=0, character=1),
                             ),
-                            message=f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'",
+                            message=self._name_mismatch_message(name_from_content, actual_filename),
                             severity=lsp.DiagnosticSeverity.Error,
                         )
                     )
@@ -125,7 +149,7 @@ class ValidationEngine:
             # Find the name field range to underline it
             name_range = self._find_name_field_range(document_content)
 
-            message = f"File name '{actual_filename}' does not match design name '{name_from_content}'. Expected: '{actual_filename}'"
+            message = self._name_mismatch_message(name_from_content, actual_filename)
 
             if name_range:
                 diagnostics.append(
@@ -145,6 +169,13 @@ class ValidationEngine:
                 )
 
         return diagnostics
+
+    @staticmethod
+    def _name_mismatch_message(design_name: str, file_stem: str) -> str:
+        return (
+            f"Design name '{design_name}' does not match file name '{file_stem}'. "
+            f"Rename the file to '{design_name}.yaml' or set name to '{file_stem}'"
+        )
 
     def validate_yaml_format(self, document_content: str) -> List[lsp.Diagnostic]:
         """Validate YAML format and syntax."""
@@ -196,278 +227,246 @@ class ValidationEngine:
 
     def validate_connections(self, config: Config, document_content: str = None) -> List[lsp.Diagnostic]:
         """Validate connections in the config and return diagnostics."""
-        diagnostics = []
+        diagnostics: List[lsp.Diagnostic] = []
 
-        if config.entity_type in [ConfigType.MODULE, ConfigType.SYSTEM]:
-            connections = config.connections or []
-            for i, connection in enumerate(connections):
-                # Connections are stored as 2-element lists [source, dest]
-                if isinstance(connection, (list, tuple)) and len(connection) >= 2:
-                    from_ref = str(connection[0])
-                    to_ref = str(connection[1])
-                elif isinstance(connection, dict):
-                    from_ref = connection.get("from", "")
-                    to_ref = connection.get("to", "")
-                else:
-                    continue
+        if config.entity_type not in (ConfigType.MODULE, ConfigType.SYSTEM):
+            return diagnostics
 
-                # Validate from reference
-                from_valid, from_message = self._validate_connection_reference(from_ref, config)
-                if not from_valid:
-                    diagnostics.append(
-                        lsp.Diagnostic(
-                            range=self._get_connection_range(i, document_content, "from"),
-                            message=f"Invalid connection source: {from_message}",
-                            severity=lsp.DiagnosticSeverity.Error,
-                        )
-                    )
+        connections = config.connections or []
+        if not connections:
+            return diagnostics
 
-                # Validate to reference
-                to_valid, to_message = self._validate_connection_reference(to_ref, config)
-                if not to_valid:
-                    diagnostics.append(
-                        lsp.Diagnostic(
-                            range=self._get_connection_range(i, document_content, "to"),
-                            message=f"Invalid connection destination: {to_message}",
-                            severity=lsp.DiagnosticSeverity.Error,
-                        )
-                    )
+        graph = self._collect_port_keys(config)
+
+        for index, connection in enumerate(connections):
+            diagnostics.extend(self._validate_connection(index, connection, config, graph, document_content))
 
         return diagnostics
 
-    def _get_entity_inputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[PortDefinition]:
-        return self.resolution_service.get_entity_inputs(config, _seen)
+    def _collect_port_keys(self, config: Config) -> "_ConnectionGraph":
+        """Collect the ``instance.port`` key space a connection is resolved against.
 
-    def _get_entity_outputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[PortDefinition]:
-        return self.resolution_service.get_entity_outputs(config, _seen)
+        Mirrors the key space the designer's link manager builds: children contribute
+        ``child.port`` keys, the entity's own external declarations contribute ``.port``
+        keys, and outputs and inputs are kept in separate namespaces.
+        """
+        graph = _ConnectionGraph()
 
-    # Port direction terms used in YAML connection strings map to stored inputs/outputs
-    # Note: YAML parser maps clients -> inputs and servers -> outputs.
-    _INPUT_TERMS = {"subscriber", "client"}
-    _OUTPUT_TERMS = {"publisher", "server"}
+        children = (config.instances or []) if config.entity_type == ConfigType.MODULE else (config.components or [])
+        for child in children:
+            if not isinstance(child, dict):
+                continue
+            child_name = child.get("name")
+            if not child_name:
+                continue
+            graph.child_names.append(child_name)
+            entity_name = child.get("entity")
+            entity_config = self.registry_manager.get_entity(entity_name) if entity_name else None
+            if entity_config is None:
+                graph.unresolved[child_name] = entity_name
+                continue
+            for port in self._get_entity_outputs(entity_config):
+                graph.outputs[f"{child_name}.{port.name}"] = (entity_config, "output", port)
+            for port in self._get_entity_inputs(entity_config):
+                graph.inputs[f"{child_name}.{port.name}"] = (entity_config, "input", port)
 
-    def _validate_connection_reference(self, ref: str, config: Config) -> Tuple[bool, str]:
-        """Validate if a connection reference is valid."""
-        if not ref:
-            return False, "Empty reference"
+        # External declarations feed internal targets, so they sit on the opposite side.
+        for port in self._get_entity_inputs(config):
+            graph.outputs[f".{port.name}"] = (config, "input", port)
+        for port in self._get_entity_outputs(config):
+            graph.inputs[f".{port.name}"] = (config, "output", port)
 
-        # Handle wildcard references
-        if "*" in ref:
-            return True, ""  # Wildcards are allowed for now
+        return graph
 
-        # Parse reference (e.g., "subscriber.pointcloud", "node_detector.publisher.objects")
-        parts = ref.split(".")
+    def _validate_connection(
+        self,
+        index: int,
+        connection,
+        config: Config,
+        graph: "_ConnectionGraph",
+        document_content: str = None,
+    ) -> List[lsp.Diagnostic]:
+        """Validate one connection entry against the collected port key space."""
+        diagnostics: List[lsp.Diagnostic] = []
 
-        if len(parts) < 2:
-            return False, f"Invalid reference format: {ref}"
+        source_map = getattr(config, "source_map", None)
 
-        if config.entity_type == ConfigType.MODULE:
-            if parts[0] in self._INPUT_TERMS:
-                # External input interface of the module itself
-                inputs = self._get_entity_inputs(config)
-                if not inputs:
-                    return False, f"No input interfaces defined in module {config.name}"
-                input_names = [iface.name for iface in inputs if iface.name]
-                if parts[1] not in input_names:
-                    return (
-                        False,
-                        f"Input '{parts[1]}' not found. Available inputs: {', '.join(input_names)}",
+        refs = self._get_connection_refs(connection)
+        if refs is None:
+            return [
+                self._connection_diagnostic(
+                    index,
+                    "from",
+                    "Connection must be a list of 2 references or a mapping with exactly 2 values",
+                    document_content,
+                    source_map,
+                )
+            ]
+
+        try:
+            parsed = Connection(connection)
+        except Exception as exc:  # DeploymentError and malformed reference strings
+            return [self._connection_diagnostic(index, "from", str(exc), document_content, source_map)]
+
+        from_side = "from" if self._first_reference_is_source(parsed, refs, connection) else "to"
+        to_side = "to" if from_side == "from" else "from"
+
+        # An unregistered entity is already reported on its own 'entity:' line.
+        if parsed.from_instance in graph.unresolved or parsed.to_instance in graph.unresolved:
+            return diagnostics
+
+        from_key = f"{parsed.from_instance}.{parsed.from_port_name}"
+        to_key = f"{parsed.to_instance}.{parsed.to_port_name}"
+
+        if any(char in from_key or char in to_key for char in _WILDCARD_CHARS):
+            pairs = match_and_pair_wildcard_ports(from_key, to_key, graph.outputs, graph.inputs)
+            if not pairs:
+                diagnostics.append(
+                    self._connection_diagnostic(
+                        index,
+                        from_side,
+                        f"No ports match the wildcard connection '{refs[0]}' -> '{refs[1]}'",
+                        document_content,
+                        source_map,
                     )
-                return True, ""
+                )
+            return diagnostics
 
-            elif parts[0] in self._OUTPUT_TERMS:
-                # External output interface of the module itself
-                outputs = self._get_entity_outputs(config)
-                if not outputs:
-                    return False, f"No output interfaces defined in module {config.name}"
-                output_names = [iface.name for iface in outputs if iface.name]
-                if parts[1] not in output_names:
-                    return (
-                        False,
-                        f"Output '{parts[1]}' not found. Available outputs: {', '.join(output_names)}",
+        source_found = from_key in graph.outputs
+        target_found = to_key in graph.inputs
+
+        if not source_found:
+            diagnostics.append(
+                self._connection_diagnostic(
+                    index,
+                    from_side,
+                    self._missing_port_message(parsed.from_instance, parsed.from_port_name, "output", config, graph),
+                    document_content,
+                    source_map,
+                )
+            )
+
+        if not target_found:
+            diagnostics.append(
+                self._connection_diagnostic(
+                    index,
+                    to_side,
+                    self._missing_port_message(parsed.to_instance, parsed.to_port_name, "input", config, graph),
+                    document_content,
+                    source_map,
+                )
+            )
+
+        if source_found and target_found:
+            mismatch = self._check_message_type_compatibility(graph.outputs[from_key], graph.inputs[to_key])
+            if mismatch:
+                diagnostics.append(
+                    self._connection_diagnostic(
+                        index,
+                        from_side,
+                        mismatch,
+                        document_content,
+                        source_map,
+                        severity=lsp.DiagnosticSeverity.Warning,
                     )
-                return True, ""
-
-            else:
-                # Instance port: instance_name.direction.port_name
-                instance_name = parts[0]
-                port_dir = parts[1] if len(parts) > 1 else None
-                port_name = parts[2] if len(parts) > 2 else None
-
-                if not port_dir or not port_name:
-                    return False, f"Invalid instance reference format: {ref}"
-
-                instances = config.instances or []
-                instance_names = [inst.get("name") for inst in instances if inst.get("name")]
-                if instance_name not in instance_names:
-                    return (
-                        False,
-                        f"Instance '{instance_name}' not found. Available instances: {', '.join(instance_names)}",
-                    )
-
-                for instance in instances:
-                    if instance.get("name") == instance_name:
-                        entity_name = instance.get("entity")
-                        if entity_name not in self.registry_manager.entity_registry:
-                            return False, f"Entity '{entity_name}' not found in registry"
-
-                        entity_config = self.registry_manager.entity_registry[entity_name]
-                        if port_dir in self._INPUT_TERMS:
-                            inputs = self._get_entity_inputs(entity_config)
-                            if not inputs:
-                                return False, f"Entity '{entity_name}' has no input ports"
-                            input_names = [port.name for port in inputs if port.name]
-                            if port_name not in input_names:
-                                return (
-                                    False,
-                                    f"Input port '{port_name}' not found in entity '{entity_name}'. Available inputs: {', '.join(input_names)}",
-                                )
-                        elif port_dir in self._OUTPUT_TERMS:
-                            outputs = self._get_entity_outputs(entity_config)
-                            if not outputs:
-                                return False, f"Entity '{entity_name}' has no output ports"
-                            output_names = [port.name for port in outputs if port.name]
-                            if port_name not in output_names:
-                                return (
-                                    False,
-                                    f"Output port '{port_name}' not found in entity '{entity_name}'. Available outputs: {', '.join(output_names)}",
-                                )
-                        else:
-                            return (
-                                False,
-                                f"Invalid port direction '{port_dir}'. Must be one of: subscriber, publisher, server, client",
-                            )
-                        return True, ""
-                return False, f"Instance '{instance_name}' configuration error"
-
-        elif config.entity_type == ConfigType.SYSTEM:
-            # System connections reference component ports: component.direction.port_name
-            component_name = parts[0]
-            port_dir = parts[1] if len(parts) > 1 else None
-            port_name = parts[2] if len(parts) > 2 else None
-
-            if not port_dir or not port_name:
-                return False, f"Invalid component reference format: {ref}"
-
-            components = config.components or []
-            component_names = [comp.get("name") for comp in components if comp.get("name")]
-            if component_name not in component_names:
-                return (
-                    False,
-                    f"Component '{component_name}' not found. Available components: {', '.join(component_names)}",
                 )
 
-            for component in components:
-                if component.get("name") == component_name:
-                    component_entity = component.get("entity")
-                    if component_entity not in self.registry_manager.entity_registry:
-                        return False, f"Entity '{component_entity}' not found in registry"
+        return diagnostics
 
-                    entity_config = self.registry_manager.entity_registry[component_entity]
-                    if port_dir in self._INPUT_TERMS:
-                        inputs = self._get_entity_inputs(entity_config)
-                        if not inputs:
-                            return False, f"Entity '{component_entity}' has no input ports"
-                        input_names = [port.name for port in inputs if port.name]
-                        if port_name not in input_names:
-                            return (
-                                False,
-                                f"Input port '{port_name}' not found in component '{component_name}'. Available inputs: {', '.join(input_names)}",
-                            )
-                    elif port_dir in self._OUTPUT_TERMS:
-                        outputs = self._get_entity_outputs(entity_config)
-                        if not outputs:
-                            return False, f"Entity '{component_entity}' has no output ports"
-                        output_names = [port.name for port in outputs if port.name]
-                        if port_name not in output_names:
-                            return (
-                                False,
-                                f"Output port '{port_name}' not found in component '{component_name}'. Available outputs: {', '.join(output_names)}",
-                            )
-                    else:
-                        return (
-                            False,
-                            f"Invalid port direction '{port_dir}'. Must be one of: subscriber, publisher, server, client",
-                        )
-                    return True, ""
-            return False, f"Component '{component_name}' configuration error"
+    def _missing_port_message(
+        self, instance_name: str, port_name: str, direction: str, config: Config, graph: "_ConnectionGraph"
+    ) -> str:
+        """Build the diagnostic text for a connection endpoint with no matching port."""
+        keys = graph.outputs if direction == "output" else graph.inputs
+        kind = "Instance" if config.entity_type == ConfigType.MODULE else "Component"
 
-        return False, f"Unsupported reference format for {config.entity_type}: {ref}"
+        if not instance_name:
+            declared = sorted(key[1:] for key in keys if key.startswith("."))
+            declaration = "input" if direction == "output" else "output"
+            return (
+                f"External {declaration} '{port_name}' is not declared in {config.full_name}. "
+                f"Declared: {', '.join(declared) if declared else '(none)'}"
+            )
 
-    def _check_message_type_compatibility(self, from_ref: str, to_ref: str, config: Config) -> Optional[str]:
-        """Check if message types are compatible between source and destination."""
-        from_type = self._get_message_type(from_ref, config)
-        to_type = self._get_message_type(to_ref, config)
+        if instance_name not in graph.child_names:
+            available = ", ".join(graph.child_names) if graph.child_names else "(none)"
+            return f"{kind} '{instance_name}' not found. Available {kind.lower()}s: {available}"
+
+        prefix = f"{instance_name}."
+        available = sorted(key[len(prefix) :] for key in keys if key.startswith(prefix))
+        return (
+            f"{direction.capitalize()} port '{port_name}' not found in {kind.lower()} '{instance_name}'. "
+            f"Available {direction}s: {', '.join(available) if available else '(none)'}"
+        )
+
+    def _check_message_type_compatibility(self, source, target) -> Optional[str]:
+        """Compare the message types of a resolved source/target port pair."""
+        from_type = self._resolve_port_message_type(*source)
+        to_type = self._resolve_port_message_type(*target)
 
         if from_type and to_type and from_type != to_type:
             return f"Source type '{from_type}' does not match destination type '{to_type}'"
 
         return None
 
-    def _get_message_type(self, ref: str, config: Config) -> Optional[str]:
-        """Get the message type for a connection reference."""
-        if "*" in ref:
-            return None  # Wildcards don't have specific types
+    def _resolve_port_message_type(self, owner: Config, direction: str, port: PortDefinition) -> Optional[str]:
+        """Resolve a port's message type, tracing composite entities when undeclared."""
+        if port.message_type:
+            return port.message_type
+        return self.resolution_service.resolve_port_type(owner, direction, port.name)
 
-        parts = ref.split(".")
-        if len(parts) < 2:
-            return None
-
-        target_entity_config = config
-        port_type = None
-        port_name = None
-
-        if config.entity_type == ConfigType.MODULE:
-            if parts[0] in self._INPUT_TERMS:
-                port_type = "input"
-                port_name = parts[1]
-            elif parts[0] in self._OUTPUT_TERMS:
-                port_type = "output"
-                port_name = parts[1]
-            else:
-                # instance_name.direction.port_name
-                instance_name = parts[0]
-                port_dir = parts[1]
-                port_name = parts[2] if len(parts) > 2 else None
-
-                if not port_name:
-                    return None
-
-                if port_dir in self._INPUT_TERMS:
-                    port_type = "input"
-                elif port_dir in self._OUTPUT_TERMS:
-                    port_type = "output"
-                else:
-                    return None
-
-                target_entity_config = self.resolution_service.get_instance_entity(config, instance_name)
-                if not target_entity_config:
-                    return None
-
-        elif config.entity_type == ConfigType.SYSTEM:
-            # component_name.direction.port_name
-            component_name = parts[0]
-            port_dir = parts[1]
-            port_name = parts[2] if len(parts) > 2 else None
-
-            if not port_name:
-                return None
-
-            if port_dir in self._INPUT_TERMS:
-                port_type = "input"
-            elif port_dir in self._OUTPUT_TERMS:
-                port_type = "output"
-            else:
-                return None
-
-            target_entity_config = self.resolution_service.get_instance_entity(config, component_name)
-            if not target_entity_config:
-                return None
-
-        if target_entity_config and port_type and port_name:
-            return self.resolution_service.resolve_port_type(target_entity_config, port_type, port_name)
-
+    @staticmethod
+    def _get_connection_refs(connection) -> Optional[Tuple[str, str]]:
+        """Extract the two endpoint references of a connection entry in YAML order."""
+        if isinstance(connection, (list, tuple)) and len(connection) == 2:
+            return str(connection[0]), str(connection[1])
+        if isinstance(connection, dict) and len(connection) == 2:
+            values = list(connection.values())
+            return str(values[0]), str(values[1])
         return None
+
+    @staticmethod
+    def _first_reference_is_source(parsed: Connection, refs: Tuple[str, str], connection) -> bool:
+        """Report whether the first YAML reference is the connection's source.
+
+        Direction follows the port roles, so it is resolved by the designer's own rule.
+        """
+        first_instance, first_role, _ = ValidationEngine._split_reference(refs[0])
+        _, second_role, _ = ValidationEngine._split_reference(refs[1])
+        try:
+            return Connection._determine_direction(parsed.type, first_instance, first_role, second_role, connection)
+        except Exception:
+            return True
+
+    @staticmethod
+    def _split_reference(ref: str) -> Tuple[str, str, str]:
+        """Split ``[instance.]port_role.port_name`` into its three parts."""
+        parts = ref.split(".")
+        if len(parts) == 2:
+            return "", parts[0], parts[1]
+        if len(parts) == 3:
+            return parts[0], parts[1], parts[2]
+        return "", "", ref
+
+    def _connection_diagnostic(
+        self,
+        index: int,
+        side: str,
+        message: str,
+        document_content: str = None,
+        source_map: Optional[dict] = None,
+        severity: lsp.DiagnosticSeverity = lsp.DiagnosticSeverity.Error,
+    ) -> lsp.Diagnostic:
+        endpoint_range = source_map_range(source_map, f"/connections/{index}/{0 if side == 'from' else 1}")
+        if endpoint_range is None:
+            endpoint_range = self._get_connection_range(index, document_content, side)
+        return lsp.Diagnostic(range=endpoint_range, message=message, severity=severity)
+
+    def _get_entity_inputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[PortDefinition]:
+        return self.resolution_service.get_entity_inputs(config, _seen)
+
+    def _get_entity_outputs(self, config: Config, _seen: Optional[Set[str]] = None) -> List[PortDefinition]:
+        return self.resolution_service.get_entity_outputs(config, _seen)
 
     def _get_connection_range(
         self, connection_index: int, document_content: str = None, side: str = "from"
@@ -592,26 +591,6 @@ class ValidationEngine:
                             )
                         )
 
-            # Check for connection references that might be incomplete
-            elif "from:" in stripped or "to:" in stripped:
-                ref_value = stripped.split(":", 1)[1].strip().strip("\"'")
-                if ref_value and not ref_value.startswith("*"):  # Skip wildcards
-                    # Basic validation - check if it looks like a reference but might be incomplete
-                    if "." in ref_value and not self._is_valid_connection_reference(ref_value, config):
-                        # Find the reference value in the line
-                        value_start = line.find(ref_value)
-                        if value_start != -1:
-                            diagnostics.append(
-                                lsp.Diagnostic(
-                                    range=lsp.Range(
-                                        start=lsp.Position(line=line_num, character=value_start),
-                                        end=lsp.Position(line=line_num, character=value_start + len(ref_value)),
-                                    ),
-                                    message=f"Connection reference '{ref_value}' may be incomplete or invalid",
-                                    severity=lsp.DiagnosticSeverity.Error,
-                                )
-                            )
-
             # Check for message types that might be incomplete
             elif "message_type:" in stripped:
                 msg_type = stripped.split(":", 1)[1].strip().strip("\"'")
@@ -635,11 +614,6 @@ class ValidationEngine:
     def _is_valid_entity_reference(self, entity_name: str) -> bool:
         """Check if an entity reference is valid."""
         return entity_name in self.registry_manager.entity_registry
-
-    def _is_valid_connection_reference(self, ref: str, config: Config) -> bool:
-        """Check if a connection reference is valid (simplified check)."""
-        valid, _ = self._validate_connection_reference(ref, config)
-        return valid
 
     def _is_valid_message_type(self, msg_type: str) -> bool:
         """Check if a message type looks valid (basic check)."""

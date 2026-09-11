@@ -11,6 +11,16 @@ from autoware_system_designer.parser.data_parser import ConfigParser
 
 logger = logging.getLogger(__name__)
 
+ENTITY_PATTERNS = [
+    "**/*.node.yaml",
+    "**/*.module.yaml",
+    "**/*.system.yaml",
+    "**/*.parameter_set.yaml",
+]
+
+# Build artifacts hold copies of the design files their source packages own.
+EXCLUDED_DIRS = {"build", "install", "log", ".git", "node_modules", "__pycache__"}
+
 
 class RegistryManager:
     """Manages entity and file registries for the language server."""
@@ -24,18 +34,12 @@ class RegistryManager:
         """Scan workspace for entity files and build registry."""
         workspace_path = uri_to_path(workspace_uri)
 
-        # Find all entity files
-        patterns = [
-            "**/*.node.yaml",
-            "**/*.module.yaml",
-            "**/*.system.yaml",
-            "**/*.parameter_set.yaml",
-        ]
-
         # Collect all files first
         all_files = []
-        for pattern in patterns:
-            all_files.extend(Path(workspace_path).glob(pattern))
+        for pattern in ENTITY_PATTERNS:
+            all_files.extend(
+                path for path in Path(workspace_path).glob(pattern) if not self._is_excluded(path, workspace_path)
+            )
 
         # Sort files to prioritize src over other folders (src files processed last to overwrite duplicates)
         def sort_key(file_path):
@@ -53,6 +57,15 @@ class RegistryManager:
                 self._register_entity(config)
             except Exception as e:
                 logger.warning(f"Failed to parse {file_path}: {e}")
+
+    @staticmethod
+    def _is_excluded(file_path: Path, workspace_path: str) -> bool:
+        """Report whether a path sits under a directory that mirrors source designs."""
+        try:
+            relative = file_path.relative_to(workspace_path)
+        except ValueError:
+            return False
+        return any(part in EXCLUDED_DIRS for part in relative.parts[:-1])
 
     def register_entity(self, config: Config):
         """Register an entity in the registry."""
@@ -78,7 +91,7 @@ class RegistryManager:
         """Register an entity in the registry."""
         self.entity_registry[config.full_name] = config
         self.file_registry[str(config.file_path)] = config
-        logger.info(f"Registered entity: {config.full_name} from {config.file_path}")
+        logger.debug(f"Registered entity: {config.full_name} from {config.file_path}")
 
     def _unregister_entity(self, file_path: str):
         """Unregister an entity from the registry."""
@@ -86,4 +99,4 @@ class RegistryManager:
             config = self.file_registry[file_path]
             del self.entity_registry[config.full_name]
             del self.file_registry[file_path]
-            logger.info(f"Unregistered entity: {config.full_name}")
+            logger.debug(f"Unregistered entity: {config.full_name}")

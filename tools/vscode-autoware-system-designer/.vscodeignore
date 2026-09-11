@@ -1,6 +1,9 @@
 .vscode/**
 .vscode-test/**
 src/**
+server/test/**
+**/__pycache__/**
+**/*.pyc
 .gitignore
 .yarnrc
 **/tsconfig.json

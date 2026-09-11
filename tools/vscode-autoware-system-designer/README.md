@@ -4,35 +4,38 @@ A VSCode extension that provides language server support for Autoware System Des
 
 ## Features
 
+The language server resolves designs with the `autoware_system_designer` package itself, so
+connection rules, schemas and format versions follow whatever version of the package is bundled
+with the extension (or checked out next to it during development).
+
 ### Connection Validation
 
-- **Real-time validation** of connection references across files
-- **Message type compatibility** checking between ports
-- **Cross-file validation** ensures connections are valid
+- **Port resolution** against the same `instance.port` key space the designer builds at deploy time
+- **Wildcard connections** — `*`, `^` and `+` are expanded and reported when nothing matches
+- **Port role pairing** — publisher/subscriber and server/client, checked by the designer's own parser
+- **External interfaces** — connections must reference declared module inputs and outputs
+- **Message type compatibility** between the two ends of a connection (warning)
+- **Cross-file validation** through the workspace entity registry
+
+### Schema Diagnostics
+
+- **Schema violations** reported at the YAML path that caused them
+- **Format version** incompatibilities reported against the supported version
+- **File and design name** mismatches
 
 ### Auto-completion
 
-- **Entity references** - Complete entity names when referencing nodes, modules, etc.
-- **Connection references** - Auto-complete port references (e.g., `instance.input.port_name`)
-- **Message types** - Common ROS 2 message types
-- **Parameter names** - Common parameter naming patterns
+- **Port roles** after `instance.` — the roles the instance actually exposes
+- **Port names** after `instance.role.`, with their message types
 
 ### Go-to-Definition
 
-- Jump to entity definitions from references
-- Navigate to port definitions in connected entities
+- Jump from an entity name to its definition file
+- Jump from a connection reference to the instance's entity
 
 ### Hover Documentation
 
-- **Entity information** - Type, file location, and summary
-- **Port details** - Message types, QoS settings
-- **Connection context** - Instance/component relationships
-
-### Diagnostics
-
-- **Error highlighting** for invalid connections
-- **Warning messages** for type mismatches
-- **Validation feedback** in real-time
+- **Entity information** — type, file, launch configuration, ports, instances and components
 
 ## Supported File Types
 
@@ -45,14 +48,14 @@ A VSCode extension that provides language server support for Autoware System Des
 
 ### Prerequisites
 
-| Tool                                                     | Version | Purpose                           |
-| -------------------------------------------------------- | ------- | --------------------------------- |
-| [Node.js](https://nodejs.org/)                           | 18+     | Build toolchain                   |
-| [pnpm](https://pnpm.io/)                                 | 8+      | Package manager                   |
-| [TypeScript](https://www.typescriptlang.org/)            | 4.9+    | Compile extension source          |
-| [@vscode/vsce](https://github.com/microsoft/vscode-vsce) | latest  | Package `.vsix` (production only) |
-| Python                                                   | 3.8+    | Language server runtime           |
-| pip packages: `pygls>=1.0.0`, `lsprotocol>=2022.0.0`     | —       | Language server libraries         |
+| Tool                                                        | Version | Purpose                           |
+| ----------------------------------------------------------- | ------- | --------------------------------- |
+| [Node.js](https://nodejs.org/)                              | 18+     | Build toolchain                   |
+| [pnpm](https://pnpm.io/)                                    | 8+      | Package manager                   |
+| [TypeScript](https://www.typescriptlang.org/)               | 4.9+    | Compile extension source          |
+| [@vscode/vsce](https://github.com/microsoft/vscode-vsce)    | latest  | Package `.vsix` (production only) |
+| Python                                                      | 3.8+    | Language server runtime           |
+| pip packages: `pygls>=1.0.0,<2.0.0`, `lsprotocol>=2022.0.0` | —       | Language server libraries         |
 
 ### 1. Install Node.js and pnpm
 
@@ -160,23 +163,32 @@ The VSCode client (`src/extension.ts`) registers the language server and handles
 
 ```text
 vscode-autoware-system-designer/
-├── src/                    # TypeScript source files
-│   └── extension.ts       # Main extension entry point
-├── server/                # Python language server
-│   ├── server.py         # Language server implementation
-│   └── requirements.txt  # Python dependencies
-├── package.json          # Extension manifest
-├── tsconfig.json         # TypeScript configuration
+├── src/                         # TypeScript client
+│   └── extension.ts             # Extension entry point
+├── server/                      # Python language server
+│   ├── server.py                # Entry point
+│   ├── base_server.py           # LSP handlers and wiring
+│   ├── document_processor.py    # Parse + publish diagnostics
+│   ├── registry_manager.py      # Workspace entity registry
+│   ├── validation_engine.py     # Connection and naming diagnostics
+│   ├── resolution_service.py    # Port and message type resolution
+│   ├── providers/               # Completion, definition, hover, signature help
+│   ├── test/                    # pytest suite for the server
+│   ├── bundled/                 # autoware_system_designer, copied in at package time
+│   └── requirements.txt         # Python dependencies
+├── scripts/bundle_python_pkg.js # Copies the designer package into server/bundled/
+├── package.json                 # Extension manifest
+├── tsconfig.json                # TypeScript configuration
 └── language-configuration.json  # YAML language configuration
 ```
 
 ### Testing
 
 ```bash
-# Run tests
-pnpm test
+# Language server tests (uses the designer package next to the extension)
+python3 -m pytest server/test
 
-# Lint code
+# Lint the TypeScript client
 pnpm lint
 ```
 

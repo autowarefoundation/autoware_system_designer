@@ -4,8 +4,6 @@ import {
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
-  TransportKind,
-  Executable,
 } from "vscode-languageclient/node";
 
 let client: LanguageClient;
@@ -21,13 +19,12 @@ export function activate(context: ExtensionContext) {
 
   // Use Python executable from configuration or default to 'python'
   const pythonPath = config.get<string>("path", "python");
+  const debug = config.get<boolean>("debug", false);
 
   // Run the server directly (server.py handles path setup for imports)
-  // If the extension is launched in debug mode then the debug server options are used
-  // Otherwise the run options are used
   const serverOptions: ServerOptions = {
     command: pythonPath,
-    args: [serverModule],
+    args: debug ? [serverModule, "--debug"] : [serverModule],
     options: {
       cwd: context.extensionPath,
     },

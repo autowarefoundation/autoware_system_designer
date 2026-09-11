@@ -81,7 +81,7 @@ class CompletionProvider:
 
         items: List[lsp.CompletionItem] = []
         if inputs:
-            for kw in ("subscriber", "server"):
+            for kw in ("subscriber", "client"):
                 if kw.startswith(partial):
                     items.append(
                         lsp.CompletionItem(
@@ -91,7 +91,7 @@ class CompletionProvider:
                         )
                     )
         if outputs:
-            for kw in ("publisher", "client"):
+            for kw in ("publisher", "server"):
                 if kw.startswith(partial):
                     items.append(
                         lsp.CompletionItem(

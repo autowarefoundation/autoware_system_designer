@@ -31,7 +31,11 @@ from validation_engine import ValidationEngine
 from autoware_system_designer.model.config import Config
 from autoware_system_designer.parser.data_parser import ConfigParser
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+_DEBUG = "--debug" in sys.argv or os.environ.get("AUTOWARE_SYSTEM_DESIGNER_LSP_DEBUG") == "1"
+logging.basicConfig(
+    level=logging.DEBUG if _DEBUG else logging.WARNING,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 
