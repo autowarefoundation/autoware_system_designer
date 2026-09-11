@@ -19,24 +19,28 @@
             <span class="nav-link-sep">|</span>
             <a href="{{ overview_path }}">Diagram</a>
         </div>
-        <p class="page-description">ROS 2 launch commands per mode and ECU (compute unit).</p>
-        {% if deploy_names %}
+        <p class="page-description">Launch commands per mode and ECU (compute unit).</p>
         <div class="deploy-selector">
+            <label for="method-select">Method:</label>
+            <select id="method-select" aria-label="Select launch method">
+                <option value="native"{% if not has_native %} disabled{% endif %}{% if default_method == 'native' %} selected{% endif %}>Runtime (autoware-system-designer-launch)</option>
+                <option value="xml"{% if default_method == 'xml' %} selected{% endif %}>XML launcher (ros2 launch)</option>
+            </select>
             <label for="deploy-select">Deploy:</label>
+            {% if deploy_names %}
             <select id="deploy-select" aria-label="Select deploy">
                 {% for name in deploy_names %}
                 <option value="{{ name }}">{{ name }}</option>
                 {% endfor %}
             </select>
-        </div>
-        {% else %}
-        <div class="deploy-selector">
-            <label for="deploy-select">Deploy:</label>
+            {% else %}
             <select id="deploy-select" disabled aria-label="Select deploy">
                 <option>—</option>
             </select>
+            {% endif %}
         </div>
-        {% endif %}
+        <p class="page-description method-note" id="method-note-xml"{% if default_method != 'xml' %} hidden{% endif %}>Runs the exported XML launcher through <code>ros2 launch</code>.</p>
+        <p class="page-description method-note" id="method-note-native"{% if default_method != 'native' %} hidden{% endif %}>Runs the exported system structure under the designer runtime supervisor, one supervised process per node.{% if has_deploy_variants %} Deploy arguments are applied by the XML wrappers only, so every deploy shares the same runtime command.{% endif %}</p>
         {% if command_rows %}
         <table>
             <thead>
@@ -55,11 +59,16 @@
                     {% if row.show_ecu_cell %}
                     <td rowspan="{{ row.ecu_rowspan }}">{{ row.ecu }}</td>
                     {% endif %}
+                    {% set cmd = row[default_method] %}
                     <td class="command-cell">
+                        {% if cmd %}
                         <div class="command-with-copy">
-                            <button type="button" class="copy-btn" data-cmd="{{ row.cmd | e }}">Copy</button>
-                            <code>{{ row.cmd }}</code>
+                            <button type="button" class="copy-btn" data-cmd="{{ cmd | e }}">Copy</button>
+                            <code>{{ cmd }}</code>
                         </div>
+                        {% else %}
+                        <span class="empty-state">—</span>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -94,36 +103,45 @@
             });
         }
         bindCopyButtons(document);
-        {% if deploy_names %}
         (function() {
-            var commandsByDeploy = {{ commands_by_deploy | tojson }};
+            var rowsByDeploy = {{ rows_by_deploy | tojson }};
             var tbody = document.getElementById('commands-tbody');
-            function rowHtml(row) {
+            var methodSelect = document.getElementById('method-select');
+            var deploySelect = document.getElementById('deploy-select');
+            if (!tbody) return;
+            function escapeHtml(s) {
+                var div = document.createElement('div');
+                div.textContent = s;
+                return div.innerHTML;
+            }
+            function rowHtml(row, method) {
                 var modeCell = row.show_mode_cell
                     ? '<td rowspan="' + row.mode_rowspan + '">' + escapeHtml(row.mode) + '</td>'
                     : '';
                 var ecuCell = row.show_ecu_cell
                     ? '<td rowspan="' + row.ecu_rowspan + '">' + escapeHtml(row.ecu) + '</td>'
                     : '';
-                var cmdEscaped = escapeHtml(row.cmd).replace(/"/g, '&quot;');
-                return '<tr>' + modeCell + ecuCell +
-                    '<td class="command-cell"><div class="command-with-copy">' +
-                    '<button type="button" class="copy-btn" data-cmd="' + cmdEscaped + '">Copy</button>' +
-                    '<code>' + escapeHtml(row.cmd) + '</code></div></td></tr>';
+                var cmd = row[method] || '';
+                var body = cmd
+                    ? '<div class="command-with-copy">' +
+                      '<button type="button" class="copy-btn" data-cmd="' +
+                      escapeHtml(cmd).replace(/"/g, '&quot;') + '">Copy</button>' +
+                      '<code>' + escapeHtml(cmd) + '</code></div>'
+                    : '<span class="empty-state">—</span>';
+                return '<tr>' + modeCell + ecuCell + '<td class="command-cell">' + body + '</td></tr>';
             }
-            function escapeHtml(s) {
-                var div = document.createElement('div');
-                div.textContent = s;
-                return div.innerHTML;
-            }
-            document.getElementById('deploy-select').addEventListener('change', function() {
-                var name = this.value;
-                var rows = commandsByDeploy[name] || [];
-                tbody.innerHTML = rows.map(rowHtml).join('');
+            function render() {
+                var method = methodSelect.value;
+                var deploy = deploySelect.disabled ? '' : deploySelect.value;
+                var rows = rowsByDeploy[deploy] || [];
+                tbody.innerHTML = rows.map(function(row) { return rowHtml(row, method); }).join('');
                 bindCopyButtons(tbody);
-            });
+                document.getElementById('method-note-xml').hidden = method !== 'xml';
+                document.getElementById('method-note-native').hidden = method !== 'native';
+            }
+            methodSelect.addEventListener('change', render);
+            deploySelect.addEventListener('change', render);
         })();
-        {% endif %}
     </script>
 </body>
 </html>

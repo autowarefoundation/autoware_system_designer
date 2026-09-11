@@ -580,6 +580,7 @@ def generate_launchers(artifacts: BuildArtifacts) -> None:
             mode_keys=artifacts.mode_keys,
             web_dir=web_dir,
             deploy_variants=artifacts.deploy_variants,
+            system_structure_dir=artifacts.layout.system_structure_dir,
         )
 
 
