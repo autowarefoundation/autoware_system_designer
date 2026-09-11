@@ -1,4 +1,7 @@
 const SVG_NS = "http://www.w3.org/2000/svg";
+const FIT_MARGIN = 40;
+const FIT_SCALE_CAP = 1;
+const MAX_ZOOM = 5;
 
 class NodeDiagramModule extends DiagramBase {
   // ── Initialization ──────────────────────────────────────────────────────────
@@ -8,6 +11,7 @@ class NodeDiagramModule extends DiagramBase {
 
     this.currentGraph = null;
     this.currentSvgRoot = null;
+    this.graphBBox = null;
     this.transform = { x: 0, y: 0, k: 1 };
     this.isDragging = false;
     this.hasDragged = false;
@@ -965,7 +969,10 @@ class NodeDiagramModule extends DiagramBase {
       const zoomIntensity = 0.1;
       const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
       const oldScale = this.transform.k;
-      const newScale = Math.min(Math.max(oldScale * (1 + delta), 0.03), 5);
+      const newScale = Math.min(
+        Math.max(oldScale * (1 + delta), this.getMinZoom()),
+        MAX_ZOOM,
+      );
       const scaleRatio = newScale / oldScale;
 
       const rect = svgRoot.getBoundingClientRect();
@@ -1022,13 +1029,9 @@ class NodeDiagramModule extends DiagramBase {
     const bbox = svg.getBBox();
     if (bbox.width === 0 || bbox.height === 0) return;
 
+    this.graphBBox = bbox;
     const containerRect = this.container.getBoundingClientRect();
-    const scale = Math.min(
-      (containerRect.width - 40) / bbox.width,
-      (containerRect.height - 40) / bbox.height,
-    );
-
-    this.transform.k = Math.min(scale, 1);
+    this.transform.k = this.getMinZoom();
     this.transform.x =
       (containerRect.width - bbox.width * this.transform.k) / 2 -
       bbox.x * this.transform.k;
@@ -1036,6 +1039,20 @@ class NodeDiagramModule extends DiagramBase {
       (containerRect.height - bbox.height * this.transform.k) / 2 -
       bbox.y * this.transform.k;
     this.updateTransform(svg);
+  }
+
+  // Zoom-out floor: the scale that fits the whole graph in the viewport, so the
+  // initial view is also the widest one. Derived from the live container size,
+  // so it follows window resizes; the graph bbox is fixed by the layout.
+  getMinZoom() {
+    const bbox = this.graphBBox;
+    if (!bbox?.width || !bbox?.height) return FIT_SCALE_CAP;
+    const rect = this.container.getBoundingClientRect();
+    const fit = Math.min(
+      (rect.width - FIT_MARGIN) / bbox.width,
+      (rect.height - FIT_MARGIN) / bbox.height,
+    );
+    return Math.min(fit, FIT_SCALE_CAP);
   }
 
   updateTheme() {
