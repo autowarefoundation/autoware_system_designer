@@ -400,11 +400,11 @@
           "org.eclipse.elk.direction": "RIGHT",
           "org.eclipse.elk.edgeRouting": "ORTHOGONAL",
           // Layer assignment minimizes total edge length, so connected boxes stay
-          // adjacent. Placement keeps the linear-time Brandes-Koepf pass with its
-          // edge-straightening step off, which is what spreads boxes apart.
+          // adjacent. Placement treats a chain of boxes as one segment, which
+          // draws the stack together; the boxes carry ports, so what the chain
+          // gains in height the links between the levels pay for in corners.
           "org.eclipse.elk.layered.layering.strategy": "NETWORK_SIMPLEX",
-          "org.eclipse.elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
-          "org.eclipse.elk.layered.nodePlacement.bk.edgeStraightening": "NONE",
+          "org.eclipse.elk.layered.nodePlacement.strategy": "LINEAR_SEGMENTS",
           // Horizontal compaction pass over the placed graph. SCANLINE
           // constraints reject this graph's hitboxes.
           "org.eclipse.elk.layered.compaction.postCompaction.strategy": "LEFT",
