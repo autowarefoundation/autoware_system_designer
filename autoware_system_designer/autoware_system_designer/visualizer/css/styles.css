@@ -752,16 +752,15 @@ body.resizing-sidebar {
   overflow: hidden;
 }
 
-/* Event glyphs: chevrons on the instance boundary, outlines for the gates.
-   Highlight colors are set by JS so they follow the diagram color presets. */
+/* Event glyphs: chevrons for the ports, outlines for the gates. Highlight
+   colors are set by JS so they follow the diagram color presets. */
 .logic-event {
   stroke: var(--text-muted);
   stroke-width: 0.5px;
   fill: var(--text-secondary);
-  transition: all 0.1s;
 }
 
-.logic-event-out {
+.logic-event-output {
   fill: var(--border-hover);
 }
 
@@ -769,7 +768,6 @@ body.resizing-sidebar {
   stroke: var(--text-secondary);
   stroke-width: 1px;
   fill: var(--bg-tertiary);
-  transition: all 0.1s;
 }
 
 .logic-gate-unknown {
@@ -781,14 +779,31 @@ body.resizing-sidebar {
   opacity: 0.45;
 }
 
-.logic-gate-label,
-.logic-gate-sublabel {
-  font-family: "Segoe UI", sans-serif;
-  pointer-events: none;
+.logic-vertex-body {
+  transition: stroke 0.1s;
 }
 
-.logic-gate-sublabel {
+/* Label detail is switched by the viewport scale: the classes are set on the
+   SVG root, and what is left out is too small to read at that scale. */
+.logic-vertex-label,
+.logic-vertex-sub,
+.logic-edge-label {
+  font-family: "Segoe UI", sans-serif;
+  pointer-events: none;
+  display: none;
+}
+
+.logic-vertex-sub {
   fill: var(--text-muted);
+}
+
+svg.lod-name .logic-vertex-label,
+svg.lod-name .logic-edge-label {
+  display: block;
+}
+
+svg.lod-rate .logic-vertex-sub {
+  display: block;
 }
 
 .logic-rate-mismatch {
@@ -889,6 +904,11 @@ body.resizing-sidebar {
   gap: 6px;
   margin-top: 4px;
   color: var(--text-secondary);
+}
+
+.logic-legend-note {
+  margin-top: 4px;
+  color: var(--text-muted);
 }
 
 /* --- Sequence Diagram Integrated Styles --- */
