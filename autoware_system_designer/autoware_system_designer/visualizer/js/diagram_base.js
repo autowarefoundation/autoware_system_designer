@@ -1,88 +1,178 @@
 // Diagram Base Module
-// This module provides common functionality for diagram modules
+// Shared lifecycle for the diagram modules the overview page loads on demand.
 
-class DiagramBase {
-  constructor(container, options = {}) {
-    this.container = container;
-    this.options = {
-      mode: options.mode || "default",
-      deployment: options.deployment || "",
-      ...options,
+(function () {
+  class DiagramBase {
+    // Third-party renderers, pinned here so the page tags and the module
+    // fallbacks that run when a tag is unavailable request the same builds.
+    static CDN = {
+      elk: "https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js",
+      mermaid:
+        "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js",
+      svgPanZoom:
+        "https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js",
+      viz: "https://cdn.jsdelivr.net/npm/viz.js@2.1.2/viz.js",
+      vizRender: "https://cdn.jsdelivr.net/npm/viz.js@2.1.2/full.render.js",
     };
-  }
 
-  isDarkMode() {
-    return document.documentElement.getAttribute("data-theme") === "dark";
-  }
+    // svg-pan-zoom settings every diagram shares; each module overrides the rest.
+    static PAN_ZOOM_DEFAULTS = {
+      zoomEnabled: true,
+      controlIconsEnabled: false,
+      fit: false,
+      center: false,
+    };
 
-  async loadScript(src) {
-    return new Promise((resolve, reject) => {
-      // Check if script is already loaded
-      const existingScript = document.querySelector(`script[src="${src}"]`);
-      if (existingScript) {
-        resolve();
-        return;
+    static loadScript(src) {
+      return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) {
+          resolve();
+          return;
+        }
+
+        const script = document.createElement("script");
+        script.src = src;
+        script.onload = () => resolve();
+        script.onerror = (event) => {
+          const error = new Error(`Failed to load script: ${src}`);
+          error.event = event;
+          reject(error);
+        };
+        document.head.appendChild(script);
+      });
+    }
+
+    // Loads src only when globalName is still absent, so a page-level <script>
+    // tag (which carries integrity metadata) always wins over the fallback.
+    static async ensureLibrary(globalName, src) {
+      if (typeof window[globalName] === "undefined") {
+        await DiagramBase.loadScript(src);
+      }
+      return window[globalName];
+    }
+
+    static escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    constructor(container, options = {}) {
+      this.container = container;
+      this.options = {
+        mode: options.mode || "default",
+        deployment: options.deployment || "",
+        ...options,
+      };
+      this.panZoomInstance = null;
+    }
+
+    isDarkMode() {
+      return document.documentElement.getAttribute("data-theme") === "dark";
+    }
+
+    loadScript(src) {
+      return DiagramBase.loadScript(src);
+    }
+
+    loadDataScript(mode, type) {
+      return DiagramBase.loadScript(`data/${mode}_${type}.js`);
+    }
+
+    showError(message) {
+      this.container.innerHTML = "";
+      const box = document.createElement("div");
+      box.className = "diagram-error";
+      box.textContent = message;
+      this.container.appendChild(box);
+    }
+
+    updateInfoPanel(data, type) {
+      if (this.options.onInfoUpdate) {
+        this.options.onInfoUpdate(data, type);
+      }
+    }
+
+    getComputedStyleValue(prop, fallback) {
+      return (
+        getComputedStyle(document.documentElement)
+          .getPropertyValue(prop)
+          .trim() || fallback
+      );
+    }
+
+    // ── Pan / zoom (svg-pan-zoom backed modules) ────────────────────────────────
+
+    createPanZoom(svgElement, options = {}) {
+      this.destroyPanZoom();
+
+      const rect = svgElement.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        console.warn(
+          "SVG has zero dimensions, skipping pan-zoom initialization",
+        );
+        return null;
       }
 
-      const script = document.createElement("script");
-      script.src = src;
-      script.onload = () => resolve();
-      script.onerror = (event) => {
-        const error = new Error(`Failed to load script: ${src}`);
-        error.event = event;
-        reject(error);
-      };
-      document.head.appendChild(script);
-    });
-  }
+      try {
+        this.panZoomInstance = svgPanZoom(svgElement, {
+          ...DiagramBase.PAN_ZOOM_DEFAULTS,
+          ...options,
+        });
+      } catch (error) {
+        console.warn("Failed to initialize svg-pan-zoom:", error);
+        this.panZoomInstance = null;
+      }
+      return this.panZoomInstance;
+    }
 
-  async loadDataScript(mode, type) {
-    return new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = `data/${mode}_${type}.js`;
-      script.onload = () => resolve();
-      script.onerror = (error) => reject(error);
-      document.head.appendChild(script);
-    });
-  }
+    // Re-fits once the browser has settled the SVG's box; a zero-sized measurement
+    // means the layout is not final yet, so the attempt is skipped.
+    fitPanZoom({ scale = 1, maxZoom = 1 } = {}) {
+      if (!this.panZoomInstance) return false;
+      try {
+        this.panZoomInstance.resize();
+        const sizes = this.panZoomInstance.getSizes();
+        if (!sizes.width || !sizes.height) return false;
 
-  showError(message) {
-    this.container.innerHTML = `<div style="display: flex; justify-content: center; align-items: center; height: 100%; color: var(--error-color, #dc3545);">${message}</div>`;
-  }
+        this.panZoomInstance.fit();
+        this.panZoomInstance.center();
+        if (scale !== 1 || maxZoom !== Infinity) {
+          this.panZoomInstance.zoom(
+            Math.min(this.panZoomInstance.getZoom() * scale, maxZoom),
+          );
+          this.panZoomInstance.center();
+        }
+        return true;
+      } catch (error) {
+        console.warn("Failed to fit diagram:", error);
+        return false;
+      }
+    }
 
-  updateInfoPanel(data, type) {
-    if (this.options.onInfoUpdate) {
-      this.options.onInfoUpdate(data, type);
+    resetZoom() {
+      if (this.panZoomInstance) {
+        this.panZoomInstance.reset();
+        this.panZoomInstance.center();
+      }
+    }
+
+    destroyPanZoom() {
+      if (this.panZoomInstance) {
+        this.panZoomInstance.destroy();
+        this.panZoomInstance = null;
+      }
+    }
+
+    destroy() {
+      this.destroyPanZoom();
+      this.container.innerHTML = "";
     }
   }
 
-  adjustColorBrightness(hexColor, factor) {
-    // Remove # if present
-    hexColor = hexColor.replace("#", "");
-
-    // Parse RGB components
-    const r = parseInt(hexColor.substr(0, 2), 16);
-    const g = parseInt(hexColor.substr(2, 2), 16);
-    const b = parseInt(hexColor.substr(4, 2), 16);
-
-    // Adjust brightness
-    const newR = Math.min(255, Math.max(0, Math.round(r + (255 - r) * factor)));
-    const newG = Math.min(255, Math.max(0, Math.round(g + (255 - g) * factor)));
-    const newB = Math.min(255, Math.max(0, Math.round(b + (255 - b) * factor)));
-
-    // Convert back to hex
-    return `#${newR.toString(16).padStart(2, "0")}${newG.toString(16).padStart(2, "0")}${newB.toString(16).padStart(2, "0")}`;
-  }
-
-  getComputedStyleValue(prop, fallback) {
-    const computedStyle = getComputedStyle(document.documentElement);
-    return computedStyle.getPropertyValue(prop).trim() || fallback;
-  }
-
-  destroy() {
-    this.container.innerHTML = "";
-  }
-}
-
-// Export for use in the overview page and other modules
-window.DiagramBase = DiagramBase;
+  // Export for use in the overview page and other modules
+  window.DiagramBase = DiagramBase;
+})();

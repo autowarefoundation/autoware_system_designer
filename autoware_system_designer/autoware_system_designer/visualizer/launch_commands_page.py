@@ -8,9 +8,10 @@
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 
 """Generate the launch commands HTML page for a deployment (modes × ECUs [× deploy variants])."""
 
@@ -22,11 +23,17 @@ from pathlib import Path
 from typing import Any
 
 from autoware_system_designer.common.template_renderer import TemplateRenderer
-from autoware_system_designer.visualizer.visualization_index import get_install_root
+from autoware_system_designer.visualizer.paths import get_install_root, systems_index_link
 
 logger = logging.getLogger(__name__)
 
 LAUNCH_FILE_SUFFIX = ".launch.xml"
+
+# Used when the page lives outside an install tree and no relative index path can be derived.
+SYSTEMS_INDEX_FALLBACK = "../../../../../../../systems.html"
+
+# One command entry: mode, compute unit, deploy variant name ("" when unversioned), command.
+Command = tuple[str, str, str, str]
 
 
 def _discover_compute_units_in_dir(mode_dir: Path) -> list[str]:
@@ -49,7 +56,7 @@ def _build_launch_path_arg(
 ) -> str:
     """Build the path argument for ros2 launch (canonical or workspace-relative)."""
     if package_name:
-        return f"install/{package_name}/share/{package_name}/exports/{system_name}/launcher" f"/{path_after_launcher}"
+        return f"install/{package_name}/share/{package_name}/exports/{system_name}/launcher/{path_after_launcher}"
     launch_file = (launcher_base / path_after_launcher).resolve()
     install_root = get_install_root(Path(web_dir))
     if install_root and install_root.exists():
@@ -60,28 +67,38 @@ def _build_launch_path_arg(
     return launch_file.as_posix()
 
 
-def _build_launch_commands(
+def _build_commands(
     system_name: str,
     package_name: str | None,
     launcher_dir: str,
     mode_keys: list[str],
+    deploy_variants: list[dict[str, Any]],
     web_dir: str,
-) -> list[tuple[str, str, str]]:
-    """Build list of (mode, compute_unit, launch_command) for all modes and ECUs.
+) -> list[Command]:
+    """Launch commands ordered by mode > ECU > deploy.
 
-    Command format: ros2 launch <path_relative_to_workspace>
-    Path uses canonical form: install/<package_name>/share/.../launcher/<mode>/<ecu>/<ecu>.launch.xml
+    Without deploy variants the launchers sit directly under launcher/<mode>/<ecu>/; with them
+    each variant has its own tree under launcher/deployments/<deploy>/<mode>/<ecu>/.
     """
     launcher_root = Path(launcher_dir).resolve()
-    result: list[tuple[str, str, str]] = []
+    deploy_names = [item["name"] for item in deploy_variants if item.get("name")] if deploy_variants else [""]
+    if deploy_variants and not (launcher_root / "deployments").is_dir():
+        return []
+
+    commands: list[Command] = []
     for mode_key in mode_keys:
-        mode_dir = launcher_root / mode_key
-        for compute_unit in _discover_compute_units_in_dir(mode_dir):
-            launch_filename = f"{compute_unit.lower()}{LAUNCH_FILE_SUFFIX}"
-            path_after = f"{mode_key}/{compute_unit}/{launch_filename}"
-            path_arg = _build_launch_path_arg(package_name, system_name, path_after, launcher_root, web_dir)
-            result.append((mode_key, compute_unit, f"ros2 launch {path_arg}"))
-    return result
+        mode_entries: list[Command] = []
+        for deploy_name in deploy_names:
+            prefix = f"deployments/{deploy_name}/" if deploy_name else ""
+            mode_dir = launcher_root / f"{prefix}{mode_key}"
+            for compute_unit in _discover_compute_units_in_dir(mode_dir):
+                launch_filename = f"{compute_unit.lower()}{LAUNCH_FILE_SUFFIX}"
+                path_after = f"{prefix}{mode_key}/{compute_unit}/{launch_filename}"
+                path_arg = _build_launch_path_arg(package_name, system_name, path_after, launcher_root, web_dir)
+                mode_entries.append((mode_key, compute_unit, deploy_name, f"ros2 launch {path_arg}"))
+        mode_entries.sort(key=lambda entry: (entry[1], entry[2]))
+        commands.extend(mode_entries)
+    return commands
 
 
 def _add_row_span_metadata(rows: list[dict[str, Any]]) -> None:
@@ -98,156 +115,17 @@ def _add_row_span_metadata(rows: list[dict[str, Any]]) -> None:
         )
 
 
-def _flat_commands_to_rows(
-    commands: list[tuple[str, str, str]],
-) -> list[dict[str, Any]]:
-    """Convert flat (mode, ecu, cmd) list to rows with mode/ecu grouping and rowspans (no deploy)."""
-    rows = [
-        {"mode": mode_key, "ecu": compute_unit, "deploy_name": "", "cmd": cmd}
-        for mode_key, compute_unit, cmd in commands
-    ]
+def _to_rows(commands: list[Command]) -> list[dict[str, Any]]:
+    """Table rows for one deploy's commands, carrying the cell-merging metadata."""
+    rows = [{"mode": mode_key, "ecu": compute_unit, "cmd": cmd} for mode_key, compute_unit, _, cmd in commands]
     _add_row_span_metadata(rows)
     return rows
 
 
-def _path_arg_for_deploy(
-    package_name: str | None,
-    system_name: str,
-    launcher_dir: str,
-    deploy_name: str,
-    mode_key: str,
-    compute_unit: str,
-    web_dir: str,
-) -> str:
-    """Build path argument for a deploy-variant launch file."""
-    launch_filename = f"{compute_unit.lower()}{LAUNCH_FILE_SUFFIX}"
-    path_after = f"deployments/{deploy_name}/{mode_key}/{compute_unit}/{launch_filename}"
-    launcher_base = Path(launcher_dir)
-    return _build_launch_path_arg(package_name, system_name, path_after, launcher_base, web_dir)
-
-
-def _build_deploy_commands(
-    system_name: str,
-    package_name: str | None,
-    launcher_dir: str,
-    mode_keys: list[str],
-    deploy_variants: list[dict[str, Any]],
-    web_dir: str,
-) -> list[tuple[str, str, str, str]]:
-    """Build list of (mode, ecu, deploy_name, launch_command) ordered by mode > ecu > deploy."""
-    result: list[tuple[str, str, str, str]] = []
-    deployments_dir = Path(launcher_dir) / "deployments"
-    if not deployments_dir.is_dir():
-        return result
-    for mode_key in mode_keys:
-        mode_entries: list[tuple[str, str, str]] = []
-        for deploy_item in deploy_variants:
-            deploy_name = deploy_item.get("name")
-            if not deploy_name:
-                continue
-            mode_dir = deployments_dir / deploy_name / mode_key
-            for compute_unit in _discover_compute_units_in_dir(mode_dir):
-                path_arg = _path_arg_for_deploy(
-                    package_name,
-                    system_name,
-                    launcher_dir,
-                    deploy_name,
-                    mode_key,
-                    compute_unit,
-                    web_dir,
-                )
-                mode_entries.append((compute_unit, deploy_name, f"ros2 launch {path_arg}"))
-        mode_entries.sort(key=lambda x: (x[0], x[1]))
-        for compute_unit, deploy_name, cmd in mode_entries:
-            result.append((mode_key, compute_unit, deploy_name, cmd))
-    return result
-
-
-def _build_command_groups(
-    deploy_commands: list[tuple[str, str, str, str]],
-) -> list[dict[str, Any]]:
-    """Build hierarchy mode > ecu > deploys for template with rowspans."""
-    if not deploy_commands:
-        return []
-    groups: list[dict[str, Any]] = []
-    current_mode: str | None = None
-    mode_group: dict[str, Any] | None = None
-    current_ecu: str | None = None
-    ecu_group: dict[str, Any] | None = None
-    for mode_key, compute_unit, deploy_name, cmd in deploy_commands:
-        if mode_key != current_mode:
-            current_mode = mode_key
-            mode_group = {"mode": mode_key, "mode_rowspan": 0, "ecus": []}
-            groups.append(mode_group)
-            current_ecu = None
-        if compute_unit != current_ecu:
-            current_ecu = compute_unit
-            ecu_group = {"ecu": compute_unit, "ecu_rowspan": 0, "deploys": []}
-            if mode_group is not None:
-                mode_group["ecus"].append(ecu_group)
-        deploy_entry = {"deploy_name": deploy_name, "cmd": cmd}
-        if ecu_group is not None:
-            ecu_group["deploys"].append(deploy_entry)
-            ecu_group["ecu_rowspan"] += 1
-        if mode_group is not None:
-            mode_group["mode_rowspan"] += 1
-    return groups
-
-
-def _command_groups_to_rows(command_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert command_groups to flat rows with show_mode_cell, mode_rowspan, show_ecu_cell, ecu_rowspan."""
-    rows = [
-        {
-            "mode": mg["mode"],
-            "ecu": eg["ecu"],
-            "deploy_name": deploy["deploy_name"],
-            "cmd": deploy["cmd"],
-        }
-        for mg in command_groups
-        for eg in mg["ecus"]
-        for deploy in eg["deploys"]
-    ]
-    _add_row_span_metadata(rows)
-    return rows
-
-
-def _rows_for_deploy(command_groups: list[dict[str, Any]], deploy_name: str) -> list[dict[str, Any]]:
-    """Build rows for a single deploy (no deploy_name in row); recomputes rowspan metadata."""
-    rows = [
-        {"mode": mg["mode"], "ecu": eg["ecu"], "cmd": deploy["cmd"]}
-        for mg in command_groups
-        for eg in mg["ecus"]
-        for deploy in eg["deploys"]
-        if deploy["deploy_name"] == deploy_name
-    ]
-    _add_row_span_metadata(rows)
-    return rows
-
-
-def _commands_by_deploy(
-    command_groups: list[dict[str, Any]],
-) -> tuple[list[str], dict[str, list[dict[str, Any]]]]:
-    """Get sorted deploy names and a map deploy_name -> rows for that deploy."""
-    deploy_names_set: set[str] = set()
-    for mg in command_groups:
-        for eg in mg["ecus"]:
-            for deploy in eg["deploys"]:
-                deploy_names_set.add(deploy["deploy_name"])
-    deploy_names = sorted(deploy_names_set)
-    commands_by_deploy = {name: _rows_for_deploy(command_groups, name) for name in deploy_names}
-    return deploy_names, commands_by_deploy
-
-
-def _calculate_systems_index_path(web_dir: str) -> str:
-    """Calculate relative path from web_dir to systems.html index."""
-    install_root = get_install_root(Path(web_dir))
-    if install_root and install_root.exists():
-        try:
-            rel_to_root = os.path.relpath(install_root, web_dir)
-            return os.path.join(rel_to_root, "systems.html")
-        except ValueError:
-            logger.warning("Could not calculate relative path from %s to %s", web_dir, install_root)
-    return "../../../../../../../systems.html"
+def _rows_by_deploy(commands: list[Command]) -> tuple[list[str], dict[str, list[dict[str, Any]]]]:
+    """Sorted deploy names and each one's table rows; the page switches between them client-side."""
+    deploy_names = sorted({deploy_name for _, _, deploy_name, _ in commands})
+    return deploy_names, {name: _to_rows([cmd for cmd in commands if cmd[2] == name]) for name in deploy_names}
 
 
 def generate_launch_commands_page(
@@ -275,21 +153,14 @@ def generate_launch_commands_page(
         deploy_variants: Optional list of deploy items (name, arguments); when set, uses launcher/deployments/.
     """
     deploy_variants = deploy_variants or []
+    commands = _build_commands(system_name, package_name, launcher_dir, mode_keys, deploy_variants, web_dir)
+
     if deploy_variants:
-        deploy_commands = _build_deploy_commands(
-            system_name, package_name, launcher_dir, mode_keys, deploy_variants, web_dir
-        )
-        command_groups = _build_command_groups(deploy_commands)
-        deploy_names, commands_by_deploy = _commands_by_deploy(command_groups)
+        deploy_names, commands_by_deploy = _rows_by_deploy(commands)
         command_rows = commands_by_deploy[deploy_names[0]] if deploy_names else []
     else:
-        deploy_names = []
-        commands_by_deploy = {}
-        commands = _build_launch_commands(system_name, package_name, launcher_dir, mode_keys, web_dir)
-        command_rows = _flat_commands_to_rows(commands)
-
-    systems_index_path = _calculate_systems_index_path(web_dir)
-    overview_path = f"{system_name}_overview.html"
+        deploy_names, commands_by_deploy = [], {}
+        command_rows = _to_rows(commands)
 
     renderer = TemplateRenderer()
     output_path = os.path.join(web_dir, f"{system_name}_launch_commands.html")
@@ -301,7 +172,7 @@ def generate_launch_commands_page(
         command_rows=command_rows,
         deploy_names=deploy_names,
         commands_by_deploy=commands_by_deploy,
-        systems_index_path=systems_index_path,
-        overview_path=overview_path,
+        systems_index_path=systems_index_link(web_dir, SYSTEMS_INDEX_FALLBACK),
+        overview_path=f"{system_name}_overview.html",
     )
     logger.info("Generated launch commands page: %s", output_path)

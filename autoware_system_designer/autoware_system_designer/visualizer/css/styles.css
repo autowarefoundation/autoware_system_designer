@@ -19,6 +19,8 @@
   --spinner-border: #f3f3f3;
   --spinner-active: #0d6efd;
   --error-color: #dc3545;
+  --link-color: #1e88e5;
+  --mono-font: "Consolas", monospace;
 }
 
 [data-theme="dark"] {
@@ -42,6 +44,7 @@
   --spinner-border: #495057;
   --spinner-active: #0d6efd;
   --error-color: #dc3545;
+  --link-color: #4da3ff;
 }
 
 body {
@@ -435,8 +438,144 @@ body {
 
 .info-value {
   color: var(--text-primary);
-  font-family: "Consolas", monospace;
+  font-family: var(--mono-font);
   word-break: break-all;
+}
+
+.info-value-full {
+  width: 100%;
+}
+
+.info-group {
+  margin-bottom: 15px;
+}
+
+.info-group:last-child {
+  margin-bottom: 0;
+}
+
+.info-subtitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+
+/* Interface card: one entry per port */
+.port-entry {
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.port-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.port-type {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--mono-font);
+  margin-top: 1px;
+}
+
+/* Parameter card: name plus source badge on the left, resolved value on the right */
+.param-entry {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.param-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.param-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  word-break: break-all;
+  flex: 1;
+}
+
+.param-value {
+  font-family: var(--mono-font);
+  font-size: 12px;
+  color: var(--text-primary);
+  word-break: break-all;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Badge colors encode where a parameter value came from. */
+.param-badge {
+  --badge-color: #888888;
+  --badge-tint: 136, 136, 136;
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--mono-font);
+  color: var(--badge-color);
+  background: rgba(var(--badge-tint), 0.12);
+  border: 1px solid rgba(var(--badge-tint), 0.35);
+  border-radius: 3px;
+  padding: 1px 5px;
+  vertical-align: middle;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+a.param-badge {
+  cursor: pointer;
+}
+
+.param-badge[data-type="OVERRIDE"],
+.param-badge[data-type="OVERRIDE_FILE"] {
+  --badge-color: #d4890a;
+  --badge-tint: 212, 137, 10;
+}
+
+.param-badge[data-type="MODE"],
+.param-badge[data-type="MODE_FILE"] {
+  --badge-color: #1e88e5;
+  --badge-tint: 30, 136, 229;
+}
+
+.param-badge[data-type="GLOBAL"] {
+  --badge-color: #8e24aa;
+  --badge-tint: 142, 36, 170;
+}
+
+/* Jump-to-editor links on source locations */
+.source-link {
+  color: var(--link-color);
+  text-decoration: none;
+  word-break: break-all;
+  font-size: 13px;
+  font-family: var(--mono-font);
+}
+
+.package-source-link {
+  display: block;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.diagram-error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  color: var(--error-color);
+}
+
+body.resizing-sidebar {
+  cursor: col-resize;
+  user-select: none;
 }
 
 /* Settings gear button */

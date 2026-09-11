@@ -1,7 +1,25 @@
+# Copyright 2026 TIER IV, inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+"""Per-component presentation hints (color, canvas position) attached to the exported tree."""
+
+from __future__ import annotations
+
 from typing import Dict, List, Optional, Tuple
 
-# Base color mapping for component types
-# All color variants (matte, medium, bright, text) are calculated from these base colors
+# Base color per top-level component; every variant is derived from these.
 BASE_COLOR_MAP = {
     "sensing": "#cc6666",  # red
     "localization": "#cc8855",  # orange
@@ -13,8 +31,18 @@ BASE_COLOR_MAP = {
     "gray": "#888888",  # gray
 }
 
+# Variant -> (base weight, white weight). Weights below 1 without white darken the base.
+COLOR_VARIANTS = {
+    "medium": (0.5, 0.5),
+    "bright": (0.2, 0.8),
+    "fade": (0.7, 0.0),
+    "darkish": (0.39, 0.0),
+    "dark": (0.26, 0.0),
+    "darkest": (0.1, 0.0),
+}
 
-def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+
+def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
     """Convert hex color to RGB tuple.
 
     Args:
@@ -40,69 +68,39 @@ def rgb_to_hex(r: int, g: int, b: int) -> str:
 
 
 def calculate_color_variant(base_color: str, variant: str) -> str:
-    """Calculate a color variant from a base color.
+    """Blend a base color toward white or black per COLOR_VARIANTS; unknown variants pass through.
 
     Args:
         base_color: Base hex color string
-        variant: Variant type - "matte", "medium", "bright", "text", "dark", or "dark_text"
+        variant: Key of COLOR_VARIANTS, or "base" for the color as-is
 
     Returns:
         Calculated hex color string
     """
-    r, g, b = hex_to_rgb(base_color)
-
-    if variant == "base":
-        # Base: use base color as-is
+    weights = COLOR_VARIANTS.get(variant)
+    if weights is None:
         return base_color
-    elif variant == "medium":
-        # Medium: blend 50% base + 50% white for lighter background
-        return rgb_to_hex(int(r * 0.5 + 255 * 0.5), int(g * 0.5 + 255 * 0.5), int(b * 0.5 + 255 * 0.5))
-    elif variant == "bright":
-        # Bright: blend 20% base + 80% white for pastel background
-        return rgb_to_hex(int(r * 0.2 + 255 * 0.8), int(g * 0.2 + 255 * 0.8), int(b * 0.2 + 255 * 0.8))
-    elif variant == "fade":
-        # Fade: blend 70% base
-        return rgb_to_hex(int(r * 0.7), int(g * 0.7), int(b * 0.7))
-    elif variant == "darkish":
-        # Darkish: blend 35% base
-        return rgb_to_hex(int(r * 0.39), int(g * 0.39), int(b * 0.39))
-    elif variant == "dark":
-        # Dark: darken for dark mode backgrounds (darker than text variant)
-        return rgb_to_hex(int(r * 0.26), int(g * 0.26), int(b * 0.26))
-    elif variant == "darkest":
-        # Darkest: blend 90% base
-        return rgb_to_hex(int(r * 0.1), int(g * 0.1), int(b * 0.1))
-    else:
-        return base_color
+    base_weight, white_weight = weights
+    return rgb_to_hex(*(int(channel * base_weight + 255 * white_weight) for channel in hex_to_rgb(base_color)))
 
 
-def get_component_color(namespace: List[str], variant: str = "matte") -> str:
+def get_component_color(namespace: List[str], variant: str = "base") -> str:
     """Get color for a component based on its top-level namespace.
-
-    All color variants are calculated dynamically from the base color map.
 
     Args:
         namespace: List of namespace components
-        variant: Color variant - "matte" (default), "medium", "bright", "text", "dark", or "dark_text"
+        variant: Key of COLOR_VARIANTS, or "base" for the unmodified base color
 
     Returns:
         Calculated hex color string
     """
-    # Get base color
-    if not namespace or len(namespace) == 0:
-        base_color = BASE_COLOR_MAP["gray"]
-    else:
-        # Get the top-level component (first in namespace)
-        top_level = namespace[0].lower()
-        base_color = BASE_COLOR_MAP.get(top_level, BASE_COLOR_MAP["gray"])
-
-    # Calculate and return the requested variant
+    top_level = namespace[0].lower() if namespace else None
+    base_color = BASE_COLOR_MAP.get(top_level, BASE_COLOR_MAP["gray"])
     return calculate_color_variant(base_color, variant)
 
 
-# Position map for visualization
-# left to right, top to bottom
-# each element is a tuple of (x, y)
+# Canvas grid slot [x, y] per component, left to right and top to bottom.
+# Nested maps refine a component; a coordinate is a leaf.
 POSITION_MAP = {
     "map": [0, 0],
     "sensing": {
@@ -126,8 +124,8 @@ POSITION_MAP = {
 def get_component_position(namespace: List[str]) -> Optional[List[int]]:
     """Get position [x, y] for a component based on its namespace.
 
-    Traverses the POSITION_MAP using the namespace components.
-    Returns the most specific position found.
+    Traverses the POSITION_MAP using the namespace components and returns the
+    most specific coordinate reached.
 
     Args:
         namespace: List of namespace components
@@ -135,29 +133,17 @@ def get_component_position(namespace: List[str]) -> Optional[List[int]]:
     Returns:
         List [x, y] or None if no position found
     """
-    if not namespace:
-        return None
-
-    current_level = POSITION_MAP
-    last_found_pos = None
+    level = POSITION_MAP
 
     for part in namespace:
-        key = part.lower()
-        if isinstance(current_level, dict) and key in current_level:
-            val = current_level[key]
-            if isinstance(val, (list, tuple)) and len(val) == 2:
-                last_found_pos = list(val)
-                # If we hit a coordinate, we stop traversing because
-                # in the current map structure, coordinates are leaf values.
-                return last_found_pos
-            elif isinstance(val, dict):
-                current_level = val
-            else:
-                break
-        else:
-            break
+        value = level.get(part.lower()) if isinstance(level, dict) else None
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            return list(value)
+        if not isinstance(value, dict):
+            return None
+        level = value
 
-    return last_found_pos
+    return None
 
 
 def build_vis_guide(namespace: List[str]) -> Dict[str, object]:
@@ -168,10 +154,8 @@ def build_vis_guide(namespace: List[str]) -> Dict[str, object]:
         "background_color": get_component_color(namespace, variant="bright"),
         "text_color": get_component_color(namespace, variant="darkest"),
         "dark_color": get_component_color(namespace, variant="fade"),
-        "dark_medium_color": get_component_color(
-            namespace, variant="darkish"
-        ),  # Integrated dark+text variant for nodes
-        "dark_background_color": get_component_color(namespace, variant="dark"),  # Pure dark variant for modules
+        "dark_medium_color": get_component_color(namespace, variant="darkish"),
+        "dark_background_color": get_component_color(namespace, variant="dark"),
         "dark_text_color": get_component_color(namespace, variant="bright"),
         "position": get_component_position(namespace),
     }

@@ -93,21 +93,7 @@
                 });
             });
         }
-        document.querySelectorAll('.copy-btn').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                var cmd = this.getAttribute('data-cmd');
-                if (!cmd) return;
-                navigator.clipboard.writeText(cmd).then(function() {
-                    var label = btn.textContent;
-                    btn.textContent = 'Copied!';
-                    btn.classList.add('copied');
-                    setTimeout(function() {
-                        btn.textContent = label;
-                        btn.classList.remove('copied');
-                    }, 1500);
-                });
-            });
-        });
+        bindCopyButtons(document);
         {% if deploy_names %}
         (function() {
             var commandsByDeploy = {{ commands_by_deploy | tojson }};
