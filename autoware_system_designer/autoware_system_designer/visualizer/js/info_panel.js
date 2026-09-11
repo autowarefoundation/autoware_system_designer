@@ -23,6 +23,8 @@
     "parameters",
     "topic",
     "global_topic",
+    "event",
+    "chain",
   ]);
 
   // Parameter source -> badge label; the matching colors live in css/styles.css.
@@ -122,6 +124,109 @@
     return card(`Global Topic ${globalTopic.topic}`, ...groups);
   }
 
+  // One event of the trigger graph: what fires it and at what rate.
+  function eventCard(event) {
+    const rows = [
+      ["kind", event.kind],
+      ["type", event.type],
+      ["rate", event.rate],
+      ["warn rate", event.warn_rate],
+      ["error rate", event.error_rate],
+      ["timeout", event.timeout],
+    ]
+      .filter(([, value]) => value !== null && value !== undefined)
+      .map(([key, value]) => {
+        const row = element("div", "info-row");
+        row.appendChild(element("span", "info-label", `${key}:`));
+        row.appendChild(element("span", "info-value", scalarText(value)));
+        return row;
+      });
+
+    if (event.mismatch) {
+      const row = element("div", "info-row");
+      row.appendChild(element("span", "info-label", "mixed trigger rates:"));
+      row.appendChild(
+        element("span", "info-value chain-warn", event.mismatch.join(" / ")),
+      );
+      rows.push(row);
+    }
+    return rows.length ? card("Event", ...rows) : null;
+  }
+
+  function chainEntry(item) {
+    const entry = element("div", "port-entry");
+    const head = item.hops ? `+${item.hops}  ${item.name}` : item.name;
+    entry.appendChild(element("div", "port-name", head));
+    if (item.path) entry.appendChild(element("div", "port-type", item.path));
+    entry.appendChild(
+      element("div", "port-type", `${item.type} · ${item.rate}`),
+    );
+    return entry;
+  }
+
+  function chainGroup(title, items, total, limit) {
+    const group = element("div", "info-group");
+    group.appendChild(element("div", "info-subtitle", `${title} (${total})`));
+    items.forEach((item) => group.appendChild(chainEntry(item)));
+    if (total > limit) {
+      group.appendChild(
+        element("div", "port-type", `… ${total - limit} more not listed`),
+      );
+    }
+    return group;
+  }
+
+  // Hop-ordered walk of the trigger graph in both directions from one event.
+  // A report that is not about a single event passes no clocks.
+  function chainCard(chain) {
+    const groups = [];
+
+    if (chain.clocks) {
+      const clockGroup = element("div", "info-group");
+      clockGroup.appendChild(element("div", "info-subtitle", "Driven by"));
+      if (chain.clocks.length) {
+        chain.clocks.forEach((clock) =>
+          clockGroup.appendChild(
+            chainEntry({
+              name: clock.name,
+              path: clock.path,
+              type: "clock",
+              rate: clock.rate,
+              hops: 0,
+            }),
+          ),
+        );
+      } else {
+        clockGroup.appendChild(
+          element("div", "port-type chain-warn", "no clock reaches this event"),
+        );
+      }
+      groups.push(clockGroup);
+    }
+
+    if (chain.upstream_total) {
+      groups.push(
+        chainGroup(
+          chain.upstream_label || "Causes",
+          chain.upstream,
+          chain.upstream_total,
+          chain.limit,
+        ),
+      );
+    }
+    if (chain.downstream_total) {
+      groups.push(
+        chainGroup(
+          chain.downstream_label || "Effects",
+          chain.downstream,
+          chain.downstream_total,
+          chain.limit,
+        ),
+      );
+    }
+    return card(chain.title || "Chain", ...groups);
+  }
+
   function interfaceCard(data) {
     const inPorts = data.in_ports || [];
     const outPorts = data.out_ports || [];
@@ -205,6 +310,8 @@
     const cards = [
       data.topic ? topicCard(data.topic) : null,
       data.global_topic ? globalTopicCard(data.global_topic) : null,
+      data.event ? eventCard(data.event) : null,
+      data.chain ? chainCard(data.chain) : null,
       infoCard(data),
       interfaceCard(data),
       parameterCard(data.parameters),

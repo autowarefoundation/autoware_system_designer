@@ -1,615 +1,1157 @@
 // Logic Diagram Module
-// This module provides functionality to render logic diagrams using Viz.js (Graphviz)
+// Event-propagation view of a system: every event is a vertex, trigger relations
+// are the edges, and the chain of causes behind any event is traceable from it.
 
-// Graphviz reports its size only once the browser has laid the SVG out.
 (function () {
-  const FIT_RETRY_DELAYS_MS = [100, 250, 500];
+  const SVG_NS = ElkCanvas.SVG_NS;
 
-  class LogicDiagramModule extends DiagramBase {
+  // Frequency is propagated from clock roots only, so these types start a chain.
+  const CLOCK_TYPES = new Set(["periodic", "once"]);
+
+  // Trigger semantics carried by shape: the gate's type is what decides how many
+  // of its inputs have to fire before it does.
+  const GATE_SHAPES = {
+    and: "and",
+    or: "or",
+    periodic: "clock",
+    once: "tag",
+  };
+
+  const UPSTREAM_COLOR = "green";
+  const DOWNSTREAM_COLOR = "orange";
+  const CHAIN_LIST_LIMIT = 40;
+
+  // Legend entries, in the order the chain reads.
+  const LEGEND = [
+    ["clock", "periodic / once — chain root"],
+    ["and", "and — waits for every trigger"],
+    ["or", "or — fires on any trigger"],
+    ["box", "on_input / on_trigger — plain relay"],
+    ["unknown", "type not declared"],
+  ];
+
+  class LogicDiagramModule extends ElkCanvas {
+    // ── Initialization ──────────────────────────────────────────────────────────
+
     constructor(container, options = {}) {
       super(container, options);
-      this.nodeMap = new Map(); // svgTitle → <g class="node"> element
-      this.edgesByNode = new Map(); // svgTitle → [{edge, srcId, tgtId}]
+
+      this.rootData = null;
+      this.events = new Map(); // eventId → event record
+      this.instances = new Map(); // instanceId → { data, depth }
+      this.succ = new Map(); // eventId → [eventId] it triggers
+      this.pred = new Map(); // eventId → [eventId] triggering it
+      this.edgeList = []; // { id, from, to, cross }
+      this.edgeIdByKey = new Map(); // "from>to" → edgeId
+      this.clocksOf = new Map(); // eventId → Set(clock root id)
+      this.clockRootIds = [];
+      this.activeIds = new Set(); // events carrying at least one trigger relation
+      this.gateIds = new Set();
+      this.groups = new Map(); // instanceId → <g>
+      this.groupDepth = new Map();
+      this.currentGraph = null;
+      this.showUnlinked = false;
+      this.traceMode = "both";
+      this.selectedId = null;
+
       this.init();
     }
 
     async init() {
-      // The renderer lives in a second script, so readiness is polled rather than
-      // inferred from the load event of either file.
-      if (!this.isGraphvizLoaded()) {
-        await DiagramBase.loadScript(DiagramBase.CDN.viz);
-        await DiagramBase.loadScript(DiagramBase.CDN.vizRender);
-      }
-      await this.waitForGraphvizReady();
-      await DiagramBase.ensureLibrary("svgPanZoom", DiagramBase.CDN.svgPanZoom);
-
-      await this.loadAndRender();
-    }
-
-    isGraphvizLoaded() {
-      return (
-        typeof window !== "undefined" &&
-        typeof window.Viz === "function" &&
-        typeof window.Viz.Module !== "undefined" &&
-        typeof window.Viz.render === "function"
-      );
-    }
-
-    async waitForGraphvizReady() {
-      return new Promise((resolve) => {
-        const checkReady = () => {
-          if (this.isGraphvizLoaded()) {
-            resolve();
-          } else {
-            setTimeout(checkReady, 50);
-          }
-        };
-        checkReady();
-      });
-    }
-
-    async loadAndRender() {
       try {
-        // Load data if not already loaded
-        if (
-          !window.logicDiagramData ||
-          !window.logicDiagramData[this.options.mode]
-        ) {
-          await this.loadDataScript(this.options.mode, "logic_diagram");
-        }
-
-        if (
-          !window.logicDiagramData ||
-          !window.logicDiagramData[this.options.mode]
-        ) {
-          throw new Error(
-            `No logic diagram data available for mode: ${this.options.mode}`,
-          );
-        }
-
-        // Generate DOT syntax from data and render
-        const data = window.logicDiagramData[this.options.mode];
-        const dotSyntax = this.generateDotSyntax(data);
-        await this.renderLogicDiagram(dotSyntax);
+        await this.initElk();
+        await this.loadAndRender();
       } catch (error) {
         console.error("Error loading logic diagram:", error);
         this.showError(`Error loading logic diagram: ${error.message}`);
       }
     }
 
-    generateDotSyntax(root) {
-      const isDark = this.isDarkMode();
+    async loadAndRender() {
+      if (!window.logicDiagramData?.[this.options.mode]) {
+        await this.loadDataScript(this.options.mode, "logic_diagram");
+      }
+      const data = window.logicDiagramData?.[this.options.mode];
+      if (!data) {
+        throw new Error(
+          `No logic diagram data available for mode: ${this.options.mode}`,
+        );
+      }
+      this.rootData = data;
+      this.buildEventModel(data);
+      await this.layoutAndRender();
+    }
 
-      const colors = {
-        bg: this.getComputedStyleValue(
-          "--bg-secondary",
-          isDark ? "#2d2d2d" : "#dddddd",
-        ),
-        nodeBg: this.getComputedStyleValue(
-          "--bg-primary",
-          isDark ? "#1e1e1e" : "white",
-        ),
-        edge: this.getComputedStyleValue(
-          "--text-muted",
-          isDark ? "#6c757d" : "#000066",
-        ),
-        text: this.getComputedStyleValue(
-          "--text-primary",
-          isDark ? "#e9ecef" : "#333333",
-        ),
-        input: isDark ? "#1e5228" : "#d4edda",
-        inputBorder: isDark ? "#1e5228" : "#28a745",
-        output: isDark ? "#7d4500" : "#ffe8cc",
-        outputBorder: isDark ? "#7d4500" : "#fd7e14",
-        cloud: this.getComputedStyleValue(
-          "--border-hover",
-          isDark ? "#adb5bd" : "gray",
-        ),
-        cloudEdge: this.getComputedStyleValue(
-          "--text-muted",
-          isDark ? "#6c757d" : "#555577",
-        ),
+    // ── Event model ─────────────────────────────────────────────────────────────
+
+    buildEventModel(root) {
+      this.events.clear();
+      this.instances.clear();
+      this.succ.clear();
+      this.pred.clear();
+      this.edgeIdByKey.clear();
+      this.edgeList = [];
+      this.activeIds.clear();
+
+      const addEvent = (event, instance, kind, port) => {
+        if (!event?.unique_id || this.events.has(event.unique_id)) return;
+        this.events.set(String(event.unique_id), {
+          id: String(event.unique_id),
+          name: event.name || "event",
+          type: event.type || null,
+          kind,
+          ownerId: String(instance.unique_id),
+          port: port || null,
+          frequency: event.frequency ?? null,
+          warn_rate: event.warn_rate ?? null,
+          error_rate: event.error_rate ?? null,
+          timeout: event.timeout ?? null,
+          triggers: (event.trigger_ids || []).map(String),
+          actions: (event.action_ids || []).map(String),
+        });
       };
 
-      let dotLines = [];
+      const visit = (instance, depth) => {
+        if (!instance?.unique_id) return;
+        this.instances.set(String(instance.unique_id), {
+          data: instance,
+          depth,
+        });
+        (instance.in_ports || []).forEach((port) =>
+          addEvent(port.event, instance, "input", port),
+        );
+        (instance.out_ports || []).forEach((port) =>
+          addEvent(port.event, instance, "output", port),
+        );
+        (instance.events || []).forEach((event) =>
+          addEvent(event, instance, "gate", null),
+        );
+        (instance.children || []).forEach((child) => visit(child, depth + 1));
+      };
+      visit(root, 0);
 
-      // Graph header
-      dotLines.push(`digraph logic_diagram {`);
-      dotLines.push(`\tlabel="System Diagram ${root.name}";`);
-      dotLines.push(`\tlabelloc=top;`);
-      dotLines.push(`\tfontsize=20;`);
-      dotLines.push(`\tfontname="Arial";`);
-      dotLines.push(`\tfontcolor="${colors.text}";`);
-      dotLines.push(`\tbgcolor="${isDark ? "#1a1a1a" : "white"}";`);
-      dotLines.push(`\trankdir=LR;`);
-      dotLines.push(
-        `\tnode [shape=box, style=filled, fillcolor="${colors.bg}", fontname="Arial", fontsize=10, fontcolor="${colors.text}"];`,
-      );
-      dotLines.push(
-        `\tedge [fontname="Arial", fontsize=8, color="${colors.edge}"];`,
-      );
-      dotLines.push(``);
+      // trigger_ids and action_ids are the same relation read from either end.
+      const link = (fromId, toId) => {
+        if (fromId === toId) return;
+        const from = this.events.get(fromId);
+        const to = this.events.get(toId);
+        if (!from || !to) return;
+        const key = `${fromId}>${toId}`;
+        if (this.edgeIdByKey.has(key)) return;
 
-      // Build instance graphs recursively
-      this.buildInstanceGraph(root, dotLines, colors);
+        const id = `le_${this.edgeList.length}`;
+        this.edgeIdByKey.set(key, id);
+        this.edgeList.push({
+          id,
+          from: fromId,
+          to: toId,
+          cross: from.ownerId !== to.ownerId,
+        });
+        if (!this.succ.has(fromId)) this.succ.set(fromId, []);
+        this.succ.get(fromId).push(toId);
+        if (!this.pred.has(toId)) this.pred.set(toId, []);
+        this.pred.get(toId).push(fromId);
+      };
 
-      dotLines.push(`}`);
-      return dotLines.join("\n");
+      this.events.forEach((event) => {
+        event.triggers.forEach((triggerId) => link(triggerId, event.id));
+        event.actions.forEach((actionId) => link(event.id, actionId));
+      });
+
+      this.events.forEach((event, id) => {
+        if (this.succ.has(id) || this.pred.has(id)) this.activeIds.add(id);
+      });
+
+      this._computeClocks();
     }
 
-    buildInstanceGraph(instance, dotLines, colors) {
-      if (instance.entity_type === "node") {
-        // Node cluster
-        dotLines.push(`\tsubgraph cluster_${instance.unique_id} {`);
-        dotLines.push(`\t\tlabel="${instance.name}";`);
-        dotLines.push(`\t\tfontcolor="${colors.text}";`);
-        if (instance.vis_guide) {
-          const guide = instance.vis_guide;
-          const color = this.isDarkMode()
-            ? guide.dark_color || guide.color
-            : guide.color;
-          const bgColor = this.isDarkMode()
-            ? guide.dark_background_color || guide.background_color
-            : guide.background_color;
-          const textColor = this.isDarkMode()
-            ? guide.dark_text_color || guide.text_color
-            : guide.text_color;
-          dotLines.push(
-            `\t\tstyle="rounded,filled"; color="${color}"; fillcolor="${bgColor}"; fontcolor="${textColor}";`,
-          );
+    // An event no clock root reaches is one nothing paces; the builder leaves its
+    // frequency unset for the same reason.
+    _computeClocks() {
+      this.clocksOf.clear();
+      this.clockRootIds = [...this.events.values()]
+        .filter((event) => CLOCK_TYPES.has(event.type))
+        .map((event) => event.id);
+
+      this.clockRootIds.forEach((rootId) => {
+        const stack = [rootId];
+        const seen = new Set();
+        while (stack.length) {
+          const id = stack.pop();
+          if (seen.has(id)) continue;
+          seen.add(id);
+          if (!this.clocksOf.has(id)) this.clocksOf.set(id, new Set());
+          this.clocksOf.get(id).add(rootId);
+          (this.succ.get(id) || []).forEach((next) => {
+            if (!seen.has(next)) stack.push(next);
+          });
         }
-        dotLines.push(
-          `\t\tnode [style=filled, fillcolor="${colors.nodeBg}", fontcolor="${colors.text}"];`,
+      });
+    }
+
+    _isVisible(eventId) {
+      return this.showUnlinked || this.activeIds.has(eventId);
+    }
+
+    // An `and` gate fires at the slowest of its triggers, so triggers arriving at
+    // different rates mean the declared rate cannot hold for all of them.
+    _rateMismatch(event) {
+      if (event.type !== "and") return null;
+      const rates = new Set(
+        (this.pred.get(event.id) || [])
+          .map((id) => this.events.get(id)?.frequency)
+          .filter((frequency) => frequency !== null && frequency !== undefined),
+      );
+      return rates.size > 1 ? [...rates].sort((a, b) => a - b) : null;
+    }
+
+    // ── Labels ──────────────────────────────────────────────────────────────────
+
+    rateLabel(frequency) {
+      if (frequency === null || frequency === undefined) return "";
+      if (frequency === 0) return "once";
+      return `${Number(frequency.toFixed(3))}Hz`;
+    }
+
+    eventLabel(event) {
+      const rate = this.rateLabel(event.frequency);
+      return rate ? `${event.name} ${rate}` : event.name;
+    }
+
+    gateSubLabel(event) {
+      return this.rateLabel(event.frequency) || event.type || "?";
+    }
+
+    // ── ELK graph ───────────────────────────────────────────────────────────────
+
+    buildElkGraph() {
+      this.gateIds.clear();
+      // Gates sit one level below the leaf instances that own them.
+      this.maxDepth = this.findMaxDepth(this.rootData) + 1;
+
+      const visiblePorts = (ports) =>
+        (ports || []).filter(
+          (port) =>
+            port.event?.unique_id &&
+            this._isVisible(String(port.event.unique_id)),
         );
 
-        // Input ports
-        if (instance.in_ports && Array.isArray(instance.in_ports)) {
-          instance.in_ports.forEach((port) => {
-            if (port && port.unique_id && port.name) {
-              const eventType = port.event ? port.event.type : "unknown";
-              const eventFreq =
-                port.event && port.event.frequency !== null
-                  ? port.event.frequency
-                  : "unknown";
-              dotLines.push(
-                `\t\t${port.unique_id} [label="input/${port.name}\\n#${eventType}\\n@${eventFreq}", shape=box, style="filled", fillcolor="${colors.input}", color="${colors.inputBorder}", penwidth=2, fontcolor="${colors.text}"];`,
-              );
-            }
+      const addPorts = (node, ports, side, style) => {
+        ports.forEach((port) => {
+          const event = this.events.get(String(port.event.unique_id));
+          const text = this.eventLabel(event);
+          node.ports.push({
+            id: event.id,
+            width: style.portSize,
+            height: style.portSize,
+            properties: { "org.eclipse.elk.port.side": side },
+            labels: [
+              {
+                text,
+                width: this.measureTextWidth(text, style.portLabelFontSz),
+                height: style.portSize,
+              },
+            ],
           });
-        }
-
-        // Output ports
-        if (instance.out_ports && Array.isArray(instance.out_ports)) {
-          instance.out_ports.forEach((port) => {
-            if (port && port.unique_id && port.name) {
-              dotLines.push(
-                `\t\t${port.unique_id} [label="output/${port.name}", shape=box, style="filled", fillcolor="${colors.output}", color="${colors.outputBorder}", penwidth=2, fontcolor="${colors.text}"];`,
-              );
-            }
-          });
-        }
-
-        // Events
-        if (instance.events && Array.isArray(instance.events)) {
-          instance.events.forEach((event) => {
-            if (
-              event &&
-              event.unique_id &&
-              event.name &&
-              event.type &&
-              event.frequency !== undefined
-            ) {
-              const freq =
-                event.frequency !== null ? event.frequency : "unknown";
-              const shape = event.type === "periodic" ? "diamond" : "box";
-              const mediumColor = instance.vis_guide
-                ? this.isDarkMode()
-                  ? instance.vis_guide.dark_medium_color ||
-                    instance.vis_guide.medium_color
-                  : instance.vis_guide.medium_color
-                : this.isDarkMode()
-                  ? "#444444"
-                  : "#cccccc";
-              dotLines.push(
-                `\t\t${event.unique_id} [label="${event.name}\\n#${event.type}\\n@${freq}", shape=${shape}, fillcolor="${mediumColor}", fontcolor="${colors.text}"];`,
-              );
-            }
-          });
-        }
-
-        dotLines.push(`\t}`);
-
-        // Global topic clouds for input ports
-        if (instance.in_ports && Array.isArray(instance.in_ports)) {
-          instance.in_ports.forEach((port) => {
-            if (port && port.unique_id && port.is_global) {
-              const topicPath = Array.isArray(port.topic)
-                ? port.topic.join("/")
-                : port.topic || "";
-              dotLines.push(
-                `\t${port.unique_id}_cloud [label="/${topicPath}", shape=hexagon, style=solid, color="${colors.cloud}", fontcolor="${colors.text}"];`,
-              );
-              dotLines.push(
-                `\t${port.unique_id}_cloud -> ${port.unique_id} [color="${colors.cloudEdge}"];`,
-              );
-            }
-          });
-        }
-
-        // Event triggers
-        if (instance.events && Array.isArray(instance.events)) {
-          instance.events.forEach((event) => {
-            if (
-              event &&
-              event.unique_id &&
-              event.trigger_ids &&
-              Array.isArray(event.trigger_ids)
-            ) {
-              event.trigger_ids.forEach((triggerId) => {
-                if (triggerId) {
-                  dotLines.push(
-                    `\t${triggerId} -> ${event.unique_id} [color="${colors.cloudEdge}"];`,
-                  );
-                }
-              });
-            }
-          });
-        }
-
-        // Output port triggers
-        if (instance.out_ports && Array.isArray(instance.out_ports)) {
-          instance.out_ports.forEach((port) => {
-            if (
-              port &&
-              port.event &&
-              port.event.unique_id &&
-              port.event.trigger_ids &&
-              Array.isArray(port.event.trigger_ids)
-            ) {
-              port.event.trigger_ids.forEach((triggerId) => {
-                if (triggerId) {
-                  dotLines.push(
-                    `\t${triggerId} -> ${port.event.unique_id} [color="${colors.cloudEdge}"];`,
-                  );
-                }
-              });
-            }
-          });
-        }
-
-        // Input port triggers
-        if (instance.in_ports && Array.isArray(instance.in_ports)) {
-          instance.in_ports.forEach((port) => {
-            if (
-              port &&
-              port.event &&
-              port.event.unique_id &&
-              port.event.trigger_ids &&
-              Array.isArray(port.event.trigger_ids)
-            ) {
-              port.event.trigger_ids.forEach((triggerId) => {
-                if (triggerId) {
-                  dotLines.push(
-                    `\t${triggerId} -> ${port.event.unique_id} [color="${colors.cloudEdge}"];`,
-                  );
-                }
-              });
-            }
-          });
-        }
-      } else if (
-        instance.entity_type === "module" ||
-        instance.entity_type === "system"
-      ) {
-        // Recursively process children for modules and systems
-        if (instance.children && Array.isArray(instance.children)) {
-          instance.children.forEach((child) => {
-            if (child) {
-              this.buildInstanceGraph(child, dotLines, colors);
-            }
-          });
-        }
-      }
-    }
-
-    async renderLogicDiagram(dotSyntax) {
-      console.log(
-        "Rendering logic diagram with DOT syntax length:",
-        dotSyntax.length,
-      );
-      console.log("Graphviz available:", this.isGraphvizLoaded());
-
-      if (!this.isGraphvizLoaded()) {
-        throw new Error("viz.js library not loaded");
-      }
-
-      try {
-        // Clear container
-        this.container.innerHTML = "";
-        this.container.className = "logic-diagram-container";
-
-        // Render DOT using viz.js
-        console.log("Rendering DOT with viz.js...");
-
-        // Render SVG using viz.js
-        const viz = new window.Viz();
-        const svgString = await viz.renderString(dotSyntax, {
-          format: "svg",
-          engine: "dot",
         });
-        console.log("SVG generated, length:", svgString.length);
+      };
 
-        // Validate SVG string
-        if (!svgString || svgString.trim().length === 0) {
-          throw new Error("Generated SVG is empty");
-        }
-
-        // Create a container for the SVG
-        const svgContainer = document.createElement("div");
-        svgContainer.style.width = "100%";
-        svgContainer.style.height = "100%";
-        svgContainer.innerHTML = svgString;
-
-        // Get the SVG element
-        const svg = svgContainer.querySelector("svg");
-        if (svg) {
-          // Ensure SVG has proper dimensions
-          // Always set to 100% to prevent the SVG's fixed size from affecting the parent layout (e.g. shrinking sidebar)
-          svg.setAttribute("width", "100%");
-          svg.setAttribute("height", "100%");
-
-          // Add the container to DOM first
-          this.container.appendChild(svgContainer);
-
-          // Add interaction handlers
-          this.addInteractionHandlers(svg);
-
-          // Initialize pan and zoom on the SVG element after it's in the DOM
-          setTimeout(() => {
-            try {
-              this.initPanZoom(svg);
-            } catch (panZoomError) {
-              console.warn(
-                "Failed to initialize pan-zoom, continuing without it:",
-                panZoomError,
-              );
-            }
-          }, 50);
-        } else {
-          this.container.appendChild(svgContainer);
-        }
-      } catch (error) {
-        console.error(
-          "Error rendering logic diagram with viz.js, falling back to text display:",
-          error,
+      const gateNode = (event, style) => {
+        this.gateIds.add(event.id);
+        const nameWidth = this.measureTextWidth(event.name, style.fontSize);
+        const subWidth = this.measureTextWidth(
+          this.gateSubLabel(event),
+          style.nsSize,
         );
+        return {
+          id: event.id,
+          width: Math.round(
+            Math.max(
+              style.nodeWidth * 0.6,
+              Math.max(nameWidth, subWidth) + style.fontSize * 2,
+            ),
+          ),
+          height: Math.round(style.nodeBaseH * 0.75),
+        };
+      };
 
-        // Fallback: display DOT syntax as formatted text
-        this.container.innerHTML = "";
-        this.container.className = "logic-diagram-container";
+      const convert = (instance, depth) => {
+        if (!instance?.unique_id) return null;
+        const style = this.getLayerStyle(depth);
+        const gateStyle = this.getLayerStyle(depth + 1);
 
-        const pre = document.createElement("pre");
-        pre.style.cssText = `
-                  background: #f8f9fa;
-                  border: 1px solid #dee2e6;
-                  border-radius: 4px;
-                  padding: 15px;
-                  margin: 0;
-                  font-family: 'Courier New', monospace;
-                  font-size: 12px;
-                  line-height: 1.4;
-                  white-space: pre-wrap;
-                  word-wrap: break-word;
-                  max-height: 600px;
-                  overflow-y: auto;
-              `;
+        const ins = visiblePorts(instance.in_ports);
+        const outs = visiblePorts(instance.out_ports);
+        const gates = (instance.events || [])
+          .filter(
+            (event) =>
+              event.unique_id && this._isVisible(String(event.unique_id)),
+          )
+          .map((event) => this.events.get(String(event.unique_id)));
+        const children = (instance.children || [])
+          .map((child) => convert(child, depth + 1))
+          .filter(Boolean);
 
-        pre.textContent = `// Logic Diagram DOT Syntax\n// Rendering failed: ${error.message}\n\n${dotSyntax}`;
-        this.container.appendChild(pre);
-      }
-    }
-
-    buildElementMaps(svgElement) {
-      this.nodeMap.clear();
-      this.edgesByNode.clear();
-
-      svgElement.querySelectorAll("g.node").forEach((node) => {
-        const titleEl = node.querySelector("title");
-        if (!titleEl) return;
-        this.nodeMap.set(titleEl.textContent.trim(), node);
-      });
-
-      svgElement.querySelectorAll("g.edge").forEach((edge) => {
-        const titleEl = edge.querySelector("title");
-        if (!titleEl) return;
-        const parts = titleEl.textContent.split("->");
-        if (parts.length < 2) return;
-        const srcId = parts[0].trim();
-        const tgtId = parts[1].trim();
-        const entry = { edge, srcId, tgtId };
-        if (!this.edgesByNode.has(srcId)) this.edgesByNode.set(srcId, []);
-        this.edgesByNode.get(srcId).push(entry);
-        if (!this.edgesByNode.has(tgtId)) this.edgesByNode.set(tgtId, []);
-        this.edgesByNode.get(tgtId).push(entry);
-      });
-    }
-
-    clearHighlights() {
-      this.container.querySelectorAll(".highlighted").forEach((el) => {
-        el.classList.remove("highlighted");
-        el.querySelectorAll("polygon, ellipse, path, rect").forEach((shape) => {
-          shape.style.stroke = "";
-          shape.style.strokeWidth = "";
-          shape.style.fill = "";
-        });
-        el.querySelectorAll("text").forEach((textEl) => {
-          textEl.style.fontWeight = "";
-        });
-      });
-    }
-
-    _applyNodeHighlight(nodeEl, color) {
-      nodeEl.classList.add("highlighted");
-      const shape = nodeEl.querySelector("polygon, ellipse, rect");
-      if (shape) {
-        shape.style.stroke = color;
-        shape.style.strokeWidth = "3";
-      }
-      nodeEl.querySelectorAll("text").forEach((textEl) => {
-        textEl.style.fontWeight = "700";
-      });
-    }
-
-    _applyEdgeHighlight(edgeEl, color) {
-      edgeEl.classList.add("highlighted");
-      const path = edgeEl.querySelector("path");
-      if (path) {
-        path.style.stroke = color;
-        path.style.strokeWidth = "3";
-      }
-      const arrowhead = edgeEl.querySelector("polygon");
-      if (arrowhead) {
-        arrowhead.style.fill = color;
-        arrowhead.style.stroke = color;
-        arrowhead.style.strokeWidth = "3";
-      }
-      edgeEl.querySelectorAll("text").forEach((textEl) => {
-        textEl.style.fontWeight = "700";
-      });
-    }
-
-    highlightNodeAndConnections(nodeEl) {
-      const titleEl = nodeEl.querySelector("title");
-      if (!titleEl) return;
-      const nodeId = titleEl.textContent.trim();
-
-      this.clearHighlights();
-
-      const highlightColor =
-        getComputedStyle(document.documentElement)
-          .getPropertyValue("--highlight")
-          .trim() || "#0d6efd";
-
-      this._applyNodeHighlight(nodeEl, highlightColor);
-
-      const connectedEdges = this.edgesByNode.get(nodeId) || [];
-      connectedEdges.forEach(({ edge, srcId, tgtId }) => {
-        const isIncoming = tgtId === nodeId;
-        const edgeColor = isIncoming ? "#28a745" : "#fd7e14";
-        this._applyEdgeHighlight(edge, edgeColor);
-        const otherId = isIncoming ? srcId : tgtId;
-        const otherNode = this.nodeMap.get(otherId);
-        if (otherNode && otherNode !== nodeEl) {
-          this._applyNodeHighlight(otherNode, edgeColor);
+        if (!ins.length && !outs.length && !gates.length && !children.length) {
+          return null;
         }
-      });
-    }
 
-    addInteractionHandlers(svgElement) {
-      this.buildElementMaps(svgElement);
+        const node = {
+          id: String(instance.unique_id),
+          labels: [
+            { text: instance.namespace || "" },
+            { text: instance.name || String(instance.unique_id) },
+          ],
+          namespace: instance.namespace || "",
+          children: [],
+          ports: [],
+          properties: {
+            "org.eclipse.elk.portConstraints": "FIXED_SIDE",
+            "org.eclipse.elk.nodeLabels.placement": "H_CENTER V_TOP",
+            "org.eclipse.elk.portLabels.placement": "INSIDE",
+            "org.eclipse.elk.portAlignment.default": "CENTER",
+            "org.eclipse.elk.spacing.portPort": String(style.portSpacing),
+            "org.eclipse.elk.spacing.nodeNode": String(style.nodeSpacing),
+            "org.eclipse.elk.spacing.edgeNode": String(style.edgeNodeSpacing),
+            "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": String(
+              style.edgeNodeBetweenLayers,
+            ),
+            "org.eclipse.elk.spacing.edgeEdge": String(style.edgeEdgeSpacing),
+            "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": String(
+              style.edgeEdgeBetweenLayers,
+            ),
+            "org.eclipse.elk.padding": `[top=${style.elkPadding},left=${style.elkPadding},bottom=${style.elkPadding},right=${style.elkPadding}]`,
+          },
+        };
 
-      const nodes = svgElement.querySelectorAll(".node");
-      const edges = svgElement.querySelectorAll(".edge");
-      const clusters = svgElement.querySelectorAll(".cluster");
+        addPorts(node, ins, "WEST", style);
+        addPorts(node, outs, "EAST", style);
 
-      nodes.forEach((node) => {
-        node.classList.add("logic-diagram-node");
-        node.style.cursor = "pointer";
-        node.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const titleEl = node.querySelector("title");
-          const label = node.querySelector("text") || node;
-          this.updateInfoPanel(
-            {
-              type: "Node",
-              label: label ? label.textContent : "Unknown",
-              title: titleEl ? titleEl.textContent : "",
-            },
-            "Node",
+        node.children = [
+          ...children,
+          ...gates.map((event) => gateNode(event, gateStyle)),
+        ];
+
+        if (!node.children.length) {
+          node.width = this.instanceWidth(instance, ins, outs, style);
+          node.height = Math.max(
+            style.nodeBaseH,
+            style.nodeBaseH +
+              Math.max(ins.length, outs.length) *
+                (style.portSize + style.portSpacing * 2),
           );
-          this.highlightNodeAndConnections(node);
-        });
-      });
+        }
+        return node;
+      };
 
-      edges.forEach((edge) => {
-        edge.classList.add("logic-diagram-edge");
-        edge.style.cursor = "pointer";
-        edge.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.handleElementClick(edge, "Edge");
-        });
-      });
+      const root = convert(this.rootData, 0) || {
+        id: String(this.rootData.unique_id || "root"),
+        children: [],
+        ports: [],
+      };
+      delete root.width;
+      delete root.height;
 
-      clusters.forEach((cluster) => {
-        cluster.classList.add("logic-diagram-cluster");
-        cluster.style.cursor = "pointer";
-        cluster.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.handleElementClick(cluster, "Cluster");
-        });
-      });
+      root.edges = this.edgeList
+        .filter(
+          (edge) => this._isVisible(edge.from) && this._isVisible(edge.to),
+        )
+        .map((edge) => ({
+          id: edge.id,
+          sources: [edge.from],
+          targets: [edge.to],
+          properties: {},
+        }));
+
+      return root;
     }
 
-    handleElementClick(element, type) {
-      this.clearHighlights();
+    instanceWidth(instance, ins, outs, style) {
+      const labelWidth = (ports) =>
+        ports.reduce((max, port) => {
+          const event = this.events.get(String(port.event.unique_id));
+          return Math.max(
+            max,
+            this.measureTextWidth(
+              this.eventLabel(event),
+              style.portLabelFontSz,
+            ),
+          );
+        }, 0);
 
-      element.classList.add("highlighted");
+      const titleWidth = this.measureTextWidth(
+        instance.name || "",
+        style.fontSize,
+      );
+      const innerPad = style.portSize * 3;
+      return Math.max(
+        style.nodeWidth,
+        labelWidth(ins) + labelWidth(outs) + innerPad,
+        titleWidth + innerPad,
+      );
+    }
 
-      element
-        .querySelectorAll("polygon, ellipse, path, rect")
-        .forEach((shape) => {
-          shape.style.strokeWidth = "3";
-        });
-      element.querySelectorAll("text").forEach((textEl) => {
-        textEl.style.fontWeight = "700";
-      });
+    // ── Layout + render ─────────────────────────────────────────────────────────
 
-      const title = element.querySelector("title");
-      const label = element.querySelector("text") || element;
-      this.updateInfoPanel(
-        {
-          type: type,
-          label: label ? label.textContent : "Unknown",
-          title: title ? title.textContent : "",
+    async layoutAndRender() {
+      const graph = await this.elk.layout(this.buildElkGraph(), {
+        layoutOptions: {
+          algorithm: "layered",
+          "org.eclipse.elk.direction": "RIGHT",
+          "org.eclipse.elk.edgeRouting": "ORTHOGONAL",
+          // Trigger relations cross instance boundaries, so layering has to see
+          // the whole hierarchy at once.
+          "org.eclipse.elk.hierarchyHandling": "INCLUDE_CHILDREN",
+          // Layer index is the longest trigger path from a chain root, which is
+          // what makes the horizontal axis read as causal depth.
+          "org.eclipse.elk.layered.layering.strategy": "LONGEST_PATH",
+          "org.eclipse.elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+          "org.eclipse.elk.layered.nodePlacement.bk.edgeStraightening": "NONE",
+          "org.eclipse.elk.padding": "[top=50,left=50,bottom=50,right=50]",
         },
-        type,
-      );
-    }
-
-    initPanZoom(svg) {
-      if (
-        !this.createPanZoom(svg, {
-          controlIconsEnabled: true,
-          minZoom: 0.01,
-          maxZoom: 10,
-          zoomScaleSensitivity: 0.2,
-        })
-      ) {
-        return;
-      }
-      this.fitDiagramToView();
-    }
-
-    // Graphviz sizes the SVG after insertion; retry until a measurement lands,
-    // leaving the diagram at 90% of the fit scale and never magnified.
-    fitDiagramToView() {
-      FIT_RETRY_DELAYS_MS.forEach((delay) => {
-        setTimeout(() => this.fitPanZoom({ scale: 0.9, maxZoom: 1 }), delay);
       });
+
+      this.currentGraph = graph;
+      this.render(graph);
+      this.fitToScreen();
+    }
+
+    render(graph) {
+      const { layer } = this.createCanvas();
+      this.container.classList.add("logic-diagram-container");
+      this.groups.clear();
+      this.groupDepth.clear();
+      this.selectedId = null;
+
+      this.renderInstance(graph, layer, 0);
+      this.renderEdges(graph, layer);
+      this.renderToolbar();
+    }
+
+    renderInstance(node, parentGroup, depth) {
+      const style = this.getLayerStyle(depth);
+      const instance = this.instances.get(node.id)?.data || {};
+
+      const g = document.createElementNS(SVG_NS, "g");
+      g.setAttribute("transform", `translate(${node.x || 0},${node.y || 0})`);
+      g.setAttribute("id", node.id);
+      g.classList.add("logic-instance");
+      this.groups.set(node.id, g);
+      this.groupDepth.set(node.id, depth);
+
+      g.appendChild(this.buildInstanceRect(node, instance, depth, style));
+      if (node.labels?.length) {
+        this.appendInstanceLabels(g, node, instance, style, depth);
+      }
+
+      (node.ports || []).forEach((port) =>
+        g.appendChild(this.buildEventPort(port, instance, node, style)),
+      );
+
+      (node.children || []).forEach((child) => {
+        if (this.gateIds.has(child.id)) {
+          g.appendChild(this.buildGate(child, instance, depth + 1));
+        } else {
+          this.renderInstance(child, g, depth + 1);
+        }
+      });
+
+      parentGroup.appendChild(g);
+    }
+
+    buildInstanceRect(node, instance, depth, style) {
+      const defaults = this.isDarkMode()
+        ? this.styleDefaults.dark
+        : this.styleDefaults.light;
+      const guide = instance.vis_guide;
+
+      let fill = this.themed(guide, "background_color", defaults.bg);
+      if (instance.entity_type === "node") {
+        fill = this.themed(guide, "medium_color", defaults.nodeBg);
+      }
+      if (depth === 0) fill = defaults.rootBg;
+
+      const rect = document.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("width", node.width || 0);
+      rect.setAttribute("height", node.height || 0);
+      rect.setAttribute("rx", style.cornerR);
+      rect.setAttribute("fill", fill);
+      rect.setAttribute("stroke", this.themed(guide, "color", defaults.stroke));
+      rect.setAttribute("stroke-width", style.borderW);
+      rect.classList.add("logic-instance-rect");
+
+      rect.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.clearHighlights();
+        this.updateInfoPanel(instance, "Node");
+      };
+
+      return rect;
+    }
+
+    appendInstanceLabels(g, node, instance, style, depth) {
+      const guide = instance.vis_guide;
+      let yOffset = Math.round(style.fontSize * 0.8);
+
+      if (node.labels.length > 1 && node.labels[0].text) {
+        const nsText = document.createElementNS(SVG_NS, "text");
+        nsText.setAttribute("x", (node.width || 0) / 2);
+        nsText.setAttribute("y", yOffset);
+        nsText.classList.add("node-label");
+        nsText.style.fontSize = `${style.nsSize}px`;
+        nsText.style.fill = this.themed(guide, "text_color", "#6c757d");
+        const lines = this._wrapSVGText(
+          nsText,
+          node.namespace || "",
+          (node.width || 0) / 2,
+          (node.width || 0) - style.badgePad * 2,
+          style.nsSize,
+        );
+        g.appendChild(nsText);
+        yOffset += (style.nsSize + 2) * lines;
+      }
+
+      const nameText = document.createElementNS(SVG_NS, "text");
+      nameText.setAttribute("x", (node.width || 0) / 2);
+      nameText.setAttribute("y", yOffset + style.fontSize / 2);
+      nameText.textContent = node.labels[node.labels.length - 1].text;
+      nameText.classList.add("node-label");
+      nameText.style.fontSize = `${style.fontSize}px`;
+      nameText.style.fill = this.themed(
+        guide,
+        "text_color",
+        this.isDarkMode() ? "#e9ecef" : "#333",
+      );
+      if (depth <= 1) nameText.style.fontWeight = "bold";
+      g.appendChild(nameText);
+    }
+
+    // Port events are the boundary of an instance: the chevron points the way the
+    // message travels, so an input and an output read the same on either side.
+    buildEventPort(port, instance, node, style) {
+      const event = this.events.get(port.id);
+      const side = (port.x || 0) > (node.width || 0) / 2 ? "out" : "in";
+      const size = port.width;
+
+      const glyph = document.createElementNS(SVG_NS, "polygon");
+      glyph.setAttribute("points", `0,0 ${size},${size / 2} 0,${size}`);
+      glyph.classList.add("logic-event", `logic-event-${side}`);
+      if (!this.clocksOf.has(port.id)) glyph.classList.add("logic-unclocked");
+
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = this.describeEvent(event);
+      glyph.appendChild(title);
+
+      const group = document.createElementNS(SVG_NS, "g");
+      group.setAttribute("id", port.id);
+      group.setAttribute("transform", `translate(${port.x},${port.y})`);
+      group.style.cursor = "pointer";
+      group.appendChild(glyph);
+
+      group.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.traceFrom(port.id);
+      };
+
+      (port.labels || []).forEach((label) => {
+        const text = document.createElementNS(SVG_NS, "text");
+        const lx = (label.x || 0) + (label.width || 0) / 2;
+        text.setAttribute("x", lx + (lx >= 0 ? 1 : -1) * style.portLabelOffset);
+        text.setAttribute("y", (label.y || 0) + (label.height || 0) / 2);
+        text.textContent = label.text;
+        text.classList.add("port-label");
+        text.style.fontSize = `${style.portLabelFontSz}px`;
+        text.style.fill = this.themed(
+          instance.vis_guide,
+          "text_color",
+          this.isDarkMode() ? "#e9ecef" : "#333",
+        );
+        group.appendChild(text);
+      });
+
+      return group;
+    }
+
+    buildGate(node, instance, depth) {
+      const style = this.getLayerStyle(depth);
+      const event = this.events.get(node.id);
+      const mismatch = this._rateMismatch(event);
+
+      const g = document.createElementNS(SVG_NS, "g");
+      g.setAttribute("transform", `translate(${node.x},${node.y})`);
+      g.setAttribute("id", node.id);
+      g.classList.add("logic-gate-group");
+      g.style.cursor = "pointer";
+
+      const shape = this.buildGateShape(
+        event.type,
+        node.width,
+        node.height,
+        style,
+      );
+      shape.classList.add("logic-gate");
+      if (!this.clocksOf.has(node.id)) shape.classList.add("logic-unclocked");
+      if (!event.type) shape.classList.add("logic-gate-unknown");
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = this.describeEvent(event, mismatch);
+      shape.appendChild(title);
+      g.appendChild(shape);
+
+      const name = document.createElementNS(SVG_NS, "text");
+      name.setAttribute("x", node.width / 2);
+      name.setAttribute("y", node.height * 0.4);
+      name.classList.add("node-label", "logic-gate-label");
+      name.style.fontSize = `${style.fontSize}px`;
+      this._truncateSVGText(
+        name,
+        event.name,
+        node.width - style.fontSize,
+        style.fontSize,
+      );
+      g.appendChild(name);
+
+      const sub = document.createElementNS(SVG_NS, "text");
+      sub.setAttribute("x", node.width / 2);
+      sub.setAttribute("y", node.height * 0.72);
+      sub.textContent = this.gateSubLabel(event);
+      sub.classList.add("node-label", "logic-gate-sublabel");
+      sub.style.fontSize = `${style.nsSize}px`;
+      g.appendChild(sub);
+
+      if (mismatch) {
+        const mark = document.createElementNS(SVG_NS, "polygon");
+        const s = Math.max(2, node.height * 0.22);
+        const x = node.width - s * 1.4;
+        mark.setAttribute(
+          "points",
+          `${x},${s * 1.3} ${x + s},${s * 1.3} ${x + s / 2},${s * 0.2}`,
+        );
+        mark.classList.add("logic-rate-mismatch");
+        g.appendChild(mark);
+      }
+
+      g.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.traceFrom(node.id);
+      };
+
+      return g;
+    }
+
+    // Gate outlines: `and` closes on a single arc, `or` on a concave back, a clock
+    // is a pill and `once` a tag; every other type stays a plain box.
+    buildGateShape(type, w, h, style) {
+      const shape = GATE_SHAPES[type];
+      if (shape === "and") {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute(
+          "d",
+          `M0,0 L${w * 0.55},0 C${w},0 ${w},${h} ${w * 0.55},${h} L0,${h} Z`,
+        );
+        return path;
+      }
+      if (shape === "or") {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute(
+          "d",
+          `M0,0 C${w * 0.3},${h * 0.3} ${w * 0.3},${h * 0.7} 0,${h} ` +
+            `C${w * 0.55},${h} ${w * 0.85},${h * 0.8} ${w},${h / 2} ` +
+            `C${w * 0.85},${h * 0.2} ${w * 0.55},0 0,0 Z`,
+        );
+        return path;
+      }
+      if (shape === "tag") {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute(
+          "d",
+          `M0,0 L${w - h * 0.45},0 L${w},${h / 2} L${w - h * 0.45},${h} L0,${h} Z`,
+        );
+        return path;
+      }
+      const rect = document.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("width", w);
+      rect.setAttribute("height", h);
+      rect.setAttribute("rx", shape === "clock" ? h / 2 : style.cornerR);
+      return rect;
+    }
+
+    // ELK reparents every edge to the deepest instance holding both of its ends
+    // and reports its route in that instance's own coordinates.
+    renderEdges(graph, rootLayer) {
+      const rootGroup = this.groups.get(graph.id) || rootLayer;
+
+      (graph.edges || []).forEach((laidEdge) => {
+        if (!laidEdge.sections) return;
+        const group = this.groups.get(laidEdge.container) || rootGroup;
+        const depth = this.groupDepth.get(laidEdge.container) ?? 0;
+        group.appendChild(this.buildEdgePath(laidEdge, depth));
+      });
+    }
+
+    buildEdgePath(laidEdge, depth) {
+      const style = this.getLayerStyle(depth);
+      let d = "";
+      laidEdge.sections.forEach((section) => {
+        d += `M ${section.startPoint.x} ${section.startPoint.y} `;
+        (section.bendPoints || []).forEach((bp) => (d += `L ${bp.x} ${bp.y} `));
+        d += `L ${section.endPoint.x} ${section.endPoint.y} `;
+      });
+
+      const fromId = laidEdge.sources?.[0];
+      const toId = laidEdge.targets?.[0];
+      const crossesInstance =
+        this.events.get(fromId)?.ownerId !== this.events.get(toId)?.ownerId;
+
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("id", laidEdge.id);
+      path.setAttribute("d", d);
+      path.setAttribute("data-depth", String(depth));
+      path.setAttribute("stroke-width", style.edgeW);
+      path.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
+      path.classList.add("edge-path", "logic-edge");
+      path.classList.add(
+        crossesInstance ? "logic-edge-link" : "logic-edge-trigger",
+      );
+      if (!this.clocksOf.has(toId)) path.classList.add("logic-unclocked");
+      if (!crossesInstance) {
+        const w = parseFloat(style.edgeW);
+        path.setAttribute("stroke-dasharray", `${w * 4} ${w * 3}`);
+      }
+
+      path.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.traceFrom(toId);
+      };
+
+      return path;
     }
 
     updateTheme() {
-      if (
-        window.logicDiagramData &&
-        window.logicDiagramData[this.options.mode]
-      ) {
-        const data = window.logicDiagramData[this.options.mode];
-        const dotSyntax = this.generateDotSyntax(data);
-        this.renderLogicDiagram(dotSyntax);
+      if (this.currentGraph) this.render(this.currentGraph);
+    }
+
+    // ── Chain tracing ───────────────────────────────────────────────────────────
+
+    // Walks the trigger relation in one direction and returns the events reached,
+    // in hop order, together with the edges the walk used.
+    walkChain(startId, adjacency) {
+      const order = [];
+      const hops = new Map([[startId, 0]]);
+      const edges = new Set();
+      const queue = [startId];
+      const seen = new Set([startId]);
+
+      while (queue.length) {
+        const id = queue.shift();
+        (adjacency.get(id) || []).forEach((nextId) => {
+          const key =
+            adjacency === this.succ ? `${id}>${nextId}` : `${nextId}>${id}`;
+          const edgeId = this.edgeIdByKey.get(key);
+          if (edgeId) edges.add(edgeId);
+          if (seen.has(nextId)) return;
+          seen.add(nextId);
+          hops.set(nextId, (hops.get(id) || 0) + 1);
+          order.push(nextId);
+          queue.push(nextId);
+        });
       }
+      return { order, hops, edges };
+    }
+
+    traceFrom(eventId) {
+      const event = this.events.get(eventId);
+      if (!event) return;
+
+      this.clearHighlights();
+      this.selectedId = eventId;
+
+      const empty = { order: [], hops: new Map(), edges: new Set() };
+      const upstream =
+        this.traceMode === "down" ? empty : this.walkChain(eventId, this.pred);
+      const downstream =
+        this.traceMode === "up" ? empty : this.walkChain(eventId, this.succ);
+
+      upstream.order.forEach((id) => this.highlightEvent(id, UPSTREAM_COLOR));
+      upstream.edges.forEach((id) => this.highlightEdge(id, UPSTREAM_COLOR));
+      downstream.order.forEach((id) =>
+        this.highlightEvent(id, DOWNSTREAM_COLOR),
+      );
+      downstream.edges.forEach((id) =>
+        this.highlightEdge(id, DOWNSTREAM_COLOR),
+      );
+      this.highlightEvent(eventId, "default");
+
+      this.updateInfoPanel(
+        this.describeChain(event, upstream, downstream),
+        "Event",
+      );
+    }
+
+    describeEvent(event, mismatch = null) {
+      const parts = [
+        `${event.kind} · ${event.type || "type not declared"}`,
+        this.rateLabel(event.frequency) || "no clock",
+      ];
+      if (mismatch) parts.push(`trigger rates: ${mismatch.join(" / ")}`);
+      return `${event.name}\n${parts.join("\n")}`;
+    }
+
+    describeChain(event, upstream, downstream) {
+      const owner = this.instances.get(event.ownerId)?.data || {};
+      const entry = (id, hops) => {
+        const item = this.events.get(id);
+        const instance = this.instances.get(item.ownerId)?.data || {};
+        return {
+          name: item.name,
+          path: instance.path || instance.name || "",
+          type: item.type || "—",
+          rate: this.rateLabel(item.frequency) || "no clock",
+          hops: hops.get(id) || 0,
+        };
+      };
+      const list = (walk) =>
+        walk.order.slice(0, CHAIN_LIST_LIMIT).map((id) => entry(id, walk.hops));
+
+      const clocks = [...(this.clocksOf.get(event.id) || [])].map((id) => {
+        const clock = this.events.get(id);
+        const instance = this.instances.get(clock.ownerId)?.data || {};
+        return {
+          name: clock.name,
+          path: instance.path || "",
+          rate: this.rateLabel(clock.frequency) || "no clock",
+        };
+      });
+
+      return {
+        name: event.name,
+        path: owner.path || "",
+        source_file: owner.source_file,
+        event: {
+          kind: event.kind,
+          type: event.type || "not declared",
+          rate: this.rateLabel(event.frequency) || "no clock",
+          warn_rate: event.warn_rate,
+          error_rate: event.error_rate,
+          timeout: event.timeout,
+          mismatch: this._rateMismatch(event),
+        },
+        chain: {
+          clocks,
+          upstream: list(upstream),
+          downstream: list(downstream),
+          upstream_total: upstream.order.length,
+          downstream_total: downstream.order.length,
+          limit: CHAIN_LIST_LIMIT,
+        },
+      };
+    }
+
+    // ── Highlighting ────────────────────────────────────────────────────────────
+
+    clearHighlights() {
+      const scope = this.currentSvgRoot || this.container;
+      if (!scope) return;
+
+      scope.querySelectorAll(".logic-highlighted").forEach((el) => {
+        el.classList.remove("logic-highlighted");
+        el.style.stroke = "";
+        el.style.strokeWidth = "";
+        el.style.fill = "";
+        if (el.tagName === "path" && el.classList.contains("logic-edge")) {
+          const depth = parseInt(el.getAttribute("data-depth") || "0", 10);
+          el.setAttribute("marker-end", `url(#arrowhead-depth-${depth})`);
+        }
+      });
+      scope
+        .querySelectorAll(".logic-instance-rect.logic-touched")
+        .forEach((el) => {
+          el.classList.remove("logic-touched");
+          el.style.stroke = "";
+          el.style.strokeWidth = "";
+        });
+      this.selectedId = null;
+    }
+
+    highlightEvent(eventId, preset) {
+      const color = this.colorPresets[preset]?.port;
+      const group = document.getElementById(eventId);
+      if (!group || !color) return;
+
+      const shape = group.querySelector(".logic-event, .logic-gate");
+      if (shape) {
+        shape.classList.add("logic-highlighted");
+        shape.style.stroke = color;
+        shape.style.fill = color;
+      }
+      this.markInstance(this.events.get(eventId)?.ownerId, color);
+    }
+
+    highlightEdge(edgeId, preset) {
+      const path = document.getElementById(edgeId);
+      const color = this.colorPresets[preset]?.edge;
+      if (!path || !color) return;
+
+      const depth = parseInt(path.getAttribute("data-depth") || "0", 10);
+      path.classList.add("logic-highlighted");
+      path.style.stroke = color;
+      path.style.strokeWidth =
+        (parseFloat(this.getLayerStyle(depth).edgeW) * 3).toFixed(1) + "px";
+      path.setAttribute(
+        "marker-end",
+        `url(#arrowhead-highlighted-${preset}-depth-${depth})`,
+      );
+      if (path.parentNode) path.parentNode.appendChild(path);
+    }
+
+    markInstance(instanceId, color) {
+      const rect = this.groups
+        .get(instanceId)
+        ?.querySelector(":scope > .logic-instance-rect");
+      if (!rect || rect.classList.contains("logic-touched")) return;
+      rect.classList.add("logic-touched");
+      rect.style.stroke = color;
+      rect.style.strokeWidth =
+        (parseFloat(rect.getAttribute("stroke-width") || "1") * 2).toFixed(1) +
+        "px";
+    }
+
+    highlightUnclocked() {
+      this.clearHighlights();
+      const color = this.colorPresets.red.port;
+      this.events.forEach((event, id) => {
+        if (this.clocksOf.has(id) || !this._isVisible(id)) return;
+        const shape = document
+          .getElementById(id)
+          ?.querySelector(".logic-event, .logic-gate");
+        if (!shape) return;
+        shape.classList.add("logic-highlighted");
+        shape.style.stroke = color;
+      });
+    }
+
+    highlightMismatches() {
+      this.clearHighlights();
+      const color = this.colorPresets.red.port;
+      const found = [];
+      this.events.forEach((event, id) => {
+        const mismatch = this._rateMismatch(event);
+        if (!mismatch || !this._isVisible(id)) return;
+        found.push({ event, mismatch });
+        const shape = document.getElementById(id)?.querySelector(".logic-gate");
+        if (!shape) return;
+        shape.classList.add("logic-highlighted");
+        shape.style.stroke = color;
+        shape.style.strokeWidth = "2px";
+      });
+      this.updateInfoPanel(
+        {
+          chain: {
+            title: "Mixed trigger rates",
+            clocks: null,
+            upstream: [],
+            downstream: found.map(({ event, mismatch }) => ({
+              name: event.name,
+              path: this.instances.get(event.ownerId)?.data.path || "",
+              type: event.type,
+              rate: mismatch
+                .map((rate) => this.rateLabel(rate) || "—")
+                .join(" / "),
+              hops: 0,
+            })),
+            downstream_label: "Gates",
+            upstream_total: 0,
+            downstream_total: found.length,
+            limit: found.length,
+          },
+        },
+        "Event",
+      );
+    }
+
+    // Centers one event in the viewport at a readable zoom. Screen geometry is
+    // read back after the scale change, so the pan is exact.
+    focusEvent(eventId, minScale = 0.6) {
+      const element = document.getElementById(eventId);
+      if (!element) return;
+
+      if (this.transform.k < minScale) {
+        this.transform.k = minScale;
+        this.updateTransform();
+      }
+      const target = element.getBoundingClientRect();
+      const view = this.container.getBoundingClientRect();
+      this.transform.x +=
+        view.x + view.width / 2 - (target.x + target.width / 2);
+      this.transform.y +=
+        view.y + view.height / 2 - (target.y + target.height / 2);
+      this.updateTransform();
+    }
+
+    // ── Toolbar ─────────────────────────────────────────────────────────────────
+
+    renderToolbar() {
+      const bar = document.createElement("div");
+      bar.className = "logic-toolbar";
+
+      const row = (...children) => {
+        const div = document.createElement("div");
+        div.className = "logic-toolbar-row";
+        children.forEach((child) => div.appendChild(child));
+        return div;
+      };
+      const label = (text) => {
+        const span = document.createElement("span");
+        span.className = "logic-toolbar-label";
+        span.textContent = text;
+        return span;
+      };
+      const button = (text, onClick, active = false) => {
+        const btn = document.createElement("button");
+        btn.className = "logic-btn";
+        btn.textContent = text;
+        btn.classList.toggle("active", active);
+        btn.onclick = onClick;
+        return btn;
+      };
+
+      const traceButtons = [
+        ["both", "both"],
+        ["up", "causes"],
+        ["down", "effects"],
+      ].map(([mode, text]) =>
+        button(
+          text,
+          () => {
+            this.traceMode = mode;
+            bar
+              .querySelectorAll("[data-trace]")
+              .forEach((el) =>
+                el.classList.toggle("active", el.dataset.trace === mode),
+              );
+            if (this.selectedId) this.traceFrom(this.selectedId);
+          },
+          this.traceMode === mode,
+        ),
+      );
+      traceButtons.forEach((btn, i) => {
+        btn.dataset.trace = ["both", "up", "down"][i];
+      });
+
+      bar.appendChild(row(label("Trace"), ...traceButtons));
+      bar.appendChild(
+        row(
+          button("unclocked", () => this.highlightUnclocked()),
+          button("rate mismatch", () => this.highlightMismatches()),
+          button("clear", () => this.clearHighlights()),
+          button("fit", () => this.fitToScreen()),
+        ),
+      );
+
+      const toggle = document.createElement("label");
+      toggle.className = "logic-toggle";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = this.showUnlinked;
+      box.onchange = async () => {
+        this.showUnlinked = box.checked;
+        await this.layoutAndRender();
+      };
+      toggle.appendChild(box);
+      toggle.appendChild(
+        document.createTextNode(" events with no trigger relation"),
+      );
+      bar.appendChild(toggle);
+
+      bar.appendChild(this.buildRootPicker());
+      bar.appendChild(this.buildCounters());
+      bar.appendChild(this.buildLegend());
+      this.container.appendChild(bar);
+    }
+
+    // Every chain starts at a clock, so the roots are the entry points into the
+    // graph the viewport cannot show at once.
+    buildRootPicker() {
+      const row = document.createElement("div");
+      row.className = "logic-toolbar-row";
+
+      const select = document.createElement("select");
+      select.className = "logic-select";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = `go to chain root (${this.clockRootIds.length})`;
+      select.appendChild(placeholder);
+
+      this.clockRootIds
+        .map((id) => {
+          const event = this.events.get(id);
+          const instance = this.instances.get(event.ownerId)?.data || {};
+          return { id, event, path: instance.path || "" };
+        })
+        .sort((a, b) => a.path.localeCompare(b.path))
+        .forEach(({ id, event, path }) => {
+          const option = document.createElement("option");
+          option.value = id;
+          option.textContent = `${path}/${event.name} · ${this.rateLabel(event.frequency) || "—"}`;
+          select.appendChild(option);
+        });
+
+      select.onchange = () => {
+        if (!select.value) return;
+        this.traceFrom(select.value);
+        this.focusEvent(select.value);
+      };
+
+      row.appendChild(select);
+      return row;
+    }
+
+    buildCounters() {
+      const shown = [...this.events.keys()].filter((id) => this._isVisible(id));
+      const unclocked = shown.filter((id) => !this.clocksOf.has(id)).length;
+
+      const div = document.createElement("div");
+      div.className = "logic-counters";
+      div.textContent =
+        `${shown.length} events · ${this.clockRootIds.length} chain roots · ` +
+        `${unclocked} unclocked`;
+      return div;
+    }
+
+    buildLegend() {
+      const details = document.createElement("details");
+      details.className = "logic-legend";
+      const summary = document.createElement("summary");
+      summary.textContent = "Legend";
+      details.appendChild(summary);
+
+      LEGEND.forEach(([shape, text]) => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "logic-legend-row";
+
+        const svg = document.createElementNS(SVG_NS, "svg");
+        svg.setAttribute("width", "26");
+        svg.setAttribute("height", "14");
+        svg.setAttribute("viewBox", "0 0 26 14");
+        const type = { clock: "periodic", and: "and", or: "or" }[shape] || null;
+        const glyph = this.buildGateShape(type, 24, 12, { cornerR: 2 });
+        glyph.setAttribute("transform", "translate(1,1)");
+        glyph.classList.add("logic-gate");
+        if (shape === "unknown") glyph.classList.add("logic-gate-unknown");
+        svg.appendChild(glyph);
+
+        rowEl.appendChild(svg);
+        const span = document.createElement("span");
+        span.textContent = text;
+        rowEl.appendChild(span);
+        details.appendChild(rowEl);
+      });
+      return details;
     }
   }
 
-  // Export for use in the overview page
   window.LogicDiagramModule = LogicDiagramModule;
 })();

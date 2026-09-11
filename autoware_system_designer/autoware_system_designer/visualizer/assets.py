@@ -43,6 +43,7 @@ OVERVIEW_PAGE = "deployment_overview.html"
 # Scripts the overview page loads from its own directory, in load order.
 OVERVIEW_SCRIPTS = (
     "js/diagram_base.js",
+    "js/elk_canvas.js",
     "js/editor_link.js",
     "js/info_panel.js",
     "js/overview_page.js",

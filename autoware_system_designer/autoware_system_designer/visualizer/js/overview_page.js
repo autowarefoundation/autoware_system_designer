@@ -107,8 +107,11 @@
         window.InfoPanel.render(infoPanel, data, type),
     });
 
-    // Only the node diagram populates the detail panel.
-    infoPanel.style.display = diagramType === "node_diagram" ? "block" : "none";
+    // Only the graph diagrams populate the detail panel.
+    infoPanel.style.display =
+      diagramType === "node_diagram" || diagramType === "logic_diagram"
+        ? "block"
+        : "none";
   }
 
   async function loadDiagram(diagramType, mode) {
