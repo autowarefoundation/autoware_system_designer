@@ -11,8 +11,6 @@
         "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js",
       svgPanZoom:
         "https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js",
-      viz: "https://cdn.jsdelivr.net/npm/viz.js@2.1.2/viz.js",
-      vizRender: "https://cdn.jsdelivr.net/npm/viz.js@2.1.2/full.render.js",
     };
 
     // svg-pan-zoom settings every diagram shares; each module overrides the rest.
@@ -23,13 +21,18 @@
       center: false,
     };
 
-    static loadScript(src) {
-      return new Promise((resolve, reject) => {
-        if (document.querySelector(`script[src="${src}"]`)) {
-          resolve();
-          return;
-        }
+    // Loads still in flight, keyed by src: a second request for the same script
+    // awaits the first load instead of resolving before the script has run.
+    static pendingScripts = new Map();
 
+    static loadScript(src) {
+      const pending = DiagramBase.pendingScripts.get(src);
+      if (pending) return pending;
+      if (document.querySelector(`script[src="${src}"]`)) {
+        return Promise.resolve();
+      }
+
+      const load = new Promise((resolve, reject) => {
         const script = document.createElement("script");
         script.src = src;
         script.onload = () => resolve();
@@ -39,7 +42,13 @@
           reject(error);
         };
         document.head.appendChild(script);
+      }).catch((error) => {
+        DiagramBase.pendingScripts.delete(src);
+        throw error;
       });
+
+      DiagramBase.pendingScripts.set(src, load);
+      return load;
     }
 
     // Loads src only when globalName is still absent, so a page-level <script>
@@ -150,13 +159,6 @@
       } catch (error) {
         console.warn("Failed to fit diagram:", error);
         return false;
-      }
-    }
-
-    resetZoom() {
-      if (this.panZoomInstance) {
-        this.panZoomInstance.reset();
-        this.panZoomInstance.center();
       }
     }
 

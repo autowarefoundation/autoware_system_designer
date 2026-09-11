@@ -176,6 +176,14 @@
       return { svgRoot, layer };
     }
 
+    // Ids of drawn elements come from the exported data, so they are resolved
+    // inside this canvas.
+    elementById(id) {
+      return id && this.currentSvgRoot
+        ? this.currentSvgRoot.querySelector(`#${CSS.escape(id)}`)
+        : null;
+    }
+
     _buildArrowDefs(arrowColor) {
       const defs = document.createElementNS(SVG_NS, "defs");
       const maxDepth = this.maxDepth || 0;
@@ -316,12 +324,13 @@
         );
         const scaleRatio = newScale / oldScale;
 
+        // Anchored on the pointer: the drawing under it stays under it.
         const rect = svgRoot.getBoundingClientRect();
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
+        const anchorX = e.clientX - rect.left;
+        const anchorY = e.clientY - rect.top;
 
-        this.transform.x = centerX - (centerX - this.transform.x) * scaleRatio;
-        this.transform.y = centerY - (centerY - this.transform.y) * scaleRatio;
+        this.transform.x = anchorX - (anchorX - this.transform.x) * scaleRatio;
+        this.transform.y = anchorY - (anchorY - this.transform.y) * scaleRatio;
         this.transform.k = newScale;
         this.updateTransform(svg);
       });

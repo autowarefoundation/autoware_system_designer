@@ -25,7 +25,7 @@
 
   // One scale for the whole drawing; a vertex is a single row.
   const VIEW = {
-    rowH: 18,
+    rowH: 16,
     glyphW: 13,
     glyphH: 11,
     fontSize: 9,
@@ -34,8 +34,9 @@
     gap: 4,
     labelChars: 26,
     markW: 7,
-    nodeSpacing: 8,
-    layerSpacing: 26,
+    nodeSpacing: 6,
+    layerSpacing: 20,
+    edgeSpacing: 2,
     aspectRatio: 1.6,
   };
 
@@ -44,8 +45,9 @@
     fontSize: 10,
     padTop: 15,
     pad: 4,
-    rowSpacing: 4,
-    layerSpacing: 14,
+    rowSpacing: 2,
+    layerSpacing: 12,
+    edgeSpacing: 2,
     nameChars: 34,
     prefix: "lg_",
   };
@@ -133,6 +135,7 @@
       this.colorBy = "owner";
       this.showUnlinked = false;
       this.traceMode = "both";
+      this.legendOpen = false;
       this.selectedId = null;
       this.selectedVertexId = null;
       this.selectedOwnerId = null;
@@ -518,8 +521,20 @@
         "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": String(
           VIEW.layerSpacing,
         ),
-        "org.eclipse.elk.spacing.edgeNode": "4",
-        "org.eclipse.elk.spacing.edgeEdge": "3",
+        // Clearance around an edge route is what holds rows apart, so it stays
+        // near zero and the placed graph is compacted instead.
+        "org.eclipse.elk.spacing.edgeNode": String(VIEW.edgeSpacing),
+        "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": String(
+          VIEW.edgeSpacing,
+        ),
+        "org.eclipse.elk.spacing.edgeEdge": String(VIEW.edgeSpacing),
+        "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": String(
+          VIEW.edgeSpacing,
+        ),
+        "org.eclipse.elk.layered.nodePlacement.bk.edgeStraightening": "NONE",
+        "org.eclipse.elk.layered.compaction.postCompaction.strategy": "LEFT",
+        "org.eclipse.elk.layered.compaction.postCompaction.constraints":
+          "QUADRATIC",
         "org.eclipse.elk.padding": "[top=20,left=20,bottom=20,right=20]",
         // Chains that never meet are packed to this shape instead of stacking
         // into one column.
@@ -631,6 +646,20 @@
             "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": String(
               GROUP.layerSpacing,
             ),
+            "org.eclipse.elk.spacing.edgeNode": String(GROUP.edgeSpacing),
+            "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": String(
+              GROUP.edgeSpacing,
+            ),
+            "org.eclipse.elk.spacing.edgeEdge": String(GROUP.edgeSpacing),
+            "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": String(
+              GROUP.edgeSpacing,
+            ),
+            "org.eclipse.elk.layered.nodePlacement.bk.edgeStraightening":
+              "NONE",
+            "org.eclipse.elk.layered.compaction.postCompaction.strategy":
+              "LEFT",
+            "org.eclipse.elk.layered.compaction.postCompaction.constraints":
+              "QUADRATIC",
             "org.eclipse.elk.padding": `[top=${GROUP.padTop},left=${GROUP.pad},bottom=${GROUP.pad},right=${GROUP.pad}]`,
           },
         },
@@ -1004,7 +1033,23 @@
     }
 
     updateTheme() {
-      if (this.currentGraph) this.render(this.currentGraph);
+      this.redraw();
+    }
+
+    // Draws the current layout again; the trace the selection stands for is
+    // restored, since the drawing it marked is replaced.
+    redraw() {
+      if (!this.currentGraph) return;
+      const selection = {
+        eventId: this.selectedId,
+        vertexId: this.selectedVertexId,
+        ownerId: this.selectedOwnerId,
+      };
+      this.render(this.currentGraph);
+      this.selectedId = selection.eventId;
+      this.selectedVertexId = selection.vertexId;
+      this.selectedOwnerId = selection.ownerId;
+      this.retrace();
     }
 
     // ── Level of detail ─────────────────────────────────────────────────────────
@@ -1034,8 +1079,8 @@
       const queue = [...startIds];
       const seen = new Set(startIds);
 
-      while (queue.length) {
-        const id = queue.shift();
+      for (let cursor = 0; cursor < queue.length; cursor += 1) {
+        const id = queue[cursor];
         (adjacency.get(id) || []).forEach((nextId) => {
           const key =
             adjacency === this.succ ? `${id}>${nextId}` : `${nextId}>${id}`;
@@ -1256,9 +1301,8 @@
 
     highlightVertex(vertexId, preset) {
       const color = this.colorPresets[preset]?.port;
-      const body = document
-        .getElementById(vertexId)
-        ?.querySelector(".logic-vertex-body");
+      const body =
+        this.elementById(vertexId)?.querySelector(".logic-vertex-body");
       if (!body || !color) return;
       body.classList.add("logic-highlighted");
       body.style.stroke = color;
@@ -1280,7 +1324,7 @@
     // the drawing carries the names without reserving room for them.
     highlightEdge(eventEdgeId, preset) {
       const viewEdgeId = this.viewEdgeOf.get(eventEdgeId);
-      const path = viewEdgeId ? document.getElementById(viewEdgeId) : null;
+      const path = this.elementById(viewEdgeId);
       const color = this.colorPresets[preset]?.edge;
       if (!path || !color || path.classList.contains("logic-highlighted")) {
         return;
@@ -1322,12 +1366,9 @@
       this.clearHighlights();
       const color = this.colorPresets.red.port;
       eventIds.forEach((id) => {
-        const vertexId = this.vertexOf.get(id);
-        const body = vertexId
-          ? document
-              .getElementById(vertexId)
-              ?.querySelector(".logic-vertex-body")
-          : null;
+        const body = this.elementById(this.vertexOf.get(id))?.querySelector(
+          ".logic-vertex-body",
+        );
         if (!body) return;
         body.classList.add("logic-highlighted");
         body.style.stroke = color;
@@ -1408,7 +1449,7 @@
     // Centers one vertex in the viewport at a readable zoom. Screen geometry is
     // read back after the scale change, so the pan is exact.
     focusVertex(vertexId, minScale = 0.8) {
-      const element = vertexId ? document.getElementById(vertexId) : null;
+      const element = this.elementById(vertexId);
       if (!element) return;
 
       if (this.transform.k < minScale) {
@@ -1522,7 +1563,7 @@
             "node",
             () => {
               this.colorBy = "owner";
-              this.render(this.currentGraph);
+              this.redraw();
             },
             this.colorBy === "owner",
           ),
@@ -1530,7 +1571,7 @@
             "rate",
             () => {
               this.colorBy = "rate";
-              this.render(this.currentGraph);
+              this.redraw();
             },
             this.colorBy === "rate",
           ),
@@ -1607,6 +1648,10 @@
     buildLegend() {
       const details = document.createElement("details");
       details.className = "logic-legend";
+      details.open = this.legendOpen;
+      details.ontoggle = () => {
+        this.legendOpen = details.open;
+      };
       const summary = document.createElement("summary");
       summary.textContent = "Legend";
       details.appendChild(summary);

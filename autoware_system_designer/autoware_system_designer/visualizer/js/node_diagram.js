@@ -546,7 +546,7 @@
         this.clearHighlights();
         if (depth === 0) return;
 
-        const nodeGroup = document.getElementById(node.id);
+        const nodeGroup = this.elementById(node.id);
 
         if (userData.entity_type === "remap_hub") {
           nodeGroup?.classList.add("highlighted");
@@ -1208,7 +1208,7 @@
       const direction = directionHint || this._getPortDirection(portId);
       if (direction !== "upstream" && direction !== "downstream") return;
 
-      const nodeGroup = document.getElementById(nodeId);
+      const nodeGroup = this.elementById(nodeId);
       if (!nodeGroup) return;
       const rect = nodeGroup.querySelector(".node-rect");
       if (!rect) return;
@@ -1236,7 +1236,7 @@
     }
 
     _applyPortHighlight(id, colorPreset, directionHint = null) {
-      const portGroup = document.getElementById(id);
+      const portGroup = this.elementById(id);
       if (!portGroup) return;
       const rect = portGroup.querySelector(".port-rect");
       if (!rect) return;
@@ -1247,7 +1247,7 @@
     }
 
     _applyEdgeHighlight(id, colorPreset) {
-      const edgePath = document.getElementById(id);
+      const edgePath = this.elementById(id);
       if (!edgePath) return;
       edgePath.classList.add("highlighted");
       const depth = parseInt(edgePath.getAttribute("data-depth") || "0", 10);

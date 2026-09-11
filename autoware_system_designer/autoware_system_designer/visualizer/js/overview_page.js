@@ -86,8 +86,12 @@
       currentDiagramModule = null;
     }
 
+    // A module renders asynchronously, so each one gets its own canvas: the
+    // switch detaches the previous canvas and a late render lands off-page.
     diagramContainer.innerHTML = "";
-    diagramContainer.className = "";
+    const canvas = document.createElement("div");
+    canvas.className = "diagram-canvas";
+    diagramContainer.appendChild(canvas);
     clearStaleHighlights();
 
     const moduleUrl = `${diagramType}.js`;
@@ -100,7 +104,7 @@
       );
     }
 
-    currentDiagramModule = new ModuleClass(diagramContainer, {
+    currentDiagramModule = new ModuleClass(canvas, {
       mode,
       deployment: deploymentName,
       onInfoUpdate: (data, type) =>

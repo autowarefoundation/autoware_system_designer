@@ -32,6 +32,7 @@ STRUCTURE_FILE_SUFFIX = ".json"
 
 LAUNCHER_SUBDIR = "launcher"
 STRUCTURE_SUBDIR = "system_structure"
+DEPLOYMENTS_SUBDIR = "deployments"
 
 # The console script installs under lib/<pkg>/, which only `ros2 run` resolves.
 RUNTIME_PACKAGE = "autoware_system_designer_runtime"
@@ -101,7 +102,8 @@ def _build_commands(
     launcher_root = Path(launcher_dir).resolve()
     structure_root = Path(system_structure_dir).resolve() if system_structure_dir else None
     deploy_names = [item["name"] for item in deploy_variants if item.get("name")] if deploy_variants else [""]
-    if deploy_variants and not (launcher_root / "deployments").is_dir():
+    if deploy_variants and not (launcher_root / DEPLOYMENTS_SUBDIR).is_dir():
+        logger.warning("No deployment launchers under %s; launch commands page left empty", launcher_root)
         return []
 
     commands: list[Command] = []
@@ -110,7 +112,7 @@ def _build_commands(
         structure_file = f"{mode_key}{STRUCTURE_FILE_SUFFIX}"
         has_structure = structure_root is not None and (structure_root / structure_file).is_file()
         for deploy_name in deploy_names:
-            prefix = f"deployments/{deploy_name}/" if deploy_name else ""
+            prefix = f"{DEPLOYMENTS_SUBDIR}/{deploy_name}/" if deploy_name else ""
             mode_dir = launcher_root / f"{prefix}{mode_key}"
             for compute_unit in _discover_compute_units_in_dir(mode_dir):
                 launch_filename = f"{compute_unit.lower()}{LAUNCH_FILE_SUFFIX}"
