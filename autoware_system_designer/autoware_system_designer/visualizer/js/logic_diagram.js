@@ -145,6 +145,7 @@
       this.viewEdges = []; // { id, from, to, via, label }
       this.viewEdgeById = new Map();
       this.viewEdgeOf = new Map(); // event edge id → view edge id
+      this.edgeWeight = new Map(); // view edge id → layout priority
       this.foldedCount = 0;
 
       this.groups = new Map(); // group key → { id, vertexIds, ownerIds, name }
@@ -402,6 +403,56 @@
       this._assignGroups();
       this.vertices.forEach((vertex) => this._labelVertex(vertex));
       this.viewEdges.forEach((edge) => this._labelEdge(edge));
+      this._weighEdges();
+    }
+
+    // What a link weighs: the hops of chain reaching it plus the hops it reaches
+    // before the chain ends. The links of the longest chain weigh most, and the
+    // layout spends its freedom on the heaviest links first.
+    _weighEdges() {
+      const out = new Map();
+      const into = new Map();
+      this.vertices.forEach((_, id) => {
+        out.set(id, []);
+        into.set(id, []);
+      });
+      this.viewEdges.forEach((edge) => {
+        out.get(edge.from).push(edge.to);
+        into.get(edge.to).push(edge.from);
+      });
+
+      // Hops from the vertices the walk starts at, which are the ones no link
+      // enters from the opposite side; a vertex held in a cycle none of them
+      // reaches keeps no depth.
+      const depths = (adjacency, opposite) => {
+        const depth = new Map();
+        const queue = [];
+        this.vertices.forEach((_, id) => {
+          if (opposite.get(id).length) return;
+          depth.set(id, 0);
+          queue.push(id);
+        });
+        for (let cursor = 0; cursor < queue.length; cursor += 1) {
+          const id = queue[cursor];
+          adjacency.get(id).forEach((next) => {
+            if (depth.has(next)) return;
+            depth.set(next, depth.get(id) + 1);
+            queue.push(next);
+          });
+        }
+        return depth;
+      };
+
+      const upstream = depths(out, into);
+      const downstream = depths(into, out);
+
+      this.edgeWeight = new Map();
+      this.viewEdges.forEach((edge) => {
+        this.edgeWeight.set(
+          edge.id,
+          (upstream.get(edge.from) ?? 0) + (downstream.get(edge.to) ?? 0) + 1,
+        );
+      });
     }
 
     // ── Grouping ────────────────────────────────────────────────────────────────
@@ -685,17 +736,28 @@
       return { id: vertex.id, width: vertex.width, height: VIEW.rowH };
     }
 
+    // The weight reaches the layout as edge priority: node placement aligns the
+    // ends of a heavy link, and a cycle is cut at the lightest link in it.
+    edgeLink(edge, source = edge.from, target = edge.to) {
+      const priority = String(this.edgeWeight.get(edge.id) ?? 1);
+      return {
+        id: edge.id,
+        sources: [source],
+        targets: [target],
+        layoutOptions: {
+          "org.eclipse.elk.layered.priority.direction": priority,
+          "org.eclipse.elk.layered.priority.straightness": priority,
+        },
+      };
+    }
+
     buildFlatGraph() {
       return {
         id: "logic-view",
         children: [...this.vertices.values()].map((vertex) =>
           this.vertexNode(vertex),
         ),
-        edges: this.viewEdges.map((edge) => ({
-          id: edge.id,
-          sources: [edge.from],
-          targets: [edge.to],
-        })),
+        edges: this.viewEdges.map((edge) => this.edgeLink(edge)),
       };
     }
 
@@ -802,11 +864,13 @@
         {
           id: "logic-view",
           children: [...groups.map((group) => group.box), ...free],
-          edges: crossing.map((edge) => ({
-            id: edge.id,
-            sources: [portOf.get(edge.id).source],
-            targets: [portOf.get(edge.id).target],
-          })),
+          edges: crossing.map((edge) =>
+            this.edgeLink(
+              edge,
+              portOf.get(edge.id).source,
+              portOf.get(edge.id).target,
+            ),
+          ),
         },
         { layoutOptions: this.layoutOptions() },
       );
@@ -862,11 +926,7 @@
           ),
           edges: this.viewEdges
             .filter((edge) => ids.has(edge.from) && ids.has(edge.to))
-            .map((edge) => ({
-              id: edge.id,
-              sources: [edge.from],
-              targets: [edge.to],
-            })),
+            .map((edge) => this.edgeLink(edge)),
         },
         {
           layoutOptions: {
