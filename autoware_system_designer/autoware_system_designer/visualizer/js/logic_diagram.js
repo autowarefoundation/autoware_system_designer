@@ -1,8 +1,8 @@
 // Logic Diagram Module
 // Chain view of a system: every event is a vertex, trigger relations are the
-// edges, and the chain of causes behind any event is traceable from it. The
-// instance owning an event is carried by color, so the drawing has one scale and
-// no nesting.
+// edges, and the chain of causes behind any event is traceable from it. Events
+// sit in the box of the node declaring them; that box is the only nesting the
+// drawing has, and one scale serves all of it.
 
 (function () {
   const SVG_NS = ElkCanvas.SVG_NS;
@@ -10,9 +10,9 @@
   // Frequency is propagated from clock roots only, so these types start a chain.
   const CLOCK_TYPES = new Set(["periodic", "once"]);
 
-  // Trigger semantics carried by shape: the gate's type is what decides how many
-  // of its inputs have to fire before it does.
-  const GATE_SHAPES = {
+  // Trigger semantics carried by shape: the type of a process event is what
+  // decides how many of its triggers have to fire before it does.
+  const TYPE_SHAPES = {
     and: "and",
     or: "or",
     periodic: "clock",
@@ -34,45 +34,62 @@
     gap: 4,
     labelChars: 26,
     markW: 7,
-    nodeSpacing: 6,
+    nodeSpacing: 8,
     layerSpacing: 26,
-    aspectRatio: 1.7,
+    aspectRatio: 1.6,
   };
 
-  // Viewport scales at which a label becomes legible; below them the glyph and
-  // the owner color are what the vertex carries.
-  const LOD_NAME = 0.4;
+  // The node box around the events one node owns.
+  const GROUP = {
+    fontSize: 10,
+    padTop: 15,
+    pad: 4,
+    rowSpacing: 4,
+    layerSpacing: 14,
+    nameChars: 34,
+    prefix: "lg_",
+  };
+
+  // Viewport scales at which a label becomes legible; the node name outlives the
+  // event name, and below both only the glyph and the box color remain.
+  const LOD_NODE = 0.3;
+  const LOD_NAME = 0.45;
   const LOD_RATE = 0.75;
 
-  // A level chooses which events keep a vertex of their own and what a vertex
-  // stands for. Transparent events fold into the edges running through them.
+  // A level chooses which events keep a vertex of their own, what a vertex
+  // stands for, and whether vertices sit in the box of the node owning them.
+  // Transparent events fold into the edges running through them.
   const LEVELS = {
-    chain: {
-      title: "gates",
-      button: "gate chain",
-      transparent: (event) => event.kind !== "gate",
-      vertexOf: (event) => event.id,
-    },
     nodes: {
       title: "nodes",
-      button: "node chain",
+      button: "nodes",
       transparent: () => false,
       vertexOf: (event) => event.ownerId,
+      cluster: false,
+    },
+    process: {
+      title: "process events",
+      button: "process events",
+      transparent: (event) => event.kind !== "process",
+      vertexOf: (event) => event.id,
+      cluster: true,
     },
     events: {
       title: "events",
-      button: "events",
+      button: "all events",
       transparent: () => false,
       vertexOf: (event) => event.id,
+      cluster: true,
     },
   };
 
   // Legend entries, in the order the chain reads.
   const LEGEND = [
+    ["port", "a topic the node subscribes or publishes"],
     ["clock", "periodic / once — chain root"],
     ["and", "and — waits for every trigger"],
     ["or", "or — fires on any trigger"],
-    ["box", "on_input / on_trigger — plain relay"],
+    ["box", "on_input / on_trigger — runs on one trigger"],
     ["unknown", "type not declared"],
   ];
 
@@ -80,7 +97,8 @@
   const RATE_RAMP = [0.1, 0.5, 2, 8, 30, 100];
 
   const LEGEND_NOTES = [
-    "outline and fill — owning node",
+    "a process event is one the node design declares under events:",
+    "box — the node owning the events in it",
     "solid edge — crosses a node, dashed — inside one",
     "an edge carries the events the level folds away",
   ];
@@ -111,13 +129,13 @@
       this.foldedCount = 0;
 
       this.currentGraph = null;
-      this.level = "chain";
+      this.level = "events";
       this.colorBy = "owner";
-      this.wrap = true;
       this.showUnlinked = false;
       this.traceMode = "both";
       this.selectedId = null;
       this.selectedVertexId = null;
+      this.selectedOwnerId = null;
 
       this.init();
     }
@@ -189,7 +207,7 @@
           addEvent(port.event, instance, "output", port),
         );
         (instance.events || []).forEach((event) =>
-          addEvent(event, instance, "gate", null),
+          addEvent(event, instance, "process", null),
         );
         (instance.children || []).forEach((child) => visit(child, depth + 1));
       };
@@ -262,8 +280,8 @@
       return this.showUnlinked || this.activeIds.has(eventId);
     }
 
-    // An `and` gate fires at the slowest of its triggers, so triggers arriving at
-    // different rates mean the declared rate cannot hold for all of them.
+    // An `and` event fires at the slowest of its triggers, so triggers arriving
+    // at different rates mean the declared rate cannot hold for all of them.
     _rateMismatch(event) {
       if (event.type !== "and") return null;
       const rates = new Set(
@@ -432,9 +450,9 @@
     // A name too long to draw keeps its tail: the leading namespace is the part
     // its neighbours in the chain repeat. What is left of the budget is filled
     // with the segment before it, cut on the left.
-    _shortLabel(name) {
-      if (name.length <= VIEW.labelChars) return name;
-      const budget = VIEW.labelChars - 1;
+    _shortLabel(name, limit = VIEW.labelChars) {
+      if (name.length <= limit) return name;
+      const budget = limit - 1;
       const segments = name.split("/");
       let tail = segments.pop();
       if (tail.length >= budget) {
@@ -467,17 +485,16 @@
       };
     }
 
-    buildElkGraph() {
-      this.maxDepth = 0;
-      this.buildView();
+    vertexNode(vertex) {
+      return { id: vertex.id, width: vertex.width, height: VIEW.rowH };
+    }
 
+    buildFlatGraph() {
       return {
         id: "logic-view",
-        children: [...this.vertices.values()].map((vertex) => ({
-          id: vertex.id,
-          width: vertex.width,
-          height: VIEW.rowH,
-        })),
+        children: [...this.vertices.values()].map((vertex) =>
+          this.vertexNode(vertex),
+        ),
         edges: this.viewEdges.map((edge) => ({
           id: edge.id,
           sources: [edge.from],
@@ -488,8 +505,8 @@
 
     // ── Layout + render ─────────────────────────────────────────────────────────
 
-    async layoutAndRender() {
-      const layoutOptions = {
+    layoutOptions() {
+      return {
         algorithm: "layered",
         "org.eclipse.elk.direction": "RIGHT",
         "org.eclipse.elk.edgeRouting": "ORTHOGONAL",
@@ -504,52 +521,271 @@
         "org.eclipse.elk.spacing.edgeNode": "4",
         "org.eclipse.elk.spacing.edgeEdge": "3",
         "org.eclipse.elk.padding": "[top=20,left=20,bottom=20,right=20]",
+        // Chains that never meet are packed to this shape instead of stacking
+        // into one column.
+        "org.eclipse.elk.separateConnectedComponents": "true",
+        "org.eclipse.elk.aspectRatio": String(VIEW.aspectRatio),
+        "org.eclipse.elk.spacing.componentComponent": "14",
       };
-      // A chain longer than the viewport is folded into stacked bands so the
-      // graph keeps a shape a screen can hold.
-      if (this.wrap) {
-        layoutOptions["org.eclipse.elk.layered.wrapping.strategy"] =
-          "MULTI_EDGE";
-        layoutOptions["org.eclipse.elk.aspectRatio"] = String(VIEW.aspectRatio);
-      }
+    }
 
-      const graph = await this.elk.layout(this.buildElkGraph(), {
-        layoutOptions,
-      });
+    async layoutAndRender() {
+      this.maxDepth = 0;
+      this.buildView();
+
+      const graph = LEVELS[this.level].cluster
+        ? await this.layoutClustered()
+        : await this.elk.layout(this.buildFlatGraph(), {
+            layoutOptions: this.layoutOptions(),
+          });
 
       this.currentGraph = graph;
       this.render(graph);
       this.fitToScreen();
     }
 
+    // Each node box is laid out on its own, then the boxes are laid out by the
+    // trigger relations running between them: causal order is read box to box,
+    // and inside a box by the triggers its own events share. The boxes carry the
+    // crossing edges on ports pinned to the row each one belongs to.
+    async layoutClustered() {
+      const members = new Map();
+      this.vertices.forEach((vertex) => {
+        const groupId = `${GROUP.prefix}${vertex.ownerId}`;
+        if (!members.has(groupId)) members.set(groupId, []);
+        members.get(groupId).push(vertex);
+      });
+
+      const groupIdOf = (vertexId) =>
+        `${GROUP.prefix}${this.vertices.get(vertexId).ownerId}`;
+      const crossing = this.viewEdges.filter(
+        (edge) => groupIdOf(edge.from) !== groupIdOf(edge.to),
+      );
+      const sides = new Map(); // vertexId → Set("EAST" | "WEST")
+      const needPort = (vertexId, side) => {
+        if (!sides.has(vertexId)) sides.set(vertexId, new Set());
+        sides.get(vertexId).add(side);
+        return `${vertexId}@${side}`;
+      };
+      const portOf = new Map(); // edge id → { source, target }
+      crossing.forEach((edge) =>
+        portOf.set(edge.id, {
+          source: needPort(edge.from, "EAST"),
+          target: needPort(edge.to, "WEST"),
+        }),
+      );
+
+      const groups = await Promise.all(
+        [...members].map(([groupId, vertices]) =>
+          this.layoutGroup(groupId, vertices, sides),
+        ),
+      );
+
+      // The boxes go into the second pass without their content, so the pass
+      // places them without relaying out what they hold.
+      const laid = await this.elk.layout(
+        {
+          id: "logic-view",
+          children: groups.map((group) => group.box),
+          edges: crossing.map((edge) => ({
+            id: edge.id,
+            sources: [portOf.get(edge.id).source],
+            targets: [portOf.get(edge.id).target],
+          })),
+        },
+        { layoutOptions: this.layoutOptions() },
+      );
+
+      const contentOf = new Map(
+        groups.map((group) => [group.box.id, group.content]),
+      );
+      (laid.children || []).forEach((box) => {
+        const content = contentOf.get(box.id);
+        if (!content) return;
+        box.children = content.children;
+        box.edges = content.edges;
+      });
+      return laid;
+    }
+
+    async layoutGroup(groupId, vertices, sides) {
+      const ids = new Set(vertices.map((vertex) => vertex.id));
+      const inner = await this.elk.layout(
+        {
+          id: groupId,
+          children: vertices.map((vertex) => this.vertexNode(vertex)),
+          edges: this.viewEdges
+            .filter((edge) => ids.has(edge.from) && ids.has(edge.to))
+            .map((edge) => ({
+              id: edge.id,
+              sources: [edge.from],
+              targets: [edge.to],
+            })),
+        },
+        {
+          layoutOptions: {
+            algorithm: "layered",
+            "org.eclipse.elk.direction": "RIGHT",
+            "org.eclipse.elk.edgeRouting": "ORTHOGONAL",
+            "org.eclipse.elk.spacing.nodeNode": String(GROUP.rowSpacing),
+            "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": String(
+              GROUP.layerSpacing,
+            ),
+            "org.eclipse.elk.padding": `[top=${GROUP.padTop},left=${GROUP.pad},bottom=${GROUP.pad},right=${GROUP.pad}]`,
+          },
+        },
+      );
+
+      const instance = this.instances.get(vertices[0].ownerId)?.data || {};
+      const name = this._shortLabel(
+        instance.name || vertices[0].ownerId,
+        GROUP.nameChars,
+      );
+      const width = Math.max(
+        inner.width,
+        this.measureTextWidth(name, GROUP.fontSize) + GROUP.pad * 4,
+      );
+
+      const ports = [];
+      (inner.children || []).forEach((child) => {
+        (sides.get(child.id) || []).forEach((side) =>
+          ports.push({
+            id: `${child.id}@${side}`,
+            width: 1,
+            height: 1,
+            x: side === "WEST" ? 0 : width,
+            y: (child.y || 0) + VIEW.rowH / 2,
+            properties: { "org.eclipse.elk.port.side": side },
+          }),
+        );
+      });
+
+      return {
+        box: {
+          id: groupId,
+          width,
+          height: inner.height,
+          labels: [{ text: name }],
+          ports,
+          properties: { "org.eclipse.elk.portConstraints": "FIXED_POS" },
+        },
+        content: { children: inner.children || [], edges: inner.edges || [] },
+      };
+    }
+
+    // ELK reports a node in the coordinates of the box holding it; the drawing
+    // is flat, so every position is resolved to the root before anything is
+    // drawn and the layers then stack boxes, edges and vertices in that order.
     render(graph) {
       const { layer } = this.createCanvas();
       this.container.classList.add("logic-diagram-container");
       this.selectedId = null;
       this.selectedVertexId = null;
+      this.selectedOwnerId = null;
+      this.groupRects = new Map();
 
+      this.groupLayer = document.createElementNS(SVG_NS, "g");
       this.edgeLayer = document.createElementNS(SVG_NS, "g");
       this.vertexLayer = document.createElementNS(SVG_NS, "g");
       this.edgeLabelLayer = document.createElementNS(SVG_NS, "g");
+      layer.appendChild(this.groupLayer);
       layer.appendChild(this.edgeLayer);
       layer.appendChild(this.vertexLayer);
       layer.appendChild(this.edgeLabelLayer);
 
-      (graph.edges || []).forEach((laidEdge) => {
-        const path = this.buildEdgePath(laidEdge);
+      const origins = new Map();
+      const groups = [];
+      const vertices = [];
+      const edges = [];
+
+      const walk = (node, ox, oy) => {
+        const origin = { x: ox + (node.x || 0), y: oy + (node.y || 0) };
+        origins.set(node.id, origin);
+        if (this.vertices.has(node.id)) vertices.push({ node, origin });
+        else if (node.id !== graph.id) groups.push({ node, origin });
+        (node.edges || []).forEach((laid) => edges.push({ laid, node }));
+        (node.children || []).forEach((child) =>
+          walk(child, origin.x, origin.y),
+        );
+      };
+      walk(graph, 0, 0);
+
+      groups.forEach(({ node, origin }) =>
+        this.groupLayer.appendChild(this.buildGroup(node, origin)),
+      );
+      edges.forEach(({ laid, node }) => {
+        const origin = origins.get(laid.container) || origins.get(node.id);
+        const path = this.buildEdgePath(laid, origin);
         if (path) this.edgeLayer.appendChild(path);
       });
-      (graph.children || []).forEach((node) =>
-        this.vertexLayer.appendChild(this.buildVertex(node)),
+      vertices.forEach(({ node, origin }) =>
+        this.vertexLayer.appendChild(this.buildVertex(node, origin)),
       );
 
       this.renderToolbar();
       this.applyLOD();
     }
 
+    // The box naming the node that owns the events drawn in it.
+    buildGroup(node, origin) {
+      const ownerId = node.id.slice(GROUP.prefix.length);
+      const instance = this.instances.get(ownerId)?.data || {};
+      const guide = instance.vis_guide;
+      const defaults = this.isDarkMode()
+        ? this.styleDefaults.dark
+        : this.styleDefaults.light;
+
+      const g = document.createElementNS(SVG_NS, "g");
+      g.setAttribute("id", node.id);
+      g.setAttribute("transform", `translate(${origin.x},${origin.y})`);
+      g.classList.add("logic-group");
+
+      const rect = document.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("width", node.width || 0);
+      rect.setAttribute("height", node.height || 0);
+      rect.setAttribute("rx", GROUP.pad);
+      rect.setAttribute(
+        "fill",
+        this.themed(guide, "background_color", defaults.bg),
+      );
+      rect.setAttribute("stroke", this.themed(guide, "color", defaults.stroke));
+      rect.classList.add("logic-group-rect");
+      g.appendChild(rect);
+      this.groupRects.set(ownerId, rect);
+
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = `${instance.path || instance.name || ownerId}\n${
+        node.children?.length || 0
+      } events`;
+      g.appendChild(title);
+
+      const name = document.createElementNS(SVG_NS, "text");
+      name.setAttribute("x", (node.width || 0) / 2);
+      name.setAttribute("y", GROUP.padTop / 2 + 2);
+      name.setAttribute("text-anchor", "middle");
+      name.setAttribute("dominant-baseline", "central");
+      name.textContent = node.labels?.[0]?.text || "";
+      name.classList.add("logic-group-label");
+      name.style.fontSize = `${GROUP.fontSize}px`;
+      name.style.fill = this.themed(
+        guide,
+        "text_color",
+        this.isDarkMode() ? "#e9ecef" : "#333",
+      );
+      g.appendChild(name);
+
+      g.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.traceOwner(ownerId);
+      };
+
+      return g;
+    }
+
     // A vertex is one row: the glyph carries the trigger semantics, the outline
     // the instance that owns it, and the trailing badge the rate.
-    buildVertex(node) {
+    buildVertex(node, origin) {
       const vertex = this.vertices.get(node.id);
       const style = this.getLayerStyle();
       const guide = this.instances.get(vertex.ownerId)?.data.vis_guide;
@@ -559,7 +795,7 @@
 
       const g = document.createElementNS(SVG_NS, "g");
       g.setAttribute("id", node.id);
-      g.setAttribute("transform", `translate(${node.x || 0},${node.y || 0})`);
+      g.setAttribute("transform", `translate(${origin.x},${origin.y})`);
       g.classList.add("logic-vertex");
       if (!vertex.clocked) g.classList.add("logic-unclocked");
       g.style.cursor = "pointer";
@@ -656,36 +892,38 @@
     }
 
     buildVertexGlyph(vertex, style) {
-      if (vertex.kind === "gate" || vertex.kind === "instance") {
-        const shape = this.buildGateShape(
+      if (vertex.kind === "process" || vertex.kind === "instance") {
+        const shape = this.buildTypeShape(
           vertex.type,
           VIEW.glyphW,
           VIEW.glyphH,
           style,
         );
-        shape.classList.add("logic-gate");
-        if (vertex.kind === "gate" && !vertex.type) {
-          shape.classList.add("logic-gate-unknown");
+        shape.classList.add("logic-process");
+        if (vertex.kind === "process" && !vertex.type) {
+          shape.classList.add("logic-process-unknown");
         }
         return shape;
       }
+      return this.buildPortGlyph(vertex.kind);
+    }
 
-      // Port events are the boundary of an instance: the chevron points the way
-      // the message travels, so an input and an output read the same on either
-      // side.
+    // Port events are the boundary of a node: the chevron points the way the
+    // message travels, so an input and an output read the same on either side.
+    buildPortGlyph(kind) {
       const glyph = document.createElementNS(SVG_NS, "polygon");
       glyph.setAttribute(
         "points",
         `0,0 ${VIEW.glyphW},${VIEW.glyphH / 2} 0,${VIEW.glyphH}`,
       );
-      glyph.classList.add("logic-event", `logic-event-${vertex.kind}`);
+      glyph.classList.add("logic-event", `logic-event-${kind}`);
       return glyph;
     }
 
-    // Gate outlines: `and` closes on a single arc, `or` on a concave back, a clock
-    // is a pill and `once` a tag; every other type stays a plain box.
-    buildGateShape(type, w, h, style) {
-      const shape = GATE_SHAPES[type];
+    // Process-event outlines: `and` closes on a single arc, `or` on a concave
+    // back, a clock is a pill and `once` a tag; every other type is a plain box.
+    buildTypeShape(type, w, h, style) {
+      const shape = TYPE_SHAPES[type];
       if (shape === "and") {
         const path = document.createElementNS(SVG_NS, "path");
         path.setAttribute(
@@ -719,16 +957,18 @@
       return rect;
     }
 
-    buildEdgePath(laidEdge) {
+    buildEdgePath(laidEdge, origin = { x: 0, y: 0 }) {
       if (!laidEdge.sections) return null;
       const edge = this.viewEdgeById.get(laidEdge.id);
+      if (!edge) return null;
       const style = this.getLayerStyle();
 
+      const at = (point) => `${point.x + origin.x} ${point.y + origin.y}`;
       let d = "";
       laidEdge.sections.forEach((section) => {
-        d += `M ${section.startPoint.x} ${section.startPoint.y} `;
-        (section.bendPoints || []).forEach((bp) => (d += `L ${bp.x} ${bp.y} `));
-        d += `L ${section.endPoint.x} ${section.endPoint.y} `;
+        d += `M ${at(section.startPoint)} `;
+        (section.bendPoints || []).forEach((bp) => (d += `L ${at(bp)} `));
+        d += `L ${at(section.endPoint)} `;
       });
 
       const from = this.vertices.get(edge.from);
@@ -774,6 +1014,7 @@
     applyLOD() {
       const root = this.currentSvgRoot;
       if (!root) return;
+      root.classList.toggle("lod-node", this.transform.k >= LOD_NODE);
       root.classList.toggle("lod-name", this.transform.k >= LOD_NAME);
       root.classList.toggle("lod-rate", this.transform.k >= LOD_RATE);
     }
@@ -833,6 +1074,7 @@
     // Repeats the current selection under a changed trace mode.
     retrace() {
       if (this.selectedVertexId) this.traceVertex(this.selectedVertexId);
+      else if (this.selectedOwnerId) this.traceOwner(this.selectedOwnerId);
       else if (this.selectedId) this.traceFrom(this.selectedId);
     }
 
@@ -842,6 +1084,7 @@
       const { upstream, downstream } = this._trace([eventId]);
       this.selectedId = eventId;
       this.selectedVertexId = this.vertexOf.get(eventId) ?? null;
+      this.selectedOwnerId = null;
       this.updateInfoPanel(
         this.describeChain(event, upstream, downstream),
         "Event",
@@ -858,17 +1101,32 @@
         return;
       }
 
-      const { upstream, downstream } = this._trace(vertex.eventIds);
-      this.selectedId = vertex.eventIds[0];
+      this._traceOwned(vertex.ownerId, vertex.eventIds);
       this.selectedVertexId = vertexId;
-      const instance = this.instances.get(vertex.ownerId)?.data || {};
+      this.selectedOwnerId = null;
+    }
+
+    // The box traces every chain the node's own events take part in.
+    traceOwner(ownerId) {
+      const eventIds = [...this.vertices.values()]
+        .filter((vertex) => vertex.ownerId === ownerId)
+        .flatMap((vertex) => vertex.eventIds);
+      if (eventIds.length) this._traceOwned(ownerId, eventIds);
+    }
+
+    _traceOwned(ownerId, eventIds) {
+      const { upstream, downstream } = this._trace(eventIds);
+      this.selectedId = eventIds[0];
+      this.selectedVertexId = null;
+      this.selectedOwnerId = ownerId;
+      const instance = this.instances.get(ownerId)?.data || {};
       this.updateInfoPanel(
         {
           ...instance,
           chain: this.chainReport(
             upstream,
             downstream,
-            this.clockIds(vertex.eventIds),
+            this.clockIds(eventIds),
           ),
         },
         "Node",
@@ -987,6 +1245,7 @@
       if (this.edgeLabelLayer) this.edgeLabelLayer.innerHTML = "";
       this.selectedId = null;
       this.selectedVertexId = null;
+      this.selectedOwnerId = null;
     }
 
     highlightEvent(eventId, preset) {
@@ -1004,6 +1263,17 @@
       body.classList.add("logic-highlighted");
       body.style.stroke = color;
       body.style.strokeWidth = "2px";
+      this.markGroup(this.vertices.get(vertexId)?.ownerId, color);
+    }
+
+    // The box of a node the chain passes through is marked once, by the first
+    // of its events the walk reaches.
+    markGroup(ownerId, color) {
+      const rect = this.groupRects?.get(ownerId);
+      if (!rect || rect.classList.contains("logic-highlighted")) return;
+      rect.classList.add("logic-highlighted");
+      rect.style.stroke = color;
+      rect.style.strokeWidth = "1.5px";
     }
 
     // The events an edge folds away are named only while the chain is traced, so
@@ -1121,8 +1391,8 @@
       );
     }
 
-    // Chain ends have no vertex of their own in the gate view, so the report
-    // comes with the level that draws them.
+    // Chain ends have no vertex of their own where the ports are folded away, so
+    // the report comes with the level that draws them.
     async highlightChainEnds() {
       const ids = [...this.chainEndIds].filter((id) => this._isVisible(id));
       if (!ids.some((id) => this.vertexOf.get(id))) {
@@ -1268,12 +1538,6 @@
       );
 
       bar.appendChild(
-        toggle("fold long chains into bands", this.wrap, async (checked) => {
-          this.wrap = checked;
-          await this.layoutAndRender();
-        }),
-      );
-      bar.appendChild(
         toggle(
           "events with no trigger relation",
           this.showUnlinked,
@@ -1355,11 +1619,20 @@
         svg.setAttribute("width", "26");
         svg.setAttribute("height", "14");
         svg.setAttribute("viewBox", "0 0 26 14");
-        const type = { clock: "periodic", and: "and", or: "or" }[shape] || null;
-        const glyph = this.buildGateShape(type, 24, 12, { cornerR: 2 });
+        const glyph =
+          shape === "port"
+            ? this.buildPortGlyph("input")
+            : this.buildTypeShape(
+                { clock: "periodic", and: "and", or: "or" }[shape] || null,
+                24,
+                12,
+                { cornerR: 2 },
+              );
         glyph.setAttribute("transform", "translate(1,1)");
-        glyph.classList.add("logic-gate");
-        if (shape === "unknown") glyph.classList.add("logic-gate-unknown");
+        if (shape !== "port") {
+          glyph.classList.add("logic-process");
+          if (shape === "unknown") glyph.classList.add("logic-process-unknown");
+        }
         svg.appendChild(glyph);
 
         rowEl.appendChild(svg);

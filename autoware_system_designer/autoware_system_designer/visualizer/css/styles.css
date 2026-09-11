@@ -764,13 +764,13 @@ body.resizing-sidebar {
   fill: var(--border-hover);
 }
 
-.logic-gate {
+.logic-process {
   stroke: var(--text-secondary);
   stroke-width: 1px;
   fill: var(--bg-tertiary);
 }
 
-.logic-gate-unknown {
+.logic-process-unknown {
   stroke-dasharray: 3 2;
 }
 
@@ -781,6 +781,19 @@ body.resizing-sidebar {
 
 .logic-vertex-body {
   transition: stroke 0.1s;
+}
+
+/* The node box the events inside it are declared by. */
+.logic-group-rect {
+  stroke-width: 1px;
+  transition: stroke 0.1s;
+}
+
+.logic-group-label {
+  font-family: "Segoe UI", sans-serif;
+  font-weight: 600;
+  pointer-events: none;
+  display: none;
 }
 
 /* Label detail is switched by the viewport scale: the classes are set on the
@@ -795,6 +808,10 @@ body.resizing-sidebar {
 
 .logic-vertex-sub {
   fill: var(--text-muted);
+}
+
+svg.lod-node .logic-group-label {
+  display: block;
 }
 
 svg.lod-name .logic-vertex-label,
