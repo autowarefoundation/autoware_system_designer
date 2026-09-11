@@ -33,6 +33,7 @@
     padX: 6,
     gap: 4,
     labelChars: 26,
+    eventChars: 15,
     markW: 7,
     nodeSpacing: 6,
     layerSpacing: 20,
@@ -67,23 +68,38 @@
       button: "nodes",
       transparent: () => false,
       vertexOf: (event) => event.ownerId,
-      cluster: false,
     },
     process: {
       title: "process events",
       button: "process events",
       transparent: (event) => event.kind !== "process",
       vertexOf: (event) => event.id,
-      cluster: true,
     },
     events: {
       title: "events",
       button: "all events",
       transparent: () => false,
       vertexOf: (event) => event.id,
-      cluster: true,
     },
   };
+
+  // How the drawing is cut into boxes. A box keeps the events it holds together
+  // and lengthens every link that leaves it, so the cut is a layout choice.
+  const GROUPINGS = {
+    node: { title: "node", keyOf: (d, v) => v.ownerId },
+    component: {
+      title: "component",
+      keyOf: (d, v) => d._componentOf(v.ownerId),
+    },
+    linked: {
+      title: "linked",
+      keyOf: (d, v) => `c_${d._communities().get(v.ownerId)}`,
+    },
+    none: { title: "none", keyOf: () => null },
+  };
+
+  // Namespace depth a component box is cut at.
+  const COMPONENT_DEPTH = 1;
 
   // Legend entries, in the order the chain reads.
   const LEGEND = [
@@ -114,6 +130,7 @@
       this.rootData = null;
       this.events = new Map(); // eventId → event record
       this.instances = new Map(); // instanceId → { data, depth }
+      this.instanceByPath = new Map(); // instance path → instance
       this.succ = new Map(); // eventId → [eventId] it triggers
       this.pred = new Map(); // eventId → [eventId] triggering it
       this.edgeList = []; // { id, from, to, cross }
@@ -130,8 +147,15 @@
       this.viewEdgeOf = new Map(); // event edge id → view edge id
       this.foldedCount = 0;
 
+      this.groups = new Map(); // group key → { id, vertexIds, ownerIds, name }
+      this.groupById = new Map();
+      this.communityOf = null; // ownerId → community id, built on demand
+      this.linkLength = null; // mean straight-line length of a drawn link
+      this.groupingReport = null;
+
       this.currentGraph = null;
       this.level = "events";
+      this.grouping = "node";
       this.colorBy = "owner";
       this.showUnlinked = false;
       this.traceMode = "both";
@@ -176,6 +200,7 @@
       this.succ.clear();
       this.pred.clear();
       this.edgeIdByKey.clear();
+      this.instanceByPath.clear();
       this.edgeList = [];
       this.activeIds.clear();
 
@@ -203,6 +228,7 @@
           data: instance,
           depth,
         });
+        if (instance.path) this.instanceByPath.set(instance.path, instance);
         (instance.in_ports || []).forEach((port) =>
           addEvent(port.event, instance, "input", port),
         );
@@ -307,6 +333,7 @@
       this.viewEdges = [];
       this.viewEdgeById = new Map();
       this.viewEdgeOf = new Map();
+      this.communityOf = null;
       this.foldedCount = 0;
 
       this.events.forEach((event, id) => {
@@ -372,7 +399,154 @@
       });
 
       this.vertices.forEach((vertex) => this._decorateVertex(vertex));
+      this._assignGroups();
+      this.vertices.forEach((vertex) => this._labelVertex(vertex));
       this.viewEdges.forEach((edge) => this._labelEdge(edge));
+    }
+
+    // ── Grouping ────────────────────────────────────────────────────────────────
+
+    // Every vertex takes the key of the box it is drawn in; a null key stays a
+    // free row of the drawing.
+    _assignGroups() {
+      this.groups = new Map();
+      this.groupById = new Map();
+      const keyOf = GROUPINGS[this.grouping].keyOf;
+
+      this.vertices.forEach((vertex) => {
+        const key =
+          this.level === "nodes" && this.grouping === "node"
+            ? null
+            : keyOf(this, vertex);
+        vertex.groupKey = key;
+        if (key === null) return;
+        let group = this.groups.get(key);
+        if (!group) {
+          group = {
+            key,
+            id: `${GROUP.prefix}${key}`,
+            vertexIds: [],
+            ownerIds: new Set(),
+          };
+          this.groups.set(key, group);
+          this.groupById.set(group.id, group);
+        }
+        group.vertexIds.push(vertex.id);
+        group.ownerIds.add(vertex.ownerId);
+      });
+
+      this.groups.forEach((group) => this._nameGroup(group));
+    }
+
+    // The namespace prefix a node sits under.
+    _componentOf(ownerId) {
+      const path = this.instances.get(ownerId)?.data.path || "";
+      return `/${path.split("/").filter(Boolean).slice(0, COMPONENT_DEPTH).join("/")}`;
+    }
+
+    // What a box is called and which instance lends it its color: the node
+    // itself, or the component the nodes in it have in common.
+    _nameGroup(group) {
+      const ownerIds = [...group.ownerIds];
+      if (this.grouping === "node") {
+        const instance = this.instances.get(ownerIds[0])?.data || {};
+        group.instance = instance;
+        group.name = instance.name || ownerIds[0];
+        group.detail = instance.path || "";
+        return;
+      }
+
+      const counts = new Map();
+      ownerIds.forEach((ownerId) => {
+        const component = this._componentOf(ownerId);
+        counts.set(component, (counts.get(component) || 0) + 1);
+      });
+      const [component] = [...counts].sort((a, b) => b[1] - a[1])[0];
+      group.instance = this.instanceByPath.get(component) || {};
+      group.detail = component;
+      group.name =
+        this.grouping === "component"
+          ? component
+          : `${component} · ${ownerIds.length} node${ownerIds.length > 1 ? "s" : ""}`;
+    }
+
+    // Modularity communities over the node boxes, from the links between them:
+    // the cut that keeps the busiest links inside one box.
+    _communities() {
+      if (this.communityOf) return this.communityOf;
+
+      const neighbors = new Map();
+      const degree = new Map();
+      let links = 0;
+      const add = (a, b) => {
+        if (!neighbors.has(a)) neighbors.set(a, new Map());
+        neighbors.get(a).set(b, (neighbors.get(a).get(b) || 0) + 1);
+        degree.set(a, (degree.get(a) || 0) + 1);
+      };
+      this.viewEdges.forEach((edge) => {
+        const a = this.vertices.get(edge.from).ownerId;
+        const b = this.vertices.get(edge.to).ownerId;
+        if (a === b) return;
+        add(a, b);
+        add(b, a);
+        links += 1;
+      });
+
+      const community = new Map();
+      this.vertices.forEach((vertex) =>
+        community.set(vertex.ownerId, vertex.ownerId),
+      );
+      if (!links) {
+        this.communityOf = community;
+        return community;
+      }
+
+      // Greedy modularity: a node joins the neighbouring community that gains
+      // the most, repeated until no move pays off.
+      const m2 = links * 2;
+      const communityDegree = new Map();
+      community.forEach((key, ownerId) =>
+        communityDegree.set(
+          key,
+          (communityDegree.get(key) || 0) + (degree.get(ownerId) || 0),
+        ),
+      );
+
+      for (let round = 0; round < 20; round += 1) {
+        let moved = false;
+        community.forEach((own, ownerId) => {
+          const k = degree.get(ownerId) || 0;
+          communityDegree.set(own, communityDegree.get(own) - k);
+
+          const weights = new Map();
+          (neighbors.get(ownerId) || new Map()).forEach((weight, other) => {
+            const key = community.get(other);
+            weights.set(key, (weights.get(key) || 0) + weight);
+          });
+
+          let best = own;
+          let bestGain =
+            (weights.get(own) || 0) -
+            ((communityDegree.get(own) || 0) * k) / m2;
+          weights.forEach((weight, key) => {
+            const gain = weight - ((communityDegree.get(key) || 0) * k) / m2;
+            if (gain > bestGain + 1e-9) {
+              bestGain = gain;
+              best = key;
+            }
+          });
+
+          communityDegree.set(best, (communityDegree.get(best) || 0) + k);
+          if (best !== own) {
+            community.set(ownerId, best);
+            moved = true;
+          }
+        });
+        if (!moved) break;
+      }
+
+      this.communityOf = community;
+      return community;
     }
 
     // The relation an edge stands for, named once: the first event it folds, or
@@ -409,8 +583,27 @@
         vertex.clocked = this.clocksOf.has(event.id);
         vertex.mismatch = Boolean(this._rateMismatch(event));
       }
+    }
 
-      vertex.label = this._shortLabel(vertex.name);
+    // A row carries the name of the node owning it unless the box around it
+    // already does.
+    _labelVertex(vertex) {
+      const owner = this.instances.get(vertex.ownerId)?.data;
+      if (
+        vertex.groupKey === vertex.ownerId ||
+        vertex.kind === "instance" ||
+        !owner?.name
+      ) {
+        vertex.label = this._shortLabel(vertex.name);
+      } else {
+        // Both names are cut on the left, so each keeps the end that tells the
+        // two rows of one node apart.
+        const event = this._shortLabel(vertex.name, VIEW.eventChars);
+        vertex.label = `${this._shortLabel(
+          owner.name,
+          Math.max(6, VIEW.labelChars - event.length - 1),
+        )}/${event}`;
+      }
       vertex.width = Math.round(
         VIEW.padX * 2 +
           VIEW.glyphW +
@@ -547,61 +740,68 @@
     async layoutAndRender() {
       this.maxDepth = 0;
       this.buildView();
-
-      const graph = LEVELS[this.level].cluster
-        ? await this.layoutClustered()
-        : await this.elk.layout(this.buildFlatGraph(), {
-            layoutOptions: this.layoutOptions(),
-          });
-
+      const graph = await this.layoutView();
+      this.linkLength = this.measureLinks(graph);
       this.currentGraph = graph;
       this.render(graph);
       this.fitToScreen();
     }
 
-    // Each node box is laid out on its own, then the boxes are laid out by the
-    // trigger relations running between them: causal order is read box to box,
-    // and inside a box by the triggers its own events share. The boxes carry the
-    // crossing edges on ports pinned to the row each one belongs to.
-    async layoutClustered() {
-      const members = new Map();
-      this.vertices.forEach((vertex) => {
-        const groupId = `${GROUP.prefix}${vertex.ownerId}`;
-        if (!members.has(groupId)) members.set(groupId, []);
-        members.get(groupId).push(vertex);
-      });
+    // Each box is laid out on its own, then the boxes and the rows outside them
+    // are laid out by the trigger relations running between them: causal order
+    // is read box to box, and inside a box by the triggers its own events share.
+    // The boxes carry the crossing links on ports pinned to the row each one
+    // belongs to. With no box at all this collapses to one pass over the rows.
+    async layoutView() {
+      if (!this.groups.size) {
+        return this.elk.layout(this.buildFlatGraph(), {
+          layoutOptions: this.layoutOptions(),
+        });
+      }
 
-      const groupIdOf = (vertexId) =>
-        `${GROUP.prefix}${this.vertices.get(vertexId).ownerId}`;
+      const groupIdOf = (vertexId) => {
+        const key = this.vertices.get(vertexId).groupKey;
+        return key === null ? null : this.groups.get(key).id;
+      };
       const crossing = this.viewEdges.filter(
-        (edge) => groupIdOf(edge.from) !== groupIdOf(edge.to),
+        (edge) =>
+          groupIdOf(edge.from) === null ||
+          groupIdOf(edge.to) === null ||
+          groupIdOf(edge.from) !== groupIdOf(edge.to),
       );
+
       const sides = new Map(); // vertexId → Set("EAST" | "WEST")
-      const needPort = (vertexId, side) => {
+      // A row inside a box is reached through a port on the box; a free row is
+      // a child of the drawing and carries the link itself.
+      const endpoint = (vertexId, side) => {
+        if (groupIdOf(vertexId) === null) return vertexId;
         if (!sides.has(vertexId)) sides.set(vertexId, new Set());
         sides.get(vertexId).add(side);
         return `${vertexId}@${side}`;
       };
-      const portOf = new Map(); // edge id → { source, target }
+      const portOf = new Map();
       crossing.forEach((edge) =>
         portOf.set(edge.id, {
-          source: needPort(edge.from, "EAST"),
-          target: needPort(edge.to, "WEST"),
+          source: endpoint(edge.from, "EAST"),
+          target: endpoint(edge.to, "WEST"),
         }),
       );
 
       const groups = await Promise.all(
-        [...members].map(([groupId, vertices]) =>
-          this.layoutGroup(groupId, vertices, sides),
+        [...this.groups.values()].map((group) =>
+          this.layoutGroup(group, sides),
         ),
       );
+      const free = [...this.vertices.values()]
+        .filter((vertex) => vertex.groupKey === null)
+        .map((vertex) => this.vertexNode(vertex));
 
       // The boxes go into the second pass without their content, so the pass
       // places them without relaying out what they hold.
       const laid = await this.elk.layout(
         {
           id: "logic-view",
-          children: groups.map((group) => group.box),
+          children: [...groups.map((group) => group.box), ...free],
           edges: crossing.map((edge) => ({
             id: edge.id,
             sources: [portOf.get(edge.id).source],
@@ -623,12 +823,43 @@
       return laid;
     }
 
-    async layoutGroup(groupId, vertices, sides) {
-      const ids = new Set(vertices.map((vertex) => vertex.id));
+    // Mean straight-line distance between the rows a link joins: what a cut into
+    // boxes costs, in the unit the drawing is read in.
+    measureLinks(graph) {
+      const at = new Map();
+      const walk = (node, ox, oy) => {
+        const x = ox + (node.x || 0);
+        const y = oy + (node.y || 0);
+        if (this.vertices.has(node.id)) at.set(node.id, { x, y });
+        (node.children || []).forEach((child) => walk(child, x, y));
+      };
+      walk(graph, 0, 0);
+
+      let total = 0;
+      let counted = 0;
+      this.viewEdges.forEach((edge) => {
+        const from = at.get(edge.from);
+        const to = at.get(edge.to);
+        if (!from || !to) return;
+        const fromWidth = this.vertices.get(edge.from).width;
+        const toWidth = this.vertices.get(edge.to).width;
+        total += Math.hypot(
+          to.x + toWidth / 2 - from.x - fromWidth / 2,
+          to.y - from.y,
+        );
+        counted += 1;
+      });
+      return counted ? Math.round(total / counted) : 0;
+    }
+
+    async layoutGroup(group, sides) {
+      const ids = new Set(group.vertexIds);
       const inner = await this.elk.layout(
         {
-          id: groupId,
-          children: vertices.map((vertex) => this.vertexNode(vertex)),
+          id: group.id,
+          children: group.vertexIds.map((id) =>
+            this.vertexNode(this.vertices.get(id)),
+          ),
           edges: this.viewEdges
             .filter((edge) => ids.has(edge.from) && ids.has(edge.to))
             .map((edge) => ({
@@ -665,11 +896,7 @@
         },
       );
 
-      const instance = this.instances.get(vertices[0].ownerId)?.data || {};
-      const name = this._shortLabel(
-        instance.name || vertices[0].ownerId,
-        GROUP.nameChars,
-      );
+      const name = this._shortLabel(group.name, GROUP.nameChars);
       const width = Math.max(
         inner.width,
         this.measureTextWidth(name, GROUP.fontSize) + GROUP.pad * 4,
@@ -691,7 +918,7 @@
 
       return {
         box: {
-          id: groupId,
+          id: group.id,
           width,
           height: inner.height,
           labels: [{ text: name }],
@@ -755,10 +982,10 @@
       this.applyLOD();
     }
 
-    // The box naming the node that owns the events drawn in it.
+    // The box naming what the events drawn in it have in common.
     buildGroup(node, origin) {
-      const ownerId = node.id.slice(GROUP.prefix.length);
-      const instance = this.instances.get(ownerId)?.data || {};
+      const group = this.groupById.get(node.id);
+      const instance = group?.instance || {};
       const guide = instance.vis_guide;
       const defaults = this.isDarkMode()
         ? this.styleDefaults.dark
@@ -780,10 +1007,10 @@
       rect.setAttribute("stroke", this.themed(guide, "color", defaults.stroke));
       rect.classList.add("logic-group-rect");
       g.appendChild(rect);
-      this.groupRects.set(ownerId, rect);
+      this.groupRects.set(group?.key, rect);
 
       const title = document.createElementNS(SVG_NS, "title");
-      title.textContent = `${instance.path || instance.name || ownerId}\n${
+      title.textContent = `${group?.detail || group?.name || node.id}\n${
         node.children?.length || 0
       } events`;
       g.appendChild(title);
@@ -806,7 +1033,7 @@
       g.onclick = (e) => {
         if (this.hasDragged) return;
         e.stopPropagation();
-        this.traceOwner(ownerId);
+        this.traceGroup(group?.key);
       };
 
       return g;
@@ -1119,7 +1346,7 @@
     // Repeats the current selection under a changed trace mode.
     retrace() {
       if (this.selectedVertexId) this.traceVertex(this.selectedVertexId);
-      else if (this.selectedOwnerId) this.traceOwner(this.selectedOwnerId);
+      else if (this.selectedOwnerId) this.traceGroup(this.selectedOwnerId);
       else if (this.selectedId) this.traceFrom(this.selectedId);
     }
 
@@ -1146,28 +1373,32 @@
         return;
       }
 
-      this._traceOwned(vertex.ownerId, vertex.eventIds);
+      this._traceOwned(vertex.groupKey, vertex.eventIds);
       this.selectedVertexId = vertexId;
       this.selectedOwnerId = null;
     }
 
-    // The box traces every chain the node's own events take part in.
-    traceOwner(ownerId) {
-      const eventIds = [...this.vertices.values()]
-        .filter((vertex) => vertex.ownerId === ownerId)
-        .flatMap((vertex) => vertex.eventIds);
-      if (eventIds.length) this._traceOwned(ownerId, eventIds);
+    // The box traces every chain the events drawn in it take part in.
+    traceGroup(groupKey) {
+      const group = this.groups.get(groupKey);
+      if (!group) return;
+      const eventIds = group.vertexIds.flatMap(
+        (id) => this.vertices.get(id).eventIds,
+      );
+      if (eventIds.length) this._traceOwned(groupKey, eventIds);
     }
 
-    _traceOwned(ownerId, eventIds) {
+    _traceOwned(groupKey, eventIds) {
       const { upstream, downstream } = this._trace(eventIds);
       this.selectedId = eventIds[0];
       this.selectedVertexId = null;
-      this.selectedOwnerId = ownerId;
-      const instance = this.instances.get(ownerId)?.data || {};
+      this.selectedOwnerId = groupKey;
+      const group = this.groups.get(groupKey);
       this.updateInfoPanel(
         {
-          ...instance,
+          ...(group?.instance || {}),
+          name: group?.name || groupKey,
+          nodes: group ? group.ownerIds.size : 1,
           chain: this.chainReport(
             upstream,
             downstream,
@@ -1307,13 +1538,13 @@
       body.classList.add("logic-highlighted");
       body.style.stroke = color;
       body.style.strokeWidth = "2px";
-      this.markGroup(this.vertices.get(vertexId)?.ownerId, color);
+      this.markGroup(this.vertices.get(vertexId)?.groupKey, color);
     }
 
-    // The box of a node the chain passes through is marked once, by the first
-    // of its events the walk reaches.
-    markGroup(ownerId, color) {
-      const rect = this.groupRects?.get(ownerId);
+    // The box a chain passes through is marked once, by the first of the events
+    // in it the walk reaches.
+    markGroup(groupKey, color) {
+      const rect = this.groupRects?.get(groupKey);
       if (!rect || rect.classList.contains("logic-highlighted")) return;
       rect.classList.add("logic-highlighted");
       rect.style.stroke = color;
@@ -1473,6 +1704,50 @@
       await this.layoutAndRender();
     }
 
+    async setGrouping(grouping) {
+      if (this.grouping === grouping) return;
+      this.grouping = grouping;
+      this.groupingReport = null;
+      await this.layoutAndRender();
+    }
+
+    // Keeps the cut with the shortest mean link: every grouping is laid out and
+    // measured, and the drawing keeps the best of them.
+    async optimizeGrouping() {
+      const results = [];
+      let best = null;
+
+      for (const grouping of Object.keys(GROUPINGS)) {
+        this._setStatus(`measuring ${GROUPINGS[grouping].title}…`);
+        this.grouping = grouping;
+        this.buildView();
+        const graph = await this.layoutView();
+        const length = this.measureLinks(graph);
+        results.push({ grouping, length, boxes: this.groups.size });
+        if (!best || length < best.length) best = { grouping, graph, length };
+      }
+
+      results.sort((a, b) => a.length - b.length);
+      this.grouping = best.grouping;
+      this.buildView();
+      this.linkLength = best.length;
+      this.groupingReport = results
+        .map((entry) => `${entry.grouping} ${entry.length}px`)
+        .join(" · ");
+      this.currentGraph = best.graph;
+      this.render(best.graph);
+      this.fitToScreen();
+      this.updateInfoPanel(
+        {
+          name: `grouping: ${best.grouping}`,
+          mean_link: `${best.length}px`,
+          boxes: this.groups.size,
+          measured: this.groupingReport,
+        },
+        "Layout",
+      );
+    }
+
     renderToolbar() {
       const bar = document.createElement("div");
       bar.className = "logic-toolbar";
@@ -1545,6 +1820,20 @@
         btn.dataset.trace = ["both", "up", "down"][i];
       });
       bar.appendChild(row(label("Trace"), ...traceButtons));
+
+      bar.appendChild(
+        row(
+          label("Group"),
+          ...Object.entries(GROUPINGS).map(([grouping, spec]) =>
+            button(
+              spec.title,
+              () => this.setGrouping(grouping),
+              this.grouping === grouping,
+            ),
+          ),
+          button("shortest", () => this.optimizeGrouping()),
+        ),
+      );
 
       bar.appendChild(
         row(
@@ -1632,6 +1921,12 @@
       return row;
     }
 
+    // What the toolbar reports while a measurement is running.
+    _setStatus(text) {
+      const counters = this.container.querySelector(".logic-counters");
+      if (counters) counters.textContent = text;
+    }
+
     buildCounters() {
       const shown = [...this.events.keys()].filter((id) => this._isVisible(id));
       const unclocked = shown.filter((id) => !this.clocksOf.has(id)).length;
@@ -1641,7 +1936,14 @@
       div.textContent =
         `${this.vertices.size} ${LEVELS[this.level].title} · ` +
         `${this.viewEdges.length} links · ${this.foldedCount} folded · ` +
-        `${this.chainEndIds.size} chain ends · ${unclocked} unclocked`;
+        `${this.chainEndIds.size} chain ends · ${unclocked} unclocked · ` +
+        `${this.groups.size} boxes · ${this.linkLength}px mean link`;
+      if (this.groupingReport) {
+        const measured = document.createElement("div");
+        measured.className = "logic-legend-note";
+        measured.textContent = `measured: ${this.groupingReport}`;
+        div.appendChild(measured);
+      }
       return div;
     }
 
