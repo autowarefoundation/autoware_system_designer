@@ -771,7 +771,10 @@
         // Every edge still runs left to right, so the horizontal axis reads as
         // causal order; the strategy picks the layer that keeps it shortest.
         "org.eclipse.elk.layered.layering.strategy": "NETWORK_SIMPLEX",
-        "org.eclipse.elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+        // Boxes joined by a chain are placed as one segment, which pulls the
+        // stack together without costing the link a corner. The strategies that
+        // pack tighter cost either the corners or the layout time.
+        "org.eclipse.elk.layered.nodePlacement.strategy": "LINEAR_SEGMENTS",
         "org.eclipse.elk.spacing.nodeNode": String(VIEW.nodeSpacing),
         "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": String(
           VIEW.layerSpacing,
@@ -786,7 +789,6 @@
         "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": String(
           VIEW.edgeSpacing,
         ),
-        "org.eclipse.elk.layered.nodePlacement.bk.edgeStraightening": "NONE",
         "org.eclipse.elk.layered.compaction.postCompaction.strategy": "LEFT",
         "org.eclipse.elk.layered.compaction.postCompaction.constraints":
           "QUADRATIC",
@@ -933,6 +935,9 @@
             algorithm: "layered",
             "org.eclipse.elk.direction": "RIGHT",
             "org.eclipse.elk.edgeRouting": "ORTHOGONAL",
+            // A row is aligned with the rows it triggers, which costs the box
+            // height the layer with the most rows in it needs anyway.
+            "org.eclipse.elk.layered.layering.strategy": "MIN_WIDTH",
             "org.eclipse.elk.spacing.nodeNode": String(GROUP.rowSpacing),
             "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": String(
               GROUP.layerSpacing,
