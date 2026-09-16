@@ -20,16 +20,12 @@ import sys
 from pathlib import Path
 from typing import List
 
-try:
-    from autoware_system_designer.linter import LintResult, lint_files
-except ImportError:  # pragma: no cover
-    # Allow direct execution: `python path/to/run_lint.py ...`
-    SCRIPT_DIR = Path(__file__).resolve().parent
-    REPO_ROOT = SCRIPT_DIR.parent.parent
-    if str(REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT))
+# The source tree holding this script wins over any other installed copy on sys.path.
+PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+if (PACKAGE_ROOT / "autoware_system_designer" / "__init__.py").is_file():
+    sys.path.insert(0, str(PACKAGE_ROOT))
 
-    from autoware_system_designer.linter import LintResult, lint_files
+from autoware_system_designer.linter import LintResult, lint_files  # noqa: E402
 
 
 def find_yaml_files(paths: List[str]) -> List[Path]:
