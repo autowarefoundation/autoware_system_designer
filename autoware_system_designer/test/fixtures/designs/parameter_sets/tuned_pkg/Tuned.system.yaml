@@ -13,6 +13,7 @@ components:
   - name: feeder
     entity: Feeder.node
     compute_unit: main_ecu
+    parameter_set: [Feed.parameter_set]
   - name: duo
     entity: Duo.module
     path: /app/duo

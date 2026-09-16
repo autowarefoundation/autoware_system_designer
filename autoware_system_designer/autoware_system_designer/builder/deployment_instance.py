@@ -80,19 +80,19 @@ class DeploymentInstance(Instance):
             self.check_ports()
             _snapshot("2_connections")
 
-            # 3. build logical topology
+            # 3. finalize parameters (resolve substitutions); the topology reads the effective values
+            current_step = "finalize"
+            self._finalize_parameters_recursive()
+
+            # 4. build logical topology
             current_step = "events"
             logger.info(f"Instance '{self.name}': building logical topology")
             self.set_event_tree()
             _snapshot("3_events")
 
-            # 4. validate node namespaces
+            # 5. validate node namespaces
             current_step = "validate"
             self.check_duplicate_node_path()
-
-            # 5. finalize parameters (resolve substitutions)
-            current_step = "finalize"
-            self._finalize_parameters_recursive()
         except Exception as e:
             _snapshot(current_step, e)
             raise

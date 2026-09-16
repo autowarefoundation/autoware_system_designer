@@ -40,6 +40,10 @@ param_values:
 
 processes:
   - name: publish
-    trigger_conditions: []
+    trigger_conditions:
+      - periodic: ${parameter rate_hz}
+        warn_rate: 5.0
+        error_rate: 1.0
+        timeout: 1.0
     outcomes:
       - to_output: status

@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import logging
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, Any, Callable, List
 
+from autoware_system_designer.common.exceptions import NodeConfigurationError
 from autoware_system_designer.common.source_location import format_source, source_from_config
 from autoware_system_designer.model.events import Event, Process
 
@@ -22,6 +23,17 @@ if TYPE_CHECKING:
     from autoware_system_designer.builder.instances.instances import Instance
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_substitutions(value: Any, resolve: Callable[[str], str]) -> Any:
+    """Apply a string resolver to every string of a config tree."""
+    if isinstance(value, str):
+        return resolve(value)
+    if isinstance(value, dict):
+        return {key: _resolve_substitutions(item, resolve) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_resolve_substitutions(item, resolve) for item in value]
+    return value
 
 
 class EventManager:
@@ -34,9 +46,21 @@ class EventManager:
         self.processes: List[Process] = []
         self.event_list: List[Event] = []
 
+    def initialize_processes(self):
+        """Build the processes of every node in the subtree.
+
+        Runs after the tree's parameters are final and before any rate propagates,
+        so `${parameter ...}` in a trigger reads the node's effective value and
+        downstream process events exist when an upstream rate reaches them.
+        """
+        self.initialize_node_processes()
+        for child in self.instance.children.values():
+            child.event_manager.initialize_processes()
+
     def initialize_node_processes(self):
-        """Initialize processes for node entity during node configuration."""
-        if self.instance.entity_type != "node":
+        """Initialize processes for node entity; substitutions resolve against the node's parameters."""
+        # node-group containers are synthesized nodes without a design file
+        if self.instance.entity_type != "node" or self.instance.configuration is None:
             return
 
         # connect port events and the process events
@@ -44,9 +68,15 @@ class EventManager:
         to_output_events = self.instance.link_manager.get_output_events()
 
         # parse processes and get trigger conditions and output conditions
-        for process_config in self.instance.configuration.processes:
+        sources = []
+        for idx, process_config in enumerate(self.instance.configuration.processes):
+            src = source_from_config(self.instance.configuration, f"/processes/{idx}")
+            process_config = _resolve_substitutions(
+                process_config, lambda text: self.instance.parameter_manager.resolve_substitutions(text, source=src)
+            )
             name = process_config.get("name")
             self.processes.append(Process(name, self.instance.resolved_path, process_config))
+            sources.append(src)
 
         # set the process events
         process_event_list = [process.event for process in self.processes]
@@ -55,9 +85,12 @@ class EventManager:
             src = source_from_config(self.instance.configuration, "/processes")
             logger.warning(f"No process found in {self.instance.name}{format_source(src)}")
             return
-        for process in self.processes:
-            process.set_condition(process_event_list, on_input_events)
-            process.set_outcomes(process_event_list, to_output_events)
+        for process, src in zip(self.processes, sources):
+            try:
+                process.set_condition(process_event_list, on_input_events)
+                process.set_outcomes(process_event_list, to_output_events)
+            except ValueError as exc:
+                raise NodeConfigurationError(f"{exc}{format_source(src)}") from exc
 
         # set the process events
         process_event_list = []

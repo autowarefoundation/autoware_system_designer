@@ -49,6 +49,17 @@ def test_duplicate_entity_non_strict_builds(tmp_path):
     assert (run.exports_dir / "system_structure" / "default.json").is_file()
 
 
+def test_unresolved_rate_fails(tmp_path):
+    """A trigger rate that does not resolve to a number is rejected with its field named."""
+    workspace = stage_case("errors_bad_rate", tmp_path)
+    with pytest.raises(SystemDesignerError) as excinfo:
+        run_pipeline(workspace, "rate_pkg/Rate.system.yaml", tmp_path)
+    message = str(excinfo.value)
+    assert "periodic" in message
+    assert "${parameter missing_rate}" in message
+    assert "Ticker.node.yaml" in message
+
+
 def test_bad_major_version_fails(tmp_path):
     workspace = stage_case("errors_bad_major", tmp_path)
     with pytest.raises(SystemDesignerError) as excinfo:

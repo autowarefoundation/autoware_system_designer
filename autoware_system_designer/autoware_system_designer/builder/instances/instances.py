@@ -117,5 +117,6 @@ class Instance:
         self.link_manager.check_ports()
 
     def set_event_tree(self):
-        # delegate to event manager
+        # delegate to event manager; every node's processes exist before any rate propagates
+        self.event_manager.initialize_processes()
         self.event_manager.set_event_tree()

@@ -78,6 +78,16 @@ class Event:
     def is_port_event(self):
         return False
 
+    @staticmethod
+    def _as_rate(key: str, value) -> float:
+        """Rate fields hold Hz or seconds as floats; substitutions are resolved before the config arrives."""
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            raise ValueError(f"'{key}' must be a number, got {value!r}")
+        try:
+            return float(value)
+        except ValueError as exc:
+            raise ValueError(f"'{key}' must be a number, got {value!r}") from exc
+
     def set_type(self, type_str):
         if type_str not in self.type_list:
             raise ValueError(f"Invalid event type: {type_str}")
@@ -143,7 +153,7 @@ class Event:
         if config_key in self.type_list:
             # incoming event
             if config_key == "periodic":
-                self.frequency = config_value
+                self.frequency = self._as_rate("periodic", config_value)
                 self.is_set = True
             elif config_key == "once" and config_value is None:
                 self.frequency = 0.0
@@ -180,11 +190,11 @@ class Event:
 
             # set the topic monitor configurations, if available
             if "warn_rate" in config_yaml.keys():
-                self.warn_rate = config_yaml.get("warn_rate")
+                self.warn_rate = self._as_rate("warn_rate", config_yaml.get("warn_rate"))
             if "error_rate" in config_yaml.keys():
-                self.error_rate = config_yaml.get("error_rate")
+                self.error_rate = self._as_rate("error_rate", config_yaml.get("error_rate"))
             if "timeout" in config_yaml.keys():
-                self.timeout = config_yaml.get("timeout")
+                self.timeout = self._as_rate("timeout", config_yaml.get("timeout"))
 
             logger.debug(
                 f"Event '{self.unique_id}' configured as '{self.type}' ({config_key}); triggers={[t.unique_id for t in self.triggers]}"

@@ -10,15 +10,15 @@
             "action_ids": [
               "id_11899dc5d83f2896"
             ],
-            "error_rate": null,
-            "frequency": null,
+            "error_rate": 1.0,
+            "frequency": 10.0,
             "name": "publish",
             "process_event": true,
-            "timeout": null,
+            "timeout": 1.0,
             "trigger_ids": [],
-            "type": "or",
+            "type": "periodic",
             "unique_id": "id_608583f5023b734e",
-            "warn_rate": null
+            "warn_rate": 5.0
           }
         ],
         "in_ports": [],
@@ -65,17 +65,17 @@
             "connected_ids": [],
             "event": {
               "action_ids": [],
-              "error_rate": null,
-              "frequency": null,
+              "error_rate": 1.0,
+              "frequency": 10.0,
               "name": "output_status",
               "process_event": false,
-              "timeout": null,
+              "timeout": 1.0,
               "trigger_ids": [
                 "id_608583f5023b734e"
               ],
               "type": "to_output",
               "unique_id": "id_11899dc5d83f2896",
-              "warn_rate": null
+              "warn_rate": 5.0
             },
             "is_global": false,
             "is_outward": true,

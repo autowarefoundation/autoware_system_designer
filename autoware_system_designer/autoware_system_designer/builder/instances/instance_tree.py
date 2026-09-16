@@ -251,11 +251,8 @@ def run_node_configuration(instance: "Instance", config_registry: "ConfigRegistr
     # set ports
     instance.link_manager.initialize_node_ports()
 
-    # Initialize node parameters
+    # Initialize node parameters; processes are built once the tree's parameters are final
     instance.parameter_manager.initialize_node_parameters(config_registry)
-
-    # initialize processes and events
-    instance.event_manager.initialize_node_processes()
 
 
 def _create_child_instance(
