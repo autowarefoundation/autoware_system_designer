@@ -61,20 +61,30 @@
       // converter has to shape it first.
       const converter = CONVERTERS[json.source];
       if (!converter || converter === fromDesigner) {
-        throw new Error(`unknown measurement schema ${json.schema ?? "(none)"}`);
+        throw new Error(
+          `unknown measurement schema ${json.schema ?? "(none)"}`,
+        );
       }
       json = converter(json);
     }
 
     const processes = new Map();
     (json.processes || []).forEach((record, index) => {
-      checkRecord(record, index, "processes", ["node_path", "process", "min_ms", "max_ms"]);
+      checkRecord(record, index, "processes", [
+        "node_path",
+        "process",
+        "min_ms",
+        "max_ms",
+      ]);
       processes.set(processKey(record.node_path, record.process), record);
     });
     const links = new Map();
     (json.links || []).forEach((record, index) => {
       checkRecord(record, index, "links", ["topic", "min_ms", "max_ms"]);
-      links.set(linkKey(record.topic, record.publisher, record.subscriber), record);
+      links.set(
+        linkKey(record.topic, record.publisher, record.subscriber),
+        record,
+      );
     });
 
     return {

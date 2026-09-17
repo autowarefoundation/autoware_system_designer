@@ -3,9 +3,7 @@
   "title": "System Entity Schema 0.5.0",
   "description": "Schema for autoware_system_design_format system entities",
   "type": "object",
-  "required": [
-    "name"
-  ],
+  "required": ["name"],
   "properties": {
     "autoware_system_design_format": {
       "type": "string"
@@ -31,9 +29,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
@@ -49,20 +45,13 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
           },
           "value": {
-            "type": [
-              "string",
-              "number",
-              "boolean",
-              "array"
-            ]
+            "type": ["string", "number", "boolean", "array"]
           },
           "description": {
             "type": "string"
@@ -75,10 +64,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name",
-          "value"
-        ],
+        "required": ["name", "value"],
         "properties": {
           "name": {
             "type": "string"
@@ -97,9 +83,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
@@ -124,10 +108,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name",
-          "entity"
-        ],
+        "required": ["name", "entity"],
         "properties": {
           "name": {
             "type": "string"
@@ -192,11 +173,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name",
-          "type",
-          "nodes"
-        ],
+        "required": ["name", "type", "nodes"],
         "properties": {
           "name": {
             "type": "string"
@@ -218,10 +195,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "source",
-          "topic"
-        ],
+        "required": ["source", "topic"],
         "properties": {
           "source": {
             "type": "string",
@@ -243,11 +217,7 @@
       "description": "Named event chains the sequence diagram offers and a CARET export would declare as target paths.",
       "items": {
         "type": "object",
-        "required": [
-          "name",
-          "from",
-          "to"
-        ],
+        "required": ["name", "from", "to"],
         "properties": {
           "name": {
             "type": "string"
@@ -283,15 +253,10 @@
   },
   "if": {
     "not": {
-      "required": [
-        "base"
-      ]
+      "required": ["base"]
     }
   },
   "then": {
-    "required": [
-      "components",
-      "connections"
-    ]
+    "required": ["components", "connections"]
   }
 }

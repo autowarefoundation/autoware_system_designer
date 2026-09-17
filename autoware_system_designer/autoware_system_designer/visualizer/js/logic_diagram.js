@@ -236,7 +236,9 @@
           const step = stack.pop();
           (this.graph.succ.get(step.id) || []).forEach((nextId) => {
             if (!this.vertexOf.has(nextId)) return;
-            const eventEdgeId = this.graph.edgeIdByKey.get(`${step.id}>${nextId}`);
+            const eventEdgeId = this.graph.edgeIdByKey.get(
+              `${step.id}>${nextId}`,
+            );
             const edges = eventEdgeId
               ? [...step.edges, eventEdgeId]
               : step.edges;
@@ -471,7 +473,9 @@
         vertex.detail = instance.path || "";
         vertex.frequency = null;
         vertex.sub = this._rateSpan(vertex.eventIds);
-        vertex.clocked = vertex.eventIds.some((id) => this.graph.clocksOf.has(id));
+        vertex.clocked = vertex.eventIds.some((id) =>
+          this.graph.clocksOf.has(id),
+        );
         vertex.mismatch = vertex.eventIds.some((id) =>
           this.graph.rateMismatch(this.graph.events.get(id)),
         );
@@ -481,7 +485,8 @@
         vertex.type = event.type;
         vertex.ownerId = event.ownerId;
         vertex.name = this._bareName(event.name);
-        vertex.detail = this.graph.instances.get(event.ownerId)?.data.path || "";
+        vertex.detail =
+          this.graph.instances.get(event.ownerId)?.data.path || "";
         vertex.frequency = event.frequency;
         vertex.sub = this.rateLabel(event.frequency);
         vertex.clocked = this.graph.clocksOf.has(event.id);
@@ -1284,7 +1289,9 @@
     clockIds(eventIds) {
       const clocks = new Set();
       eventIds.forEach((id) =>
-        (this.graph.clocksOf.get(id) || []).forEach((clockId) => clocks.add(clockId)),
+        (this.graph.clocksOf.get(id) || []).forEach((clockId) =>
+          clocks.add(clockId),
+        ),
       );
       return [...clocks];
     }
@@ -1509,7 +1516,9 @@
     // Chain ends have no vertex of their own where the ports are folded away, so
     // the report comes with the level that draws them.
     async highlightChainEnds() {
-      const ids = [...this.graph.chainEndIds].filter((id) => this._isVisible(id));
+      const ids = [...this.graph.chainEndIds].filter((id) =>
+        this._isVisible(id),
+      );
       if (!ids.some((id) => this.vertexOf.get(id))) {
         await this.setLevel("events");
       }
@@ -1771,8 +1780,12 @@
     }
 
     buildCounters() {
-      const shown = [...this.graph.events.keys()].filter((id) => this._isVisible(id));
-      const unclocked = shown.filter((id) => !this.graph.clocksOf.has(id)).length;
+      const shown = [...this.graph.events.keys()].filter((id) =>
+        this._isVisible(id),
+      );
+      const unclocked = shown.filter(
+        (id) => !this.graph.clocksOf.has(id),
+      ).length;
 
       const div = document.createElement("div");
       div.className = "logic-counters";

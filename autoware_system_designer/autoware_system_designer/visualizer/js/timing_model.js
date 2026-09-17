@@ -49,7 +49,10 @@
       min: record.min_ms,
       mean,
       max: record.max_ms,
-      sd: record.sd_ms === undefined || record.sd_ms === null ? null : record.sd_ms,
+      sd:
+        record.sd_ms === undefined || record.sd_ms === null
+          ? null
+          : record.sd_ms,
       count: record.count ?? null,
       source,
     });
@@ -131,7 +134,8 @@
   }
 
   function formatMs(value, digits = 2) {
-    if (value === null || value === undefined || Number.isNaN(value)) return "—";
+    if (value === null || value === undefined || Number.isNaN(value))
+      return "—";
     const abs = Math.abs(value);
     const d = abs >= 100 ? 0 : abs >= 10 ? 1 : digits;
     return `${Number(value.toFixed(d))} ms`;
@@ -244,7 +248,10 @@
 
         const mode = foldOf(event);
         if (event.kind === "process" && !event.type) unknownGates.push(id);
-        const folded = id === sourceId ? { summary: summary(), via: emptyVia() } : fold(branches, mode);
+        const folded =
+          id === sourceId
+            ? { summary: summary(), via: emptyVia() }
+            : fold(branches, mode);
         const wait = this.costs.wait(event);
         const exec = this.costs.exec(event);
         const start = add(folded.summary, wait);
@@ -270,7 +277,8 @@
         const event = graph.events.get(id);
         const step = event.kind === "process" ? 1 : 0;
         arrival.rank = arrival.branches.reduce(
-          (rank, branch) => Math.max(rank, arrivals.get(branch.fromId).rank + step),
+          (rank, branch) =>
+            Math.max(rank, arrivals.get(branch.fromId).rank + step),
           id === sourceId ? 0 : step,
         );
       });
@@ -283,10 +291,12 @@
         edgeEnds,
         loopEdges,
         unknownGates,
-        sinkIds: order.filter((id) =>
-          !(graph.succ.get(id) || []).some(
-            (next) => reach.has(next) && !loopEdges.has(graph.edgeId(id, next)),
-          ),
+        sinkIds: order.filter(
+          (id) =>
+            !(graph.succ.get(id) || []).some(
+              (next) =>
+                reach.has(next) && !loopEdges.has(graph.edgeId(id, next)),
+            ),
         ),
       };
     }
@@ -374,7 +384,12 @@
     }
     events.reverse();
     edges.reverse();
-    return { component, events, edges, total: solution.arrivals.get(sinkId)?.total || null };
+    return {
+      component,
+      events,
+      edges,
+      total: solution.arrivals.get(sinkId)?.total || null,
+    };
   }
 
   // Per-hop table for a chain: what each event waited, ran and rode in on.
@@ -457,7 +472,9 @@
     let combos = [[]];
     lists.forEach((list) => {
       const next = [];
-      combos.forEach((combo) => list.forEach((alt) => next.push([...combo, alt])));
+      combos.forEach((combo) =>
+        list.forEach((alt) => next.push([...combo, alt])),
+      );
       combos = next
         .sort(
           (a, b) =>

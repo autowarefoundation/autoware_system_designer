@@ -3,9 +3,7 @@
   "title": "Module Entity Schema 0.5.0",
   "description": "Schema for autoware_system_design_format module entities",
   "type": "object",
-  "required": [
-    "name"
-  ],
+  "required": ["name"],
   "properties": {
     "autoware_system_design_format": {
       "type": "string"
@@ -31,10 +29,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name",
-          "entity"
-        ],
+        "required": ["name", "entity"],
         "properties": {
           "name": {
             "type": "string"
@@ -57,9 +52,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
@@ -75,9 +68,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
@@ -93,9 +84,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
@@ -111,9 +100,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "properties": {
           "name": {
             "type": "string"
@@ -152,17 +139,10 @@
   "additionalProperties": false,
   "if": {
     "not": {
-      "required": [
-        "base"
-      ]
+      "required": ["base"]
     }
   },
   "then": {
-    "required": [
-      "instances",
-      "subscribers",
-      "publishers",
-      "connections"
-    ]
+    "required": ["instances", "subscribers", "publishers", "connections"]
   }
 }

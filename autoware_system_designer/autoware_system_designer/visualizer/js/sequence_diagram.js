@@ -26,7 +26,11 @@
     ["sigma3", "mean+3σ"],
   ];
 
-  const CHAIN_CLASS = { max: "seq-on-max", min: "seq-on-min", mean: "seq-on-mean" };
+  const CHAIN_CLASS = {
+    max: "seq-on-max",
+    min: "seq-on-min",
+    mean: "seq-on-mean",
+  };
   const CHAIN_COLOR = { max: "red", min: "green", mean: "orange" };
 
   const VIEW = {
@@ -241,7 +245,9 @@
 
       this.gates = [...onPath]
         .map((id) => graph.events.get(id))
-        .filter((event) => event.kind === "process" || event.id === this.sourceId)
+        .filter(
+          (event) => event.kind === "process" || event.id === this.sourceId,
+        )
         .sort((a, b) => this.orderKey(a.id) - this.orderKey(b.id));
       this.gateIds = new Set(this.gates.map((gate) => gate.id));
 
@@ -292,7 +298,14 @@
               lastEdge: edges.length ? edges[edges.length - 1] : branch.key,
             });
           } else if (depth < 6) {
-            walk(branch.fromId, nextEdges, nextComm, nextTopic, branchSummary, depth + 1);
+            walk(
+              branch.fromId,
+              nextEdges,
+              nextComm,
+              nextTopic,
+              branchSummary,
+              depth + 1,
+            );
           }
         });
       };
@@ -315,7 +328,14 @@
             lastEdge: branch.key,
           });
         } else {
-          walk(branch.fromId, [branch.key], branch.comm, topic, branch.summary, 1);
+          walk(
+            branch.fromId,
+            [branch.key],
+            branch.comm,
+            topic,
+            branch.summary,
+            1,
+          );
         }
       });
       return hops;
@@ -400,12 +420,16 @@
       });
       const rankOf = (component) => {
         const entry = componentOrder.get(component);
-        return entry.slot ?? 1000 + (Number.isFinite(entry.first) ? entry.first : 999);
+        return (
+          entry.slot ??
+          1000 + (Number.isFinite(entry.first) ? entry.first : 999)
+        );
       };
       lanes.sort((a, b) => {
         const byComponent = rankOf(a.component) - rankOf(b.component);
         if (byComponent) return byComponent;
-        if (a.component !== b.component) return a.component.localeCompare(b.component);
+        if (a.component !== b.component)
+          return a.component.localeCompare(b.component);
         if (a.collapsed !== b.collapsed) return a.collapsed ? 1 : -1;
         return a.first - b.first;
       });
@@ -476,7 +500,10 @@
         let extent = 0;
         this.gates.forEach((gate) => {
           const arrival = this.solution.arrivals.get(gate.id);
-          extent = Math.max(extent, T.at(arrival.total, this.driver) + arrival.total.sd);
+          extent = Math.max(
+            extent,
+            T.at(arrival.total, this.driver) + arrival.total.sd,
+          );
         });
         this.pxPerMs = extent > 0 ? VIEW.targetHeight / extent : 1;
       }
@@ -525,7 +552,9 @@
       ].forEach((g) => layer.appendChild(g));
 
       this.boxes = new Map();
-      this.gates.forEach((gate) => this.boxes.set(gate.id, this.gateBox(gate.id)));
+      this.gates.forEach((gate) =>
+        this.boxes.set(gate.id, this.gateBox(gate.id)),
+      );
       let bottom = this.origin + VIEW.rowH;
       this.boxes.forEach((box) => {
         bottom = Math.max(bottom, box.bottom + box.sdPx);
@@ -565,7 +594,10 @@
           "fill",
           this.themed(guide, "background_color", defaults.rootBg),
         );
-        rect.setAttribute("stroke", this.themed(guide, "color", defaults.stroke));
+        rect.setAttribute(
+          "stroke",
+          this.themed(guide, "color", defaults.stroke),
+        );
         rect.classList.add("seq-band-rect");
         g.appendChild(rect);
 
@@ -586,7 +618,10 @@
           line.setAttribute("x2", lane.x);
           line.setAttribute("y1", this.origin - 4);
           line.setAttribute("y2", this.height - VIEW.padBottom / 2);
-          line.setAttribute("stroke", this.themed(laneGuide, "color", defaults.stroke));
+          line.setAttribute(
+            "stroke",
+            this.themed(laneGuide, "color", defaults.stroke),
+          );
           line.classList.add("seq-lane-line");
           if (lane.collapsed) line.classList.add("seq-lane-collapsed");
           g.appendChild(line);
@@ -648,12 +683,15 @@
       };
 
       if (!STATES[this.state].timed) {
-        const rows = Math.round((this.height - VIEW.padBottom - this.origin) / VIEW.rowH);
+        const rows = Math.round(
+          (this.height - VIEW.padBottom - this.origin) / VIEW.rowH,
+        );
         for (let rank = 0; rank <= rows; rank += 1) {
           tick(this.origin + rank * VIEW.rowH, `rank ${rank}`);
         }
       } else {
-        const spanMs = (this.height - VIEW.padBottom - this.origin) / this.pxPerMs;
+        const spanMs =
+          (this.height - VIEW.padBottom - this.origin) / this.pxPerMs;
         const step = niceStep(spanMs / 8);
         for (let ms = 0; ms <= spanMs + 1e-9; ms += step) {
           tick(this.origin + ms * this.pxPerMs, T.formatMs(ms, 1));
@@ -780,7 +818,10 @@
       bar.setAttribute("width", VIEW.barW);
       bar.setAttribute("height", Math.max(VIEW.barMinH, box.bottom - box.top));
       bar.setAttribute("rx", 1.5);
-      bar.setAttribute("fill", this.themed(guide, "medium_color", defaults.nodeBg));
+      bar.setAttribute(
+        "fill",
+        this.themed(guide, "medium_color", defaults.nodeBg),
+      );
       bar.setAttribute("stroke", this.themed(guide, "color", defaults.stroke));
       bar.classList.add("seq-bar");
       if (arrival.exec.source === "declared") bar.classList.add("seq-declared");
@@ -799,11 +840,17 @@
           `M ${lane.x} ${y0} L ${lane.x} ${y1} M ${lane.x - w} ${y0} L ${lane.x + w} ${y0} M ${lane.x - w} ${y1} L ${lane.x + w} ${y1}`,
         );
         whisker.classList.add("seq-whisker");
-        if (arrival.total.missingSd) whisker.classList.add("seq-whisker-partial");
+        if (arrival.total.missingSd)
+          whisker.classList.add("seq-whisker-partial");
         g.appendChild(whisker);
       }
 
-      const glyph = this.buildTypeShape(gate.type, VIEW.glyphW, VIEW.glyphH, style);
+      const glyph = this.buildTypeShape(
+        gate.type,
+        VIEW.glyphW,
+        VIEW.glyphH,
+        style,
+      );
       glyph.setAttribute(
         "transform",
         `translate(${lane.x + VIEW.barW / 2 + 3},${box.top - VIEW.glyphH / 2 + 2})`,
@@ -863,7 +910,9 @@
     applyEmphasis() {
       const chainOf = (hop) => {
         if (this.highlightEdges) {
-          return hop.edges.every((id) => this.highlightEdges.has(id)) ? "max" : null;
+          return hop.edges.every((id) => this.highlightEdges.has(id))
+            ? "max"
+            : null;
         }
         if (hop.on.max) return "max";
         if (hop.on.min) return "min";
@@ -901,7 +950,9 @@
       this.gates.forEach((gate) => {
         gate.element?.classList.toggle(
           "seq-dim",
-          !onGate.get(gate.id) && gate.id !== this.sourceId && gate.id !== this.sinkId,
+          !onGate.get(gate.id) &&
+            gate.id !== this.sourceId &&
+            gate.id !== this.sinkId,
         );
       });
     }
@@ -977,7 +1028,12 @@
       if (lane.collapsed) {
         const entries = [...lane.owners].map((ownerId) => {
           const instance = this.graph.instances.get(ownerId)?.data || {};
-          return { name: instance.name || ownerId, path: instance.path || "", type: "node", rate: "off the chain" };
+          return {
+            name: instance.name || ownerId,
+            path: instance.path || "",
+            type: "node",
+            rate: "off the chain",
+          };
         });
         this.updateInfoPanel(
           {
@@ -1139,8 +1195,10 @@
       }
       const target = element.getBoundingClientRect();
       const view = this.container.getBoundingClientRect();
-      this.transform.x += view.x + view.width / 2 - (target.x + target.width / 2);
-      this.transform.y += view.y + view.height / 2 - (target.y + target.height / 2);
+      this.transform.x +=
+        view.x + view.width / 2 - (target.x + target.width / 2);
+      this.transform.y +=
+        view.y + view.height / 2 - (target.y + target.height / 2);
       this.updateTransform();
     }
 
@@ -1276,18 +1334,35 @@
               !STATES[this.state].timed,
             ),
           ),
-          button("time +", () => this.zoomTime(2), false, !STATES[this.state].timed),
-          button("time −", () => this.zoomTime(0.5), false, !STATES[this.state].timed),
+          button(
+            "time +",
+            () => this.zoomTime(2),
+            false,
+            !STATES[this.state].timed,
+          ),
+          button(
+            "time −",
+            () => this.zoomTime(0.5),
+            false,
+            !STATES[this.state].timed,
+          ),
         ),
       );
 
       bar.appendChild(row(label("From"), this.buildSourcePicker()));
-      bar.appendChild(row(label("To"), this.buildSinkPicker(), this.buildHopLimit()));
+      bar.appendChild(
+        row(label("To"), this.buildSinkPicker(), this.buildHopLimit()),
+      );
 
       bar.appendChild(
         row(
           button("enumerate chains", () => this.enumerate()),
-          button("three chains", () => this.clearChain(), false, !this.highlightEdges),
+          button(
+            "three chains",
+            () => this.clearChain(),
+            false,
+            !this.highlightEdges,
+          ),
           button("fit", () => this.fitToScreen()),
         ),
       );
@@ -1310,7 +1385,8 @@
           option.value = `chain:${index}`;
           option.textContent = chain.name;
           option.selected =
-            chain.from === this.sourceId && (!chain.to || chain.to === this.sinkId);
+            chain.from === this.sourceId &&
+            (!chain.to || chain.to === this.sinkId);
           group.appendChild(option);
         });
         select.appendChild(group);
@@ -1328,7 +1404,8 @@
           const option = document.createElement("option");
           option.value = id;
           option.textContent = `${path}:${event.name} · ${this.rateLabel(event.frequency) || "—"}`;
-          option.selected = id === this.sourceId && !select.querySelector("option[selected]");
+          option.selected =
+            id === this.sourceId && !select.querySelector("option[selected]");
           group.appendChild(option);
         });
       select.appendChild(group);
@@ -1359,7 +1436,10 @@
           path: this.graph.ownerOf(id)?.path || "",
           arrival: this.solution.arrivals.get(id),
         }))
-        .sort((a, b) => b.arrival.rank - a.arrival.rank || a.path.localeCompare(b.path))
+        .sort(
+          (a, b) =>
+            b.arrival.rank - a.arrival.rank || a.path.localeCompare(b.path),
+        )
         .forEach(({ id, event, path, arrival }) => {
           const option = document.createElement("option");
           option.value = id;
@@ -1417,7 +1497,9 @@
         `${this.solution.reach.size} events reached`,
       ];
       if (this.solution.unknownGates.length) {
-        parts.push(`${this.solution.unknownGates.length} gates without a type (folded as or)`);
+        parts.push(
+          `${this.solution.unknownGates.length} gates without a type (folded as or)`,
+        );
       }
       if (STATES[this.state].timed && sink) {
         parts.push(`total ${T.formatSummary(sink.total)}`);

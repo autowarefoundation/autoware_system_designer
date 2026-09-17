@@ -236,7 +236,11 @@
     const children = [];
     if (latency.state === "logical") {
       children.push(
-        element("div", "port-type", `logical view · rank ${latency.rank ?? "—"}`),
+        element(
+          "div",
+          "port-type",
+          `logical view · rank ${latency.rank ?? "—"}`,
+        ),
       );
     }
     latency.rows.forEach((row) => {
@@ -264,7 +268,11 @@
     }
     if (latency.unknownType) {
       children.push(
-        element("div", "port-type latency-flag", "type not declared — folded as or"),
+        element(
+          "div",
+          "port-type latency-flag",
+          "type not declared — folded as or",
+        ),
       );
     }
     if (latency.branches?.length > 1) {
@@ -289,12 +297,18 @@
     }
     if (latency.declared || latency.measured) {
       const group = element("div", "info-group");
-      group.appendChild(element("div", "info-subtitle", "declared vs measured"));
+      group.appendChild(
+        element("div", "info-subtitle", "declared vs measured"),
+      );
       if (latency.declared) {
-        group.appendChild(element("div", "port-type", `declared  ${latency.declared}`));
+        group.appendChild(
+          element("div", "port-type", `declared  ${latency.declared}`),
+        );
       }
       if (latency.measured) {
-        group.appendChild(element("div", "port-type", `measured  ${latency.measured}`));
+        group.appendChild(
+          element("div", "port-type", `measured  ${latency.measured}`),
+        );
       }
       if (latency.delta) {
         const sign = latency.delta.deltaMax >= 0 ? "+" : "";
@@ -319,9 +333,12 @@
     const items = chains.items.map((item) => {
       const entry = element("div", "port-entry chain-item");
       entry.appendChild(element("div", "port-name", item.label));
-      if (item.detail) entry.appendChild(element("div", "port-type", item.detail));
+      if (item.detail)
+        entry.appendChild(element("div", "port-type", item.detail));
       entry.onclick = () => {
-        chains.items.forEach((other) => other.element?.classList.remove("active"));
+        chains.items.forEach((other) =>
+          other.element?.classList.remove("active"),
+        );
         entry.classList.add("active");
         item.onSelect?.();
       };

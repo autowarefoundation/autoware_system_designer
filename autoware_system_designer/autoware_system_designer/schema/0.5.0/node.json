@@ -3,9 +3,7 @@
   "title": "Node Entity Schema 0.5.0",
   "description": "Schema for autoware_system_design_format node entities",
   "type": "object",
-  "required": [
-    "name"
-  ],
+  "required": ["name"],
   "properties": {
     "autoware_system_design_format": {
       "type": "string"
@@ -29,10 +27,7 @@
     },
     "package": {
       "type": "object",
-      "required": [
-        "name",
-        "provider"
-      ],
+      "required": ["name", "provider"],
       "properties": {
         "name": {
           "type": "string"
@@ -53,10 +48,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": [
-              "name",
-              "message_type"
-            ],
+            "required": ["name", "message_type"],
             "properties": {
               "name": {
                 "type": "string"
@@ -90,10 +82,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": [
-              "name",
-              "message_type"
-            ],
+            "required": ["name", "message_type"],
             "properties": {
               "name": {
                 "type": "string"
@@ -125,10 +114,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name",
-          "message_type"
-        ],
+        "required": ["name", "message_type"],
         "properties": {
           "name": {
             "type": "string"
@@ -158,10 +144,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name",
-          "message_type"
-        ],
+        "required": ["name", "message_type"],
         "properties": {
           "name": {
             "type": "string"
@@ -197,9 +180,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": [
-              "name"
-            ],
+            "required": ["name"],
             "properties": {
               "name": {
                 "type": "string"
@@ -239,9 +220,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": [
-              "name"
-            ],
+            "required": ["name"],
             "properties": {
               "name": {
                 "type": "string"
@@ -272,11 +251,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "name",
-          "trigger_conditions",
-          "outcomes"
-        ],
+        "required": ["name", "trigger_conditions", "outcomes"],
         "properties": {
           "name": {
             "type": "string"
@@ -293,10 +268,7 @@
           "latency": {
             "type": "object",
             "description": "Design-time execution time summary of the process, in milliseconds.",
-            "required": [
-              "min_ms",
-              "max_ms"
-            ],
+            "required": ["min_ms", "max_ms"],
             "properties": {
               "min_ms": {
                 "type": "number",
@@ -325,9 +297,7 @@
   "additionalProperties": false,
   "if": {
     "not": {
-      "required": [
-        "base"
-      ]
+      "required": ["base"]
     }
   },
   "then": {

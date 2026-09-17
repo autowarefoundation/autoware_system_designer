@@ -3,10 +3,7 @@
   "title": "Parameter Set Entity Schema 0.5.0",
   "description": "Schema for autoware_system_design_format parameter_set entities",
   "type": "object",
-  "required": [
-    "name",
-    "parameters"
-  ],
+  "required": ["name", "parameters"],
   "properties": {
     "autoware_system_design_format": {
       "type": "string"
@@ -32,9 +29,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "node"
-        ],
+        "required": ["node"],
         "properties": {
           "node": {
             "type": "string"
@@ -53,9 +48,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": [
-                "name"
-              ],
+              "required": ["name"],
               "properties": {
                 "name": {
                   "type": "string"

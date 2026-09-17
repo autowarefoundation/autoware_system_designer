@@ -14,11 +14,11 @@ The sequence diagram of the deployment overview draws one chain of events: from 
 
 ## States
 
-| State | y axis | Numbers |
-| --- | --- | --- |
-| logical | rank (process gates from the source) | none; the default while nothing is measured |
-| declared | milliseconds | a periodic gate's sampling delay from its rate, plus any `latency` a process declares |
-| measured | milliseconds | a loaded measurement file; a hop without a sample falls back to its declared value and is drawn hatched |
+| State    | y axis                               | Numbers                                                                                                 |
+| -------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| logical  | rank (process gates from the source) | none; the default while nothing is measured                                                             |
+| declared | milliseconds                         | a periodic gate's sampling delay from its rate, plus any `latency` a process declares                   |
+| measured | milliseconds                         | a loaded measurement file; a hop without a sample falls back to its declared value and is drawn hatched |
 
 The axis is driven by one component of every summary: `min`, `mean`, `max`, or `mean + kσ` (k = 1, 2, 3). `time +` / `time −` zoom the millisecond scale.
 
@@ -26,7 +26,7 @@ The axis is driven by one component of every summary: `min`, `mean`, `max`, or `
 
 Every cost and every arrival is a distribution summary `{ min, mean, max, sd, count }`, never a single number.
 
-- **Series**: along a chain, `min`, `mean` and `max` add and *variances* add (`sd = √Σsd²`).
+- **Series**: along a chain, `min`, `mean` and `max` add and _variances_ add (`sd = √Σsd²`).
 - **`and` gate**: arrival folds as componentwise `max` over its branches.
 - **`or` gate**: arrival folds as componentwise `min`. A gate with no declared type folds as `or` and is reported.
 - **`periodic` gate (f Hz)**: needs no measurement; its sampling delay is uniform on `[0, 1/f]`: `min 0`, `mean 1/2f`, `max 1/f`, `sd 1/(f·√12)`.
