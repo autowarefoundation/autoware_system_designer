@@ -25,6 +25,8 @@
     "global_topic",
     "event",
     "chain",
+    "latency",
+    "chains",
   ]);
 
   // Parameter source -> badge label; the matching colors live in css/styles.css.
@@ -227,6 +229,108 @@
     return card(chain.title || "Chain", ...groups);
   }
 
+  // Costs of one hop or gate as min / mean ± sd / max, each row naming where
+  // its numbers came from, then the branches a gate folded and the declared
+  // against measured delta where both exist.
+  function latencyCard(latency) {
+    const children = [];
+    if (latency.state === "logical") {
+      children.push(
+        element("div", "port-type", `logical view · rank ${latency.rank ?? "—"}`),
+      );
+    }
+    latency.rows.forEach((row) => {
+      const line = element("div", "latency-row");
+      line.appendChild(element("span", "latency-label", row.label));
+      const value = element("span", "latency-value", row.value);
+      if (row.source && row.source !== "none") {
+        const source = element("span", "latency-source", row.source);
+        if (row.count) source.textContent += ` n=${row.count}`;
+        value.appendChild(source);
+      }
+      line.appendChild(value);
+      children.push(line);
+    });
+    if (latency.arrives) {
+      const line = element("div", "latency-row");
+      line.appendChild(element("span", "latency-label", "arrives"));
+      line.appendChild(element("span", "latency-value", latency.arrives));
+      children.push(line);
+    }
+    if (latency.on?.length) {
+      children.push(
+        element("div", "port-type", `on the ${latency.on.join(", ")} chain`),
+      );
+    }
+    if (latency.unknownType) {
+      children.push(
+        element("div", "port-type latency-flag", "type not declared — folded as or"),
+      );
+    }
+    if (latency.branches?.length > 1) {
+      const group = element("div", "info-group");
+      group.appendChild(
+        element(
+          "div",
+          "info-subtitle",
+          `${latency.fold === "max" ? "and — every branch" : "or — first branch"} (${latency.branches.length})`,
+        ),
+      );
+      latency.branches.forEach((branch) => {
+        const entry = element("div", "port-entry");
+        const head = branch.via.length
+          ? `${branch.name}  ← ${branch.via.join("/")}`
+          : branch.name;
+        entry.appendChild(element("div", "port-name", head));
+        entry.appendChild(element("div", "port-type", branch.value));
+        group.appendChild(entry);
+      });
+      children.push(group);
+    }
+    if (latency.declared || latency.measured) {
+      const group = element("div", "info-group");
+      group.appendChild(element("div", "info-subtitle", "declared vs measured"));
+      if (latency.declared) {
+        group.appendChild(element("div", "port-type", `declared  ${latency.declared}`));
+      }
+      if (latency.measured) {
+        group.appendChild(element("div", "port-type", `measured  ${latency.measured}`));
+      }
+      if (latency.delta) {
+        const sign = latency.delta.deltaMax >= 0 ? "+" : "";
+        const flags = [];
+        if (latency.delta.maxExceeded) flags.push("max exceeded");
+        if (latency.delta.sdGrew) flags.push("spread grew");
+        group.appendChild(
+          element(
+            "div",
+            flags.length ? "port-type latency-flag" : "port-type",
+            `Δmax ${sign}${latency.delta.deltaMax.toFixed(2)} ms${flags.length ? ` · ${flags.join(", ")}` : ""}`,
+          ),
+        );
+      }
+      children.push(group);
+    }
+    return card("Latency", ...children);
+  }
+
+  // Enumerated chains; each entry selects the chain it names.
+  function chainsCard(chains) {
+    const items = chains.items.map((item) => {
+      const entry = element("div", "port-entry chain-item");
+      entry.appendChild(element("div", "port-name", item.label));
+      if (item.detail) entry.appendChild(element("div", "port-type", item.detail));
+      entry.onclick = () => {
+        chains.items.forEach((other) => other.element?.classList.remove("active"));
+        entry.classList.add("active");
+        item.onSelect?.();
+      };
+      item.element = entry;
+      return entry;
+    });
+    return card(chains.title, ...items);
+  }
+
   function interfaceCard(data) {
     const inPorts = data.in_ports || [];
     const outPorts = data.out_ports || [];
@@ -311,6 +415,8 @@
       data.topic ? topicCard(data.topic) : null,
       data.global_topic ? globalTopicCard(data.global_topic) : null,
       data.event ? eventCard(data.event) : null,
+      data.latency ? latencyCard(data.latency) : null,
+      data.chains ? chainsCard(data.chains) : null,
       data.chain ? chainCard(data.chain) : null,
       infoCard(data),
       interfaceCard(data),

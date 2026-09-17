@@ -7,8 +7,6 @@
     // fallbacks that run when a tag is unavailable request the same builds.
     static CDN = {
       elk: "https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js",
-      mermaid:
-        "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js",
       svgPanZoom:
         "https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js",
     };
