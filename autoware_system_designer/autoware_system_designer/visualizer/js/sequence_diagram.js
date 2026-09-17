@@ -1,8 +1,9 @@
 // Sequence Diagram Module
-// Event-chain latency view: one lane per node, time down the page, and the
-// chain from a source gate to a sink drawn hop by hop. One solve gives the
-// minimum, mean and maximum chain; the view highlights all three and places
-// every gate by the component the axis is driven by.
+// Event-chain latency view drawn as a timeline: time runs left to right, every
+// process gate is a block as wide as its run, and the gaps between blocks are
+// the transport, alignment and sampling delays that separate them. The chain
+// the axis is driven by is the spine on the centre track; the branches that
+// join or leave it are packed onto the tracks above and below.
 
 (function () {
   const SVG_NS = ElkCanvas.SVG_NS;
@@ -16,7 +17,7 @@
     measured: { button: "measured", timed: true },
   };
 
-  // The component of every summary the y axis is read from.
+  // The component of every summary the time axis is read from.
   const DRIVERS = [
     ["min", "min"],
     ["mean", "mean"],
@@ -34,25 +35,23 @@
   const CHAIN_COLOR = { max: "red", min: "green", mean: "orange" };
 
   const VIEW = {
-    laneMin: 96,
-    laneMax: 190,
-    laneGap: 18,
-    headerH: 44,
-    bandPad: 8,
-    bandGap: 14,
-    rowH: 64,
-    barW: 10,
-    barMinH: 4,
-    logicalBarH: 14,
-    glyphW: 14,
-    glyphH: 10,
+    trackH: 46,
+    blockH: 14,
+    blockMinW: 5,
+    logicalBlockW: 40,
+    logicalColW: 150,
+    glyphW: 12,
+    glyphH: 8,
     fontSize: 10,
     subSize: 8,
-    gutter: 64,
-    padTop: 16,
-    padBottom: 24,
-    targetHeight: 760,
-    collapsedW: 72,
+    padLeft: 24,
+    padRight: 60,
+    padTop: 12,
+    padBottom: 16,
+    axisH: 24,
+    targetWidth: 1400,
+    labelMin: 18,
+    labelTierH: 10,
     nameChars: 22,
   };
 
@@ -62,20 +61,22 @@
   const CHAIN_LIST_LIMIT = 40;
 
   const LEGEND = [
-    ["bar", "a process running; height is its execution time"],
-    ["wait", "wait at the gate before it runs (sampling delay, trigger skew)"],
+    ["block", "a process running; width is its execution time"],
+    ["wait", "wait before the run: sampling delay, trigger skew"],
     ["whisker", "±1 sd at the end of a run"],
     ["max", "maximum chain — the critical path"],
     ["min", "minimum chain — the sequential shortest path"],
     ["mean", "mean chain, dashed where it leaves the other two"],
+    ["late", "late hop: the message lands after the run it feeds started"],
     ["loop", "loop-closing edge, cut from the solve"],
   ];
 
   const LEGEND_NOTES = [
+    "the centre track is the chain the axis is driven by; branches sit above and below",
     "≈ marks a mean folded at an and/or gate: one branch's number, not the set's",
     "? marks a spread that skipped hops with no sd",
     "a periodic gate needs no measurement: its sampling delay is uniform over one period",
-    "hatched runs are declared, plain runs measured",
+    "hatched blocks are declared, plain blocks measured",
   ];
 
   class SequenceDiagramModule extends ElkCanvas {
@@ -221,7 +222,7 @@
 
     // The events on some path from the source to the sink, the gates among
     // them, the hops between gates with the ports folded into them, and the
-    // lanes the gates sit on.
+    // tracks the gates sit on.
     buildView() {
       const { solution, graph } = this;
       const onPath = new Set([this.sinkId]);
@@ -265,7 +266,7 @@
         });
       });
 
-      this.buildLanes();
+      this.assignTracks();
     }
 
     // The gates behind one gate, each with the port events between folded into
@@ -356,128 +357,138 @@
       return T.at(arrival.start, this.driver);
     }
 
-    // Lanes: one per node holding a gate on the chain, grouped by component
-    // and ordered left to right by the component's declared slot, else by
-    // where its gates first appear. Nodes the source reaches but the chain
-    // does not pass collapse into one lane per component.
-    buildLanes() {
-      const { graph, solution } = this;
-      const laneOf = new Map(); // ownerId → lane
-      const lanes = [];
-      this.gates.forEach((gate) => {
-        if (laneOf.has(gate.ownerId)) return;
-        const instance = graph.instances.get(gate.ownerId)?.data || {};
-        const lane = {
-          id: `sq_lane_${lanes.length}`,
-          ownerId: gate.ownerId,
-          instance,
-          name: instance.name || gate.ownerId,
-          path: instance.path || "",
-          component: this.componentOf(instance.path),
-          first: this.orderKey(gate.id),
-          collapsed: false,
-        };
-        laneOf.set(gate.ownerId, lane);
-        lanes.push(lane);
-      });
+    // The chain the spine follows: the axis driver, the mean under a σ driver.
+    spineComponent() {
+      if (!STATES[this.state].timed) return "max";
+      return ["min", "mean", "max"].includes(this.driver)
+        ? this.driver
+        : "mean";
+    }
 
-      const collapsed = new Map(); // component → lane
-      solution.reach.forEach((id) => {
-        const event = graph.events.get(id);
-        if (event.kind !== "process" || laneOf.has(event.ownerId)) return;
-        const instance = graph.instances.get(event.ownerId)?.data || {};
-        const component = this.componentOf(instance.path);
-        if (!collapsed.has(component)) {
-          collapsed.set(component, {
-            id: `sq_lane_c_${collapsed.size}`,
-            ownerId: null,
-            instance: graph.instanceByPath.get(component) || {},
-            owners: new Set(),
-            component,
-            first: Infinity,
-            collapsed: true,
-          });
-        }
-        collapsed.get(component).owners.add(event.ownerId);
-      });
-      collapsed.forEach((lane) => {
-        lane.name = `+${lane.owners.size} node${lane.owners.size > 1 ? "s" : ""}`;
-        lane.path = `${lane.owners.size} nodes in ${lane.component} the chain does not pass`;
-        lanes.push(lane);
-      });
-
-      const componentOrder = new Map();
-      lanes.forEach((lane) => {
-        const instance = graph.instanceByPath.get(lane.component);
-        const slot = instance?.vis_guide?.position?.[0];
-        const entry = componentOrder.get(lane.component) || {
-          slot: null,
-          first: Infinity,
-        };
-        if (slot !== null && slot !== undefined) entry.slot = slot;
-        entry.first = Math.min(entry.first, lane.first);
-        componentOrder.set(lane.component, entry);
-      });
-      const rankOf = (component) => {
-        const entry = componentOrder.get(component);
-        return (
-          entry.slot ??
-          1000 + (Number.isFinite(entry.first) ? entry.first : 999)
-        );
+    // Tracks: the spine on track 0; every other gate continues the track of
+    // the gate it feeds, or takes the nearest track beside the spine that is
+    // free over its span, sides alternating. Successors are placed before the
+    // gates that feed them, so a branch reads as one run leaving the spine.
+    // Spans are in time, so gates with no cost share a track at one instant.
+    assignTracks() {
+      this.prepareScale();
+      const spans = new Map();
+      this.gates.forEach((gate) => spans.set(gate.id, this.spanOf(gate.id)));
+      const trackOf = new Map();
+      const occupancy = new Map();
+      const overlaps = (track, [x0, x1]) =>
+        (occupancy.get(track) || []).some(([a, b]) => x0 < b && a < x1);
+      const claim = (id, track) => {
+        trackOf.set(id, track);
+        if (!occupancy.has(track)) occupancy.set(track, []);
+        occupancy.get(track).push(spans.get(id));
       };
-      lanes.sort((a, b) => {
-        const byComponent = rankOf(a.component) - rankOf(b.component);
-        if (byComponent) return byComponent;
-        if (a.component !== b.component)
-          return a.component.localeCompare(b.component);
-        if (a.collapsed !== b.collapsed) return a.collapsed ? 1 : -1;
-        return a.first - b.first;
-      });
+      const nearestFree = (from, dir, id) => {
+        let track = from;
+        while (track === 0 || overlaps(track, spans.get(id))) track += dir;
+        return track;
+      };
 
-      // Lane width follows the longest name among the lanes it holds.
-      lanes.forEach((lane) => {
-        const label = this.shortName(lane.name);
-        lane.label = label;
-        lane.width = lane.collapsed
-          ? VIEW.collapsedW
-          : Math.min(
-              VIEW.laneMax,
-              Math.max(
-                VIEW.laneMin,
-                this.measureTextWidth(label, VIEW.fontSize) + 24,
-              ),
-            );
+      const spine = this.chains[this.spineComponent()].events.filter((id) =>
+        this.gateIds.has(id),
+      );
+      spine.forEach((id) => claim(id, 0));
+      if (!trackOf.has(this.sinkId) && this.gateIds.has(this.sinkId)) {
+        claim(this.sinkId, 0);
+      }
+      const hopsInto = new Map();
+      this.hops.forEach((hop) => {
+        if (!hopsInto.has(hop.to)) hopsInto.set(hop.to, []);
+        hopsInto.get(hop.to).push(hop);
       });
+      const rankHop = (hop) =>
+        hop.on.max ? 0 : hop.on.mean ? 1 : hop.on.min ? 2 : 3;
 
-      let x = VIEW.gutter;
-      const bands = [];
-      lanes.forEach((lane, index) => {
-        const previous = lanes[index - 1];
-        if (!previous || previous.component !== lane.component) {
-          if (previous) x += VIEW.bandGap;
-          bands.push({
-            component: lane.component,
-            instance: graph.instanceByPath.get(lane.component) || {},
-            x0: x,
-            lanes: [],
+      let side = 1;
+      const queue = [...spine].reverse();
+      const seen = new Set(queue);
+      for (let cursor = 0; cursor < queue.length; cursor += 1) {
+        const id = queue[cursor];
+        const track = trackOf.get(id);
+        let continued = track === 0;
+        (hopsInto.get(id) || [])
+          .slice()
+          .sort(
+            (a, b) =>
+              rankHop(a) - rankHop(b) ||
+              spans.get(b.from)[1] - spans.get(a.from)[1],
+          )
+          .forEach((hop) => {
+            if (!trackOf.has(hop.from)) {
+              if (!continued && !overlaps(track, spans.get(hop.from))) {
+                claim(hop.from, track);
+                continued = true;
+              } else if (track !== 0) {
+                const dir = Math.sign(track);
+                claim(hop.from, nearestFree(track + dir, dir, hop.from));
+              } else {
+                claim(hop.from, nearestFree(side, side, hop.from));
+                side = -side;
+              }
+            }
+            if (!seen.has(hop.from)) {
+              seen.add(hop.from);
+              queue.push(hop.from);
+            }
           });
-        }
-        x += VIEW.bandPad;
-        lane.x = x + lane.width / 2;
-        x += lane.width + VIEW.laneGap;
-        const band = bands[bands.length - 1];
-        band.lanes.push(lane);
-        band.x1 = x - VIEW.laneGap + VIEW.bandPad;
+      }
+      this.gates.forEach((gate) => {
+        if (!trackOf.has(gate.id))
+          claim(gate.id, nearestFree(side, side, gate.id));
       });
-      this.lanes = lanes;
-      this.laneOf = laneOf;
-      this.collapsedLaneOf = collapsed;
-      this.bands = bands;
-      this.width = x + VIEW.bandPad;
+
+      // Rows: the tracks in use, top to bottom, empty ones dropped.
+      const tracks = [...new Set(trackOf.values())].sort((a, b) => a - b);
+      this.rowOf = new Map();
+      this.gates.forEach((gate) => {
+        this.rowOf.set(gate.id, tracks.indexOf(trackOf.get(gate.id)));
+      });
+      this.rows = tracks.map((track, index) => ({
+        index,
+        track,
+        spine: track === 0,
+        gates: this.gates
+          .filter((gate) => trackOf.get(gate.id) === track)
+          .sort((a, b) => spans.get(a.id)[0] - spans.get(b.id)[0]),
+      }));
     }
 
     componentOf(path) {
       return `/${(path || "").split("/").filter(Boolean).slice(0, 1).join("/")}`;
+    }
+
+    // Top-level components the chain passes, in order of first appearance.
+    componentsOnChain() {
+      const seen = new Map();
+      this.gates.forEach((gate) => {
+        const instance = this.graph.instances.get(gate.ownerId)?.data || {};
+        const component = this.componentOf(instance.path);
+        if (!seen.has(component)) {
+          seen.set(component, {
+            component,
+            instance: this.graph.instanceByPath.get(component) || {},
+          });
+        }
+      });
+      return [...seen.values()];
+    }
+
+    // Nodes the source reaches that hold no gate on the chain.
+    offChainNodes() {
+      const onChain = new Set(this.gates.map((gate) => gate.ownerId));
+      const off = new Set();
+      this.solution.reach.forEach((id) => {
+        const event = this.graph.events.get(id);
+        if (event.kind === "process" && !onChain.has(event.ownerId)) {
+          off.add(event.ownerId);
+        }
+      });
+      return off;
     }
 
     shortName(name, limit = VIEW.nameChars) {
@@ -487,11 +498,12 @@
 
     // ── Geometry ────────────────────────────────────────────────────────────────
 
-    // Time to y. In the logical state one row per rank; in a timed state the
-    // scale is set so the sink lands near the target height, then zoomed.
+    // Time to x. In the logical state one column per rank; in a timed state the
+    // scale is set so the sink lands near the target width, then zoomed.
     prepareScale() {
       const timed = STATES[this.state].timed;
-      this.origin = VIEW.padTop + VIEW.headerH;
+      this.originX = VIEW.padLeft;
+      this.originY = VIEW.padTop + VIEW.axisH;
       if (!timed) {
         this.pxPerMs = null;
         return;
@@ -505,30 +517,49 @@
             T.at(arrival.total, this.driver) + arrival.total.sd,
           );
         });
-        this.pxPerMs = extent > 0 ? VIEW.targetHeight / extent : 1;
+        this.pxPerMs = extent > 0 ? VIEW.targetWidth / extent : 1;
       }
     }
 
-    yOf(summary) {
-      return this.origin + T.at(summary, this.driver) * this.pxPerMs;
+    xOf(summary) {
+      return this.originX + T.at(summary, this.driver) * this.pxPerMs;
     }
 
-    // Top, bottom and arrival edge of a gate's run.
+    // Arrival, left and right edge of a gate's block along the axis.
     gateBox(gateId) {
       const arrival = this.solution.arrivals.get(gateId);
       if (!STATES[this.state].timed) {
-        const top = this.origin + arrival.rank * VIEW.rowH;
+        const left = this.originX + arrival.rank * VIEW.logicalColW;
         return {
-          arrive: top,
-          top,
-          bottom: top + VIEW.logicalBarH,
+          arrive: left,
+          left,
+          right: left + VIEW.logicalBlockW,
+          end: left + VIEW.logicalBlockW,
           sdPx: 0,
         };
       }
-      const arrive = this.yOf(arrival.arrive);
-      const top = this.yOf(arrival.start);
-      const bottom = Math.max(this.yOf(arrival.total), top + VIEW.barMinH);
-      return { arrive, top, bottom, sdPx: arrival.total.sd * this.pxPerMs };
+      const arrive = this.xOf(arrival.arrive);
+      const left = this.xOf(arrival.start);
+      const end = this.xOf(arrival.total);
+      return {
+        arrive,
+        left,
+        right: Math.max(end, left + VIEW.blockMinW),
+        end,
+        sdPx: arrival.total.sd * this.pxPerMs,
+      };
+    }
+
+    // The time a gate occupies on its track, wait included.
+    spanOf(gateId) {
+      const box = this.gateBox(gateId);
+      return [box.arrive, box.end];
+    }
+
+    rowY(gateId) {
+      return (
+        this.originY + this.rowOf.get(gateId) * VIEW.trackH + VIEW.trackH / 2
+      );
     }
 
     // ── Render ──────────────────────────────────────────────────────────────────
@@ -538,13 +569,13 @@
       const { layer } = this.createCanvas();
       this.container.classList.add("sequence-diagram-container");
 
-      this.bandLayer = document.createElementNS(SVG_NS, "g");
+      this.trackLayer = document.createElementNS(SVG_NS, "g");
       this.axisLayer = document.createElementNS(SVG_NS, "g");
       this.hopLayer = document.createElementNS(SVG_NS, "g");
       this.gateLayer = document.createElementNS(SVG_NS, "g");
       this.labelLayer = document.createElementNS(SVG_NS, "g");
       [
-        this.bandLayer,
+        this.trackLayer,
         this.axisLayer,
         this.hopLayer,
         this.gateLayer,
@@ -555,16 +586,19 @@
       this.gates.forEach((gate) =>
         this.boxes.set(gate.id, this.gateBox(gate.id)),
       );
-      let bottom = this.origin + VIEW.rowH;
+      let right = this.originX + VIEW.logicalColW;
       this.boxes.forEach((box) => {
-        bottom = Math.max(bottom, box.bottom + box.sdPx);
+        right = Math.max(right, box.right + box.sdPx);
       });
-      this.height = bottom + VIEW.padBottom;
+      this.width = right + VIEW.padRight;
+      this.height =
+        this.originY + this.rows.length * VIEW.trackH + VIEW.padBottom;
 
-      this.drawBands();
+      this.drawTracks();
       this.drawAxis();
       this.hops.forEach((hop) => this.drawHop(hop));
       this.gates.forEach((gate) => this.drawGate(gate));
+      this.fitLabels();
       this.applyEmphasis();
 
       this.renderToolbar();
@@ -573,138 +607,76 @@
       if (this.selectedId) this.select(this.selectedId, false);
     }
 
-    // A tinted band per component behind its lanes, the lane names in its header
-    // and a hairline down every lane.
-    drawBands() {
-      const defaults = this.isDarkMode()
-        ? this.styleDefaults.dark
-        : this.styleDefaults.light;
-      this.bands.forEach((band) => {
-        const guide = band.instance.vis_guide;
-        const g = document.createElementNS(SVG_NS, "g");
-        g.classList.add("seq-band");
-
+    // A stripe per track, the spine's tinted.
+    drawTracks() {
+      this.rows.forEach((row) => {
         const rect = document.createElementNS(SVG_NS, "rect");
-        rect.setAttribute("x", band.x0);
-        rect.setAttribute("y", VIEW.padTop);
-        rect.setAttribute("width", band.x1 - band.x0);
-        rect.setAttribute("height", this.height - VIEW.padTop);
-        rect.setAttribute("rx", 4);
-        rect.setAttribute(
-          "fill",
-          this.themed(guide, "background_color", defaults.rootBg),
-        );
-        rect.setAttribute(
-          "stroke",
-          this.themed(guide, "color", defaults.stroke),
-        );
-        rect.classList.add("seq-band-rect");
-        g.appendChild(rect);
-
-        const title = document.createElementNS(SVG_NS, "text");
-        title.setAttribute("x", (band.x0 + band.x1) / 2);
-        title.setAttribute("y", VIEW.padTop + 11);
-        title.setAttribute("text-anchor", "middle");
-        title.textContent = band.component;
-        title.classList.add("seq-band-title");
-        title.style.fontSize = `${VIEW.fontSize}px`;
-        title.style.fill = this.themed(guide, "text_color", defaults.text);
-        g.appendChild(title);
-
-        band.lanes.forEach((lane) => {
-          const laneGuide = lane.instance.vis_guide || guide;
-          const line = document.createElementNS(SVG_NS, "line");
-          line.setAttribute("x1", lane.x);
-          line.setAttribute("x2", lane.x);
-          line.setAttribute("y1", this.origin - 4);
-          line.setAttribute("y2", this.height - VIEW.padBottom / 2);
-          line.setAttribute(
-            "stroke",
-            this.themed(laneGuide, "color", defaults.stroke),
-          );
-          line.classList.add("seq-lane-line");
-          if (lane.collapsed) line.classList.add("seq-lane-collapsed");
-          g.appendChild(line);
-
-          const name = document.createElementNS(SVG_NS, "text");
-          name.setAttribute("x", lane.x);
-          name.setAttribute("y", VIEW.padTop + 28);
-          name.setAttribute("text-anchor", "middle");
-          name.textContent = lane.label;
-          name.classList.add("seq-lane-name");
-          if (lane.collapsed) name.classList.add("seq-lane-collapsed");
-          name.style.fontSize = `${VIEW.fontSize}px`;
-          name.style.fill = this.themed(laneGuide, "text_color", defaults.text);
-          const tip = document.createElementNS(SVG_NS, "title");
-          tip.textContent = lane.path;
-          name.appendChild(tip);
-          name.style.cursor = "pointer";
-          name.onclick = (e) => {
-            if (this.hasDragged) return;
-            e.stopPropagation();
-            this.selectLane(lane);
-          };
-          g.appendChild(name);
-        });
-        this.bandLayer.appendChild(g);
+        rect.setAttribute("x", this.originX - VIEW.padLeft / 2);
+        rect.setAttribute("y", this.originY + row.index * VIEW.trackH);
+        rect.setAttribute("width", this.width - this.originX);
+        rect.setAttribute("height", VIEW.trackH);
+        rect.classList.add("seq-track");
+        if (row.spine) rect.classList.add("seq-track-spine");
+        else if (row.index % 2) rect.classList.add("seq-track-alt");
+        this.trackLayer.appendChild(rect);
       });
     }
 
-    // Ticks down the left gutter: milliseconds in a timed state, ranks otherwise.
+    // Ticks along the top: milliseconds in a timed state, ranks otherwise, each
+    // with a hairline down through the tracks.
     drawAxis() {
       const g = document.createElementNS(SVG_NS, "g");
       g.classList.add("seq-axis");
-      const x = VIEW.gutter - 10;
+      const y = this.originY - 4;
       const axis = document.createElementNS(SVG_NS, "line");
-      axis.setAttribute("x1", x);
-      axis.setAttribute("x2", x);
-      axis.setAttribute("y1", this.origin);
-      axis.setAttribute("y2", this.height - VIEW.padBottom / 2);
+      axis.setAttribute("x1", this.originX);
+      axis.setAttribute("x2", this.width - VIEW.padRight / 2);
+      axis.setAttribute("y1", y);
+      axis.setAttribute("y2", y);
       axis.classList.add("seq-axis-line");
       g.appendChild(axis);
 
-      const tick = (y, label) => {
+      const tick = (x, label) => {
         const mark = document.createElementNS(SVG_NS, "line");
-        mark.setAttribute("x1", x - 4);
-        mark.setAttribute("x2", this.width);
-        mark.setAttribute("y1", y);
-        mark.setAttribute("y2", y);
+        mark.setAttribute("x1", x);
+        mark.setAttribute("x2", x);
+        mark.setAttribute("y1", y - 3);
+        mark.setAttribute("y2", this.height - VIEW.padBottom / 2);
         mark.classList.add("seq-axis-tick");
         g.appendChild(mark);
         const text = document.createElementNS(SVG_NS, "text");
-        text.setAttribute("x", x - 7);
-        text.setAttribute("y", y);
-        text.setAttribute("text-anchor", "end");
-        text.setAttribute("dominant-baseline", "central");
+        text.setAttribute("x", x);
+        text.setAttribute("y", y - 6);
+        text.setAttribute("text-anchor", "middle");
         text.textContent = label;
         text.classList.add("seq-axis-label");
         text.style.fontSize = `${VIEW.subSize}px`;
         g.appendChild(text);
       };
 
+      const spanPx = this.width - VIEW.padRight - this.originX;
       if (!STATES[this.state].timed) {
-        const rows = Math.round(
-          (this.height - VIEW.padBottom - this.origin) / VIEW.rowH,
-        );
-        for (let rank = 0; rank <= rows; rank += 1) {
-          tick(this.origin + rank * VIEW.rowH, `rank ${rank}`);
+        const columns = Math.round(spanPx / VIEW.logicalColW);
+        for (let rank = 0; rank <= columns; rank += 1) {
+          tick(this.originX + rank * VIEW.logicalColW, `rank ${rank}`);
         }
       } else {
-        const spanMs =
-          (this.height - VIEW.padBottom - this.origin) / this.pxPerMs;
-        const step = niceStep(spanMs / 8);
+        const spanMs = spanPx / this.pxPerMs;
+        const step = niceStep(spanMs / 10);
         for (let ms = 0; ms <= spanMs + 1e-9; ms += step) {
-          tick(this.origin + ms * this.pxPerMs, T.formatMs(ms, 1));
+          tick(this.originX + ms * this.pxPerMs, T.formatMs(ms, 1));
         }
-        const title = document.createElementNS(SVG_NS, "text");
-        title.setAttribute("x", x);
-        title.setAttribute("y", this.origin - 8);
-        title.setAttribute("text-anchor", "end");
-        title.textContent = `${this.driverLabel()} · ${this.state}`;
-        title.classList.add("seq-axis-label");
-        title.style.fontSize = `${VIEW.subSize}px`;
-        g.appendChild(title);
       }
+      const title = document.createElementNS(SVG_NS, "text");
+      title.setAttribute("x", this.width - VIEW.padRight / 2);
+      title.setAttribute("y", y - 6);
+      title.setAttribute("text-anchor", "end");
+      title.textContent = STATES[this.state].timed
+        ? `${this.driverLabel()} · ${this.state}`
+        : "rank · logical";
+      title.classList.add("seq-axis-label", "seq-axis-title");
+      title.style.fontSize = `${VIEW.subSize}px`;
+      g.appendChild(title);
       this.axisLayer.appendChild(g);
     }
 
@@ -712,42 +684,42 @@
       return DRIVERS.find(([key]) => key === this.driver)?.[1] || this.driver;
     }
 
-    // A hop is an arrow from the end of one run to the arrival at the next
-    // gate, labelled with the topic; a hop inside one node runs down its lane.
+    // A hop runs from the end of one block to the arrival at the next gate:
+    // straight along a shared track, a curve between tracks, dashed when both
+    // gates belong to one node. A hop landing after its block started is late:
+    // the gate fired from another branch. The topic labels the gap.
     drawHop(hop) {
-      const fromLane = this.laneOf.get(this.graph.events.get(hop.from).ownerId);
-      const toLane = this.laneOf.get(this.graph.events.get(hop.to).ownerId);
       const fromBox = this.boxes.get(hop.from);
       const toBox = this.boxes.get(hop.to);
-      if (!fromLane || !toLane || !fromBox || !toBox) return;
-
-      const x1 = fromLane.x;
-      const x2 = toLane.x;
-      const y1 = fromBox.bottom;
-      const y2 = STATES[this.state].timed
-        ? Math.max(this.yOf(hop.arrival), y1)
-        : toBox.top;
-      const same = fromLane === toLane;
+      if (!fromBox || !toBox) return;
+      const timed = STATES[this.state].timed;
+      const y1 = this.rowY(hop.from);
+      const y2 = this.rowY(hop.to);
+      const x1 = fromBox.right;
+      const arrive = timed ? this.xOf(hop.arrival) : toBox.left;
+      const x2 = Math.max(arrive, x1 + 4);
+      const same = y1 === y2;
 
       const path = document.createElementNS(SVG_NS, "path");
       path.setAttribute("id", hop.id);
       if (same) {
-        const dx = VIEW.barW * 1.6;
-        path.setAttribute(
-          "d",
-          `M ${x1} ${y1} C ${x1 + dx} ${y1 + 6}, ${x2 + dx} ${y2 - 6}, ${x2 + 2} ${y2}`,
-        );
-        path.classList.add("seq-hop-internal");
+        path.setAttribute("d", `M ${x1} ${y1} L ${x2} ${y2}`);
       } else {
-        const side = x2 > x1 ? 1 : -1;
+        const dx = Math.max(10, (x2 - x1) / 2);
         path.setAttribute(
           "d",
-          `M ${x1 + side * (VIEW.barW / 2)} ${y1} L ${x2 - side * (VIEW.barW / 2 + 1)} ${y2}`,
+          `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`,
         );
       }
+      const fromOwner = this.graph.events.get(hop.from).ownerId;
+      const toOwner = this.graph.events.get(hop.to).ownerId;
+      if (fromOwner === toOwner) path.classList.add("seq-hop-internal");
+      if (timed && arrive > toBox.left + 0.5)
+        path.classList.add("seq-hop-late");
       path.classList.add("seq-hop");
       path.setAttribute("marker-end", "url(#arrowhead-depth-0)");
       hop.element = path;
+      hop.gap = [x1, x2, same];
 
       const title = document.createElementNS(SVG_NS, "title");
       title.textContent = this.describeHop(hop);
@@ -768,10 +740,13 @@
       hit.appendChild(title.cloneNode(true));
       this.hopLayer.appendChild(hit);
 
-      if (hop.topic && !same) {
+      if (hop.topic) {
         const label = document.createElementNS(SVG_NS, "text");
         label.setAttribute("x", (x1 + x2) / 2);
-        label.setAttribute("y", (y1 + y2) / 2 - 3);
+        label.setAttribute(
+          "y",
+          same ? y1 + VIEW.blockH / 2 + VIEW.subSize : (y1 + y2) / 2 - 3,
+        );
         label.setAttribute("text-anchor", "middle");
         label.textContent = this.shortName(hop.topic, 30);
         label.classList.add("seq-hop-label");
@@ -781,14 +756,16 @@
       }
     }
 
-    // A gate is a run on its lane: the glyph names the trigger semantics, the
-    // bar is the run, a bracket above it the wait, a whisker below it the sd.
+    // A gate is a block on its track: the wait segment leads into it, the
+    // whisker trails its end, and the line above carries the trigger glyph,
+    // node, process and the time it completes.
     drawGate(gate) {
-      const lane = this.laneOf.get(gate.ownerId);
       const box = this.boxes.get(gate.id);
-      if (!lane || !box) return;
+      if (!box) return;
+      const y = this.rowY(gate.id);
       const arrival = this.solution.arrivals.get(gate.id);
-      const guide = lane.instance.vis_guide;
+      const instance = this.graph.instances.get(gate.ownerId)?.data || {};
+      const guide = instance.vis_guide;
       const defaults = this.isDarkMode()
         ? this.styleDefaults.dark
         : this.styleDefaults.light;
@@ -801,43 +778,49 @@
       g.style.cursor = "pointer";
       gate.element = g;
 
-      if (box.arrive < box.top - 0.5) {
-        const wait = document.createElementNS(SVG_NS, "path");
-        const w = VIEW.barW / 2 + 3;
-        wait.setAttribute(
-          "d",
-          `M ${lane.x - w} ${box.arrive} L ${lane.x - w} ${box.top} M ${lane.x - w - 3} ${box.arrive} L ${lane.x - w + 3} ${box.arrive}`,
-        );
+      if (box.arrive < box.left - 0.5) {
+        const wait = document.createElementNS(SVG_NS, "rect");
+        wait.setAttribute("x", box.arrive);
+        wait.setAttribute("y", y - VIEW.blockH / 6);
+        wait.setAttribute("width", box.left - box.arrive);
+        wait.setAttribute("height", VIEW.blockH / 3);
         wait.classList.add("seq-wait");
         g.appendChild(wait);
       }
 
-      const bar = document.createElementNS(SVG_NS, "rect");
-      bar.setAttribute("x", lane.x - VIEW.barW / 2);
-      bar.setAttribute("y", box.top);
-      bar.setAttribute("width", VIEW.barW);
-      bar.setAttribute("height", Math.max(VIEW.barMinH, box.bottom - box.top));
-      bar.setAttribute("rx", 1.5);
-      bar.setAttribute(
+      const block = document.createElementNS(SVG_NS, "rect");
+      block.setAttribute("x", box.left);
+      block.setAttribute("y", y - VIEW.blockH / 2);
+      block.setAttribute(
+        "width",
+        Math.max(VIEW.blockMinW, box.right - box.left),
+      );
+      block.setAttribute("height", VIEW.blockH);
+      block.setAttribute("rx", 1.5);
+      block.setAttribute(
         "fill",
         this.themed(guide, "medium_color", defaults.nodeBg),
       );
-      bar.setAttribute("stroke", this.themed(guide, "color", defaults.stroke));
-      bar.classList.add("seq-bar");
-      if (arrival.exec.source === "declared") bar.classList.add("seq-declared");
+      block.setAttribute(
+        "stroke",
+        this.themed(guide, "color", defaults.stroke),
+      );
+      block.classList.add("seq-bar");
+      if (arrival.exec.source === "declared")
+        block.classList.add("seq-declared");
       if (arrival.exec.source === "none" && STATES[this.state].timed) {
-        bar.classList.add("seq-unknown");
+        block.classList.add("seq-unknown");
       }
-      g.appendChild(bar);
+      g.appendChild(block);
 
       if (box.sdPx > 0.5) {
         const whisker = document.createElementNS(SVG_NS, "path");
-        const y0 = Math.max(box.top, box.bottom - box.sdPx);
-        const y1 = box.bottom + box.sdPx;
+        const x0 = Math.max(box.left, box.end - box.sdPx);
+        const x1 = box.end + box.sdPx;
         const w = 3;
         whisker.setAttribute(
           "d",
-          `M ${lane.x} ${y0} L ${lane.x} ${y1} M ${lane.x - w} ${y0} L ${lane.x + w} ${y0} M ${lane.x - w} ${y1} L ${lane.x + w} ${y1}`,
+          `M ${x0} ${y} L ${x1} ${y} M ${x0} ${y - w} L ${x0} ${y + w} M ${x1} ${y - w} L ${x1} ${y + w}`,
         );
         whisker.classList.add("seq-whisker");
         if (arrival.total.missingSd)
@@ -845,6 +828,7 @@
         g.appendChild(whisker);
       }
 
+      const labelY = y - VIEW.blockH / 2 - 3;
       const glyph = this.buildTypeShape(
         gate.type,
         VIEW.glyphW,
@@ -853,40 +837,40 @@
       );
       glyph.setAttribute(
         "transform",
-        `translate(${lane.x + VIEW.barW / 2 + 3},${box.top - VIEW.glyphH / 2 + 2})`,
+        `translate(${box.left},${labelY - VIEW.glyphH + 1})`,
       );
       glyph.classList.add("logic-process", "seq-glyph");
       if (!gate.type) glyph.classList.add("logic-process-unknown");
       g.appendChild(glyph);
 
-      const name = document.createElementNS(SVG_NS, "text");
-      name.setAttribute("x", lane.x + VIEW.barW / 2 + VIEW.glyphW + 6);
-      name.setAttribute("y", box.top + 2);
-      name.setAttribute("dominant-baseline", "central");
-      name.textContent = gate.name;
-      name.classList.add("seq-gate-name");
-      name.style.fontSize = `${VIEW.subSize}px`;
-      g.appendChild(name);
-
-      if (STATES[this.state].timed) {
-        const rate = document.createElementNS(SVG_NS, "text");
-        rate.setAttribute("x", lane.x + VIEW.barW / 2 + VIEW.glyphW + 6);
-        rate.setAttribute("y", box.top + 2 + VIEW.subSize + 1);
-        rate.setAttribute("dominant-baseline", "central");
-        rate.textContent = `@${T.formatMs(T.at(arrival.total, this.driver), 1)}`;
-        rate.classList.add("seq-gate-rate");
-        rate.style.fontSize = `${VIEW.subSize - 1}px`;
-        g.appendChild(rate);
-      } else if (gate.frequency) {
-        const rate = document.createElementNS(SVG_NS, "text");
-        rate.setAttribute("x", lane.x + VIEW.barW / 2 + VIEW.glyphW + 6);
-        rate.setAttribute("y", box.top + 2 + VIEW.subSize + 1);
-        rate.setAttribute("dominant-baseline", "central");
-        rate.textContent = this.rateLabel(gate.frequency);
-        rate.classList.add("seq-gate-rate");
-        rate.style.fontSize = `${VIEW.subSize - 1}px`;
-        g.appendChild(rate);
-      }
+      const label = document.createElementNS(SVG_NS, "text");
+      label.setAttribute("x", box.left + VIEW.glyphW + 3);
+      label.setAttribute("y", labelY);
+      label.classList.add("seq-gate-name");
+      label.style.fontSize = `${VIEW.subSize}px`;
+      const tail = STATES[this.state].timed
+        ? `@${T.formatMs(T.at(arrival.total, this.driver), 1)}`
+        : this.rateLabel(gate.frequency);
+      gate.label = {
+        element: label,
+        x: box.left + VIEW.glyphW + 3,
+        y: labelY,
+        node: this.shortName(instance.name || gate.ownerId),
+        process: gate.name,
+        tail,
+      };
+      this.setLabel(gate.label, true);
+      label.style.cursor = "pointer";
+      label.style.pointerEvents = "auto";
+      label.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.selectNode(gate.ownerId);
+      };
+      const tip = document.createElementNS(SVG_NS, "title");
+      tip.textContent = instance.path || "";
+      label.appendChild(tip);
+      g.appendChild(label);
 
       const title = document.createElementNS(SVG_NS, "title");
       title.textContent = this.describeGate(gate);
@@ -897,6 +881,95 @@
         this.select(gate.id);
       };
       this.gateLayer.appendChild(g);
+    }
+
+    // node · process @time as three spans; the node span is dropped first when
+    // the room is short.
+    setLabel(label, withNode) {
+      const text = label.element;
+      [...text.querySelectorAll("tspan")].forEach((span) => span.remove());
+      const tip = text.querySelector("title");
+      const span = (content, cls) => {
+        const el = document.createElementNS(SVG_NS, "tspan");
+        el.textContent = content;
+        if (cls) el.classList.add(cls);
+        text.insertBefore(el, tip);
+      };
+      if (withNode) span(`${label.node} · `, "seq-gate-node");
+      span(label.process);
+      if (label.tail) span(` ${label.tail}`, "seq-gate-rate");
+    }
+
+    labelWidth(label, withNode) {
+      const text = `${withNode ? `${label.node} · ` : ""}${label.process}${label.tail ? ` ${label.tail}` : ""}`;
+      return this.measureTextWidth(text, VIEW.subSize);
+    }
+
+    // Labels sit on two tiers above the blocks of a track. A label takes the
+    // lower tier when it fits before the next block, the upper tier when it
+    // fits before the block after that; otherwise the node part goes first,
+    // then the process name is clipped, then the label is hidden. Hop labels
+    // are clipped to their gap the same way.
+    fitLabels() {
+      this.rows.forEach((row) => {
+        const tierEnd = [-Infinity, -Infinity];
+        row.gates.forEach((gate, index) => {
+          const label = gate.label;
+          if (!label) return;
+          const startOf = (offset) => {
+            const next = row.gates[index + offset];
+            return next ? this.boxes.get(next.id).left : Infinity;
+          };
+          const full = this.labelWidth(label, true);
+          const short = this.labelWidth(label, false);
+          const room = [startOf(1), startOf(2)].map((edge, tier) =>
+            label.x < tierEnd[tier] ? -1 : edge - label.x - 4,
+          );
+          const tier =
+            full <= room[0] ? 0 : full <= room[1] || room[1] > room[0] ? 1 : 0;
+          const available = room[tier];
+          label.element.setAttribute(
+            "y",
+            label.y - (tier ? VIEW.labelTierH : 0),
+          );
+          label.element.classList.toggle("seq-gate-name-upper", tier === 1);
+          label.element.classList.remove("seq-label-hidden");
+          if (full <= available) {
+            this.setLabel(label, true);
+            tierEnd[tier] = label.x + full;
+          } else if (short <= available) {
+            this.setLabel(label, false);
+            tierEnd[tier] = label.x + short;
+          } else if (available < VIEW.labelMin) {
+            label.element.classList.add("seq-label-hidden");
+          } else {
+            const chars = Math.max(
+              3,
+              Math.floor((label.process.length * available) / short),
+            );
+            this.setLabel(
+              { ...label, process: `${label.process.slice(0, chars - 1)}…` },
+              false,
+            );
+            tierEnd[tier] = label.x + available;
+          }
+        });
+      });
+      this.hops.forEach((hop) => {
+        if (!hop.label || !hop.gap) return;
+        const [x1, x2, same] = hop.gap;
+        const room = same ? x2 - x1 - 4 : Math.max(x2 - x1, 40);
+        if (room < VIEW.labelMin) {
+          hop.label.classList.add("seq-label-hidden");
+        } else {
+          this._truncateSVGText(
+            hop.label,
+            this.shortName(hop.topic, 30),
+            room,
+            VIEW.subSize,
+          );
+        }
+      });
     }
 
     rateLabel(frequency) {
@@ -1024,39 +1097,12 @@
       if (focus) this.focusElement(gate.element);
     }
 
-    selectLane(lane) {
-      if (lane.collapsed) {
-        const entries = [...lane.owners].map((ownerId) => {
-          const instance = this.graph.instances.get(ownerId)?.data || {};
-          return {
-            name: instance.name || ownerId,
-            path: instance.path || "",
-            type: "node",
-            rate: "off the chain",
-          };
-        });
-        this.updateInfoPanel(
-          {
-            name: lane.path,
-            chain: {
-              title: "Reached, not on the chain",
-              clocks: null,
-              upstream: [],
-              downstream: entries.slice(0, CHAIN_LIST_LIMIT),
-              downstream_label: lane.component,
-              upstream_total: 0,
-              downstream_total: entries.length,
-              limit: CHAIN_LIST_LIMIT,
-            },
-          },
-          "Component",
-        );
-        return;
-      }
+    selectNode(ownerId) {
+      const instance = this.graph.instances.get(ownerId)?.data || {};
       this.updateInfoPanel(
         {
-          ...lane.instance,
-          gates: this.gates.filter((g) => g.ownerId === lane.ownerId).length,
+          ...instance,
+          gates: this.gates.filter((g) => g.ownerId === ownerId).length,
         },
         "Node",
       );
@@ -1488,11 +1534,14 @@
 
     countersText() {
       const sink = this.solution.arrivals.get(this.sinkId);
-      const lanes = this.lanes.filter((lane) => !lane.collapsed).length;
+      const nodes = new Set(this.gates.map((gate) => gate.ownerId)).size;
+      const offChain = this.offChainNodes().size;
       const parts = [
-        `${lanes} nodes`,
+        `${nodes} nodes`,
         `${this.gates.length} gates`,
         `${this.hops.length} hops`,
+        `${this.rows.length} track${this.rows.length === 1 ? "" : "s"}`,
+        `${offChain} reached node${offChain === 1 ? "" : "s"} off the chain`,
         `${this.solution.loopEdges.size} loop edge${this.solution.loopEdges.size === 1 ? "" : "s"} cut`,
         `${this.solution.reach.size} events reached`,
       ];
@@ -1553,29 +1602,67 @@
         note.textContent = text;
         details.appendChild(note);
       });
+
+      const defaults = this.isDarkMode()
+        ? this.styleDefaults.dark
+        : this.styleDefaults.light;
+      this.componentsOnChain().forEach(({ component, instance }) => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "logic-legend-row";
+        const svg = document.createElementNS(SVG_NS, "svg");
+        svg.setAttribute("width", "26");
+        svg.setAttribute("height", "14");
+        svg.setAttribute("viewBox", "0 0 26 14");
+        const rect = document.createElementNS(SVG_NS, "rect");
+        rect.setAttribute("x", 2);
+        rect.setAttribute("y", 3);
+        rect.setAttribute("width", 22);
+        rect.setAttribute("height", 8);
+        rect.setAttribute("rx", 1.5);
+        const guide = instance.vis_guide;
+        rect.setAttribute(
+          "fill",
+          this.themed(guide, "medium_color", defaults.nodeBg),
+        );
+        rect.setAttribute(
+          "stroke",
+          this.themed(guide, "color", defaults.stroke),
+        );
+        rect.classList.add("seq-bar");
+        svg.appendChild(rect);
+        rowEl.appendChild(svg);
+        const span = document.createElement("span");
+        span.textContent = component;
+        rowEl.appendChild(span);
+        details.appendChild(rowEl);
+      });
       return details;
     }
 
     legendGlyph(kind) {
       const make = (tag) => document.createElementNS(SVG_NS, tag);
-      if (kind === "bar") {
+      if (kind === "block") {
         const rect = make("rect");
-        rect.setAttribute("x", 9);
-        rect.setAttribute("y", 1);
-        rect.setAttribute("width", 8);
-        rect.setAttribute("height", 12);
+        rect.setAttribute("x", 2);
+        rect.setAttribute("y", 3);
+        rect.setAttribute("width", 22);
+        rect.setAttribute("height", 8);
+        rect.setAttribute("rx", 1.5);
         rect.classList.add("seq-bar", "seq-legend-bar");
         return rect;
       }
       if (kind === "wait") {
-        const path = make("path");
-        path.setAttribute("d", "M 13 2 L 13 12 M 10 2 L 16 2");
-        path.classList.add("seq-wait");
-        return path;
+        const rect = make("rect");
+        rect.setAttribute("x", 3);
+        rect.setAttribute("y", 5.5);
+        rect.setAttribute("width", 20);
+        rect.setAttribute("height", 3);
+        rect.classList.add("seq-wait");
+        return rect;
       }
       if (kind === "whisker") {
         const path = make("path");
-        path.setAttribute("d", "M 13 2 L 13 12 M 10 2 L 16 2 M 10 12 L 16 12");
+        path.setAttribute("d", "M 3 7 L 23 7 M 3 4 L 3 10 M 23 4 L 23 10");
         path.classList.add("seq-whisker");
         return path;
       }
@@ -1583,6 +1670,7 @@
       line.setAttribute("d", "M 2 7 L 24 7");
       line.classList.add("seq-hop");
       if (kind === "loop") line.classList.add("seq-loop");
+      else if (kind === "late") line.classList.add("seq-hop-late");
       else line.classList.add(CHAIN_CLASS[kind]);
       return line;
     }

@@ -1,20 +1,20 @@
 # Sequence Diagram: Event-Chain Latency View
 
-The sequence diagram of the deployment overview draws one chain of events: from a source gate (a clock-driven process) to a sink event, one lane per node, time down the page. It answers two questions about a design: which sequential path is the shortest or the most critical, and what the system's end-to-end latency is.
+The sequence diagram of the deployment overview draws one chain of events as a timeline: from a source gate (a clock-driven process) to a sink event, time left to right, every process a block as wide as its run. It answers two questions about a design: which sequential path is the shortest or the most critical, and what the system's end-to-end latency is.
 
 ## What is drawn
 
-- **Lane**: one node. Lanes are grouped into a tinted band per top-level component, ordered left to right by the component's canvas slot.
-- **Run**: a process gate executing, drawn as a bar on its lane. The glyph beside it carries the trigger semantics of the logic diagram (`and`, `or`, clock, `once`); a dashed outline marks a gate whose type is not declared.
-- **Wait**: the bracket above a run is the time between the trigger arriving and the run starting: the sampling delay of a periodic gate, or the skew an `and` gate waits out.
-- **Whisker**: ±1 standard deviation at the end of a run.
-- **Hop**: an arrow from the end of one run to the arrival at the next gate, labelled with the topic. A hop inside one node (`to_trigger`) runs down its lane.
-- **Emphasis**: the maximum chain (red, the critical path), the minimum chain (green, the sequential shortest path) and the mean chain (orange, dashed where it leaves the other two). Everything off the three chains is dimmed. Nodes the source reaches but the chain does not pass collapse into one `+N nodes` lane per component.
+- **Block**: a process gate executing, as wide as its run. Its colour is the top-level component of the node (the legend lists them); the line above it carries the trigger glyph of the logic diagram (`and`, `or`, clock, `once`), the node, the process and the time the run completes. A dashed glyph marks a gate whose type is not declared.
+- **Wait**: the thin segment leading into a block is the time between the trigger arriving and the run starting: the sampling delay of a periodic gate, or the skew an `and` gate waits out.
+- **Whisker**: ±1 standard deviation at the end of a block.
+- **Hop**: an arrow from the end of one block to the arrival at the next gate, labelled with the topic. Its length is the transport time; a hop between two gates of one node (`to_trigger`) is dashed. A hop that lands after its block has started is drawn dotted: the gate is an `or` and fired from another branch.
+- **Track**: one row of blocks. The chain the axis is driven by is the spine on the tinted centre track; every other gate continues the track of the gate it feeds, or takes the nearest free track beside the spine, so the branches that join or leave the spine stack above and below it.
+- **Emphasis**: the maximum chain (red, the critical path), the minimum chain (green, the sequential shortest path) and the mean chain (orange, dashed where it leaves the other two). Everything off the three chains is dimmed. Nodes the source reaches but the chain does not pass are counted in the toolbar.
 - **Loop edge**: the event graph is cyclic (vehicle → localization → planning → control → vehicle). A depth-first walk from the source cuts every edge that closes on an ancestor; the toolbar counts them.
 
 ## States
 
-| State    | y axis                               | Numbers                                                                                                 |
+| State    | x axis                               | Numbers                                                                                                 |
 | -------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | logical  | rank (process gates from the source) | none; the default while nothing is measured                                                             |
 | declared | milliseconds                         | a periodic gate's sampling delay from its rate, plus any `latency` a process declares                   |

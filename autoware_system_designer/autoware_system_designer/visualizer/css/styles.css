@@ -949,30 +949,19 @@ svg.lod-rate .logic-vertex-sub {
   outline-offset: -4px;
 }
 
-.seq-band-rect {
-  stroke-width: 0.6px;
-  opacity: 0.55;
+/* Tracks: one stripe per row of blocks, the spine tinted. */
+.seq-track {
+  fill: var(--text-muted);
+  opacity: 0.04;
 }
 
-.seq-band-title {
-  font-family: "Segoe UI", sans-serif;
-  font-weight: 600;
-  pointer-events: none;
+.seq-track-alt {
+  opacity: 0.09;
 }
 
-.seq-lane-line {
-  stroke-width: 0.6px;
-  stroke-dasharray: 2 3;
-  opacity: 0.7;
-}
-
-.seq-lane-name {
-  font-family: "Segoe UI", sans-serif;
-  font-weight: 500;
-}
-
-.seq-lane-collapsed {
-  opacity: 0.5;
+.seq-track-spine {
+  fill: var(--highlight);
+  opacity: 0.09;
 }
 
 .seq-axis-line {
@@ -991,7 +980,7 @@ svg.lod-rate .logic-vertex-sub {
   pointer-events: none;
 }
 
-/* A hop: the arrow from the end of one run to the arrival at the next gate. */
+/* A hop: the arrow from the end of one block to the arrival at the next gate. */
 .seq-hop {
   fill: none;
   stroke: var(--text-secondary);
@@ -1009,6 +998,13 @@ svg.lod-rate .logic-vertex-sub {
 
 .seq-hop-internal {
   stroke-dasharray: 3 2;
+}
+
+/* The message lands after the run it feeds has started: the gate fired from
+   another branch. */
+.seq-hop-late {
+  stroke-dasharray: 1.5 2.5;
+  opacity: 0.6;
 }
 
 /* The three chains one solve yields; everything off them is dimmed. */
@@ -1071,7 +1067,7 @@ path.seq-selected {
   stroke: var(--text-secondary);
 }
 
-/* A declared run is an estimate, drawn hatched; a run with no time at all
+/* A declared block is an estimate, drawn hatched; a block with no time at all
    is an outline. */
 .seq-declared {
   fill-opacity: 0.55;
@@ -1114,8 +1110,13 @@ path.seq-selected {
   fill: var(--text-primary);
 }
 
+.seq-gate-node,
 .seq-gate-rate {
   fill: var(--text-muted);
+}
+
+.seq-gate-rate {
+  display: none;
 }
 
 svg.lod-name .seq-hop-label,
@@ -1124,7 +1125,15 @@ svg.lod-name .seq-gate-name {
 }
 
 svg.lod-rate .seq-gate-rate {
-  display: block;
+  display: inline;
+}
+
+.seq-gate-name-upper {
+  opacity: 0.85;
+}
+
+.seq-label-hidden {
+  display: none !important;
 }
 
 .seq-hop-limit {
