@@ -207,7 +207,7 @@ Top-level entry point defining the complete system.
   - `type`: Node group execution type. select `ros2_component_container_mt` or `ros2_component_container`.
   - `nodes`: List of non-empty path patterns. Glob patterns (`*`, `?`, `[...]`) match the full node path.
 - `connections`: Top-level wiring between components. List of connection pairs, where each connection is a list of two port paths. Supports wildcards (e.g., `component.publisher.^` for wildcard); a wildcard matches only ports of the declared kind. Connection entries do not take a `description`.
-- `event_chains`: (Optional) Named event chains the sequence diagram offers in its source picker.
+- `event_chains`: (Optional) Named event chains the sequence diagram draws first, each with its sink fixed.
   - `name`: Chain name.
   - `description`: (Optional) Brief explanation of the chain.
   - `from`: Source event as `<node path>:<process or port name>`.

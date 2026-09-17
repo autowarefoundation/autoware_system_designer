@@ -1,9 +1,11 @@
 // Sequence Diagram Module
 // Event-chain latency view drawn as a timeline: time runs left to right, every
 // process gate is a block as wide as its run, and the gaps between blocks are
-// the transport, alignment and sampling delays that separate them. The chain
-// the axis is driven by is the spine on the centre track; the branches that
-// join or leave it are packed onto the tracks above and below.
+// the transport, alignment and sampling delays that separate them. Every chain
+// of the system is drawn: one group per named chain, then one per clock root,
+// stacked down the page on a shared axis. Within a group the chain the axis is
+// driven by is the spine on the centre track; the branches that join or leave
+// it are packed onto the tracks above and below.
 
 (function () {
   const SVG_NS = ElkCanvas.SVG_NS;
@@ -49,6 +51,8 @@
     padTop: 12,
     padBottom: 16,
     axisH: 24,
+    groupHeaderH: 20,
+    groupGap: 14,
     targetWidth: 1400,
     labelMin: 18,
     labelTierH: 10,
@@ -72,7 +76,8 @@
   ];
 
   const LEGEND_NOTES = [
-    "the centre track is the chain the axis is driven by; branches sit above and below",
+    "one group per chain, each starting at its own source firing; all groups share the axis",
+    "the tinted track is the chain the axis is driven by; branches sit above and below",
     "≈ marks a mean folded at an and/or gate: one branch's number, not the set's",
     "? marks a spread that skipped hops with no sd",
     "a periodic gate needs no measurement: its sampling delay is uniform over one period",
@@ -85,11 +90,11 @@
     constructor(container, options = {}) {
       super(container, options);
       this.graph = new EventGraph();
-      this.solution = null;
+      this.groups = [];
+      this.activeGroup = null;
       this.namedChains = [];
-      this.sourceId = null;
-      this.sinkId = null;
       this.hopLimit = null;
+      this.showTrivial = false;
       this.state = "logical";
       this.driver = "max";
       this.measured = null; // loaded measurement, see latency_source.js
@@ -129,8 +134,6 @@
         );
         if (this.measured) this.state = "measured";
       }
-      this.chooseSource(this.namedChains[0]?.from ?? this.widestRoot());
-      if (this.namedChains[0]?.to) this.sinkId = this.namedChains[0].to;
       this.solveAndRender();
     }
 
@@ -160,24 +163,7 @@
         .filter((chain) => chain.from);
     }
 
-    // The clock root that reaches the most of the graph.
-    widestRoot() {
-      let best = null;
-      this.graph.clockRootIds.forEach((id) => {
-        const size = this.graph.reach(id).size;
-        if (!best || size > best.size) best = { id, size };
-      });
-      return best?.id ?? this.graph.events.keys().next().value ?? null;
-    }
-
-    chooseSource(sourceId) {
-      this.sourceId = sourceId;
-      this.sinkId = null;
-      this.enumerated = null;
-      this.highlightEdges = null;
-    }
-
-    // The sink the view opens on: the deepest chain, then the longest.
+    // The sink a group opens on: the deepest chain, then the longest.
     defaultSink(solution) {
       let best = null;
       solution.sinkIds.forEach((id) => {
@@ -204,29 +190,92 @@
       return T.declaredCosts(this.graph);
     }
 
+    // One group per named chain, then one per clock root a named chain does
+    // not start from. Groups with a single gate are trivial and hidden unless
+    // asked for.
     solveAndRender() {
-      if (!this.sourceId) {
+      const solver = new T.ChainSolver(this.graph, this.costs());
+      const used = new Set();
+      const specs = [];
+      this.namedChains.forEach((chain) => {
+        used.add(chain.from);
+        specs.push({
+          name: chain.name,
+          sourceId: chain.from,
+          sinkId: chain.to,
+          named: true,
+        });
+      });
+      this.graph.clockRootIds
+        .filter((id) => !used.has(id))
+        .map((id) => ({ id, path: this.graph.ownerOf(id)?.path || "" }))
+        .sort((a, b) => a.path.localeCompare(b.path))
+        .forEach(({ id }) =>
+          specs.push({ name: null, sourceId: id, sinkId: null, named: false }),
+        );
+
+      if (!specs.length) {
         this.showError("The design declares no events to chain.");
         return;
       }
-      const solver = new T.ChainSolver(this.graph, this.costs());
-      this.solution = solver.solve(this.sourceId, { hopLimit: this.hopLimit });
-      if (!this.sinkId || !this.solution.reach.has(this.sinkId)) {
-        this.sinkId = this.defaultSink(this.solution);
-      }
-      this.buildView();
+
+      const activeSource = this.activeGroup?.sourceId ?? null;
+      this.groups = specs.map((spec, index) => {
+        const group = { ...spec, index };
+        group.solution = solver.solve(spec.sourceId, {
+          hopLimit: this.hopLimit,
+        });
+        if (!group.sinkId || !group.solution.reach.has(group.sinkId)) {
+          group.sinkId = this.defaultSink(group.solution);
+        }
+        const source = this.graph.events.get(spec.sourceId);
+        group.title =
+          spec.name ||
+          `${this.graph.ownerOf(spec.sourceId)?.path || ""}:${source.name}`;
+        group.rate = this.rateLabel(source.frequency);
+        this.buildView(group);
+        group.trivial = group.gates.length <= 1;
+        return group;
+      });
+      this.groups.sort((a, b) => {
+        if (a.named !== b.named) return a.named ? -1 : 1;
+        if (a.named) return a.index - b.index;
+        const rankA = a.solution.arrivals.get(a.sinkId).rank;
+        const rankB = b.solution.arrivals.get(b.sinkId).rank;
+        if (rankA !== rankB) return rankB - rankA;
+        return a.title.localeCompare(b.title);
+      });
+      this.groups.forEach((group, index) => {
+        group.index = index;
+        group.gates.forEach((gate) => {
+          gate.key = `${index}/${gate.id}`;
+        });
+        group.hops.forEach((hop, hopIndex) => {
+          hop.id = `sq_hop_${index}_${hopIndex}`;
+        });
+      });
+      this.activeGroup =
+        this.groups.find((group) => group.sourceId === activeSource) ||
+        this.visibleGroups()[0] ||
+        this.groups[0];
       this.render();
+    }
+
+    visibleGroups() {
+      return this.groups.filter((group) => this.showTrivial || !group.trivial);
     }
 
     // ── View model ──────────────────────────────────────────────────────────────
 
     // The events on some path from the source to the sink, the gates among
     // them, the hops between gates with the ports folded into them, and the
-    // tracks the gates sit on.
-    buildView() {
-      const { solution, graph } = this;
-      const onPath = new Set([this.sinkId]);
-      const queue = [this.sinkId];
+    // tracks the gates sit on. Gates are views over the graph's events, since
+    // one event may sit in several groups.
+    buildView(group) {
+      const { solution } = group;
+      const { graph } = this;
+      const onPath = new Set([group.sinkId]);
+      const queue = [group.sinkId];
       for (let cursor = 0; cursor < queue.length; cursor += 1) {
         const arrival = solution.arrivals.get(queue[cursor]);
         (arrival?.branches || []).forEach((branch) => {
@@ -235,51 +284,53 @@
           queue.push(branch.fromId);
         });
       }
-      this.onPath = onPath;
+      group.onPath = onPath;
 
-      this.chains = {};
+      group.chains = {};
       ["min", "mean", "max"].forEach((component) => {
-        const chain = T.chainTo(solution, this.sinkId, component);
+        const chain = T.chainTo(solution, group.sinkId, component);
         chain.edgeSet = new Set(chain.edges);
-        this.chains[component] = chain;
+        group.chains[component] = chain;
       });
 
-      this.gates = [...onPath]
+      group.gates = [...onPath]
         .map((id) => graph.events.get(id))
         .filter(
-          (event) => event.kind === "process" || event.id === this.sourceId,
+          (event) => event.kind === "process" || event.id === group.sourceId,
         )
-        .sort((a, b) => this.orderKey(a.id) - this.orderKey(b.id));
-      this.gateIds = new Set(this.gates.map((gate) => gate.id));
+        .sort((a, b) => this.orderKey(group, a.id) - this.orderKey(group, b.id))
+        .map((event) => ({ ...event, key: `${group.index}/${event.id}` }));
+      group.gateIds = new Set(group.gates.map((gate) => gate.id));
 
-      this.hops = [];
-      this.gates.forEach((gate) => {
-        this.foldBack(gate.id).forEach((hop) => this.hops.push(hop));
+      group.hops = [];
+      group.gates.forEach((gate) => {
+        this.foldBack(group, gate.id).forEach((hop) => group.hops.push(hop));
       });
-      this.hops.forEach((hop, index) => {
-        hop.id = `sq_hop_${index}`;
+      group.hops.forEach((hop, index) => {
+        hop.id = `sq_hop_${group.index}_${index}`;
         hop.on = {};
         ["min", "mean", "max"].forEach((component) => {
           hop.on[component] = hop.edges.every((edgeId) =>
-            this.chains[component].edgeSet.has(edgeId),
+            group.chains[component].edgeSet.has(edgeId),
           );
         });
       });
 
-      this.assignTracks();
+      this.assignTracks(group);
     }
 
     // The gates behind one gate, each with the port events between folded into
     // the hop: the edges it stands for, the transport cost along them, and the
     // topic the message travelled on.
-    foldBack(gateId) {
-      const { solution, graph } = this;
+    foldBack(group, gateId) {
+      const { solution } = group;
+      const { graph } = this;
       const hops = [];
       const walk = (id, edges, comm, topic, branchSummary, depth) => {
         const arrival = solution.arrivals.get(id);
         if (!arrival) return;
         arrival.branches.forEach((branch) => {
-          if (!this.onPath.has(branch.fromId)) return;
+          if (!group.onPath.has(branch.fromId)) return;
           const from = graph.events.get(branch.fromId);
           const nextEdges = [branch.key, ...edges];
           const nextComm = T.add(branch.comm, comm);
@@ -288,7 +339,7 @@
             (from.kind === "input" || from.kind === "output"
               ? this.topicOf(from)
               : null);
-          if (from.kind === "process" || branch.fromId === this.sourceId) {
+          if (from.kind === "process" || branch.fromId === group.sourceId) {
             hops.push({
               from: branch.fromId,
               to: gateId,
@@ -312,13 +363,13 @@
       };
       const arrival = solution.arrivals.get(gateId);
       (arrival?.branches || []).forEach((branch) => {
-        if (!this.onPath.has(branch.fromId)) return;
+        if (!group.onPath.has(branch.fromId)) return;
         const from = graph.events.get(branch.fromId);
         const topic =
           from.kind === "input" || from.kind === "output"
             ? this.topicOf(from)
             : null;
-        if (from.kind === "process" || branch.fromId === this.sourceId) {
+        if (from.kind === "process" || branch.fromId === group.sourceId) {
           hops.push({
             from: branch.fromId,
             to: gateId,
@@ -350,8 +401,8 @@
     }
 
     // Where an event sits along the axis the view is driven by.
-    orderKey(eventId) {
-      const arrival = this.solution.arrivals.get(eventId);
+    orderKey(group, eventId) {
+      const arrival = group.solution.arrivals.get(eventId);
       if (!arrival) return Infinity;
       if (!STATES[this.state].timed) return arrival.rank;
       return T.at(arrival.start, this.driver);
@@ -370,10 +421,11 @@
     // free over its span, sides alternating. Successors are placed before the
     // gates that feed them, so a branch reads as one run leaving the spine.
     // Spans are in time, so gates with no cost share a track at one instant.
-    assignTracks() {
-      this.prepareScale();
+    assignTracks(group) {
       const spans = new Map();
-      this.gates.forEach((gate) => spans.set(gate.id, this.spanOf(gate.id)));
+      group.gates.forEach((gate) =>
+        spans.set(gate.id, this.spanOf(group, gate.id)),
+      );
       const trackOf = new Map();
       const occupancy = new Map();
       const overlaps = (track, [x0, x1]) =>
@@ -389,15 +441,16 @@
         return track;
       };
 
-      const spine = this.chains[this.spineComponent()].events.filter((id) =>
-        this.gateIds.has(id),
+      const spine = group.chains[this.spineComponent()].events.filter((id) =>
+        group.gateIds.has(id),
       );
       spine.forEach((id) => claim(id, 0));
-      if (!trackOf.has(this.sinkId) && this.gateIds.has(this.sinkId)) {
-        claim(this.sinkId, 0);
+      if (!trackOf.has(group.sinkId) && group.gateIds.has(group.sinkId)) {
+        claim(group.sinkId, 0);
       }
+
       const hopsInto = new Map();
-      this.hops.forEach((hop) => {
+      group.hops.forEach((hop) => {
         if (!hopsInto.has(hop.to)) hopsInto.set(hop.to, []);
         hopsInto.get(hop.to).push(hop);
       });
@@ -437,22 +490,22 @@
             }
           });
       }
-      this.gates.forEach((gate) => {
+      group.gates.forEach((gate) => {
         if (!trackOf.has(gate.id))
           claim(gate.id, nearestFree(side, side, gate.id));
       });
 
       // Rows: the tracks in use, top to bottom, empty ones dropped.
       const tracks = [...new Set(trackOf.values())].sort((a, b) => a - b);
-      this.rowOf = new Map();
-      this.gates.forEach((gate) => {
-        this.rowOf.set(gate.id, tracks.indexOf(trackOf.get(gate.id)));
+      group.rowOf = new Map();
+      group.gates.forEach((gate) => {
+        group.rowOf.set(gate.id, tracks.indexOf(trackOf.get(gate.id)));
       });
-      this.rows = tracks.map((track, index) => ({
+      group.rows = tracks.map((track, index) => ({
         index,
         track,
         spine: track === 0,
-        gates: this.gates
+        gates: group.gates
           .filter((gate) => trackOf.get(gate.id) === track)
           .sort((a, b) => spans.get(a.id)[0] - spans.get(b.id)[0]),
       }));
@@ -462,33 +515,22 @@
       return `/${(path || "").split("/").filter(Boolean).slice(0, 1).join("/")}`;
     }
 
-    // Top-level components the chain passes, in order of first appearance.
+    // Top-level components the drawn chains pass, in order of first appearance.
     componentsOnChain() {
       const seen = new Map();
-      this.gates.forEach((gate) => {
-        const instance = this.graph.instances.get(gate.ownerId)?.data || {};
-        const component = this.componentOf(instance.path);
-        if (!seen.has(component)) {
-          seen.set(component, {
-            component,
-            instance: this.graph.instanceByPath.get(component) || {},
-          });
-        }
+      this.visibleGroups().forEach((group) => {
+        group.gates.forEach((gate) => {
+          const instance = this.graph.instances.get(gate.ownerId)?.data || {};
+          const component = this.componentOf(instance.path);
+          if (!seen.has(component)) {
+            seen.set(component, {
+              component,
+              instance: this.graph.instanceByPath.get(component) || {},
+            });
+          }
+        });
       });
       return [...seen.values()];
-    }
-
-    // Nodes the source reaches that hold no gate on the chain.
-    offChainNodes() {
-      const onChain = new Set(this.gates.map((gate) => gate.ownerId));
-      const off = new Set();
-      this.solution.reach.forEach((id) => {
-        const event = this.graph.events.get(id);
-        if (event.kind === "process" && !onChain.has(event.ownerId)) {
-          off.add(event.ownerId);
-        }
-      });
-      return off;
     }
 
     shortName(name, limit = VIEW.nameChars) {
@@ -499,7 +541,8 @@
     // ── Geometry ────────────────────────────────────────────────────────────────
 
     // Time to x. In the logical state one column per rank; in a timed state the
-    // scale is set so the sink lands near the target width, then zoomed.
+    // scale is shared by every group and set so the longest chain lands near
+    // the target width, then zoomed.
     prepareScale() {
       const timed = STATES[this.state].timed;
       this.originX = VIEW.padLeft;
@@ -510,12 +553,14 @@
       }
       if (this.pxPerMs === null) {
         let extent = 0;
-        this.gates.forEach((gate) => {
-          const arrival = this.solution.arrivals.get(gate.id);
-          extent = Math.max(
-            extent,
-            T.at(arrival.total, this.driver) + arrival.total.sd,
-          );
+        this.visibleGroups().forEach((group) => {
+          group.gates.forEach((gate) => {
+            const arrival = group.solution.arrivals.get(gate.id);
+            extent = Math.max(
+              extent,
+              T.at(arrival.total, this.driver) + arrival.total.sd,
+            );
+          });
         });
         this.pxPerMs = extent > 0 ? VIEW.targetWidth / extent : 1;
       }
@@ -525,11 +570,13 @@
       return this.originX + T.at(summary, this.driver) * this.pxPerMs;
     }
 
-    // Arrival, left and right edge of a gate's block along the axis.
-    gateBox(gateId) {
-      const arrival = this.solution.arrivals.get(gateId);
+    // Arrival, left and right edge of a gate's block along the axis. Track
+    // assignment happens before the scale is known, so a unit scale stands in
+    // there: spans are compared, never drawn.
+    gateBox(group, gateId) {
+      const arrival = group.solution.arrivals.get(gateId);
       if (!STATES[this.state].timed) {
-        const left = this.originX + arrival.rank * VIEW.logicalColW;
+        const left = VIEW.padLeft + arrival.rank * VIEW.logicalColW;
         return {
           arrive: left,
           left,
@@ -538,28 +585,40 @@
           sdPx: 0,
         };
       }
-      const arrive = this.xOf(arrival.arrive);
-      const left = this.xOf(arrival.start);
-      const end = this.xOf(arrival.total);
+      const scale = this.pxPerMs ?? 1;
+      const x = (summary) => VIEW.padLeft + T.at(summary, this.driver) * scale;
+      const arrive = x(arrival.arrive);
+      const left = x(arrival.start);
+      const end = x(arrival.total);
       return {
         arrive,
         left,
         right: Math.max(end, left + VIEW.blockMinW),
         end,
-        sdPx: arrival.total.sd * this.pxPerMs,
+        sdPx: arrival.total.sd * scale,
       };
     }
 
     // The time a gate occupies on its track, wait included.
-    spanOf(gateId) {
-      const box = this.gateBox(gateId);
+    spanOf(group, gateId) {
+      const box = this.gateBox(group, gateId);
       return [box.arrive, box.end];
     }
 
-    rowY(gateId) {
-      return (
-        this.originY + this.rowOf.get(gateId) * VIEW.trackH + VIEW.trackH / 2
-      );
+    rowY(group, gateId) {
+      return group.y0 + group.rowOf.get(gateId) * VIEW.trackH + VIEW.trackH / 2;
+    }
+
+    // Groups stack down the page, each under its header.
+    layoutGroups() {
+      let y = this.originY;
+      this.visibleGroups().forEach((group) => {
+        group.headerY = y;
+        group.y0 = y + VIEW.groupHeaderH;
+        group.y1 = group.y0 + group.rows.length * VIEW.trackH;
+        y = group.y1 + VIEW.groupGap;
+      });
+      return y - VIEW.groupGap;
     }
 
     // ── Render ──────────────────────────────────────────────────────────────────
@@ -582,24 +641,28 @@
         this.labelLayer,
       ].forEach((g) => layer.appendChild(g));
 
-      this.boxes = new Map();
-      this.gates.forEach((gate) =>
-        this.boxes.set(gate.id, this.gateBox(gate.id)),
-      );
+      const groups = this.visibleGroups();
       let right = this.originX + VIEW.logicalColW;
-      this.boxes.forEach((box) => {
-        right = Math.max(right, box.right + box.sdPx);
+      groups.forEach((group) => {
+        group.boxes = new Map();
+        group.gates.forEach((gate) => {
+          const box = this.gateBox(group, gate.id);
+          group.boxes.set(gate.id, box);
+          right = Math.max(right, box.right + box.sdPx);
+        });
       });
       this.width = right + VIEW.padRight;
-      this.height =
-        this.originY + this.rows.length * VIEW.trackH + VIEW.padBottom;
+      this.height = this.layoutGroups() + VIEW.padBottom;
 
-      this.drawTracks();
+      groups.forEach((group) => this.drawGroup(group));
       this.drawAxis();
-      this.hops.forEach((hop) => this.drawHop(hop));
-      this.gates.forEach((gate) => this.drawGate(gate));
-      this.fitLabels();
-      this.applyEmphasis();
+      groups.forEach((group) => {
+        group.hops.forEach((hop) => this.drawHop(group, hop));
+        group.gates.forEach((gate) => this.drawGate(group, gate));
+        this.fitLabels(group);
+        this.applyEmphasis(group);
+      });
+      this.activeGroup?.element?.classList.add("seq-group-active");
 
       this.renderToolbar();
       this.fitToScreen();
@@ -607,23 +670,68 @@
       if (this.selectedId) this.select(this.selectedId, false);
     }
 
-    // A stripe per track, the spine's tinted.
-    drawTracks() {
-      this.rows.forEach((row) => {
+    // A group is its header line and a stripe per track, the spine's tinted.
+    drawGroup(group) {
+      const g = document.createElementNS(SVG_NS, "g");
+      g.classList.add("seq-group");
+      g.dataset.group = group.index;
+      group.element = g;
+
+      const header = document.createElementNS(SVG_NS, "text");
+      header.setAttribute("x", this.originX);
+      header.setAttribute("y", group.headerY + VIEW.groupHeaderH - 6);
+      header.classList.add("seq-group-title");
+      header.style.fontSize = `${VIEW.fontSize}px`;
+      const title = document.createElementNS(SVG_NS, "tspan");
+      title.textContent = group.title;
+      header.appendChild(title);
+      const detail = document.createElementNS(SVG_NS, "tspan");
+      detail.classList.add("seq-group-detail");
+      detail.textContent = ` · ${this.describeGroup(group)}`;
+      header.appendChild(detail);
+      header.style.cursor = "pointer";
+      header.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.selectGroup(group);
+      };
+      const tip = document.createElementNS(SVG_NS, "title");
+      tip.textContent = `${group.title}\nto ${this.graph.ownerOf(group.sinkId)?.path || ""}:${this.graph.events.get(group.sinkId)?.name || ""}`;
+      header.appendChild(tip);
+      g.appendChild(header);
+
+      group.rows.forEach((row) => {
         const rect = document.createElementNS(SVG_NS, "rect");
         rect.setAttribute("x", this.originX - VIEW.padLeft / 2);
-        rect.setAttribute("y", this.originY + row.index * VIEW.trackH);
+        rect.setAttribute("y", group.y0 + row.index * VIEW.trackH);
         rect.setAttribute("width", this.width - this.originX);
         rect.setAttribute("height", VIEW.trackH);
         rect.classList.add("seq-track");
         if (row.spine) rect.classList.add("seq-track-spine");
         else if (row.index % 2) rect.classList.add("seq-track-alt");
-        this.trackLayer.appendChild(rect);
+        g.appendChild(rect);
       });
+      this.trackLayer.appendChild(g);
+    }
+
+    describeGroup(group) {
+      const sink = group.solution.arrivals.get(group.sinkId);
+      const parts = [];
+      if (group.rate) parts.push(group.rate);
+      parts.push(`${group.gates.length} gates`);
+      if (STATES[this.state].timed) {
+        parts.push(`total ${T.formatSummary(sink.total)}`);
+      } else {
+        parts.push(`depth ${sink.rank}`);
+      }
+      if (group.solution.loopEdges.size) {
+        parts.push(`${group.solution.loopEdges.size} loop cut`);
+      }
+      return parts.join(" · ");
     }
 
     // Ticks along the top: milliseconds in a timed state, ranks otherwise, each
-    // with a hairline down through the tracks.
+    // with a hairline down through every group.
     drawAxis() {
       const g = document.createElementNS(SVG_NS, "g");
       g.classList.add("seq-axis");
@@ -688,13 +796,13 @@
     // straight along a shared track, a curve between tracks, dashed when both
     // gates belong to one node. A hop landing after its block started is late:
     // the gate fired from another branch. The topic labels the gap.
-    drawHop(hop) {
-      const fromBox = this.boxes.get(hop.from);
-      const toBox = this.boxes.get(hop.to);
+    drawHop(group, hop) {
+      const fromBox = group.boxes.get(hop.from);
+      const toBox = group.boxes.get(hop.to);
       if (!fromBox || !toBox) return;
       const timed = STATES[this.state].timed;
-      const y1 = this.rowY(hop.from);
-      const y2 = this.rowY(hop.to);
+      const y1 = this.rowY(group, hop.from);
+      const y2 = this.rowY(group, hop.to);
       const x1 = fromBox.right;
       const arrive = timed ? this.xOf(hop.arrival) : toBox.left;
       const x2 = Math.max(arrive, x1 + 4);
@@ -722,7 +830,7 @@
       hop.gap = [x1, x2, same];
 
       const title = document.createElementNS(SVG_NS, "title");
-      title.textContent = this.describeHop(hop);
+      title.textContent = this.describeHop(group, hop);
       path.appendChild(title);
       path.onclick = (e) => {
         if (this.hasDragged) return;
@@ -759,11 +867,11 @@
     // A gate is a block on its track: the wait segment leads into it, the
     // whisker trails its end, and the line above carries the trigger glyph,
     // node, process and the time it completes.
-    drawGate(gate) {
-      const box = this.boxes.get(gate.id);
+    drawGate(group, gate) {
+      const box = group.boxes.get(gate.id);
       if (!box) return;
-      const y = this.rowY(gate.id);
-      const arrival = this.solution.arrivals.get(gate.id);
+      const y = this.rowY(group, gate.id);
+      const arrival = group.solution.arrivals.get(gate.id);
       const instance = this.graph.instances.get(gate.ownerId)?.data || {};
       const guide = instance.vis_guide;
       const defaults = this.isDarkMode()
@@ -772,7 +880,7 @@
       const style = { cornerR: 2 };
 
       const g = document.createElementNS(SVG_NS, "g");
-      g.setAttribute("id", `sq_gate_${gate.id}`);
+      g.setAttribute("id", `sq_gate_${group.index}_${gate.id}`);
       g.classList.add("seq-gate");
       g.dataset.eventId = gate.id;
       g.style.cursor = "pointer";
@@ -873,12 +981,12 @@
       g.appendChild(label);
 
       const title = document.createElementNS(SVG_NS, "title");
-      title.textContent = this.describeGate(gate);
+      title.textContent = this.describeGate(group, gate);
       g.appendChild(title);
       g.onclick = (e) => {
         if (this.hasDragged) return;
         e.stopPropagation();
-        this.select(gate.id);
+        this.select(gate.key);
       };
       this.gateLayer.appendChild(g);
     }
@@ -910,15 +1018,15 @@
     // fits before the block after that; otherwise the node part goes first,
     // then the process name is clipped, then the label is hidden. Hop labels
     // are clipped to their gap the same way.
-    fitLabels() {
-      this.rows.forEach((row) => {
+    fitLabels(group) {
+      group.rows.forEach((row) => {
         const tierEnd = [-Infinity, -Infinity];
         row.gates.forEach((gate, index) => {
           const label = gate.label;
           if (!label) return;
           const startOf = (offset) => {
             const next = row.gates[index + offset];
-            return next ? this.boxes.get(next.id).left : Infinity;
+            return next ? group.boxes.get(next.id).left : Infinity;
           };
           const full = this.labelWidth(label, true);
           const short = this.labelWidth(label, false);
@@ -955,7 +1063,7 @@
           }
         });
       });
-      this.hops.forEach((hop) => {
+      group.hops.forEach((hop) => {
         if (!hop.label || !hop.gap) return;
         const [x1, x2, same] = hop.gap;
         const room = same ? x2 - x1 - 4 : Math.max(x2 - x1, 40);
@@ -978,14 +1086,13 @@
       return `${Number(frequency.toFixed(3))}Hz`;
     }
 
-    // The three chains at full strength, everything else dimmed; an enumerated
-    // chain on show takes the place of all three.
-    applyEmphasis() {
+    // The three chains of a group at full strength, everything else dimmed; an
+    // enumerated chain on show takes the place of all three in its group.
+    applyEmphasis(group) {
+      const highlight = group === this.activeGroup ? this.highlightEdges : null;
       const chainOf = (hop) => {
-        if (this.highlightEdges) {
-          return hop.edges.every((id) => this.highlightEdges.has(id))
-            ? "max"
-            : null;
+        if (highlight) {
+          return hop.edges.every((id) => highlight.has(id)) ? "max" : null;
         }
         if (hop.on.max) return "max";
         if (hop.on.min) return "min";
@@ -993,11 +1100,16 @@
         return null;
       };
       const onGate = new Map();
-      this.hops.forEach((hop) => {
+      group.hops.forEach((hop) => {
         const component = chainOf(hop);
         const element = hop.element;
         if (!element) return;
-        element.classList.remove(...Object.values(CHAIN_CLASS), "seq-dim");
+        element.classList.remove(
+          ...Object.values(CHAIN_CLASS),
+          "seq-dim",
+          "seq-on-mean-too",
+          "seq-mean-diverges",
+        );
         hop.label?.classList.remove(...Object.values(CHAIN_CLASS), "seq-dim");
         if (component) {
           element.classList.add(CHAIN_CLASS[component]);
@@ -1006,7 +1118,7 @@
             "marker-end",
             `url(#arrowhead-highlighted-${CHAIN_COLOR[component]}-depth-0)`,
           );
-          if (hop.on.mean && component !== "mean" && !this.highlightEdges) {
+          if (hop.on.mean && component !== "mean" && !highlight) {
             element.classList.add("seq-on-mean-too");
           }
           onGate.set(hop.to, true);
@@ -1016,16 +1128,16 @@
           hop.label?.classList.add("seq-dim");
           element.setAttribute("marker-end", "url(#arrowhead-depth-0)");
         }
-        if (hop.on.mean && !hop.on.max && !hop.on.min && !this.highlightEdges) {
+        if (hop.on.mean && !hop.on.max && !hop.on.min && !highlight) {
           element.classList.add("seq-mean-diverges");
         }
       });
-      this.gates.forEach((gate) => {
+      group.gates.forEach((gate) => {
         gate.element?.classList.toggle(
           "seq-dim",
           !onGate.get(gate.id) &&
-            gate.id !== this.sourceId &&
-            gate.id !== this.sinkId,
+            gate.id !== group.sourceId &&
+            gate.id !== group.sinkId,
         );
       });
     }
@@ -1049,11 +1161,12 @@
 
     // ── Descriptions ────────────────────────────────────────────────────────────
 
-    describeGate(gate) {
-      const arrival = this.solution.arrivals.get(gate.id);
+    describeGate(group, gate) {
+      const arrival = group.solution.arrivals.get(gate.id);
       const lines = [
         `${this.graph.ownerOf(gate.id)?.path || ""}:${gate.name}`,
         `${gate.type || "type not declared"} · ${this.rateLabel(gate.frequency) || "no clock"}`,
+        `chain ${group.title}`,
       ];
       if (STATES[this.state].timed) {
         lines.push(`cumulative ${T.formatSummary(arrival.total)}`);
@@ -1063,7 +1176,7 @@
       return lines.join("\n");
     }
 
-    describeHop(hop) {
+    describeHop(group, hop) {
       const from = this.graph.events.get(hop.from);
       const to = this.graph.events.get(hop.to);
       const lines = [
@@ -1079,33 +1192,100 @@
 
     // ── Selection / info panel ──────────────────────────────────────────────────
 
+    findHop(id) {
+      for (const group of this.groups) {
+        const hop = group.hops.find((h) => h.id === id);
+        if (hop) return { group, hop };
+      }
+      return null;
+    }
+
+    findGate(key) {
+      for (const group of this.groups) {
+        const gate = group.gates.find((g) => g.key === key);
+        if (gate) return { group, gate };
+      }
+      return null;
+    }
+
+    // Selecting anything in a group makes it the group enumeration acts on.
     select(id, focus = true) {
-      const hop = this.hops.find((h) => h.id === id);
       this.container
         .querySelectorAll(".seq-selected")
         .forEach((el) => el.classList.remove("seq-selected"));
       this.selectedId = id;
-      if (hop) {
-        hop.element?.classList.add("seq-selected");
-        this.updateInfoPanel(this.describeHopPanel(hop), "Hop");
+      const hopHit = this.findHop(id);
+      if (hopHit) {
+        this.setActiveGroup(hopHit.group);
+        hopHit.hop.element?.classList.add("seq-selected");
+        this.updateInfoPanel(
+          this.describeHopPanel(hopHit.group, hopHit.hop),
+          "Hop",
+        );
         return;
       }
-      const gate = this.gates.find((g) => g.id === id);
-      if (!gate) return;
-      gate.element?.classList.add("seq-selected");
-      this.updateInfoPanel(this.describeGatePanel(gate), "Event");
-      if (focus) this.focusElement(gate.element);
+      const gateHit = this.findGate(id);
+      if (!gateHit) return;
+      this.setActiveGroup(gateHit.group);
+      gateHit.gate.element?.classList.add("seq-selected");
+      this.updateInfoPanel(
+        this.describeGatePanel(gateHit.group, gateHit.gate),
+        "Event",
+      );
+      if (focus) this.focusElement(gateHit.gate.element);
+    }
+
+    setActiveGroup(group) {
+      if (this.activeGroup === group) return;
+      const previous = this.activeGroup;
+      this.activeGroup = group;
+      if (this.highlightEdges) {
+        this.highlightEdges = null;
+        this.enumerated = null;
+        if (previous) this.applyEmphasis(previous);
+      }
+      this.container
+        .querySelectorAll(".seq-group-active")
+        .forEach((el) => el.classList.remove("seq-group-active"));
+      group.element?.classList.add("seq-group-active");
+      this.updateCounters();
+    }
+
+    selectGroup(group) {
+      this.setActiveGroup(group);
+      const sink = group.solution.arrivals.get(group.sinkId);
+      const source = this.graph.events.get(group.sourceId);
+      const sinkEvent = this.graph.events.get(group.sinkId);
+      this.updateInfoPanel(
+        {
+          name: group.title,
+          from: `${this.graph.ownerOf(group.sourceId)?.path || ""}:${source.name}`,
+          to: `${this.graph.ownerOf(group.sinkId)?.path || ""}:${sinkEvent.name}`,
+          latency: {
+            state: this.state,
+            rank: sink.rank,
+            rows: this.latencyRows(sink),
+            branches: [],
+          },
+          chain: this.chainReport(
+            this.graph.walk([group.sourceId], "up"),
+            this.graph.walk([group.sourceId], "down"),
+            group.sourceId,
+          ),
+        },
+        "Chain",
+      );
     }
 
     selectNode(ownerId) {
       const instance = this.graph.instances.get(ownerId)?.data || {};
-      this.updateInfoPanel(
-        {
-          ...instance,
-          gates: this.gates.filter((g) => g.ownerId === ownerId).length,
-        },
-        "Node",
+      const gates = new Set();
+      this.groups.forEach((group) =>
+        group.gates.forEach((gate) => {
+          if (gate.ownerId === ownerId) gates.add(gate.id);
+        }),
       );
+      this.updateInfoPanel({ ...instance, gates: gates.size }, "Node");
     }
 
     latencyRows(arrival, comm) {
@@ -1124,8 +1304,8 @@
       return rows;
     }
 
-    describeGatePanel(gate) {
-      const arrival = this.solution.arrivals.get(gate.id);
+    describeGatePanel(group, gate) {
+      const arrival = group.solution.arrivals.get(gate.id);
       const owner = this.graph.ownerOf(gate.id) || {};
       const declared = T.fromRecord(gate.latency, "declared");
       const measured =
@@ -1168,10 +1348,10 @@
       };
     }
 
-    describeHopPanel(hop) {
+    describeHopPanel(group, hop) {
       const from = this.graph.events.get(hop.from);
       const to = this.graph.events.get(hop.to);
-      const arrival = this.solution.arrivals.get(hop.to);
+      const arrival = group.solution.arrivals.get(hop.to);
       return {
         name: `${from.name} → ${to.name}`,
         from: `${this.graph.ownerOf(hop.from)?.path}:${from.name}`,
@@ -1250,20 +1430,25 @@
 
     // ── Chain enumeration ───────────────────────────────────────────────────────
 
+    // Every distinct chain of the active group, ranked by max.
     enumerate() {
-      const { chains, total } = T.enumerateChains(this.solution, this.sinkId, {
-        limit: ENUMERATE_LIMIT,
-      });
+      const group = this.activeGroup;
+      if (!group) return;
+      const { chains, total } = T.enumerateChains(
+        group.solution,
+        group.sinkId,
+        { limit: ENUMERATE_LIMIT },
+      );
       this.enumerated = chains;
       this.updateInfoPanel(
         {
-          name: `chains to ${this.graph.events.get(this.sinkId)?.name}`,
+          name: `chains of ${group.title}`,
           chains: {
             title: `Chains (${chains.length} of ${total})`,
             total,
             items: chains.map((chain, index) => ({
               label: `#${index + 1} ${STATES[this.state].timed ? T.formatSummary(chain.summary) : `${chain.events.size} events`}`,
-              detail: `${[...chain.events].filter((id) => this.gateIds.has(id)).length} gates`,
+              detail: `${[...chain.events].filter((id) => group.gateIds.has(id)).length} gates`,
               onSelect: () => this.showChain(index),
             })),
           },
@@ -1276,14 +1461,14 @@
     showChain(index) {
       const chain = this.enumerated?.[index];
       this.highlightEdges = chain ? new Set(chain.edges) : null;
-      this.applyEmphasis();
+      if (this.activeGroup) this.applyEmphasis(this.activeGroup);
       this.updateCounters();
     }
 
     clearChain() {
       this.highlightEdges = null;
       this.enumerated = null;
-      this.applyEmphasis();
+      if (this.activeGroup) this.applyEmphasis(this.activeGroup);
       this.updateCounters();
     }
 
@@ -1317,7 +1502,7 @@
       if (this.driver === driver) return;
       this.driver = driver;
       this.pxPerMs = null;
-      this.buildView();
+      this.groups.forEach((group) => this.buildView(group));
       this.render();
     }
 
@@ -1395,13 +1580,11 @@
         ),
       );
 
-      bar.appendChild(row(label("From"), this.buildSourcePicker()));
-      bar.appendChild(
-        row(label("To"), this.buildSinkPicker(), this.buildHopLimit()),
-      );
-
       bar.appendChild(
         row(
+          label("Chains"),
+          this.buildTrivialToggle(),
+          this.buildHopLimit(),
           button("enumerate chains", () => this.enumerate()),
           button(
             "three chains",
@@ -1419,92 +1602,27 @@
       this.installDropZone();
     }
 
-    // Sources: named chains first, then every clock root by path.
-    buildSourcePicker() {
-      const select = document.createElement("select");
-      select.className = "logic-select";
-      if (this.namedChains.length) {
-        const group = document.createElement("optgroup");
-        group.label = "named chains";
-        this.namedChains.forEach((chain, index) => {
-          const option = document.createElement("option");
-          option.value = `chain:${index}`;
-          option.textContent = chain.name;
-          option.selected =
-            chain.from === this.sourceId &&
-            (!chain.to || chain.to === this.sinkId);
-          group.appendChild(option);
-        });
-        select.appendChild(group);
-      }
-      const group = document.createElement("optgroup");
-      group.label = `clock roots (${this.graph.clockRootIds.length})`;
-      this.graph.clockRootIds
-        .map((id) => ({
-          id,
-          event: this.graph.events.get(id),
-          path: this.graph.ownerOf(id)?.path || "",
-        }))
-        .sort((a, b) => a.path.localeCompare(b.path))
-        .forEach(({ id, event, path }) => {
-          const option = document.createElement("option");
-          option.value = id;
-          option.textContent = `${path}:${event.name} · ${this.rateLabel(event.frequency) || "—"}`;
-          option.selected =
-            id === this.sourceId && !select.querySelector("option[selected]");
-          group.appendChild(option);
-        });
-      select.appendChild(group);
-      select.onchange = () => {
-        if (select.value.startsWith("chain:")) {
-          const chain = this.namedChains[Number(select.value.slice(6))];
-          this.chooseSource(chain.from);
-          this.sinkId = chain.to;
-        } else {
-          this.chooseSource(select.value);
+    buildTrivialToggle() {
+      const trivial = this.groups.filter((group) => group.trivial).length;
+      const wrap = document.createElement("label");
+      wrap.className = "logic-toggle";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = this.showTrivial;
+      input.disabled = trivial === 0;
+      input.onchange = () => {
+        this.showTrivial = input.checked;
+        this.pxPerMs = null;
+        if (this.activeGroup?.trivial && !this.showTrivial) {
+          this.activeGroup = this.visibleGroups()[0] || this.activeGroup;
         }
-        this.pxPerMs = null;
-        this.solveAndRender();
-      };
-      return select;
-    }
-
-    // Sinks: every event the source reaches that triggers nothing further.
-    buildSinkPicker() {
-      const select = document.createElement("select");
-      select.className = "logic-select";
-      const ids = new Set(this.solution.sinkIds);
-      ids.add(this.sinkId);
-      [...ids]
-        .map((id) => ({
-          id,
-          event: this.graph.events.get(id),
-          path: this.graph.ownerOf(id)?.path || "",
-          arrival: this.solution.arrivals.get(id),
-        }))
-        .sort(
-          (a, b) =>
-            b.arrival.rank - a.arrival.rank || a.path.localeCompare(b.path),
-        )
-        .forEach(({ id, event, path, arrival }) => {
-          const option = document.createElement("option");
-          option.value = id;
-          const tail = STATES[this.state].timed
-            ? T.formatMs(T.at(arrival.total, this.driver), 1)
-            : `rank ${arrival.rank}`;
-          option.textContent = `${path}:${event.name} · ${tail}`;
-          option.selected = id === this.sinkId;
-          select.appendChild(option);
-        });
-      select.onchange = () => {
-        this.sinkId = select.value;
-        this.enumerated = null;
-        this.highlightEdges = null;
-        this.pxPerMs = null;
-        this.buildView();
         this.render();
       };
-      return select;
+      wrap.appendChild(input);
+      wrap.appendChild(
+        document.createTextNode(` single-gate clocks (${trivial})`),
+      );
+      return wrap;
     }
 
     buildHopLimit() {
@@ -1533,28 +1651,29 @@
     }
 
     countersText() {
-      const sink = this.solution.arrivals.get(this.sinkId);
-      const nodes = new Set(this.gates.map((gate) => gate.ownerId)).size;
-      const offChain = this.offChainNodes().size;
+      const groups = this.visibleGroups();
+      const hidden = this.groups.length - groups.length;
+      const nodes = new Set();
+      let gates = 0;
+      let hops = 0;
+      let loops = 0;
+      let unknown = 0;
+      groups.forEach((group) => {
+        group.gates.forEach((gate) => nodes.add(gate.ownerId));
+        gates += group.gates.length;
+        hops += group.hops.length;
+        loops += group.solution.loopEdges.size;
+        unknown += group.solution.unknownGates.length;
+      });
       const parts = [
-        `${nodes} nodes`,
-        `${this.gates.length} gates`,
-        `${this.hops.length} hops`,
-        `${this.rows.length} track${this.rows.length === 1 ? "" : "s"}`,
-        `${offChain} reached node${offChain === 1 ? "" : "s"} off the chain`,
-        `${this.solution.loopEdges.size} loop edge${this.solution.loopEdges.size === 1 ? "" : "s"} cut`,
-        `${this.solution.reach.size} events reached`,
+        `${groups.length} chain${groups.length === 1 ? "" : "s"}${hidden ? ` (${hidden} single-gate hidden)` : ""}`,
+        `${nodes.size} nodes`,
+        `${gates} gates`,
+        `${hops} hops`,
+        `${loops} loop edge${loops === 1 ? "" : "s"} cut`,
       ];
-      if (this.solution.unknownGates.length) {
-        parts.push(
-          `${this.solution.unknownGates.length} gates without a type (folded as or)`,
-        );
-      }
-      if (STATES[this.state].timed && sink) {
-        parts.push(`total ${T.formatSummary(sink.total)}`);
-      } else if (sink) {
-        parts.push(`depth ${sink.rank}`);
-      }
+      if (unknown) parts.push(`${unknown} gates without a type (folded as or)`);
+      if (this.activeGroup) parts.push(`active: ${this.activeGroup.title}`);
       if (this.highlightEdges) parts.push("showing one enumerated chain");
       if (this.measured) parts.push(`measurement: ${this.measured.label}`);
       return parts.join(" · ");

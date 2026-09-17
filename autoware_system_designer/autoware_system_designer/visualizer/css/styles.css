@@ -949,6 +949,23 @@ svg.lod-rate .logic-vertex-sub {
   outline-offset: -4px;
 }
 
+/* Groups: one timeline per chain under its title; the active group's title
+   is emphasised. */
+.seq-group-title {
+  font-family: "Segoe UI", sans-serif;
+  font-weight: 600;
+  fill: var(--text-primary);
+}
+
+.seq-group-detail {
+  font-weight: 400;
+  fill: var(--text-muted);
+}
+
+.seq-group-active .seq-group-title {
+  fill: var(--highlight);
+}
+
 /* Tracks: one stripe per row of blocks, the spine tinted. */
 .seq-track {
   fill: var(--text-muted);
