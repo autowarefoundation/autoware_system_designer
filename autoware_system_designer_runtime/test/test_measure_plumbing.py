@@ -54,7 +54,9 @@ def test_node_spec_env_reaches_spawn(monkeypatch, tmp_path):
 
     async def run():
         spec = NodeSpec(name="/n", cmd=["true"], env={"ASD_TRACE_DIR": "/t", "LD_PRELOAD": "/lib.so"})
-        actor = RegularNodeActor(spec, ActorConfig(output_dir=tmp_path), asyncio.Queue(), asyncio.Queue(), asyncio.Event())
+        actor = RegularNodeActor(
+            spec, ActorConfig(output_dir=tmp_path), asyncio.Queue(), asyncio.Queue(), asyncio.Event()
+        )
         await actor._handle_pending()
 
     asyncio.run(run())
@@ -72,7 +74,13 @@ def test_default_env_is_inherited(monkeypatch, tmp_path):
     monkeypatch.setattr(regular_actor, "spawn_pgrp", fake_spawn)
 
     async def run():
-        actor = RegularNodeActor(NodeSpec(name="/n", cmd=["true"]), ActorConfig(output_dir=tmp_path), asyncio.Queue(), asyncio.Queue(), asyncio.Event())
+        actor = RegularNodeActor(
+            NodeSpec(name="/n", cmd=["true"]),
+            ActorConfig(output_dir=tmp_path),
+            asyncio.Queue(),
+            asyncio.Queue(),
+            asyncio.Event(),
+        )
         await actor._handle_pending()
 
     asyncio.run(run())
@@ -148,8 +156,14 @@ def test_analyze_traces_writes_file_and_report(tmp_path):
     report_out = report_path_for(latency_out)
 
     data = analyze_traces(
-        traces, graph, window_start_ns=start, window_end_ns=end, mode="Test", probe=True,
-        latency_out=latency_out, report_out=report_out,
+        traces,
+        graph,
+        window_start_ns=start,
+        window_end_ns=end,
+        mode="Test",
+        probe=True,
+        latency_out=latency_out,
+        report_out=report_out,
     )
 
     written = json.loads(latency_out.read_text())
@@ -161,7 +175,13 @@ def test_analyze_traces_writes_file_and_report(tmp_path):
     a_out = by_path["/a"]["outputs"][0]
     assert a_out["topic"] == "/x" and a_out["trigger"]["kind"] == "timer" and a_out["exec"]["mean_ms"] == 1.0
     assert by_path["/a"]["timers"] == [{"period_ms": 20.0, "count": 50, "rate_hz": 50.0}]
-    assert by_path["/d"]["inputs"][0] == {"topic": "/p", "count": 0, "rate_hz": 0.0, "intra_process": True, "duplicate_count": 20}
+    assert by_path["/d"]["inputs"][0] == {
+        "topic": "/p",
+        "count": 0,
+        "rate_hz": 0.0,
+        "intra_process": True,
+        "duplicate_count": 20,
+    }
     links = {(l["topic"], l.get("publisher"), l["subscriber"]): l for l in written["links"]}
     assert links[("/x", "/a", "/b")]["mean_ms"] == 0.53
     assert links[("/p", "/c", "/d")] == {"topic": "/p", "publisher": "/c", "subscriber": "/d", "intra_process": True}

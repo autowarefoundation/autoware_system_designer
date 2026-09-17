@@ -60,7 +60,9 @@ def test_talker_listener_are_traced_and_linked(tmp_path):
     env = tracer_env(_tracer(), trace_dir)
     env["ROS_DOMAIN_ID"] = str(random.randint(150, 230))
     procs = [
-        subprocess.Popen([str(_demo(name))], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        subprocess.Popen(
+            [str(_demo(name))], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+        )
         for name in ("talker", "listener")
     ]
     t_start = time.time_ns()
@@ -80,8 +82,16 @@ def test_talker_listener_are_traced_and_linked(tmp_path):
     assert len(trace_set.processes) == 2
     design = system(
         [
-            node("/talker", out_ports=[out_port("chatter", "/chatter", "t.out", ["t.tick"])], events=[process("tick", "t.tick", "periodic", [], ["t.out"], 1.0)]),
-            node("/listener", in_ports=[in_port("chatter", "/chatter", "l.in")], events=[process("hear", "l.hear", "on_input", ["l.in"], [])]),
+            node(
+                "/talker",
+                out_ports=[out_port("chatter", "/chatter", "t.out", ["t.tick"])],
+                events=[process("tick", "t.tick", "periodic", [], ["t.out"], 1.0)],
+            ),
+            node(
+                "/listener",
+                in_ports=[in_port("chatter", "/chatter", "l.in")],
+                events=[process("hear", "l.hear", "on_input", ["l.in"], [])],
+            ),
         ]
     )
     graph = NodeGraph.from_system_structure(design)

@@ -302,7 +302,9 @@ def _match_take(take: TakeEvent, index: _PublishIndex, gid_owner: dict[str, Node
     take.dup = _is_duplicate(take.node, take.publisher, same_pid, graph, take.topic)
 
 
-def _is_duplicate(take_node: NodeObs, publisher: Optional[NodeObs], same_pid: bool, graph: NodeGraph, topic: str) -> bool:
+def _is_duplicate(
+    take_node: NodeObs, publisher: Optional[NodeObs], same_pid: bool, graph: NodeGraph, topic: str
+) -> bool:
     """An inter-process copy of a message the node already received intra-process."""
     if publisher is None or not same_pid:
         return False

@@ -126,7 +126,9 @@ def diff_output(
         observed_label += f" @ {observed_rate_hz:.1f} Hz"
 
     if observed.kind == "unknown":
-        return DiffRow("", declared_label, observed_label, STATUS_UNKNOWN, "trigger not visible on the publishing thread")
+        return DiffRow(
+            "", declared_label, observed_label, STATUS_UNKNOWN, "trigger not visible on the publishing thread"
+        )
 
     if declared.kind == "none":
         return DiffRow("", declared_label, observed_label, STATUS_UNDECLARED, "no process event produces this output")
@@ -145,7 +147,9 @@ def diff_output(
         if declared.upstream_rate_hz:
             agree = _rates_agree(declared.upstream_rate_hz, 1000.0 / observed.period_ms if observed.period_ms else None)
             if agree is False:
-                return DiffRow("", declared_label, observed_label, STATUS_RATE_MISMATCH, "clock reached through a process")
+                return DiffRow(
+                    "", declared_label, observed_label, STATUS_RATE_MISMATCH, "clock reached through a process"
+                )
             return DiffRow("", declared_label, observed_label, STATUS_MATCH, "clock reached through a process")
         return DiffRow("", declared_label, observed_label, STATUS_MISMATCH, "declared input-driven, fired by a timer")
     if observed.topic in declared.topics:

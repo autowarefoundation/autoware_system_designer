@@ -108,7 +108,9 @@ def _round(value: Optional[float], digits: int = 4) -> Optional[float]:
 
 def _link_records(graph: NodeGraph, analysis: Analysis) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for (topic, publisher, subscriber), values in sorted(analysis.links.items(), key=lambda item: (item[0][0], item[0][1] or "", item[0][2])):
+    for (topic, publisher, subscriber), values in sorted(
+        analysis.links.items(), key=lambda item: (item[0][0], item[0][1] or "", item[0][2])
+    ):
         summary = summarize(values)
         if summary is None:
             continue
@@ -261,18 +263,27 @@ def build_report(
                 approx.append(f"| {node.path} | {topic} | {unknown}/{len(pubs)} publishes with no visible trigger |")
     lines += ["## Approximations", ""]
     lines.append("- intra-process hops are folded into the downstream node's process time and carry no transport")
-    lines.append("- a publish from a thread that never took or fired has an unknown trigger; its response is still computed")
+    lines.append(
+        "- a publish from a thread that never took or fired has an unknown trigger; its response is still computed"
+    )
     if approx:
         lines += ["", "| node | output | note |", "| --- | --- | --- |", *approx]
     lines.append("")
 
     if chains:
-        lines += ["## Chains", "", "| from | to | hops | count | mean ms | max ms |", "| --- | --- | --- | --- | --- | --- |"]
+        lines += [
+            "## Chains",
+            "",
+            "| from | to | hops | count | mean ms | max ms |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
         for chain in chains:
             if not chain.terminal:
                 continue
             s = chain.summary
-            lines.append(f"| {chain.source} | {chain.target} | {chain.hops} | {s.count} | {_fmt(s.mean_ms)} | {_fmt(s.max_ms)} |")
+            lines.append(
+                f"| {chain.source} | {chain.target} | {chain.hops} | {s.count} | {_fmt(s.mean_ms)} | {_fmt(s.max_ms)} |"
+            )
         lines.append("")
     return "\n".join(lines)
 

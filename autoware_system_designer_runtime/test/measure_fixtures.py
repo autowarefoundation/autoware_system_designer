@@ -48,7 +48,9 @@ class TraceBuilder:
         self.names.append(f"{t}\ttimer\t{handle:x}\t{period_ns}")
         return self
 
-    def take(self, t: int, tid: int, handle: int, source_ts: int, gid: str, flags: int = 0, seq: int = 0) -> "TraceBuilder":
+    def take(
+        self, t: int, tid: int, handle: int, source_ts: int, gid: str, flags: int = 0, seq: int = 0
+    ) -> "TraceBuilder":
         self.records.append(RECORD.pack(1, flags, 0, tid, t, source_ts, handle, bytes.fromhex(gid), seq))
         return self
 
@@ -64,7 +66,9 @@ class TraceBuilder:
         directory.mkdir(parents=True, exist_ok=True)
         capacity = capacity if capacity is not None else len(self.records) + unfinished
         count = len(self.records) + unfinished
-        header = HEADER.pack(b"ASDTRACE", 1, RECORD.size, self.pid, HEADER.size, capacity, count, self.start_ns, bytes(16))
+        header = HEADER.pack(
+            b"ASDTRACE", 1, RECORD.size, self.pid, HEADER.size, capacity, count, self.start_ns, bytes(16)
+        )
         body = b"".join(self.records) + bytes(RECORD.size) * unfinished
         path = directory / f"{self.pid}.trace"
         path.write_bytes(header + body)
@@ -84,7 +88,13 @@ def out_port(name: str, topic: str, event_id: str, producers: list[str], msg: st
         "name": name,
         "msg_type": msg,
         "topic": topic.strip("/").split("/"),
-        "event": {"name": f"output_{name}", "type": "to_output", "unique_id": event_id, "trigger_ids": producers, "action_ids": []},
+        "event": {
+            "name": f"output_{name}",
+            "type": "to_output",
+            "unique_id": event_id,
+            "trigger_ids": producers,
+            "action_ids": [],
+        },
     }
 
 
@@ -93,7 +103,13 @@ def in_port(name: str, topic: str, event_id: str, msg: str = "std_msgs/msg/Strin
         "name": name,
         "msg_type": msg,
         "topic": topic.strip("/").split("/"),
-        "event": {"name": f"input_{name}", "type": "on_input", "unique_id": event_id, "trigger_ids": [], "action_ids": []},
+        "event": {
+            "name": f"input_{name}",
+            "type": "on_input",
+            "unique_id": event_id,
+            "trigger_ids": [],
+            "action_ids": [],
+        },
     }
 
 
@@ -136,7 +152,13 @@ def system(children: list[dict], *, mode="Test", source_file=None) -> dict:
     return {
         "schema_version": "1.1",
         "metadata": {"system_name": "Test", "mode": mode},
-        "data": {"name": "root", "entity_type": "system", "path": "/", "source_file": source_file, "children": children},
+        "data": {
+            "name": "root",
+            "entity_type": "system",
+            "path": "/",
+            "source_file": source_file,
+            "children": children,
+        },
     }
 
 
@@ -148,7 +170,11 @@ def chain_design() -> dict:
     """
     return system(
         [
-            node("/a", out_ports=[out_port("x", "/x", "a.out", ["a.tick"])], events=[process("tick", "a.tick", "periodic", [], ["a.out"], 50.0)]),
+            node(
+                "/a",
+                out_ports=[out_port("x", "/x", "a.out", ["a.tick"])],
+                events=[process("tick", "a.tick", "periodic", [], ["a.out"], 50.0)],
+            ),
             node(
                 "/b",
                 in_ports=[in_port("x", "/x", "b.in")],
@@ -204,11 +230,7 @@ def write_chain_traces(directory: Path, seconds: int = 1) -> tuple[int, int]:
     b = TraceBuilder(200).sub(0xB1, "/b", "/x").pub(0xB2, "/b", "/y", GB)
     e = TraceBuilder(300).sub(0xE1, "/e", "/x").timer(0xE2, 10 * MS).pub(0xE3, "/e", "/r", GE)
     cc = (
-        TraceBuilder(400)
-        .timer(0xC1, 50 * MS)
-        .pub(0xC2, "/c", "/p", GC)
-        .sub(0xD1, "/d", "/p")
-        .pub(0xD2, "/d", "/q", GD)
+        TraceBuilder(400).timer(0xC1, 50 * MS).pub(0xC2, "/c", "/p", GC).sub(0xD1, "/d", "/p").pub(0xD2, "/d", "/q", GD)
     )
     f = TraceBuilder(500).pub(0xF1, "/f", "/w", GF)
 

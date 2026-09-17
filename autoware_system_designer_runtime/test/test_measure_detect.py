@@ -92,7 +92,14 @@ def test_diff_node_reports_inputs_that_feed_nothing_and_never_taken(tmp_path):
     design = chain_design()
     # /b declares a second trigger topic it never takes, and /e's input feeds no process.
     b = next(c for c in design["data"]["children"] if c["path"] == "/b")
-    b["in_ports"].append({"name": "z", "msg_type": "std_msgs/msg/String", "topic": ["z"], "event": {"unique_id": "b.z", "type": "on_input", "trigger_ids": [], "action_ids": []}})
+    b["in_ports"].append(
+        {
+            "name": "z",
+            "msg_type": "std_msgs/msg/String",
+            "topic": ["z"],
+            "event": {"unique_id": "b.z", "type": "on_input", "trigger_ids": [], "action_ids": []},
+        }
+    )
     b["events"][0]["trigger_ids"].append("b.z")
     graph = NodeGraph.from_system_structure(design)
     analysis = analyze(read_trace_dir(tmp_path), graph, start, end)

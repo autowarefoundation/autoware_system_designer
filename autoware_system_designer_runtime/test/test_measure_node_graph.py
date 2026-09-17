@@ -48,7 +48,13 @@ def test_probe_topics_are_those_read_only_intra_process():
     design = system(
         [
             node("/cc", state="node_container"),
-            node("/c", out_ports=[out_port("p", "/p", "c.out", []), out_port("lonely", "/lonely", "c.out2", [])], state="composable_node", container="/cc", intra=True),
+            node(
+                "/c",
+                out_ports=[out_port("p", "/p", "c.out", []), out_port("lonely", "/lonely", "c.out2", [])],
+                state="composable_node",
+                container="/cc",
+                intra=True,
+            ),
             node("/d", in_ports=[in_port("p", "/p", "d.in")], state="composable_node", container="/cc", intra=True),
             node("/g", in_ports=[in_port("p", "/p", "g.in")]),
             node("/h", out_ports=[out_port("z", "/z", "h.out", [])]),

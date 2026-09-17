@@ -72,9 +72,7 @@ def locate_tracer() -> Path:
     try:
         prefix = Path(get_package_prefix(TRACER_PACKAGE))
     except PackageNotFoundError as exc:
-        raise FileNotFoundError(
-            f"package {TRACER_PACKAGE} is not installed; build it or set {TRACER_LIB_ENV}"
-        ) from exc
+        raise FileNotFoundError(f"package {TRACER_PACKAGE} is not installed; build it or set {TRACER_LIB_ENV}") from exc
     path = prefix / "lib" / f"lib{TRACER_PACKAGE}.so"
     if not path.is_file():
         raise FileNotFoundError(f"tracer library missing at {path}")
