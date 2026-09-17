@@ -11,11 +11,11 @@
   const SVG_NS = ElkCanvas.SVG_NS;
   const T = window.TimingModel;
 
-  // What the numbers are: none, the design's rates and declared latencies, or
-  // a loaded measurement with the declared values filling the gaps.
+  // What the numbers are: none, the design's rates alone, or a loaded
+  // measurement with the rates filling the gaps.
   const STATES = {
     logical: { button: "logical", timed: false },
-    declared: { button: "declared", timed: true },
+    rates: { button: "rates", timed: true },
     measured: { button: "measured", timed: true },
   };
 
@@ -81,7 +81,7 @@
     "≈ marks a mean folded at an and/or gate: one branch's number, not the set's",
     "? marks a spread that skipped hops with no sd",
     "a periodic gate needs no measurement: its sampling delay is uniform over one period",
-    "hatched blocks are declared, plain blocks measured",
+    "a faint block is a process run no measurement covers",
   ];
 
   class SequenceDiagramModule extends ElkCanvas {
@@ -187,7 +187,7 @@
       if (this.state === "measured" && this.measured) {
         return T.measuredCosts(this.graph, this.measured.costs(this.graph));
       }
-      return T.declaredCosts(this.graph);
+      return T.designCosts(this.graph);
     }
 
     // One group per named chain, then one per clock root a named chain does
@@ -914,10 +914,8 @@
         this.themed(guide, "color", defaults.stroke),
       );
       block.classList.add("seq-bar");
-      if (arrival.exec.source === "declared")
-        block.classList.add("seq-declared");
-      if (arrival.exec.source === "none" && STATES[this.state].timed) {
-        block.classList.add("seq-unknown");
+      if (arrival.exec.source === "unmeasured" && STATES[this.state].timed) {
+        block.classList.add("seq-unmeasured");
       }
       g.appendChild(block);
 
@@ -1307,11 +1305,6 @@
     describeGatePanel(group, gate) {
       const arrival = group.solution.arrivals.get(gate.id);
       const owner = this.graph.ownerOf(gate.id) || {};
-      const declared = T.fromRecord(gate.latency, "declared");
-      const measured =
-        this.state === "measured" && arrival.exec.source === "measured"
-          ? arrival.exec
-          : null;
       const upstream = this.graph.walk([gate.id], "up");
       const downstream = this.graph.walk([gate.id], "down");
       return {
@@ -1339,9 +1332,6 @@
               .filter(([, key]) => key === branch.key)
               .map(([component]) => component),
           })),
-          declared: declared ? T.formatSummary(declared) : null,
-          measured: measured ? T.formatSummary(measured) : null,
-          delta: T.compare(declared, measured),
           unknownType: gate.kind === "process" && !gate.type,
         },
         chain: this.chainReport(upstream, downstream, gate.id),

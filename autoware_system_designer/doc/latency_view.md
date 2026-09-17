@@ -15,11 +15,11 @@ The sequence diagram of the deployment overview draws every event chain of the s
 
 ## States
 
-| State    | x axis                               | Numbers                                                                                                 |
-| -------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| logical  | rank (process gates from the source) | none; the default while nothing is measured                                                             |
-| declared | milliseconds                         | a periodic gate's sampling delay from its rate, plus any `latency` a process declares                   |
-| measured | milliseconds                         | a loaded measurement file; a hop without a sample falls back to its declared value and is drawn hatched |
+| State    | x axis                               | Numbers                                                                                                      |
+| -------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| logical  | rank (process gates from the source) | none; the default while nothing is measured                                                                  |
+| rates    | milliseconds                         | a periodic gate's sampling delay from its rate; every process run is an unmeasured placeholder of zero width |
+| measured | milliseconds                         | a loaded measurement file; a run without a sample stays the placeholder and is drawn faint                   |
 
 The axis is driven by one component of every summary: `min`, `mean`, `max`, or `mean + kσ` (k = 1, 2, 3). `time +` / `time −` zoom the millisecond scale.
 
@@ -31,6 +31,7 @@ Every cost and every arrival is a distribution summary `{ min, mean, max, sd, co
 - **`and` gate**: arrival folds as componentwise `max` over its branches.
 - **`or` gate**: arrival folds as componentwise `min`. A gate with no declared type folds as `or` and is reported.
 - **`periodic` gate (f Hz)**: needs no measurement; its sampling delay is uniform on `[0, 1/f]`: `min 0`, `mean 1/2f`, `max 1/f`, `sd 1/(f·√12)`.
+- **Execution and transport**: measured quantities only. The design declares no latency; a process run or a link without a sample costs zero and is marked `unmeasured`, so a chain total is a lower bound until the measurement covers it.
 - **`once` gate**: initialization, excluded from steady-state chains.
 - **Three chains from one solve**: each fold records which branch supplied each component, so walking back from the sink yields the minimum, mean and maximum chain. They often differ.
 
@@ -40,29 +41,9 @@ What the marks in the panel mean:
 - `?` after a spread: hops without an `sd` were skipped; the chain's `sd` is an estimate, never a bound. `max` remains the bound.
 - At an `or` gate the folded number describes only the fastest branch; every branch is listed with its own summary, and **enumerate chains** expands the `or` choices into separate chains (every `and` branch kept), ranked by `max` and capped.
 
-## Declared latency
-
-A process may declare its execution summary in the node design (format 0.5.0):
-
-```yaml
-processes:
-  - name: detect
-    trigger_conditions:
-      - on_input: image
-    outcomes:
-      - to_output: objects
-    latency:
-      min_ms: 2.0
-      mean_ms: 4.5
-      max_ms: 12.0
-      sd_ms: 1.5
-```
-
-`min_ms` and `max_ms` are required. The shape is the one a measurement carries, so when both exist the panel shows the delta (`measured.max − declared.max`) and flags a measured `max` above the declared one, or a spread that grew past twice the declared `sd`. There are no deadlines: a chain reports its minimum, mean and maximum; it asserts nothing.
-
 ## Named chains
 
-A system may name chains; they head the list of groups and fix the sink:
+A system may name chains (format 0.5.0); they head the list of groups and fix the sink:
 
 ```yaml
 event_chains:
@@ -113,7 +94,7 @@ A run is loaded from `data/<mode>_latency.json` in the web bundle, or by droppin
 - `sd_ms` and `count` are optional. A record without `sd_ms` is drawn without a whisker and excluded from the chain's `sd`, with the skipped hops counted.
 - Records are keyed by names, never by `unique_id`: ids are name hashes and change whenever the design is edited.
 
-The toolbar reports how many records of the file matched the design.
+The toolbar reports how many records of the file matched the design. There are no deadlines: a chain reports its minimum, mean and maximum; it asserts nothing.
 
 ## CARET
 

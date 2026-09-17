@@ -19,8 +19,8 @@ const T = require(path.join(JS_DIR, "timing_model.js"));
 // ── Graph builder ───────────────────────────────────────────────────────────
 
 // nodes: [{ name, inputs: [name], outputs: [name], processes: [{ name, type,
-// frequency, on: [input names], to: [output names], after: [process names],
-// latency }] }]; links: [[nodeA, output, nodeB, input]].
+// frequency, on: [input names], to: [output names], after: [process names] }]
+// }]; links: [[nodeA, output, nodeB, input]].
 function build({ nodes, links = [] }) {
   const events = new Map();
   const event = (id, name, type) => {
@@ -59,7 +59,6 @@ function build({ nodes, links = [] }) {
     const processes = (node.processes || []).map((p) => {
       const e = event(`${node.name}.${p.name}`, p.name, p.type ?? null);
       if (p.frequency !== undefined) e.frequency = p.frequency;
-      if (p.latency) e.latency = p.latency;
       return e;
     });
     (node.processes || []).forEach((p, i) => {
@@ -110,6 +109,15 @@ const lat = (min, mean, max, sd) => ({
   max_ms: max,
   sd_ms: sd,
 });
+
+// A measurement answering exec by event id from records { id: lat }; no comm.
+const measuredFrom = (records) => ({
+  exec: (event) =>
+    records[event.id] ? T.fromRecord(records[event.id], "measured") : null,
+  comm: () => null,
+});
+const measured = (graph, records) =>
+  T.measuredCosts(graph, measuredFrom(records));
 
 // ── Summaries ───────────────────────────────────────────────────────────────
 
@@ -168,15 +176,6 @@ test("axis driver: components and mean + k sigma", () => {
   assert.equal(T.at(s, "sigma2"), 14);
 });
 
-test("compare flags a max overrun and a grown spread", () => {
-  const declared = T.summary({ min: 1, mean: 2, max: 5, sd: 1 });
-  const measured = T.summary({ min: 1, mean: 3, max: 8, sd: 3 });
-  const delta = T.compare(declared, measured);
-  assert.equal(delta.deltaMax, 3);
-  assert.equal(delta.maxExceeded, true);
-  assert.equal(delta.sdGrew, true);
-});
-
 // ── Solver ──────────────────────────────────────────────────────────────────
 
 const chainGraph = () =>
@@ -199,17 +198,30 @@ const chainGraph = () =>
             type: "on_input",
             on: ["cloud"],
             to: ["clean"],
-            latency: lat(1, 2, 4, 0.5),
           },
         ],
       },
     ],
     links: [["sensor", "cloud", "filter", "cloud"]],
   });
+const chainCosts = (graph) =>
+  measured(graph, { "filter.run": lat(1, 2, 4, 0.5) });
 
-test("a two-hop chain: sampling delay plus declared execution", () => {
+test("the design alone times only the clocks: a run is an unmeasured placeholder", () => {
   const graph = chainGraph();
-  const solver = new T.ChainSolver(graph, T.declaredCosts(graph));
+  const solution = new T.ChainSolver(graph, T.designCosts(graph)).solve(
+    "sensor.scan",
+  );
+  const run = solution.arrivals.get("filter.run");
+  assert.equal(run.exec.source, "unmeasured");
+  assert.equal(run.exec.max, 0);
+  assert.equal(solution.arrivals.get("sensor.scan").wait.source, "derived");
+  near(solution.arrivals.get("filter.out.clean").total.max, 100);
+});
+
+test("a two-hop chain: sampling delay plus measured execution", () => {
+  const graph = chainGraph();
+  const solver = new T.ChainSolver(graph, chainCosts(graph));
   const solution = solver.solve("sensor.scan");
   const sink = solution.arrivals.get("filter.out.clean");
   near(sink.total.min, 1);
@@ -229,7 +241,7 @@ test("a two-hop chain: sampling delay plus declared execution", () => {
   ]);
   assert.equal(chain.edges.length, 4);
   const hops = T.hopsOf(solution, chain);
-  assert.equal(hops[3].exec.source, "declared");
+  assert.equal(hops[3].exec.source, "measured");
   assert.equal(hops[0].wait.source, "derived");
 });
 
@@ -264,7 +276,6 @@ const forkGraph = (type) =>
             type: "on_input",
             on: ["tick"],
             to: ["out"],
-            latency: lat(1, 2, 3, 0.1),
           },
         ],
       },
@@ -278,7 +289,6 @@ const forkGraph = (type) =>
             type: "on_input",
             on: ["tick"],
             to: ["out"],
-            latency: lat(0.5, 20, 40, 5),
           },
         ],
       },
@@ -296,10 +306,15 @@ const forkGraph = (type) =>
       ["slow", "out", "merge", "b"],
     ],
   });
+const forkCosts = (graph) =>
+  measured(graph, {
+    "fast.run": lat(1, 2, 3, 0.1),
+    "slow.run": lat(0.5, 20, 40, 5),
+  });
 
 test("an and gate waits for the slowest branch, componentwise", () => {
   const graph = forkGraph("and");
-  const solution = new T.ChainSolver(graph, T.declaredCosts(graph)).solve(
+  const solution = new T.ChainSolver(graph, forkCosts(graph)).solve(
     "clock.tick",
   );
   const join = solution.arrivals.get("merge.join");
@@ -317,7 +332,7 @@ test("an and gate waits for the slowest branch, componentwise", () => {
 
 test("an or gate fires on the earliest branch", () => {
   const graph = forkGraph("or");
-  const solution = new T.ChainSolver(graph, T.declaredCosts(graph)).solve(
+  const solution = new T.ChainSolver(graph, forkCosts(graph)).solve(
     "clock.tick",
   );
   const join = solution.arrivals.get("merge.join");
@@ -330,7 +345,7 @@ test("an or gate fires on the earliest branch", () => {
 
 test("enumerate: one chain per or branch, ranked by max", () => {
   const graph = forkGraph("or");
-  const solution = new T.ChainSolver(graph, T.declaredCosts(graph)).solve(
+  const solution = new T.ChainSolver(graph, forkCosts(graph)).solve(
     "clock.tick",
   );
   const { chains, total } = T.enumerateChains(solution, "merge.out.out");
@@ -343,7 +358,7 @@ test("enumerate: one chain per or branch, ranked by max", () => {
 
 test("enumerate: an and gate keeps every branch in one chain", () => {
   const graph = forkGraph("and");
-  const solution = new T.ChainSolver(graph, T.declaredCosts(graph)).solve(
+  const solution = new T.ChainSolver(graph, forkCosts(graph)).solve(
     "clock.tick",
   );
   const { chains, total } = T.enumerateChains(solution, "merge.out.out");
@@ -355,7 +370,7 @@ test("enumerate: an and gate keeps every branch in one chain", () => {
 
 test("enumerate caps the list and reports the true count", () => {
   const graph = forkGraph("or");
-  const solution = new T.ChainSolver(graph, T.declaredCosts(graph)).solve(
+  const solution = new T.ChainSolver(graph, forkCosts(graph)).solve(
     "clock.tick",
   );
   const { chains, total } = T.enumerateChains(solution, "merge.out.out", {
@@ -396,7 +411,7 @@ test("a cycle is cut once and the arrival stays finite", () => {
       ["vehicle", "state", "planner", "state"],
     ],
   });
-  const solution = new T.ChainSolver(graph, T.declaredCosts(graph)).solve(
+  const solution = new T.ChainSolver(graph, T.designCosts(graph)).solve(
     "planner.plan",
   );
   assert.equal(solution.loopEdges.size, 1);
@@ -449,9 +464,9 @@ test("a gate without a declared type is folded as or and reported", () => {
   assert.equal(solution.arrivals.get("merge.join").fold, "min");
 });
 
-test("measured costs fall back to declared per hop and name their source", () => {
+test("measured costs fall back to the design per hop and name their source", () => {
   const graph = forkGraph("and");
-  const measured = {
+  const partial = {
     exec: (event) =>
       event.id === "fast.run"
         ? T.fromRecord({ ...lat(2, 3, 9, 1), count: 500 }, "measured")
@@ -463,11 +478,11 @@ test("measured costs fall back to declared per hop and name their source", () =>
   };
   const solution = new T.ChainSolver(
     graph,
-    T.measuredCosts(graph, measured),
+    T.measuredCosts(graph, partial),
   ).solve("clock.tick");
   assert.equal(solution.arrivals.get("fast.run").exec.source, "measured");
   assert.equal(solution.arrivals.get("fast.run").exec.count, 500);
-  assert.equal(solution.arrivals.get("slow.run").exec.source, "declared");
+  assert.equal(solution.arrivals.get("slow.run").exec.source, "unmeasured");
   const [intoB] = solution.arrivals.get("merge.in.b").branches;
   assert.equal(intoB.comm.source, "measured");
   const [intoA] = solution.arrivals.get("merge.in.a").branches;

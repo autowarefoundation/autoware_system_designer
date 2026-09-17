@@ -1084,14 +1084,8 @@ path.seq-selected {
   stroke: var(--text-secondary);
 }
 
-/* A declared block is an estimate, drawn hatched; a block with no time at all
-   is an outline. */
-.seq-declared {
-  fill-opacity: 0.55;
-  stroke-dasharray: 2 1.5;
-}
-
-.seq-unknown {
+/* A process run no measurement covers is a faint placeholder. */
+.seq-unmeasured {
   fill-opacity: 0.15;
 }
 

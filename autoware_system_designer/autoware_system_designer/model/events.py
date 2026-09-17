@@ -14,7 +14,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import ClassVar, Dict, List, Optional
+from typing import ClassVar, List, Optional
 
 from autoware_system_designer.common.naming import generate_unique_id
 
@@ -50,8 +50,6 @@ class Event:
     warn_rate: Optional[float] = None
     error_rate: Optional[float] = None
     timeout: Optional[float] = None
-    # design-time execution summary of a process: min_ms / mean_ms / max_ms / sd_ms
-    latency: Optional[Dict[str, float]] = None
     is_set: bool = field(default=False, metadata={"exclude": True})
 
     __serde_computed__: ClassVar[tuple] = (("unique_id", "unique_id"),)
@@ -70,7 +68,6 @@ class Event:
         self.warn_rate = None
         self.error_rate = None
         self.timeout = None
-        self.latency = None
         self.is_set = False
 
     @property
@@ -96,28 +93,6 @@ class Event:
             raise ValueError(f"Invalid event type: {type_str}")
         self.type = type_str
         logger.debug(f"Event '{self.unique_id}' set type '{type_str}'")
-
-    _LATENCY_KEYS: ClassVar[tuple] = ("min_ms", "mean_ms", "max_ms", "sd_ms")
-
-    def set_latency(self, config):
-        """Declared execution summary; the same shape a measurement carries, so the two compare directly."""
-        if config is None:
-            self.latency = None
-            return
-        if not isinstance(config, dict):
-            raise ValueError(f"'latency' must be a mapping, got {config!r}")
-        unknown = set(config) - set(self._LATENCY_KEYS)
-        if unknown:
-            raise ValueError(f"'latency' has unknown keys: {sorted(unknown)}")
-        summary = {key: self._as_rate(f"latency.{key}", value) for key, value in config.items()}
-        for key in ("min_ms", "max_ms"):
-            if key not in summary:
-                raise ValueError(f"'latency' lacks '{key}'")
-        if any(value < 0 for value in summary.values()):
-            raise ValueError("'latency' values must not be negative")
-        if summary["min_ms"] > summary["max_ms"]:
-            raise ValueError("'latency' has min_ms above max_ms")
-        self.latency = summary
 
     def check_trigger_root_ids(self, trigger_root_id):
         if trigger_root_id in self.trigger_root_ids:
@@ -350,7 +325,6 @@ class Process:
         trigger_condition_config = self.config_yaml.get("trigger_conditions")
         logger.debug(f"Process '{self.unique_id}' setting trigger condition: {trigger_condition_config}")
         self.event.set_chain(trigger_condition_config, process_list, on_input_list)
-        self.event.set_latency(self.config_yaml.get("latency"))
 
     def set_outcomes(self, process_list, to_output_events):
         outcome_config = self.config_yaml.get("outcomes")

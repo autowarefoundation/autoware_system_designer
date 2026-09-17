@@ -94,7 +94,6 @@ Represents a single ROS 2 node.
     - `to_output`: Sends result to output port (`to_output: port_name`).
     - `to_trigger`: Triggers another process (`to_trigger: process_name`).
     - `terminal`: Ends the chain (`terminal: null`).
-  - `latency`: (Optional) Design-time execution summary of the process in milliseconds: `min_ms`, `max_ms` (required), `mean_ms`, `sd_ms`. Read by the sequence diagram's latency view and compared against measurements; see `autoware_system_designer/doc/latency_view.md`.
 
 ### 4.2. Module Configuration (`.module.yaml`)
 
@@ -332,11 +331,6 @@ processes:
           - once: image
     outcomes:
       - to_output: objects
-    latency:
-      min_ms: 2.0
-      mean_ms: 4.5
-      max_ms: 12.0
-      sd_ms: 1.5
 ```
 
 ### Module Example (0.5.0)

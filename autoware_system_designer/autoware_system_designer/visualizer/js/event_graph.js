@@ -54,7 +54,6 @@
           warn_rate: event.warn_rate ?? null,
           error_rate: event.error_rate ?? null,
           timeout: event.timeout ?? null,
-          latency: event.latency ?? null,
           triggers: (event.trigger_ids || []).map(String),
           actions: (event.action_ids || []).map(String),
         });

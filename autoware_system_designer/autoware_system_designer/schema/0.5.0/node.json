@@ -264,30 +264,6 @@
           },
           "outcomes": {
             "type": "array"
-          },
-          "latency": {
-            "type": "object",
-            "description": "Design-time execution time summary of the process, in milliseconds.",
-            "required": ["min_ms", "max_ms"],
-            "properties": {
-              "min_ms": {
-                "type": "number",
-                "minimum": 0
-              },
-              "mean_ms": {
-                "type": "number",
-                "minimum": 0
-              },
-              "max_ms": {
-                "type": "number",
-                "minimum": 0
-              },
-              "sd_ms": {
-                "type": "number",
-                "minimum": 0
-              }
-            },
-            "additionalProperties": false
           }
         },
         "additionalProperties": false

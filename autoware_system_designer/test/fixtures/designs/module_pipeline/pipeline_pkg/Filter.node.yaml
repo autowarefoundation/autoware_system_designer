@@ -37,8 +37,3 @@ processes:
           - on_input: pointcloud
     outcomes:
       - to_output: objects
-    latency:
-      min_ms: 2.0
-      mean_ms: 4.5
-      max_ms: 12.0
-      sd_ms: 1.5

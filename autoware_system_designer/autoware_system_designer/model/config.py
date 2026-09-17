@@ -46,7 +46,6 @@ class ProcessDict(TypedDict, total=False):
     name: str
     trigger_conditions: List[Any]
     outcomes: List[Any]
-    latency: Dict[str, float]
 
 
 # Named chain of the latency view; `from` / `to` are "<node path>:<process or port name>".

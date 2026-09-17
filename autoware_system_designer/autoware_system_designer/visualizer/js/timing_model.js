@@ -11,7 +11,7 @@
 
   // sd is composed only over hops that know theirs; missingSd counts the rest.
   // approx marks a fold whose mean and sd describe one branch, not the set.
-  // source names where the numbers came from: measured, declared, derived, none.
+  // source names where the numbers came from: measured, derived, unmeasured, none.
   function summary(fields = {}) {
     const sd = fields.sd === undefined ? 0 : fields.sd;
     return {
@@ -28,6 +28,10 @@
 
   const ZERO = Object.freeze(summary());
 
+  // Placeholder for a process run no measurement covers yet: zero width,
+  // marked so the view can show the gap.
+  const UNMEASURED = Object.freeze(summary({ source: "unmeasured" }));
+
   // Sampling delay of a clock: uniform over one period.
   function uniform(lo, hi, source = "derived") {
     return summary({
@@ -39,7 +43,7 @@
     });
   }
 
-  // A measured or declared record: min_ms / mean_ms / max_ms, sd_ms optional.
+  // A measured record: min_ms / mean_ms / max_ms, sd_ms optional.
   function fromRecord(record, source) {
     if (!record || record.min_ms === undefined || record.max_ms === undefined) {
       return null;
@@ -121,18 +125,6 @@
     return s.mean + k * s.sd;
   }
 
-  // Declared against measured: the max delta and whether the spread grew.
-  function compare(declared, measured, sdFactor = 2) {
-    if (!declared || !measured) return null;
-    return {
-      deltaMax: measured.max - declared.max,
-      deltaMean: measured.mean - declared.mean,
-      deltaSd: measured.sd - declared.sd,
-      maxExceeded: measured.max > declared.max,
-      sdGrew: declared.sd > 0 && measured.sd > declared.sd * sdFactor,
-    };
-  }
-
   function formatMs(value, digits = 2) {
     if (value === null || value === undefined || Number.isNaN(value))
       return "—";
@@ -153,9 +145,10 @@
 
   // Costs land on three places: the wait at a gate before it runs, the run of
   // a process gate, and the transport from an output to the input it feeds.
-  // The declared provider reads the design: a periodic gate's sampling delay
-  // from its rate and a process's declared latency; everything else is zero.
-  function declaredCosts(graph) {
+  // The design provider knows only what the design declares: a periodic
+  // gate's sampling delay from its rate. Execution is a measured quantity, so
+  // every process run is the unmeasured placeholder; transport is zero.
+  function designCosts(graph) {
     return {
       wait(event) {
         if (event.type === "periodic" && event.frequency > 0) {
@@ -164,8 +157,7 @@
         return ZERO;
       },
       exec(event) {
-        if (event.kind !== "process") return ZERO;
-        return fromRecord(event.latency, "declared") || ZERO;
+        return event.kind === "process" ? UNMEASURED : ZERO;
       },
       comm() {
         return ZERO;
@@ -178,18 +170,18 @@
     return { wait: () => ZERO, exec: () => ZERO, comm: () => ZERO };
   }
 
-  // Measured costs where a sample exists, the declared ones where it does not.
+  // Measured costs where a sample exists, the design's where it does not.
   // `measured` answers exec(event) and comm(edge, from, to) with a summary or
   // null; each returned summary names its source so a hop can be marked.
   function measuredCosts(graph, measured) {
-    const declared = declaredCosts(graph);
+    const design = designCosts(graph);
     return {
-      wait: declared.wait,
+      wait: design.wait,
       exec(event) {
-        return measured.exec?.(event) || declared.exec(event);
+        return measured.exec?.(event) || design.exec(event);
       },
       comm(edge, from, to) {
-        return measured.comm?.(edge, from, to) || declared.comm(edge, from, to);
+        return measured.comm?.(edge, from, to) || design.comm(edge, from, to);
       },
     };
   }
@@ -210,7 +202,7 @@
   class ChainSolver {
     constructor(graph, costs) {
       this.graph = graph;
-      this.costs = costs || declaredCosts(graph);
+      this.costs = costs || designCosts(graph);
     }
 
     // Arrival summaries for everything the source reaches. The event graph is
@@ -526,18 +518,18 @@
 
   const TimingModel = {
     ZERO,
+    UNMEASURED,
     summary,
     uniform,
     fromRecord,
     add,
     fold,
     at,
-    compare,
     formatMs,
     formatSummary,
     foldOf,
     logicalCosts,
-    declaredCosts,
+    designCosts,
     measuredCosts,
     ChainSolver,
     chainTo,

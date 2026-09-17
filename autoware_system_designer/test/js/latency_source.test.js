@@ -168,7 +168,7 @@ test("exec matches by node path and process, comm by topic with open ends", () =
   assert.match(measurement.label, /1\/2 processes, 1\/1 links/);
 });
 
-test("measured costs feed the solver with declared fallback per hop", () => {
+test("measured costs feed the solver with the design filling the gaps", () => {
   const g = graph();
   const measurement = L.fromJson(file());
   const solution = new T.ChainSolver(

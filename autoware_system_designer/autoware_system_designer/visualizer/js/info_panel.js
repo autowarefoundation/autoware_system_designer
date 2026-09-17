@@ -230,8 +230,7 @@
   }
 
   // Costs of one hop or gate as min / mean ± sd / max, each row naming where
-  // its numbers came from, then the branches a gate folded and the declared
-  // against measured delta where both exist.
+  // its numbers came from, then the branches a gate folded.
   function latencyCard(latency) {
     const children = [];
     if (latency.state === "logical") {
@@ -293,36 +292,6 @@
         entry.appendChild(element("div", "port-type", branch.value));
         group.appendChild(entry);
       });
-      children.push(group);
-    }
-    if (latency.declared || latency.measured) {
-      const group = element("div", "info-group");
-      group.appendChild(
-        element("div", "info-subtitle", "declared vs measured"),
-      );
-      if (latency.declared) {
-        group.appendChild(
-          element("div", "port-type", `declared  ${latency.declared}`),
-        );
-      }
-      if (latency.measured) {
-        group.appendChild(
-          element("div", "port-type", `measured  ${latency.measured}`),
-        );
-      }
-      if (latency.delta) {
-        const sign = latency.delta.deltaMax >= 0 ? "+" : "";
-        const flags = [];
-        if (latency.delta.maxExceeded) flags.push("max exceeded");
-        if (latency.delta.sdGrew) flags.push("spread grew");
-        group.appendChild(
-          element(
-            "div",
-            flags.length ? "port-type latency-flag" : "port-type",
-            `Δmax ${sign}${latency.delta.deltaMax.toFixed(2)} ms${flags.length ? ` · ${flags.join(", ")}` : ""}`,
-          ),
-        );
-      }
       children.push(group);
     }
     return card("Latency", ...children);
