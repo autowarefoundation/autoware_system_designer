@@ -45,43 +45,96 @@ What the marks in the panel mean:
 
 A run is loaded from `data/<mode>_latency.json` in the web bundle, or by dropping a file on the canvas. The build copies `latency/<mode>_latency.json` from the directory beside the system definition file when it exists and validates.
 
+The runtime writes the file (schema `autoware_system_designer/latency/2`) from a traced run of the system; see the [runtime README](../../autoware_system_designer_runtime/README.md#latency-measurement) for the command. It is keyed by node path and topic, never by process name or `unique_id`: ids are name hashes and change whenever the design is edited.
+
 ```json
 {
-  "schema": "autoware_system_designer/latency/1",
+  "schema": "autoware_system_designer/latency/2",
   "mode": "Runtime",
-  "source": "caret",
-  "processes": [
+  "run": { "window_s": 60.0, "probe": true, "tracer": "0.1.0" },
+  "nodes": [
     {
       "node_path": "/localization/pose_twist_fusion_filter/ekf_localizer",
-      "process": "fuse",
-      "count": 1200,
-      "min_ms": 1.8,
-      "mean_ms": 3.1,
-      "max_ms": 11.2,
-      "sd_ms": 0.9
+      "inputs": [
+        {
+          "topic": "/localization/pose_estimator/pose_with_covariance",
+          "rate_hz": 10.0
+        }
+      ],
+      "timers": [{ "period_ms": 20.0, "rate_hz": 49.9 }],
+      "outputs": [
+        {
+          "topic": "/localization/kinematic_state",
+          "rate_hz": 49.9,
+          "trigger": { "kind": "timer", "period_ms": 20.0, "share": 0.998 },
+          "exec": {
+            "count": 2990,
+            "min_ms": 0.9,
+            "mean_ms": 1.4,
+            "max_ms": 6.2,
+            "sd_ms": 0.4
+          },
+          "response": [
+            {
+              "from": "/localization/pose_estimator/pose_with_covariance",
+              "mean_ms": 51.2,
+              "min_ms": 1.0,
+              "max_ms": 104.0,
+              "sd_ms": 29.0
+            }
+          ]
+        }
+      ],
+      "declared_diff": [
+        {
+          "output": "/localization/kinematic_state",
+          "declared": "periodic 50 Hz",
+          "observed": "timer 20 ms @ 49.9 Hz",
+          "status": "match"
+        }
+      ]
     }
   ],
   "links": [
     {
-      "topic": "/localization/kinematic_state",
-      "publisher": "/localization/pose_twist_fusion_filter/ekf_localizer",
-      "subscriber": "/control/trajectory_follower",
+      "topic": "...",
+      "publisher": "...",
+      "subscriber": "...",
+      "count": 600,
       "min_ms": 0.2,
       "mean_ms": 0.4,
       "max_ms": 3.0,
       "sd_ms": 0.3
+    },
+    {
+      "topic": "...",
+      "publisher": "...",
+      "subscriber": "...",
+      "intra_process": true
+    }
+  ],
+  "chains": [
+    {
+      "from": "<node_path>:timer:<period_ms>",
+      "to": "<node_path>:<topic>",
+      "hops": 4,
+      "terminal": true,
+      "count": 580,
+      "min_ms": 12.0,
+      "mean_ms": 18.5,
+      "max_ms": 41.0,
+      "sd_ms": 4.2
     }
   ]
 }
 ```
 
-- `processes[]` supplies the execution cost of a process gate, keyed by `node_path` and `process`.
-- `links[]` supplies the transport cost of a topic between an output and the input it feeds, keyed by `topic`; `publisher` and `subscriber` narrow the match and may be left out.
+- `nodes[].outputs[].exec` supplies the execution cost of a process gate: the gate takes the record of the output topic it feeds (ports are trusted, process names are not). `trigger` is the dominant detected trigger of that output and `response` the age each input has when the output leaves.
+- `links[]` supplies the transport cost of a topic between an output and the input it feeds, keyed by `topic`; `publisher` and `subscriber` narrow the match and may be left out. A link marked `intra_process` crossed no DDS hop: it is drawn as a zero-length hop and its time is part of the downstream node's `exec`.
+- `chains[]` is the measured end-to-end time from a detected timer to a publish, following the message flow. A group's title shows the measured record of its clock-root node to its sink beside the total composed from `exec` and `links`; the two are measured separately and never derived from one another.
+- `declared_diff` compares each output's declared trigger (from the node design's process events) with the observed one; the rows appear in a gate's info panel and in the Node panel.
 - `sd_ms` and `count` are optional. A record without `sd_ms` is drawn without a whisker and excluded from the chain's `sd`, with the skipped hops counted.
-- Records are keyed by names, never by `unique_id`: ids are name hashes and change whenever the design is edited.
+
+The first shape, `autoware_system_designer/latency/1` (`processes[]` keyed by node path and process name, `links[]`), stays readable.
 
 The toolbar reports how many records of the file matched the design. There are no deadlines: a chain reports its minimum, mean and maximum; it asserts nothing.
-
-## CARET
-
-CARET is the measurement path in both directions: the design already holds what a CARET architecture needs (processes as callbacks, ports and links as communications, clock-root chains as target paths), and CARET's callback and communication latencies map onto `processes[]` and `links[]`. Both directions are reserved as documented stubs (`builder/export/caret_export.py`, `visualizer/latency_source.py`, `js/latency_source.js`) and are not implemented; a CARET run is expected in the file shape above until they are.

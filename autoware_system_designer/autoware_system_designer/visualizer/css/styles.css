@@ -1017,6 +1017,13 @@ svg.lod-rate .logic-vertex-sub {
   stroke-dasharray: 3 2;
 }
 
+/* The message never crossed DDS: delivered inside one process, its transport is
+   folded into the next run. */
+.seq-hop-intra {
+  stroke-dasharray: 1 1.5;
+  stroke: var(--accent-color, #4a90d9);
+}
+
 /* The message lands after the run it feeds has started: the gate fired from
    another branch. */
 .seq-hop-late {

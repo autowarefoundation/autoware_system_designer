@@ -676,10 +676,49 @@
       } else {
         parts.push(`depth ${sink.rank}`);
       }
+      const measured = this.measuredChain(group);
+      if (measured && STATES[this.state].timed) {
+        parts.push(`measured ${T.formatSummary(measured.summary)}`);
+      }
       if (group.solution.loopEdges.size) {
         parts.push(`${group.solution.loopEdges.size} loop cut`);
       }
       return parts.join(" · ");
+    }
+
+    // The measured end-to-end record matching a group: from a timer of the
+    // source's node to the sink's node and topic. An input sink is reached
+    // through the output feeding it, since chains end at publishes.
+    measuredChain(group) {
+      if (!this.measured?.chainFor) return null;
+      const fromNode = this.graph.ownerOf(group.sourceId)?.path;
+      let sinkId = group.sinkId;
+      let sink = this.graph.events.get(sinkId);
+      if (sink?.kind === "input") {
+        const feeder = (this.graph.pred.get(sinkId) || []).find(
+          (id) => this.graph.events.get(id)?.kind === "output",
+        );
+        if (feeder) {
+          sinkId = feeder;
+          sink = this.graph.events.get(sinkId);
+        }
+      }
+      const toNode = this.graph.ownerOf(sinkId)?.path;
+      const topic = sink?.kind === "output" ? this.topicOf(sink) : null;
+      return this.measured.chainFor(fromNode, toNode, topic);
+    }
+
+    measuredRows(group) {
+      const measured = this.measuredChain(group);
+      if (!measured) return [];
+      return [
+        {
+          label: `measured e2e${measured.hops ? ` (${measured.hops} hops)` : ""}`,
+          value: T.formatSummary(measured.summary),
+          source: "measured",
+          count: measured.summary.count,
+        },
+      ];
     }
 
     // Ticks along the top: milliseconds in a timed state, ranks otherwise, each
@@ -774,6 +813,8 @@
       const fromOwner = this.graph.events.get(hop.from).ownerId;
       const toOwner = this.graph.events.get(hop.to).ownerId;
       if (fromOwner === toOwner) path.classList.add("seq-hop-internal");
+      if (hop.comm?.source === "intra_process")
+        path.classList.add("seq-hop-intra");
       if (timed && arrive > toBox.left + 0.5)
         path.classList.add("seq-hop-late");
       path.classList.add("seq-hop");
@@ -1214,7 +1255,7 @@
           latency: {
             state: this.state,
             rank: sink.rank,
-            rows: this.latencyRows(sink),
+            rows: [...this.latencyRows(sink), ...this.measuredRows(group)],
             branches: [],
           },
           chain: this.chainReport(
@@ -1235,7 +1276,11 @@
           if (gate.ownerId === ownerId) gates.add(gate.id);
         }),
       );
-      this.updateInfoPanel({ ...instance, gates: gates.size }, "Node");
+      const measurement = this.measured?.nodeRecord?.(instance.path) || null;
+      this.updateInfoPanel(
+        { ...instance, gates: gates.size, measurement },
+        "Node",
+      );
     }
 
     latencyRows(arrival, comm) {
@@ -1285,9 +1330,18 @@
               .map(([component]) => component),
           })),
           unknownType: gate.kind === "process" && !gate.type,
+          diff: this.declaredDiff(owner.path, gate),
         },
         chain: this.chainReport(upstream, downstream, gate.id),
       };
+    }
+
+    // The measurement's declared-versus-observed rows for the outputs a gate feeds.
+    declaredDiff(path, gate) {
+      if (!this.measured?.diffFor || !path || gate.kind !== "process")
+        return [];
+      const topics = window.LatencySource.outputTopicsOf(this.graph, gate);
+      return topics.length ? this.measured.diffFor(path, topics) : [];
     }
 
     describeHopPanel(group, hop) {

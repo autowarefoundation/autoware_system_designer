@@ -15,26 +15,34 @@
 
 """Measured latency files the sequence diagram reads: shape, validation, and the bundle copy.
 
-A file is one measurement run of one mode::
+The runtime writes one file per measurement run of one mode
+(``autoware_system_designer/latency/2``, see the runtime README)::
 
     {
-      "schema": "autoware_system_designer/latency/1",
+      "schema": "autoware_system_designer/latency/2",
       "mode": "Runtime",
-      "source": "caret",
-      "processes": [
-        {"node_path": "/localization/.../ekf_localizer", "process": "fuse",
-         "count": 1200, "min_ms": 1.8, "mean_ms": 3.1, "max_ms": 11.2, "sd_ms": 0.9}
+      "run": {"window_s": 60.0, "probe": true, ...},
+      "nodes": [
+        {"node_path": "/localization/.../ekf_localizer",
+         "inputs": [...], "timers": [...],
+         "outputs": [{"topic": "/localization/kinematic_state", "rate_hz": 49.9,
+                      "trigger": {"kind": "timer", "period_ms": 20.0, "share": 0.998},
+                      "exec": {"count": 2990, "min_ms": 0.9, "mean_ms": 1.4, "max_ms": 6.2, "sd_ms": 0.4}}],
+         "declared_diff": [...]}
       ],
       "links": [
-        {"topic": "/localization/.../kinematic_state",
-         "publisher": "/localization/.../ekf_localizer", "subscriber": "/control/...",
-         "min_ms": 0.2, "mean_ms": 0.4, "max_ms": 3.0, "sd_ms": 0.3}
-      ]
+        {"topic": "...", "publisher": "...", "subscriber": "...", "count": 600,
+         "min_ms": 0.2, "mean_ms": 0.4, "max_ms": 3.0, "sd_ms": 0.3},
+        {"topic": "...", "publisher": "...", "subscriber": "...", "intra_process": true}
+      ],
+      "chains": [{"from": "<node_path>:timer:<period_ms>", "to": "<node_path>:<topic>", ...}]
     }
 
-Records are keyed by node path and process or topic, never by unique_id: ids
-are name hashes and change whenever the design is edited. ``sd_ms`` and
-``count`` are optional; a record without ``sd_ms`` is drawn spread-unknown.
+The first shape (``latency/1``: ``processes[]`` keyed by node path and process
+name, ``links[]``) stays readable. Records are keyed by node path and topic or
+process, never by unique_id: ids are name hashes and change whenever the design
+is edited. ``sd_ms`` and ``count`` are optional; a record without ``sd_ms`` is
+drawn spread-unknown.
 """
 
 from __future__ import annotations
@@ -48,13 +56,17 @@ from typing import Any, Dict, Iterable, List
 
 logger = logging.getLogger(__name__)
 
-LATENCY_SCHEMA = "autoware_system_designer/latency/1"
+LATENCY_SCHEMA_V1 = "autoware_system_designer/latency/1"
+LATENCY_SCHEMA = "autoware_system_designer/latency/2"
+LATENCY_SCHEMAS = (LATENCY_SCHEMA_V1, LATENCY_SCHEMA)
 
 # Directory beside a system definition file that holds <mode>_latency.json files.
 LATENCY_DIR_NAME = "latency"
 
 _PROCESS_REQUIRED = ("node_path", "process", "min_ms", "max_ms")
 _LINK_REQUIRED = ("topic", "min_ms", "max_ms")
+_SUMMARY_REQUIRED = ("min_ms", "max_ms")
+_CHAIN_REQUIRED = ("from", "to", "min_ms", "max_ms")
 
 
 def _check_records(records: Any, kind: str, required: Iterable[str]) -> None:
@@ -63,23 +75,54 @@ def _check_records(records: Any, kind: str, required: Iterable[str]) -> None:
     if not isinstance(records, list):
         raise ValueError(f"'{kind}' must be a list")
     for index, record in enumerate(records):
-        if not isinstance(record, dict):
-            raise ValueError(f"{kind}[{index}] must be an object")
-        for field in required:
-            if record.get(field) is None:
-                raise ValueError(f"{kind}[{index}] lacks '{field}'")
-        if record["min_ms"] > record["max_ms"]:
-            raise ValueError(f"{kind}[{index}] has min_ms above max_ms")
+        _check_record(record, f"{kind}[{index}]", required)
+
+
+def _check_record(record: Any, label: str, required: Iterable[str]) -> None:
+    if not isinstance(record, dict):
+        raise ValueError(f"{label} must be an object")
+    for field in required:
+        if record.get(field) is None:
+            raise ValueError(f"{label} lacks '{field}'")
+    if record.get("min_ms") is not None and record.get("max_ms") is not None and record["min_ms"] > record["max_ms"]:
+        raise ValueError(f"{label} has min_ms above max_ms")
+
+
+def _check_v2(data: Dict[str, Any]) -> None:
+    nodes = data.get("nodes")
+    if nodes is not None:
+        if not isinstance(nodes, list):
+            raise ValueError("'nodes' must be a list")
+        for index, node in enumerate(nodes):
+            _check_record(node, f"nodes[{index}]", ("node_path",))
+            for out_index, output in enumerate(node.get("outputs") or []):
+                label = f"nodes[{index}].outputs[{out_index}]"
+                _check_record(output, label, ("topic",))
+                if output.get("exec") is not None:
+                    _check_record(output["exec"], f"{label}.exec", _SUMMARY_REQUIRED)
+    links = data.get("links")
+    if links is not None:
+        if not isinstance(links, list):
+            raise ValueError("'links' must be a list")
+        for index, link in enumerate(links):
+            _check_record(link, f"links[{index}]", ("topic",))
+            if not link.get("intra_process"):
+                _check_record(link, f"links[{index}]", _LINK_REQUIRED)
+    _check_records(data.get("chains"), "chains", _CHAIN_REQUIRED)
 
 
 def validate_latency_data(data: Any) -> Dict[str, Any]:
     """Return the data when it is a well-formed latency file, else raise ValueError."""
     if not isinstance(data, dict):
         raise ValueError("latency file must hold a JSON object")
-    if data.get("schema") != LATENCY_SCHEMA:
-        raise ValueError(f"unknown latency schema {data.get('schema')!r}; expected {LATENCY_SCHEMA!r}")
-    _check_records(data.get("processes"), "processes", _PROCESS_REQUIRED)
-    _check_records(data.get("links"), "links", _LINK_REQUIRED)
+    schema = data.get("schema")
+    if schema not in LATENCY_SCHEMAS:
+        raise ValueError(f"unknown latency schema {schema!r}; expected one of {list(LATENCY_SCHEMAS)}")
+    if schema == LATENCY_SCHEMA_V1:
+        _check_records(data.get("processes"), "processes", _PROCESS_REQUIRED)
+        _check_records(data.get("links"), "links", _LINK_REQUIRED)
+    else:
+        _check_v2(data)
     return data
 
 
@@ -87,17 +130,6 @@ def load_latency_file(path: str | os.PathLike) -> Dict[str, Any]:
     """Read and validate one latency file."""
     with open(path, encoding="utf-8") as handle:
         return validate_latency_data(json.load(handle))
-
-
-def convert_caret_result(path: str | os.PathLike) -> Dict[str, Any]:
-    """Convert a CARET measurement into the latency file shape.
-
-    CARET is the measurement path in both directions: the designer emits the
-    CARET architecture and target paths (``builder.export.caret_export``), CARET
-    measures, and its callback and communication latencies come back as
-    ``processes[]`` and ``links[]``. Reserved; not implemented.
-    """
-    raise NotImplementedError("CARET result conversion is not implemented; export the run as " + LATENCY_SCHEMA)
 
 
 def latency_dir_for(system_file: str | None) -> str | None:

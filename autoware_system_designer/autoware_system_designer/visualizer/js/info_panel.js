@@ -27,6 +27,7 @@
     "chain",
     "latency",
     "chains",
+    "measurement",
   ]);
 
   // Parameter source -> badge label; the matching colors live in css/styles.css.
@@ -274,6 +275,7 @@
         ),
       );
     }
+    if (latency.diff?.length) children.push(diffGroup(latency.diff));
     if (latency.branches?.length > 1) {
       const group = element("div", "info-group");
       group.appendChild(
@@ -295,6 +297,86 @@
       children.push(group);
     }
     return card("Latency", ...children);
+  }
+
+  // Declared trigger of each output beside what the measurement observed.
+  function diffGroup(rows) {
+    const group = element("div", "info-group");
+    group.appendChild(element("div", "info-subtitle", "declared vs observed"));
+    rows.forEach((row) => {
+      const entry = element("div", "port-entry");
+      const head = element("div", "port-name", `${row.output} · ${row.status}`);
+      if (row.status !== "match") head.classList.add("latency-flag");
+      entry.appendChild(head);
+      const detail = [`declared ${row.declared}`, `observed ${row.observed}`];
+      if (row.note) detail.push(row.note);
+      entry.appendChild(element("div", "port-type", detail.join(" · ")));
+      group.appendChild(entry);
+    });
+    return group;
+  }
+
+  const rate = (value) =>
+    value === null || value === undefined
+      ? "—"
+      : `${Number(value).toFixed(1)} Hz`;
+
+  // A node's measured record: input, timer and output rates, the trigger and
+  // process time of each output, and the declared diff.
+  function measurementCard(record) {
+    const children = [];
+    const list = (title, items, describe) => {
+      if (!items?.length) return;
+      const group = element("div", "info-group");
+      group.appendChild(element("div", "info-subtitle", title));
+      items.forEach((item) => {
+        const entry = element("div", "port-entry");
+        const [name, detail] = describe(item);
+        entry.appendChild(element("div", "port-name", name));
+        if (detail) entry.appendChild(element("div", "port-type", detail));
+        group.appendChild(entry);
+      });
+      children.push(group);
+    };
+    list("inputs", record.inputs, (input) => [
+      input.topic,
+      [
+        rate(input.rate_hz),
+        input.intra_process ? "intra-process" : null,
+        input.duplicate_count
+          ? `${input.duplicate_count} duplicate takes`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    ]);
+    list("timers", record.timers, (timer) => [
+      `${timer.period_ms ?? "?"} ms`,
+      rate(timer.rate_hz),
+    ]);
+    list("outputs", record.outputs, (output) => {
+      const parts = [rate(output.rate_hz)];
+      if (output.trigger) {
+        const t = output.trigger;
+        const what =
+          t.kind === "timer"
+            ? `timer ${t.period_ms ?? "?"} ms`
+            : t.kind === "input"
+              ? `input ${t.topic}${t.intra_process ? " (intra-process)" : ""}`
+              : "unknown trigger";
+        parts.push(`${what} ${Math.round((t.share ?? 0) * 100)}%`);
+      }
+      if (output.exec) {
+        parts.push(
+          `exec ${output.exec.min_ms} / ${output.exec.mean_ms} / ${output.exec.max_ms} ms`,
+        );
+      }
+      return [output.topic, parts.join(" · ")];
+    });
+    if (record.declared_diff?.length)
+      children.push(diffGroup(record.declared_diff));
+    if (!children.length) return null;
+    return card("Measurement", ...children);
   }
 
   // Enumerated chains; each entry selects the chain it names.
@@ -402,6 +484,7 @@
       data.global_topic ? globalTopicCard(data.global_topic) : null,
       data.event ? eventCard(data.event) : null,
       data.latency ? latencyCard(data.latency) : null,
+      data.measurement ? measurementCard(data.measurement) : null,
       data.chains ? chainsCard(data.chains) : null,
       data.chain ? chainCard(data.chain) : null,
       infoCard(data),
