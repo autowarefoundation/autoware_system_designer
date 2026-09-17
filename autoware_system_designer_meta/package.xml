@@ -12,6 +12,7 @@
 
   <exec_depend>autoware_system_designer</exec_depend>
   <exec_depend>autoware_system_designer_runtime</exec_depend>
+  <exec_depend>autoware_system_designer_tracer</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

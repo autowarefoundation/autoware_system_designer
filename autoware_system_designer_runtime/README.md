@@ -228,3 +228,42 @@ The two systems share the design pattern but not code. When play_launch's parser
 - **Empty / placeholder nodes** (single_node entries whose `executable` is empty) are silently skipped during build; check the log at startup.
 - **Direct binary spawn**: `build_cmd` resolves the executable path via `ros2run.api.get_executable_path` to deliver `SIGTERM` directly to rclcpp rather than through a Python wrapper. Falls back to `ros2 run <pkg> <exe>` with a warning if resolution fails.
 - **Namespace data convention**: system_structure stores `namespace` as the full path of the entity (including its own name as the last segment when the entity sits under a same-named module). The builder strips that last segment if it equals `name`. See `common/namespace.py::parent_namespace`.
+
+---
+
+## Latency measurement
+
+`--measure` preloads a small C recorder (`autoware_system_designer_tracer`, an `LD_PRELOAD` interposer over the `rcl` C API) into every spawned process and analyzes the recording per node: process time, topic communication time and event-chain end-to-end time, measured separately and never derived from one another. No CARET, no rclcpp fork, no rebuild of Autoware.
+
+```bash
+ros2 run autoware_system_designer_runtime autoware-system-designer-launch SYSTEM.json \
+    --measure --measure-duration 60      # settle 5 s, record 60 s, analyze, shut down
+    [--measure-settle S]                 # seconds after launch_ready left out of the window (default 5)
+    [--measure-keep-running]             # keep the system up after the analysis
+    [--no-probe]                         # do not add probe subscriptions on intra-process-only topics
+    [--latency-out FILE]                 # default: latency/<Mode>_latency.json beside the .system.yaml the export names
+    [--measure-report FILE]              # default: <Mode>_measure_report.md beside the latency file
+```
+
+Without `--measure-duration` the window opens at `launch_ready` and closes at shutdown or on the console verb `measure stop` (`--interactive`: `measure start | stop | status`). Trace files stay under `<log-dir>/trace/` and can be re-analyzed offline:
+
+```bash
+ros2 run autoware_system_designer_runtime autoware-system-designer-measure-analyze <log-dir>/trace SYSTEM.json -o FILE
+```
+
+### What is measured
+
+The unit of analysis is the node. Ports and inter-node topic links come from the design and are trusted; the design's process events are a claim that the report diffs against what was observed, output by output.
+
+| Quantity                  | Definition                                                                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Rates                     | takes, publishes and timer fires per second, per topic or timer                                                                                                                            |
+| Process time (`exec`)     | trigger → publish on the same thread; the trigger is the take, timer fire or (intra-process) upstream publish immediately preceding on that thread                                         |
+| Response                  | `publish − latest take of input i` on any thread of the node: the age the node adds when it samples `i` instead of being triggered by it                                                   |
+| Trigger                   | the dominant class of what preceded an output over the run: `timer(period)`, `input(topic)`, `input(topic, intra_process)`, `unknown`                                                      |
+| Communication (`links[]`) | `take − source_timestamp` per topic, publisher node and subscriber node; a take is matched to its publish by topic and a source timestamp inside the publish call                          |
+| Chain (`chains[]`)        | per instance: detected timer fire → same-thread publish → matched takes → the publishes they trigger → … → terminal publish; where a node samples, the chain continues at its next publish |
+
+Intra-process communication stays on. rclcpp skips `rcl_publish` when every matched reader is intra-process, so the runtime's own rclpy node adds one best-effort **probe subscription** to each such topic during the window; the publish is then recorded and the hop is folded into the downstream node's process time (`links[]` marks it `intra_process`, the inter-process duplicate the subscription still receives is dropped from every statistic). Approximations are reported, not hidden: a publish from a thread that never took or fired has an `unknown` trigger, a node that never publishes has no `exec`, dropped records and unmatched nodes are listed in the report.
+
+The latency file (`autoware_system_designer/latency/2`) is documented in [doc/latency_view.md](../autoware_system_designer/doc/latency_view.md#measurement-file); the next designer build copies it into the visualization bundle when it sits beside the system definition file.
