@@ -94,6 +94,7 @@ Represents a single ROS 2 node.
     - `to_output`: Sends result to output port (`to_output: port_name`).
     - `to_trigger`: Triggers another process (`to_trigger: process_name`).
     - `terminal`: Ends the chain (`terminal: null`).
+  - `latency`: (Optional) Design-time execution summary of the process in milliseconds: `min_ms`, `max_ms` (required), `mean_ms`, `sd_ms`. Read by the sequence diagram's latency view and compared against measurements; see `autoware_system_designer/doc/latency_view.md`.
 
 ### 4.2. Module Configuration (`.module.yaml`)
 
@@ -206,6 +207,11 @@ Top-level entry point defining the complete system.
   - `type`: Node group execution type. select `ros2_component_container_mt` or `ros2_component_container`.
   - `nodes`: List of non-empty path patterns. Glob patterns (`*`, `?`, `[...]`) match the full node path.
 - `connections`: Top-level wiring between components. List of connection pairs, where each connection is a list of two port paths. Supports wildcards (e.g., `component.publisher.^` for wildcard); a wildcard matches only ports of the declared kind. Connection entries do not take a `description`.
+- `event_chains`: (Optional) Named event chains the sequence diagram offers in its source picker.
+  - `name`: Chain name.
+  - `description`: (Optional) Brief explanation of the chain.
+  - `from`: Source event as `<node path>:<process or port name>`.
+  - `to`: Sink event as `<node path>:<process or port name>`.
 
 **Mode-Specific Overrides:**
 Each mode can define overrides using the mode name as a key:
@@ -290,10 +296,10 @@ Removals are applied **before** overrides to ensure removed items don't interfer
 
 ## 7. Examples
 
-### Node Example (0.4.0)
+### Node Example (0.5.0)
 
 ```yaml
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.5.0
 name: Detector.node
 description: Camera-based object detector.
 package:
@@ -326,12 +332,17 @@ processes:
           - once: image
     outcomes:
       - to_output: objects
+    latency:
+      min_ms: 2.0
+      mean_ms: 4.5
+      max_ms: 12.0
+      sd_ms: 1.5
 ```
 
-### Module Example (0.4.0)
+### Module Example (0.5.0)
 
 ```yaml
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.5.0
 name: DetectorA.module
 instances:
   - name: node_detector
@@ -354,10 +365,10 @@ connections:
     - publisher.*
 ```
 
-### System Example (0.4.0)
+### System Example (0.5.0)
 
 ```yaml
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.5.0
 name: AutowareSample.system
 variables:
   - name: config_path
@@ -389,6 +400,11 @@ node_groups:
 connections:
   - - localization.publisher.kinematic_state
     - sensing.subscriber.odometry
+event_chains:
+  - name: lidar_to_control
+    description: Point cloud in, control command out.
+    from: /sensing/lidar/top/lidar:hw_interface
+    to: /control/trajectory_follower:output_control_cmd
 LoggingSimulation:
   override:
     components:
@@ -403,10 +419,10 @@ LoggingSimulation:
           - /sensing
 ```
 
-### Parameter Set Example (0.4.0)
+### Parameter Set Example (0.5.0)
 
 ```yaml
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.5.0
 name: PerceptionModuleA.parameter_set
 parameters:
   - node: /perception/object_recognition/detector_a1/node_detector

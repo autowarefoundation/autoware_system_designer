@@ -12,7 +12,7 @@ Traditional ROS 2 launch files can become complex and hard to manage as a system
 
 - **Modular Architecture**: Define systems using reusable **Nodes** and **Modules**.
 - **Automatic Launch Generation**: Generate correct-by-construction ROS 2 XML launch files.
-- **System Visualization**: Automatically generate diagrams (node graphs, sequence diagrams) to visualize the system structure and data flow.
+- **System Visualization**: Automatically generate diagrams to visualize the system: the node graph, the logic diagram of trigger chains, and the sequence diagram, an event-chain latency view that reports the minimum, mean and maximum chain from declared rates or a measurement file (see [doc/latency_view.md](autoware_system_designer/doc/latency_view.md)).
 - **Parameter Management**: Manage parameters efficiently using **Parameter Sets** and schema validation.
 - **Deployment Configuration**: Easily switch between different hardware configurations or simulation modes using **Deployments**.
 
