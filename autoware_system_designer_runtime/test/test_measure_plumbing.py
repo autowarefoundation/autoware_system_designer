@@ -31,7 +31,7 @@ from autoware_system_designer_runtime._impl.measure.session import (
 )
 from autoware_system_designer_runtime._impl.measure.writer import LATENCY_SCHEMA
 
-from .measure_fixtures import chain_design, system, write_chain_traces
+from .measure_fixtures import chain_design, write_chain_traces
 
 
 class _FakeProc:
@@ -129,20 +129,24 @@ def test_tracer_env_prepends_preload_and_sets_trace_dir():
     assert bare["LD_PRELOAD"] == "/opt/lib/libtracer.so"
 
 
-def test_default_latency_out_sits_beside_the_system_file_or_under_logs(tmp_path):
-    design = system([], mode="Runtime", source_file="/ws/src/pkg/design/system/Auto.system.yaml")
-    graph = NodeGraph.from_system_structure(design)
-    out = default_latency_out(graph, Path("/x/system_structure/Runtime.json"), tmp_path)
-    assert out == Path("/ws/src/pkg/design/system/latency/Runtime_latency.json")
+def test_default_latency_out_targets_the_export_bundle_or_the_log_dir(tmp_path):
+    export = tmp_path / "exports" / "Auto"
+    json_path = export / "system_structure" / "Runtime.json"
+    json_path.parent.mkdir(parents=True)
+    json_path.write_text("{}")
 
-    design = system([], mode="Runtime", source_file="${workspace_root}/src/pkg/Auto.system.yaml")
-    graph = NodeGraph.from_system_structure(design)
-    out = default_latency_out(graph, Path("/x/system_structure/Runtime.json"), tmp_path)
-    assert out == tmp_path / "latency" / "Runtime_latency.json"
+    # No visualization bundle yet: the log directory takes it.
+    out = default_latency_out("Runtime", json_path, tmp_path / "logs")
+    assert out == tmp_path / "logs" / "latency" / "Runtime_latency.json"
 
-    graph.mode = None
-    out = default_latency_out(graph, Path("/x/system_structure/Psim.json"), tmp_path)
-    assert out.name == "Psim_latency.json"
+    (export / "visualization" / "web").mkdir(parents=True)
+    out = default_latency_out("Runtime", json_path, tmp_path / "logs")
+    assert out == export / "visualization" / "web" / "data" / "Runtime_latency.json"
+
+    # A JSON outside an export tree falls back as well.
+    loose = tmp_path / "Psim.json"
+    loose.write_text("{}")
+    assert default_latency_out("Psim", loose, tmp_path / "logs") == tmp_path / "logs" / "latency" / "Psim_latency.json"
 
     assert report_path_for(Path("/l/Runtime_latency.json")) == Path("/l/Runtime_measure_report.md")
     assert report_path_for(Path("/l/custom.json")) == Path("/l/custom_measure_report.md")

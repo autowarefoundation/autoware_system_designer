@@ -241,7 +241,7 @@ ros2 run autoware_system_designer_runtime autoware-system-designer-launch SYSTEM
     [--measure-settle S]                 # seconds after launch_ready left out of the window (default 5)
     [--measure-keep-running]             # keep the system up after the analysis
     [--no-probe]                         # do not add probe subscriptions on intra-process-only topics
-    [--latency-out FILE]                 # default: latency/<Mode>_latency.json beside the .system.yaml the export names
+    [--latency-out FILE]                 # default: <export>/visualization/web/data/<Mode>_latency.json, else <log-dir>/latency/
     [--measure-report FILE]              # default: <Mode>_measure_report.md beside the latency file
 ```
 
@@ -266,4 +266,4 @@ The unit of analysis is the node. Ports and inter-node topic links come from the
 
 Intra-process communication stays on. rclcpp skips `rcl_publish` when every matched reader is intra-process, so the runtime's own rclpy node adds one best-effort **probe subscription** to each such topic during the window; the publish is then recorded and the hop is folded into the downstream node's process time (`links[]` marks it `intra_process`, the inter-process duplicate the subscription still receives is dropped from every statistic). Approximations are reported, not hidden: a publish from a thread that never took or fired has an `unknown` trigger, a node that never publishes has no `exec`, dropped records and unmatched nodes are listed in the report.
 
-The latency file (`autoware_system_designer/latency/2`) is documented in [doc/latency_view.md](../autoware_system_designer/doc/latency_view.md#measurement-file); the next designer build copies it into the visualization bundle when it sits beside the system definition file.
+The latency file (`autoware_system_designer/latency/2`) is documented in [doc/latency_view.md](../autoware_system_designer/doc/latency_view.md#measurement-file). By default it is written into the export's visualization bundle (`<export>/visualization/web/data/`, beside the `system_structure/` directory the JSON came from), which is where the sequence diagram fetches `data/<Mode>_latency.json`; the next reload of the deployment overview shows it. A rebuild regenerates the bundle, so keep a copy as `latency/<Mode>_latency.json` beside the system definition file to have the build carry it over.

@@ -214,7 +214,8 @@ def launch_from_json(
     latency_out: Optional[Path] = None
     if measure is not None:
         graph = NodeGraph.from_system_structure(data, ecu=ecu)
-        latency_out = measure.latency_out or default_latency_out(graph, Path(json_path), out_dir)
+        mode = graph.mode or Path(json_path).stem
+        latency_out = measure.latency_out or default_latency_out(mode, Path(json_path), out_dir)
 
     config = ActorConfig(
         respawn_enabled=respawn,
@@ -366,8 +367,8 @@ def main() -> None:
         type=Path,
         default=None,
         metavar="FILE",
-        help="Latency file to write. Default: latency/<Mode>_latency.json beside the "
-        "system definition the export names, else <log-dir>/latency/.",
+        help="Latency file to write. Default: <Mode>_latency.json in the export's "
+        "visualization/web/data/ (where the diagram reads it), else <log-dir>/latency/.",
     )
     measure_group.add_argument(
         "--measure-report",
