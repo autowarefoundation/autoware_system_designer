@@ -7,18 +7,6 @@
 (function () {
   const SVG_NS = ElkCanvas.SVG_NS;
 
-  // Frequency is propagated from clock roots only, so these types start a chain.
-  const CLOCK_TYPES = new Set(["periodic", "once"]);
-
-  // Trigger semantics carried by shape: the type of a process event is what
-  // decides how many of its triggers have to fire before it does.
-  const TYPE_SHAPES = {
-    and: "and",
-    or: "or",
-    periodic: "clock",
-    once: "tag",
-  };
-
   const UPSTREAM_COLOR = "green";
   const DOWNSTREAM_COLOR = "orange";
   const CHAIN_LIST_LIMIT = 40;
@@ -128,17 +116,7 @@
       super(container, options);
 
       this.rootData = null;
-      this.events = new Map(); // eventId → event record
-      this.instances = new Map(); // instanceId → { data, depth }
-      this.instanceByPath = new Map(); // instance path → instance
-      this.succ = new Map(); // eventId → [eventId] it triggers
-      this.pred = new Map(); // eventId → [eventId] triggering it
-      this.edgeList = []; // { id, from, to, cross }
-      this.edgeIdByKey = new Map(); // "from>to" → edgeId
-      this.clocksOf = new Map(); // eventId → Set(clock root id)
-      this.clockRootIds = [];
-      this.activeIds = new Set(); // events carrying at least one trigger relation
-      this.chainEndIds = new Set(); // events the chain stops at
+      this.graph = new EventGraph();
 
       this.vertices = new Map(); // vertexId → drawn record
       this.vertexOf = new Map(); // eventId → vertexId, null when folded
@@ -189,137 +167,12 @@
         );
       }
       this.rootData = data;
-      this.buildEventModel(data);
+      this.graph.build(data);
       await this.layoutAndRender();
     }
 
-    // ── Event model ─────────────────────────────────────────────────────────────
-
-    buildEventModel(root) {
-      this.events.clear();
-      this.instances.clear();
-      this.succ.clear();
-      this.pred.clear();
-      this.edgeIdByKey.clear();
-      this.instanceByPath.clear();
-      this.edgeList = [];
-      this.activeIds.clear();
-
-      const addEvent = (event, instance, kind, port) => {
-        if (!event?.unique_id || this.events.has(event.unique_id)) return;
-        this.events.set(String(event.unique_id), {
-          id: String(event.unique_id),
-          name: event.name || "event",
-          type: event.type || null,
-          kind,
-          ownerId: String(instance.unique_id),
-          port: port || null,
-          frequency: event.frequency ?? null,
-          warn_rate: event.warn_rate ?? null,
-          error_rate: event.error_rate ?? null,
-          timeout: event.timeout ?? null,
-          triggers: (event.trigger_ids || []).map(String),
-          actions: (event.action_ids || []).map(String),
-        });
-      };
-
-      const visit = (instance, depth) => {
-        if (!instance?.unique_id) return;
-        this.instances.set(String(instance.unique_id), {
-          data: instance,
-          depth,
-        });
-        if (instance.path) this.instanceByPath.set(instance.path, instance);
-        (instance.in_ports || []).forEach((port) =>
-          addEvent(port.event, instance, "input", port),
-        );
-        (instance.out_ports || []).forEach((port) =>
-          addEvent(port.event, instance, "output", port),
-        );
-        (instance.events || []).forEach((event) =>
-          addEvent(event, instance, "process", null),
-        );
-        (instance.children || []).forEach((child) => visit(child, depth + 1));
-      };
-      visit(root, 0);
-
-      // trigger_ids and action_ids are the same relation read from either end.
-      const link = (fromId, toId) => {
-        if (fromId === toId) return;
-        const from = this.events.get(fromId);
-        const to = this.events.get(toId);
-        if (!from || !to) return;
-        const key = `${fromId}>${toId}`;
-        if (this.edgeIdByKey.has(key)) return;
-
-        const id = `le_${this.edgeList.length}`;
-        this.edgeIdByKey.set(key, id);
-        this.edgeList.push({
-          id,
-          from: fromId,
-          to: toId,
-          cross: from.ownerId !== to.ownerId,
-        });
-        if (!this.succ.has(fromId)) this.succ.set(fromId, []);
-        this.succ.get(fromId).push(toId);
-        if (!this.pred.has(toId)) this.pred.set(toId, []);
-        this.pred.get(toId).push(fromId);
-      };
-
-      this.events.forEach((event) => {
-        event.triggers.forEach((triggerId) => link(triggerId, event.id));
-        event.actions.forEach((actionId) => link(event.id, actionId));
-      });
-
-      this.events.forEach((event, id) => {
-        if (this.succ.has(id) || this.pred.has(id)) this.activeIds.add(id);
-      });
-
-      this.chainEndIds = new Set(
-        [...this.activeIds].filter((id) => !(this.succ.get(id) || []).length),
-      );
-
-      this._computeClocks();
-    }
-
-    // An event no clock root reaches is one nothing paces; the builder leaves its
-    // frequency unset for the same reason.
-    _computeClocks() {
-      this.clocksOf.clear();
-      this.clockRootIds = [...this.events.values()]
-        .filter((event) => CLOCK_TYPES.has(event.type))
-        .map((event) => event.id);
-
-      this.clockRootIds.forEach((rootId) => {
-        const stack = [rootId];
-        const seen = new Set();
-        while (stack.length) {
-          const id = stack.pop();
-          if (seen.has(id)) continue;
-          seen.add(id);
-          if (!this.clocksOf.has(id)) this.clocksOf.set(id, new Set());
-          this.clocksOf.get(id).add(rootId);
-          (this.succ.get(id) || []).forEach((next) => {
-            if (!seen.has(next)) stack.push(next);
-          });
-        }
-      });
-    }
-
     _isVisible(eventId) {
-      return this.showUnlinked || this.activeIds.has(eventId);
-    }
-
-    // An `and` event fires at the slowest of its triggers, so triggers arriving
-    // at different rates mean the declared rate cannot hold for all of them.
-    _rateMismatch(event) {
-      if (event.type !== "and") return null;
-      const rates = new Set(
-        (this.pred.get(event.id) || [])
-          .map((id) => this.events.get(id)?.frequency)
-          .filter((frequency) => frequency !== null && frequency !== undefined),
-      );
-      return rates.size > 1 ? [...rates].sort((a, b) => a - b) : null;
+      return this.showUnlinked || this.graph.activeIds.has(eventId);
     }
 
     // ── View model ──────────────────────────────────────────────────────────────
@@ -337,7 +190,7 @@
       this.communityOf = null;
       this.foldedCount = 0;
 
-      this.events.forEach((event, id) => {
+      this.graph.events.forEach((event, id) => {
         if (!this._isVisible(id)) return;
         if (level.transparent(event)) {
           this.vertexOf.set(id, null);
@@ -381,9 +234,9 @@
         const seen = new Set();
         while (stack.length) {
           const step = stack.pop();
-          (this.succ.get(step.id) || []).forEach((nextId) => {
+          (this.graph.succ.get(step.id) || []).forEach((nextId) => {
             if (!this.vertexOf.has(nextId)) return;
-            const eventEdgeId = this.edgeIdByKey.get(`${step.id}>${nextId}`);
+            const eventEdgeId = this.graph.edgeIdByKey.get(`${step.id}>${nextId}`);
             const edges = eventEdgeId
               ? [...step.edges, eventEdgeId]
               : step.edges;
@@ -491,7 +344,7 @@
 
     // The namespace prefix a node sits under.
     _componentOf(ownerId) {
-      const path = this.instances.get(ownerId)?.data.path || "";
+      const path = this.graph.instances.get(ownerId)?.data.path || "";
       return `/${path.split("/").filter(Boolean).slice(0, COMPONENT_DEPTH).join("/")}`;
     }
 
@@ -500,7 +353,7 @@
     _nameGroup(group) {
       const ownerIds = [...group.ownerIds];
       if (this.grouping === "node") {
-        const instance = this.instances.get(ownerIds[0])?.data || {};
+        const instance = this.graph.instances.get(ownerIds[0])?.data || {};
         group.instance = instance;
         group.name = instance.name || ownerIds[0];
         group.detail = instance.path || "";
@@ -513,7 +366,7 @@
         counts.set(component, (counts.get(component) || 0) + 1);
       });
       const [component] = [...counts].sort((a, b) => b[1] - a[1])[0];
-      group.instance = this.instanceByPath.get(component) || {};
+      group.instance = this.graph.instanceByPath.get(component) || {};
       group.detail = component;
       group.name =
         this.grouping === "component"
@@ -603,14 +456,14 @@
     // The relation an edge stands for, named once: the first event it folds, or
     // its source event when the source vertex does not already carry that name.
     _labelEdge(edge) {
-      const source = this.events.get(edge.via[0] ?? edge.sourceEventId);
+      const source = this.graph.events.get(edge.via[0] ?? edge.sourceEventId);
       const label = this._shortLabel(this._bareName(source.name));
       edge.label = label === this.vertices.get(edge.from).label ? "" : label;
     }
 
     _decorateVertex(vertex) {
       if (this.level === "nodes") {
-        const instance = this.instances.get(vertex.id)?.data || {};
+        const instance = this.graph.instances.get(vertex.id)?.data || {};
         vertex.kind = "instance";
         vertex.type = null;
         vertex.ownerId = vertex.id;
@@ -618,28 +471,28 @@
         vertex.detail = instance.path || "";
         vertex.frequency = null;
         vertex.sub = this._rateSpan(vertex.eventIds);
-        vertex.clocked = vertex.eventIds.some((id) => this.clocksOf.has(id));
+        vertex.clocked = vertex.eventIds.some((id) => this.graph.clocksOf.has(id));
         vertex.mismatch = vertex.eventIds.some((id) =>
-          this._rateMismatch(this.events.get(id)),
+          this.graph.rateMismatch(this.graph.events.get(id)),
         );
       } else {
-        const event = this.events.get(vertex.eventIds[0]);
+        const event = this.graph.events.get(vertex.eventIds[0]);
         vertex.kind = event.kind;
         vertex.type = event.type;
         vertex.ownerId = event.ownerId;
         vertex.name = this._bareName(event.name);
-        vertex.detail = this.instances.get(event.ownerId)?.data.path || "";
+        vertex.detail = this.graph.instances.get(event.ownerId)?.data.path || "";
         vertex.frequency = event.frequency;
         vertex.sub = this.rateLabel(event.frequency);
-        vertex.clocked = this.clocksOf.has(event.id);
-        vertex.mismatch = Boolean(this._rateMismatch(event));
+        vertex.clocked = this.graph.clocksOf.has(event.id);
+        vertex.mismatch = Boolean(this.graph.rateMismatch(event));
       }
     }
 
     // A row carries the name of the node owning it unless the box around it
     // already does.
     _labelVertex(vertex) {
-      const owner = this.instances.get(vertex.ownerId)?.data;
+      const owner = this.graph.instances.get(vertex.ownerId)?.data;
       if (
         vertex.groupKey === vertex.ownerId ||
         vertex.kind === "instance" ||
@@ -672,7 +525,7 @@
       const rates = [
         ...new Set(
           eventIds
-            .map((id) => this.events.get(id).frequency)
+            .map((id) => this.graph.events.get(id).frequency)
             .filter((frequency) => frequency),
         ),
       ].sort((a, b) => a - b);
@@ -1109,7 +962,7 @@
     buildVertex(node, origin) {
       const vertex = this.vertices.get(node.id);
       const style = this.getLayerStyle();
-      const guide = this.instances.get(vertex.ownerId)?.data.vis_guide;
+      const guide = this.graph.instances.get(vertex.ownerId)?.data.vis_guide;
       const defaults = this.isDarkMode()
         ? this.styleDefaults.dark
         : this.styleDefaults.light;
@@ -1226,56 +1079,7 @@
         }
         return shape;
       }
-      return this.buildPortGlyph(vertex.kind);
-    }
-
-    // Port events are the boundary of a node: the chevron points the way the
-    // message travels, so an input and an output read the same on either side.
-    buildPortGlyph(kind) {
-      const glyph = document.createElementNS(SVG_NS, "polygon");
-      glyph.setAttribute(
-        "points",
-        `0,0 ${VIEW.glyphW},${VIEW.glyphH / 2} 0,${VIEW.glyphH}`,
-      );
-      glyph.classList.add("logic-event", `logic-event-${kind}`);
-      return glyph;
-    }
-
-    // Process-event outlines: `and` closes on a single arc, `or` on a concave
-    // back, a clock is a pill and `once` a tag; every other type is a plain box.
-    buildTypeShape(type, w, h, style) {
-      const shape = TYPE_SHAPES[type];
-      if (shape === "and") {
-        const path = document.createElementNS(SVG_NS, "path");
-        path.setAttribute(
-          "d",
-          `M0,0 L${w * 0.55},0 C${w},0 ${w},${h} ${w * 0.55},${h} L0,${h} Z`,
-        );
-        return path;
-      }
-      if (shape === "or") {
-        const path = document.createElementNS(SVG_NS, "path");
-        path.setAttribute(
-          "d",
-          `M0,0 C${w * 0.3},${h * 0.3} ${w * 0.3},${h * 0.7} 0,${h} ` +
-            `C${w * 0.55},${h} ${w * 0.85},${h * 0.8} ${w},${h / 2} ` +
-            `C${w * 0.85},${h * 0.2} ${w * 0.55},0 0,0 Z`,
-        );
-        return path;
-      }
-      if (shape === "tag") {
-        const path = document.createElementNS(SVG_NS, "path");
-        path.setAttribute(
-          "d",
-          `M0,0 L${w - h * 0.45},0 L${w},${h / 2} L${w - h * 0.45},${h} L0,${h} Z`,
-        );
-        return path;
-      }
-      const rect = document.createElementNS(SVG_NS, "rect");
-      rect.setAttribute("width", w);
-      rect.setAttribute("height", h);
-      rect.setAttribute("rx", shape === "clock" ? h / 2 : style.cornerR);
-      return rect;
+      return this.buildPortGlyph(vertex.kind, VIEW.glyphW, VIEW.glyphH);
     }
 
     buildEdgePath(laidEdge, origin = { x: 0, y: 0 }) {
@@ -1362,38 +1166,12 @@
 
     // ── Chain tracing ───────────────────────────────────────────────────────────
 
-    // Walks the trigger relation in one direction and returns the events reached,
-    // in hop order, together with the edges the walk used.
-    walkChain(startIds, adjacency) {
-      const order = [];
-      const hops = new Map(startIds.map((id) => [id, 0]));
-      const edges = new Set();
-      const queue = [...startIds];
-      const seen = new Set(startIds);
-
-      for (let cursor = 0; cursor < queue.length; cursor += 1) {
-        const id = queue[cursor];
-        (adjacency.get(id) || []).forEach((nextId) => {
-          const key =
-            adjacency === this.succ ? `${id}>${nextId}` : `${nextId}>${id}`;
-          const edgeId = this.edgeIdByKey.get(key);
-          if (edgeId) edges.add(edgeId);
-          if (seen.has(nextId)) return;
-          seen.add(nextId);
-          hops.set(nextId, (hops.get(id) || 0) + 1);
-          order.push(nextId);
-          queue.push(nextId);
-        });
-      }
-      return { order, hops, edges };
-    }
-
     _trace(startIds) {
       const empty = { order: [], hops: new Map(), edges: new Set() };
       const upstream =
-        this.traceMode === "down" ? empty : this.walkChain(startIds, this.pred);
+        this.traceMode === "down" ? empty : this.graph.walk(startIds, "up");
       const downstream =
-        this.traceMode === "up" ? empty : this.walkChain(startIds, this.succ);
+        this.traceMode === "up" ? empty : this.graph.walk(startIds, "down");
 
       this.clearHighlights();
       upstream.order.forEach((id) => this.highlightEvent(id, UPSTREAM_COLOR));
@@ -1416,7 +1194,7 @@
     }
 
     traceFrom(eventId) {
-      const event = this.events.get(eventId);
+      const event = this.graph.events.get(eventId);
       if (!event) return;
       const { upstream, downstream } = this._trace([eventId]);
       this.selectedId = eventId;
@@ -1483,8 +1261,8 @@
         );
       }
       return this.describeEvent(
-        this.events.get(vertex.eventIds[0]),
-        this._rateMismatch(this.events.get(vertex.eventIds[0])),
+        this.graph.events.get(vertex.eventIds[0]),
+        this.graph.rateMismatch(this.graph.events.get(vertex.eventIds[0])),
       );
     }
 
@@ -1500,21 +1278,21 @@
     describeEdge(edge) {
       const head = `${this.vertices.get(edge.from).name} → ${this.vertices.get(edge.to).name}`;
       if (!edge.via.length) return head;
-      return `${head}\n${edge.via.map((id) => this.events.get(id).name).join("\n")}`;
+      return `${head}\n${edge.via.map((id) => this.graph.events.get(id).name).join("\n")}`;
     }
 
     clockIds(eventIds) {
       const clocks = new Set();
       eventIds.forEach((id) =>
-        (this.clocksOf.get(id) || []).forEach((clockId) => clocks.add(clockId)),
+        (this.graph.clocksOf.get(id) || []).forEach((clockId) => clocks.add(clockId)),
       );
       return [...clocks];
     }
 
     chainReport(upstream, downstream, clockIds, extra = {}) {
       const entry = (id, hops) => {
-        const item = this.events.get(id);
-        const instance = this.instances.get(item.ownerId)?.data || {};
+        const item = this.graph.events.get(id);
+        const instance = this.graph.instances.get(item.ownerId)?.data || {};
         return {
           name: item.name,
           path: instance.path || instance.name || "",
@@ -1528,8 +1306,8 @@
 
       return {
         clocks: clockIds.map((id) => {
-          const clock = this.events.get(id);
-          const instance = this.instances.get(clock.ownerId)?.data || {};
+          const clock = this.graph.events.get(id);
+          const instance = this.graph.instances.get(clock.ownerId)?.data || {};
           return {
             name: clock.name,
             path: instance.path || "",
@@ -1546,7 +1324,7 @@
     }
 
     describeChain(event, upstream, downstream) {
-      const owner = this.instances.get(event.ownerId)?.data || {};
+      const owner = this.graph.instances.get(event.ownerId)?.data || {};
       return {
         name: event.name,
         path: owner.path || "",
@@ -1558,7 +1336,7 @@
           warn_rate: event.warn_rate,
           error_rate: event.error_rate,
           timeout: event.timeout,
-          mismatch: this._rateMismatch(event),
+          mismatch: this.graph.rateMismatch(event),
         },
         chain: this.chainReport(
           upstream,
@@ -1689,10 +1467,10 @@
     }
 
     _entryOf(eventId, rate) {
-      const event = this.events.get(eventId);
+      const event = this.graph.events.get(eventId);
       return {
         name: event.name,
-        path: this.instances.get(event.ownerId)?.data.path || "",
+        path: this.graph.instances.get(event.ownerId)?.data.path || "",
         type: event.type || "—",
         rate: rate ?? (this.rateLabel(event.frequency) || "no clock"),
         hops: 0,
@@ -1700,8 +1478,8 @@
     }
 
     highlightUnclocked() {
-      const ids = [...this.events.keys()].filter(
-        (id) => this._isVisible(id) && !this.clocksOf.has(id),
+      const ids = [...this.graph.events.keys()].filter(
+        (id) => this._isVisible(id) && !this.graph.clocksOf.has(id),
       );
       this.report(
         "No clock reaches these",
@@ -1712,8 +1490,8 @@
 
     highlightMismatches() {
       const found = [];
-      this.events.forEach((event, id) => {
-        const mismatch = this._rateMismatch(event);
+      this.graph.events.forEach((event, id) => {
+        const mismatch = this.graph.rateMismatch(event);
         if (mismatch && this._isVisible(id)) found.push({ id, mismatch });
       });
       this.report(
@@ -1731,7 +1509,7 @@
     // Chain ends have no vertex of their own where the ports are folded away, so
     // the report comes with the level that draws them.
     async highlightChainEnds() {
-      const ids = [...this.chainEndIds].filter((id) => this._isVisible(id));
+      const ids = [...this.graph.chainEndIds].filter((id) => this._isVisible(id));
       if (!ids.some((id) => this.vertexOf.get(id))) {
         await this.setLevel("events");
       }
@@ -1959,13 +1737,13 @@
       select.className = "logic-select";
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = `go to chain root (${this.clockRootIds.length})`;
+      placeholder.textContent = `go to chain root (${this.graph.clockRootIds.length})`;
       select.appendChild(placeholder);
 
-      this.clockRootIds
+      this.graph.clockRootIds
         .map((id) => {
-          const event = this.events.get(id);
-          const instance = this.instances.get(event.ownerId)?.data || {};
+          const event = this.graph.events.get(id);
+          const instance = this.graph.instances.get(event.ownerId)?.data || {};
           return { id, event, path: instance.path || "" };
         })
         .sort((a, b) => a.path.localeCompare(b.path))
@@ -1993,15 +1771,15 @@
     }
 
     buildCounters() {
-      const shown = [...this.events.keys()].filter((id) => this._isVisible(id));
-      const unclocked = shown.filter((id) => !this.clocksOf.has(id)).length;
+      const shown = [...this.graph.events.keys()].filter((id) => this._isVisible(id));
+      const unclocked = shown.filter((id) => !this.graph.clocksOf.has(id)).length;
 
       const div = document.createElement("div");
       div.className = "logic-counters";
       div.textContent =
         `${this.vertices.size} ${LEVELS[this.level].title} · ` +
         `${this.viewEdges.length} links · ${this.foldedCount} folded · ` +
-        `${this.chainEndIds.size} chain ends · ${unclocked} unclocked · ` +
+        `${this.graph.chainEndIds.size} chain ends · ${unclocked} unclocked · ` +
         `${this.groups.size} boxes · ${this.linkLength}px mean link`;
       if (this.groupingReport) {
         const measured = document.createElement("div");
@@ -2033,7 +1811,7 @@
         svg.setAttribute("viewBox", "0 0 26 14");
         const glyph =
           shape === "port"
-            ? this.buildPortGlyph("input")
+            ? this.buildPortGlyph("input", VIEW.glyphW, VIEW.glyphH)
             : this.buildTypeShape(
                 { clock: "periodic", and: "and", or: "or" }[shape] || null,
                 24,

@@ -8,8 +8,18 @@
   const FIT_SCALE_CAP = 1;
   const MAX_ZOOM = 5;
 
+  // Trigger semantics carried by shape: the type of a process event is what
+  // decides how many of its triggers have to fire before it does.
+  const TYPE_SHAPES = {
+    and: "and",
+    or: "or",
+    periodic: "clock",
+    once: "tag",
+  };
+
   class ElkCanvas extends DiagramBase {
     static SVG_NS = SVG_NS;
+    static TYPE_SHAPES = TYPE_SHAPES;
 
     constructor(container, options = {}) {
       super(container, options);
@@ -217,6 +227,54 @@
 
       defs.innerHTML = markup + globalMarkers;
       return defs;
+    }
+
+    // ── Event glyphs ────────────────────────────────────────────────────────────
+
+    // Port events are the boundary of a node: the chevron points the way the
+    // message travels, so an input and an output read the same on either side.
+    buildPortGlyph(kind, w, h) {
+      const glyph = document.createElementNS(SVG_NS, "polygon");
+      glyph.setAttribute("points", `0,0 ${w},${h / 2} 0,${h}`);
+      glyph.classList.add("logic-event", `logic-event-${kind}`);
+      return glyph;
+    }
+
+    // Process-event outlines: `and` closes on a single arc, `or` on a concave
+    // back, a clock is a pill and `once` a tag; every other type is a plain box.
+    buildTypeShape(type, w, h, style) {
+      const shape = TYPE_SHAPES[type];
+      if (shape === "and") {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute(
+          "d",
+          `M0,0 L${w * 0.55},0 C${w},0 ${w},${h} ${w * 0.55},${h} L0,${h} Z`,
+        );
+        return path;
+      }
+      if (shape === "or") {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute(
+          "d",
+          `M0,0 C${w * 0.3},${h * 0.3} ${w * 0.3},${h * 0.7} 0,${h} ` +
+            `C${w * 0.55},${h} ${w * 0.85},${h * 0.8} ${w},${h / 2} ` +
+            `C${w * 0.85},${h * 0.2} ${w * 0.55},0 0,0 Z`,
+        );
+        return path;
+      }
+      if (shape === "tag") {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute(
+          "d",
+          `M0,0 L${w - h * 0.45},0 L${w},${h / 2} L${w - h * 0.45},${h} L0,${h} Z`,
+        );
+        return path;
+      }
+      const rect = document.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("width", w);
+      rect.setAttribute("height", h);
+      rect.setAttribute("rx", shape === "clock" ? h / 2 : style.cornerR);
+      return rect;
     }
 
     // ── Text utilities ──────────────────────────────────────────────────────────

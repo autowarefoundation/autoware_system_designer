@@ -44,6 +44,7 @@ OVERVIEW_PAGE = "deployment_overview.html"
 OVERVIEW_SCRIPTS = (
     "js/diagram_base.js",
     "js/elk_canvas.js",
+    "js/event_graph.js",
     "js/editor_link.js",
     "js/info_panel.js",
     "js/overview_page.js",
