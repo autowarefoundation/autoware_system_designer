@@ -35,6 +35,7 @@ setup(
     entry_points={
         "console_scripts": [
             "autoware-system-designer-launch = autoware_system_designer_runtime.system_runner:main",
+            "autoware-system-designer-measure-analyze = autoware_system_designer_runtime.measure_analyze:main",
         ],
     },
 )

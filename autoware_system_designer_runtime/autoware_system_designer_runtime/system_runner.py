@@ -36,6 +36,8 @@ from typing import Any, Mapping, Optional, Sequence
 from ._impl.core.config import ActorConfig
 from ._impl.core.coordinator import ensure_output_dir
 from ._impl.core.stdin_console import run_console
+from ._impl.measure.node_graph import NodeGraph
+from ._impl.measure.session import MeasureOptions, MeasureSession, default_latency_out
 from ._impl.ros2.builder import populate_builder
 from ._impl.ros2.common.substitutions import bind_variables, resolve_argument_values, unresolved_var_names
 
@@ -198,6 +200,7 @@ def launch_from_json(
     max_respawn_attempts: Optional[int] = None,
     graceful_shutdown_timeout: float = 5.0,
     interactive: bool = False,
+    measure: Optional[MeasureOptions] = None,
 ) -> int:
     with open(json_path) as f:
         data = json.load(f)
@@ -206,6 +209,12 @@ def launch_from_json(
 
     out_dir = output_dir or ensure_output_dir()
     logger.info("logs: %s", out_dir)
+
+    graph: Optional[NodeGraph] = None
+    latency_out: Optional[Path] = None
+    if measure is not None:
+        graph = NodeGraph.from_system_structure(data, ecu=ecu)
+        latency_out = measure.latency_out or default_latency_out(graph, Path(json_path), out_dir)
 
     config = ActorConfig(
         respawn_enabled=respawn,
@@ -217,12 +226,23 @@ def launch_from_json(
 
     async def _run() -> int:
         builder, worker = populate_builder(data["data"], ecu=ecu, config=config)
+        session: Optional[MeasureSession] = None
+        if measure is not None and graph is not None and latency_out is not None:
+            session = MeasureSession(
+                graph,
+                worker,
+                measure,
+                log_dir=out_dir,
+                latency_out=latency_out,
+                mode=graph.mode or Path(json_path).stem,
+            )
+            session.install(builder)
         coord = builder.build()
         console_task = None
         try:
             await worker.start()
             if interactive:
-                console_task = asyncio.ensure_future(run_console(coord))
+                console_task = asyncio.ensure_future(run_console(coord, measure=session))
             return await coord.run()
         finally:
             if console_task is not None and not console_task.done():
@@ -307,7 +327,67 @@ def main() -> None:
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
     )
+    measure_group = parser.add_argument_group(
+        "latency measurement",
+        "Preload the rcl tracer into every process and analyze node process time, "
+        "topic communication and event chains into a latency file.",
+    )
+    measure_group.add_argument(
+        "--measure",
+        action="store_true",
+        help="Arm the tracer and open the measurement window once every actor has started.",
+    )
+    measure_group.add_argument(
+        "--measure-duration",
+        type=float,
+        default=None,
+        metavar="S",
+        help="Close the window after S seconds (after the settle time) and shut down.",
+    )
+    measure_group.add_argument(
+        "--measure-settle",
+        type=float,
+        default=5.0,
+        metavar="S",
+        help="Seconds after launch_ready excluded from the window (default: 5).",
+    )
+    measure_group.add_argument(
+        "--measure-keep-running",
+        action="store_true",
+        help="With --measure-duration, keep the system running after the analysis.",
+    )
+    measure_group.add_argument(
+        "--no-probe",
+        action="store_true",
+        help="Do not add probe subscriptions on intra-process-only topics.",
+    )
+    measure_group.add_argument(
+        "--latency-out",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Latency file to write. Default: latency/<Mode>_latency.json beside the "
+        "system definition the export names, else <log-dir>/latency/.",
+    )
+    measure_group.add_argument(
+        "--measure-report",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Report to write (default: <Mode>_measure_report.md beside the latency file).",
+    )
     args = parser.parse_args()
+
+    measure: Optional[MeasureOptions] = None
+    if args.measure or args.measure_duration is not None:
+        measure = MeasureOptions(
+            duration=args.measure_duration,
+            settle=args.measure_settle,
+            probe=not args.no_probe,
+            keep_running=args.measure_keep_running,
+            latency_out=args.latency_out,
+            report_out=args.measure_report,
+        )
 
     short_name_filter = _ShortNameFilter()
     handler = logging.StreamHandler()
@@ -328,5 +408,6 @@ def main() -> None:
             max_respawn_attempts=args.max_respawn_attempts,
             graceful_shutdown_timeout=args.graceful_shutdown_timeout,
             interactive=args.interactive,
+            measure=measure,
         )
     )

@@ -27,7 +27,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from typing import Mapping, Optional, Sequence
 
 from . import events as ev
 from .config import ActorConfig
@@ -51,6 +51,8 @@ class NodeSpec:
 
     name: str  # unique, used for routing and log directory
     cmd: Sequence[str]
+    # Full environment of the spawned process; None inherits the runtime's.
+    env: Optional[Mapping[str, str]] = field(default=None, repr=False)
     # Resolved with the PID the first time the process enters Running;
     # awaited by composable actors before submitting LoadNode.
     on_first_running: Optional["asyncio.Future[int]"] = field(default=None, repr=False)
@@ -135,6 +137,7 @@ class RegularNodeActor:
         try:
             self._proc = await spawn_pgrp(
                 self._spec.cmd,
+                env=self._spec.env,
                 stdout_path=node_dir / "out",
                 stderr_path=node_dir / "err",
             )

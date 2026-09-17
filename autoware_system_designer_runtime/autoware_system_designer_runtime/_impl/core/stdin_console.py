@@ -21,6 +21,7 @@ Supported commands (one per line)::
     stop    <name>    send Stop to matching members
     restart <name>    send Restart to matching members
     kill    <name>    send SIGKILL to matching members
+    measure start|stop|status  control the latency measurement window
     quit                     request shutdown
 
 Names are matched as substrings, so ``stop /perception`` stops everything
@@ -41,9 +42,12 @@ import shlex
 import signal
 import sys
 import threading
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .coordinator import Coordinator
+
+if TYPE_CHECKING:
+    from ..measure.session import MeasureSession
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +73,7 @@ class _StickyHandler(logging.Handler):
             self.handleError(record)
 
 
-async def run_console(coord: Coordinator) -> None:
+async def run_console(coord: Coordinator, measure: "Optional[MeasureSession]" = None) -> None:
     """Loop reading commands from stdin until shutdown or ``quit``."""
     if not sys.stdin.isatty():
         logger.warning("--interactive: stdin is not a TTY — interactive console disabled")
@@ -111,7 +115,7 @@ async def run_console(coord: Coordinator) -> None:
                 return
             if line is None:  # shutdown fired while waiting for input
                 return
-            await _dispatch(coord, line.strip())
+            await _dispatch(coord, line.strip(), measure)
     finally:
         logging.root.removeHandler(sticky)
         for h in replaced:
@@ -171,7 +175,7 @@ def _fut_resolve(
         fut.set_result(result)
 
 
-async def _dispatch(coord: Coordinator, line: str) -> None:
+async def _dispatch(coord: Coordinator, line: str, measure: "Optional[MeasureSession]" = None) -> None:
     try:
         parts = shlex.split(line)
     except ValueError as e:
@@ -189,6 +193,7 @@ async def _dispatch(coord: Coordinator, line: str) -> None:
             "  stop    <name>      — send Stop to matching members\n"
             "  restart <name>      — send Restart to matching members\n"
             "  kill    <name>      — send SIGKILL to matching members\n"
+            "  measure start|stop|status — control the latency measurement window\n"
             "  quit                — request graceful shutdown\n"
             "  help / ?            — show this message\n"
             "  Names are matched as substrings, e.g. 'stop /perception'."
@@ -202,6 +207,21 @@ async def _dispatch(coord: Coordinator, line: str) -> None:
 
     if op == "quit":
         coord.request_shutdown()
+        return
+
+    if op == "measure":
+        if measure is None:
+            print("[console] measurement is not armed; launch with --measure")
+            return
+        verb = (arg or "status").lower()
+        if verb == "start":
+            print(f"[console] {await measure.start()}")
+        elif verb == "stop":
+            print(f"[console] {await measure.stop()}")
+        elif verb == "status":
+            print(f"[console] {measure.status()}")
+        else:
+            print(f"[console] measure needs start, stop or status, not {verb!r}")
         return
 
     if op in ("stop", "restart", "kill"):

@@ -14,6 +14,8 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>rosidl_runtime_py</exec_depend>
+  <exec_depend>autoware_system_designer_tracer</exec_depend>
   <exec_depend>ros2run</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 
