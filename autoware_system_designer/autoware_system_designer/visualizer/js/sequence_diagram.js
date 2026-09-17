@@ -2,8 +2,8 @@
 // Event-chain latency view drawn as a timeline: time runs left to right, every
 // process gate is a block as wide as its run, and the gaps between blocks are
 // the transport, alignment and sampling delays that separate them. Every chain
-// of the system is drawn: one group per named chain, then one per clock root,
-// stacked down the page on a shared axis. Within a group the chain the axis is
+// of the system is drawn: one group per clock root, from its periodic source
+// to the terminals it reaches, stacked down the page on a shared axis. Within a group the chain the axis is
 // driven by is the spine on the centre track; the branches that join or leave
 // it are packed onto the tracks above and below.
 
@@ -92,7 +92,6 @@
       this.graph = new EventGraph();
       this.groups = [];
       this.activeGroup = null;
-      this.namedChains = [];
       this.hopLimit = null;
       this.showTrivial = false;
       this.state = "logical";
@@ -126,7 +125,6 @@
         );
       }
       this.graph.build(data);
-      this.namedChains = this.resolveNamedChains(data.event_chains || []);
       if (window.LatencySource) {
         this.measured = await window.LatencySource.loadBundled(
           this.options.mode,
@@ -135,32 +133,6 @@
         if (this.measured) this.state = "measured";
       }
       this.solveAndRender();
-    }
-
-    // A named chain points at events by node path and event name.
-    resolveNamedChains(chains) {
-      const find = (ref) => {
-        if (!ref) return null;
-        const [path, name] = String(ref).split(":");
-        const instance = this.graph.instanceByPath.get(path);
-        if (!instance) return null;
-        return (
-          [...this.graph.events.values()].find(
-            (event) =>
-              event.ownerId === String(instance.unique_id) &&
-              (event.name === name ||
-                event.name === `input_${name}` ||
-                event.name === `output_${name}`),
-          )?.id ?? null
-        );
-      };
-      return chains
-        .map((chain) => ({
-          name: chain.name,
-          from: find(chain.from),
-          to: find(chain.to),
-        }))
-        .filter((chain) => chain.from);
     }
 
     // The sink a group opens on: the deepest chain, then the longest.
@@ -190,29 +162,15 @@
       return T.designCosts(this.graph);
     }
 
-    // One group per named chain, then one per clock root a named chain does
-    // not start from. Groups with a single gate are trivial and hidden unless
+    // One group per clock root: the chain a periodic source drives, analyzed
+    // from the graph. Groups with a single gate are trivial and hidden unless
     // asked for.
     solveAndRender() {
       const solver = new T.ChainSolver(this.graph, this.costs());
-      const used = new Set();
-      const specs = [];
-      this.namedChains.forEach((chain) => {
-        used.add(chain.from);
-        specs.push({
-          name: chain.name,
-          sourceId: chain.from,
-          sinkId: chain.to,
-          named: true,
-        });
-      });
-      this.graph.clockRootIds
-        .filter((id) => !used.has(id))
+      const specs = this.graph.clockRootIds
         .map((id) => ({ id, path: this.graph.ownerOf(id)?.path || "" }))
         .sort((a, b) => a.path.localeCompare(b.path))
-        .forEach(({ id }) =>
-          specs.push({ name: null, sourceId: id, sinkId: null, named: false }),
-        );
+        .map(({ id }) => ({ sourceId: id, sinkId: null }));
 
       if (!specs.length) {
         this.showError("The design declares no events to chain.");
@@ -225,21 +183,15 @@
         group.solution = solver.solve(spec.sourceId, {
           hopLimit: this.hopLimit,
         });
-        if (!group.sinkId || !group.solution.reach.has(group.sinkId)) {
-          group.sinkId = this.defaultSink(group.solution);
-        }
+        group.sinkId = this.defaultSink(group.solution);
         const source = this.graph.events.get(spec.sourceId);
-        group.title =
-          spec.name ||
-          `${this.graph.ownerOf(spec.sourceId)?.path || ""}:${source.name}`;
+        group.title = `${this.graph.ownerOf(spec.sourceId)?.path || ""}:${source.name}`;
         group.rate = this.rateLabel(source.frequency);
         this.buildView(group);
         group.trivial = group.gates.length <= 1;
         return group;
       });
       this.groups.sort((a, b) => {
-        if (a.named !== b.named) return a.named ? -1 : 1;
-        if (a.named) return a.index - b.index;
         const rankA = a.solution.arrivals.get(a.sinkId).rank;
         const rankB = b.solution.arrivals.get(b.sinkId).rank;
         if (rankA !== rankB) return rankB - rankA;

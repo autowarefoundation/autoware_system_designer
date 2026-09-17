@@ -202,7 +202,6 @@ class SystemVariantResolver(VariantResolver):
                 "key_field": "source",
                 "converter": RemapEntry.from_dict,
             },
-            {"field": "event_chains", "key_field": "name"},
         ]
         self._resolve_merges(system_config, config_yaml, merge_specs)
 
@@ -238,7 +237,6 @@ class SystemVariantResolver(VariantResolver):
             {"field": "connections", "key_field": None},
             {"field": "node_groups", "key_field": "name"},
             {"field": "remaps", "key_field": "source"},
-            {"field": "event_chains", "key_field": "name"},
         ]
         self._resolve_removals(system_config, remove_config, remove_specs)
 

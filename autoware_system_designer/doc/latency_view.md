@@ -8,7 +8,7 @@ The sequence diagram of the deployment overview draws every event chain of the s
 - **Wait**: the thin segment leading into a block is the time between the trigger arriving and the run starting: the sampling delay of a periodic gate, or the skew an `and` gate waits out.
 - **Whisker**: ±1 standard deviation at the end of a block.
 - **Hop**: an arrow from the end of one block to the arrival at the next gate, labelled with the topic. Its length is the transport time; a hop between two gates of one node (`to_trigger`) is dashed. A hop that lands after its block has started is drawn dotted: the gate is an `or` and fired from another branch.
-- **Group**: one chain, from a source gate (a clock-driven process) to a sink event, under a title line with its rate, gate count and total. Named chains come first, then one group per clock root the named chains do not start from, deepest first; each starts at its own source firing and all share the axis. Clocks that reach a single gate are hidden behind the `single-gate clocks` toggle. Clicking a title, block or hop makes its group the active one; `enumerate chains` acts on it.
+- **Group**: one chain, from a source gate (a clock-driven process) to a sink event, under a title line with its rate, gate count and total. There is one group per clock root, deepest first, analyzed from the event graph: no chain is declared in the design; each starts at its own source firing and all share the axis. Clocks that reach a single gate are hidden behind the `single-gate clocks` toggle. Clicking a title, block or hop makes its group the active one; `enumerate chains` acts on it.
 - **Track**: one row of blocks within a group. The chain the axis is driven by is the spine on the tinted centre track; every other gate continues the track of the gate it feeds, or takes the nearest free track beside the spine, so the branches that join or leave the spine stack above and below it.
 - **Emphasis**: the maximum chain (red, the critical path), the minimum chain (green, the sequential shortest path) and the mean chain (orange, dashed where it leaves the other two). Everything off the three chains is dimmed. Nodes the source reaches but the chain does not pass are counted in the toolbar.
 - **Loop edge**: the event graph is cyclic (vehicle → localization → planning → control → vehicle). A depth-first walk from the source cuts every edge that closes on an ancestor; the toolbar counts them.
@@ -40,20 +40,6 @@ What the marks in the panel mean:
 - `≈` after a mean: the value was folded at an `and`/`or` gate and describes one branch, not the set. An `and` gate's mean is a lower bound.
 - `?` after a spread: hops without an `sd` were skipped; the chain's `sd` is an estimate, never a bound. `max` remains the bound.
 - At an `or` gate the folded number describes only the fastest branch; every branch is listed with its own summary, and **enumerate chains** expands the `or` choices into separate chains (every `and` branch kept), ranked by `max` and capped.
-
-## Named chains
-
-A system may name chains (format 0.5.0); they head the list of groups and fix the sink:
-
-```yaml
-event_chains:
-  - name: lidar_to_control
-    description: Point cloud in, control command out.
-    from: /sensing/lidar/top/lidar:hw_interface
-    to: /control/trajectory_follower:output_control_cmd
-```
-
-`from` and `to` are `<node path>:<event name>`, where the event is a process name or a port name. Named chains are also the target paths a CARET export would declare.
 
 ## Measurement file
 
@@ -98,4 +84,4 @@ The toolbar reports how many records of the file matched the design. There are n
 
 ## CARET
 
-CARET is the measurement path in both directions: the design already holds what a CARET architecture needs (processes as callbacks, ports and links as communications, named chains as target paths), and CARET's callback and communication latencies map onto `processes[]` and `links[]`. Both directions are reserved as documented stubs (`builder/export/caret_export.py`, `visualizer/latency_source.py`, `js/latency_source.js`) and are not implemented; a CARET run is expected in the file shape above until they are.
+CARET is the measurement path in both directions: the design already holds what a CARET architecture needs (processes as callbacks, ports and links as communications, clock-root chains as target paths), and CARET's callback and communication latencies map onto `processes[]` and `links[]`. Both directions are reserved as documented stubs (`builder/export/caret_export.py`, `visualizer/latency_source.py`, `js/latency_source.js`) and are not implemented; a CARET run is expected in the file shape above until they are.

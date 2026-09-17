@@ -21,7 +21,7 @@ design data already holds what a CARET architecture description needs:
 * ``processes[]`` of a node → callbacks of that node
 * ``in_ports`` / ``out_ports`` and the links between them → publish/subscribe
   communications
-* ``event_chains`` of the system → CARET target paths, one per named chain
+* each clock root's chain to the terminals it reaches → CARET target paths
 
 Measured results come back as ``visualizer.latency_source`` files keyed by
 node path and process or topic. Neither direction is wired into the export
@@ -36,12 +36,11 @@ if TYPE_CHECKING:
     from autoware_system_designer.builder.instances import Instance
 
 
-def export_caret_architecture(instance: "Instance", event_chains: list[Dict[str, Any]] | None = None) -> Dict[str, Any]:
+def export_caret_architecture(instance: "Instance") -> Dict[str, Any]:
     """Build the CARET architecture description of one deployed system.
 
     Args:
         instance: Root of the deployed instance tree.
-        event_chains: Named chains of the system design, exported as target paths.
 
     Raises:
         NotImplementedError: always; the mapping is documented above and awaits an implementation.

@@ -138,10 +138,6 @@ def _collect_parameter_files(instance: "Instance") -> list[ParameterFileData]:
 
 def collect_system_structure(instance: "Instance", system_name: str, mode: str) -> SystemStructurePayload:
     """Collect instance data with schema/version metadata for JSON handover."""
-    data = collect_instance_data(instance)
-    event_chains = getattr(instance.configuration, "event_chains", None)
-    if event_chains:
-        data["event_chains"] = event_chains
     return {
         "schema_version": SCHEMA_VERSION,
         "metadata": {
@@ -149,5 +145,5 @@ def collect_system_structure(instance: "Instance", system_name: str, mode: str) 
             "mode": mode,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         },
-        "data": data,
+        "data": collect_instance_data(instance),
     }

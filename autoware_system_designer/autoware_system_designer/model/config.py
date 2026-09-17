@@ -48,10 +48,6 @@ class ProcessDict(TypedDict, total=False):
     outcomes: List[Any]
 
 
-# Named chain of the latency view; `from` / `to` are "<node path>:<process or port name>".
-EventChainDict = TypedDict("EventChainDict", {"name": str, "description": str, "from": str, "to": str}, total=False)
-
-
 class InstanceRefDict(TypedDict, total=False):
     name: str
     entity: str
@@ -192,4 +188,3 @@ class SystemConfig(Config):
     variable_files: Optional[List[VariableFileDict]] = None
     node_groups: Optional[List[NodeGroupDict]] = None
     remaps: Optional[List[RemapEntry]] = None
-    event_chains: Optional[List[EventChainDict]] = None  # Named chains for the latency view / CARET target paths

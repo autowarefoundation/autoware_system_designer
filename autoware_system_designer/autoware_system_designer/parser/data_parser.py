@@ -330,7 +330,6 @@ class ConfigParser:
                 variable_files=config.get("variable_files"),
                 node_groups=config.get("node_groups"),
                 remaps=[RemapEntry.from_dict(r) for r in raw_remaps],
-                event_chains=config.get("event_chains"),
             )
         else:
             raise ValidationError(f"Unknown entity type: {entity_type}")

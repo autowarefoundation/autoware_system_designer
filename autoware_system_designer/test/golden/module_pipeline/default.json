@@ -1226,14 +1226,6 @@
     ],
     "compute_unit": "",
     "entity_type": "system",
-    "event_chains": [
-      {
-        "description": "Point cloud in, merged objects consumed.",
-        "from": "/sensing/lidar:capture",
-        "name": "lidar_to_sink",
-        "to": "/sink:consume"
-      }
-    ],
     "events": [],
     "in_ports": [],
     "links": [
