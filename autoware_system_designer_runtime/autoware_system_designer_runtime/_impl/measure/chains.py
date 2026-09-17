@@ -147,13 +147,16 @@ def _timer_fires_of(analysis: Analysis, node: NodeObs, pid: int, handle: int) ->
 def _walk_from_timer(analysis, node, fire, source, reached, hops, terminal, paths) -> None:
     first_pubs = [p for p in analysis.pubs_by_trigger.get(id(fire), []) if p.node is node]
     stack: list[tuple[PubEvent, int, tuple[str, ...]]] = [(p, 1, (_node_key(node),)) for p in first_pubs]
+    # target → (latency, depth, path) of the earliest arrival from this fire
+    arrivals: dict[str, tuple[int, int, tuple[str, ...]]] = {}
     while stack:
         pub, depth, path = stack.pop()
         target = f"{_node_key(pub.node)}:{pub.topic}"
         key = (source, target)
-        reached.setdefault(key, []).append(pub.t_in - fire.t)
-        hops.setdefault(key, depth)
-        paths.setdefault(key, list(path))
+        latency = pub.t_in - fire.t
+        best = arrivals.get(target)
+        if best is None or latency < best[0]:
+            arrivals[target] = (latency, depth, path)
         if depth >= MAX_DEPTH:
             terminal.setdefault(key, False)
             continue
@@ -173,3 +176,8 @@ def _walk_from_timer(analysis, node, fire, source, reached, hops, terminal, path
         terminal[key] = terminal.get(key, True) and is_terminal
         for cont, cont_path in next_pubs:
             stack.append((cont, depth + 1, cont_path))
+    for target, (latency, depth, path) in arrivals.items():
+        key = (source, target)
+        reached.setdefault(key, []).append(latency)
+        hops.setdefault(key, depth)
+        paths.setdefault(key, list(path))

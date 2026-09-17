@@ -133,6 +133,9 @@ def diff_output(
     if declared.kind == "none":
         return DiffRow("", declared_label, observed_label, STATUS_UNDECLARED, "no process event produces this output")
 
+    if declared.kind == "untriggered":
+        return DiffRow("", declared_label, observed_label, STATUS_MISMATCH, "the producing process declares no trigger")
+
     if declared.kind == "periodic":
         if observed.kind != "timer":
             return DiffRow("", declared_label, observed_label, STATUS_MISMATCH, "declared periodic, fired by an input")

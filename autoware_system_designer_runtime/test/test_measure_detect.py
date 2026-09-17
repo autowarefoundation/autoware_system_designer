@@ -106,3 +106,11 @@ def test_diff_node_reports_inputs_that_feed_nothing_and_never_taken(tmp_path):
 
     assert diff_node(graph, analysis, analysis.nodes["/b"]).never_taken == ["/z"]
     assert diff_node(graph, analysis, analysis.nodes["/e"]).feeds_nothing == ["/x"]
+
+
+def test_untriggered_process_differs_from_any_observation():
+    untriggered = DeclaredTrigger(kind="untriggered", gate="or")
+    timer = ObservedTrigger(kind="timer", share=1.0, total=10, period_ms=100.0)
+    row = diff_output(untriggered, timer, observed_rate_hz=10.0)
+    assert row.status == STATUS_MISMATCH and "declares no trigger" in row.note
+    assert diff_output(untriggered, None, observed_rate_hz=None).status == STATUS_UNOBSERVED

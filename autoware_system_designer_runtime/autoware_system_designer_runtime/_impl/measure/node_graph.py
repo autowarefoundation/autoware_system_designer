@@ -57,24 +57,30 @@ class DeclaredEvent:
 class DeclaredTrigger:
     """What the design says fires an output: a clock, inputs through a gate, or nothing."""
 
-    kind: str  # periodic | input | none
+    kind: str  # periodic | input | untriggered | none
     rate_hz: Optional[float] = None
     topics: list[str] = field(default_factory=list)
     gate: Optional[str] = None
     processes: list[str] = field(default_factory=list)
     # A clock upstream of the producing process, reached through other processes.
     upstream_rate_hz: Optional[float] = None
+    # Trigger ports that are not topics (services, ports without a topic), by name.
+    others: list[str] = field(default_factory=list)
 
     def label(self) -> str:
         if self.kind == "periodic":
             return f"periodic {_fmt_rate(self.rate_hz)}"
         if self.kind == "input":
             gate = f" {self.gate}" if self.gate in ("and", "or") else ""
-            topics = ", ".join(self.topics) if self.topics else "?"
+            names = list(self.topics) + [f"{name} (no topic)" for name in self.others]
+            topics = ", ".join(names) if names else "?"
             text = f"input({topics}){gate}"
             if self.upstream_rate_hz:
                 text += f" <- periodic {_fmt_rate(self.upstream_rate_hz)}"
             return text
+        if self.kind == "untriggered":
+            gate = f" {self.gate}" if self.gate else ""
+            return f"process{gate} without triggers"
         return "none"
 
 
@@ -95,6 +101,8 @@ class NodeInfo:
     inputs: dict[str, PortInfo] = field(default_factory=dict)
     outputs: dict[str, PortInfo] = field(default_factory=dict)
     events: dict[str, DeclaredEvent] = field(default_factory=dict)
+    # Input port event id → port name for ports that carry no topic (services, unbound).
+    other_inputs: dict[str, str] = field(default_factory=dict)
 
     @property
     def input_events(self) -> dict[str, PortInfo]:
@@ -191,6 +199,10 @@ class NodeGraph:
             info = self._port_info(port, producers=False)
             if info is not None:
                 node.inputs.setdefault(info.topic, info)
+            else:
+                event_id = (port.get("event") or {}).get("unique_id")
+                if event_id:
+                    node.other_inputs[str(event_id)] = port.get("name", "?")
         for port in entity.get("out_ports", []):
             info = self._port_info(port, producers=True)
             if info is not None:
@@ -298,6 +310,7 @@ class NodeGraph:
             rate = next((p.frequency for p in periodic if p.frequency), None)
             return DeclaredTrigger(kind="periodic", rate_hz=rate, processes=[p.name for p in periodic])
         topics: list[str] = []
+        others: list[str] = []
         upstream_rate: Optional[float] = None
         gate = producers[0].type if len(producers) == 1 else None
         seen: set[str] = set()
@@ -316,6 +329,11 @@ class NodeGraph:
                         if input_port.topic not in topics:
                             topics.append(input_port.topic)
                         continue
+                    other = node.other_inputs.get(trigger_id)
+                    if other is not None:
+                        if other not in others:
+                            others.append(other)
+                        continue
                     upstream = node.events.get(trigger_id)
                     if upstream is None:
                         continue
@@ -325,6 +343,8 @@ class NodeGraph:
                         next_stack.append(upstream)
             stack = next_stack
         rate = next((p.frequency for p in producers if p.frequency), None)
+        if not topics and not others and upstream_rate is None:
+            return DeclaredTrigger(kind="untriggered", rate_hz=rate, gate=gate, processes=[p.name for p in producers])
         return DeclaredTrigger(
             kind="input",
             rate_hz=rate,
@@ -332,6 +352,7 @@ class NodeGraph:
             gate=gate,
             processes=[p.name for p in producers],
             upstream_rate_hz=upstream_rate,
+            others=others,
         )
 
     def declared_consumers(self, node: NodeInfo, topic: str) -> list[str]:

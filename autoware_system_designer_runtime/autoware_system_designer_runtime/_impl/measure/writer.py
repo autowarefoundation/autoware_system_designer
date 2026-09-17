@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from .chains import ChainSummary
-from .detect import STATUS_MATCH, NodeDiff, diff_node, observed_trigger
+from .detect import STATUS_MATCH, STATUS_UNDECLARED, STATUS_UNOBSERVED, NodeDiff, diff_node, observed_trigger
 from .node_graph import NodeGraph
 from .node_stats import NS_PER_MS, Analysis, NodeObs, summarize
 
@@ -215,19 +215,37 @@ def build_report(
 
     rows = []
     matches = 0
+    unobserved: dict[str, list[str]] = {}
+    undeclared: dict[str, list[str]] = {}
     for node in sorted(analysis.matched_nodes(), key=lambda n: n.path or ""):
         for row in diffs[node.key].rows:
             if row.status == STATUS_MATCH:
                 matches += 1
-                continue
-            rows.append((node.path, row))
+            elif row.status == STATUS_UNOBSERVED:
+                unobserved.setdefault(node.path, []).append(row.output)
+            elif row.status == STATUS_UNDECLARED:
+                undeclared.setdefault(node.path, []).append(row.output)
+            else:
+                rows.append((node.path, row))
     lines += ["## Declared vs observed", ""]
-    lines.append(f"{matches} output(s) match their declared trigger; {len(rows)} differ or are unobserved.")
+    lines.append(
+        f"{matches} output(s) match their declared trigger, {len(rows)} differ, "
+        f"{sum(len(v) for v in unobserved.values())} declared output(s) were not published, "
+        f"{sum(len(v) for v in undeclared.values())} published output(s) have no declared producer."
+    )
     lines.append("")
     if rows:
         lines += ["| node | output | declared | observed | status | note |", "| --- | --- | --- | --- | --- | --- |"]
         for path, row in rows:
             lines.append(f"| {path} | {row.output} | {row.declared} | {row.observed} | {row.status} | {row.note} |")
+        lines.append("")
+    if unobserved:
+        lines += ["### Declared outputs not published", ""]
+        lines += [f"- {path}: {', '.join(topics)}" for path, topics in unobserved.items()]
+        lines.append("")
+    if undeclared:
+        lines += ["### Published outputs without a declared producer", ""]
+        lines += [f"- {path}: {', '.join(topics)}" for path, topics in undeclared.items()]
         lines.append("")
 
     notes = []

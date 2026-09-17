@@ -115,3 +115,47 @@ def test_ecu_filter_and_service_ports():
 
     assert "/a" not in graph.nodes  # filtered out by ecu
     assert "/svc" not in graph.nodes["/b"].inputs if "/b" in graph.nodes else True
+
+
+def test_declared_trigger_names_ports_without_a_topic():
+    design = system(
+        [
+            node(
+                "/api",
+                in_ports=[
+                    {
+                        "name": "set_mode",
+                        "msg_type": "std_srvs/srv/Trigger",
+                        "topic": ["api", "set_mode"],
+                        "event": {"unique_id": "api.svc", "type": "on_input", "trigger_ids": [], "action_ids": []},
+                    },
+                    in_port("state", "/state", "api.in"),
+                ],
+                out_ports=[out_port("mode", "/api/mode", "api.out", ["api.run"])],
+                events=[process("run", "api.run", "or", ["api.svc", "api.in"], ["api.out"])],
+            )
+        ]
+    )
+    graph = NodeGraph.from_system_structure(design)
+
+    trigger = graph.declared_trigger(graph.nodes["/api"], "/api/mode")
+    assert trigger.topics == ["/state"]
+    assert trigger.others == ["set_mode"]
+    assert trigger.label() == "input(/state, set_mode (no topic)) or"
+
+
+def test_process_without_triggers_is_untriggered():
+    design = system(
+        [
+            node(
+                "/s",
+                out_ports=[out_port("state", "/state", "s.out", ["s.pub"])],
+                events=[process("publish_state", "s.pub", "or", [], ["s.out"])],
+            )
+        ]
+    )
+    graph = NodeGraph.from_system_structure(design)
+
+    trigger = graph.declared_trigger(graph.nodes["/s"], "/state")
+    assert trigger.kind == "untriggered"
+    assert trigger.label() == "process or without triggers"
