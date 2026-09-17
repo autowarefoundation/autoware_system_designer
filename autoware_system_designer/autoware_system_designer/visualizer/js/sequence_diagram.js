@@ -95,41 +95,23 @@
       return lines.join("\n");
     }
 
+    // Events keyed by id, with the kind of each: a process event is one the
+    // node declares under events:, a port event belongs to a port. The shared
+    // data tree is read only.
     collectAllEvents(instance, eventMap) {
-      // Collect events from this instance
-      if (instance.events && Array.isArray(instance.events)) {
-        instance.events.forEach((e) => {
-          // If process_event is undefined, assume true for instance events
-          if (e.process_event === undefined) e.process_event = true;
-          eventMap.set(e.unique_id, e);
-        });
-      }
-      // Collect events from ports
-      if (instance.in_ports && Array.isArray(instance.in_ports)) {
-        instance.in_ports.forEach((p) => {
-          if (p.event) {
-            if (p.event.process_event === undefined)
-              p.event.process_event = false;
-            eventMap.set(p.event.unique_id, p.event);
+      (instance.events || []).forEach((e) => {
+        if (e?.unique_id) eventMap.set(e.unique_id, { event: e, process: true });
+      });
+      [...(instance.in_ports || []), ...(instance.out_ports || [])].forEach(
+        (p) => {
+          if (p.event?.unique_id) {
+            eventMap.set(p.event.unique_id, { event: p.event, process: false });
           }
-        });
-      }
-      if (instance.out_ports && Array.isArray(instance.out_ports)) {
-        instance.out_ports.forEach((p) => {
-          if (p.event) {
-            if (p.event.process_event === undefined)
-              p.event.process_event = false;
-            eventMap.set(p.event.unique_id, p.event);
-          }
-        });
-      }
-
-      // Recurse
-      if (instance.children && Array.isArray(instance.children)) {
-        instance.children.forEach((child) =>
-          this.collectAllEvents(child, eventMap),
-        );
-      }
+        },
+      );
+      (instance.children || []).forEach((child) =>
+        this.collectAllEvents(child, eventMap),
+      );
     }
 
     buildLogicGraph(instance, lines) {
@@ -155,23 +137,23 @@
       if (instance.entity_type === "node") {
         if (instance.events && Array.isArray(instance.events)) {
           instance.events.forEach((event) => {
-            if (event.process_event === true) {
-              if (event.trigger_ids && Array.isArray(event.trigger_ids)) {
-                event.trigger_ids.forEach((triggerId) => {
-                  const trigger = eventMap.get(triggerId);
-                  if (trigger) {
-                    this.eventConnection(
-                      instance.name,
-                      event,
-                      trigger.name,
-                      trigger,
-                      lines,
-                      eventMap,
-                    );
-                  }
-                });
+            if (!eventMap.get(event.unique_id)?.process) return;
+            const emitted = new Set();
+            (event.trigger_ids || []).forEach((triggerId) => {
+              const trigger = eventMap.get(triggerId);
+              if (trigger) {
+                this.eventConnection(
+                  instance.name,
+                  event,
+                  trigger.event.name,
+                  trigger,
+                  lines,
+                  eventMap,
+                  emitted,
+                  new Set(),
+                );
               }
-            }
+            });
           });
         }
       } else if (instance.entity_type === "module") {
@@ -183,6 +165,9 @@
       }
     }
 
+    // Follows the port chain behind a trigger back to the process event that
+    // fired it. Ports carry no logic, so the arrow joins the two processes and
+    // is labelled with the topic the message travelled on.
     eventConnection(
       rootName,
       eventOrigin,
@@ -190,37 +175,39 @@
       eventTarget,
       lines,
       eventMap,
+      emitted,
+      visited,
     ) {
+      const target = eventTarget.event;
+      if (visited.has(target.unique_id)) return;
+      visited.add(target.unique_id);
+
       if (
-        (eventTarget.type === "on_input" || eventTarget.type === "to_output") &&
-        eventTarget.process_event === false
+        (target.type === "on_input" || target.type === "to_output") &&
+        !eventTarget.process
       ) {
-        const newConnectionName = eventTarget.name;
-        if (eventTarget.trigger_ids && Array.isArray(eventTarget.trigger_ids)) {
-          eventTarget.trigger_ids.forEach((triggerId) => {
-            const trigger = eventMap.get(triggerId);
-            if (trigger) {
-              this.eventConnection(
-                rootName,
-                eventOrigin,
-                newConnectionName,
-                trigger,
-                lines,
-                eventMap,
-              );
-            }
-          });
-        }
-      } else {
-        const targetNamespace =
-          eventTarget.namespace && eventTarget.namespace.length > 0
-            ? eventTarget.namespace[eventTarget.namespace.length - 1]
-            : "";
-        const label = `${targetNamespace} to ${rootName}_${connectionName}`;
-        lines.push(
-          `${eventTarget.unique_id}->>${eventOrigin.unique_id}: ${label}`,
-        );
+        (target.trigger_ids || []).forEach((triggerId) => {
+          const trigger = eventMap.get(triggerId);
+          if (trigger) {
+            this.eventConnection(
+              rootName,
+              eventOrigin,
+              target.name,
+              trigger,
+              lines,
+              eventMap,
+              emitted,
+              visited,
+            );
+          }
+        });
+        return;
       }
+
+      if (emitted.has(target.unique_id)) return;
+      emitted.add(target.unique_id);
+      const topic = connectionName.replace(/^(input|output)_/, "");
+      lines.push(`${target.unique_id}->>${eventOrigin.unique_id}: ${topic}`);
     }
 
     async renderSequenceDiagram(mermaidSyntax) {
@@ -230,7 +217,7 @@
       // Create mermaid container that takes full height
       const mermaidContainer = document.createElement("div");
       mermaidContainer.className = "mermaid";
-      mermaidContainer.style.width = "1200px"; // Set explicit width for Mermaid to generate larger SVG
+      mermaidContainer.style.width = "100%";
       mermaidContainer.style.height = "100%"; // Take full height of parent
       mermaidContainer.style.minHeight = "800px"; // Minimum height fallback
       mermaidContainer.style.overflow = "visible";
@@ -397,7 +384,7 @@
               if (next.tagName === "text" && isText(next)) {
                 break;
               }
-              next = nextElementSibling;
+              next = next.nextElementSibling;
             }
           }
         }
