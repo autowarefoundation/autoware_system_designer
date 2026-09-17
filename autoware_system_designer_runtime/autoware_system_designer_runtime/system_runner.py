@@ -343,7 +343,8 @@ def main() -> None:
         type=float,
         default=None,
         metavar="S",
-        help="Close the window after S seconds (after the settle time) and shut down.",
+        help="Close the window after S seconds (after the settle time), shut the system down "
+        "and analyze once the actors have terminated.",
     )
     measure_group.add_argument(
         "--measure-settle",
@@ -370,13 +371,6 @@ def main() -> None:
         help="Latency file to write. Default: <Mode>_latency.json in the export's "
         "visualization/web/data/ (where the diagram reads it), else <log-dir>/latency/.",
     )
-    measure_group.add_argument(
-        "--measure-report",
-        type=Path,
-        default=None,
-        metavar="FILE",
-        help="Report to write (default: <Mode>_measure_report.md beside the latency file).",
-    )
     args = parser.parse_args()
 
     measure: Optional[MeasureOptions] = None
@@ -387,7 +381,6 @@ def main() -> None:
             probe=not args.no_probe,
             keep_running=args.measure_keep_running,
             latency_out=args.latency_out,
-            report_out=args.measure_report,
         )
 
     short_name_filter = _ShortNameFilter()

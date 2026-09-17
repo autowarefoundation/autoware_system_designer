@@ -17,6 +17,10 @@
 Tracing is armed at spawn (``LD_PRELOAD`` + ``ASD_TRACE_DIR``); the session only
 decides which part of the recording is analyzed. Probe subscriptions are attached
 when the window opens and removed when it closes.
+
+Lifecycle: ``armed`` → ``running`` → ``closed`` → ``analyzing`` → ``done`` | ``failed``.
+Every transition is logged; while the window is open a heartbeat reports the phase,
+the time left and the trace counters.
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -34,8 +39,8 @@ from .chains import trace_chains
 from .node_graph import NodeGraph
 from .node_stats import NS_PER_S, analyze
 from .probe import ProbeResult, attach_probes, detach_probes, probe_topics
-from .trace_reader import read_trace_dir
-from .writer import build_latency_file, build_report, write_latency_file, write_report
+from .trace_reader import read_trace_dir, trace_dir_progress
+from .writer import build_latency_file, write_latency_file
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +52,7 @@ TRACE_SUBDIR = "trace"
 LATENCY_DIR_NAME = "latency"
 SYSTEM_STRUCTURE_DIR = "system_structure"
 VISUALIZATION_DIR = "visualization"
+DEFAULT_HEARTBEAT_S = 10.0
 
 
 @dataclass
@@ -56,7 +62,7 @@ class MeasureOptions:
     probe: bool = True
     keep_running: bool = False
     latency_out: Optional[Path] = None
-    report_out: Optional[Path] = None
+    heartbeat: float = DEFAULT_HEARTBEAT_S
 
 
 def locate_tracer() -> Path:
@@ -118,13 +124,6 @@ def default_latency_out(mode: str, json_path: Path, log_dir: Path) -> Path:
     return base / f"{mode}_latency.json"
 
 
-def report_path_for(latency_out: Path) -> Path:
-    stem = latency_out.stem
-    if stem.endswith("_latency"):
-        stem = stem[: -len("_latency")]
-    return latency_out.with_name(f"{stem}_measure_report.md")
-
-
 def analyze_traces(
     trace_dir: Path,
     graph: NodeGraph,
@@ -134,22 +133,24 @@ def analyze_traces(
     mode: Optional[str],
     probe: Optional[bool],
     latency_out: Path,
-    report_out: Path,
     started_ns: Optional[int] = None,
 ) -> dict[str, Any]:
-    """Blocking: read the trace directory, analyze, write the latency file and the report."""
+    """Blocking: read the trace directory, analyze, write the latency file."""
     trace_set = read_trace_dir(trace_dir)
     span_start, span_end = trace_set.time_span()
     t0 = window_start_ns if window_start_ns is not None else span_start
     t1 = window_end_ns if window_end_ns is not None else span_end
     analysis = analyze(trace_set, graph, t0, t1)
     chains = trace_chains(analysis)
-    data, diffs = build_latency_file(graph, analysis, chains, mode=mode, probe=bool(probe), started_ns=started_ns)
+    data, _diffs = build_latency_file(graph, analysis, chains, mode=mode, probe=bool(probe), started_ns=started_ns)
     if probe is None:
         data["run"]["probe"] = None
     write_latency_file(data, latency_out)
-    write_report(build_report(graph, analysis, data, diffs, chains), report_out)
     return data
+
+
+def _clock(t_s: float) -> str:
+    return datetime.fromtimestamp(t_s).strftime("%H:%M:%S")
 
 
 class MeasureSession:
@@ -170,7 +171,6 @@ class MeasureSession:
         self._options = options
         self._trace_dir = log_dir / TRACE_SUBDIR
         self._latency_out = latency_out
-        self._report_out = options.report_out or report_path_for(latency_out)
         self._mode = mode
         self._tracer = locate_tracer()
         self._state = "armed"
@@ -197,25 +197,44 @@ class MeasureSession:
         coord.schedule_task(self._auto(coord))
 
     async def _auto(self, coord: Coordinator) -> None:
+        """Opens the window at launch_ready, heartbeats, closes it on the deadline or at shutdown."""
         await coord.launch_ready.wait()
         if coord.shutdown_event.is_set():
+            logger.info("measure: shutdown before launch_ready, the window never opened")
             return
-        logger.info(self._log_prefix() + await self.start())
-        if self._options.duration is None:
+        logger.info("measure: %s", await self.start())
+        while self._state == "running":
+            timeout = self._options.heartbeat
+            remaining = self._remaining_s()
+            if remaining is not None:
+                timeout = min(timeout, max(remaining, 0.0))
+            try:
+                await asyncio.wait_for(coord.shutdown_event.wait(), timeout=timeout)
+            except asyncio.TimeoutError:
+                pass
+            else:
+                logger.info("measure: %s", await self.close("shutdown requested"))
+                return  # the shutdown hook analyzes once the actors are down
+            if self._state != "running":
+                return  # closed from the console
+            if remaining is not None and self._remaining_s() <= 0:
+                break
+            logger.info("measure: %s", self.status())
+        logger.info("measure: %s", await self.close("duration elapsed"))
+        if self._options.keep_running:
+            logger.info("measure: %s", await self.analyze())
             return
-        total = self._options.settle + self._options.duration
-        try:
-            await asyncio.wait_for(coord.shutdown_event.wait(), timeout=total)
-            return  # shutdown fired first; the shutdown hook finalizes
-        except asyncio.TimeoutError:
-            pass
-        logger.info(self._log_prefix() + await self.stop())
-        if not self._options.keep_running:
-            coord.request_shutdown()
+        logger.info(
+            "measure: --measure-duration elapsed, shutting the system down; "
+            "the analysis runs once the actors have terminated (--measure-keep-running keeps it up)"
+        )
+        coord.request_shutdown()
 
     async def _on_shutdown(self, coord: Coordinator) -> None:
         if self._state == "running":
-            logger.info(self._log_prefix() + await self.stop())
+            logger.info("measure: %s", await self.close("shutdown"))
+        if self._state == "closed":
+            logger.info("measure: %s", await self.analyze())
 
     # ---- control ------------------------------------------------------------
 
@@ -223,7 +242,7 @@ class MeasureSession:
         async with self._lock:
             if self._state == "running":
                 return "measurement already running"
-            if self._state in ("analyzing", "done"):
+            if self._state != "armed":
                 return f"measurement {self._state}; one window per launch"
             self._started_ns = time.time_ns()
             self._state = "running"
@@ -233,19 +252,34 @@ class MeasureSession:
                 probe_note = f", {len(self._probe_result.attached)}/{len(topics)} probe subscriptions"
             else:
                 probe_note = ", probes off"
-            return f"measurement started (settle {self._options.settle:g} s{probe_note})"
+            duration = self._options.duration
+            if duration is None:
+                plan = "closes at shutdown or on 'measure stop'"
+            else:
+                plan = f"record {duration:g} s, closes at {_clock(self._deadline_s())}"
+            return f"window open: settle {self._options.settle:g} s, {plan}{probe_note}"
 
-    async def stop(self) -> str:
+    async def close(self, reason: str) -> str:
+        """Ends the recording window; the analysis is a separate step."""
         async with self._lock:
             if self._state != "running":
-                return f"measurement is {self._state}, nothing to stop"
+                return f"measurement is {self._state}, nothing to close"
             self._stopped_ns = time.time_ns()
-            self._state = "analyzing"
+            self._state = "closed"
             if self._options.probe:
                 await detach_probes(self._worker)
-            window_start = self._started_ns + int(self._options.settle * NS_PER_S)
-            if window_start >= self._stopped_ns:
-                window_start = self._started_ns
+            window_s = (self._stopped_ns - (self._window_start_ns() or self._stopped_ns)) / NS_PER_S
+            progress = trace_dir_progress(self._trace_dir)
+            return f"window closed ({reason}): {window_s:.1f} s recorded, {progress.describe()}"
+
+    async def analyze(self) -> str:
+        async with self._lock:
+            if self._state != "closed":
+                return f"measurement is {self._state}, nothing to analyze"
+            self._state = "analyzing"
+            progress = trace_dir_progress(self._trace_dir)
+            logger.info("measure: analyzing %s from %s", progress.describe(), self._trace_dir)
+            t_begin = time.monotonic()
             loop = asyncio.get_running_loop()
             try:
                 self._result = await loop.run_in_executor(
@@ -253,36 +287,46 @@ class MeasureSession:
                     lambda: analyze_traces(
                         self._trace_dir,
                         self._graph,
-                        window_start_ns=window_start,
+                        window_start_ns=self._window_start_ns(),
                         window_end_ns=self._stopped_ns,
                         mode=self._mode,
                         probe=self._options.probe,
                         latency_out=self._latency_out,
-                        report_out=self._report_out,
                         started_ns=self._started_ns,
                     ),
                 )
             except Exception as exc:  # noqa: BLE001
                 self._state = "failed"
                 logger.exception("measure: analysis failed")
-                return f"analysis failed: {exc}"
+                return f"analysis failed: {exc}; traces kept in {self._trace_dir}"
             self._state = "done"
             run = self._result["run"]
+            summary = self._result["summary"]
             return (
-                f"measurement done: {run['window_s']} s window, {len(self._result['nodes'])} nodes, "
-                f"{len(self._result['links'])} links, {len(self._result['chains'])} chains -> "
-                f"{self._latency_out} (report {self._report_out})"
+                f"analysis done in {time.monotonic() - t_begin:.1f} s: {run['window_s']} s window, "
+                f"{summary['observed_nodes']}/{summary['design_nodes']} design nodes observed, "
+                f"{len(self._result['links'])} links, {len(self._result['chains'])} chains -> {self._latency_out}"
             )
 
     def status(self) -> str:
-        parts = [f"state={self._state}", f"traces={self._trace_dir}"]
-        if self._started_ns is not None:
+        if self._state == "armed":
+            return f"armed, waiting for launch_ready; traces in {self._trace_dir}"
+        if self._state == "running":
             elapsed = (time.time_ns() - self._started_ns) / NS_PER_S
-            parts.append(f"started {elapsed:.1f} s ago")
-        if self._probe_result is not None:
-            parts.append(f"probes={len(self._probe_result.attached)} (failed {len(self._probe_result.failed)})")
-        parts.append(f"out={self._latency_out}")
-        return ", ".join(parts)
+            settle = self._options.settle
+            if elapsed < settle:
+                phase = f"settling {elapsed:.1f}/{settle:g} s"
+            elif self._options.duration is None:
+                phase = f"recording {elapsed - settle:.1f} s, open until shutdown or 'measure stop'"
+            else:
+                phase = f"recording {elapsed - settle:.1f}/{self._options.duration:g} s"
+            parts = [phase, trace_dir_progress(self._trace_dir).describe()]
+            if self._probe_result is not None and self._probe_result.failed:
+                parts.append(f"{len(self._probe_result.failed)} probe subscriptions failed")
+            return ", ".join(parts)
+        if self._state == "done":
+            return f"done -> {self._latency_out}"
+        return f"{self._state}; traces in {self._trace_dir}"
 
     @property
     def state(self) -> str:
@@ -296,6 +340,22 @@ class MeasureSession:
     def latency_out(self) -> Path:
         return self._latency_out
 
-    @staticmethod
-    def _log_prefix() -> str:
-        return "measure: "
+    # ---- window arithmetic ----------------------------------------------------
+
+    def _window_start_ns(self) -> Optional[int]:
+        """Start of the analyzed window; a window shorter than the settle time keeps everything."""
+        if self._started_ns is None:
+            return None
+        start = self._started_ns + int(self._options.settle * NS_PER_S)
+        if self._stopped_ns is not None and start >= self._stopped_ns:
+            return self._started_ns
+        return start
+
+    def _deadline_s(self) -> Optional[float]:
+        if self._started_ns is None or self._options.duration is None:
+            return None
+        return self._started_ns / NS_PER_S + self._options.settle + self._options.duration
+
+    def _remaining_s(self) -> Optional[float]:
+        deadline = self._deadline_s()
+        return None if deadline is None else deadline - time.time()

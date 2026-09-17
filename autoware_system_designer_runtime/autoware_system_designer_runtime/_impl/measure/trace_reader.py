@@ -239,6 +239,40 @@ def _read_names(path: Path, proc: ProcessTrace) -> None:
                 proc.timer_infos.add(obj, TimerInfo(proc.pid, obj, period, t_init), t_init)
 
 
+@dataclass(slots=True)
+class TraceProgress:
+    """Header counters of a trace directory, readable while the processes still write."""
+
+    processes: int = 0
+    records: int = 0
+    dropped: int = 0
+
+    def describe(self) -> str:
+        text = f"{self.processes} traced processes, {self.records} records"
+        if self.dropped:
+            text += f" ({self.dropped} dropped)"
+        return text
+
+
+def trace_dir_progress(path: Union[str, Path]) -> TraceProgress:
+    progress = TraceProgress()
+    for file in Path(path).glob("*.trace"):
+        try:
+            with file.open("rb") as handle:
+                data = handle.read(_HEADER.size)
+        except OSError:
+            continue
+        if len(data) < _HEADER.size:
+            continue
+        magic, version, _record_size, _pid, _header_size, capacity, count, _start_ns, _ = _HEADER.unpack_from(data, 0)
+        if magic != TRACE_MAGIC or version != TRACE_VERSION:
+            continue
+        progress.processes += 1
+        progress.records += min(count, capacity)
+        progress.dropped += max(count - capacity, 0)
+    return progress
+
+
 def read_trace_dir(path: Union[str, Path]) -> TraceSet:
     trace_set = TraceSet()
     for file in sorted(Path(path).glob("*.trace")):

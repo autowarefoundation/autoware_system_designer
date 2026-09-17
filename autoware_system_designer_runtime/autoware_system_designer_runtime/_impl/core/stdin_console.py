@@ -217,7 +217,9 @@ async def _dispatch(coord: Coordinator, line: str, measure: "Optional[MeasureSes
         if verb == "start":
             print(f"[console] {await measure.start()}")
         elif verb == "stop":
-            print(f"[console] {await measure.stop()}")
+            print(f"[console] {await measure.close('console stop')}")
+            if measure.state == "closed":
+                print(f"[console] {await measure.analyze()}")
         elif verb == "status":
             print(f"[console] {measure.status()}")
         else:

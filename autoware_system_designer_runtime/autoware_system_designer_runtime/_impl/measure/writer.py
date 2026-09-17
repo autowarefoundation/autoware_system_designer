@@ -12,20 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The ``autoware_system_designer/latency/2`` file and the measurement report.
+"""The ``autoware_system_designer/latency/2`` file.
 
 Records are keyed by node path and topic, never by process name or unique_id.
+The file is the whole result of a measurement; ``summary`` carries the counts a
+consumer needs to judge a run without walking the records.
 """
 
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
 from .chains import ChainSummary
-from .detect import STATUS_MATCH, STATUS_UNDECLARED, STATUS_UNOBSERVED, NodeDiff, diff_node, observed_trigger
+from .detect import NodeDiff, diff_node, observed_trigger
 from .node_graph import NodeGraph
 from .node_stats import NS_PER_MS, Analysis, NodeObs, summarize
 
@@ -158,6 +161,9 @@ def build_latency_file(
         }
         for node in sorted(analysis.unmatched_nodes(), key=lambda n: n.fqn)
     ]
+    observed_paths = {node.path for node in analysis.matched_nodes()}
+    unobserved = sorted(set(graph.nodes) - observed_paths)
+    output_status = Counter(row.status for diff in diffs.values() for row in diff.rows)
     data = {
         "schema": LATENCY_SCHEMA,
         "mode": mode,
@@ -172,9 +178,17 @@ def build_latency_file(
             "dropped_records": analysis.dropped_records,
             "invalid_communication_samples": analysis.comm_invalid,
         },
+        "summary": {
+            "design_nodes": len(graph.nodes),
+            "observed_nodes": len(observed_paths),
+            "unobserved_nodes": len(unobserved),
+            "nodes_not_in_design": len(unmatched),
+            "outputs_by_status": dict(sorted(output_status.items())),
+        },
         "nodes": nodes,
         "links": _link_records(graph, analysis),
         "chains": [chain.as_dict() for chain in chains],
+        "unobserved_nodes": unobserved,
         "unmatched_nodes": unmatched,
     }
     return data, diffs
@@ -184,130 +198,4 @@ def write_latency_file(data: dict[str, Any], path: Union[str, Path]) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    return path
-
-
-# ---- report -----------------------------------------------------------------------
-
-
-def _fmt(value: Optional[float]) -> str:
-    return "-" if value is None else f"{value:.2f}"
-
-
-def build_report(
-    graph: NodeGraph,
-    analysis: Analysis,
-    data: dict[str, Any],
-    diffs: dict[str, NodeDiff],
-    chains: list[ChainSummary],
-) -> str:
-    run = data["run"]
-    lines = [f"# Measurement report: {data.get('mode') or 'system'}", ""]
-    lines += [
-        f"- window: {run['window_s']} s from {run['window_start']} to {run['window_end']}",
-        f"- traced processes: {run['processes']}, probe subscriptions: {'on' if run['probe'] else 'off'}",
-        f"- design nodes: {len(graph.nodes)}, observed: {len(analysis.matched_nodes())}, "
-        f"not in design: {len(analysis.unmatched_nodes())}",
-        f"- dropped records: {run['dropped_records']}, invalid communication samples: "
-        f"{run['invalid_communication_samples']}",
-        "",
-    ]
-
-    rows = []
-    matches = 0
-    unobserved: dict[str, list[str]] = {}
-    undeclared: dict[str, list[str]] = {}
-    for node in sorted(analysis.matched_nodes(), key=lambda n: n.path or ""):
-        for row in diffs[node.key].rows:
-            if row.status == STATUS_MATCH:
-                matches += 1
-            elif row.status == STATUS_UNOBSERVED:
-                unobserved.setdefault(node.path, []).append(row.output)
-            elif row.status == STATUS_UNDECLARED:
-                undeclared.setdefault(node.path, []).append(row.output)
-            else:
-                rows.append((node.path, row))
-    lines += ["## Declared vs observed", ""]
-    lines.append(
-        f"{matches} output(s) match their declared trigger, {len(rows)} differ, "
-        f"{sum(len(v) for v in unobserved.values())} declared output(s) were not published, "
-        f"{sum(len(v) for v in undeclared.values())} published output(s) have no declared producer."
-    )
-    lines.append("")
-    if rows:
-        lines += ["| node | output | declared | observed | status | note |", "| --- | --- | --- | --- | --- | --- |"]
-        for path, row in rows:
-            lines.append(f"| {path} | {row.output} | {row.declared} | {row.observed} | {row.status} | {row.note} |")
-        lines.append("")
-    if unobserved:
-        lines += ["### Declared outputs not published", ""]
-        lines += [f"- {path}: {', '.join(topics)}" for path, topics in unobserved.items()]
-        lines.append("")
-    if undeclared:
-        lines += ["### Published outputs without a declared producer", ""]
-        lines += [f"- {path}: {', '.join(topics)}" for path, topics in undeclared.items()]
-        lines.append("")
-
-    notes = []
-    for node in sorted(analysis.matched_nodes(), key=lambda n: n.path or ""):
-        diff = diffs[node.key]
-        for topic in diff.never_taken:
-            notes.append(f"| {node.path} | {topic} | declared trigger never taken |")
-        for topic in diff.feeds_nothing:
-            notes.append(f"| {node.path} | {topic} | taken, feeds no declared process |")
-        for topic in diff.undeclared_inputs:
-            notes.append(f"| {node.path} | {topic} | taken, not an input of the design |")
-    if notes:
-        lines += ["## Inputs", "", "| node | topic | note |", "| --- | --- | --- |", *notes, ""]
-
-    unobserved = sorted(set(graph.nodes) - {n.path for n in analysis.matched_nodes()})
-    if unobserved:
-        lines += ["## Design nodes without records", ""]
-        lines += [f"- {path}" for path in unobserved]
-        lines.append("")
-    if data["unmatched_nodes"]:
-        lines += ["## Traced nodes not in the design", ""]
-        lines += [
-            f"- {u['node']} (pid {', '.join(map(str, u['pids']))}): {u['publishes']} publishes, {u['takes']} takes"
-            for u in data["unmatched_nodes"]
-        ]
-        lines.append("")
-
-    approx = []
-    for node in sorted(analysis.matched_nodes(), key=lambda n: n.path or ""):
-        for topic, pubs in sorted(node.pubs_by_topic.items()):
-            unknown = sum(1 for p in pubs if p.trigger is None or p.trigger.kind == "unknown")
-            if unknown:
-                approx.append(f"| {node.path} | {topic} | {unknown}/{len(pubs)} publishes with no visible trigger |")
-    lines += ["## Approximations", ""]
-    lines.append("- intra-process hops are folded into the downstream node's process time and carry no transport")
-    lines.append(
-        "- a publish from a thread that never took or fired has an unknown trigger; its response is still computed"
-    )
-    if approx:
-        lines += ["", "| node | output | note |", "| --- | --- | --- |", *approx]
-    lines.append("")
-
-    if chains:
-        lines += [
-            "## Chains",
-            "",
-            "| from | to | hops | count | mean ms | max ms |",
-            "| --- | --- | --- | --- | --- | --- |",
-        ]
-        for chain in chains:
-            if not chain.terminal:
-                continue
-            s = chain.summary
-            lines.append(
-                f"| {chain.source} | {chain.target} | {chain.hops} | {s.count} | {_fmt(s.mean_ms)} | {_fmt(s.max_ms)} |"
-            )
-        lines.append("")
-    return "\n".join(lines)
-
-
-def write_report(text: str, path: Union[str, Path]) -> Path:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
     return path

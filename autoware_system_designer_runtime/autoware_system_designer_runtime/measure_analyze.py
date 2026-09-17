@@ -26,7 +26,7 @@ from typing import Optional
 
 from ._impl.measure.node_graph import NodeGraph
 from ._impl.measure.node_stats import NS_PER_S
-from ._impl.measure.session import analyze_traces, default_latency_out, report_path_for
+from ._impl.measure.session import analyze_traces, default_latency_out
 from .system_runner import _resolve_structure_paths
 
 logger = logging.getLogger("autoware_system_designer")
@@ -55,7 +55,6 @@ def main() -> None:
         default=None,
         help="Output latency file (default: the export's visualization/web/data/, else <trace_dir>/../latency/)",
     )
-    parser.add_argument("--report", type=Path, default=None, help="Output report (default: beside the latency file)")
     parser.add_argument("--ecu", default=None, help="Restrict the design to nodes of this compute unit")
     parser.add_argument("--window-start", default=None, help="Epoch seconds or ISO time; default: first record")
     parser.add_argument("--window-end", default=None, help="Epoch seconds or ISO time; default: last record")
@@ -77,7 +76,6 @@ def main() -> None:
     mode = graph.mode or args.json_file.stem
 
     latency_out = args.latency_out or default_latency_out(mode, args.json_file, args.trace_dir.resolve().parent)
-    report_out = args.report or report_path_for(latency_out)
 
     window_start = _parse_time(args.window_start)
     if args.settle and window_start is not None:
@@ -96,7 +94,6 @@ def main() -> None:
         mode=mode,
         probe=args.probe,
         latency_out=latency_out,
-        report_out=report_out,
     )
     run = result["run"]
     print(
@@ -104,7 +101,6 @@ def main() -> None:
         f"{len(result['links'])} links, {len(result['chains'])} chains"
     )
     print(f"latency file: {latency_out}")
-    print(f"report:       {report_out}")
     sys.exit(0)
 
 

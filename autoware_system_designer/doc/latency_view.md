@@ -51,7 +51,27 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
 {
   "schema": "autoware_system_designer/latency/2",
   "mode": "Runtime",
-  "run": { "window_s": 60.0, "probe": true, "tracer": "0.1.0" },
+  "run": {
+    "window_s": 60.0,
+    "probe": true,
+    "tracer": "0.1.0",
+    "processes": 55,
+    "dropped_records": 0
+  },
+  "summary": {
+    "design_nodes": 102,
+    "observed_nodes": 100,
+    "unobserved_nodes": 2,
+    "nodes_not_in_design": 12,
+    "outputs_by_status": {
+      "match": 28,
+      "mismatch": 40,
+      "rate_mismatch": 37,
+      "unobserved": 105,
+      "undeclared": 169,
+      "unknown": 5
+    }
+  },
   "nodes": [
     {
       "node_path": "/localization/pose_twist_fusion_filter/ekf_localizer",
@@ -125,6 +145,10 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
       "max_ms": 41.0,
       "sd_ms": 4.2
     }
+  ],
+  "unobserved_nodes": ["<node_path>"],
+  "unmatched_nodes": [
+    { "node": "<fqn>", "pids": [1234], "publishes": 600, "takes": 0 }
   ]
 }
 ```
@@ -134,6 +158,7 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
 - `chains[]` is the measured end-to-end time from a detected timer to a publish, following the message flow. A group's title shows the measured record of its clock-root node to its sink beside the total composed from `exec` and `links`; the two are measured separately and never derived from one another.
 - `declared_diff` compares each output's declared trigger (from the node design's process events) with the observed one; the rows appear in a gate's info panel and in the Node panel.
 - `sd_ms` and `count` are optional. A record without `sd_ms` is drawn without a whisker and excluded from the chain's `sd`, with the skipped hops counted.
+- `summary` gives the run-level counts (design nodes observed, traced nodes outside the design, declared outputs per `declared_diff` status) so a consumer can judge a run without walking the records; `unobserved_nodes` lists the design nodes that produced no record and `unmatched_nodes` the traced nodes the design does not contain.
 
 The first shape, `autoware_system_designer/latency/1` (`processes[]` keyed by node path and process name, `links[]`), stays readable.
 

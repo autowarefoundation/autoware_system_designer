@@ -237,15 +237,16 @@ The two systems share the design pattern but not code. When play_launch's parser
 
 ```bash
 ros2 run autoware_system_designer_runtime autoware-system-designer-launch SYSTEM.json \
-    --measure --measure-duration 60      # settle 5 s, record 60 s, analyze, shut down
+    --measure --measure-duration 60      # settle 5 s, record 60 s, shut down, analyze
     [--measure-settle S]                 # seconds after launch_ready left out of the window (default 5)
-    [--measure-keep-running]             # keep the system up after the analysis
+    [--measure-keep-running]             # analyze with the system still up and keep it running
     [--no-probe]                         # do not add probe subscriptions on intra-process-only topics
     [--latency-out FILE]                 # default: <export>/visualization/web/data/<Mode>_latency.json, else <log-dir>/latency/
-    [--measure-report FILE]              # default: <Mode>_measure_report.md beside the latency file
 ```
 
-Without `--measure-duration` the window opens at `launch_ready` and closes at shutdown or on the console verb `measure stop` (`--interactive`: `measure start | stop | status`). Trace files stay under `<log-dir>/trace/` and can be re-analyzed offline:
+The session logs every step under the `measure:` prefix: the window opening (with the wall-clock time it closes), a heartbeat every 10 s with the phase (`settling` / `recording x/y s`) and the trace counters, the window closing with its reason, the shutdown it requests, and the analysis start and result. With `--measure-duration` the system is shut down as soon as the window closes; the analysis reads the trace files after the actors have terminated. A shutdown from elsewhere (signal, actor failure) closes the window at that moment and analyzes what was recorded.
+
+Without `--measure-duration` the window opens at `launch_ready` and closes at shutdown or on the console verb `measure stop` (`--interactive`: `measure start | stop | status`; `status` prints the heartbeat line on demand). Trace files stay under `<log-dir>/trace/` and can be re-analyzed offline:
 
 ```bash
 ros2 run autoware_system_designer_runtime autoware-system-designer-measure-analyze <log-dir>/trace SYSTEM.json -o FILE
@@ -253,7 +254,7 @@ ros2 run autoware_system_designer_runtime autoware-system-designer-measure-analy
 
 ### What is measured
 
-The unit of analysis is the node. Ports and inter-node topic links come from the design and are trusted; the design's process events are a claim that the report diffs against what was observed, output by output.
+The unit of analysis is the node. Ports and inter-node topic links come from the design and are trusted; the design's process events are a claim that the analysis diffs against what was observed, output by output (`declared_diff`).
 
 | Quantity                  | Definition                                                                                                                                                                                 |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -264,6 +265,6 @@ The unit of analysis is the node. Ports and inter-node topic links come from the
 | Communication (`links[]`) | `take − source_timestamp` per topic, publisher node and subscriber node; a take is matched to its publish by topic and a source timestamp inside the publish call                          |
 | Chain (`chains[]`)        | per instance: detected timer fire → same-thread publish → matched takes → the publishes they trigger → … → terminal publish; where a node samples, the chain continues at its next publish |
 
-Intra-process communication stays on. rclcpp skips `rcl_publish` when every matched reader is intra-process, so the runtime's own rclpy node adds one best-effort **probe subscription** to each such topic during the window; the publish is then recorded and the hop is folded into the downstream node's process time (`links[]` marks it `intra_process`, the inter-process duplicate the subscription still receives is dropped from every statistic). Approximations are reported, not hidden: a publish from a thread that never took or fired has an `unknown` trigger, a node that never publishes has no `exec`, dropped records and unmatched nodes are listed in the report.
+Intra-process communication stays on. rclcpp skips `rcl_publish` when every matched reader is intra-process, so the runtime's own rclpy node adds one best-effort **probe subscription** to each such topic during the window; the publish is then recorded and the hop is folded into the downstream node's process time (`links[]` marks it `intra_process`, the inter-process duplicate the subscription still receives is dropped from every statistic). Approximations are recorded, not hidden: a publish from a thread that never took or fired has an `unknown` trigger, a node that never publishes has no `exec`, dropped records are counted in `run`, design nodes without records and traced nodes outside the design are listed (`unobserved_nodes`, `unmatched_nodes`), and `summary` holds the run-level counts. The latency file is the only output; it is meant to be consumed by tooling (the visualizer, diagnostics), not read.
 
 The latency file (`autoware_system_designer/latency/2`) is documented in [doc/latency_view.md](../autoware_system_designer/doc/latency_view.md#measurement-file). By default it is written into the export's visualization bundle (`<export>/visualization/web/data/`, beside the `system_structure/` directory the JSON came from), which is where the sequence diagram fetches `data/<Mode>_latency.json`; the next reload of the deployment overview shows it. A rebuild regenerates the bundle, so keep a copy as `latency/<Mode>_latency.json` beside the system definition file to have the build carry it over.
