@@ -24,6 +24,7 @@ from typing import Dict
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.model.export_schema import DeploymentDataByMode
 from autoware_system_designer.visualizer import assets
+from autoware_system_designer.visualizer.latency_source import copy_latency_files, latency_dir_for
 from autoware_system_designer.visualizer.paths import systems_index_link
 from autoware_system_designer.visualizer.visualization_guide import inject_vis_guides
 
@@ -100,6 +101,8 @@ def visualize_deployment(
     if not deploy_data:
         return
 
+    # Measured latencies are optional and live beside the system file as latency/<mode>_latency.json.
+    copy_latency_files(latency_dir_for(system_definition_file), list(deploy_data), web_data_dir)
     _copy_web_assets(web_dir)
     _generate_config(renderer, web_dir, name, list(deploy_data), system_definition_file or "")
 

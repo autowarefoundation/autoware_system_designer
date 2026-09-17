@@ -46,6 +46,7 @@ OVERVIEW_SCRIPTS = (
     "js/elk_canvas.js",
     "js/event_graph.js",
     "js/timing_model.js",
+    "js/latency_source.js",
     "js/editor_link.js",
     "js/info_panel.js",
     "js/overview_page.js",
