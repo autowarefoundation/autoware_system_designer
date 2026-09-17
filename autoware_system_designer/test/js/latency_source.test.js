@@ -454,3 +454,186 @@ test("measured costs feed the solver with the design filling the gaps", () => {
   // 100 ms period + 0.9 ms link + 5 ms run
   assert.ok(Math.abs(run.total.max - 105.9) < 1e-9);
 });
+
+// ── Recorded graph ──────────────────────────────────────────────────────────
+
+test("the recorded graph is built from timers, triggers, responses and links", () => {
+  const design = graphV2();
+  const measurement = L.fromJson(fileV2(), "Runtime_latency.json");
+  const recorded = measurement.recordedGraph(design);
+  const g = recorded.graph;
+
+  const timer = "r:/sensing/a|timer:100";
+  const aGate = "r:/sensing/a|run:/sensing/cloud";
+  const aPub = "r:/sensing/a|pub:/sensing/cloud";
+  const bSub = "r:/perception/b|sub:/sensing/cloud";
+  const bGate = "r:/perception/b|run:/perception/objects";
+  assert.deepEqual(g.clockRootIds, [timer]);
+  assert.equal(g.events.get(timer).type, "periodic");
+  assert.equal(g.events.get(timer).frequency, 10);
+  assert.equal(g.events.get(aGate).type, "timer");
+  assert.equal(g.events.get(bGate).type, "input");
+  assert.equal(g.events.get(bGate).frequency, 10);
+  assert.ok(g.edgeId(timer, aGate));
+  assert.ok(g.edgeId(aGate, aPub));
+  assert.ok(g.edgeId(aPub, bSub));
+  assert.ok(g.edgeId(bSub, bGate));
+  assert.equal(recorded.edgeInfo(timer, aGate).kind, "timer");
+  assert.equal(recorded.edgeInfo(aPub, bSub).kind, "link");
+  assert.equal(recorded.edgeInfo(bSub, bGate).kind, "trigger");
+  assert.equal(recorded.edgeInfo(bSub, bGate).share, 1);
+  assert.equal(recorded.edgeInfo(aGate, bGate), null);
+
+  // Instances come from the design: the node keeps its name and path.
+  assert.equal(g.ownerOf(bGate).name, "b");
+  assert.equal(g.ownerOf(bGate).path, "/perception/b");
+  assert.deepEqual(L.outputTopicsOf(g, bGate && g.events.get(bGate)), [
+    "/perception/objects",
+  ]);
+
+  const { costs } = recorded;
+  assert.equal(costs.exec(g.events.get(bGate)).max, 5);
+  assert.equal(costs.exec(g.events.get(bGate)).source, "measured");
+  assert.equal(costs.exec(g.events.get(timer)).max, 0);
+  assert.equal(costs.wait(g.events.get(timer)).max, 0);
+  const link = costs.comm(null, g.events.get(aPub), g.events.get(bSub));
+  assert.equal(link.source, "measured");
+  assert.equal(link.max, 0.9);
+  assert.equal(
+    costs.comm(null, g.events.get(bSub), g.events.get(bGate)).max,
+    0,
+  );
+
+  // timer → a runs 0.9 → link 0.9 → b runs 5: the file's own chain record.
+  const solution = new T.ChainSolver(g, costs).solve(timer);
+  assert.ok(Math.abs(solution.arrivals.get(bGate).total.max - 6.8) < 1e-9);
+  assert.equal(recorded.triggerOf(bGate).topic, "/sensing/cloud");
+  assert.match(
+    recorded.label,
+    /1 timers, 2 outputs, 1 links, 0 sampled inputs/,
+  );
+});
+
+test("a sampled input waits for the gate's next run and keeps its response", () => {
+  const design = graphV2();
+  const file = fileV2();
+  file.nodes[0].timers = [{ period_ms: 50, rate_hz: 20, count: 200 }];
+  file.nodes[0].outputs.push({
+    topic: "/perception/summary",
+    rate_hz: 20,
+    trigger: { kind: "timer", period_ms: 50, share: 1 },
+    exec: { count: 200, min_ms: 0.1, mean_ms: 0.2, max_ms: 0.4, sd_ms: 0.1 },
+    response: [
+      {
+        from: "/sensing/cloud",
+        count: 100,
+        min_ms: 1,
+        mean_ms: 25,
+        max_ms: 51,
+      },
+    ],
+  });
+  const recorded = L.fromJson(file).recordedGraph(design);
+  const g = recorded.graph;
+  const bSub = "r:/perception/b|sub:/sensing/cloud";
+  const bTimer = "r:/perception/b|timer:50";
+  const summary = "r:/perception/b|run:/perception/summary";
+
+  assert.equal(g.clockRootIds.length, 2);
+  const info = recorded.edgeInfo(bSub, summary);
+  assert.equal(info.kind, "sampled");
+  assert.equal(info.rate, 20);
+  assert.equal(info.response.max_ms, 51);
+  const sampling = recorded.costs.comm(
+    null,
+    g.events.get(bSub),
+    g.events.get(summary),
+  );
+  assert.equal(sampling.source, "derived");
+  assert.equal(sampling.max, 50);
+  assert.equal(sampling.mean, 25);
+  assert.equal(recorded.edgeInfo(bTimer, summary).kind, "timer");
+
+  // From a's timer the summary gate is reached through the sampled input.
+  const solution = new T.ChainSolver(g, recorded.costs).solve(
+    "r:/sensing/a|timer:100",
+  );
+  assert.ok(Math.abs(solution.arrivals.get(summary).total.max - 52.2) < 1e-9);
+  // From b's own timer the gate fires at once.
+  const own = new T.ChainSolver(g, recorded.costs).solve(bTimer);
+  assert.ok(Math.abs(own.arrivals.get(summary).total.max - 0.4) < 1e-9);
+  assert.match(recorded.label, /1 sampled inputs/);
+});
+
+test("links attach by the topic's only publisher, intra-process costs nothing, unplaced nodes join the root", () => {
+  const design = graphV2();
+  const data = fileV2({
+    links: [
+      {
+        topic: "/sensing/cloud",
+        subscriber: "/perception/b",
+        min_ms: 0.1,
+        max_ms: 0.9,
+      },
+      {
+        topic: "/perception/objects",
+        publisher: "/perception/b",
+        subscriber: "/extra/c",
+        intra_process: true,
+      },
+    ],
+  });
+  data.nodes.push({
+    node_path: "/extra/c",
+    inputs: [{ topic: "/perception/objects", rate_hz: 10, count: 100 }],
+    timers: [],
+    outputs: [
+      {
+        topic: "/extra/out",
+        rate_hz: 10,
+        trigger: { kind: "unknown", share: 0.5 },
+        response: [
+          {
+            from: "/perception/objects",
+            count: 100,
+            min_ms: 1,
+            mean_ms: 2,
+            max_ms: 3,
+          },
+        ],
+      },
+    ],
+    declared_diff: [],
+  });
+  const recorded = L.fromJson(data).recordedGraph(design);
+  const g = recorded.graph;
+  const aPub = "r:/sensing/a|pub:/sensing/cloud";
+  const bSub = "r:/perception/b|sub:/sensing/cloud";
+  const bPub = "r:/perception/b|pub:/perception/objects";
+  const cSub = "r:/extra/c|sub:/perception/objects";
+  const cGate = "r:/extra/c|run:/extra/out";
+  assert.equal(recorded.edgeInfo(aPub, bSub).kind, "link");
+  assert.equal(recorded.edgeInfo(bPub, cSub).kind, "intra");
+  assert.equal(
+    recorded.costs.comm(null, g.events.get(bPub), g.events.get(cSub)).source,
+    "intra_process",
+  );
+  assert.ok(g.instanceByPath.has("/extra/c"));
+  assert.equal(g.ownerOf(cGate).name, "c");
+  assert.equal(g.events.get(cGate).type, null);
+  assert.equal(recorded.costs.exec(g.events.get(cGate)).source, "unmeasured");
+  assert.equal(recorded.edgeInfo(cSub, cGate).kind, "sampled");
+
+  const solution = new T.ChainSolver(g, recorded.costs).solve(
+    "r:/sensing/a|timer:100",
+  );
+  assert.ok(solution.reach.has(cGate));
+  assert.deepEqual(solution.unknownGates, [cGate]);
+  assert.throws(
+    () =>
+      L.fromJson(file({ schema: L.SCHEMA_V1, processes: [] })).recordedGraph(
+        design,
+      ),
+    /latency\/2/,
+  );
+});

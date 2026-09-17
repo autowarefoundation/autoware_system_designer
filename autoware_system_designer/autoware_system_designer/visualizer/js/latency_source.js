@@ -3,6 +3,8 @@
 // it. Records are keyed by node path and topic (or process name in the first
 // file version), never by unique_id: ids are name hashes and change whenever
 // the design is edited. The runtime writes latency/2; latency/1 stays readable.
+// A latency/2 file also yields the recorded graph: the event graph of what the
+// run showed, at node unit, with every cost measured.
 
 (function () {
   const SCHEMA_V1 = "autoware_system_designer/latency/1";
@@ -138,6 +140,9 @@
       },
       nodeRecord(nodePath) {
         return this.nodes.get(nodePath) || null;
+      },
+      recordedGraph(designGraph) {
+        return recordedGraph(this, designGraph);
       },
     };
     if (json.schema === SCHEMA_V1) parseV1(json, measurement);
@@ -296,6 +301,301 @@
     return rows.filter((row) => wanted.has(row.output));
   }
 
+  // ── Recorded graph ──────────────────────────────────────────────────────────
+
+  // The event graph a latency/2 run showed, at node unit. Every timer of a node
+  // is a clock root; every output is a process gate whose run is the output's
+  // exec; the ports are the topics. A gate is fed by its detected trigger and
+  // by every input its response table names; a link joins a publish to the
+  // take it was matched with. Node instances come from the design where the
+  // path is known, so colours and panels stay the design's.
+  const R_TIMER_TYPE = "periodic";
+
+  function recordedIds(path) {
+    return {
+      timer: (period) => `r:${path}|timer:${period}`,
+      gate: (topic) => `r:${path}|run:${topic}`,
+      pub: (topic) => `r:${path}|pub:${topic}`,
+      sub: (topic) => `r:${path}|sub:${topic}`,
+    };
+  }
+
+  function periodKey(period) {
+    return period === null || period === undefined ? "?" : `${period}`;
+  }
+
+  // Sampling delay of a gate for a message it does not fire on: uniform over
+  // the gate's own measured period.
+  function samplingOf(rateHz) {
+    if (!(rateHz > 0)) return T.summary({ source: "unmeasured" });
+    return T.uniform(0, 1000 / rateHz);
+  }
+
+  function recordedGraph(measurement, designGraph) {
+    if (measurement.schema !== SCHEMA) {
+      throw new Error("the recorded graph needs a latency/2 file");
+    }
+    const edgeInfo = new Map(); // "fromId>toId" → what the edge stands for
+    const execOf = new Map(); // gate id → exec record
+    const triggerOf = new Map(); // gate id → trigger record
+    const publishers = new Map(); // topic → [node path]
+    const synthesized = new Map(); // node path → synthesized instance fields
+
+    measurement.nodes.forEach((node, path) => {
+      (node.outputs || []).forEach((output) => {
+        if (!publishers.has(output.topic)) publishers.set(output.topic, []);
+        publishers.get(output.topic).push(path);
+      });
+    });
+
+    const edgeKey = (from, to) => `${from}>${to}`;
+    const addEdge = (from, to, info) => {
+      const key = edgeKey(from, to);
+      if (!edgeInfo.has(key)) edgeInfo.set(key, { from, to, ...info });
+      return edgeInfo.get(key);
+    };
+
+    measurement.nodes.forEach((node, path) => {
+      const ids = recordedIds(path);
+      const timers = new Map(); // period key → timer event
+      const subs = new Map(); // topic → input event
+      const gates = [];
+      const pubs = [];
+
+      const sub = (topic) => {
+        if (!subs.has(topic)) {
+          subs.set(topic, {
+            unique_id: ids.sub(topic),
+            name: topic,
+            type: "on_input",
+            trigger_ids: [],
+            action_ids: [],
+          });
+        }
+        return subs.get(topic);
+      };
+      (node.inputs || []).forEach((input) => sub(input.topic));
+
+      (node.timers || []).forEach((timer) => {
+        const key = periodKey(timer.period_ms);
+        if (!timers.has(key)) {
+          timers.set(key, {
+            unique_id: ids.timer(key),
+            name: `timer ${key} ms`,
+            type: R_TIMER_TYPE,
+            frequency: timer.rate_hz ?? null,
+            period_ms: timer.period_ms ?? null,
+            trigger_ids: [],
+            action_ids: [],
+          });
+        } else if ((timer.rate_hz ?? 0) > (timers.get(key).frequency ?? 0)) {
+          timers.get(key).frequency = timer.rate_hz;
+        }
+      });
+
+      (node.outputs || []).forEach((output) => {
+        const trigger = output.trigger || { kind: "unknown" };
+        const gateId = ids.gate(output.topic);
+        const gate = {
+          unique_id: gateId,
+          name: output.topic,
+          type: trigger.kind === "unknown" ? null : trigger.kind,
+          frequency: output.rate_hz ?? null,
+          trigger_ids: [],
+          action_ids: [ids.pub(output.topic)],
+        };
+        if (output.exec) execOf.set(gateId, output.exec);
+        triggerOf.set(gateId, { ...trigger, share: trigger.share ?? null });
+
+        // The gate's own period sets the sampling delay of messages it does
+        // not fire on: its timer's under a timer, its output rate otherwise.
+        let sampleRate = output.rate_hz ?? null;
+        if (trigger.kind === "timer") {
+          const timer = timers.get(periodKey(trigger.period_ms));
+          if (timer) {
+            timer.action_ids.push(gateId);
+            gate.trigger_ids.push(timer.unique_id);
+            addEdge(timer.unique_id, gateId, { kind: "timer" });
+            sampleRate = timer.frequency ?? sampleRate;
+          }
+        } else if (trigger.kind === "input" && trigger.topic) {
+          const input = sub(trigger.topic);
+          input.action_ids.push(gateId);
+          gate.trigger_ids.push(input.unique_id);
+          addEdge(input.unique_id, gateId, {
+            kind: "trigger",
+            share: trigger.share ?? null,
+            intra: Boolean(trigger.intra_process),
+          });
+        }
+        (output.response || []).forEach((response) => {
+          const input = sub(response.from);
+          const key = edgeKey(input.unique_id, gateId);
+          if (!edgeInfo.has(key)) {
+            input.action_ids.push(gateId);
+            gate.trigger_ids.push(input.unique_id);
+            addEdge(input.unique_id, gateId, {
+              kind: "sampled",
+              rate: sampleRate,
+            });
+          }
+          edgeInfo.get(key).response = response;
+        });
+        gates.push(gate);
+        pubs.push({
+          name: output.topic,
+          topic: output.topic,
+          event: {
+            unique_id: ids.pub(output.topic),
+            name: output.topic,
+            type: "to_output",
+            trigger_ids: [gateId],
+            action_ids: [],
+          },
+        });
+      });
+
+      synthesized.set(path, {
+        events: [...timers.values(), ...gates],
+        out_ports: pubs,
+        subs,
+      });
+    });
+
+    // Links: a publish matched to a take. A record without a publisher names
+    // the topic's only recorded publisher, else it stays unattached.
+    const linkEdge = (topic, publisher, subscriber, record) => {
+      const from = publisher ?? single(publishers.get(topic));
+      if (!from || !synthesized.has(from) || !synthesized.has(subscriber))
+        return;
+      const pub = synthesized
+        .get(from)
+        .out_ports.find((port) => port.topic === topic);
+      if (!pub) return;
+      const input = synthesized.get(subscriber).subs.get(topic);
+      if (!input) return;
+      if (!pub.event.action_ids.includes(input.unique_id)) {
+        pub.event.action_ids.push(input.unique_id);
+        input.trigger_ids.push(pub.event.unique_id);
+      }
+      addEdge(pub.event.unique_id, input.unique_id, {
+        kind: record.intra_process ? "intra" : "link",
+        link: record.intra_process ? null : record,
+      });
+    };
+    measurement.links.forEach((record) =>
+      linkEdge(record.topic, record.publisher, record.subscriber, record),
+    );
+    measurement.intra.forEach((key) => {
+      const [topic, publisher, subscriber] = key.split("|");
+      linkEdge(
+        topic,
+        publisher === "*" ? null : publisher,
+        subscriber === "*" ? null : subscriber,
+        { intra_process: true },
+      );
+    });
+
+    // The design's instance tree carries the nodes' guides and panels; nodes
+    // the design does not place are appended under the root.
+    const placed = new Set();
+    const instanceOf = (path, base) => {
+      const fields = synthesized.get(path);
+      placed.add(path);
+      return {
+        ...base,
+        in_ports: [...fields.subs.values()].map((event) => ({
+          name: event.name,
+          topic: event.name,
+          event,
+        })),
+        out_ports: fields.out_ports,
+        events: fields.events,
+        children: [],
+      };
+    };
+    const visit = (instance) => {
+      if (instance.path && synthesized.has(instance.path)) {
+        return instanceOf(instance.path, instance);
+      }
+      return {
+        ...instance,
+        in_ports: [],
+        out_ports: [],
+        events: [],
+        children: (instance.children || []).map(visit),
+      };
+    };
+    const designRoot = designGraph.instances.get(
+      [...designGraph.instances.keys()][0],
+    )?.data;
+    const root = designRoot
+      ? visit(designRoot)
+      : { unique_id: "r:root", name: "recorded", path: "/", children: [] };
+    synthesized.forEach((fields, path) => {
+      if (placed.has(path)) return;
+      root.children.push(
+        instanceOf(path, {
+          unique_id: `r:node:${path}`,
+          name: path.split("/").filter(Boolean).pop() || path,
+          path,
+          entity_type: "node",
+        }),
+      );
+    });
+
+    const graph = new designGraph.constructor().build(root);
+
+    const info = (fromId, toId) => edgeInfo.get(edgeKey(fromId, toId)) || null;
+    const costs = {
+      wait: () => T.ZERO,
+      exec(event) {
+        if (event.kind !== "process" || event.type === R_TIMER_TYPE) {
+          return T.ZERO;
+        }
+        const record = execOf.get(event.id);
+        return record ? T.fromRecord(record, "measured") : T.UNMEASURED;
+      },
+      // A link costs what was measured; a message a gate does not fire on
+      // waits for the gate's next run; a trigger costs nothing of its own.
+      comm(edge, from, to) {
+        const hit = info(from.id, to.id);
+        if (!hit) return T.ZERO;
+        if (hit.kind === "link") return T.fromRecord(hit.link, "measured");
+        if (hit.kind === "intra") return T.summary({ source: "intra_process" });
+        if (hit.kind === "sampled") return samplingOf(hit.rate);
+        return T.ZERO;
+      },
+    };
+
+    const counts = {
+      timers: [...graph.events.values()].filter(
+        (event) => event.kind === "process" && event.type === R_TIMER_TYPE,
+      ).length,
+      outputs: execOf.size,
+      links: [...edgeInfo.values()].filter(
+        (edge) => edge.kind === "link" || edge.kind === "intra",
+      ).length,
+      sampled: [...edgeInfo.values()].filter((edge) => edge.kind === "sampled")
+        .length,
+    };
+    return {
+      graph,
+      costs,
+      edgeInfo: info,
+      triggerOf: (gateId) => triggerOf.get(gateId) || null,
+      sampling: samplingOf,
+      counts,
+      label:
+        `${counts.timers} timers, ${counts.outputs} outputs, ` +
+        `${counts.links} links, ${counts.sampled} sampled inputs`,
+    };
+  }
+
+  function single(list) {
+    return list && list.length === 1 ? list[0] : null;
+  }
+
   // ── Loaders ─────────────────────────────────────────────────────────────────
 
   async function fromFile(file) {
@@ -327,6 +627,7 @@
     fromFile,
     loadBundled,
     outputTopicsOf,
+    recordedGraph,
   };
 
   if (typeof module !== "undefined" && module.exports) {

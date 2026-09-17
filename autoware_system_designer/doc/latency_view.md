@@ -2,18 +2,27 @@
 
 The sequence diagram of the deployment overview draws every event chain of the system as a timeline: time left to right, every process a block as wide as its run, one group per chain stacked down the page. It answers two questions about a design: which sequential path is the shortest or the most critical, and what the system's end-to-end latency is.
 
+The chains come from one of two graphs. The **design graph** is the trigger relation the node designs declare. The **recorded graph** is what a measured run showed, at node unit: it exists once a measurement file is loaded and is the graph the view opens on, since declared events are a claim and the record is the observation.
+
 ## What is drawn
 
 - **Block**: a process gate executing, as wide as its run. Its colour is the top-level component of the node (the legend lists them); the line above it carries the trigger glyph of the logic diagram (`and`, `or`, clock, `once`), the node, the process and the time the run completes. A dashed glyph marks a gate whose type is not declared.
 - **Wait**: the thin segment leading into a block is the time between the trigger arriving and the run starting: the sampling delay of a periodic gate, or the skew an `and` gate waits out.
 - **Whisker**: ±1 standard deviation at the end of a block.
-- **Hop**: an arrow from the end of one block to the arrival at the next gate, labelled with the topic. Its length is the transport time; a hop between two gates of one node (`to_trigger`) is dashed. A hop that lands after its block has started is drawn dotted: the gate is an `or` and fired from another branch.
-- **Group**: one chain, from a source gate (a clock-driven process) to a sink event, under a title line with its rate, gate count and total. There is one group per clock root, deepest first, analyzed from the event graph: no chain is declared in the design; each starts at its own source firing and all share the axis. Clocks that reach a single gate are hidden behind the `single-gate clocks` toggle. Clicking a title, block or hop makes its group the active one; `enumerate chains` acts on it.
+- **Hop**: an arrow from the end of one block to the arrival at the next gate, labelled with the topic. Its length is the transport time; a hop between two gates of one node (`to_trigger`) is dashed. A hop that lands after its block has started is drawn dotted: the gate is an `or` and fired from another branch. In the recorded graph a long-dashed hop is _sampled_: the message did not fire its gate and waited in the subscription for the gate's next run, and the hop's length includes that wait.
+- **Group**: one chain, from a source gate (a clock-driven process) to a sink event, under a title line with its rate, gate count and total. There is one group per clock root, deepest first, analyzed from the event graph: no chain is declared in the design; each starts at its own source firing and all share the axis. Clocks whose chain never leaves their own node are hidden behind the `single-node chains` toggle. Clicking a title, block or hop makes its group the active one; `enumerate chains` acts on it.
 - **Track**: one row of blocks within a group. The chain the axis is driven by is the spine on the tinted centre track; every other gate continues the track of the gate it feeds, or takes the nearest free track beside the spine, so the branches that join or leave the spine stack above and below it.
 - **Emphasis**: the maximum chain (red, the critical path), the minimum chain (green, the sequential shortest path) and the mean chain (orange, dashed where it leaves the other two). Everything off the three chains is dimmed. Nodes the source reaches but the chain does not pass are counted in the toolbar.
 - **Loop edge**: the event graph is cyclic (vehicle → localization → planning → control → vehicle). A depth-first walk from the source cuts every edge that closes on an ancestor; the toolbar counts them.
 
-## States
+## Graphs and states
+
+| Graph    | Vertices                                                                                                                                                                                                   | States                   |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| design   | the process and port events the node designs declare; clock roots are the `periodic` gates                                                                                                                 | logical, rates, measured |
+| recorded | one clock root per timer a node ran, one process gate per output it published, one port per topic taken or published; built from a `latency/2` file, with the design's instances behind the nodes it names | logical, measured        |
+
+In the recorded graph a gate is fed by the trigger the run detected for its output (its timer, or the input that fired it) and by every input its `response` table names. The trigger edge costs nothing; a response edge is _sampled_ and carries the sampling delay of the gate, uniform over the gate's own measured period (its timer's under a timer, its output rate otherwise). A link joins a publish to the takes matched with it; a record with no publisher attaches to the topic's only recorded publisher. Nodes the design does not place are appended under the root without a guide. Every run and every link in the graph is measured; nothing is declared, so there is no rates state.
 
 | State    | x axis                               | Numbers                                                                                                      |
 | -------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
@@ -153,7 +162,7 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
 }
 ```
 
-- `nodes[].outputs[].exec` supplies the execution cost of a process gate: the gate takes the record of the output topic it feeds (ports are trusted, process names are not). `trigger` is the dominant detected trigger of that output and `response` the age each input has when the output leaves.
+- `nodes[].outputs[].exec` supplies the execution cost of a process gate: the gate takes the record of the output topic it feeds (ports are trusted, process names are not). `trigger` is the dominant detected trigger of that output and `response` the age each input has when the output leaves. In the recorded graph the output _is_ the gate, `trigger` and `response` are its incoming edges, and `timers[]` are the clock roots; the hop panel shows the link, the sampling delay and the measured response side by side, the composed sum beside the direct measurement.
 - `links[]` supplies the transport cost of a topic between an output and the input it feeds, keyed by `topic`; `publisher` and `subscriber` narrow the match and may be left out. A link marked `intra_process` crossed no DDS hop: it is drawn as a zero-length hop and its time is part of the downstream node's `exec`.
 - `chains[]` is the measured end-to-end time from a detected timer to a publish, following the message flow. A group's title shows the measured record of its clock-root node to its sink beside the total composed from `exec` and `links`; the two are measured separately and never derived from one another.
 - `declared_diff` compares each output's declared trigger (from the node design's process events) with the observed one; the rows appear in a gate's info panel and in the Node panel.

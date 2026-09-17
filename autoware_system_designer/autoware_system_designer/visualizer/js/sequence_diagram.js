@@ -3,9 +3,11 @@
 // process gate is a block as wide as its run, and the gaps between blocks are
 // the transport, alignment and sampling delays that separate them. Every chain
 // of the system is drawn: one group per clock root, from its periodic source
-// to the terminals it reaches, stacked down the page on a shared axis. Within a group the chain the axis is
-// driven by is the spine on the centre track; the branches that join or leave
-// it are packed onto the tracks above and below.
+// to the terminals it reaches, stacked down the page on a shared axis. Within
+// a group the chain the axis is driven by is the spine on the centre track;
+// the branches that join or leave it are packed onto the tracks above and
+// below. The chains come from one of two graphs: the design's declared events,
+// or the recorded graph a measurement run showed.
 
 (function () {
   const SVG_NS = ElkCanvas.SVG_NS;
@@ -17,6 +19,14 @@
     logical: { button: "logical", timed: false },
     rates: { button: "rates", timed: true },
     measured: { button: "measured", timed: true },
+  };
+
+  // Where the chains come from: the design's declared events, or the graph a
+  // measurement recorded at node unit. The recorded graph has no rates state:
+  // every cost in it is measured or derived from a measured rate.
+  const GRAPHS = {
+    design: { button: "design", states: ["logical", "rates", "measured"] },
+    recorded: { button: "recorded", states: ["logical", "measured"] },
   };
 
   // The component of every summary the time axis is read from.
@@ -72,6 +82,7 @@
     ["min", "minimum chain — the sequential shortest path"],
     ["mean", "mean chain, dashed where it leaves the other two"],
     ["late", "late hop: the message lands after the run it feeds started"],
+    ["sampled", "sampled hop: the message waits for the next run of its gate"],
     ["loop", "loop-closing edge, cut from the solve"],
   ];
 
@@ -82,6 +93,7 @@
     "? marks a spread that skipped hops with no sd",
     "a periodic gate needs no measurement: its sampling delay is uniform over one period",
     "a faint block is a process run no measurement covers",
+    "the recorded graph has a gate per output the run published, fed by its detected trigger and the inputs its response table names",
   ];
 
   class SequenceDiagramModule extends ElkCanvas {
@@ -89,7 +101,10 @@
 
     constructor(container, options = {}) {
       super(container, options);
-      this.graph = new EventGraph();
+      this.designGraph = new EventGraph();
+      this.recorded = null; // recorded graph and costs, see latency_source.js
+      this.graphKind = "design";
+      this.graph = this.designGraph;
       this.groups = [];
       this.activeGroup = null;
       this.hopLimit = null;
@@ -124,15 +139,29 @@
           `No sequence diagram data available for mode: ${this.options.mode}`,
         );
       }
-      this.graph.build(data);
+      this.designGraph.build(data);
       if (window.LatencySource) {
-        this.measured = await window.LatencySource.loadBundled(
+        const measured = await window.LatencySource.loadBundled(
           this.options.mode,
-          this.graph,
         );
-        if (this.measured) this.state = "measured";
+        if (measured) this.attachMeasurement(measured);
       }
       this.solveAndRender();
+    }
+
+    // A loaded measurement opens on the graph it recorded.
+    attachMeasurement(measured) {
+      this.measured = measured;
+      this.recorded = measured.recordedGraph
+        ? measured.recordedGraph(this.designGraph)
+        : null;
+      this.graphKind = this.recorded ? "recorded" : "design";
+      this.graph = this.recorded ? this.recorded.graph : this.designGraph;
+      this.state = "measured";
+      this.activeGroup = null;
+      this.selectedId = null;
+      this.highlightEdges = null;
+      this.enumerated = null;
     }
 
     // The sink a group opens on: the deepest chain, then the longest.
@@ -156,6 +185,7 @@
 
     costs() {
       if (this.state === "logical") return T.logicalCosts();
+      if (this.graphKind === "recorded") return this.recorded.costs;
       if (this.state === "measured" && this.measured) {
         return T.measuredCosts(this.graph, this.measured.costs(this.graph));
       }
@@ -163,8 +193,8 @@
     }
 
     // One group per clock root: the chain a periodic source drives, analyzed
-    // from the graph. Groups with a single gate are trivial and hidden unless
-    // asked for.
+    // from the graph. Groups that never leave the source's node are trivial
+    // and hidden unless asked for.
     solveAndRender() {
       const solver = new T.ChainSolver(this.graph, this.costs());
       const specs = this.graph.clockRootIds
@@ -188,7 +218,9 @@
         group.title = `${this.graph.ownerOf(spec.sourceId)?.path || ""}:${source.name}`;
         group.rate = this.rateLabel(source.frequency);
         this.buildView(group);
-        group.trivial = group.gates.length <= 1;
+        group.trivial = group.gates.every(
+          (gate) => gate.ownerId === source.ownerId,
+        );
         return group;
       });
       this.groups.sort((a, b) => {
@@ -266,6 +298,7 @@
             group.chains[component].edgeSet.has(edgeId),
           );
         });
+        hop.info = this.hopInfo(hop);
       });
 
       this.assignTracks(group);
@@ -350,6 +383,23 @@
       if (Array.isArray(topic) && topic.length) return `/${topic.join("/")}`;
       if (typeof topic === "string" && topic) return topic;
       return event.port?.name || event.name.replace(/^(input|output)_/, "");
+    }
+
+    // What the record says about the edges a hop folds: the link it rode, the
+    // sampling delay at its gate, and the response measured across both.
+    hopInfo(hop) {
+      if (this.graphKind !== "recorded") return null;
+      const info = { link: null, sampled: null, response: null, share: null };
+      hop.edges.forEach((edgeId) => {
+        const edge = this.graph.edgeById.get(edgeId);
+        const hit = edge ? this.recorded.edgeInfo(edge.from, edge.to) : null;
+        if (!hit) return;
+        if (hit.kind === "link") info.link = hit.link;
+        if (hit.kind === "sampled") info.sampled = hit.rate;
+        if (hit.kind === "trigger") info.share = hit.share;
+        if (hit.response) info.response = hit.response;
+      });
+      return info;
     }
 
     // Where an event sits along the axis the view is driven by.
@@ -493,8 +543,9 @@
     // ── Geometry ────────────────────────────────────────────────────────────────
 
     // Time to x. In the logical state one column per rank; in a timed state the
-    // scale is shared by every group and set so the longest chain lands near
-    // the target width, then zoomed.
+    // scale is shared by every group and set so the longest sink chain lands
+    // near the target width, then zoomed. Gates off the sink chains may run
+    // past it: a rarely published output samples over a long period.
     prepareScale() {
       const timed = STATES[this.state].timed;
       this.originX = VIEW.padLeft;
@@ -506,13 +557,11 @@
       if (this.pxPerMs === null) {
         let extent = 0;
         this.visibleGroups().forEach((group) => {
-          group.gates.forEach((gate) => {
-            const arrival = group.solution.arrivals.get(gate.id);
-            extent = Math.max(
-              extent,
-              T.at(arrival.total, this.driver) + arrival.total.sd,
-            );
-          });
+          const sink = group.solution.arrivals.get(group.sinkId);
+          extent = Math.max(
+            extent,
+            T.at(sink.total, this.driver) + sink.total.sd,
+          );
         });
         this.pxPerMs = extent > 0 ? VIEW.targetWidth / extent : 1;
       }
@@ -704,7 +753,11 @@
         }
       }
       const toNode = this.graph.ownerOf(sinkId)?.path;
-      const topic = sink?.kind === "output" ? this.topicOf(sink) : null;
+      let topic = sink?.kind === "output" ? this.topicOf(sink) : null;
+      if (sink?.kind === "process" && window.LatencySource) {
+        topic =
+          window.LatencySource.outputTopicsOf(this.graph, sink)[0] ?? null;
+      }
       return this.measured.chainFor(fromNode, toNode, topic);
     }
 
@@ -815,6 +868,8 @@
       if (fromOwner === toOwner) path.classList.add("seq-hop-internal");
       if (hop.comm?.source === "intra_process")
         path.classList.add("seq-hop-intra");
+      if (hop.info?.sampled !== null && hop.info?.sampled !== undefined)
+        path.classList.add("seq-hop-sampled");
       if (timed && arrive > toBox.left + 0.5)
         path.classList.add("seq-hop-late");
       path.classList.add("seq-hop");
@@ -1178,6 +1233,11 @@
         lines.push(`comm ${T.formatSummary(hop.comm)}`);
         lines.push(`arrives ${T.formatSummary(hop.arrival)}`);
       }
+      if (hop.info?.response) {
+        lines.push(
+          `response ${T.formatSummary(T.fromRecord(hop.info.response, "measured"))}`,
+        );
+      }
       return lines.join("\n");
     }
 
@@ -1299,6 +1359,51 @@
       return rows;
     }
 
+    // The record behind a hop of the recorded graph: the link's own transport,
+    // the sampling delay derived from the gate's rate, and the response the
+    // run measured from the take to the publish.
+    recordRows(hop) {
+      const info = hop.info;
+      if (!info) return [];
+      const rows = [];
+      const row = (label, summary) =>
+        summary &&
+        rows.push({
+          label,
+          value: T.formatSummary(summary),
+          source: summary.source,
+          count: summary.count,
+        });
+      if (info.link) row("link", T.fromRecord(info.link, "measured"));
+      if (info.sampled !== null) {
+        row("sampling", this.recorded.sampling(info.sampled));
+      }
+      if (info.share !== null) {
+        rows.push({
+          label: "trigger",
+          value: `fires the gate (${Math.round(info.share * 100)}% of runs)`,
+        });
+      }
+      if (info.response)
+        row("response", T.fromRecord(info.response, "measured"));
+      return rows;
+    }
+
+    // The detected trigger of a recorded gate.
+    triggerRows(gate) {
+      const trigger = this.recorded?.triggerOf(gate.id);
+      if (!trigger || this.graphKind !== "recorded") return [];
+      const what =
+        trigger.kind === "timer"
+          ? `timer ${trigger.period_ms ?? "?"} ms`
+          : trigger.kind === "input"
+            ? `input ${trigger.topic}${trigger.intra_process ? " (intra-process)" : ""}`
+            : "not visible on the publishing thread";
+      const share =
+        trigger.share === null ? "" : ` · ${Math.round(trigger.share * 100)}%`;
+      return [{ label: "trigger", value: `${what}${share}` }];
+    }
+
     describeGatePanel(group, gate) {
       const arrival = group.solution.arrivals.get(gate.id);
       const owner = this.graph.ownerOf(gate.id) || {};
@@ -1321,7 +1426,7 @@
           state: this.state,
           rank: arrival.rank,
           fold: arrival.fold,
-          rows: this.latencyRows(arrival),
+          rows: [...this.triggerRows(gate), ...this.latencyRows(arrival)],
           branches: arrival.branches.map((branch) => ({
             name: this.branchName(branch),
             value: T.formatSummary(branch.summary),
@@ -1356,7 +1461,10 @@
         latency: {
           state: this.state,
           fold: arrival.fold,
-          rows: this.latencyRows(arrival, hop.comm),
+          rows: [
+            ...this.recordRows(hop),
+            ...this.latencyRows(arrival, hop.comm),
+          ],
           arrives: T.formatSummary(hop.arrival),
           on: Object.entries(hop.on)
             .filter(([, yes]) => yes)
@@ -1474,8 +1582,7 @@
     async loadMeasurement(file) {
       if (!window.LatencySource) return;
       try {
-        this.measured = await window.LatencySource.fromFile(file, this.graph);
-        this.state = "measured";
+        this.attachMeasurement(await window.LatencySource.fromFile(file));
         this.pxPerMs = null;
         this.solveAndRender();
       } catch (error) {
@@ -1489,7 +1596,22 @@
     setState(state) {
       if (this.state === state) return;
       if (state === "measured" && !this.measured) return;
+      if (!GRAPHS[this.graphKind].states.includes(state)) return;
       this.state = state;
+      this.pxPerMs = null;
+      this.solveAndRender();
+    }
+
+    setGraphKind(kind) {
+      if (this.graphKind === kind) return;
+      if (kind === "recorded" && !this.recorded) return;
+      this.graphKind = kind;
+      this.graph = kind === "recorded" ? this.recorded.graph : this.designGraph;
+      if (!GRAPHS[kind].states.includes(this.state)) this.state = "measured";
+      this.activeGroup = null;
+      this.selectedId = null;
+      this.highlightEdges = null;
+      this.enumerated = null;
       this.pxPerMs = null;
       this.solveAndRender();
     }
@@ -1536,6 +1658,23 @@
 
       bar.appendChild(
         row(
+          label("Graph"),
+          ...Object.entries(GRAPHS).map(([kind, spec]) =>
+            button(
+              kind === "recorded" && !this.recorded
+                ? "recorded (drop a latency file)"
+                : spec.button,
+              () => this.setGraphKind(kind),
+              this.graphKind === kind,
+              kind === "recorded" && !this.recorded,
+            ),
+          ),
+        ),
+      );
+
+      const allowed = GRAPHS[this.graphKind].states;
+      bar.appendChild(
+        row(
           label("State"),
           ...Object.entries(STATES).map(([state, spec]) =>
             button(
@@ -1544,7 +1683,8 @@
                 : spec.button,
               () => this.setState(state),
               this.state === state,
-              state === "measured" && !this.measured,
+              (state === "measured" && !this.measured) ||
+                !allowed.includes(state),
             ),
           ),
         ),
@@ -1616,7 +1756,7 @@
       };
       wrap.appendChild(input);
       wrap.appendChild(
-        document.createTextNode(` single-gate clocks (${trivial})`),
+        document.createTextNode(` single-node chains (${trivial})`),
       );
       return wrap;
     }
@@ -1662,7 +1802,8 @@
         unknown += group.solution.unknownGates.length;
       });
       const parts = [
-        `${groups.length} chain${groups.length === 1 ? "" : "s"}${hidden ? ` (${hidden} single-gate hidden)` : ""}`,
+        `${this.graphKind} graph`,
+        `${groups.length} chain${groups.length === 1 ? "" : "s"}${hidden ? ` (${hidden} single-node hidden)` : ""}`,
         `${nodes.size} nodes`,
         `${gates} gates`,
         `${hops} hops`,
@@ -1671,7 +1812,11 @@
       if (unknown) parts.push(`${unknown} gates without a type (folded as or)`);
       if (this.activeGroup) parts.push(`active: ${this.activeGroup.title}`);
       if (this.highlightEdges) parts.push("showing one enumerated chain");
-      if (this.measured) parts.push(`measurement: ${this.measured.label}`);
+      if (this.graphKind === "recorded") {
+        parts.push(`record: ${this.recorded.label}`);
+      } else if (this.measured) {
+        parts.push(`measurement: ${this.measured.label}`);
+      }
       return parts.join(" · ");
     }
 
@@ -1786,6 +1931,7 @@
       line.classList.add("seq-hop");
       if (kind === "loop") line.classList.add("seq-loop");
       else if (kind === "late") line.classList.add("seq-hop-late");
+      else if (kind === "sampled") line.classList.add("seq-hop-sampled");
       else line.classList.add(CHAIN_CLASS[kind]);
       return line;
     }

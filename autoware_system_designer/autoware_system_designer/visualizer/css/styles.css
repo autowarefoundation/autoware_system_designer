@@ -1024,6 +1024,12 @@ svg.lod-rate .logic-vertex-sub {
   stroke: var(--accent-color, #4a90d9);
 }
 
+/* The message did not fire its gate: it waited in the subscription for the
+   gate's next run, and the hop carries that sampling delay. */
+.seq-hop-sampled {
+  stroke-dasharray: 6 2;
+}
+
 /* The message lands after the run it feeds has started: the gate fired from
    another branch. */
 .seq-hop-late {
