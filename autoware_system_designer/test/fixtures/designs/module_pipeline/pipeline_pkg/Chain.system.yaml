@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.5.0
 
 name: Chain.system
 
@@ -33,3 +33,9 @@ connections:
     - lidar.publisher.pointcloud
   - - pipeline.publisher.objects
     - sink.subscriber.objects
+
+event_chains:
+  - name: lidar_to_sink
+    description: Point cloud in, merged objects consumed.
+    from: /sensing/lidar:capture
+    to: /sink:consume
