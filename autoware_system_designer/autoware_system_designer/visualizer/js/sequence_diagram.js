@@ -63,6 +63,8 @@
     labelMin: 18,
     labelTierH: 10,
     nameChars: 22,
+    endStubW: 10,
+    loopDip: 18,
   };
 
   // Time-scale zoom: floor as a fraction of the fit scale, ceiling in px/ms,
@@ -88,7 +90,11 @@
       "sampled",
       "sampled hop: measured wait from the input's arrival to the run that answered it",
     ],
-    ["loop", "loop-closing edge, cut from the solve"],
+    [
+      "loop",
+      "loop end: the chain rejoins itself; the closing edge is cut from the solve",
+    ],
+    ["end", "open end: the last message has no consumer"],
     [
       "dead",
       "a process the recorded run never fired: node gone, never initialized, or output never published; a fold skips it",
@@ -383,8 +389,94 @@
         });
         hop.info = this.hopInfo(hop);
       });
+      this.chainEnds(group);
 
       this.assignTracks(group);
+    }
+
+    // Where a group's chain stops and where it folds back. A loop-closing
+    // edge leaving an on-path gate, or a port its message reaches, is a loop
+    // exit of that gate into the gate it rejoins; the sink is a terminal
+    // unless a loop exit leaves it.
+    chainEnds(group) {
+      const { solution } = group;
+      const { graph } = this;
+      const gateAfter = (id) => {
+        let cursor = id;
+        for (let depth = 0; depth < 8 && cursor; depth += 1) {
+          if (group.gateIds.has(cursor)) return cursor;
+          cursor =
+            (graph.succ.get(cursor) || []).find((next) =>
+              group.onPath.has(next),
+            ) ?? null;
+        }
+        return null;
+      };
+      const gateBefore = (id) => {
+        let cursor = id;
+        for (let depth = 0; depth < 8 && cursor; depth += 1) {
+          if (group.gateIds.has(cursor)) return cursor;
+          const arrival = solution.arrivals.get(cursor);
+          const via = arrival?.via[this.spineComponent()];
+          const branch =
+            arrival?.branches.find((b) => b.key === via) ??
+            arrival?.branches[0];
+          cursor = branch?.fromId ?? null;
+        }
+        return null;
+      };
+
+      const loops = [];
+      const claimed = new Set();
+      group.gates.forEach((gate) => {
+        const stack = [[gate.id, 0]];
+        const seen = new Set([gate.id]);
+        while (stack.length) {
+          const [id, depth] = stack.pop();
+          T.loopExits(solution, graph, id).forEach((exit) => {
+            if (claimed.has(exit.edgeId)) return;
+            claimed.add(exit.edgeId);
+            const tail = graph.events.get(id);
+            loops.push({
+              from: gate.id,
+              to: gateAfter(exit.toId),
+              tail: id,
+              head: exit.toId,
+              edgeId: exit.edgeId,
+              topic: tail.kind === "process" ? null : this.topicOf(tail),
+              atSink: id === group.sinkId,
+            });
+          });
+          if (depth >= 6) continue;
+          (graph.succ.get(id) || []).forEach((next) => {
+            const event = graph.events.get(next);
+            if (!event || seen.has(next) || event.kind === "process") return;
+            if (!solution.reach.has(next)) return;
+            if (solution.loopEdges.has(graph.edgeId(id, next))) return;
+            seen.add(next);
+            stack.push([next, depth + 1]);
+          });
+        }
+      });
+
+      const end = T.endOf(solution, graph, group.sinkId);
+      const sink = graph.events.get(group.sinkId);
+      let terminal = null;
+      if (end.kind !== "loop") {
+        const label =
+          end.kind === "limit"
+            ? "hop limit"
+            : sink.kind === "process"
+              ? "no output"
+              : this.shortName(this.topicOf(sink), 30);
+        terminal = {
+          gate: gateBefore(group.sinkId),
+          kind: end.kind,
+          sinkId: group.sinkId,
+          label,
+        };
+      }
+      group.ends = { loops, terminal };
     }
 
     // The gates behind one gate, each with the port events between folded into
@@ -753,6 +845,9 @@
           group.boxes.set(gate.id, box);
           right = Math.max(right, box.right + box.sdPx);
         });
+        const terminal = group.ends.terminal;
+        const leaf = terminal && group.boxes.get(terminal.gate);
+        if (leaf) right = Math.max(right, leaf.right + 2 * VIEW.endStubW);
       });
       this.width = right + VIEW.padRight;
       this.height = this.layoutGroups() + VIEW.padBottom;
@@ -762,6 +857,7 @@
       groups.forEach((group) => {
         group.hops.forEach((hop) => this.drawHop(group, hop));
         group.gates.forEach((gate) => this.drawGate(group, gate));
+        this.drawEnds(group);
         this.fitLabels(group);
         this.applyEmphasis(group);
       });
@@ -841,6 +937,14 @@
       if (measured && STATES[this.state].timed) {
         parts.push(`measured ${T.formatSummary(measured.summary)}`);
       }
+      const { terminal } = group.ends;
+      parts.push(
+        !terminal
+          ? "loop end"
+          : terminal.kind === "open"
+            ? "open end"
+            : "hop limit",
+      );
       if (group.solution.loopEdges.size) {
         parts.push(`${group.solution.loopEdges.size} loop cut`);
       }
@@ -1046,6 +1150,120 @@
         hop.label = label;
         this.labelLayer.appendChild(label);
       }
+    }
+
+    // A loop exit is a return wire: out of the end of its gate, down under
+    // the track and back along it, up into the start of the gate it rejoins.
+    // An open terminal is a stub with an end stop after the last gate, named
+    // under the block for the message nobody takes; at the hop limit the stub
+    // trails off instead.
+    drawEnds(group) {
+      const dip = VIEW.loopDip;
+      const hook = VIEW.endStubW;
+      group.ends.loops.forEach((loop, index) => {
+        const fromBox = group.boxes.get(loop.from);
+        if (!fromBox) return;
+        const toBox = loop.to ? group.boxes.get(loop.to) : null;
+        const y1 = this.rowY(group, loop.from);
+        const y2 = toBox ? this.rowY(group, loop.to) : y1;
+        const x1 = fromBox.right;
+        const x2 = toBox ? toBox.left : x1 - 2 * hook;
+        const path = document.createElementNS(SVG_NS, "path");
+        loop.id = `sq_end_${group.index}_${index}`;
+        path.setAttribute("id", loop.id);
+        path.setAttribute(
+          "d",
+          `M ${x1} ${y1} h ${hook} V ${y1 + dip} H ${x2 - hook} V ${y2} h ${hook}`,
+        );
+        path.classList.add("seq-hop", "seq-loop");
+        if (loop.atSink) path.classList.add("seq-loop-sink");
+        path.setAttribute("marker-end", "url(#arrowhead-depth-0)");
+        loop.element = path;
+        const title = document.createElementNS(SVG_NS, "title");
+        title.textContent = this.describeEnd(group, loop);
+        path.appendChild(title);
+        path.onclick = (e) => {
+          if (this.hasDragged) return;
+          e.stopPropagation();
+          this.select(loop.id);
+        };
+        this.hopLayer.appendChild(path);
+        const hit = path.cloneNode(false);
+        hit.removeAttribute("id");
+        hit.removeAttribute("marker-end");
+        hit.classList.add("seq-hop-hit");
+        hit.onclick = path.onclick;
+        hit.appendChild(title.cloneNode(true));
+        this.hopLayer.appendChild(hit);
+
+        const label = document.createElementNS(SVG_NS, "text");
+        label.setAttribute("x", x1 + hook + 3);
+        label.setAttribute("y", y1 + dip - 2);
+        label.classList.add("seq-hop-label", "seq-loop-label");
+        label.style.fontSize = `${VIEW.subSize}px`;
+        const toName = loop.to
+          ? this.graph.events.get(loop.to).name
+          : this.graph.events.get(loop.head).name;
+        this._truncateSVGText(label, `↺ ${toName}`, 160, VIEW.subSize);
+        loop.label = label;
+        this.labelLayer.appendChild(label);
+      });
+
+      const { terminal } = group.ends;
+      const box = terminal && group.boxes.get(terminal.gate);
+      if (!box) return;
+      const y = this.rowY(group, terminal.gate);
+      const x0 = Math.max(box.right, box.end + box.sdPx) + 2;
+      const x1 = x0 + VIEW.endStubW;
+      const stop = document.createElementNS(SVG_NS, "path");
+      terminal.id = `sq_end_${group.index}_t`;
+      stop.setAttribute("id", terminal.id);
+      stop.classList.add("seq-end");
+      if (terminal.kind === "limit") {
+        stop.setAttribute("d", `M ${x0} ${y} L ${x1} ${y}`);
+        stop.classList.add("seq-end-limit");
+      } else {
+        stop.setAttribute(
+          "d",
+          `M ${x0} ${y} L ${x1} ${y} M ${x1} ${y - 5} L ${x1} ${y + 5}`,
+        );
+      }
+      terminal.element = stop;
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = this.describeEnd(group, terminal);
+      stop.appendChild(title);
+      stop.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.select(terminal.id);
+      };
+      this.gateLayer.appendChild(stop);
+      const hit = stop.cloneNode(false);
+      hit.removeAttribute("id");
+      hit.classList.add("seq-hop-hit");
+      hit.onclick = stop.onclick;
+      hit.appendChild(title.cloneNode(true));
+      this.gateLayer.appendChild(hit);
+
+      const label = document.createElementNS(SVG_NS, "text");
+      label.setAttribute("x", x1);
+      label.setAttribute("y", y + VIEW.blockH / 2 + VIEW.subSize + 1);
+      label.setAttribute("text-anchor", "end");
+      label.classList.add("seq-hop-label", "seq-end-label");
+      label.style.fontSize = `${VIEW.subSize}px`;
+      // The label may reach back to the middle of the gap before the block.
+      const row = group.rows[group.rowOf.get(terminal.gate)];
+      const before = row.gates
+        .map((gate) => group.boxes.get(gate.id))
+        .filter((other) => other.left < box.left)
+        .reduce((edge, other) => Math.max(edge, other.right), -Infinity);
+      const room = Number.isFinite(before)
+        ? Math.min(160, x1 - (before + box.left) / 2 - 2)
+        : 160;
+      if (room < VIEW.labelMin) label.classList.add("seq-label-hidden");
+      else this._truncateSVGText(label, terminal.label, room, VIEW.subSize);
+      terminal.labelElement = label;
+      this.labelLayer.appendChild(label);
     }
 
     // A gate is a block on its track: the wait segment leads into it, the
@@ -1498,6 +1716,34 @@
       return lines.join("\n");
     }
 
+    // How a chain stops: the loop it closes, or what its last message met.
+    describeEnd(group, end) {
+      if (end.edgeId) {
+        const tail = this.graph.events.get(end.tail);
+        const head = this.graph.events.get(end.head);
+        const lines = [
+          `loop end: ${this.graph.ownerOf(end.tail)?.name}:${tail.name} → ${this.graph.ownerOf(end.head)?.name}:${head.name}`,
+        ];
+        if (end.topic) lines.push(end.topic);
+        lines.push(
+          "the chain rejoins itself here; the edge is cut from the solve",
+        );
+        return lines.join("\n");
+      }
+      const sink = this.graph.events.get(end.sinkId);
+      const owner = this.graph.ownerOf(end.sinkId)?.name || "";
+      if (end.kind === "limit") {
+        return `cut at the hop limit after ${owner}:${sink.name}`;
+      }
+      if (sink.kind === "output") {
+        return `open end: nothing subscribes to ${this.topicOf(sink)}`;
+      }
+      if (sink.kind === "input") {
+        return `open end: ${owner}:${sink.name} triggers no process`;
+      }
+      return `open end: ${owner}:${sink.name} publishes nothing`;
+    }
+
     // ── Selection / info panel ──────────────────────────────────────────────────
 
     findHop(id) {
@@ -1516,6 +1762,16 @@
       return null;
     }
 
+    findEnd(id) {
+      for (const group of this.groups) {
+        const { loops, terminal } = group.ends;
+        const end = loops.find((loop) => loop.id === id);
+        if (end) return { group, end };
+        if (terminal?.id === id) return { group, end: terminal };
+      }
+      return null;
+    }
+
     // Selecting anything in a group makes it the group enumeration acts on.
     select(id, focus = true) {
       this.container
@@ -1529,6 +1785,16 @@
         this.updateInfoPanel(
           this.describeHopPanel(hopHit.group, hopHit.hop),
           "Hop",
+        );
+        return;
+      }
+      const endHit = this.findEnd(id);
+      if (endHit) {
+        this.setActiveGroup(endHit.group);
+        endHit.end.element?.classList.add("seq-selected");
+        this.updateInfoPanel(
+          this.describeEndPanel(endHit.group, endHit.end),
+          "Chain end",
         );
         return;
       }
@@ -1765,6 +2031,32 @@
           })),
         },
       };
+    }
+
+    describeEndPanel(group, end) {
+      const [summary, ...notes] = this.describeEnd(group, end).split("\n");
+      const eventId = end.edgeId ? end.tail : end.sinkId;
+      const arrival = group.solution.arrivals.get(eventId);
+      const event = this.graph.events.get(eventId);
+      const panel = {
+        name: summary,
+        from: `${this.graph.ownerOf(eventId)?.path}:${event.name}`,
+        topic: end.topic || undefined,
+        latency: {
+          state: this.state,
+          rank: arrival?.rank,
+          rows: [
+            ...notes.map((note) => ({ label: "end", value: note })),
+            ...(arrival ? this.latencyRows(arrival) : []),
+          ],
+          branches: [],
+        },
+      };
+      if (end.edgeId) {
+        const head = this.graph.events.get(end.head);
+        panel.to = `${this.graph.ownerOf(end.head)?.path}:${head.name}`;
+      }
+      return panel;
     }
 
     // The rate the run observed on the ports a hop folds: the input the gate
@@ -2213,11 +2505,22 @@
         path.classList.add("seq-whisker");
         return path;
       }
+      if (kind === "loop") {
+        const arc = make("path");
+        arc.setAttribute("d", "M 22 4 C 26 13, 0 13, 4 4");
+        arc.classList.add("seq-hop", "seq-loop");
+        return arc;
+      }
+      if (kind === "end") {
+        const stop = make("path");
+        stop.setAttribute("d", "M 2 7 L 20 7 M 20 2 L 20 12");
+        stop.classList.add("seq-end");
+        return stop;
+      }
       const line = make("path");
       line.setAttribute("d", "M 2 7 L 24 7");
       line.classList.add("seq-hop");
-      if (kind === "loop") line.classList.add("seq-loop");
-      else if (kind === "late") line.classList.add("seq-hop-late");
+      if (kind === "late") line.classList.add("seq-hop-late");
       else if (kind === "sampled") line.classList.add("seq-hop-sampled");
       else line.classList.add(CHAIN_CLASS[kind]);
       return line;

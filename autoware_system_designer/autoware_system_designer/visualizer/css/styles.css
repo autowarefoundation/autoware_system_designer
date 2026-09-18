@@ -10,6 +10,7 @@
   --text-primary: #212529;
   --text-secondary: #495057;
   --text-muted: #6c757d;
+  --seq-loop: #8e5ea2;
   --border-color: #e9ecef;
   --border-hover: #adb5bd;
   --border-active: #007bff;
@@ -35,6 +36,7 @@
   --text-primary: #e9ecef;
   --text-secondary: #adb5bd;
   --text-muted: #6c757d;
+  --seq-loop: #b48ccf;
   --border-color: #495057;
   --border-hover: #6c757d;
   --border-active: #0d6efd;
@@ -1078,9 +1080,36 @@ text.seq-on-mean {
   opacity: 0.28;
 }
 
+/* A loop end: the arc from a gate back to the one its message rejoins; the
+   edge is cut from the solve. */
 .seq-loop {
-  stroke-dasharray: 2 2;
-  stroke: var(--text-muted);
+  stroke-dasharray: 3 2;
+  stroke: var(--seq-loop, #8e5ea2);
+  stroke-width: 1.1px;
+}
+
+.seq-loop-sink {
+  stroke-width: 1.5px;
+}
+
+.seq-loop-label {
+  fill: var(--seq-loop, #8e5ea2);
+}
+
+/* An open end: the stop after the last gate, where nothing takes the message. */
+.seq-end {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: 1.2px;
+  cursor: pointer;
+}
+
+.seq-end-limit {
+  stroke-dasharray: 1 2;
+}
+
+.seq-end-label {
+  fill: var(--text-secondary);
 }
 
 .seq-selected {

@@ -764,3 +764,92 @@ test("a single source still reads its chain outward and cuts the loop coming bac
   assert.ok(solution.reach.has("right.correct"));
   assert.equal(solution.arrivals.get("concat.update").branches.length, 1);
 });
+
+test("a chain end is a loop where its edge was cut, open where nothing follows", () => {
+  const graph = build({
+    nodes: [
+      {
+        name: "planner",
+        inputs: ["state"],
+        outputs: ["cmd", "debug"],
+        processes: [
+          {
+            name: "plan",
+            type: "periodic",
+            frequency: 10,
+            on: ["state"],
+            to: ["cmd", "debug"],
+          },
+        ],
+      },
+      {
+        name: "vehicle",
+        inputs: ["cmd"],
+        outputs: ["state"],
+        processes: [
+          { name: "drive", type: "on_input", on: ["cmd"], to: ["state"] },
+        ],
+      },
+    ],
+    links: [
+      ["planner", "cmd", "vehicle", "cmd"],
+      ["vehicle", "state", "planner", "state"],
+    ],
+  });
+  const solution = new T.ChainSolver(graph, T.designCosts(graph)).solve(
+    "planner.plan",
+  );
+  assert.deepEqual(solution.sinkIds.sort(), [
+    "planner.in.state",
+    "planner.out.debug",
+  ]);
+  const back = T.endOf(solution, graph, "planner.in.state");
+  assert.equal(back.kind, "loop");
+  assert.deepEqual(back.rejoins, ["planner.plan"]);
+  const exits = T.loopExits(solution, graph, "planner.in.state");
+  assert.equal(exits.length, 1);
+  assert.equal(exits[0].toId, "planner.plan");
+  assert.ok(solution.loopEdges.has(exits[0].edgeId));
+  assert.deepEqual(T.endOf(solution, graph, "planner.out.debug"), {
+    kind: "open",
+    rejoins: [],
+  });
+  // a kept edge is no loop exit, whatever follows it
+  assert.equal(T.loopExits(solution, graph, "planner.out.cmd").length, 0);
+});
+
+test("a chain cut by the hop limit ends at the limit, not open", () => {
+  const graph = build({
+    nodes: [
+      {
+        name: "a",
+        outputs: ["x"],
+        processes: [
+          { name: "tick", type: "periodic", frequency: 10, to: ["x"] },
+        ],
+      },
+      {
+        name: "b",
+        inputs: ["x"],
+        outputs: ["y"],
+        processes: [{ name: "relay", type: "on_input", on: ["x"], to: ["y"] }],
+      },
+      {
+        name: "c",
+        inputs: ["y"],
+        processes: [{ name: "sink", type: "on_input", on: ["y"] }],
+      },
+    ],
+    links: [
+      ["a", "x", "b", "x"],
+      ["b", "y", "c", "y"],
+    ],
+  });
+  const solver = new T.ChainSolver(graph, T.designCosts(graph));
+  const limited = solver.solve("a.tick", { hopLimit: 1 });
+  assert.deepEqual(limited.sinkIds, ["c.in.y"]);
+  assert.equal(T.endOf(limited, graph, "c.in.y").kind, "limit");
+  const full = solver.solve("a.tick");
+  assert.deepEqual(full.sinkIds, ["c.sink"]);
+  assert.equal(T.endOf(full, graph, "c.sink").kind, "open");
+});

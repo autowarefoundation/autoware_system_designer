@@ -613,6 +613,34 @@
     return events;
   }
 
+  // ── Chain ends ──────────────────────────────────────────────────────────────
+
+  // The loop-closing edges leaving an event, each with the event it rejoins.
+  function loopExits(solution, graph, eventId) {
+    return (graph.succ.get(eventId) || [])
+      .map((toId) => ({
+        edgeId: graph.edgeId(eventId, toId),
+        fromId: eventId,
+        toId,
+      }))
+      .filter(({ edgeId }) => edgeId && solution.loopEdges.has(edgeId));
+  }
+
+  // How a chain stops at an event. `loop`: an edge leaving it was cut as
+  // loop-closing, the chain rejoins itself. `open`: nothing in the graph
+  // follows it. `limit`: its successors lie beyond the hop limit.
+  function endOf(solution, graph, eventId) {
+    const loops = loopExits(solution, graph, eventId);
+    if (loops.length) {
+      return { kind: "loop", rejoins: loops.map((exit) => exit.toId) };
+    }
+    const beyond = (graph.succ.get(eventId) || []).some((id) => {
+      const next = graph.events.get(id);
+      return next && !EXCLUDED_TYPES.has(next.type);
+    });
+    return { kind: beyond ? "limit" : "open", rejoins: [] };
+  }
+
   const TimingModel = {
     ZERO,
     UNMEASURED,
@@ -635,6 +663,8 @@
     hopsOf,
     enumerateChains,
     countChains,
+    loopExits,
+    endOf,
   };
 
   if (typeof module !== "undefined" && module.exports) {
