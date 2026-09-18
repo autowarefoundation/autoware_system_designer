@@ -376,8 +376,9 @@ def main() -> None:
         type=Path,
         default=None,
         metavar="FILE",
-        help="Latency file to write. Default: <Mode>_latency.json in the export's "
-        "visualization/web/data/ (where the diagram reads it), else <log-dir>/latency/.",
+        help="Latency file to write: the bundle's script under .js, bare JSON under any other suffix. "
+        "Default: <Mode>_latency.js in the export's visualization/web/data/ (where the diagram reads it), "
+        "else <log-dir>/latency/.",
     )
     args = parser.parse_args()
 

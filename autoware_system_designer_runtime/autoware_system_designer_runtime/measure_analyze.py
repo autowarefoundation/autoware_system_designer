@@ -54,7 +54,8 @@ def main() -> None:
         "--latency-out",
         type=Path,
         default=None,
-        help="Output latency file (default: the export's visualization/web/data/, else <trace_dir>/../latency/)",
+        help="Output latency file: the bundle's script under .js, bare JSON under any other suffix "
+        "(default: <Mode>_latency.js in the export's visualization/web/data/, else <trace_dir>/../latency/)",
     )
     parser.add_argument("--ecu", default=None, help="Restrict the design to nodes of this compute unit")
     parser.add_argument("--window-start", default=None, help="Epoch seconds or ISO time; default: first record")

@@ -170,13 +170,36 @@
     return { wait: () => ZERO, exec: () => ZERO, comm: () => ZERO };
   }
 
+  // The wait a message spent before the run that answered it: the node's
+  // measured in→out response less the run. Components are taken so that the
+  // series wait + run reproduces the response in min, mean and max; the
+  // spread is what the response has beyond the run's.
+  function sampling(response, run) {
+    const min = Math.max(0, response.min - run.min);
+    const max = Math.max(min, response.max - run.max);
+    const mean = Math.min(Math.max(response.mean - run.mean, min), max);
+    const variance = response.sd * response.sd - run.sd * run.sd;
+    return summary({
+      min,
+      mean,
+      max,
+      sd: Math.sqrt(Math.max(0, variance)),
+      count: response.count,
+      missingSd: response.missingSd,
+      source: "derived",
+    });
+  }
+
   // Measured costs where a sample exists, the design's where it does not.
-  // `measured` answers exec(event) and comm(edge, from, to) with a summary or
-  // null; each returned summary names its source so a hop can be marked.
+  // `measured` answers wait(event), exec(event) and comm(edge, from, to) with a
+  // summary or null; each returned summary names its source so a hop can be
+  // marked.
   function measuredCosts(graph, measured) {
     const design = designCosts(graph);
     return {
-      wait: design.wait,
+      wait(event) {
+        return measured.wait?.(event) || design.wait(event);
+      },
       exec(event) {
         return measured.exec?.(event) || design.exec(event);
       },
@@ -522,6 +545,7 @@
     summary,
     uniform,
     fromRecord,
+    sampling,
     add,
     fold,
     at,

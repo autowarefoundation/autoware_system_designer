@@ -6,8 +6,9 @@
 // to the terminals it reaches, stacked down the page on a shared axis. Within
 // a group the chain the axis is driven by is the spine on the centre track;
 // the branches that join or leave it are packed onto the tracks above and
-// below. The chains come from one of two graphs: the design's declared events,
-// or the recorded graph a measurement run showed.
+// below. The chains come from the design's event graph; a loaded measurement
+// supplies the time along them: every gate's run, the wait of every input
+// before that run and the transport of every link the run observed.
 
 (function () {
   const SVG_NS = ElkCanvas.SVG_NS;
@@ -19,14 +20,6 @@
     logical: { button: "logical", timed: false },
     rates: { button: "rates", timed: true },
     measured: { button: "measured", timed: true },
-  };
-
-  // Where the chains come from: the design's declared events, or the graph a
-  // measurement recorded at node unit. The recorded graph has no rates state:
-  // every cost in it is measured or derived from a measured rate.
-  const GRAPHS = {
-    design: { button: "design", states: ["logical", "rates", "measured"] },
-    recorded: { button: "recorded", states: ["logical", "measured"] },
   };
 
   // The component of every summary the time axis is read from.
@@ -82,7 +75,10 @@
     ["min", "minimum chain — the sequential shortest path"],
     ["mean", "mean chain, dashed where it leaves the other two"],
     ["late", "late hop: the message lands after the run it feeds started"],
-    ["sampled", "sampled hop: the message waits for the next run of its gate"],
+    [
+      "sampled",
+      "sampled hop: measured wait from the input's arrival to the run that answered it",
+    ],
     ["loop", "loop-closing edge, cut from the solve"],
   ];
 
@@ -93,7 +89,7 @@
     "? marks a spread that skipped hops with no sd",
     "a periodic gate needs no measurement: its sampling delay is uniform over one period",
     "a faint block is a process run no measurement covers",
-    "the recorded graph has a gate per output the run published, fed by its detected trigger and the inputs its response table names",
+    "a measured chain keeps the design's events; the file supplies each gate's run, each input's wait (in→out response less the run) and each link's transport",
   ];
 
   class SequenceDiagramModule extends ElkCanvas {
@@ -102,8 +98,6 @@
     constructor(container, options = {}) {
       super(container, options);
       this.designGraph = new EventGraph();
-      this.recorded = null; // recorded graph and costs, see latency_source.js
-      this.graphKind = "design";
       this.graph = this.designGraph;
       this.groups = [];
       this.activeGroup = null;
@@ -149,14 +143,9 @@
       this.solveAndRender();
     }
 
-    // A loaded measurement opens on the graph it recorded.
+    // A loaded measurement opens the measured state.
     attachMeasurement(measured) {
       this.measured = measured;
-      this.recorded = measured.recordedGraph
-        ? measured.recordedGraph(this.designGraph)
-        : null;
-      this.graphKind = this.recorded ? "recorded" : "design";
-      this.graph = this.recorded ? this.recorded.graph : this.designGraph;
       this.state = "measured";
       this.activeGroup = null;
       this.selectedId = null;
@@ -185,7 +174,6 @@
 
     costs() {
       if (this.state === "logical") return T.logicalCosts();
-      if (this.graphKind === "recorded") return this.recorded.costs;
       if (this.state === "measured" && this.measured) {
         return T.measuredCosts(this.graph, this.measured.costs(this.graph));
       }
@@ -385,21 +373,31 @@
       return event.port?.name || event.name.replace(/^(input|output)_/, "");
     }
 
-    // What the record says about the edges a hop folds: the link it rode, the
-    // sampling delay at its gate, and the response measured across both.
+    // What the measurement says about the edges a hop folds: the link it rode
+    // and the in→out response its wait was taken from.
     hopInfo(hop) {
-      if (this.graphKind !== "recorded") return null;
-      const info = { link: null, sampled: null, response: null, share: null };
+      if (this.state !== "measured" || !this.measured?.hopInfo) return null;
+      const info = { link: null, intra: false, response: null, run: null };
+      let any = false;
       hop.edges.forEach((edgeId) => {
         const edge = this.graph.edgeById.get(edgeId);
-        const hit = edge ? this.recorded.edgeInfo(edge.from, edge.to) : null;
+        if (!edge) return;
+        const hit = this.measured.hopInfo(
+          this.graph,
+          edge,
+          this.graph.events.get(edge.from),
+          this.graph.events.get(edge.to),
+        );
         if (!hit) return;
-        if (hit.kind === "link") info.link = hit.link;
-        if (hit.kind === "sampled") info.sampled = hit.rate;
-        if (hit.kind === "trigger") info.share = hit.share;
-        if (hit.response) info.response = hit.response;
+        any = true;
+        if (hit.link) info.link = hit.link;
+        if (hit.intra) info.intra = true;
+        if (hit.response) {
+          info.response = hit.response;
+          info.run = hit.run;
+        }
       });
-      return info;
+      return any ? info : null;
     }
 
     // Where an event sits along the axis the view is driven by.
@@ -868,8 +866,7 @@
       if (fromOwner === toOwner) path.classList.add("seq-hop-internal");
       if (hop.comm?.source === "intra_process")
         path.classList.add("seq-hop-intra");
-      if (hop.info?.sampled !== null && hop.info?.sampled !== undefined)
-        path.classList.add("seq-hop-sampled");
+      if (hop.info?.response) path.classList.add("seq-hop-sampled");
       if (timed && arrive > toBox.left + 0.5)
         path.classList.add("seq-hop-late");
       path.classList.add("seq-hop");
@@ -1359,9 +1356,9 @@
       return rows;
     }
 
-    // The record behind a hop of the recorded graph: the link's own transport,
-    // the sampling delay derived from the gate's rate, and the response the
-    // run measured from the take to the publish.
+    // The records behind a measured hop: the link's own transport, the node's
+    // in→out response from the input to the publish, the run it contains, and
+    // the wait left between them.
     recordRows(hop) {
       const info = hop.info;
       if (!info) return [];
@@ -1375,24 +1372,24 @@
           count: summary.count,
         });
       if (info.link) row("link", T.fromRecord(info.link, "measured"));
-      if (info.sampled !== null) {
-        row("sampling", this.recorded.sampling(info.sampled));
+      if (info.intra) rows.push({ label: "link", value: "intra-process" });
+      if (info.response) {
+        const response = T.fromRecord(info.response, "measured");
+        const run = info.run ? T.fromRecord(info.run, "measured") : null;
+        row(`in→out (${info.response.from})`, response);
+        if (run) {
+          row("run", run);
+          row("wait", T.sampling(response, run));
+        }
       }
-      if (info.share !== null) {
-        rows.push({
-          label: "trigger",
-          value: `fires the gate (${Math.round(info.share * 100)}% of runs)`,
-        });
-      }
-      if (info.response)
-        row("response", T.fromRecord(info.response, "measured"));
       return rows;
     }
 
-    // The detected trigger of a recorded gate.
+    // The trigger the run detected for the output a gate feeds.
     triggerRows(gate) {
-      const trigger = this.recorded?.triggerOf(gate.id);
-      if (!trigger || this.graphKind !== "recorded") return [];
+      if (this.state !== "measured" || !this.measured?.triggerOf) return [];
+      const trigger = this.measured.triggerOf(this.graph, gate);
+      if (!trigger) return [];
       const what =
         trigger.kind === "timer"
           ? `timer ${trigger.period_ms ?? "?"} ms`
@@ -1596,22 +1593,7 @@
     setState(state) {
       if (this.state === state) return;
       if (state === "measured" && !this.measured) return;
-      if (!GRAPHS[this.graphKind].states.includes(state)) return;
       this.state = state;
-      this.pxPerMs = null;
-      this.solveAndRender();
-    }
-
-    setGraphKind(kind) {
-      if (this.graphKind === kind) return;
-      if (kind === "recorded" && !this.recorded) return;
-      this.graphKind = kind;
-      this.graph = kind === "recorded" ? this.recorded.graph : this.designGraph;
-      if (!GRAPHS[kind].states.includes(this.state)) this.state = "measured";
-      this.activeGroup = null;
-      this.selectedId = null;
-      this.highlightEdges = null;
-      this.enumerated = null;
       this.pxPerMs = null;
       this.solveAndRender();
     }
@@ -1658,23 +1640,6 @@
 
       bar.appendChild(
         row(
-          label("Graph"),
-          ...Object.entries(GRAPHS).map(([kind, spec]) =>
-            button(
-              kind === "recorded" && !this.recorded
-                ? "recorded (drop a latency file)"
-                : spec.button,
-              () => this.setGraphKind(kind),
-              this.graphKind === kind,
-              kind === "recorded" && !this.recorded,
-            ),
-          ),
-        ),
-      );
-
-      const allowed = GRAPHS[this.graphKind].states;
-      bar.appendChild(
-        row(
           label("State"),
           ...Object.entries(STATES).map(([state, spec]) =>
             button(
@@ -1683,8 +1648,7 @@
                 : spec.button,
               () => this.setState(state),
               this.state === state,
-              (state === "measured" && !this.measured) ||
-                !allowed.includes(state),
+              state === "measured" && !this.measured,
             ),
           ),
         ),
@@ -1802,7 +1766,6 @@
         unknown += group.solution.unknownGates.length;
       });
       const parts = [
-        `${this.graphKind} graph`,
         `${groups.length} chain${groups.length === 1 ? "" : "s"}${hidden ? ` (${hidden} single-node hidden)` : ""}`,
         `${nodes.size} nodes`,
         `${gates} gates`,
@@ -1812,11 +1775,7 @@
       if (unknown) parts.push(`${unknown} gates without a type (folded as or)`);
       if (this.activeGroup) parts.push(`active: ${this.activeGroup.title}`);
       if (this.highlightEdges) parts.push("showing one enumerated chain");
-      if (this.graphKind === "recorded") {
-        parts.push(`record: ${this.recorded.label}`);
-      } else if (this.measured) {
-        parts.push(`measurement: ${this.measured.label}`);
-      }
+      if (this.measured) parts.push(`measurement: ${this.measured.label}`);
       return parts.join(" · ");
     }
 

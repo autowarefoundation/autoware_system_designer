@@ -108,8 +108,8 @@ def export_bundle_data_dir(json_path: Path) -> Optional[Path]:
     """The visualization bundle's data directory of the export a system_structure JSON belongs to.
 
     An export lays out ``<export>/system_structure/<Mode>.json`` beside
-    ``<export>/visualization/web/data/``; the diagram renderer fetches
-    ``data/<Mode>_latency.json`` from there.
+    ``<export>/visualization/web/data/``; the diagram renderer loads
+    ``data/<Mode>_latency.js`` from there.
     """
     json_path = Path(json_path).resolve()
     if json_path.parent.name != SYSTEM_STRUCTURE_DIR:
@@ -121,10 +121,10 @@ def export_bundle_data_dir(json_path: Path) -> Optional[Path]:
 
 
 def default_latency_out(mode: str, json_path: Path, log_dir: Path) -> Path:
-    """``<Mode>_latency.json`` in the export's visualization bundle, else under the log dir."""
+    """``<Mode>_latency.js`` in the export's visualization bundle, else under the log dir."""
     data_dir = export_bundle_data_dir(json_path)
     base = data_dir if data_dir is not None else log_dir / LATENCY_DIR_NAME
-    return base / f"{mode}_latency.json"
+    return base / f"{mode}_latency.js"
 
 
 def analyze_traces(

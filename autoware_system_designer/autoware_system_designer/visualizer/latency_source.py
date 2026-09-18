@@ -50,7 +50,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
@@ -62,9 +62,12 @@ LATENCY_SCHEMAS = (LATENCY_SCHEMA_V1, LATENCY_SCHEMA)
 
 # Directory beside a system definition file that holds <mode>_latency.json files.
 LATENCY_DIR_NAME = "latency"
-# Global the script twin of a latency file assigns to, keyed by mode; a page
-# opened from file:// cannot fetch the JSON and loads the script instead.
+# A latency file is one object: bare JSON, or the script the bundle serves,
+# `window.latencyData["<mode>"] = {...};`, which a page opened from file://
+# can load where it cannot fetch. Both shapes are read; the bundle gets the script.
 LATENCY_SCRIPT_GLOBAL = "latencyData"
+LATENCY_SCRIPT_SUFFIX = ".js"
+_SCRIPT_ASSIGN = re.compile(r"window\." + LATENCY_SCRIPT_GLOBAL + r"\[(\"(?:[^\"\\\\]|\\\\.)*\")\]\s*=\s*")
 
 _PROCESS_REQUIRED = ("node_path", "process", "min_ms", "max_ms")
 _LINK_REQUIRED = ("topic", "min_ms", "max_ms")
@@ -129,10 +132,20 @@ def validate_latency_data(data: Any) -> Dict[str, Any]:
     return data
 
 
+def parse_latency_text(text: str) -> Any:
+    """The object in a latency file, whether written as JSON or as the bundle's script."""
+    text = text.strip()
+    match = _SCRIPT_ASSIGN.search(text)
+    if match is None:
+        return json.loads(text)
+    body = text[match.end() :].rstrip()
+    return json.loads(body[:-1] if body.endswith(";") else body)
+
+
 def load_latency_file(path: str | os.PathLike) -> Dict[str, Any]:
     """Read and validate one latency file."""
     with open(path, encoding="utf-8") as handle:
-        return validate_latency_data(json.load(handle))
+        return validate_latency_data(parse_latency_text(handle.read()))
 
 
 def latency_dir_for(system_file: str | None) -> str | None:
@@ -143,21 +156,30 @@ def latency_dir_for(system_file: str | None) -> str | None:
 
 
 def latency_script_text(mode: str, data: Dict[str, Any]) -> str:
-    """The script twin of a latency file: the same object under the page's latency global."""
+    """A latency file in the bundle's script shape: the object under the page's latency global."""
     return (
         f"window.{LATENCY_SCRIPT_GLOBAL} = window.{LATENCY_SCRIPT_GLOBAL} || {{}};\n"
         f"window.{LATENCY_SCRIPT_GLOBAL}[{json.dumps(mode)}] = {json.dumps(data, indent=2)};\n"
     )
 
 
+def find_latency_file(latency_dir: str | os.PathLike, mode: str) -> Path | None:
+    """``<mode>_latency.js`` or ``<mode>_latency.json`` in a latency directory."""
+    for suffix in (LATENCY_SCRIPT_SUFFIX, ".json"):
+        candidate = Path(latency_dir) / f"{mode}_latency{suffix}"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def copy_latency_files(latency_dir: str | None, modes: List[str], web_data_dir: str) -> List[str]:
-    """Place each mode's validated latency file and its script twin in the web bundle; returns the modes served."""
+    """Place each mode's validated latency file in the web bundle as its script; returns the modes served."""
     if not latency_dir or not os.path.isdir(latency_dir):
         return []
     served: List[str] = []
     for mode in modes:
-        source = Path(latency_dir) / f"{mode}_latency.json"
-        if not source.is_file():
+        source = find_latency_file(latency_dir, mode)
+        if source is None:
             continue
         try:
             data = load_latency_file(source)
@@ -165,9 +187,8 @@ def copy_latency_files(latency_dir: str | None, modes: List[str], web_data_dir: 
             logger.warning(f"Latency file ignored: {source} ({exc})")
             continue
         os.makedirs(web_data_dir, exist_ok=True)
-        shutil.copy2(source, os.path.join(web_data_dir, source.name))
-        script = Path(web_data_dir) / f"{mode}_latency.js"
-        script.write_text(latency_script_text(mode, data), encoding="utf-8")
+        target = Path(web_data_dir) / f"{mode}_latency{LATENCY_SCRIPT_SUFFIX}"
+        target.write_text(latency_script_text(mode, data), encoding="utf-8")
         served.append(mode)
         logger.info(f"Copied latency file: {source.name}")
     return served

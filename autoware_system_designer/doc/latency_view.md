@@ -2,33 +2,28 @@
 
 The sequence diagram of the deployment overview draws every event chain of the system as a timeline: time left to right, every process a block as wide as its run, one group per chain stacked down the page. It answers two questions about a design: which sequential path is the shortest or the most critical, and what the system's end-to-end latency is.
 
-The chains come from one of two graphs. The **design graph** is the trigger relation the node designs declare. The **recorded graph** is what a measured run showed, at node unit: it exists once a measurement file is loaded and is the graph the view opens on, since declared events are a claim and the record is the observation.
+The chains are the design's: the trigger relation the node designs declare, node by node, port by port. A measurement file supplies the time along them, at node unit: the run of every gate from the exec of the output it feeds, the wait of every input before that run from the node's measured in→out response, and the transport of every link from the take it was matched with.
 
 ## What is drawn
 
 - **Block**: a process gate executing, as wide as its run. Its colour is the top-level component of the node (the legend lists them); the line above it carries the trigger glyph of the logic diagram (`and`, `or`, clock, `once`), the node, the process and the time the run completes. A dashed glyph marks a gate whose type is not declared.
 - **Wait**: the thin segment leading into a block is the time between the trigger arriving and the run starting: the sampling delay of a periodic gate, or the skew an `and` gate waits out.
 - **Whisker**: ±1 standard deviation at the end of a block.
-- **Hop**: an arrow from the end of one block to the arrival at the next gate, labelled with the topic. Its length is the transport time; a hop between two gates of one node (`to_trigger`) is dashed. A hop that lands after its block has started is drawn dotted: the gate is an `or` and fired from another branch. In the recorded graph a long-dashed hop is _sampled_: the message did not fire its gate and waited in the subscription for the gate's next run, and the hop's length includes that wait.
+- **Hop**: an arrow from the end of one block to the arrival at the next gate, labelled with the topic. Its length is the transport time; a hop between two gates of one node (`to_trigger`) is dashed. A hop that lands after its block has started is drawn dotted: the gate is an `or` and fired from another branch. In the measured state a long-dashed hop is _sampled_: its length includes the measured wait between the input's arrival and the run that answered it (the node's in→out response less the run).
 - **Group**: one chain, from a source gate (a clock-driven process) to a sink event, under a title line with its rate, gate count and total. There is one group per clock root, deepest first, analyzed from the event graph: no chain is declared in the design; each starts at its own source firing and all share the axis. Clocks whose chain never leaves their own node are hidden behind the `single-node chains` toggle. Clicking a title, block or hop makes its group the active one; `enumerate chains` acts on it.
 - **Track**: one row of blocks within a group. The chain the axis is driven by is the spine on the tinted centre track; every other gate continues the track of the gate it feeds, or takes the nearest free track beside the spine, so the branches that join or leave the spine stack above and below it.
 - **Emphasis**: the maximum chain (red, the critical path), the minimum chain (green, the sequential shortest path) and the mean chain (orange, dashed where it leaves the other two). Everything off the three chains is dimmed. Nodes the source reaches but the chain does not pass are counted in the toolbar.
 - **Loop edge**: the event graph is cyclic (vehicle → localization → planning → control → vehicle). A depth-first walk from the source cuts every edge that closes on an ancestor; the toolbar counts them.
 
-## Graphs and states
+## States
 
-| Graph    | Vertices                                                                                                                                                                                                   | States                   |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| design   | the process and port events the node designs declare; clock roots are the `periodic` gates                                                                                                                 | logical, rates, measured |
-| recorded | one clock root per timer a node ran, one process gate per output it published, one port per topic taken or published; built from a `latency/2` file, with the design's instances behind the nodes it names | logical, measured        |
+The vertices are the process and port events the node designs declare; clock roots are the `periodic` gates. Every chain is analyzed from the design graph in every state; what changes is the time on it.
 
-In the recorded graph a gate is fed by the trigger the run detected for its output (its timer, or the input that fired it) and by every input its `response` table names. The trigger edge costs nothing; a response edge is _sampled_ and carries the sampling delay of the gate, uniform over the gate's own measured period (its timer's under a timer, its output rate otherwise). A link joins a publish to the takes matched with it; a record with no publisher attaches to the topic's only recorded publisher. Nodes the design does not place are appended under the root without a guide. Every run and every link in the graph is measured; nothing is declared, so there is no rates state.
-
-| State    | x axis                               | Numbers                                                                                                      |
-| -------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| logical  | rank (process gates from the source) | none; the default while nothing is measured                                                                  |
-| rates    | milliseconds                         | a periodic gate's sampling delay from its rate; every process run is an unmeasured placeholder of zero width |
-| measured | milliseconds                         | a loaded measurement file; a run without a sample stays the placeholder and is drawn faint                   |
+| State    | x axis                               | Numbers                                                                                                                                                                          |
+| -------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| logical  | rank (process gates from the source) | none; the default while nothing is measured                                                                                                                                      |
+| rates    | milliseconds                         | a periodic gate's sampling delay from its rate; every process run is an unmeasured placeholder of zero width                                                                     |
+| measured | milliseconds                         | a loaded measurement file; a run without a sample stays the placeholder and is drawn faint; a gate the run observed waits nothing of its own, its inputs carry the measured wait |
 
 The axis is driven by one component of every summary: `min`, `mean`, `max`, or `mean + kσ` (k = 1, 2, 3). `time +` / `time −` zoom the millisecond scale.
 
@@ -40,7 +35,7 @@ Every cost and every arrival is a distribution summary `{ min, mean, max, sd, co
 - **`and` gate**: arrival folds as componentwise `max` over its branches.
 - **`or` gate**: arrival folds as componentwise `min`. A gate with no declared type folds as `or` and is reported.
 - **`periodic` gate (f Hz)**: needs no measurement; its sampling delay is uniform on `[0, 1/f]`: `min 0`, `mean 1/2f`, `max 1/f`, `sd 1/(f·√12)`.
-- **Execution and transport**: measured quantities only. The design declares no latency; a process run or a link without a sample costs zero and is marked `unmeasured`, so a chain total is a lower bound until the measurement covers it.
+- **Execution, wait and transport**: measured quantities only. The design declares no latency; a process run or a link without a sample costs zero and is marked `unmeasured`, so a chain total is a lower bound until the measurement covers it. An input's wait before a measured run is the node's in→out response less the run, taken so that wait + run reproduces the response in min, mean and max; a gate the run observed has no sampling delay of its own, since that wait sits on its inputs and a timer's phase is not part of a measured chain.
 - **`once` gate**: initialization, excluded from steady-state chains.
 - **Three chains from one solve**: each fold records which branch supplied each component, so walking back from the sink yields the minimum, mean and maximum chain. They often differ.
 
@@ -52,7 +47,7 @@ What the marks in the panel mean:
 
 ## Measurement file
 
-A run is loaded from `data/<mode>_latency.json` in the web bundle when the file exists, or by dropping a file on the canvas. A page opened from `file://` cannot fetch JSON, so the same object is also shipped as the script twin `data/<mode>_latency.js` (assigning `window.latencyData["<mode>"]`), which the loader falls back to. The build copies `latency/<mode>_latency.json` from the directory beside the system definition file when it exists and validates, and writes the twin beside it.
+A run is loaded from `data/<mode>_latency.js` in the web bundle when the file exists, or by dropping a file (`.js` or `.json`) on the canvas. The file is one object; in the bundle it is written as the script `window.latencyData["<mode>"] = {...};`, which a page opened from `file://` can load where it cannot fetch JSON. The build copies `latency/<mode>_latency.js` (or `.json`) from the directory beside the system definition file when it exists and validates, and serves it as the script.
 
 The runtime writes the file (schema `autoware_system_designer/latency/2`) from a traced run of the system, by default straight into the export's `visualization/web/data/`; see the [runtime README](../../autoware_system_designer_runtime/README.md#latency-measurement) for the command. It is keyed by node path and topic, never by process name or `unique_id`: ids are name hashes and change whenever the design is edited.
 
@@ -164,8 +159,9 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
 }
 ```
 
-- `run.clock` is the time base of every duration and rate: `ros` when the system ran on `/clock` (`use_sim_time`), with its rate against wall time and the number of `/clock` samples, else `wall`. `window_s` is the window in that base, `window_wall_s` the same window in wall time; the recorded graph's rates and the design's declared rates then speak the same time.
-- `nodes[].outputs[].exec` supplies the execution cost of a process gate: the gate takes the record of the output topic it feeds (ports are trusted, process names are not). `trigger` is the dominant detected trigger of that output and `response` the age each input has when the output leaves. In the recorded graph the output _is_ the gate, `trigger` and `response` are its incoming edges, and `timers[]` are the clock roots; the hop panel shows the link, the sampling delay and the measured response side by side, the composed sum beside the direct measurement.
+- `run.clock` is the time base of every duration and rate: `ros` when the system ran on `/clock` (`use_sim_time`), with its rate against wall time and the number of `/clock` samples, else `wall`. `window_s` is the window in that base, `window_wall_s` the same window in wall time; measured rates and the design's declared rates then speak the same time.
+- `nodes[].outputs[].response[]` supplies the wait of an input→gate edge: the row whose `from` is the input's topic, under the output the gate feeds, is the node's in→out time from that input's arrival to the publish; less the output's `exec` it is the wait the message spent before the run.
+- `nodes[].outputs[].exec` supplies the execution cost of a process gate: the gate takes the record of the output topic it feeds (ports are trusted, process names are not). `trigger` is the dominant detected trigger of that output and `response` the age each input has when the output leaves. The gate panel names the detected trigger; the hop panel shows the link, the in→out response, the run and the wait left between them, and a group's title puts the composed total beside the record's own end-to-end chain (`chains[]`).
 - `links[]` supplies the transport cost of a topic between an output and the input it feeds, keyed by `topic`; `publisher` and `subscriber` narrow the match and may be left out. A link marked `intra_process` crossed no DDS hop: it is drawn as a zero-length hop and its time is part of the downstream node's `exec`.
 - `chains[]` is the measured end-to-end time from a detected timer to a publish, following the message flow. A group's title shows the measured record of its clock-root node to its sink beside the total composed from `exec` and `links`; the two are measured separately and never derived from one another.
 - `declared_diff` compares each output's declared trigger (from the node design's process events) with the observed one; the rows appear in a gate's info panel and in the Node panel.

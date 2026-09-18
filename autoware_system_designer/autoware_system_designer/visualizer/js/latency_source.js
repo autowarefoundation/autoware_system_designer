@@ -3,8 +3,10 @@
 // it. Records are keyed by node path and topic (or process name in the first
 // file version), never by unique_id: ids are name hashes and change whenever
 // the design is edited. The runtime writes latency/2; latency/1 stays readable.
-// A latency/2 file also yields the recorded graph: the event graph of what the
-// run showed, at node unit, with every cost measured.
+// The chains come from the design's event graph; the file supplies the time:
+// a gate's run from the exec of the output it feeds, the wait of an input
+// before that run from the node's measured in→out response, a link's
+// transport from the take it was matched with.
 
 (function () {
   const SCHEMA_V1 = "autoware_system_designer/latency/1";
@@ -24,6 +26,10 @@
 
   function linkKey(topic, publisher, subscriber) {
     return `${topic}|${publisher || "*"}|${subscriber || "*"}`;
+  }
+
+  function responseKey(nodePath, outTopic, inTopic) {
+    return `${nodePath}|${outTopic}|${inTopic}`;
   }
 
   function checkRecord(record, index, kind, required) {
@@ -87,6 +93,17 @@
             trigger: output.trigger || null,
           });
         }
+        (output.response || []).forEach((response, resIndex) => {
+          checkRecord(response, resIndex, `nodes[${index}].outputs.response`, [
+            "from",
+            "min_ms",
+            "max_ms",
+          ]);
+          measurement.responses.set(
+            responseKey(node.node_path, output.topic, response.from),
+            response,
+          );
+        });
       });
       if (node.declared_diff?.length) {
         measurement.diffs.set(node.node_path, node.declared_diff);
@@ -123,6 +140,7 @@
       run: json.run ?? null,
       processes: new Map(),
       outputs: new Map(),
+      responses: new Map(),
       links: new Map(),
       intra: new Set(),
       chains: [],
@@ -141,8 +159,11 @@
       nodeRecord(nodePath) {
         return this.nodes.get(nodePath) || null;
       },
-      recordedGraph(designGraph) {
-        return recordedGraph(this, designGraph);
+      hopInfo(graph, edge, from, to) {
+        return hopInfo(this, graph, edge, from, to);
+      },
+      triggerOf(graph, event) {
+        return triggerOf(this, graph, event);
       },
     };
     if (json.schema === SCHEMA_V1) parseV1(json, measurement);
@@ -186,60 +207,104 @@
 
   // ── Cost provider ───────────────────────────────────────────────────────────
 
-  // exec answers a process gate: by process name from latency/1, by the topic
-  // of an output the gate feeds from latency/2 (ports are trusted, process
-  // names are not). comm answers an output→input edge from links[]; a link
-  // record may leave publisher or subscriber open, and an intra-process link
-  // costs nothing of its own.
+  // The output record a process gate is measured through: the first output it
+  // feeds that the run published (ports are trusted, process names are not).
+  function outputRecord(measurement, graph, event) {
+    if (event.kind !== "process") return null;
+    const owner = graph.ownerOf(event.id);
+    if (!owner?.path) return null;
+    if (measurement.schema === SCHEMA_V1) {
+      const key = processKey(owner.path, event.name);
+      return measurement.processes.has(key)
+        ? { key, topic: null, record: measurement.processes.get(key) }
+        : null;
+    }
+    for (const output of outputsOf(graph, event)) {
+      const topic = topicOf(output);
+      if (!topic) continue;
+      const key = outputKey(owner.path, topic);
+      if (measurement.outputs.has(key)) {
+        return { key, topic, record: measurement.outputs.get(key) };
+      }
+    }
+    return null;
+  }
+
+  // The node's measured in→out time from an input topic to the output a gate
+  // feeds: the response row of that output.
+  function responseRecord(measurement, graph, input, gate) {
+    if (measurement.schema === SCHEMA_V1) return null;
+    const owner = graph.ownerOf(gate.id);
+    const inTopic = topicOf(input);
+    if (!owner?.path || !inTopic) return null;
+    for (const output of outputsOf(graph, gate)) {
+      const outTopic = topicOf(output);
+      if (!outTopic) continue;
+      const record = measurement.responses.get(
+        responseKey(owner.path, outTopic, inTopic),
+      );
+      if (record) return { record, outTopic, inTopic };
+    }
+    return null;
+  }
+
+  // What a link record says about an output→input edge, if anything.
+  function linkRecord(measurement, graph, from, to) {
+    const topic = topicOf(to) || topicOf(from);
+    if (!topic) return null;
+    const publisher = graph.ownerOf(from.id)?.path;
+    const subscriber = graph.ownerOf(to.id)?.path;
+    const candidates = [
+      linkKey(topic, publisher, subscriber),
+      linkKey(topic, null, subscriber),
+      linkKey(topic, publisher, null),
+      linkKey(topic, null, null),
+    ];
+    const intra = candidates.find((k) => measurement.intra.has(k));
+    if (intra) return { key: intra, intra: true, record: null };
+    const key = candidates.find((k) => measurement.links.has(k));
+    return key
+      ? { key, intra: false, record: measurement.links.get(key) }
+      : null;
+  }
+
+  // exec answers a process gate from the exec of the output it feeds. comm
+  // answers an output→input edge from links[] (a record may leave publisher or
+  // subscriber open; an intra-process link costs nothing of its own) and an
+  // input→gate edge from the node's response: the time from that input's
+  // arrival to the publish, less the run itself, is the wait the message
+  // spent before the gate ran. wait is nothing at a gate the run observed:
+  // its sampling sits on the input edges and a timer's phase is not part of
+  // a measured chain.
   function costsFor(measurement, graph) {
     const matched = { processes: new Set(), links: new Set() };
-    const execRecord = (event) => {
-      if (event.kind !== "process") return null;
-      const owner = graph.ownerOf(event.id);
-      if (!owner?.path) return null;
-      if (measurement.schema === SCHEMA_V1) {
-        const key = processKey(owner.path, event.name);
-        return measurement.processes.has(key)
-          ? { key, record: measurement.processes.get(key) }
-          : null;
-      }
-      for (const output of outputsOf(graph, event)) {
-        const topic = topicOf(output);
-        if (!topic) continue;
-        const key = outputKey(owner.path, topic);
-        if (measurement.outputs.has(key)) {
-          return { key, record: measurement.outputs.get(key) };
-        }
-      }
-      return null;
-    };
     const exec = (event) => {
-      const hit = execRecord(event);
+      const hit = outputRecord(measurement, graph, event);
       if (!hit) return null;
       matched.processes.add(hit.key);
       return T.fromRecord(hit.record, "measured");
     };
+    const wait = (event) =>
+      outputRecord(measurement, graph, event) ? T.summary() : null;
     const comm = (edge, from, to) => {
-      if (from.kind !== "output" || to.kind !== "input") return null;
-      const topic = topicOf(to) || topicOf(from);
-      if (!topic) return null;
-      const publisher = graph.ownerOf(from.id)?.path;
-      const subscriber = graph.ownerOf(to.id)?.path;
-      const candidates = [
-        linkKey(topic, publisher, subscriber),
-        linkKey(topic, null, subscriber),
-        linkKey(topic, publisher, null),
-        linkKey(topic, null, null),
-      ];
-      const intra = candidates.find((k) => measurement.intra.has(k));
-      if (intra) {
-        matched.links.add(intra);
-        return T.summary({ source: "intra_process" });
+      if (from.kind === "output" && to.kind === "input") {
+        const hit = linkRecord(measurement, graph, from, to);
+        if (!hit) return null;
+        matched.links.add(hit.key);
+        return hit.intra
+          ? T.summary({ source: "intra_process" })
+          : T.fromRecord(hit.record, "measured");
       }
-      const key = candidates.find((k) => measurement.links.has(k));
-      if (!key) return null;
-      matched.links.add(key);
-      return T.fromRecord(measurement.links.get(key), "measured");
+      if (from.kind === "input" && to.kind === "process") {
+        const response = responseRecord(measurement, graph, from, to);
+        const run = outputRecord(measurement, graph, to);
+        if (!response || !run) return null;
+        return T.sampling(
+          T.fromRecord(response.record, "measured"),
+          T.fromRecord(run.record, "measured"),
+        );
+      }
+      return null;
     };
 
     // Coverage is counted once over the whole graph so the toolbar can say how
@@ -263,7 +328,34 @@
       `(${measurement.matched.processes}/${measurement.matched.processesTotal} ${unit}, ` +
       `${measurement.matched.links}/${measurement.matched.linksTotal} links matched` +
       `${clockNote(measurement.run)})`;
-    return { exec, comm };
+    return { exec, wait, comm };
+  }
+
+  // The records behind one edge of a hop: the link it rode, or the response
+  // and run its wait was taken from.
+  function hopInfo(measurement, graph, edge, from, to) {
+    if (from.kind === "output" && to.kind === "input") {
+      const hit = linkRecord(measurement, graph, from, to);
+      if (!hit) return null;
+      return hit.intra ? { intra: true } : { link: hit.record };
+    }
+    if (from.kind === "input" && to.kind === "process") {
+      const response = responseRecord(measurement, graph, from, to);
+      if (!response) return null;
+      const run = outputRecord(measurement, graph, to);
+      return {
+        response: response.record,
+        run: run?.record ?? null,
+        outTopic: response.outTopic,
+      };
+    }
+    return null;
+  }
+
+  // The trigger the run detected for the output a gate feeds.
+  function triggerOf(measurement, graph, event) {
+    const hit = outputRecord(measurement, graph, event);
+    return hit?.record?.trigger ?? null;
   }
 
   // ── Measured chains and the declared diff ───────────────────────────────────
@@ -302,346 +394,43 @@
     return rows.filter((row) => wanted.has(row.output));
   }
 
-  // ── Recorded graph ──────────────────────────────────────────────────────────
-
-  // The event graph a latency/2 run showed, at node unit. Every timer of a node
-  // is a clock root; every output is a process gate whose run is the output's
-  // exec; the ports are the topics. A gate is fed by its detected trigger and
-  // by every input its response table names; a link joins a publish to the
-  // take it was matched with. Node instances come from the design where the
-  // path is known, so colours and panels stay the design's.
-  const R_TIMER_TYPE = "periodic";
-
-  function recordedIds(path) {
-    return {
-      timer: (period) => `r:${path}|timer:${period}`,
-      gate: (topic) => `r:${path}|run:${topic}`,
-      pub: (topic) => `r:${path}|pub:${topic}`,
-      sub: (topic) => `r:${path}|sub:${topic}`,
-    };
-  }
-
-  function periodKey(period) {
-    return period === null || period === undefined ? "?" : `${period}`;
-  }
-
-  // Sampling delay of a gate for a message it does not fire on: uniform over
-  // the gate's own measured period.
-  function samplingOf(rateHz) {
-    if (!(rateHz > 0)) return T.summary({ source: "unmeasured" });
-    return T.uniform(0, 1000 / rateHz);
-  }
-
-  function recordedGraph(measurement, designGraph) {
-    if (measurement.schema !== SCHEMA) {
-      throw new Error("the recorded graph needs a latency/2 file");
-    }
-    const edgeInfo = new Map(); // "fromId>toId" → what the edge stands for
-    const execOf = new Map(); // gate id → exec record
-    const triggerOf = new Map(); // gate id → trigger record
-    const publishers = new Map(); // topic → [node path]
-    const synthesized = new Map(); // node path → synthesized instance fields
-
-    measurement.nodes.forEach((node, path) => {
-      (node.outputs || []).forEach((output) => {
-        if (!publishers.has(output.topic)) publishers.set(output.topic, []);
-        publishers.get(output.topic).push(path);
-      });
-    });
-
-    const edgeKey = (from, to) => `${from}>${to}`;
-    const addEdge = (from, to, info) => {
-      const key = edgeKey(from, to);
-      if (!edgeInfo.has(key)) edgeInfo.set(key, { from, to, ...info });
-      return edgeInfo.get(key);
-    };
-
-    measurement.nodes.forEach((node, path) => {
-      const ids = recordedIds(path);
-      const timers = new Map(); // period key → timer event
-      const subs = new Map(); // topic → input event
-      const gates = [];
-      const pubs = [];
-
-      const sub = (topic) => {
-        if (!subs.has(topic)) {
-          subs.set(topic, {
-            unique_id: ids.sub(topic),
-            name: topic,
-            type: "on_input",
-            trigger_ids: [],
-            action_ids: [],
-          });
-        }
-        return subs.get(topic);
-      };
-      (node.inputs || []).forEach((input) => sub(input.topic));
-
-      (node.timers || []).forEach((timer) => {
-        const key = periodKey(timer.period_ms);
-        if (!timers.has(key)) {
-          timers.set(key, {
-            unique_id: ids.timer(key),
-            name: `timer ${key} ms`,
-            type: R_TIMER_TYPE,
-            frequency: timer.rate_hz ?? null,
-            period_ms: timer.period_ms ?? null,
-            trigger_ids: [],
-            action_ids: [],
-          });
-        } else if ((timer.rate_hz ?? 0) > (timers.get(key).frequency ?? 0)) {
-          timers.get(key).frequency = timer.rate_hz;
-        }
-      });
-
-      (node.outputs || []).forEach((output) => {
-        const trigger = output.trigger || { kind: "unknown" };
-        const gateId = ids.gate(output.topic);
-        const gate = {
-          unique_id: gateId,
-          name: output.topic,
-          type: trigger.kind === "unknown" ? null : trigger.kind,
-          frequency: output.rate_hz ?? null,
-          trigger_ids: [],
-          action_ids: [ids.pub(output.topic)],
-        };
-        if (output.exec) execOf.set(gateId, output.exec);
-        triggerOf.set(gateId, { ...trigger, share: trigger.share ?? null });
-
-        // The gate's own period sets the sampling delay of messages it does
-        // not fire on: its timer's under a timer, its output rate otherwise.
-        let sampleRate = output.rate_hz ?? null;
-        if (trigger.kind === "timer") {
-          const timer = timers.get(periodKey(trigger.period_ms));
-          if (timer) {
-            timer.action_ids.push(gateId);
-            gate.trigger_ids.push(timer.unique_id);
-            addEdge(timer.unique_id, gateId, { kind: "timer" });
-            sampleRate = timer.frequency ?? sampleRate;
-          }
-        } else if (trigger.kind === "input" && trigger.topic) {
-          const input = sub(trigger.topic);
-          input.action_ids.push(gateId);
-          gate.trigger_ids.push(input.unique_id);
-          addEdge(input.unique_id, gateId, {
-            kind: "trigger",
-            share: trigger.share ?? null,
-            intra: Boolean(trigger.intra_process),
-          });
-        }
-        (output.response || []).forEach((response) => {
-          const input = sub(response.from);
-          const key = edgeKey(input.unique_id, gateId);
-          if (!edgeInfo.has(key)) {
-            input.action_ids.push(gateId);
-            gate.trigger_ids.push(input.unique_id);
-            addEdge(input.unique_id, gateId, {
-              kind: "sampled",
-              rate: sampleRate,
-            });
-          }
-          edgeInfo.get(key).response = response;
-        });
-        gates.push(gate);
-        pubs.push({
-          name: output.topic,
-          topic: output.topic,
-          event: {
-            unique_id: ids.pub(output.topic),
-            name: output.topic,
-            type: "to_output",
-            trigger_ids: [gateId],
-            action_ids: [],
-          },
-        });
-      });
-
-      synthesized.set(path, {
-        events: [...timers.values(), ...gates],
-        out_ports: pubs,
-        subs,
-      });
-    });
-
-    // Links: a publish matched to a take. A record without a publisher names
-    // the topic's only recorded publisher, else it stays unattached.
-    const linkEdge = (topic, publisher, subscriber, record) => {
-      const from = publisher ?? single(publishers.get(topic));
-      if (!from || !synthesized.has(from) || !synthesized.has(subscriber))
-        return;
-      const pub = synthesized
-        .get(from)
-        .out_ports.find((port) => port.topic === topic);
-      if (!pub) return;
-      const input = synthesized.get(subscriber).subs.get(topic);
-      if (!input) return;
-      if (!pub.event.action_ids.includes(input.unique_id)) {
-        pub.event.action_ids.push(input.unique_id);
-        input.trigger_ids.push(pub.event.unique_id);
-      }
-      addEdge(pub.event.unique_id, input.unique_id, {
-        kind: record.intra_process ? "intra" : "link",
-        link: record.intra_process ? null : record,
-      });
-    };
-    measurement.links.forEach((record) =>
-      linkEdge(record.topic, record.publisher, record.subscriber, record),
-    );
-    measurement.intra.forEach((key) => {
-      const [topic, publisher, subscriber] = key.split("|");
-      linkEdge(
-        topic,
-        publisher === "*" ? null : publisher,
-        subscriber === "*" ? null : subscriber,
-        { intra_process: true },
-      );
-    });
-
-    // The design's instance tree carries the nodes' guides and panels; nodes
-    // the design does not place are appended under the root.
-    const placed = new Set();
-    const instanceOf = (path, base) => {
-      const fields = synthesized.get(path);
-      placed.add(path);
-      return {
-        ...base,
-        in_ports: [...fields.subs.values()].map((event) => ({
-          name: event.name,
-          topic: event.name,
-          event,
-        })),
-        out_ports: fields.out_ports,
-        events: fields.events,
-        children: [],
-      };
-    };
-    const visit = (instance) => {
-      if (instance.path && synthesized.has(instance.path)) {
-        return instanceOf(instance.path, instance);
-      }
-      return {
-        ...instance,
-        in_ports: [],
-        out_ports: [],
-        events: [],
-        children: (instance.children || []).map(visit),
-      };
-    };
-    const designRoot = designGraph.instances.get(
-      [...designGraph.instances.keys()][0],
-    )?.data;
-    const root = designRoot
-      ? visit(designRoot)
-      : { unique_id: "r:root", name: "recorded", path: "/", children: [] };
-    synthesized.forEach((fields, path) => {
-      if (placed.has(path)) return;
-      root.children.push(
-        instanceOf(path, {
-          unique_id: `r:node:${path}`,
-          name: path.split("/").filter(Boolean).pop() || path,
-          path,
-          entity_type: "node",
-        }),
-      );
-    });
-
-    const graph = new designGraph.constructor().build(root);
-
-    const info = (fromId, toId) => edgeInfo.get(edgeKey(fromId, toId)) || null;
-    const costs = {
-      wait: () => T.ZERO,
-      exec(event) {
-        if (event.kind !== "process" || event.type === R_TIMER_TYPE) {
-          return T.ZERO;
-        }
-        const record = execOf.get(event.id);
-        return record ? T.fromRecord(record, "measured") : T.UNMEASURED;
-      },
-      // A link costs what was measured; a message a gate does not fire on
-      // waits for the gate's next run; a trigger costs nothing of its own.
-      comm(edge, from, to) {
-        const hit = info(from.id, to.id);
-        if (!hit) return T.ZERO;
-        if (hit.kind === "link") return T.fromRecord(hit.link, "measured");
-        if (hit.kind === "intra") return T.summary({ source: "intra_process" });
-        if (hit.kind === "sampled") return samplingOf(hit.rate);
-        return T.ZERO;
-      },
-    };
-
-    const counts = {
-      timers: [...graph.events.values()].filter(
-        (event) => event.kind === "process" && event.type === R_TIMER_TYPE,
-      ).length,
-      outputs: execOf.size,
-      links: [...edgeInfo.values()].filter(
-        (edge) => edge.kind === "link" || edge.kind === "intra",
-      ).length,
-      sampled: [...edgeInfo.values()].filter((edge) => edge.kind === "sampled")
-        .length,
-    };
-    return {
-      graph,
-      costs,
-      edgeInfo: info,
-      triggerOf: (gateId) => triggerOf.get(gateId) || null,
-      sampling: samplingOf,
-      counts,
-      label:
-        `${counts.timers} timers, ${counts.outputs} outputs, ` +
-        `${counts.links} links, ${counts.sampled} sampled inputs` +
-        clockNote(measurement.run),
-    };
-  }
-
-  function single(list) {
-    return list && list.length === 1 ? list[0] : null;
-  }
-
   // ── Loaders ─────────────────────────────────────────────────────────────────
 
-  async function fromFile(file) {
-    const text = await file.text();
-    return fromJson(JSON.parse(text), file.name);
-  }
-
-  // The bundle may ship data/<mode>_latency.json beside the design data; its
-  // absence is the normal case. A page opened from file:// cannot fetch JSON,
-  // so the file's script twin (data/<mode>_latency.js, assigning
-  // window.latencyData[mode]) is loaded there, and wherever the fetch fails.
+  // The latency file is one object, either bare JSON or the script the bundle
+  // serves: `window.latencyData["<mode>"] = {...};`, which a page opened from
+  // file:// can load where it cannot fetch.
   const SCRIPT_GLOBAL = "latencyData";
+  const SCRIPT_ASSIGN = new RegExp(
+    `window\\.${SCRIPT_GLOBAL}\\[("(?:[^"\\\\]|\\\\.)*")\\]\\s*=\\s*`,
+  );
 
-  async function loadBundled(mode) {
-    const label = `${mode}_latency.json`;
-    const fetched = await fetchBundled(mode);
-    if (fetched) return fromJson(fetched, label);
-    const scripted = await loadBundledScript(mode);
-    return scripted ? fromJson(scripted, label) : null;
+  function parseText(text) {
+    const trimmed = text.trim();
+    const assign = SCRIPT_ASSIGN.exec(trimmed);
+    if (!assign) return JSON.parse(trimmed);
+    const body = trimmed.slice(assign.index + assign[0].length);
+    return JSON.parse(body.replace(/;\s*$/, ""));
   }
 
-  async function fetchBundled(mode) {
-    if (typeof fetch !== "function" || window.location?.protocol === "file:") {
-      return null;
-    }
-    const url = `data/${mode}_latency.json`;
-    try {
-      const response = await fetch(url, { cache: "no-store" });
-      return response.ok ? await response.json() : null;
-    } catch (error) {
-      console.warn(`Latency file ${url} not fetched:`, error.message);
-      return null;
-    }
+  async function fromFile(file) {
+    return fromJson(parseText(await file.text()), file.name);
   }
 
-  function loadBundledScript(mode) {
+  // The bundle may ship data/<mode>_latency.js beside the design data; its
+  // absence is the normal case.
+  function loadBundled(mode) {
     const doc = typeof document !== "undefined" ? document : null;
     if (!doc?.head) return Promise.resolve(null);
+    const label = `${mode}_latency.js`;
     const known = window[SCRIPT_GLOBAL]?.[mode];
-    if (known) return Promise.resolve(known);
+    if (known) return Promise.resolve(fromJson(known, label));
     return new Promise((resolve) => {
       const script = doc.createElement("script");
-      script.src = `data/${mode}_latency.js`;
-      script.onload = () => resolve(window[SCRIPT_GLOBAL]?.[mode] ?? null);
+      script.src = `data/${label}`;
+      script.onload = () => {
+        const data = window[SCRIPT_GLOBAL]?.[mode];
+        resolve(data ? fromJson(data, label) : null);
+      };
       script.onerror = () => resolve(null);
       doc.head.appendChild(script);
     });
@@ -663,10 +452,10 @@
     SCHEMA_V1,
     fromJson,
     fromFile,
+    parseText,
     loadBundled,
     clockNote,
     outputTopicsOf,
-    recordedGraph,
   };
 
   if (typeof module !== "undefined" && module.exports) {
