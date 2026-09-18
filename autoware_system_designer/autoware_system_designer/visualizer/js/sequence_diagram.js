@@ -157,17 +157,21 @@
       this.enumerated = null;
     }
 
-    // The sink a group opens on: the deepest chain, then the longest.
+    // The sink a group opens on: a chain the run completed before one it did
+    // not, then the deepest, then the longest. Dead chains stay in view as
+    // side branches of the live one where they feed it.
     defaultSink(solution) {
       let best = null;
       solution.sinkIds.forEach((id) => {
         const arrival = solution.arrivals.get(id);
-        const score = [arrival.rank, T.at(arrival.total, "max")];
-        if (
-          !best ||
-          score[0] > best.score[0] ||
-          (score[0] === best.score[0] && score[1] > best.score[1])
-        ) {
+        const score = [
+          arrival.total.dead ? 0 : 1,
+          arrival.rank,
+          T.at(arrival.total, "max"),
+        ];
+        const ahead =
+          score.findIndex((value, i) => value !== best?.score[i]) ?? -1;
+        if (!best || (ahead >= 0 && score[ahead] > best.score[ahead])) {
           best = { id, score };
         }
       });
