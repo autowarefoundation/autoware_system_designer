@@ -264,9 +264,16 @@ def test_coordinator_state_hooks_see_actor_events(monkeypatch, tmp_path):
     monkeypatch.setattr(regular_actor, "spawn_pgrp", fake_spawn)
     builder = CoordinatorBuilder(default_config=ActorConfig(output_dir=tmp_path, respawn_enabled=False))
     builder.add_node(NodeSpec(name="/n", cmd=["true"]))
-    builder.add_state_hook(seen.append)
+
+    # A stopped actor waits for a shutdown; the exit is what ends the run here.
+    def hook(event):
+        seen.append(event)
+        if isinstance(event, ev.Exited):
+            coord.request_shutdown()
+
+    builder.add_state_hook(hook)
     coord = builder.build()
-    asyncio.run(coord.run())
+    asyncio.run(asyncio.wait_for(coord.run(), timeout=10))
     kinds = [(type(e).__name__, getattr(e, "pid", None), getattr(e, "exit_code", None)) for e in seen]
     assert ("Started", 4242, None) in kinds and ("Exited", None, 0) in kinds
 
