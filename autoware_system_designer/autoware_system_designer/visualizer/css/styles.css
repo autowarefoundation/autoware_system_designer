@@ -997,6 +997,11 @@ svg.lod-rate .logic-vertex-sub {
   pointer-events: none;
 }
 
+/* The ruler is pinned to the top of the viewport and covers what scrolls under it. */
+.seq-axis-bg {
+  fill: var(--bg-primary);
+}
+
 /* A hop: the arrow from the end of one block to the arrival at the next gate. */
 .seq-hop {
   fill: none;
@@ -1136,7 +1141,6 @@ path.seq-selected {
 .seq-gate-rate {
   font-family: "Segoe UI", sans-serif;
   pointer-events: none;
-  display: none;
 }
 
 .seq-hop-label {
@@ -1150,19 +1154,6 @@ path.seq-selected {
 .seq-gate-node,
 .seq-gate-rate {
   fill: var(--text-muted);
-}
-
-.seq-gate-rate {
-  display: none;
-}
-
-svg.lod-name .seq-hop-label,
-svg.lod-name .seq-gate-name {
-  display: block;
-}
-
-svg.lod-rate .seq-gate-rate {
-  display: inline;
 }
 
 .seq-gate-name-upper {

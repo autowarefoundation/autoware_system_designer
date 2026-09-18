@@ -371,27 +371,7 @@
       this.releaseDragHandlers();
       this.zoomLayer = svg;
 
-      svgRoot.addEventListener("wheel", (e) => {
-        e.preventDefault();
-        const zoomIntensity = 0.1;
-        const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
-        const oldScale = this.transform.k;
-        const newScale = Math.min(
-          Math.max(oldScale * (1 + delta), this.getMinZoom()),
-          MAX_ZOOM,
-        );
-        const scaleRatio = newScale / oldScale;
-
-        // Anchored on the pointer: the drawing under it stays under it.
-        const rect = svgRoot.getBoundingClientRect();
-        const anchorX = e.clientX - rect.left;
-        const anchorY = e.clientY - rect.top;
-
-        this.transform.x = anchorX - (anchorX - this.transform.x) * scaleRatio;
-        this.transform.y = anchorY - (anchorY - this.transform.y) * scaleRatio;
-        this.transform.k = newScale;
-        this.updateTransform(svg);
-      });
+      svgRoot.addEventListener("wheel", (e) => this.onWheel(e, svgRoot));
 
       svgRoot.addEventListener("mousedown", (e) => {
         this.isDragging = true;
@@ -437,6 +417,29 @@
     destroy() {
       this.releaseDragHandlers();
       super.destroy();
+    }
+
+    // The wheel gesture: a uniform zoom anchored on the pointer, so the drawing
+    // under it stays under it. Diagrams with another navigation override this.
+    onWheel(e, svgRoot) {
+      e.preventDefault();
+      const zoomIntensity = 0.1;
+      const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
+      const oldScale = this.transform.k;
+      const newScale = Math.min(
+        Math.max(oldScale * (1 + delta), this.getMinZoom()),
+        MAX_ZOOM,
+      );
+      const scaleRatio = newScale / oldScale;
+
+      const rect = svgRoot.getBoundingClientRect();
+      const anchorX = e.clientX - rect.left;
+      const anchorY = e.clientY - rect.top;
+
+      this.transform.x = anchorX - (anchorX - this.transform.x) * scaleRatio;
+      this.transform.y = anchorY - (anchorY - this.transform.y) * scaleRatio;
+      this.transform.k = newScale;
+      this.updateTransform();
     }
 
     updateTransform(svg) {

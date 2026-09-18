@@ -8,7 +8,9 @@
 // the branches that join or leave it are packed onto the tracks above and
 // below. The chains come from the design's event graph; a loaded measurement
 // supplies the time along them: every gate's run, the wait of every input
-// before that run and the transport of every link the run observed.
+// before that run and the transport of every link the run observed. The page
+// is navigated like a document: the wheel scrolls it and ctrl+wheel zooms the
+// time scale; the drawing keeps its size on screen.
 
 (function () {
   const SVG_NS = ElkCanvas.SVG_NS;
@@ -56,14 +58,20 @@
     axisH: 24,
     groupHeaderH: 20,
     groupGap: 14,
-    targetWidth: 1400,
+    fallbackWidth: 1400,
     labelMin: 18,
     labelTierH: 10,
     nameChars: 22,
   };
 
-  const LOD_NAME = 0.45;
-  const LOD_RATE = 0.75;
+  // Time-scale zoom: floor as a fraction of the fit scale, ceiling in px/ms,
+  // and the rate a wheel notch turns into a factor.
+  const TIME_ZOOM_MIN = 0.1;
+  const TIME_ZOOM_MAX = 5000;
+  const WHEEL_ZOOM_RATE = 0.0015;
+  const WHEEL_LINE_PX = 16;
+  // Space between the toolbar's lower edge and the top of the canvas.
+  const TOOLBAR_GAP = 6;
   const ENUMERATE_LIMIT = 12;
   const CHAIN_LIST_LIMIT = 40;
 
@@ -94,6 +102,7 @@
     "a periodic gate needs no measurement: its sampling delay is uniform over one period",
     "a faint block is a process run no measurement covers; it yields to a measured branch at an or gate",
     "a measured chain keeps the design's events; the file supplies each gate's run, each input's wait (in→out response less the run) and each link's transport",
+    "scroll to move down the page, shift+scroll to move along the axis, ctrl+scroll (or pinch) to zoom the time scale about the pointer",
   ];
 
   class SequenceDiagramModule extends ElkCanvas {
@@ -111,6 +120,7 @@
       this.driver = "max";
       this.measured = null; // loaded measurement, see latency_source.js
       this.pxPerMs = null;
+      this.fitPxPerMs = null;
       this.legendOpen = false;
       this.selectedId = null;
       this.enumerated = null;
@@ -549,9 +559,9 @@
     // ── Geometry ────────────────────────────────────────────────────────────────
 
     // Time to x. In the logical state one column per rank; in a timed state the
-    // scale is shared by every group and set so the longest sink chain lands
-    // near the target width, then zoomed. Gates off the sink chains may run
-    // past it: a rarely published output samples over a long period.
+    // scale is shared by every group and set so the longest sink chain fills
+    // the viewport width, then zoomed. Gates off the sink chains may run past
+    // it: a rarely published output samples over a long period.
     prepareScale() {
       const timed = STATES[this.state].timed;
       this.originX = VIEW.padLeft;
@@ -569,7 +579,12 @@
             T.at(sink.total, this.driver) + sink.total.sd,
           );
         });
-        this.pxPerMs = extent > 0 ? VIEW.targetWidth / extent : 1;
+        const width =
+          (this.container.clientWidth || VIEW.fallbackWidth) -
+          VIEW.padLeft -
+          VIEW.padRight;
+        this.fitPxPerMs = extent > 0 ? width / extent : 1;
+        this.pxPerMs = this.fitPxPerMs;
       }
     }
 
@@ -630,7 +645,9 @@
 
     // ── Render ──────────────────────────────────────────────────────────────────
 
-    render() {
+    // keepView redraws under the current viewport, for a change of scale
+    // alone; otherwise the page opens at its top.
+    render({ keepView = false } = {}) {
       this.prepareScale();
       const { layer } = this.createCanvas();
       this.container.classList.add("sequence-diagram-container");
@@ -640,12 +657,14 @@
       this.hopLayer = document.createElementNS(SVG_NS, "g");
       this.gateLayer = document.createElementNS(SVG_NS, "g");
       this.labelLayer = document.createElementNS(SVG_NS, "g");
+      this.rulerLayer = document.createElementNS(SVG_NS, "g");
       [
         this.trackLayer,
         this.axisLayer,
         this.hopLayer,
         this.gateLayer,
         this.labelLayer,
+        this.rulerLayer,
       ].forEach((g) => layer.appendChild(g));
 
       const groups = this.visibleGroups();
@@ -672,8 +691,9 @@
       this.activeGroup?.element?.classList.add("seq-group-active");
 
       this.renderToolbar();
-      this.fitToScreen();
-      this.applyLOD();
+      this.placeCanvas();
+      if (keepView) this.updateTransform();
+      else this.fitToScreen();
       if (this.selectedId) this.select(this.selectedId, false);
     }
 
@@ -781,27 +801,44 @@
     }
 
     // Ticks along the top: milliseconds in a timed state, ranks otherwise, each
-    // with a hairline down through every group.
+    // with a hairline down through every group. The hairlines belong to the
+    // page; the ruler with the labels is pinned to the top of the viewport.
     drawAxis() {
       const g = document.createElementNS(SVG_NS, "g");
       g.classList.add("seq-axis");
+      const ruler = document.createElementNS(SVG_NS, "g");
+      ruler.classList.add("seq-axis-ruler");
       const y = this.originY - 4;
+      const bg = document.createElementNS(SVG_NS, "rect");
+      bg.setAttribute("x", 0);
+      bg.setAttribute("y", 0);
+      bg.setAttribute("width", this.width);
+      bg.setAttribute("height", this.originY - 2);
+      bg.classList.add("seq-axis-bg");
+      ruler.appendChild(bg);
       const axis = document.createElementNS(SVG_NS, "line");
       axis.setAttribute("x1", this.originX);
       axis.setAttribute("x2", this.width - VIEW.padRight / 2);
       axis.setAttribute("y1", y);
       axis.setAttribute("y2", y);
       axis.classList.add("seq-axis-line");
-      g.appendChild(axis);
+      ruler.appendChild(axis);
 
       const tick = (x, label) => {
+        const hair = document.createElementNS(SVG_NS, "line");
+        hair.setAttribute("x1", x);
+        hair.setAttribute("x2", x);
+        hair.setAttribute("y1", this.originY - 2);
+        hair.setAttribute("y2", this.height - VIEW.padBottom / 2);
+        hair.classList.add("seq-axis-tick");
+        g.appendChild(hair);
         const mark = document.createElementNS(SVG_NS, "line");
         mark.setAttribute("x1", x);
         mark.setAttribute("x2", x);
         mark.setAttribute("y1", y - 3);
-        mark.setAttribute("y2", this.height - VIEW.padBottom / 2);
-        mark.classList.add("seq-axis-tick");
-        g.appendChild(mark);
+        mark.setAttribute("y2", y + 2);
+        mark.classList.add("seq-axis-line");
+        ruler.appendChild(mark);
         const text = document.createElementNS(SVG_NS, "text");
         text.setAttribute("x", x);
         text.setAttribute("y", y - 6);
@@ -809,7 +846,7 @@
         text.textContent = label;
         text.classList.add("seq-axis-label");
         text.style.fontSize = `${VIEW.subSize}px`;
-        g.appendChild(text);
+        ruler.appendChild(text);
       };
 
       const spanPx = this.width - VIEW.padRight - this.originX;
@@ -834,8 +871,11 @@
         : "rank · logical";
       title.classList.add("seq-axis-label", "seq-axis-title");
       title.style.fontSize = `${VIEW.subSize}px`;
-      g.appendChild(title);
+      ruler.appendChild(title);
       this.axisLayer.appendChild(g);
+      this.rulerLayer.appendChild(ruler);
+      this.axisRuler = ruler;
+      this.pinAxis();
     }
 
     driverLabel() {
@@ -1195,17 +1235,129 @@
       });
     }
 
-    // ── Level of detail ─────────────────────────────────────────────────────────
+    // ── Navigation ──────────────────────────────────────────────────────────────
 
-    applyLOD() {
-      const root = this.currentSvgRoot;
-      if (!root) return;
-      root.classList.toggle("lod-name", this.transform.k >= LOD_NAME);
-      root.classList.toggle("lod-rate", this.transform.k >= LOD_RATE);
+    // The page reads like a document: the wheel scrolls it, shift+wheel or a
+    // sideways swipe moves along the axis, ctrl+wheel and a pinch zoom the
+    // time scale about the pointer. The drawing keeps its size on screen.
+    onWheel(e, svgRoot) {
+      e.preventDefault();
+      const unit =
+        e.deltaMode === 1
+          ? WHEEL_LINE_PX
+          : e.deltaMode === 2
+            ? this.viewRect().height
+            : 1;
+      if (e.ctrlKey || e.metaKey) {
+        const anchorX = e.clientX - svgRoot.getBoundingClientRect().left;
+        this.zoomTimeAt(Math.exp(-e.deltaY * unit * WHEEL_ZOOM_RATE), anchorX);
+        return;
+      }
+      let dx = e.deltaX * unit;
+      let dy = e.deltaY * unit;
+      if (e.shiftKey && dx === 0) [dx, dy] = [dy, 0];
+      this.transform.x -= dx;
+      this.transform.y -= dy;
+      this.updateTransform();
+    }
+
+    // Time under a viewport x at the current scale.
+    msAt(viewX) {
+      return (
+        ((viewX - this.transform.x) / this.transform.k - this.originX) /
+        this.pxPerMs
+      );
+    }
+
+    // Rescales the axis with the time under `anchorX` held in place. Wheel
+    // events arrive faster than a render, so factors accumulate and the page
+    // is redrawn once per frame.
+    zoomTimeAt(factor, anchorX) {
+      if (!STATES[this.state].timed || !(this.pxPerMs > 0)) return;
+      const pending = this._timeZoom || { factor: 1 };
+      pending.factor *= factor;
+      pending.anchorX = anchorX;
+      pending.ms = this.msAt(anchorX);
+      this._timeZoom = pending;
+      if (pending.frame) return;
+      pending.frame = requestAnimationFrame(() => {
+        this._timeZoom = null;
+        const floor = (this.fitPxPerMs || this.pxPerMs) * TIME_ZOOM_MIN;
+        this.pxPerMs = Math.min(
+          Math.max(this.pxPerMs * pending.factor, floor),
+          TIME_ZOOM_MAX,
+        );
+        this.render({ keepView: true });
+        this.transform.x =
+          pending.anchorX -
+          (this.originX + pending.ms * this.pxPerMs) * this.transform.k;
+        this.updateTransform();
+      });
+    }
+
+    // The toolbar takes the top of the container and the canvas is laid out
+    // below it, so nothing is drawn or scrolled under the menu. Re-run
+    // whenever the toolbar changes height.
+    placeCanvas() {
+      const bar = this.container.querySelector(".seq-toolbar");
+      const svg = this.currentSvgRoot;
+      if (!bar || !svg) return;
+      const top = Math.ceil(
+        bar.getBoundingClientRect().bottom -
+          this.container.getBoundingClientRect().top +
+          TOOLBAR_GAP,
+      );
+      svg.style.position = "absolute";
+      svg.style.top = `${top}px`;
+      svg.style.height = `calc(100% - ${top}px)`;
+      if (!this._toolbarObserver && typeof ResizeObserver !== "undefined") {
+        this._toolbarObserver = new ResizeObserver(() => {
+          this.placeCanvas();
+          this.updateTransform();
+        });
+      }
+      this._toolbarObserver?.disconnect();
+      this._toolbarObserver?.observe(bar);
+    }
+
+    // The visible canvas, in screen pixels.
+    viewRect() {
+      return (this.currentSvgRoot || this.container).getBoundingClientRect();
+    }
+
+    // The viewport never leaves the page: the page's top-left corner sits at
+    // the view's origin, its far side stops at the page edge, and a page
+    // smaller than the view stays at the origin.
+    clampViewport() {
+      if (!(this.width > 0 && this.height > 0)) return;
+      const k = this.transform.k;
+      const view = this.viewRect();
+      const minX = Math.min(0, view.width - this.width * k);
+      const minY = Math.min(0, view.height - this.height * k);
+      this.transform.x = Math.min(0, Math.max(minX, this.transform.x));
+      this.transform.y = Math.min(0, Math.max(minY, this.transform.y));
+    }
+
+    updateTransform(svg) {
+      this.clampViewport();
+      super.updateTransform(svg);
+    }
+
+    // The page opens at its top-left corner, at screen scale.
+    fitToScreen() {
+      this.transform = { x: 0, y: 0, k: 1 };
+      this.updateTransform();
+    }
+
+    // The ruler stays at the top of the viewport while the page scrolls under it.
+    pinAxis() {
+      if (!this.axisRuler) return;
+      const y = Math.max(0, -this.transform.y / this.transform.k);
+      this.axisRuler.setAttribute("transform", `translate(0,${y})`);
     }
 
     onTransform() {
-      this.applyLOD();
+      this.pinAxis();
     }
 
     updateTheme() {
@@ -1546,14 +1698,10 @@
       };
     }
 
-    focusElement(element, minScale = 0.8) {
+    focusElement(element) {
       if (!element) return;
-      if (this.transform.k < minScale) {
-        this.transform.k = minScale;
-        this.updateTransform();
-      }
       const target = element.getBoundingClientRect();
-      const view = this.container.getBoundingClientRect();
+      const view = this.viewRect();
       this.transform.x +=
         view.x + view.width / 2 - (target.x + target.width / 2);
       this.transform.y +=
@@ -1638,9 +1786,20 @@
       this.render();
     }
 
+    destroy() {
+      this._toolbarObserver?.disconnect();
+      this._toolbarObserver = null;
+      super.destroy();
+    }
+
+    // Toolbar zoom, about the centre of the viewport.
     zoomTime(factor) {
-      if (!STATES[this.state].timed) return;
-      this.pxPerMs *= factor;
+      this.zoomTimeAt(factor, this.viewRect().width / 2);
+    }
+
+    // Back to the scale that fits the longest chain, at the top of the page.
+    resetScale() {
+      this.pxPerMs = null;
       this.render();
     }
 
@@ -1724,7 +1883,7 @@
             false,
             !this.highlightEdges,
           ),
-          button("fit", () => this.fitToScreen()),
+          button("fit", () => this.resetScale()),
         ),
       );
 

@@ -25,7 +25,11 @@ The vertices are the process and port events the node designs declare; clock roo
 | rates    | milliseconds                         | a periodic gate's sampling delay from its rate; every process run is an unmeasured placeholder of zero width                                                                                                                                                              |
 | measured | milliseconds                         | a loaded measurement file; a run without a sample stays the placeholder and is drawn faint; a gate the record says never ran is dead, drawn dashed, and delivers nothing downstream; a gate the run observed waits nothing of its own, its inputs carry the measured wait |
 
-The axis is driven by one component of every summary: `min`, `mean`, `max`, or `mean + kσ` (k = 1, 2, 3). `time +` / `time −` zoom the millisecond scale.
+The axis is driven by one component of every summary: `min`, `mean`, `max`, or `mean + kσ` (k = 1, 2, 3).
+
+## Navigation
+
+The page reads like a document at screen scale. The scroll wheel moves down and up the page, shift+scroll (or a sideways swipe) moves along the axis, and dragging pans. Ctrl+scroll, a pinch, or `time +` / `time −` zoom the millisecond scale, about the pointer or the centre of the view: blocks and hops stretch along the axis while tracks, glyphs and labels keep their size, and the ruler stays pinned to the top of the view. The scale opens with the longest sink chain fitted to the width of the view; `fit` returns to it.
 
 ## Timing model
 
