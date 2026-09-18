@@ -103,17 +103,20 @@
   // waits for every trigger, min for one that fires on any. sd and count are
   // borrowed from the branch that dominates the mean. A dead branch never
   // delivers: an or gate folds the live branches, an and gate waiting on one
-  // is dead itself. Among the live branches, ones fully measured take
+  // is dead itself. At an or gate, live branches fully measured take
   // precedence over ones summing placeholders, whose zero width would
-  // otherwise always be the earliest.
+  // otherwise always be the earliest; an and gate waits for every branch,
+  // placeholders included, and stays marked unknown while one is in the pool.
   function fold(branches, pick) {
     if (!branches.length) return { summary: summary(), via: emptyVia() };
     const alive = branches.filter((b) => !b.summary.dead);
     const isDead =
       pick === "max" ? alive.length < branches.length : !alive.length;
     let pool = alive.length ? alive : branches;
-    const known = pool.filter((b) => !b.summary.unknown);
-    if (known.length) pool = known;
+    if (pick === "min") {
+      const known = pool.filter((b) => !b.summary.unknown);
+      if (known.length) pool = known;
+    }
     const better = pick === "max" ? (a, b) => a > b : (a, b) => a < b;
     const best = (component) =>
       pool.reduce((chosen, branch) =>
@@ -136,7 +139,10 @@
         count: byMean.summary.count,
         missingSd: byMean.summary.missingSd,
         approx: branches.length > 1 || branches.some((b) => b.summary.approx),
-        unknown: byMean.summary.unknown,
+        unknown:
+          pick === "max"
+            ? Math.max(...pool.map((b) => b.summary.unknown))
+            : byMean.summary.unknown,
         dead: isDead,
         reason,
       }),

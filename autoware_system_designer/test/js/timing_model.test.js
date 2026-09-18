@@ -535,6 +535,22 @@ test("fold: a measured branch outranks one summing placeholders at either gate",
   assert.equal(or.summary.unknown, 0);
   const and = T.fold([guessed, measured], "max");
   assert.deepEqual(and.via, { min: "m", mean: "m", max: "m" });
+  assert.equal(and.summary.unknown, 1); // the gate still waits on a placeholder
+  // An and gate keeps a placeholder branch that arrives last: its measured
+  // links can put it on the critical path.
+  const late = {
+    key: "l",
+    summary: T.add(T.UNMEASURED, T.summary({ min: 50, mean: 60, max: 80 })),
+  };
+  const critical = T.fold([late, measured], "max");
+  assert.deepEqual(critical.via, { min: "l", mean: "l", max: "l" });
+  assert.equal(critical.summary.max, 80);
+  assert.equal(critical.summary.unknown, 1);
+  assert.deepEqual(T.fold([late, measured], "min").via, {
+    min: "m",
+    mean: "m",
+    max: "m",
+  });
   // With placeholders only, the fold is what it always was.
   const both = T.fold([guessed, { key: "h", summary: T.UNMEASURED }], "min");
   assert.equal(both.summary.unknown, 1);

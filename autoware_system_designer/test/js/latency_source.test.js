@@ -629,9 +629,16 @@ test("loadBundled loads data/<mode>_latency.js", async () => {
 
 test("loadBundled resolves null when the file is absent", async () => {
   const saved = global.document;
-  global.document = fakeDocument((script) => script.onerror());
+  let appended = 0;
+  global.document = fakeDocument((script) => {
+    appended += 1;
+    script.onerror();
+  });
   try {
-    assert.equal(await L.loadBundled("Runtime"), null);
+    assert.equal(await L.loadBundled("Missing"), null);
+    // The miss is remembered: no second script tag for the same mode.
+    assert.equal(await L.loadBundled("Missing"), null);
+    assert.equal(appended, 1);
   } finally {
     global.document = saved;
   }

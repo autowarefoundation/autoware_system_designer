@@ -533,6 +533,9 @@
     return fromJson(parseText(await file.text()), file.name);
   }
 
+  // Modes whose bundle holds no file; asked once per page.
+  const bundledMisses = new Set();
+
   // The bundle may ship data/<mode>_latency.js beside the design data; its
   // absence is the normal case.
   function loadBundled(mode) {
@@ -541,14 +544,20 @@
     const label = `${mode}_latency.js`;
     const known = window[SCRIPT_GLOBAL]?.[mode];
     if (known) return Promise.resolve(fromJson(known, label));
+    if (bundledMisses.has(mode)) return Promise.resolve(null);
     return new Promise((resolve) => {
       const script = doc.createElement("script");
       script.src = `data/${label}`;
       script.onload = () => {
         const data = window[SCRIPT_GLOBAL]?.[mode];
+        if (!data) bundledMisses.add(mode);
         resolve(data ? fromJson(data, label) : null);
       };
-      script.onerror = () => resolve(null);
+      script.onerror = () => {
+        bundledMisses.add(mode);
+        script.remove?.();
+        resolve(null);
+      };
       doc.head.appendChild(script);
     });
   }
