@@ -19,11 +19,11 @@ The chains are the design's: the trigger relation the node designs declare, node
 
 The vertices are the process and port events the node designs declare; clock roots are the `periodic` gates. Every chain is analyzed from the design graph in every state; what changes is the time on it.
 
-| State    | x axis                               | Numbers                                                                                                                                                                          |
-| -------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| logical  | rank (process gates from the source) | none; the default while nothing is measured                                                                                                                                      |
-| rates    | milliseconds                         | a periodic gate's sampling delay from its rate; every process run is an unmeasured placeholder of zero width                                                                     |
-| measured | milliseconds                         | a loaded measurement file; a run without a sample stays the placeholder and is drawn faint; a gate the run observed waits nothing of its own, its inputs carry the measured wait |
+| State    | x axis                               | Numbers                                                                                                                                                                                                                                                                   |
+| -------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| logical  | rank (process gates from the source) | none; the default while nothing is measured                                                                                                                                                                                                                               |
+| rates    | milliseconds                         | a periodic gate's sampling delay from its rate; every process run is an unmeasured placeholder of zero width                                                                                                                                                              |
+| measured | milliseconds                         | a loaded measurement file; a run without a sample stays the placeholder and is drawn faint; a gate the record says never ran is dead, drawn dashed, and delivers nothing downstream; a gate the run observed waits nothing of its own, its inputs carry the measured wait |
 
 The axis is driven by one component of every summary: `min`, `mean`, `max`, or `mean + kσ` (k = 1, 2, 3). `time +` / `time −` zoom the millisecond scale.
 
@@ -35,7 +35,7 @@ Every cost and every arrival is a distribution summary `{ min, mean, max, sd, co
 - **`and` gate**: arrival folds as componentwise `max` over its branches.
 - **`or` gate**: arrival folds as componentwise `min`. A gate with no declared type folds as `or` and is reported.
 - **`periodic` gate (f Hz)**: needs no measurement; its sampling delay is uniform on `[0, 1/f]`: `min 0`, `mean 1/2f`, `max 1/f`, `sd 1/(f·√12)`.
-- **Execution, wait and transport**: measured quantities only. The design declares no latency; a process run or a link without a sample costs zero and is marked `unmeasured`, so a chain total is a lower bound until the measurement covers it. An input's wait before a measured run is the node's in→out response less the run, taken so that wait + run reproduces the response in min, mean and max; a gate the run observed has no sampling delay of its own, since that wait sits on its inputs and a timer's phase is not part of a measured chain.
+- **Execution, wait and transport**: measured quantities only. The design declares no latency; a process run or a link without a sample costs zero and is marked `unmeasured`, so a chain total is a lower bound until the measurement covers it. At an `or` gate a branch that is fully measured takes precedence over one summing placeholders, whose zero width would otherwise always arrive first. A gate whose node was never observed, whose process exited inside the window or never got past construction, or whose every declared output was never published is **dead**: its run is marked `dead` with the reason, nothing arrives downstream of it, an `or` gate folds the live branches only and an `and` gate waiting on it is dead itself. The gate panel names the reason; the group title reads `never ran` when the sink is dead. An input's wait before a measured run is the node's in→out response less the run, taken so that wait + run reproduces the response in min, mean and max; a gate the run observed has no sampling delay of its own, since that wait sits on its inputs and a timer's phase is not part of a measured chain.
 - **`once` gate**: initialization, excluded from steady-state chains.
 - **Three chains from one solve**: each fold records which branch supplied each component, so walking back from the sink yields the minimum, mean and maximum chain. They often differ.
 
@@ -68,6 +68,8 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
     "design_nodes": 102,
     "observed_nodes": 100,
     "unobserved_nodes": 2,
+    "nodes_exited": 1,
+    "nodes_not_initialized": 1,
     "nodes_not_in_design": 12,
     "outputs_by_status": {
       "match": 28,
@@ -81,6 +83,11 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
   "nodes": [
     {
       "node_path": "/localization/pose_twist_fusion_filter/ekf_localizer",
+      "process": {
+        "pids": [4242],
+        "state": "running",
+        "last_record": "2026-09-18T02:36:53+00:00"
+      },
       "inputs": [
         {
           "topic": "/localization/pose_estimator/pose_with_covariance",
@@ -118,7 +125,12 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
           "observed": "timer 20 ms @ 49.9 Hz",
           "status": "match"
         }
-      ]
+      ],
+      "notes": {
+        "declared_input_never_subscribed": ["<topic>"],
+        "declared_trigger_never_taken": ["<topic>"],
+        "declared_output_never_advertised": ["<topic>"]
+      }
     }
   ],
   "links": [
@@ -165,8 +177,10 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
 - `links[]` supplies the transport cost of a topic between an output and the input it feeds, keyed by `topic`; `publisher` and `subscriber` narrow the match and may be left out. A link marked `intra_process` crossed no DDS hop: it is drawn as a zero-length hop and its time is part of the downstream node's `exec`.
 - `chains[]` is the measured end-to-end time from a detected timer to a publish, following the message flow. A group's title shows the measured record of its clock-root node to its sink beside the total composed from `exec` and `links`; the two are measured separately and never derived from one another.
 - `declared_diff` compares each output's declared trigger (from the node design's process events) with the observed one; the rows appear in a gate's info panel and in the Node panel.
+- `process` says what became of the node's process over the window: `state` is `running`, `exited` (the runtime saw the process end inside the window; `exit` carries the wall time, the exit code and the actor) or `not_initialized` (the process traced only the endpoints every node creates — `/rosout`, `/parameter_events`, `/clock` — so the node never got past construction; not judged for a node whose design declares no topic port). `last_record` is the wall time of the process's last trace record. Exits are known to the runtime only; an offline re-analysis of the trace directory reports `running` for a process it cannot see end.
+- `notes` separates a declared trigger topic the node never subscribed to (`declared_input_never_subscribed`, the node never asked for it) from one it subscribed to and never received (`declared_trigger_never_taken`), and lists declared outputs it never advertised (`declared_output_never_advertised`), inputs it took that the design does not name and inputs that feed nothing declared.
 - `sd_ms` and `count` are optional. A record without `sd_ms` is drawn without a whisker and excluded from the chain's `sd`, with the skipped hops counted.
-- `summary` gives the run-level counts (design nodes observed, traced nodes outside the design, declared outputs per `declared_diff` status) so a consumer can judge a run without walking the records; `unobserved_nodes` lists the design nodes that produced no record and `unmatched_nodes` the traced nodes the design does not contain.
+- `summary` gives the run-level counts (design nodes observed, exited or never initialized, traced nodes outside the design, declared outputs per `declared_diff` status) so a consumer can judge a run without walking the records; `unobserved_nodes` lists the design nodes that produced no record and `unmatched_nodes` the traced nodes the design does not contain. An observed node is one with any trace record, so `observed_nodes` counts an exited or uninitialized node too; the state counts say how many of them were alive.
 
 The first shape, `autoware_system_designer/latency/1` (`processes[]` keyed by node path and process name, `links[]`), stays readable.
 

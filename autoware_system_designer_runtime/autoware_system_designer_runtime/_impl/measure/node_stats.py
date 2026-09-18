@@ -56,6 +56,13 @@ COMM_LIMIT_NS = 10 * NS_PER_S
 PREROLL_NS = 1 * NS_PER_S
 # Tolerance around a publish call when placing a source timestamp inside it.
 MATCH_SLACK_NS = 200_000
+# Endpoints every node owns before its own code runs; they say nothing about initialization.
+LIFECYCLE_TOPICS = INFRA_TOPICS | {"/clock"}
+
+# What became of a node's process over the window.
+STATE_RUNNING = "running"
+STATE_EXITED = "exited"
+STATE_NOT_INITIALIZED = "not_initialized"
 
 
 # ---- summaries ---------------------------------------------------------------
@@ -179,6 +186,9 @@ class NodeObs:
     last_arrival: dict[str, int] = field(default_factory=dict)
     # (output topic, input topic) → response values
     response: dict[tuple[str, str], list[int]] = field(default_factory=dict)
+    # Topics the node created endpoints for, whether or not any message moved.
+    subscribed: set[str] = field(default_factory=set)
+    advertised: set[str] = field(default_factory=set)
 
     @property
     def path(self) -> Optional[str]:
@@ -187,6 +197,26 @@ class NodeObs:
     @property
     def matched(self) -> bool:
         return self.info is not None
+
+    @property
+    def initialized(self) -> bool:
+        """The node got past construction: it owns an endpoint beyond the ones every node creates.
+
+        Only topic endpoints are traced, so a node whose design declares no topic port is not judged.
+        """
+        if self.info is not None and not self.info.inputs and not self.info.outputs:
+            return True
+        return bool((self.subscribed | self.advertised) - LIFECYCLE_TOPICS)
+
+
+@dataclass(slots=True)
+class ProcessExit:
+    """A traced process the runtime saw end: wall time and exit code."""
+
+    pid: int
+    t_ns: int
+    exit_code: Optional[int]
+    actor: Optional[str] = None
 
 
 # ---- analysis -----------------------------------------------------------------------
@@ -210,6 +240,10 @@ class Analysis:
     takes_by_pub: dict[int, list[TakeEvent]] = field(default_factory=dict)
     dropped_records: int = 0
     process_count: int = 0
+    # pid → wall time of the process's last trace record
+    process_last_ns: dict[int, int] = field(default_factory=dict)
+    # pid → the exit the runtime reported, when it reported one
+    process_exits: dict[int, ProcessExit] = field(default_factory=dict)
 
     @property
     def window_s(self) -> float:
@@ -228,6 +262,26 @@ class Analysis:
     def matched_nodes(self) -> list[NodeObs]:
         return [n for n in self.nodes.values() if n.matched]
 
+    def exit_of(self, node: NodeObs) -> Optional[ProcessExit]:
+        """The earliest exit of the node's processes inside the window; exits after it are the shutdown."""
+        exits = [
+            self.process_exits[pid]
+            for pid in node.pids
+            if pid in self.process_exits and self.process_exits[pid].t_ns <= self.window_end_ns
+        ]
+        return min(exits, key=lambda e: e.t_ns) if exits else None
+
+    def node_state(self, node: NodeObs) -> str:
+        if self.exit_of(node) is not None:
+            return STATE_EXITED
+        if not node.initialized:
+            return STATE_NOT_INITIALIZED
+        return STATE_RUNNING
+
+    def last_record_of(self, node: NodeObs) -> Optional[int]:
+        times = [self.process_last_ns[pid] for pid in node.pids if pid in self.process_last_ns]
+        return max(times) if times else None
+
 
 def analyze(
     trace_set: TraceSet,
@@ -235,10 +289,13 @@ def analyze(
     window_start_ns: int,
     window_end_ns: int,
     clock: Optional[Clock] = None,
+    exits: Optional[dict[int, ProcessExit]] = None,
 ) -> Analysis:
     analysis = Analysis(window_start_ns=window_start_ns, window_end_ns=window_end_ns, clock=clock or WallClock())
     analysis.dropped_records = trace_set.total_dropped()
     analysis.process_count = len(trace_set.processes)
+    analysis.process_last_ns = {pid: proc.last_time() for pid, proc in trace_set.processes.items()}
+    analysis.process_exits = {pid: exit_ for pid, exit_ in (exits or {}).items() if pid in trace_set.processes}
     nodes: dict[str, NodeObs] = analysis.nodes
 
     def obs_for(endpoint: Endpoint) -> NodeObs:
@@ -252,6 +309,11 @@ def analyze(
             nodes[key] = node
         node.pids.add(endpoint.pid)
         return node
+
+    for proc in trace_set.processes.values():
+        for endpoint in proc.endpoints.values():
+            node = obs_for(endpoint)
+            (node.subscribed if endpoint.kind == "sub" else node.advertised).add(endpoint.topic)
 
     gid_owner: dict[str, NodeObs] = {}
     for gid, endpoint in trace_set.publishers_by_gid.items():

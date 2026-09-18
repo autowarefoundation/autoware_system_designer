@@ -17,10 +17,17 @@
 import pytest
 
 from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
-from autoware_system_designer_runtime._impl.measure.node_stats import analyze, summarize
+from autoware_system_designer_runtime._impl.measure.node_stats import (
+    STATE_EXITED,
+    STATE_NOT_INITIALIZED,
+    STATE_RUNNING,
+    ProcessExit,
+    analyze,
+    summarize,
+)
 from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir
 
-from .measure_fixtures import MS, chain_design, write_chain_traces
+from .measure_fixtures import MS, S, TraceBuilder, chain_design, write_chain_traces
 
 
 @pytest.fixture
@@ -105,3 +112,72 @@ def test_unmatched_nodes_are_kept_by_ros_name(tmp_path):
     graph = NodeGraph.from_system_structure(design)
     result = analyze(read_trace_dir(tmp_path), graph, start, end)
     assert [n.fqn for n in result.unmatched_nodes()] == ["/f"]
+
+
+def test_endpoints_are_recorded_whether_or_not_messages_moved(analysis):
+    b = analysis.nodes["/b"]
+    assert b.subscribed == {"/x"} and b.advertised == {"/y"}
+    assert b.initialized
+    assert analysis.node_state(b) == STATE_RUNNING
+    assert analysis.last_record_of(b) == max(p.t_in for p in b.pubs_by_topic["/y"])
+
+
+def test_a_node_owning_only_lifecycle_endpoints_is_not_initialized(tmp_path):
+    start, end = write_chain_traces(tmp_path)
+    # /g stalls in its constructor: the endpoints every node creates exist, nothing of its own does.
+    g = (
+        TraceBuilder(700)
+        .pub(0x71, "/g", "/rosout", "7" * 48)
+        .sub(0x72, "/g", "/clock")
+        .sub(0x73, "/g", "/parameter_events")
+    )
+    for i in range(10):
+        g.take(start + i * 100 * MS, 7, 0x72, start + i * 100 * MS - MS, "0" * 48)
+    g.write(tmp_path)
+    design = chain_design()
+    g_node = {
+        "name": "g",
+        "namespace": "/",
+        "path": "/g",
+        "entity_type": "node",
+        "in_ports": [],
+        "out_ports": [
+            {
+                "name": "out",
+                "msg_type": "std_msgs/msg/String",
+                "topic": ["g_out"],
+                "event": {"unique_id": "g.out", "type": "to_output", "trigger_ids": [], "action_ids": []},
+            }
+        ],
+        "events": [],
+        "launcher": {"launch_state": "single_node", "package": "pkg", "executable": "g", "ports": []},
+    }
+    design["data"]["children"].append(g_node)
+    graph = NodeGraph.from_system_structure(design)
+    result = analyze(read_trace_dir(tmp_path), graph, start, end)
+    node = result.nodes["/g"]
+    assert node.subscribed == {"/clock", "/parameter_events"} and node.advertised == {"/rosout"}
+    assert not node.initialized
+    assert result.node_state(node) == STATE_NOT_INITIALIZED
+    assert result.last_record_of(node) == start + 9 * 100 * MS
+
+    # A node whose design declares no topic port (services only) cannot be judged by topic endpoints.
+    g_node["out_ports"] = []
+    graph = NodeGraph.from_system_structure(design)
+    result = analyze(read_trace_dir(tmp_path), graph, start, end)
+    assert result.node_state(result.nodes["/g"]) == STATE_RUNNING
+
+
+def test_an_exit_inside_the_window_marks_the_node_exited_and_the_shutdown_does_not(tmp_path):
+    start, end = write_chain_traces(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    exits = {
+        200: ProcessExit(pid=200, t_ns=start + 500 * MS, exit_code=-6, actor="b"),
+        300: ProcessExit(pid=300, t_ns=end + 2 * S, exit_code=0, actor="e"),
+        999: ProcessExit(pid=999, t_ns=start, exit_code=1, actor="untraced"),
+    }
+    result = analyze(read_trace_dir(tmp_path), graph, start, end, exits=exits)
+    assert set(result.process_exits) == {200, 300}  # an exit of a process the trace never saw is dropped
+    b, e = result.nodes["/b"], result.nodes["/e"]
+    assert result.node_state(b) == STATE_EXITED and result.exit_of(b).exit_code == -6
+    assert result.node_state(e) == STATE_RUNNING and result.exit_of(e) is None

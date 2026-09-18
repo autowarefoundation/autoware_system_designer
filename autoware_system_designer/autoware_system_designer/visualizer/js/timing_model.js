@@ -11,7 +11,9 @@
 
   // sd is composed only over hops that know theirs; missingSd counts the rest.
   // approx marks a fold whose mean and sd describe one branch, not the set.
-  // source names where the numbers came from: measured, derived, unmeasured, none.
+  // source names where the numbers came from: measured, derived, unmeasured,
+  // dead, none. unknown counts the placeholders summed into the value; dead
+  // marks a value behind a gate the run never fired, with the reason.
   function summary(fields = {}) {
     const sd = fields.sd === undefined ? 0 : fields.sd;
     return {
@@ -23,6 +25,9 @@
       missingSd: fields.missingSd ?? (sd === null ? 1 : 0),
       approx: Boolean(fields.approx),
       source: fields.source || "none",
+      unknown: fields.unknown ?? 0,
+      dead: Boolean(fields.dead),
+      reason: fields.reason ?? null,
     };
   }
 
@@ -30,7 +35,15 @@
 
   // Placeholder for a process run no measurement covers yet: zero width,
   // marked so the view can show the gap.
-  const UNMEASURED = Object.freeze(summary({ source: "unmeasured" }));
+  const UNMEASURED = Object.freeze(
+    summary({ source: "unmeasured", unknown: 1 }),
+  );
+
+  // A process run the record says never happened: nothing downstream of it
+  // arrives, and a fold never picks it while a live branch exists.
+  function dead(reason) {
+    return summary({ source: "dead", dead: true, reason });
+  }
 
   // Sampling delay of a clock: uniform over one period.
   function uniform(lo, hi, source = "derived") {
@@ -62,7 +75,8 @@
     });
   }
 
-  // Series composition: components add, variances add.
+  // Series composition: components add, variances add, placeholders count up
+  // and a dead term makes the sum dead.
   function add(a, b) {
     return summary({
       min: a.min + b.min,
@@ -73,6 +87,9 @@
       missingSd: a.missingSd + b.missingSd,
       approx: a.approx || b.approx,
       source: "none",
+      unknown: a.unknown + b.unknown,
+      dead: a.dead || b.dead,
+      reason: a.reason ?? b.reason,
     });
   }
 
@@ -84,12 +101,22 @@
 
   // Componentwise fold over branches [{ key, summary }]: max for a gate that
   // waits for every trigger, min for one that fires on any. sd and count are
-  // borrowed from the branch that dominates the mean.
+  // borrowed from the branch that dominates the mean. A dead branch never
+  // delivers: an or gate folds the live branches, an and gate waiting on one
+  // is dead itself. Among the live branches, ones fully measured take
+  // precedence over ones summing placeholders, whose zero width would
+  // otherwise always be the earliest.
   function fold(branches, pick) {
     if (!branches.length) return { summary: summary(), via: emptyVia() };
+    const alive = branches.filter((b) => !b.summary.dead);
+    const isDead =
+      pick === "max" ? alive.length < branches.length : !alive.length;
+    let pool = alive.length ? alive : branches;
+    const known = pool.filter((b) => !b.summary.unknown);
+    if (known.length) pool = known;
     const better = pick === "max" ? (a, b) => a > b : (a, b) => a < b;
     const best = (component) =>
-      branches.reduce((chosen, branch) =>
+      pool.reduce((chosen, branch) =>
         better(branch.summary[component], chosen.summary[component])
           ? branch
           : chosen,
@@ -97,6 +124,9 @@
     const byMin = best("min");
     const byMean = best("mean");
     const byMax = best("max");
+    const reason = isDead
+      ? (branches.find((b) => b.summary.dead)?.summary.reason ?? null)
+      : null;
     return {
       summary: summary({
         min: byMin.summary.min,
@@ -106,6 +136,9 @@
         count: byMean.summary.count,
         missingSd: byMean.summary.missingSd,
         approx: branches.length > 1 || branches.some((b) => b.summary.approx),
+        unknown: byMean.summary.unknown,
+        dead: isDead,
+        reason,
       }),
       via: { min: byMin.key, mean: byMean.key, max: byMax.key },
     };
@@ -136,6 +169,7 @@
   // "min / mean ± sd / max", with the marks the honesty rules ask for.
   function formatSummary(s) {
     if (!s) return "—";
+    if (s.dead) return "never ran";
     const mean = `${formatMs(s.mean)}${s.approx ? "≈" : ""}`;
     const sd = s.missingSd ? `±${formatMs(s.sd)}?` : `±${formatMs(s.sd)}`;
     return `${formatMs(s.min)} / ${mean} ${sd} / ${formatMs(s.max)}`;
@@ -543,6 +577,7 @@
     ZERO,
     UNMEASURED,
     summary,
+    dead,
     uniform,
     fromRecord,
     sampling,

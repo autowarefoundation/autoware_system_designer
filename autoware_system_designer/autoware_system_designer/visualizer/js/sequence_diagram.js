@@ -80,6 +80,10 @@
       "sampled hop: measured wait from the input's arrival to the run that answered it",
     ],
     ["loop", "loop-closing edge, cut from the solve"],
+    [
+      "dead",
+      "a process the recorded run never fired: node gone, never initialized, or output never published; a fold skips it",
+    ],
   ];
 
   const LEGEND_NOTES = [
@@ -88,7 +92,7 @@
     "≈ marks a mean folded at an and/or gate: one branch's number, not the set's",
     "? marks a spread that skipped hops with no sd",
     "a periodic gate needs no measurement: its sampling delay is uniform over one period",
-    "a faint block is a process run no measurement covers",
+    "a faint block is a process run no measurement covers; it yields to a measured branch at an or gate",
     "a measured chain keeps the design's events; the file supplies each gate's run, each input's wait (in→out response less the run) and each link's transport",
   ];
 
@@ -867,6 +871,7 @@
       if (hop.comm?.source === "intra_process")
         path.classList.add("seq-hop-intra");
       if (hop.info?.response) path.classList.add("seq-hop-sampled");
+      if (hop.arrival?.dead) path.classList.add("seq-hop-dead");
       if (timed && arrive > toBox.left + 0.5)
         path.classList.add("seq-hop-late");
       path.classList.add("seq-hop");
@@ -962,6 +967,7 @@
       if (arrival.exec.source === "unmeasured" && STATES[this.state].timed) {
         block.classList.add("seq-unmeasured");
       }
+      if (arrival.exec.dead) block.classList.add("seq-dead");
       g.appendChild(block);
 
       if (box.sdPx > 0.5) {
@@ -1385,6 +1391,23 @@
       return rows;
     }
 
+    // Why a gate never ran, or why nothing arrives over a hop, when the record says so.
+    stateRows(arrival, hopArrival = null) {
+      const rows = [];
+      if (arrival?.exec?.dead) {
+        rows.push({
+          label: "state",
+          value: `never ran: ${arrival.exec.reason || "no run recorded"}`,
+        });
+      } else if (hopArrival?.dead) {
+        rows.push({
+          label: "state",
+          value: `never arrives: ${hopArrival.reason || "upstream never ran"}`,
+        });
+      }
+      return rows;
+    }
+
     // The trigger the run detected for the output a gate feeds.
     triggerRows(gate) {
       if (this.state !== "measured" || !this.measured?.triggerOf) return [];
@@ -1423,7 +1446,11 @@
           state: this.state,
           rank: arrival.rank,
           fold: arrival.fold,
-          rows: [...this.triggerRows(gate), ...this.latencyRows(arrival)],
+          rows: [
+            ...this.stateRows(arrival),
+            ...this.triggerRows(gate),
+            ...this.latencyRows(arrival),
+          ],
           branches: arrival.branches.map((branch) => ({
             name: this.branchName(branch),
             value: T.formatSummary(branch.summary),
@@ -1459,6 +1486,7 @@
           state: this.state,
           fold: arrival.fold,
           rows: [
+            ...this.stateRows(arrival, hop.arrival),
             ...this.recordRows(hop),
             ...this.latencyRows(arrival, hop.comm),
           ],
@@ -1860,7 +1888,7 @@
 
     legendGlyph(kind) {
       const make = (tag) => document.createElementNS(SVG_NS, tag);
-      if (kind === "block") {
+      if (kind === "block" || kind === "dead") {
         const rect = make("rect");
         rect.setAttribute("x", 2);
         rect.setAttribute("y", 3);
@@ -1868,6 +1896,7 @@
         rect.setAttribute("height", 8);
         rect.setAttribute("rx", 1.5);
         rect.classList.add("seq-bar", "seq-legend-bar");
+        if (kind === "dead") rect.classList.add("seq-dead");
         return rect;
       }
       if (kind === "wait") {

@@ -167,8 +167,12 @@ def diff_output(
 @dataclass
 class NodeDiff:
     rows: list[DiffRow] = field(default_factory=list)
-    # Declared trigger topics never taken, inputs taken that feed nothing declared.
+    # Declared trigger topics the node never subscribed to, and those subscribed
+    # but never taken; declared outputs it never advertised; inputs taken that
+    # feed nothing declared; inputs taken that the design does not name.
+    never_subscribed: list[str] = field(default_factory=list)
     never_taken: list[str] = field(default_factory=list)
+    never_advertised: list[str] = field(default_factory=list)
     feeds_nothing: list[str] = field(default_factory=list)
     undeclared_inputs: list[str] = field(default_factory=list)
 
@@ -194,8 +198,13 @@ def diff_node(graph: NodeGraph, analysis: Analysis, node: NodeObs) -> NodeDiff:
         declared_trigger_topics.update(graph.declared_trigger(info, topic).topics)
     taken = set(node.takes_by_topic) | set(node.dup_takes)
     for topic in sorted(declared_trigger_topics):
-        if topic not in taken and topic not in node.intra_inputs:
+        if topic not in node.subscribed:
+            result.never_subscribed.append(topic)
+        elif topic not in taken and topic not in node.intra_inputs:
             result.never_taken.append(topic)
+    for topic in sorted(info.outputs):
+        if topic not in node.advertised:
+            result.never_advertised.append(topic)
     for topic in sorted(taken):
         if topic not in info.inputs:
             result.undeclared_inputs.append(topic)

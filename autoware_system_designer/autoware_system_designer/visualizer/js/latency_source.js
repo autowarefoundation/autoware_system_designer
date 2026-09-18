@@ -123,6 +123,9 @@
       checkRecord(record, index, "chains", ["from", "to", "min_ms", "max_ms"]);
       measurement.chains.push(record);
     });
+    (json.unobserved_nodes || []).forEach((path) =>
+      measurement.unobserved.add(path),
+    );
   }
 
   // A parsed file: records indexed for lookup, plus what the toolbar reports.
@@ -143,6 +146,7 @@
       responses: new Map(),
       links: new Map(),
       intra: new Set(),
+      unobserved: new Set(),
       chains: [],
       diffs: new Map(),
       nodes: new Map(),
@@ -164,6 +168,9 @@
       },
       triggerOf(graph, event) {
         return triggerOf(this, graph, event);
+      },
+      deadReason(graph, event) {
+        return deadReason(this, graph, event);
       },
     };
     if (json.schema === SCHEMA_V1) parseV1(json, measurement);
@@ -268,7 +275,40 @@
       : null;
   }
 
-  // exec answers a process gate from the exec of the output it feeds. comm
+  // Why a process gate never ran in the recorded run, or null: its node was
+  // never observed, its process ended inside the window or never got past
+  // construction, or every output the gate feeds was declared and never
+  // published. Read from the node records, so a gate the file has no exec for
+  // stays merely unmeasured.
+  function deadReason(measurement, graph, event) {
+    if (event.kind !== "process" || measurement.schema === SCHEMA_V1) {
+      return null;
+    }
+    const owner = graph.ownerOf(event.id);
+    const path = owner?.path;
+    if (!path) return null;
+    if (measurement.unobserved.has(path)) return "node not observed in the run";
+    const process = measurement.nodes.get(path)?.process;
+    if (process?.state === "exited") {
+      const code = process.exit?.code;
+      const at = process.exit?.at ? ` at ${process.exit.at}` : "";
+      return `process exited${code === undefined || code === null ? "" : ` (code ${code})`}${at}`;
+    }
+    if (process?.state === "not_initialized") {
+      return "node never left construction: no endpoint of its own";
+    }
+    const topics = outputTopicsOf(graph, event);
+    if (!topics.length) return null;
+    const rows = measurement.diffs.get(path);
+    if (!rows) return null;
+    const status = new Map(rows.map((row) => [row.output, row.status]));
+    return topics.every((topic) => status.get(topic) === "unobserved")
+      ? `output never published (${topics.join(", ")})`
+      : null;
+  }
+
+  // exec answers a process gate from the exec of the output it feeds, or the
+  // dead marker when the record says the gate never ran. comm
   // answers an output→input edge from links[] (a record may leave publisher or
   // subscriber open; an intra-process link costs nothing of its own) and an
   // input→gate edge from the node's response: the time from that input's
@@ -279,13 +319,18 @@
   function costsFor(measurement, graph) {
     const matched = { processes: new Set(), links: new Set() };
     const exec = (event) => {
+      const reason = deadReason(measurement, graph, event);
+      if (reason) return T.dead(reason);
       const hit = outputRecord(measurement, graph, event);
       if (!hit) return null;
       matched.processes.add(hit.key);
       return T.fromRecord(hit.record, "measured");
     };
     const wait = (event) =>
-      outputRecord(measurement, graph, event) ? T.summary() : null;
+      outputRecord(measurement, graph, event) ||
+      deadReason(measurement, graph, event)
+        ? T.summary()
+        : null;
     const comm = (edge, from, to) => {
       if (from.kind === "output" && to.kind === "input") {
         const hit = linkRecord(measurement, graph, from, to);

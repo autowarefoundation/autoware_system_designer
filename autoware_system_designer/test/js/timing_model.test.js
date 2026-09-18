@@ -488,3 +488,70 @@ test("measured costs fall back to the design per hop and name their source", () 
   const [intoA] = solution.arrivals.get("merge.in.a").branches;
   assert.equal(intoA.comm.source, "none");
 });
+
+// ── Dead and unmeasured branches ────────────────────────────────────────────
+
+test("a placeholder counts as unknown and a dead term makes a sum dead", () => {
+  assert.equal(T.UNMEASURED.unknown, 1);
+  assert.equal(T.add(T.UNMEASURED, T.UNMEASURED).unknown, 2);
+  const gone = T.dead("process exited (code -6)");
+  assert.equal(gone.source, "dead");
+  const sum = T.add(T.summary({ min: 1, mean: 2, max: 3 }), gone);
+  assert.equal(sum.dead, true);
+  assert.equal(sum.reason, "process exited (code -6)");
+  assert.equal(T.formatSummary(sum), "never ran");
+});
+
+test("fold: an or gate skips dead branches, an and gate waiting on one is dead", () => {
+  const live = { key: "live", summary: T.summary({ min: 5, mean: 6, max: 7 }) };
+  const gone = {
+    key: "gone",
+    summary: T.add(T.summary({ min: 1, mean: 1, max: 1 }), T.dead("never")),
+  };
+  const or = T.fold([gone, live], "min");
+  assert.deepEqual(or.via, { min: "live", mean: "live", max: "live" });
+  assert.equal(or.summary.dead, false);
+  const and = T.fold([gone, live], "max");
+  assert.equal(and.summary.dead, true);
+  assert.equal(and.summary.reason, "never");
+  // Every branch dead: the fold is dead and reads the branches as they are.
+  const all = T.fold([gone], "min");
+  assert.equal(all.summary.dead, true);
+});
+
+test("fold: a measured branch outranks one summing placeholders at either gate", () => {
+  const measured = {
+    key: "m",
+    summary: T.summary({ min: 5, mean: 6, max: 7, source: "measured" }),
+  };
+  const guessed = { key: "g", summary: T.add(T.UNMEASURED, T.summary()) };
+  const or = T.fold([guessed, measured], "min");
+  assert.deepEqual(or.via, { min: "m", mean: "m", max: "m" });
+  assert.equal(or.summary.unknown, 0);
+  const and = T.fold([guessed, measured], "max");
+  assert.deepEqual(and.via, { min: "m", mean: "m", max: "m" });
+  // With placeholders only, the fold is what it always was.
+  const both = T.fold([guessed, { key: "h", summary: T.UNMEASURED }], "min");
+  assert.equal(both.summary.unknown, 1);
+});
+
+test("a dead branch of an or gate never carries the chain", () => {
+  const graph = forkGraph("or");
+  const costs = T.measuredCosts(graph, {
+    exec: (event) => {
+      if (event.id === "fast.run") return T.dead("output never published");
+      if (event.id === "slow.run")
+        return T.fromRecord(lat(20, 20, 20, 0), "measured");
+      return null;
+    },
+    comm: () => null,
+  });
+  const solution = new T.ChainSolver(graph, costs).solve("clock.tick");
+  const join = solution.arrivals.get("merge.join");
+  assert.equal(join.fold, "min");
+  assert.equal(join.arrive.dead, false);
+  assert.ok(
+    T.chainTo(solution, "merge.join", "mean").events.includes("slow.run"),
+  );
+  assert.equal(solution.arrivals.get("fast.run").total.dead, true);
+});

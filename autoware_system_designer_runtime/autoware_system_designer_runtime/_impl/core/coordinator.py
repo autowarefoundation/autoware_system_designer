@@ -94,6 +94,8 @@ class CoordinatorBuilder:
         self._post_start_hooks: list[Callable[["Coordinator"], Awaitable[None]]] = []
         # Shutdown hooks run once the event loop ends, while the actors are still alive.
         self._shutdown_hooks: list[Callable[["Coordinator"], Awaitable[None]]] = []
+        # State hooks see every actor state event (Started, Exited, ...) as the loop pumps it.
+        self._state_hooks: list[Callable[[object], None]] = []
 
     @property
     def default_config(self) -> ActorConfig:
@@ -128,12 +130,17 @@ class CoordinatorBuilder:
         """Register a callback invoked when the run ends, before the actors are torn down."""
         self._shutdown_hooks.append(hook)
 
+    def add_state_hook(self, hook: Callable[[object], None]) -> None:
+        """Register a synchronous callback invoked with each actor state event."""
+        self._state_hooks.append(hook)
+
     def build(self) -> "Coordinator":
         return Coordinator(
             self._entries,
             list(self._post_start_hooks),
             pre_start_hooks=list(self._pre_start_hooks),
             shutdown_hooks=list(self._shutdown_hooks),
+            state_hooks=list(self._state_hooks),
         )
 
 
@@ -147,11 +154,13 @@ class Coordinator:
         *,
         pre_start_hooks: Optional[list[Callable[["Coordinator"], Awaitable[None]]]] = None,
         shutdown_hooks: Optional[list[Callable[["Coordinator"], Awaitable[None]]]] = None,
+        state_hooks: Optional[list[Callable[[object], None]]] = None,
     ) -> None:
         self._entries = entries
         self._pre_start_hooks = pre_start_hooks or []
         self._post_start_hooks = post_start_hooks
         self._shutdown_hooks = shutdown_hooks or []
+        self._state_hooks = state_hooks or []
         self._state_q: asyncio.Queue = asyncio.Queue()
         self._shutdown = asyncio.Event()
         self._launch_ready = asyncio.Event()
@@ -291,6 +300,11 @@ class Coordinator:
                     event = await self._state_q.get()
 
                 self._log_event(event)
+                for hook in self._state_hooks:
+                    try:
+                        hook(event)
+                    except Exception:  # noqa: BLE001
+                        logger.exception("state hook failed")
                 if isinstance(event, ev.Failed):
                     self._had_failure = True
                     self._shutdown.set()  # cascade: one node failure shuts down everything

@@ -36,7 +36,7 @@ from typing import Any, Optional, Union
 from .chains import ChainSummary
 from .detect import NodeDiff, diff_node, observed_trigger
 from .node_graph import NodeGraph
-from .node_stats import NS_PER_MS, Analysis, NodeObs, summarize
+from .node_stats import NS_PER_MS, STATE_EXITED, STATE_NOT_INITIALIZED, Analysis, NodeObs, summarize
 
 LATENCY_SCHEMA = "autoware_system_designer/latency/2"
 TRACER_VERSION = "0.1.0"
@@ -97,14 +97,19 @@ def _node_record(graph: NodeGraph, analysis: Analysis, node: NodeObs, diff: Node
 
     record = {
         "node_path": node.path,
+        "process": _process_record(analysis, node),
         "inputs": inputs,
         "timers": timers,
         "outputs": outputs,
         "declared_diff": [row.as_dict() for row in diff.rows],
     }
     notes: dict[str, list[str]] = {}
+    if diff.never_subscribed:
+        notes["declared_input_never_subscribed"] = diff.never_subscribed
     if diff.never_taken:
         notes["declared_trigger_never_taken"] = diff.never_taken
+    if diff.never_advertised:
+        notes["declared_output_never_advertised"] = diff.never_advertised
     if diff.feeds_nothing:
         notes["input_feeds_nothing_declared"] = diff.feeds_nothing
     if diff.undeclared_inputs:
@@ -116,6 +121,20 @@ def _node_record(graph: NodeGraph, analysis: Analysis, node: NodeObs, diff: Node
 
 def _round(value: Optional[float], digits: int = 4) -> Optional[float]:
     return None if value is None else round(value, digits)
+
+
+def _process_record(analysis: Analysis, node: NodeObs) -> dict[str, Any]:
+    """What became of the node's process: its state over the window, last trace record and exit."""
+    record: dict[str, Any] = {"pids": sorted(node.pids), "state": analysis.node_state(node)}
+    last = analysis.last_record_of(node)
+    if last is not None:
+        record["last_record"] = _iso(last)
+    exit_ = analysis.exit_of(node)
+    if exit_ is not None:
+        record["exit"] = {"at": _iso(exit_.t_ns), "code": exit_.exit_code}
+        if exit_.actor:
+            record["exit"]["actor"] = exit_.actor
+    return record
 
 
 def _link_records(graph: NodeGraph, analysis: Analysis) -> list[dict[str, Any]]:
@@ -173,6 +192,7 @@ def build_latency_file(
     observed_paths = {node.path for node in analysis.matched_nodes()}
     unobserved = sorted(set(graph.nodes) - observed_paths)
     output_status = Counter(row.status for diff in diffs.values() for row in diff.rows)
+    node_states = Counter(record["process"]["state"] for record in nodes)
     data = {
         "schema": LATENCY_SCHEMA,
         "mode": mode,
@@ -193,6 +213,8 @@ def build_latency_file(
             "design_nodes": len(graph.nodes),
             "observed_nodes": len(observed_paths),
             "unobserved_nodes": len(unobserved),
+            "nodes_exited": node_states[STATE_EXITED],
+            "nodes_not_initialized": node_states[STATE_NOT_INITIALIZED],
             "nodes_not_in_design": len(unmatched),
             "outputs_by_status": dict(sorted(output_status.items())),
         },

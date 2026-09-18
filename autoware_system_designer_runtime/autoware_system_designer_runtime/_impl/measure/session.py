@@ -34,11 +34,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from ..core import events as ev
 from ..core.coordinator import Coordinator, CoordinatorBuilder
 from .chains import trace_chains
 from .clock import CLOCK_AUTO, clock_for
 from .node_graph import NodeGraph
-from .node_stats import NS_PER_S, analyze
+from .node_stats import NS_PER_S, ProcessExit, analyze
 from .probe import ProbeResult, attach_probes, detach_probes, probe_topics
 from .trace_reader import read_trace_dir, trace_dir_progress
 from .writer import build_latency_file, write_latency_file
@@ -138,6 +139,7 @@ def analyze_traces(
     latency_out: Path,
     started_ns: Optional[int] = None,
     clock: str = CLOCK_AUTO,
+    exits: Optional[dict[int, ProcessExit]] = None,
 ) -> dict[str, Any]:
     """Blocking: read the trace directory, analyze, write the latency file."""
     trace_set = read_trace_dir(trace_dir)
@@ -146,7 +148,7 @@ def analyze_traces(
     t1 = window_end_ns if window_end_ns is not None else span_end
     time_base = clock_for(trace_set, clock)
     logger.info("measure: durations in %s", time_base.describe())
-    analysis = analyze(trace_set, graph, t0, t1, clock=time_base)
+    analysis = analyze(trace_set, graph, t0, t1, clock=time_base, exits=exits)
     chains = trace_chains(analysis)
     data, _diffs = build_latency_file(graph, analysis, chains, mode=mode, probe=bool(probe), started_ns=started_ns)
     if probe is None:
@@ -185,6 +187,9 @@ class MeasureSession:
         self._probe_result: Optional[ProbeResult] = None
         self._lock = asyncio.Lock()
         self._result: Optional[dict[str, Any]] = None
+        # Actor lifecycle by pid, so a process that ends inside the window reaches the latency file.
+        self._pids: dict[str, int] = {}
+        self._exits: dict[int, ProcessExit] = {}
 
     # ---- wiring -------------------------------------------------------------
 
@@ -192,6 +197,7 @@ class MeasureSession:
         builder.add_pre_start_hook(self._pre_start)
         builder.add_post_start_hook(self._post_start)
         builder.add_shutdown_hook(self._on_shutdown)
+        builder.add_state_hook(self.on_state_event)
 
     async def _pre_start(self, coord: Coordinator) -> None:
         self._trace_dir.mkdir(parents=True, exist_ok=True)
@@ -235,6 +241,21 @@ class MeasureSession:
             "the analysis runs once the actors have terminated (--measure-keep-running keeps it up)"
         )
         coord.request_shutdown()
+
+    def on_state_event(self, event) -> None:
+        if isinstance(event, ev.Started):
+            self._pids[event.name] = event.pid
+        elif isinstance(event, ev.Exited):
+            pid = self._pids.pop(event.name, None)
+            if pid is None:
+                return
+            self._exits[pid] = ProcessExit(pid=pid, t_ns=time.time_ns(), exit_code=event.exit_code, actor=event.name)
+            if self._state == "running":
+                logger.warning("measure: [%s] exited code=%s inside the window", event.name, event.exit_code)
+
+    @property
+    def exits(self) -> dict[int, ProcessExit]:
+        return dict(self._exits)
 
     async def _on_shutdown(self, coord: Coordinator) -> None:
         if self._state == "running":
@@ -300,6 +321,7 @@ class MeasureSession:
                         latency_out=self._latency_out,
                         started_ns=self._started_ns,
                         clock=self._options.clock,
+                        exits=self._exits,
                     ),
                 )
             except Exception as exc:  # noqa: BLE001

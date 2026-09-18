@@ -325,6 +325,36 @@
   // process time of each output, and the declared diff.
   function measurementCard(record) {
     const children = [];
+    if (record.process) {
+      const process = record.process;
+      const parts = [
+        process.state,
+        process.pids?.length ? `pid ${process.pids.join(", ")}` : null,
+        process.exit
+          ? `exit code ${process.exit.code ?? "?"}${process.exit.at ? ` at ${process.exit.at}` : ""}`
+          : null,
+        process.last_record ? `last record ${process.last_record}` : null,
+      ].filter(Boolean);
+      children.push(
+        element(
+          "div",
+          process.state === "running" ? "port-type" : "port-type latency-flag",
+          parts.join(" · "),
+        ),
+      );
+    }
+    if (record.notes) {
+      Object.entries(record.notes).forEach(([note, topics]) => {
+        const group = element("div", "info-group");
+        group.appendChild(
+          element("div", "info-subtitle", note.replaceAll("_", " ")),
+        );
+        topics.forEach((topic) =>
+          group.appendChild(element("div", "port-type", topic)),
+        );
+        children.push(group);
+      });
+    }
     const list = (title, items, describe) => {
       if (!items?.length) return;
       const group = element("div", "info-group");

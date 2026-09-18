@@ -652,3 +652,75 @@ test("labels say when a run counted ROS time", () => {
   measured.costs(g);
   assert.match(measured.label, /links matched, ROS time ×1\)$/);
 });
+
+// ── Gates the record says never ran ─────────────────────────────────────────
+
+test("a gate is dead when its node exited, never initialized or was never observed", () => {
+  const g = graphV2();
+  const exited = fileV2();
+  exited.nodes[0].process = {
+    pids: [7],
+    state: "exited",
+    exit: { at: "2026-09-18T02:35:13+00:00", code: -6 },
+  };
+  let m = L.fromJson(exited);
+  assert.equal(
+    m.deadReason(g, g.events.get("b.run")),
+    "process exited (code -6) at 2026-09-18T02:35:13+00:00",
+  );
+  assert.equal(m.deadReason(g, g.events.get("a.scan")), null);
+  assert.equal(m.deadReason(g, g.events.get("b.in")), null); // ports are never dead
+
+  const stalled = fileV2();
+  stalled.nodes[0].process = { pids: [7], state: "not_initialized" };
+  m = L.fromJson(stalled);
+  assert.match(
+    m.deadReason(g, g.events.get("b.run")),
+    /never left construction/,
+  );
+
+  const missing = fileV2({ unobserved_nodes: ["/perception/b"] });
+  m = L.fromJson(missing);
+  assert.equal(
+    m.deadReason(g, g.events.get("b.run")),
+    "node not observed in the run",
+  );
+
+  // A running node with its output recorded is alive; a latency/1 file knows nothing of this.
+  assert.equal(L.fromJson(fileV2()).deadReason(g, g.events.get("b.run")), null);
+  assert.equal(L.fromJson(file()).deadReason(g, g.events.get("b.run")), null);
+});
+
+test("a gate is dead when every output it feeds was declared and never published", () => {
+  const g = graphV2();
+  const silent = fileV2();
+  silent.nodes[0].outputs = [];
+  silent.nodes[0].declared_diff = [
+    {
+      output: "/perception/objects",
+      declared: "input(/sensing/cloud) on_input",
+      observed: "not published",
+      status: "unobserved",
+    },
+  ];
+  const m = L.fromJson(silent);
+  assert.equal(
+    m.deadReason(g, g.events.get("b.run")),
+    "output never published (/perception/objects)",
+  );
+  const costs = m.costs(g);
+  const exec = costs.exec(g.events.get("b.run"));
+  assert.equal(exec.source, "dead");
+  assert.equal(exec.dead, true);
+  assert.equal(costs.wait(g.events.get("b.run")).max, 0);
+  const solution = new T.ChainSolver(g, T.measuredCosts(g, costs)).solve(
+    "a.scan",
+  );
+  assert.equal(solution.arrivals.get("b.run").total.dead, true);
+  assert.equal(solution.arrivals.get("a.scan").total.dead, false);
+
+  // A row of another status keeps the gate alive though unmeasured.
+  silent.nodes[0].declared_diff[0].status = "undeclared";
+  const alive = L.fromJson(silent).costs(g);
+  assert.equal(alive.exec(g.events.get("b.run")), null);
+});

@@ -23,7 +23,9 @@ from autoware_system_designer_runtime._impl.core import regular_actor
 from autoware_system_designer_runtime._impl.core.config import ActorConfig
 from autoware_system_designer_runtime._impl.core.coordinator import CoordinatorBuilder
 from autoware_system_designer_runtime._impl.core.regular_actor import NodeSpec, RegularNodeActor
+from autoware_system_designer_runtime._impl.core import events as ev
 from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
+from autoware_system_designer_runtime._impl.measure.node_stats import ProcessExit
 from autoware_system_designer_runtime._impl.measure.session import (
     MeasureOptions,
     MeasureSession,
@@ -34,7 +36,7 @@ from autoware_system_designer_runtime._impl.measure.session import (
 from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir, trace_dir_progress
 from autoware_system_designer_runtime._impl.measure.writer import LATENCY_SCHEMA
 
-from .measure_fixtures import chain_design, write_chain_traces, write_clock_trace
+from .measure_fixtures import MS, chain_design, write_chain_traces, write_clock_trace
 
 
 def _read_latency(path: Path) -> dict:
@@ -207,6 +209,66 @@ def test_analyze_traces_writes_the_latency_file(tmp_path):
     assert sum(summary["outputs_by_status"].values()) == sum(len(n["declared_diff"]) for n in written["nodes"])
     f_out = by_path["/f"]["outputs"][0]
     assert f_out["topic"] == "/w" and f_out["trigger"]["kind"] == "unknown"  # approximation stays visible
+    # What became of each node's process is on the record, and counted.
+    assert by_path["/b"]["process"] == {
+        "pids": [200],
+        "state": "running",
+        "last_record": by_path["/b"]["process"]["last_record"],
+    }
+    assert by_path["/b"]["process"]["last_record"].startswith("2023-11-14T22:13:20")
+    assert summary["nodes_exited"] == 0 and summary["nodes_not_initialized"] == 0
+
+
+def test_a_process_exit_reported_by_the_runtime_reaches_the_record(tmp_path):
+    traces = tmp_path / "trace"
+    start, end = write_chain_traces(traces)
+    graph = NodeGraph.from_system_structure(chain_design())
+    exits = {200: ProcessExit(pid=200, t_ns=start + 300 * MS, exit_code=-6, actor="b_actor")}
+    data = analyze_traces(
+        traces,
+        graph,
+        window_start_ns=start,
+        window_end_ns=end,
+        mode="Test",
+        probe=True,
+        latency_out=tmp_path / "Test_latency.json",
+        exits=exits,
+    )
+    b = next(n for n in data["nodes"] if n["node_path"] == "/b")
+    assert b["process"]["state"] == "exited"
+    assert b["process"]["exit"] == {"at": b["process"]["exit"]["at"], "code": -6, "actor": "b_actor"}
+    assert data["summary"]["nodes_exited"] == 1
+
+
+def test_session_keeps_actor_exits_by_pid(tmp_path, monkeypatch):
+    session, _worker = _session(tmp_path, monkeypatch)
+    builder = CoordinatorBuilder()
+    session.install(builder)
+    assert builder._state_hooks == [session.on_state_event]
+    session.on_state_event(ev.Started(name="/b", pid=200))
+    session.on_state_event(ev.Exited(name="/unknown", exit_code=0))
+    session.on_state_event(ev.Exited(name="/b", exit_code=-6))
+    exits = session.exits
+    assert list(exits) == [200] and exits[200].exit_code == -6 and exits[200].actor == "/b"
+
+
+def test_coordinator_state_hooks_see_actor_events(monkeypatch, tmp_path):
+    seen = []
+
+    class _ExitingProc(_FakeProc):
+        pid = 4242
+
+    async def fake_spawn(cmd, *, env=None, stdout_path=None, stderr_path=None, cwd=None):
+        return _ExitingProc()
+
+    monkeypatch.setattr(regular_actor, "spawn_pgrp", fake_spawn)
+    builder = CoordinatorBuilder(default_config=ActorConfig(output_dir=tmp_path, respawn_enabled=False))
+    builder.add_node(NodeSpec(name="/n", cmd=["true"]))
+    builder.add_state_hook(seen.append)
+    coord = builder.build()
+    asyncio.run(coord.run())
+    kinds = [(type(e).__name__, getattr(e, "pid", None), getattr(e, "exit_code", None)) for e in seen]
+    assert ("Started", 4242, None) in kinds and ("Exited", None, 0) in kinds
 
 
 class _StubCoord:

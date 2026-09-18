@@ -104,8 +104,33 @@ def test_diff_node_reports_inputs_that_feed_nothing_and_never_taken(tmp_path):
     graph = NodeGraph.from_system_structure(design)
     analysis = analyze(read_trace_dir(tmp_path), graph, start, end)
 
-    assert diff_node(graph, analysis, analysis.nodes["/b"]).never_taken == ["/z"]
+    # The trace holds no subscription of /b to /z: the node never asked for it.
+    diff = diff_node(graph, analysis, analysis.nodes["/b"])
+    assert diff.never_subscribed == ["/z"] and diff.never_taken == []
     assert diff_node(graph, analysis, analysis.nodes["/e"]).feeds_nothing == ["/x"]
+
+    # Subscribed but silent is the other case.
+    analysis.nodes["/b"].subscribed.add("/z")
+    diff = diff_node(graph, analysis, analysis.nodes["/b"])
+    assert diff.never_subscribed == [] and diff.never_taken == ["/z"]
+
+
+def test_diff_node_reports_declared_outputs_never_advertised(tmp_path):
+    start, end = write_chain_traces(tmp_path)
+    design = chain_design()
+    b = next(c for c in design["data"]["children"] if c["path"] == "/b")
+    b["out_ports"].append(
+        {
+            "name": "debug",
+            "msg_type": "std_msgs/msg/String",
+            "topic": ["b_debug"],
+            "event": {"unique_id": "b.debug", "type": "to_output", "trigger_ids": ["b.run"], "action_ids": []},
+        }
+    )
+    graph = NodeGraph.from_system_structure(design)
+    analysis = analyze(read_trace_dir(tmp_path), graph, start, end)
+    assert diff_node(graph, analysis, analysis.nodes["/b"]).never_advertised == ["/b_debug"]
+    assert diff_node(graph, analysis, analysis.nodes["/a"]).never_advertised == []
 
 
 def test_untriggered_process_differs_from_any_observation():
