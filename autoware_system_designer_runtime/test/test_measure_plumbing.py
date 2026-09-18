@@ -19,11 +19,11 @@ import json
 import logging
 from pathlib import Path
 
+from autoware_system_designer_runtime._impl.core import events as ev
 from autoware_system_designer_runtime._impl.core import regular_actor
 from autoware_system_designer_runtime._impl.core.config import ActorConfig
 from autoware_system_designer_runtime._impl.core.coordinator import CoordinatorBuilder
 from autoware_system_designer_runtime._impl.core.regular_actor import NodeSpec, RegularNodeActor
-from autoware_system_designer_runtime._impl.core import events as ev
 from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
 from autoware_system_designer_runtime._impl.measure.node_stats import ProcessExit
 from autoware_system_designer_runtime._impl.measure.session import (
