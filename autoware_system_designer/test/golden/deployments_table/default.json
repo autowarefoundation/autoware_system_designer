@@ -14,6 +14,7 @@
             "frequency": null,
             "name": "publish",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "or",
@@ -69,6 +70,7 @@
               "frequency": null,
               "name": "output_status",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_608583f5023b734e"

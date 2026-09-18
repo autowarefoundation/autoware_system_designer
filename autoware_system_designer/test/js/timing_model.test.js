@@ -20,8 +20,10 @@ const T = require(path.join(JS_DIR, "timing_model.js"));
 
 // nodes: [{ name, inputs: [name | { name, type }], outputs: [name | { name,
 // type }], processes: [{ name, type, frequency, on: [input names], to:
-// [output names], after: [process names] }] }]; links: [[nodeA, output,
-// nodeB, input]]. A port's type is its message type, "cloud" by default.
+// [output names], after: [process names], fills: [queue names], reads:
+// [queue names] }] }]; links: [[nodeA, output, nodeB, input]]. A port's type
+// is its message type, "cloud" by default. A queue named by `fills` or
+// `reads` is a queue event of the node.
 function build({ nodes, links = [] }) {
   const events = new Map();
   const event = (id, name, type) => {
@@ -32,6 +34,8 @@ function build({ nodes, links = [] }) {
         type,
         trigger_ids: [],
         action_ids: [],
+        read_ids: [],
+        reader_ids: [],
         frequency: null,
       });
     }
@@ -66,6 +70,12 @@ function build({ nodes, links = [] }) {
       if (p.frequency !== undefined) e.frequency = p.frequency;
       return e;
     });
+    const queues = [];
+    const queue = (name) => {
+      const id = `${node.name}.q.${name}`;
+      if (!events.has(id)) queues.push(event(id, name, "queue"));
+      return events.get(id);
+    };
     (node.processes || []).forEach((p, i) => {
       (p.on || []).forEach((input) =>
         trigger(events.get(`${node.name}.in.${input}`), processes[i]),
@@ -76,6 +86,12 @@ function build({ nodes, links = [] }) {
       (p.to || []).forEach((output) =>
         trigger(processes[i], events.get(`${node.name}.out.${output}`)),
       );
+      (p.fills || []).forEach((name) => trigger(processes[i], queue(name)));
+      (p.reads || []).forEach((name) => {
+        const q = queue(name);
+        processes[i].read_ids.push(q.unique_id);
+        q.reader_ids.push(processes[i].unique_id);
+      });
     });
     return {
       unique_id: `n.${node.name}`,
@@ -84,7 +100,7 @@ function build({ nodes, links = [] }) {
       entity_type: "node",
       in_ports: inPorts,
       out_ports: outPorts,
-      events: processes,
+      events: [...processes, ...queues],
       children: [],
     };
   });
@@ -852,4 +868,90 @@ test("a chain cut by the hop limit ends at the limit, not open", () => {
   const full = solver.solve("a.tick");
   assert.deepEqual(full.sinkIds, ["c.sink"]);
   assert.equal(T.endOf(full, graph, "c.sink").kind, "open");
+});
+
+// ── Queues ──────────────────────────────────────────────────────────────────
+
+// An IMU stream queued by a corrector that a lidar stream paces.
+function queuedCorrector() {
+  return build({
+    nodes: [
+      {
+        name: "imu",
+        outputs: [{ name: "imu", type: "imu" }],
+        processes: [
+          { name: "sample", type: "periodic", frequency: 100, to: ["imu"] },
+        ],
+      },
+      {
+        name: "lidar",
+        outputs: ["cloud"],
+        processes: [
+          { name: "capture", type: "periodic", frequency: 10, to: ["cloud"] },
+        ],
+      },
+      {
+        name: "corrector",
+        inputs: ["cloud", { name: "imu", type: "imu" }],
+        outputs: ["cloud"],
+        processes: [
+          { name: "queue_imu", type: "on_input", on: ["imu"], fills: ["imu"] },
+          {
+            name: "undistort",
+            type: "on_input",
+            on: ["cloud"],
+            reads: ["imu"],
+            to: ["cloud"],
+          },
+        ],
+      },
+    ],
+    links: [
+      ["imu", "imu", "corrector", "imu"],
+      ["lidar", "cloud", "corrector", "cloud"],
+    ],
+  });
+}
+
+test("a queue read is a relation beside the edges, not a trigger", () => {
+  const graph = queuedCorrector();
+  const queue = graph.events.get("corrector.q.imu");
+  assert.equal(queue.kind, "queue");
+  assert.deepEqual(graph.pred.get("corrector.q.imu"), ["corrector.queue_imu"]);
+  assert.equal(graph.succ.has("corrector.q.imu"), false);
+  assert.deepEqual(graph.queuesReadBy("corrector.undistort"), [
+    "corrector.q.imu",
+  ]);
+  assert.deepEqual(graph.readersOfQueue("corrector.q.imu"), [
+    "corrector.undistort",
+  ]);
+  assert.equal(graph.readEdges.length, 1);
+  assert.ok(graph.activeIds.has("corrector.q.imu"));
+  // The reader is not clocked by the queue's filler.
+  assert.deepEqual(
+    [...graph.clocksOf.get("corrector.undistort")],
+    ["lidar.capture"],
+  );
+  assert.deepEqual([...graph.clocksOf.get("corrector.q.imu")], ["imu.sample"]);
+});
+
+test("the filling chain ends queued at the queue; the reader's chain never enters it", () => {
+  const graph = queuedCorrector();
+  const solver = new T.ChainSolver(graph, T.designCosts(graph));
+
+  const filling = solver.solve(["imu.sample"]);
+  assert.deepEqual(filling.sinkIds, ["corrector.q.imu"]);
+  assert.deepEqual(T.endOf(filling, graph, "corrector.q.imu"), {
+    kind: "queued",
+    rejoins: [],
+    readers: ["corrector.undistort"],
+  });
+  assert.equal(filling.reach.has("corrector.undistort"), false);
+
+  const paced = solver.solve(["lidar.capture"]);
+  assert.equal(paced.reach.has("corrector.q.imu"), false);
+  assert.equal(paced.reach.has("imu.sample"), false);
+  assert.deepEqual(paced.sinkIds, ["corrector.out.cloud"]);
+  // The two streams carry different message types, so the clocks are not peers.
+  assert.deepEqual(graph.peerRoots(), [["imu.sample"], ["lidar.capture"]]);
 });

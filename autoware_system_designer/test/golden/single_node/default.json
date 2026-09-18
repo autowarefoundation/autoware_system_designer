@@ -14,6 +14,7 @@
             "frequency": 10.0,
             "name": "publish",
             "process_event": true,
+            "read_ids": [],
             "timeout": 1.0,
             "trigger_ids": [],
             "type": "periodic",
@@ -69,6 +70,7 @@
               "frequency": 10.0,
               "name": "output_status",
               "process_event": false,
+              "read_ids": [],
               "timeout": 1.0,
               "trigger_ids": [
                 "id_608583f5023b734e"

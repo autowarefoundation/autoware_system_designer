@@ -14,6 +14,7 @@
             "frequency": null,
             "name": "scan",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "or",
@@ -61,6 +62,7 @@
               "frequency": null,
               "name": "output_scan",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_8080420635a63b8e"
@@ -117,6 +119,7 @@
             "frequency": null,
             "name": "consume",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_b6a70d0602b75ceb"
@@ -139,6 +142,7 @@
               "frequency": null,
               "name": "input_scan",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_3201bc3bcf81555e"
@@ -225,6 +229,7 @@
             "frequency": null,
             "name": "output_scan",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_8080420635a63b8e"
@@ -262,6 +267,7 @@
             "frequency": null,
             "name": "input_scan",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_3201bc3bcf81555e"
