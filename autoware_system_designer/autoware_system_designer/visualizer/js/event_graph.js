@@ -65,6 +65,7 @@
           error_rate: event.error_rate ?? null,
           timeout: event.timeout ?? null,
           triggers: (event.trigger_ids || []).map(String),
+          latches: (event.latch_ids || []).map(String),
           actions: (event.action_ids || []).map(String),
           reads: (event.read_ids || []).map(String),
           readers: (event.reader_ids || []).map(String),
@@ -203,12 +204,15 @@
       return event ? this.instances.get(event.ownerId)?.data || null : null;
     }
 
-    // An `and` event fires at the slowest of its triggers, so triggers arriving
-    // at different rates mean the declared rate cannot hold for all of them.
+    // An `and` event fires at the slowest of its pacing triggers, so triggers
+    // arriving at different rates mean its rate does not hold for all of them.
+    // A latch is left out: it gates the event and carries no rate of its own.
     rateMismatch(event) {
       if (event.type !== "and") return null;
+      const latches = new Set(event.latches || []);
       const rates = new Set(
         (this.pred.get(event.id) || [])
+          .filter((id) => !latches.has(id))
           .map((id) => this.events.get(id)?.frequency)
           .filter((frequency) => frequency !== null && frequency !== undefined),
       );

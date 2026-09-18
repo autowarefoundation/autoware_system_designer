@@ -19,9 +19,9 @@ const T = require(path.join(JS_DIR, "timing_model.js"));
 // ── Graph builder ───────────────────────────────────────────────────────────
 
 // nodes: [{ name, inputs: [name | { name, type }], outputs: [name | { name,
-// type }], processes: [{ name, type, frequency, on: [input names], to:
-// [output names], after: [process names], fills: [queue names], reads:
-// [queue names] }] }]; links: [[nodeA, output, nodeB, input]]. A port's type
+// type }], processes: [{ name, type, frequency, on: [input names], latch:
+// [input names], to: [output names], after: [process names], fills: [queue
+// names], reads: [queue names] }] }]; links: [[nodeA, output, nodeB, input]]. A port's type
 // is its message type, "cloud" by default. A queue named by `fills` or
 // `reads` is a queue event of the node.
 function build({ nodes, links = [] }) {
@@ -33,6 +33,7 @@ function build({ nodes, links = [] }) {
         name,
         type,
         trigger_ids: [],
+        latch_ids: [],
         action_ids: [],
         read_ids: [],
         reader_ids: [],
@@ -80,6 +81,11 @@ function build({ nodes, links = [] }) {
       (p.on || []).forEach((input) =>
         trigger(events.get(`${node.name}.in.${input}`), processes[i]),
       );
+      (p.latch || []).forEach((input) => {
+        const from = events.get(`${node.name}.in.${input}`);
+        trigger(from, processes[i]);
+        processes[i].latch_ids.push(from.unique_id);
+      });
       (p.after || []).forEach((name) =>
         trigger(events.get(`${node.name}.${name}`), processes[i]),
       );
@@ -467,6 +473,51 @@ test("a once gate takes no part in a steady chain", () => {
   const solution = new T.ChainSolver(graph).solve("src.tick");
   assert.ok(!solution.reach.has("init.setup"));
   assert.ok(solution.reach.has("init.in.a"));
+});
+
+test("a latched trigger takes no part in a steady chain", () => {
+  const graph = build({
+    nodes: [
+      {
+        name: "map",
+        outputs: ["lanelet"],
+        processes: [{ name: "load", type: "once", to: ["lanelet"] }],
+      },
+      {
+        name: "lidar",
+        outputs: ["cloud"],
+        processes: [
+          { name: "scan", type: "periodic", frequency: 10, to: ["cloud"] },
+        ],
+      },
+      {
+        name: "filter",
+        inputs: ["lanelet", "cloud"],
+        outputs: ["objects"],
+        processes: [
+          {
+            name: "run",
+            type: "and",
+            on: ["cloud"],
+            latch: ["lanelet"],
+            to: ["objects"],
+          },
+        ],
+      },
+    ],
+    links: [
+      ["map", "lanelet", "filter", "lanelet"],
+      ["lidar", "cloud", "filter", "cloud"],
+    ],
+  });
+  const solution = new T.ChainSolver(graph).solve("lidar.scan");
+  assert.deepEqual(
+    solution.arrivals.get("filter.run").branches.map((b) => b.fromId),
+    ["filter.in.cloud"],
+  );
+  const mapChain = new T.ChainSolver(graph).solve("map.load");
+  assert.ok(mapChain.reach.has("filter.in.lanelet"));
+  assert.ok(!mapChain.reach.has("filter.run"));
 });
 
 test("hop limit counts process gates", () => {

@@ -84,11 +84,11 @@ Represents a single ROS 2 node.
 - `processes`: Execution logic / Event chains.
   - `name`: Name of the process/callback.
   - `description`: (Optional) Brief explanation of the process.
-  - `trigger_conditions`: Logic to start process. Can be nested with `or`/`and`.
+  - `trigger_conditions`: Logic to start process. Can be nested with `or`/`and`. The process runs at the rate of the conditions that pace it, and that rate follows its outcomes to the ports it publishes: an `and` runs at its slowest condition, any other at its quickest.
     - `on_input`: Triggered by input port (`on_input: port_name`).
     - `on_trigger`: Triggered by another process (`on_trigger: process_name`).
     - `periodic`: Triggered periodically (`periodic: 10.0` [Hz]). The rate may reference the node's effective parameter (`periodic: ${parameter rate}`), so a parameter set that retunes the parameter retunes the design rate.
-    - `once`: Triggered once. Can be `once: null` or `once: <port_name>` to trigger once when a specific port receives data.
+    - `once`: Triggered once. Can be `once: null` or `once: <port_name>` to trigger once when a specific port receives data. Inside an `and`/`or` it is a latch: it gates the chain and leaves the rate to the other conditions.
     - **Monitoring**: Optional fields `warn_rate`, `error_rate`, `timeout` can be added to trigger definitions. Like `periodic`, each is a number or a `${parameter ...}` reference that resolves to one.
   - `outcomes`: Result of process.
     - `to_output`: Sends result to output port (`to_output: port_name`).
