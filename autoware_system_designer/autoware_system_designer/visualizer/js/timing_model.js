@@ -262,17 +262,23 @@
       this.costs = costs || designCosts(graph);
     }
 
-    // Arrival summaries for everything the source reaches. The event graph is
-    // cyclic, so a depth-first walk from the source cuts every edge that closes
-    // on an ancestor; what remains is a DAG with the walk's own tree in it, and
-    // arrivals are folded along it in topological order.
-    solve(sourceId, { hopLimit = null } = {}) {
+    // Arrival summaries for everything the sources reach. Several sources fire
+    // together at time zero: peer clocks whose streams one gate merges, so the
+    // fold at that gate weighs one chain against the other. The event graph is
+    // cyclic, so edges are kept in order of distance from the sources and an
+    // edge that closes a cycle is cut where the long way round rejoins; what
+    // remains is a DAG, and arrivals are folded along it in topological order.
+    solve(sources, { hopLimit = null } = {}) {
       const graph = this.graph;
-      const source = graph.events.get(sourceId);
-      if (!source) throw new Error(`unknown source event ${sourceId}`);
+      const sourceIds = new Set([].concat(sources));
+      sourceIds.forEach((id) => {
+        if (!graph.events.get(id))
+          throw new Error(`unknown source event ${id}`);
+      });
+      const [sourceId] = sourceIds;
 
-      const reach = this._reach(sourceId, hopLimit);
-      const { order, loopEdges } = this._cut(sourceId, reach);
+      const reach = this._reach(sourceIds, hopLimit);
+      const { order, loopEdges } = this._cut(sourceIds, reach);
 
       const arrivals = new Map();
       const edgeEnds = new Map(); // kept edge id → { fromId, toId }
@@ -281,7 +287,7 @@
         const event = graph.events.get(id);
         const branches = [];
         (graph.pred.get(id) || []).forEach((fromId) => {
-          if (!reach.has(fromId)) return;
+          if (!reach.has(fromId) || sourceIds.has(id)) return;
           const edgeId = graph.edgeId(fromId, id);
           if (loopEdges.has(edgeId)) return;
           const from = graph.events.get(fromId);
@@ -297,10 +303,9 @@
 
         const mode = foldOf(event);
         if (event.kind === "process" && !event.type) unknownGates.push(id);
-        const folded =
-          id === sourceId
-            ? { summary: summary(), via: emptyVia() }
-            : fold(branches, mode);
+        const folded = sourceIds.has(id)
+          ? { summary: summary(), via: emptyVia() }
+          : fold(branches, mode);
         const wait = this.costs.wait(event);
         const exec = this.costs.exec(event);
         const start = add(folded.summary, wait);
@@ -319,7 +324,7 @@
         });
       });
 
-      // Rank: longest gate count from the source along kept edges, for the view
+      // Rank: longest gate count from a source along kept edges, for the view
       // that has no time to place events by.
       order.forEach((id) => {
         const arrival = arrivals.get(id);
@@ -328,12 +333,13 @@
         arrival.rank = arrival.branches.reduce(
           (rank, branch) =>
             Math.max(rank, arrivals.get(branch.fromId).rank + step),
-          id === sourceId ? 0 : step,
+          sourceIds.has(id) ? 0 : step,
         );
       });
 
       return {
         sourceId,
+        sourceIds,
         reach,
         order,
         arrivals,
@@ -350,12 +356,12 @@
       };
     }
 
-    // Events the source reaches, start-up gates left out, within the hop limit
+    // Events the sources reach, start-up gates left out, within the hop limit
     // counted in process gates.
-    _reach(sourceId, hopLimit) {
+    _reach(sourceIds, hopLimit) {
       const graph = this.graph;
-      const hops = new Map([[sourceId, 0]]);
-      const queue = [sourceId];
+      const hops = new Map([...sourceIds].map((id) => [id, 0]));
+      const queue = [...sourceIds];
       for (let cursor = 0; cursor < queue.length; cursor += 1) {
         const id = queue[cursor];
         (graph.succ.get(id) || []).forEach((nextId) => {
@@ -371,42 +377,70 @@
       return new Set(hops.keys());
     }
 
-    // Iterative depth-first walk over the reach: an edge into an event still on
-    // the walk's stack closes a loop and is cut; the reverse finishing order is
-    // a topological order of what is left.
-    _cut(sourceId, reach) {
+    // Cuts the reach into a DAG. Events are ranked by breadth-first distance
+    // from the sources and edges are decided in that order: an edge that moves
+    // away from the sources is kept; one that does not is kept only if the
+    // kept edges do not already lead from its head back to its tail. Every
+    // cycle has an edge leaving its farthest event, and that edge is decided
+    // last, so it is the one cut: a chain is read outward from its sources
+    // and a loop is cut where the long way round rejoins it. Returns a
+    // topological order of the kept edges.
+    _cut(sourceIds, reach) {
       const graph = this.graph;
-      const WHITE = 0;
-      const GRAY = 1;
-      const BLACK = 2;
-      const color = new Map();
-      const finished = [];
-      const loopEdges = new Set();
-
-      const stack = [{ id: sourceId, next: 0 }];
-      color.set(sourceId, GRAY);
-      while (stack.length) {
-        const frame = stack[stack.length - 1];
-        const successors = (graph.succ.get(frame.id) || []).filter((id) =>
-          reach.has(id),
-        );
-        if (frame.next < successors.length) {
-          const nextId = successors[frame.next];
-          frame.next += 1;
-          const state = color.get(nextId) ?? WHITE;
-          if (state === GRAY) {
-            loopEdges.add(graph.edgeId(frame.id, nextId));
-          } else if (state === WHITE) {
-            color.set(nextId, GRAY);
-            stack.push({ id: nextId, next: 0 });
-          }
-        } else {
-          color.set(frame.id, BLACK);
-          finished.push(frame.id);
-          stack.pop();
-        }
+      const distance = new Map([...sourceIds].map((id) => [id, 0]));
+      const byDistance = [...sourceIds];
+      for (let cursor = 0; cursor < byDistance.length; cursor += 1) {
+        const id = byDistance[cursor];
+        (graph.succ.get(id) || []).forEach((nextId) => {
+          if (!reach.has(nextId) || distance.has(nextId)) return;
+          distance.set(nextId, distance.get(id) + 1);
+          byDistance.push(nextId);
+        });
       }
-      return { order: finished.reverse(), loopEdges };
+
+      const kept = new Map(byDistance.map((id) => [id, []]));
+      const leadsBack = (fromId, toId) => {
+        const stack = [fromId];
+        const seen = new Set([fromId]);
+        while (stack.length) {
+          const id = stack.pop();
+          if (id === toId) return true;
+          (kept.get(id) || []).forEach((nextId) => {
+            if (!seen.has(nextId)) {
+              seen.add(nextId);
+              stack.push(nextId);
+            }
+          });
+        }
+        return false;
+      };
+
+      const loopEdges = new Set();
+      const indegree = new Map(byDistance.map((id) => [id, 0]));
+      byDistance.forEach((id) => {
+        (graph.succ.get(id) || []).forEach((nextId) => {
+          if (!reach.has(nextId)) return;
+          const forward = distance.get(nextId) > distance.get(id);
+          if (forward || !leadsBack(nextId, id)) {
+            kept.get(id).push(nextId);
+            indegree.set(nextId, indegree.get(nextId) + 1);
+          } else {
+            loopEdges.add(graph.edgeId(id, nextId));
+          }
+        });
+      });
+
+      const order = [];
+      const ready = byDistance.filter((id) => indegree.get(id) === 0);
+      for (let cursor = 0; cursor < ready.length; cursor += 1) {
+        const id = ready[cursor];
+        order.push(id);
+        kept.get(id).forEach((nextId) => {
+          indegree.set(nextId, indegree.get(nextId) - 1);
+          if (indegree.get(nextId) === 0) ready.push(nextId);
+        });
+      }
+      return { order, loopEdges };
     }
   }
 
@@ -468,14 +502,14 @@
   // list is ranked by max and capped; `total` says how many there were.
   function enumerateChains(solution, sinkId, { limit = 20 } = {}) {
     const memo = new Map();
-    const source = solution.sourceId;
+    const sources = solution.sourceIds;
 
     const expand = (id) => {
       if (memo.has(id)) return memo.get(id);
       const arrival = solution.arrivals.get(id);
       const own = add(arrival.wait, arrival.exec);
       let alternatives;
-      if (id === source || !arrival.branches.length) {
+      if (sources.has(id) || !arrival.branches.length) {
         alternatives = [{ summary: own, edges: new Set(), count: 1 }];
       } else {
         const perBranch = arrival.branches.map((branch) =>
@@ -549,7 +583,7 @@
       if (memo.has(id)) return memo.get(id);
       const arrival = solution.arrivals.get(id);
       let n = 1;
-      if (id !== solution.sourceId && arrival.branches.length) {
+      if (!solution.sourceIds.has(id) && arrival.branches.length) {
         const per = arrival.branches.map((b) => count(b.fromId));
         n =
           arrival.mode === "max"

@@ -127,12 +127,14 @@
     return card(`Global Topic ${globalTopic.topic}`, ...groups);
   }
 
-  // One event of the trigger graph: what fires it and at what rate.
+  // One event of the trigger graph: what fires it, at what declared rate and,
+  // when a run was measured, at what observed rate.
   function eventCard(event) {
     const rows = [
       ["kind", event.kind],
       ["type", event.type],
       ["rate", event.rate],
+      ["measured rate", event.measured_rate],
       ["warn rate", event.warn_rate],
       ["error rate", event.error_rate],
       ["timeout", event.timeout],
@@ -150,6 +152,14 @@
       row.appendChild(element("span", "info-label", "mixed trigger rates:"));
       row.appendChild(
         element("span", "info-value chain-warn", event.mismatch.join(" / ")),
+      );
+      rows.push(row);
+    }
+    if (event.rate_warn) {
+      const row = element("div", "info-row");
+      row.appendChild(element("span", "info-label", "rate differs:"));
+      row.appendChild(
+        element("span", "info-value chain-warn", event.rate_warn),
       );
       rows.push(row);
     }

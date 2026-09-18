@@ -18,9 +18,10 @@ const T = require(path.join(JS_DIR, "timing_model.js"));
 
 // ── Graph builder ───────────────────────────────────────────────────────────
 
-// nodes: [{ name, inputs: [name], outputs: [name], processes: [{ name, type,
-// frequency, on: [input names], to: [output names], after: [process names] }]
-// }]; links: [[nodeA, output, nodeB, input]].
+// nodes: [{ name, inputs: [name | { name, type }], outputs: [name | { name,
+// type }], processes: [{ name, type, frequency, on: [input names], to:
+// [output names], after: [process names] }] }]; links: [[nodeA, output,
+// nodeB, input]]. A port's type is its message type, "cloud" by default.
 function build({ nodes, links = [] }) {
   const events = new Map();
   const event = (id, name, type) => {
@@ -45,14 +46,18 @@ function build({ nodes, links = [] }) {
     }
   };
 
+  const port = (spec) =>
+    typeof spec === "string" ? { name: spec, type: "cloud" } : spec;
   const children = nodes.map((node) => {
-    const inPorts = (node.inputs || []).map((name) => ({
+    const inPorts = (node.inputs || []).map(port).map(({ name, type }) => ({
       name,
+      msg_type: type,
       topic: [`${node.name}_${name}`],
       event: event(`${node.name}.in.${name}`, `input_${name}`, "on_input"),
     }));
-    const outPorts = (node.outputs || []).map((name) => ({
+    const outPorts = (node.outputs || []).map(port).map(({ name, type }) => ({
       name,
+      msg_type: type,
       topic: [`${node.name}_${name}`],
       event: event(`${node.name}.out.${name}`, `output_${name}`, "to_output"),
     }));
@@ -554,4 +559,192 @@ test("a dead branch of an or gate never carries the chain", () => {
     T.chainTo(solution, "merge.join", "mean").events.includes("slow.run"),
   );
   assert.equal(solution.arrivals.get("fast.run").total.dead, true);
+});
+
+// ── Peer sources ────────────────────────────────────────────────────────────
+
+// Two lidars into one concatenation, an imu into each lidar's corrector as a
+// side input, and a synchronizer downstream fed by the concatenated cloud
+// twice (once straight, once through a segmenter).
+const lidar = (name) => ({
+  name,
+  inputs: [{ name: "imu", type: "imu" }],
+  outputs: ["cloud"],
+  processes: [
+    { name: "scan", type: "periodic", frequency: 10 },
+    {
+      name: "correct",
+      type: "and",
+      after: ["scan"],
+      on: ["imu"],
+      to: ["cloud"],
+    },
+  ],
+});
+const fanInGraph = ({ loop = false } = {}) =>
+  build({
+    nodes: [
+      lidar("left"),
+      lidar("right"),
+      {
+        name: "imu",
+        outputs: [{ name: "data", type: "imu" }],
+        processes: [
+          { name: "sample", type: "periodic", frequency: 100, to: ["data"] },
+        ],
+      },
+      {
+        name: "concat",
+        inputs: ["in1", "in2"],
+        outputs: ["cloud"],
+        processes: [
+          { name: "update", type: "or", on: ["in1", "in2"], to: ["cloud"] },
+        ],
+      },
+      {
+        name: "segment",
+        inputs: ["cloud"],
+        outputs: ["cloud"],
+        processes: [
+          { name: "run", type: "on_input", on: ["cloud"], to: ["cloud"] },
+        ],
+      },
+      {
+        name: "sync",
+        inputs: ["raw", "obstacle"],
+        outputs: [{ name: "grid", type: "grid" }],
+        processes: [
+          { name: "fuse", type: "and", on: ["raw", "obstacle"], to: ["grid"] },
+        ],
+      },
+      ...(loop
+        ? [
+            {
+              name: "corrector",
+              inputs: [{ name: "grid", type: "grid" }],
+              outputs: [{ name: "data", type: "imu" }],
+              processes: [
+                { name: "run", type: "on_input", on: ["grid"], to: ["data"] },
+              ],
+            },
+          ]
+        : []),
+    ],
+    links: [
+      ["left", "cloud", "concat", "in1"],
+      ["right", "cloud", "concat", "in2"],
+      ["imu", "data", "left", "imu"],
+      ["imu", "data", "right", "imu"],
+      ["concat", "cloud", "segment", "cloud"],
+      ["concat", "cloud", "sync", "raw"],
+      ["segment", "cloud", "sync", "obstacle"],
+      ...(loop
+        ? [
+            ["sync", "grid", "corrector", "grid"],
+            ["corrector", "data", "left", "imu"],
+            ["corrector", "data", "right", "imu"],
+          ]
+        : []),
+    ],
+  });
+
+test("a stream's roots are the clocks upstream on its message type", () => {
+  const graph = fanInGraph();
+  assert.deepEqual([...graph.streamRoots("concat.in.in1")], ["left.scan"]);
+  assert.deepEqual([...graph.streamRoots("sync.in.obstacle")].sort(), [
+    "left.scan",
+    "right.scan",
+  ]);
+  // the imu feeds the corrector as a side input of another type
+  assert.deepEqual([...graph.streamRoots("left.in.imu")], ["imu.sample"]);
+});
+
+test("clocks whose streams one gate merges are peers; side inputs and rejoined forks are not", () => {
+  const graph = fanInGraph();
+  const sets = graph.peerRoots();
+  assert.deepEqual(
+    sets.map((ids) => ids.sort()),
+    [["imu.sample"], ["left.scan", "right.scan"]],
+  );
+});
+
+test("peer sources are solved together and meet at the merging gate", () => {
+  const graph = fanInGraph();
+  // the left lidar is faster at best and slower at worst than the right one
+  const costs = measured(graph, {
+    "left.correct": lat(1, 3, 20, 0),
+    "right.correct": lat(5, 5, 5, 0),
+    "concat.update": lat(2, 2, 2, 0),
+  });
+  const solution = new T.ChainSolver(graph, costs).solve([
+    "left.scan",
+    "right.scan",
+  ]);
+  assert.deepEqual([...solution.sourceIds], ["left.scan", "right.scan"]);
+  assert.equal(solution.arrivals.get("right.scan").rank, 0);
+  const update = solution.arrivals.get("concat.update");
+  assert.equal(update.fold, "min");
+  assert.deepEqual(update.branches.map((b) => b.fromId).sort(), [
+    "concat.in.in1",
+    "concat.in.in2",
+  ]);
+  // both lidars sample uniformly over 100 ms; the or gate takes the earlier
+  // arrival component by component
+  near(update.arrive.min, 1);
+  near(update.arrive.max, 105);
+  assert.equal(update.via.min, graph.edgeId("concat.in.in1", "concat.update"));
+  assert.equal(update.via.max, graph.edgeId("concat.in.in2", "concat.update"));
+  const min = T.chainTo(solution, "concat.out.cloud", "min");
+  const max = T.chainTo(solution, "concat.out.cloud", "max");
+  assert.equal(min.events[0], "left.scan");
+  assert.equal(max.events[0], "right.scan");
+  assert.equal(T.countChains(solution, "concat.out.cloud"), 2);
+  assert.equal(
+    T.enumerateChains(solution, "concat.out.cloud").chains.length,
+    2,
+  );
+});
+
+test("a loop is cut where the long way round rejoins a source's own chain", () => {
+  const graph = fanInGraph({ loop: true });
+  const solution = new T.ChainSolver(graph, T.designCosts(graph)).solve([
+    "left.scan",
+    "right.scan",
+  ]);
+  // every lidar keeps its short way into the merge; the corrector's feedback
+  // reaches the lidars' imu inputs and is cut there, into the gates
+  const cut = [...solution.loopEdges].map((id) => graph.edgeById.get(id));
+  assert.deepEqual(cut.map((edge) => edge.to).sort(), [
+    "left.correct",
+    "right.correct",
+  ]);
+  assert.deepEqual(cut.map((edge) => edge.from).sort(), [
+    "left.in.imu",
+    "right.in.imu",
+  ]);
+  const update = solution.arrivals.get("concat.update");
+  assert.equal(update.branches.length, 2);
+  assert.ok(
+    solution.order.indexOf("left.correct") <
+      solution.order.indexOf("concat.update"),
+  );
+  assert.ok(
+    solution.order.indexOf("right.correct") <
+      solution.order.indexOf("concat.update"),
+  );
+});
+
+test("a single source still reads its chain outward and cuts the loop coming back", () => {
+  const graph = fanInGraph({ loop: true });
+  const solution = new T.ChainSolver(graph, T.designCosts(graph)).solve(
+    "left.scan",
+  );
+  const cutInto = [...solution.loopEdges].map(
+    (id) => graph.edgeById.get(id).to,
+  );
+  // the feedback into this lidar is cut; the other lidar is reached only
+  // through the loop, so its way into the merge is the long way round
+  assert.deepEqual(cutInto.sort(), ["concat.update", "left.correct"]);
+  assert.ok(solution.reach.has("right.correct"));
+  assert.equal(solution.arrivals.get("concat.update").branches.length, 1);
 });

@@ -168,6 +168,104 @@
       return rates.size > 1 ? [...rates].sort((a, b) => a - b) : null;
     }
 
+    // The message type a port event carries; a process event carries none.
+    msgType(event) {
+      return event?.port?.msg_type || null;
+    }
+
+    // The clock roots at the head of a port's stream: the walk upstream that
+    // stays on the port's message type, through links, the gates that publish
+    // and the gates that trigger them, and stops at a periodic gate. Inputs of
+    // another type along the way are side inputs of the stream, not its
+    // sources, so the walk never enters them; that keeps it local in a cyclic
+    // graph.
+    streamRoots(portId) {
+      const port = this.events.get(portId);
+      const type = this.msgType(port);
+      if (!port || !type) return new Set();
+      const roots = new Set();
+      const seen = new Set();
+      const stack = [portId];
+      while (stack.length) {
+        const id = stack.pop();
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const event = this.events.get(id);
+        if (!event) continue;
+        if (event.kind === "process" && CLOCK_TYPES.has(event.type)) {
+          roots.add(id);
+          continue;
+        }
+        (this.pred.get(id) || []).forEach((predId) => {
+          const pred = this.events.get(predId);
+          if (!pred) return;
+          if (pred.kind === "process" || this.msgType(pred) === type) {
+            stack.push(predId);
+          }
+        });
+      }
+      return roots;
+    }
+
+    // Clock roots that drive distinct streams of one message type into one
+    // gate are peers: the gate merges their chains, so they are analyzed as
+    // one. Two streams pair the roots each has and the other lacks; a root
+    // both streams share (a fork that rejoins) pairs with nothing there. Every
+    // root is in exactly one set; a root without peers stands alone. Sets are
+    // ordered by their first root's owner path.
+    peerRoots() {
+      const parent = new Map(this.clockRootIds.map((id) => [id, id]));
+      const find = (id) => {
+        while (parent.get(id) !== id) {
+          parent.set(id, parent.get(parent.get(id)));
+          id = parent.get(id);
+        }
+        return id;
+      };
+      const union = (a, b) => {
+        const ra = find(a);
+        const rb = find(b);
+        if (ra !== rb) parent.set(ra, rb);
+      };
+
+      this.events.forEach((gate) => {
+        if (gate.kind !== "process") return;
+        const byType = new Map();
+        (this.pred.get(gate.id) || []).forEach((predId) => {
+          const pred = this.events.get(predId);
+          const type = pred?.kind === "input" ? this.msgType(pred) : null;
+          if (!type) return;
+          if (!byType.has(type)) byType.set(type, []);
+          byType.get(type).push(predId);
+        });
+        byType.forEach((ports) => {
+          if (ports.length < 2) return;
+          const streams = ports
+            .map((portId) => this.streamRoots(portId))
+            .filter((roots) => roots.size);
+          for (let i = 0; i < streams.length; i += 1) {
+            for (let j = i + 1; j < streams.length; j += 1) {
+              const own = [...streams[i]].filter((id) => !streams[j].has(id));
+              const other = [...streams[j]].filter((id) => !streams[i].has(id));
+              if (!own.length || !other.length) continue;
+              [...own, ...other].forEach((id) => union(own[0], id));
+            }
+          }
+        });
+      });
+
+      const sets = new Map();
+      this.clockRootIds.forEach((id) => {
+        const root = find(id);
+        if (!sets.has(root)) sets.set(root, []);
+        sets.get(root).push(id);
+      });
+      const pathOf = (id) => this.ownerOf(id)?.path || "";
+      return [...sets.values()]
+        .map((ids) => ids.sort((a, b) => pathOf(a).localeCompare(pathOf(b))))
+        .sort((a, b) => pathOf(a[0]).localeCompare(pathOf(b[0])));
+    }
+
     // Walks the trigger relation in one direction and returns the events reached,
     // in hop order, together with the edges the walk used.
     walk(startIds, direction = "down") {

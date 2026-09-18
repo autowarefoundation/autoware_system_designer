@@ -724,3 +724,55 @@ test("a gate is dead when every output it feeds was declared and never published
   const alive = L.fromJson(silent).costs(g);
   assert.equal(alive.exec(g.events.get("b.run")), null);
 });
+
+test("rateOf answers the rate the run observed: port, timer, or fed output", () => {
+  const g = graph();
+  const measurement = L.fromJson({
+    schema: L.SCHEMA,
+    nodes: [
+      {
+        node_path: "/sensing/a",
+        timers: [{ period_ms: 100, rate_hz: 9.7 }],
+        outputs: [{ topic: "/sensing/cloud", rate_hz: 9.6 }],
+      },
+      {
+        node_path: "/perception/b",
+        inputs: [{ topic: "/sensing/cloud", rate_hz: 9.5 }],
+        outputs: [{ topic: "/perception/out", rate_hz: 4.8 }],
+      },
+    ],
+  });
+  const intra = L.fromJson({
+    schema: L.SCHEMA,
+    nodes: [
+      {
+        node_path: "/perception/b",
+        inputs: [
+          {
+            topic: "/sensing/cloud",
+            rate_hz: 0,
+            count: 0,
+            intra_process: true,
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(intra.rateOf(g, g.events.get("b.in")), null);
+  const scan = g.events.get("a.scan");
+  const out = g.events.get("a.out");
+  const input = g.events.get("b.in");
+  const run = g.events.get("b.run");
+  assert.deepEqual(measurement.rateOf(g, scan), {
+    rate_hz: 9.7,
+    via: "timer 100 ms",
+  });
+  assert.deepEqual(measurement.rateOf(g, out), { rate_hz: 9.6, via: "output" });
+  assert.deepEqual(measurement.rateOf(g, input), {
+    rate_hz: 9.5,
+    via: "input",
+  });
+  // the run feeds no declared output, so nothing was observed for it
+  assert.equal(measurement.rateOf(g, run), null);
+  assert.equal(measurement.rateOf(g, null), null);
+});

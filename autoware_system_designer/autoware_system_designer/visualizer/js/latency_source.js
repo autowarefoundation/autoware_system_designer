@@ -75,14 +75,39 @@
     });
   }
 
+  function isRate(value) {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+
   // latency/2: nodes[] with per-output exec, links[] with intra-process
-  // markers, chains[] measured end to end, declared_diff per node.
+  // markers, chains[] measured end to end, declared_diff per node; every
+  // output, input and timer carries the rate the run observed.
   function parseV2(json, measurement) {
     (json.nodes || []).forEach((node, index) => {
       checkRecord(node, index, "nodes", ["node_path"]);
       measurement.nodes.set(node.node_path, node);
+      // An intra-process input the tracer saw no take on has no observed rate.
+      (node.inputs || []).forEach((input) => {
+        if (input?.intra_process && !input.count) return;
+        if (input?.topic && isRate(input.rate_hz)) {
+          measurement.inputRates.set(
+            outputKey(node.node_path, input.topic),
+            input.rate_hz,
+          );
+        }
+      });
+      measurement.timers.set(
+        node.node_path,
+        (node.timers || []).filter((timer) => isRate(timer?.rate_hz)),
+      );
       (node.outputs || []).forEach((output, outIndex) => {
         checkRecord(output, outIndex, `nodes[${index}].outputs`, ["topic"]);
+        if (isRate(output.rate_hz)) {
+          measurement.outputRates.set(
+            outputKey(node.node_path, output.topic),
+            output.rate_hz,
+          );
+        }
         if (output.exec) {
           checkRecord(output.exec, outIndex, `nodes[${index}].outputs.exec`, [
             "min_ms",
@@ -150,6 +175,9 @@
       chains: [],
       diffs: new Map(),
       nodes: new Map(),
+      inputRates: new Map(),
+      outputRates: new Map(),
+      timers: new Map(),
       matched: null,
       costs(graph) {
         return costsFor(this, graph);
@@ -171,6 +199,9 @@
       },
       deadReason(graph, event) {
         return deadReason(this, graph, event);
+      },
+      rateOf(graph, event) {
+        return rateOf(this, graph, event);
       },
     };
     if (json.schema === SCHEMA_V1) parseV1(json, measurement);
@@ -393,6 +424,47 @@
         run: run?.record ?? null,
         outTopic: response.outTopic,
       };
+    }
+    return null;
+  }
+
+  // The rate the run observed for an event, or null: a port from its topic's
+  // take or publish count, a periodic gate from the timer nearest its declared
+  // period, any other process gate from the first output it feeds. The design
+  // propagates a declared rate through the graph; this is what actually ran.
+  function rateOf(measurement, graph, event) {
+    if (measurement.schema === SCHEMA_V1 || !event) return null;
+    const owner = graph.ownerOf(event.id);
+    const path = owner?.path;
+    if (!path) return null;
+    const hit = (rate_hz, via) => (isRate(rate_hz) ? { rate_hz, via } : null);
+    if (event.kind === "input") {
+      const topic = topicOf(event);
+      return topic
+        ? hit(measurement.inputRates.get(outputKey(path, topic)), "input")
+        : null;
+    }
+    if (event.kind === "output") {
+      const topic = topicOf(event);
+      return topic
+        ? hit(measurement.outputRates.get(outputKey(path, topic)), "output")
+        : null;
+    }
+    if (event.kind !== "process") return null;
+    if (event.type === "periodic" && event.frequency > 0) {
+      const period = 1000 / event.frequency;
+      const timer = (measurement.timers.get(path) || [])
+        .filter((t) => isRate(t.period_ms))
+        .sort(
+          (a, b) =>
+            Math.abs(a.period_ms - period) - Math.abs(b.period_ms - period),
+        )[0];
+      if (timer) return hit(timer.rate_hz, `timer ${timer.period_ms} ms`);
+    }
+    for (const output of outputsOf(graph, event)) {
+      const topic = topicOf(output);
+      const rate = topic && measurement.outputRates.get(outputKey(path, topic));
+      if (isRate(rate)) return hit(rate, `output ${topic}`);
     }
     return null;
   }

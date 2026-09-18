@@ -3,7 +3,8 @@
 // process gate is a block as wide as its run, and the gaps between blocks are
 // the transport, alignment and sampling delays that separate them. Every chain
 // of the system is drawn: one group per clock root, from its periodic source
-// to the terminals it reaches, stacked down the page on a shared axis. Within
+// to the terminals it reaches, stacked down the page on a shared axis; clocks
+// whose streams one gate merges share a group and meet at that gate. Within
 // a group the chain the axis is driven by is the spine on the centre track;
 // the branches that join or leave it are packed onto the tracks above and
 // below. The chains come from the design's event graph; a loaded measurement
@@ -96,6 +97,8 @@
 
   const LEGEND_NOTES = [
     "one group per chain, each starting at its own source firing; all groups share the axis",
+    "clocks whose streams of one message type meet at a gate (three lidars into one concatenation) form one group and merge at that gate",
+    "in the measured state a rate is what the run observed; the design's declared rate stands beside it in the panel",
     "the tinted track is the chain the axis is driven by; branches sit above and below",
     "≈ marks a mean folded at an and/or gate: one branch's number, not the set's",
     "? marks a spread that skipped hops with no sd",
@@ -198,35 +201,36 @@
       return T.designCosts(this.graph);
     }
 
-    // One group per clock root: the chain a periodic source drives, analyzed
-    // from the graph. Groups that never leave the source's node are trivial
-    // and hidden unless asked for.
+    // One group per set of peer clock roots: the chain a periodic source
+    // drives, analyzed from the graph, with the clocks a gate merges solved
+    // together so their chains meet there. Groups that never leave their
+    // sources' nodes are trivial and hidden unless asked for.
     solveAndRender() {
       const solver = new T.ChainSolver(this.graph, this.costs());
-      const specs = this.graph.clockRootIds
-        .map((id) => ({ id, path: this.graph.ownerOf(id)?.path || "" }))
-        .sort((a, b) => a.path.localeCompare(b.path))
-        .map(({ id }) => ({ sourceId: id, sinkId: null }));
+      const specs = this.graph
+        .peerRoots()
+        .map((ids) => ({ sourceIds: ids, key: ids.join("|") }));
 
       if (!specs.length) {
         this.showError("The design declares no events to chain.");
         return;
       }
 
-      const activeSource = this.activeGroup?.sourceId ?? null;
+      const activeKey = this.activeGroup?.key ?? null;
       this.groups = specs.map((spec, index) => {
-        const group = { ...spec, index };
-        group.solution = solver.solve(spec.sourceId, {
+        const group = { ...spec, index, sourceId: spec.sourceIds[0] };
+        group.sources = new Set(spec.sourceIds);
+        group.solution = solver.solve(spec.sourceIds, {
           hopLimit: this.hopLimit,
         });
         group.sinkId = this.defaultSink(group.solution);
-        const source = this.graph.events.get(spec.sourceId);
-        group.title = `${this.graph.ownerOf(spec.sourceId)?.path || ""}:${source.name}`;
-        group.rate = this.rateLabel(source.frequency);
+        group.title = this.groupTitle(spec.sourceIds);
+        group.rate = this.groupRate(spec.sourceIds);
         this.buildView(group);
-        group.trivial = group.gates.every(
-          (gate) => gate.ownerId === source.ownerId,
+        const owners = new Set(
+          spec.sourceIds.map((id) => this.graph.events.get(id).ownerId),
         );
+        group.trivial = group.gates.every((gate) => owners.has(gate.ownerId));
         return group;
       });
       this.groups.sort((a, b) => {
@@ -245,10 +249,83 @@
         });
       });
       this.activeGroup =
-        this.groups.find((group) => group.sourceId === activeSource) ||
+        this.groups.find((group) => group.key === activeKey) ||
         this.visibleGroups()[0] ||
         this.groups[0];
       this.render();
+    }
+
+    // The title of a group: its source's path and event, or for peer sources
+    // the paths folded into one, the segments they differ in braced:
+    // `/sensing/lidar/{left,right,top}/lidar:decoder_0`.
+    groupTitle(sourceIds) {
+      const sources = sourceIds.map((id) => ({
+        path: this.graph.ownerOf(id)?.path || "",
+        name: this.graph.events.get(id)?.name || "",
+      }));
+      if (sources.length === 1) {
+        return `${sources[0].path}:${sources[0].name}`;
+      }
+      const names = [...new Set(sources.map((s) => s.name))];
+      const split = sources.map((s) => s.path.split("/"));
+      const depth = Math.max(...split.map((s) => s.length));
+      const same = (index) =>
+        split.every(
+          (s) => s.length === split[0].length && s[index] === split[0][index],
+        );
+      let head = 0;
+      while (head < depth && same(head)) head += 1;
+      let tail = 0;
+      while (
+        tail < depth - head &&
+        same(split[0].length - 1 - tail) &&
+        split.every((s) => s.length === split[0].length)
+      ) {
+        tail += 1;
+      }
+      const middle = [
+        ...new Set(
+          split.map((s) => s.slice(head, s.length - tail).join("/") || "·"),
+        ),
+      ].sort();
+      const path = [
+        ...split[0].slice(0, head),
+        `{${middle.join(",")}}`,
+        ...split[0].slice(split[0].length - tail),
+      ].join("/");
+      return `${path}:${names.join("|")}`;
+    }
+
+    // The rate line of a group: the sources' declared rates, each counted.
+    groupRate(sourceIds) {
+      const counts = new Map();
+      sourceIds.forEach((id) => {
+        const rate = this.rateLabel(this.graph.events.get(id)?.frequency);
+        if (rate) counts.set(rate, (counts.get(rate) || 0) + 1);
+      });
+      return [...counts]
+        .map(([rate, n]) => (n > 1 ? `${rate} ×${n}` : rate))
+        .join(" / ");
+    }
+
+    // The rate the run observed at an event, formatted with what it was read
+    // from, or "" when nothing was measured there.
+    measuredRate(event) {
+      if (this.state !== "measured" || !this.measured?.rateOf) return "";
+      const hit = this.measured.rateOf(this.graph, event);
+      if (!hit) return "";
+      return hit.rate_hz === 0 ? "0Hz" : this.rateLabel(hit.rate_hz);
+    }
+
+    // Declared versus observed rate, when both exist and differ by more than
+    // a fifth of the declared rate.
+    rateWarning(event) {
+      if (this.state !== "measured" || !this.measured?.rateOf) return null;
+      const hit = this.measured.rateOf(this.graph, event);
+      const declared = event.frequency;
+      if (!hit || !(declared > 0)) return null;
+      if (Math.abs(hit.rate_hz - declared) <= declared * 0.2) return null;
+      return `declared ${this.rateLabel(declared)} · measured ${this.rateLabel(hit.rate_hz)} (${hit.via})`;
     }
 
     visibleGroups() {
@@ -286,7 +363,7 @@
       group.gates = [...onPath]
         .map((id) => graph.events.get(id))
         .filter(
-          (event) => event.kind === "process" || event.id === group.sourceId,
+          (event) => event.kind === "process" || group.sources.has(event.id),
         )
         .sort((a, b) => this.orderKey(group, a.id) - this.orderKey(group, b.id))
         .map((event) => ({ ...event, key: `${group.index}/${event.id}` }));
@@ -330,7 +407,7 @@
             (from.kind === "input" || from.kind === "output"
               ? this.topicOf(from)
               : null);
-          if (from.kind === "process" || branch.fromId === group.sourceId) {
+          if (from.kind === "process" || group.sources.has(branch.fromId)) {
             hops.push({
               from: branch.fromId,
               to: gateId,
@@ -360,7 +437,7 @@
           from.kind === "input" || from.kind === "output"
             ? this.topicOf(from)
             : null;
-        if (from.kind === "process" || branch.fromId === group.sourceId) {
+        if (from.kind === "process" || group.sources.has(branch.fromId)) {
           hops.push({
             from: branch.fromId,
             to: gateId,
@@ -745,6 +822,15 @@
       const sink = group.solution.arrivals.get(group.sinkId);
       const parts = [];
       if (group.rate) parts.push(group.rate);
+      const observed = [
+        ...new Set(
+          [...group.sources]
+            .map((id) => this.measuredRate(this.graph.events.get(id)))
+            .filter(Boolean),
+        ),
+      ];
+      if (observed.length) parts.push(`measured ${observed.join(" / ")}`);
+      if (group.sources.size > 1) parts.push(`${group.sources.size} sources`);
       parts.push(`${group.gates.length} gates`);
       if (STATES[this.state].timed) {
         parts.push(`total ${T.formatSummary(sink.total)}`);
@@ -766,7 +852,6 @@
     // through the output feeding it, since chains end at publishes.
     measuredChain(group) {
       if (!this.measured?.chainFor) return null;
-      const fromNode = this.graph.ownerOf(group.sourceId)?.path;
       let sinkId = group.sinkId;
       let sink = this.graph.events.get(sinkId);
       if (sink?.kind === "input") {
@@ -784,7 +869,12 @@
         topic =
           window.LatencySource.outputTopicsOf(this.graph, sink)[0] ?? null;
       }
-      return this.measured.chainFor(fromNode, toNode, topic);
+      for (const sourceId of group.sources) {
+        const fromNode = this.graph.ownerOf(sourceId)?.path;
+        const hit = this.measured.chainFor(fromNode, toNode, topic);
+        if (hit) return hit;
+      }
+      return null;
     }
 
     measuredRows(group) {
@@ -1179,6 +1269,13 @@
       return `${Number(frequency.toFixed(3))}Hz`;
     }
 
+    // Declared rate, with the observed one after it in the measured state.
+    rateText(event) {
+      const declared = this.rateLabel(event.frequency) || "no clock";
+      const observed = this.measuredRate(event);
+      return observed ? `${declared} · measured ${observed}` : declared;
+    }
+
     // The three chains of a group at full strength, everything else dimmed; an
     // enumerated chain on show takes the place of all three in its group.
     applyEmphasis(group) {
@@ -1229,7 +1326,7 @@
         gate.element?.classList.toggle(
           "seq-dim",
           !onGate.get(gate.id) &&
-            gate.id !== group.sourceId &&
+            !group.sources.has(gate.id) &&
             gate.id !== group.sinkId,
         );
       });
@@ -1368,9 +1465,10 @@
 
     describeGate(group, gate) {
       const arrival = group.solution.arrivals.get(gate.id);
+      const observed = this.measuredRate(gate);
       const lines = [
         `${this.graph.ownerOf(gate.id)?.path || ""}:${gate.name}`,
-        `${gate.type || "type not declared"} · ${this.rateLabel(gate.frequency) || "no clock"}`,
+        `${gate.type || "type not declared"} · ${this.rateLabel(gate.frequency) || "no clock"}${observed ? ` · measured ${observed}` : ""}`,
         `chain ${group.title}`,
       ];
       if (STATES[this.state].timed) {
@@ -1464,12 +1562,17 @@
     selectGroup(group) {
       this.setActiveGroup(group);
       const sink = group.solution.arrivals.get(group.sinkId);
-      const source = this.graph.events.get(group.sourceId);
       const sinkEvent = this.graph.events.get(group.sinkId);
+      const sourceIds = [...group.sources];
       this.updateInfoPanel(
         {
           name: group.title,
-          from: `${this.graph.ownerOf(group.sourceId)?.path || ""}:${source.name}`,
+          from: sourceIds
+            .map(
+              (id) =>
+                `${this.graph.ownerOf(id)?.path || ""}:${this.graph.events.get(id).name}`,
+            )
+            .join(", "),
           to: `${this.graph.ownerOf(group.sinkId)?.path || ""}:${sinkEvent.name}`,
           latency: {
             state: this.state,
@@ -1478,9 +1581,9 @@
             branches: [],
           },
           chain: this.chainReport(
-            this.graph.walk([group.sourceId], "up"),
-            this.graph.walk([group.sourceId], "down"),
-            group.sourceId,
+            this.graph.walk(sourceIds, "up"),
+            this.graph.walk(sourceIds, "down"),
+            sourceIds,
           ),
         },
         "Chain",
@@ -1593,6 +1696,8 @@
           kind: gate.kind,
           type: gate.type || "not declared",
           rate: this.rateLabel(gate.frequency) || "no clock",
+          measured_rate: this.measuredRate(gate) || undefined,
+          rate_warn: this.rateWarning(gate),
           warn_rate: gate.warn_rate,
           error_rate: gate.error_rate,
           timeout: gate.timeout,
@@ -1643,6 +1748,7 @@
           fold: arrival.fold,
           rows: [
             ...this.stateRows(arrival, hop.arrival),
+            ...this.hopRateRows(hop),
             ...this.recordRows(hop),
             ...this.latencyRows(arrival, hop.comm),
           ],
@@ -1661,13 +1767,43 @@
       };
     }
 
+    // The rate the run observed on the ports a hop folds: the input the gate
+    // took the message on, and the output it was published from.
+    hopRateRows(hop) {
+      if (this.state !== "measured") return [];
+      const rows = [];
+      const seen = new Set();
+      hop.edges.forEach((edgeId) => {
+        const edge = this.graph.edgeById.get(edgeId);
+        if (!edge) return;
+        [edge.from, edge.to].forEach((id) => {
+          const event = this.graph.events.get(id);
+          if (!event || seen.has(id) || event.kind === "process") return;
+          seen.add(id);
+          const observed = this.measuredRate(event);
+          if (!observed) return;
+          rows.push({
+            label: `${event.kind} rate`,
+            value: `${observed}${event.frequency ? ` (declared ${this.rateLabel(event.frequency)})` : ""}`,
+            source: "measured",
+          });
+        });
+      });
+      return rows;
+    }
+
     branchName(branch) {
       const from = this.graph.events.get(branch.fromId);
       const owner = this.graph.ownerOf(branch.fromId);
       return `${owner?.name || ""}:${from?.name || branch.fromId}`;
     }
 
-    chainReport(upstream, downstream, eventId) {
+    chainReport(upstream, downstream, eventIds) {
+      const clockIds = new Set(
+        []
+          .concat(eventIds)
+          .flatMap((id) => [...(this.graph.clocksOf.get(id) || [])]),
+      );
       const entry = (id, hops) => {
         const item = this.graph.events.get(id);
         const instance = this.graph.ownerOf(id) || {};
@@ -1675,19 +1811,19 @@
           name: item.name,
           path: instance.path || instance.name || "",
           type: item.type || "—",
-          rate: this.rateLabel(item.frequency) || "no clock",
+          rate: this.rateText(item),
           hops: hops.get(id) || 0,
         };
       };
       const list = (walk) =>
         walk.order.slice(0, CHAIN_LIST_LIMIT).map((id) => entry(id, walk.hops));
       return {
-        clocks: [...(this.graph.clocksOf.get(eventId) || [])].map((id) => {
+        clocks: [...clockIds].map((id) => {
           const clock = this.graph.events.get(id);
           return {
             name: clock.name,
             path: this.graph.ownerOf(id)?.path || "",
-            rate: this.rateLabel(clock.frequency) || "no clock",
+            rate: this.rateText(clock),
           };
         }),
         upstream: list(upstream),
