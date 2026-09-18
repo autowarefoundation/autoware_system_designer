@@ -74,12 +74,13 @@ def _continuations(analysis: Analysis, take: TakeEvent) -> list[PubEvent]:
     takes = node.takes_by_topic.get(take.topic, [])
     times = [t.t for t in takes]
     index = bisect_right(times, take.t)
-    next_take_t = takes[index].t if index < len(takes) else take.t + SAMPLE_HORIZON_NS
+    next_take_t = takes[index].t if index < len(takes) else None
+    elapsed = analysis.clock.elapsed
     for topic, pubs in node.pubs_by_topic.items():
         pub_times = [p.t_in for p in pubs]
         start = bisect_right(pub_times, take.t)
         for pub in pubs[start:]:
-            if pub.t_in > next_take_t or pub.t_in - take.t > SAMPLE_HORIZON_NS:
+            if (next_take_t is not None and pub.t_in > next_take_t) or elapsed(take.t, pub.t_in) > SAMPLE_HORIZON_NS:
                 break
             trigger = pub.trigger
             if trigger is not None and trigger.kind == "input" and trigger.topic == take.topic:
@@ -153,7 +154,7 @@ def _walk_from_timer(analysis, node, fire, source, reached, hops, terminal, path
         pub, depth, path = stack.pop()
         target = f"{_node_key(pub.node)}:{pub.topic}"
         key = (source, target)
-        latency = pub.t_in - fire.t
+        latency = analysis.clock.elapsed(fire.t, pub.t_in)
         best = arrivals.get(target)
         if best is None or latency < best[0]:
             arrivals[target] = (latency, depth, path)

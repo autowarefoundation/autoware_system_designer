@@ -36,6 +36,7 @@ from typing import Any, Mapping, Optional, Sequence
 from ._impl.core.config import ActorConfig
 from ._impl.core.coordinator import ensure_output_dir
 from ._impl.core.stdin_console import run_console
+from ._impl.measure.clock import CLOCK_AUTO, CLOCK_CHOICES
 from ._impl.measure.node_graph import NodeGraph
 from ._impl.measure.session import MeasureOptions, MeasureSession, default_latency_out
 from ._impl.ros2.builder import populate_builder
@@ -364,6 +365,13 @@ def main() -> None:
         help="Do not add probe subscriptions on intra-process-only topics.",
     )
     measure_group.add_argument(
+        "--measure-clock",
+        default=CLOCK_AUTO,
+        choices=CLOCK_CHOICES,
+        help="Time base of durations and rates: ros when the system runs on /clock (use_sim_time), "
+        "wall otherwise; auto picks by the trace (default).",
+    )
+    measure_group.add_argument(
         "--latency-out",
         type=Path,
         default=None,
@@ -381,6 +389,7 @@ def main() -> None:
             probe=not args.no_probe,
             keep_running=args.measure_keep_running,
             latency_out=args.latency_out,
+            clock=args.measure_clock,
         )
 
     short_name_filter = _ShortNameFilter()

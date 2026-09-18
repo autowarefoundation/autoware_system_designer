@@ -16,7 +16,13 @@
 
 Records are keyed by node path and topic, never by process name or unique_id.
 The file is the whole result of a measurement; ``summary`` carries the counts a
-consumer needs to judge a run without walking the records.
+consumer needs to judge a run without walking the records. Every duration and
+rate is in the run's clock (``run.clock``): ROS time when the system ran on
+``/clock``, wall time otherwise.
+
+Beside the JSON a script twin ``<stem>.js`` assigns the same object to
+``window.latencyData["<mode>"]``; a diagram page opened from ``file://`` cannot
+fetch JSON and loads that instead.
 """
 
 from __future__ import annotations
@@ -34,6 +40,8 @@ from .node_stats import NS_PER_MS, Analysis, NodeObs, summarize
 
 LATENCY_SCHEMA = "autoware_system_designer/latency/2"
 TRACER_VERSION = "0.1.0"
+LATENCY_SUFFIX = "_latency"
+SCRIPT_GLOBAL = "latencyData"
 
 
 def _iso(t_ns: int) -> str:
@@ -172,6 +180,8 @@ def build_latency_file(
             "window_start": _iso(analysis.window_start_ns),
             "window_end": _iso(analysis.window_end_ns),
             "window_s": _round(analysis.window_s, 3),
+            "window_wall_s": _round(analysis.window_wall_s, 3),
+            "clock": analysis.clock.as_dict(),
             "probe": probe,
             "tracer": TRACER_VERSION,
             "processes": analysis.process_count,
@@ -198,4 +208,24 @@ def write_latency_file(data: dict[str, Any], path: Union[str, Path]) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    write_latency_script(data, path)
     return path
+
+
+def latency_mode_of(path: Union[str, Path]) -> str:
+    """The mode a ``<Mode>_latency.json`` file is served under."""
+    stem = Path(path).stem
+    return stem[: -len(LATENCY_SUFFIX)] if stem.endswith(LATENCY_SUFFIX) else stem
+
+
+def write_latency_script(data: dict[str, Any], json_path: Union[str, Path]) -> Path:
+    """The script twin of a latency file, beside it."""
+    json_path = Path(json_path)
+    mode = json.dumps(latency_mode_of(json_path))
+    body = json.dumps(data, indent=2)
+    script = json_path.with_suffix(".js")
+    script.write_text(
+        f"window.{SCRIPT_GLOBAL} = window.{SCRIPT_GLOBAL} || {{}};\nwindow.{SCRIPT_GLOBAL}[{mode}] = {body};\n",
+        encoding="utf-8",
+    )
+    return script

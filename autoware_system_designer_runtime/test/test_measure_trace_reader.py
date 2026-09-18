@@ -86,3 +86,16 @@ def test_bad_magic_is_rejected(tmp_path):
     path.write_bytes(b"X" * 64)
     with pytest.raises(ValueError):
         read_trace_file(path)
+
+
+def test_clock_records_are_read_and_merged_by_wall_time(tmp_path):
+    TraceBuilder(pid=31).clock(T0 + 2 * MS, 5_000).clock(T0 + 0 * MS, 4_000).write(tmp_path)
+    TraceBuilder(pid=32).clock(T0 + 1 * MS, 4_000, tid=3, handle=0xC2).write(tmp_path)
+
+    trace_set = read_trace_dir(tmp_path)
+    proc = trace_set.processes[31]
+    assert [(s.t, s.ros_ns) for s in proc.clocks] == [(T0, 4_000), (T0 + 2 * MS, 5_000)]
+    assert proc.record_count == 2
+    merged = trace_set.clock_samples()
+    assert [(s.pid, s.ros_ns) for s in merged] == [(31, 4_000), (32, 4_000), (31, 5_000)]
+    assert merged[1].handle == 0xC2

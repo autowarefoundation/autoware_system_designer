@@ -24,6 +24,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from ._impl.measure.clock import CLOCK_AUTO, CLOCK_CHOICES
 from ._impl.measure.node_graph import NodeGraph
 from ._impl.measure.node_stats import NS_PER_S
 from ._impl.measure.session import analyze_traces, default_latency_out
@@ -61,6 +62,13 @@ def main() -> None:
     parser.add_argument("--settle", type=float, default=0.0, help="Seconds skipped after the window start")
     parser.add_argument("--probe", dest="probe", action="store_true", default=None, help="Record that probes were on")
     parser.add_argument("--no-probe", dest="probe", action="store_false", help="Record that probes were off")
+    parser.add_argument(
+        "--clock",
+        default=CLOCK_AUTO,
+        choices=CLOCK_CHOICES,
+        help="Time base of durations and rates: ros when the traced processes ran on /clock "
+        "(use_sim_time), wall otherwise; auto picks by the trace (default)",
+    )
     parser.add_argument("--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR"))
     args = parser.parse_args()
 
@@ -94,10 +102,12 @@ def main() -> None:
         mode=mode,
         probe=args.probe,
         latency_out=latency_out,
+        clock=args.clock,
     )
     run = result["run"]
     print(
-        f"{run['window_s']} s window, {run['processes']} processes, {len(result['nodes'])} nodes, "
+        f"{run['window_s']} s window ({run['clock']['base']} time), {run['processes']} processes, "
+        f"{len(result['nodes'])} nodes, "
         f"{len(result['links'])} links, {len(result['chains'])} chains"
     )
     print(f"latency file: {latency_out}")

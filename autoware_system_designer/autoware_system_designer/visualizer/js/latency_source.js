@@ -261,7 +261,8 @@
     measurement.label =
       `${measurement.label.replace(/ \(.*\)$/, "")} ` +
       `(${measurement.matched.processes}/${measurement.matched.processesTotal} ${unit}, ` +
-      `${measurement.matched.links}/${measurement.matched.linksTotal} links matched)`;
+      `${measurement.matched.links}/${measurement.matched.linksTotal} links matched` +
+      `${clockNote(measurement.run)})`;
     return { exec, comm };
   }
 
@@ -588,7 +589,8 @@
       counts,
       label:
         `${counts.timers} timers, ${counts.outputs} outputs, ` +
-        `${counts.links} links, ${counts.sampled} sampled inputs`,
+        `${counts.links} links, ${counts.sampled} sampled inputs` +
+        clockNote(measurement.run),
     };
   }
 
@@ -604,20 +606,56 @@
   }
 
   // The bundle may ship data/<mode>_latency.json beside the design data; its
-  // absence is the normal case.
+  // absence is the normal case. A page opened from file:// cannot fetch JSON,
+  // so the file's script twin (data/<mode>_latency.js, assigning
+  // window.latencyData[mode]) is loaded there, and wherever the fetch fails.
+  const SCRIPT_GLOBAL = "latencyData";
+
   async function loadBundled(mode) {
-    if (typeof fetch !== "function" || window.location.protocol === "file:") {
+    const label = `${mode}_latency.json`;
+    const fetched = await fetchBundled(mode);
+    if (fetched) return fromJson(fetched, label);
+    const scripted = await loadBundledScript(mode);
+    return scripted ? fromJson(scripted, label) : null;
+  }
+
+  async function fetchBundled(mode) {
+    if (typeof fetch !== "function" || window.location?.protocol === "file:") {
       return null;
     }
     const url = `data/${mode}_latency.json`;
     try {
       const response = await fetch(url, { cache: "no-store" });
-      if (!response.ok) return null;
-      return fromJson(await response.json(), `${mode}_latency.json`);
+      return response.ok ? await response.json() : null;
     } catch (error) {
-      console.warn(`Latency file ${url} not loaded:`, error.message);
+      console.warn(`Latency file ${url} not fetched:`, error.message);
       return null;
     }
+  }
+
+  function loadBundledScript(mode) {
+    const doc = typeof document !== "undefined" ? document : null;
+    if (!doc?.head) return Promise.resolve(null);
+    const known = window[SCRIPT_GLOBAL]?.[mode];
+    if (known) return Promise.resolve(known);
+    return new Promise((resolve) => {
+      const script = doc.createElement("script");
+      script.src = `data/${mode}_latency.js`;
+      script.onload = () => resolve(window[SCRIPT_GLOBAL]?.[mode] ?? null);
+      script.onerror = () => resolve(null);
+      doc.head.appendChild(script);
+    });
+  }
+
+  // How the run counted time; only a ROS-time run says so.
+  function clockNote(run) {
+    const clock = run?.clock;
+    if (!clock || clock.base !== "ros") return "";
+    const rate =
+      typeof clock.rate === "number"
+        ? ` ×${Number(clock.rate.toFixed(3))}`
+        : "";
+    return `, ROS time${rate}`;
   }
 
   const LatencySource = {
@@ -626,6 +664,7 @@
     fromJson,
     fromFile,
     loadBundled,
+    clockNote,
     outputTopicsOf,
     recordedGraph,
   };

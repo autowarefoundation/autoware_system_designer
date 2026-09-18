@@ -42,6 +42,7 @@ enum asd_record_kind {
   ASD_REC_TAKE = 1,
   ASD_REC_TIMER = 2,
   ASD_REC_PUBLISH = 3,
+  ASD_REC_CLOCK = 4,  // ROS time override: the process runs on /clock (use_sim_time)
 };
 
 enum asd_record_flags {
@@ -72,9 +73,9 @@ typedef struct asd_trace_record {
   uint8_t flags;
   uint16_t reserved;
   uint32_t tid;
-  uint64_t t_ns;   // take/timer: return time; publish: entry time
-  uint64_t t2_ns;  // take: source_timestamp; publish: exit time
-  uint64_t handle; // address of the rcl object; joins the name table
+  uint64_t t_ns;   // take/timer/clock: wall time of the call; publish: entry time
+  uint64_t t2_ns;  // take: source_timestamp; publish: exit time; clock: ROS time value
+  uint64_t handle; // address of the rcl object; joins the name table (clock: rcl_clock_t)
   uint8_t gid[ASD_TRACE_GID_SIZE];  // take: publisher gid
   uint64_t seq;    // take: publication_sequence_number
 } asd_trace_record_t;

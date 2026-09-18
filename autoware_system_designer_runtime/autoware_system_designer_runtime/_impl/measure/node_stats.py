@@ -23,6 +23,9 @@ node's process time and carry no transport of their own.
 A take is matched to the publish of its message by topic and source timestamp:
 the DDS source timestamp lies inside the publish call. Publisher gids are not
 comparable across processes under every RMW, so they only break ties.
+
+Records are ordered and matched in wall time; every duration is taken through
+the analysis clock, which is ROS time when the system ran on ``/clock``.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Deque, Optional, Union
 
+from .clock import Clock, WallClock
 from .node_graph import INFRA_TOPICS, NodeGraph, NodeInfo
 from .trace_reader import Endpoint, TraceSet
 
@@ -192,6 +196,7 @@ class NodeObs:
 class Analysis:
     window_start_ns: int
     window_end_ns: int
+    clock: Clock = field(default_factory=WallClock)
     nodes: dict[str, NodeObs] = field(default_factory=dict)
     # (topic, publisher key or None, subscriber key) → communication values
     links: dict[tuple[str, Optional[str], str], list[int]] = field(default_factory=dict)
@@ -208,6 +213,10 @@ class Analysis:
 
     @property
     def window_s(self) -> float:
+        return max(self.clock.elapsed(self.window_start_ns, self.window_end_ns), 0) / NS_PER_S
+
+    @property
+    def window_wall_s(self) -> float:
         return max(self.window_end_ns - self.window_start_ns, 0) / NS_PER_S
 
     def rate(self, count: int) -> Optional[float]:
@@ -220,8 +229,14 @@ class Analysis:
         return [n for n in self.nodes.values() if n.matched]
 
 
-def analyze(trace_set: TraceSet, graph: NodeGraph, window_start_ns: int, window_end_ns: int) -> Analysis:
-    analysis = Analysis(window_start_ns=window_start_ns, window_end_ns=window_end_ns)
+def analyze(
+    trace_set: TraceSet,
+    graph: NodeGraph,
+    window_start_ns: int,
+    window_end_ns: int,
+    clock: Optional[Clock] = None,
+) -> Analysis:
+    analysis = Analysis(window_start_ns=window_start_ns, window_end_ns=window_end_ns, clock=clock or WallClock())
     analysis.dropped_records = trace_set.total_dropped()
     analysis.process_count = len(trace_set.processes)
     nodes: dict[str, NodeObs] = analysis.nodes
@@ -388,6 +403,7 @@ def _event_time(event: Event) -> int:
 
 
 def _scan_process(events: list[Event], analysis: Analysis) -> None:
+    elapsed = analysis.clock.elapsed
     last_marker: dict[int, Union[TakeEvent, TimerEvent]] = {}
     recent_pubs: dict[str, Deque[PubEvent]] = {}
     # Intra-process readers of a topic within this process.
@@ -424,17 +440,17 @@ def _scan_process(events: list[Event], analysis: Analysis) -> None:
             note_node(node)
             marker = last_marker.get(event.tid)
             own = _own_marker(marker, node, analysis)
-            upstream = _latest_intra_upstream(node, recent_pubs, event.t_in)
+            upstream = _latest_intra_upstream(node, recent_pubs, event.t_in, analysis)
             trigger = _choose_trigger(own, upstream, node, analysis)
             event.trigger = trigger
             if trigger.kind != "unknown":
-                event.exec_ns = event.t_in - trigger.t
+                event.exec_ns = elapsed(trigger.t, event.t_in)
                 if trigger.ref is not None:
                     analysis.pubs_by_trigger.setdefault(id(trigger.ref), []).append(event)
             if event.in_window:
                 node.pubs_by_topic.setdefault(event.topic, []).append(event)
                 for topic, t_arrival in node.last_arrival.items():
-                    delta = event.t_in - t_arrival
+                    delta = elapsed(t_arrival, event.t_in)
                     if 0 <= delta <= RESPONSE_HORIZON_NS:
                         node.response.setdefault((event.topic, topic), []).append(delta)
             recent = recent_pubs.setdefault(event.topic, deque(maxlen=256))
@@ -444,7 +460,9 @@ def _scan_process(events: list[Event], analysis: Analysis) -> None:
                     reader.last_arrival[event.topic] = event.t_in
 
 
-def _latest_intra_upstream(node: NodeObs, recent_pubs: dict[str, Deque[PubEvent]], t_in: int) -> Optional[PubEvent]:
+def _latest_intra_upstream(
+    node: NodeObs, recent_pubs: dict[str, Deque[PubEvent]], t_in: int, analysis: Analysis
+) -> Optional[PubEvent]:
     best: Optional[PubEvent] = None
     for topic in node.intra_inputs:
         recent = recent_pubs.get(topic)
@@ -455,7 +473,7 @@ def _latest_intra_upstream(node: NodeObs, recent_pubs: dict[str, Deque[PubEvent]
                 continue
             if candidate.t_in >= t_in:
                 continue
-            if t_in - candidate.t_in > INTRA_LOOKBACK_NS:
+            if analysis.clock.elapsed(candidate.t_in, t_in) > INTRA_LOOKBACK_NS:
                 break
             if best is None or candidate.t_in > best.t_in:
                 best = candidate
@@ -491,7 +509,7 @@ def _note_link(analysis: Analysis, take: TakeEvent) -> None:
     if take.source_ts <= 0:
         analysis.comm_invalid += 1
         return
-    comm = take.t - take.source_ts
+    comm = analysis.clock.elapsed(take.source_ts, take.t)
     if comm < -COMM_LIMIT_NS or comm > COMM_LIMIT_NS:
         analysis.comm_invalid += 1
         return

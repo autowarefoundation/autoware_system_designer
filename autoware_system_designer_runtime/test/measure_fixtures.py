@@ -62,6 +62,10 @@ class TraceBuilder:
         self.records.append(RECORD.pack(3, 0, 0, tid, t_in, t_out, handle, bytes(24), 0))
         return self
 
+    def clock(self, t: int, ros_ns: int, tid: int = 9, handle: int = 0xC10C) -> "TraceBuilder":
+        self.records.append(RECORD.pack(4, 0, 0, tid, t, ros_ns, handle, bytes(24), 0))
+        return self
+
     def write(self, directory: Path, capacity: int | None = None, unfinished: int = 0) -> Path:
         directory.mkdir(parents=True, exist_ok=True)
         capacity = capacity if capacity is not None else len(self.records) + unfinished
@@ -270,3 +274,18 @@ def write_chain_traces(directory: Path, seconds: int = 1) -> tuple[int, int]:
     for builder in (a, b, e, cc, f):
         builder.write(directory)
     return T0, end
+
+
+ROS_T0 = 1_600_000_000 * S  # the bag's own epoch
+
+
+def write_clock_trace(
+    directory: Path, start: int, end: int, rate: float, period_ns: int = 10 * MS, pid: int = 600
+) -> Path:
+    """One process running on /clock from ``start`` to ``end``: ROS time advances ``rate`` × wall time."""
+    b = TraceBuilder(pid).sub(0xC1, "/clock_sink", "/clock")
+    t = start - period_ns
+    while t <= end + period_ns:
+        b.clock(t, ROS_T0 + round((t - start) * rate))
+        t += period_ns
+    return b.write(directory)

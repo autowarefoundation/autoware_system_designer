@@ -39,6 +39,7 @@ RECORD_SIZE = _RECORD.size
 REC_TAKE = 1
 REC_TIMER = 2
 REC_PUBLISH = 3
+REC_CLOCK = 4
 
 FLAG_FROM_INTRA = 1
 FLAG_SERIALIZED = 2
@@ -74,6 +75,17 @@ class Publish:
     pid: int
     handle: int
     flags: int
+
+
+@dataclass(slots=True)
+class ClockSample:
+    """A ROS time override: the process saw ROS time ``ros_ns`` at wall time ``t``."""
+
+    t: int
+    tid: int
+    pid: int
+    handle: int
+    ros_ns: int
 
 
 @dataclass(slots=True)
@@ -129,6 +141,7 @@ class ProcessTrace:
     takes: list[Take] = field(default_factory=list)
     timers: list[TimerFire] = field(default_factory=list)
     publishes: list[Publish] = field(default_factory=list)
+    clocks: list[ClockSample] = field(default_factory=list)
     endpoints: _HandleTable = field(default_factory=_HandleTable)
     timer_infos: _HandleTable = field(default_factory=_HandleTable)
 
@@ -138,7 +151,7 @@ class ProcessTrace:
 
     @property
     def record_count(self) -> int:
-        return len(self.takes) + len(self.timers) + len(self.publishes)
+        return len(self.takes) + len(self.timers) + len(self.publishes) + len(self.clocks)
 
     def endpoint(self, handle: int, t: int) -> Optional[Endpoint]:
         return self.endpoints.resolve(handle, t)
@@ -181,6 +194,12 @@ class TraceSet:
     def total_dropped(self) -> int:
         return sum(p.dropped for p in self.processes.values())
 
+    def clock_samples(self) -> list[ClockSample]:
+        """Every ROS time override of every process, ordered by wall time."""
+        samples = [sample for proc in self.processes.values() for sample in proc.clocks]
+        samples.sort(key=lambda s: s.t)
+        return samples
+
 
 def read_trace_file(path: Union[str, Path]) -> ProcessTrace:
     path = Path(path)
@@ -204,9 +223,12 @@ def read_trace_file(path: Union[str, Path]) -> ProcessTrace:
             proc.timers.append(TimerFire(t, tid, pid, handle))
         elif kind == REC_PUBLISH:
             proc.publishes.append(Publish(t, t2, tid, pid, handle, flags))
+        elif kind == REC_CLOCK:
+            proc.clocks.append(ClockSample(t, tid, pid, handle, t2))
     proc.takes.sort(key=lambda r: r.t)
     proc.timers.sort(key=lambda r: r.t)
     proc.publishes.sort(key=lambda r: r.t_in)
+    proc.clocks.sort(key=lambda r: r.t)
 
     names_path = path.with_suffix(".names")
     if names_path.exists():

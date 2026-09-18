@@ -36,6 +36,7 @@ from typing import Any, Optional
 
 from ..core.coordinator import Coordinator, CoordinatorBuilder
 from .chains import trace_chains
+from .clock import CLOCK_AUTO, clock_for
 from .node_graph import NodeGraph
 from .node_stats import NS_PER_S, analyze
 from .probe import ProbeResult, attach_probes, detach_probes, probe_topics
@@ -63,6 +64,8 @@ class MeasureOptions:
     keep_running: bool = False
     latency_out: Optional[Path] = None
     heartbeat: float = DEFAULT_HEARTBEAT_S
+    # auto: ROS time when the traced processes ran on /clock, else wall time.
+    clock: str = CLOCK_AUTO
 
 
 def locate_tracer() -> Path:
@@ -134,13 +137,16 @@ def analyze_traces(
     probe: Optional[bool],
     latency_out: Path,
     started_ns: Optional[int] = None,
+    clock: str = CLOCK_AUTO,
 ) -> dict[str, Any]:
     """Blocking: read the trace directory, analyze, write the latency file."""
     trace_set = read_trace_dir(trace_dir)
     span_start, span_end = trace_set.time_span()
     t0 = window_start_ns if window_start_ns is not None else span_start
     t1 = window_end_ns if window_end_ns is not None else span_end
-    analysis = analyze(trace_set, graph, t0, t1)
+    time_base = clock_for(trace_set, clock)
+    logger.info("measure: durations in %s", time_base.describe())
+    analysis = analyze(trace_set, graph, t0, t1, clock=time_base)
     chains = trace_chains(analysis)
     data, _diffs = build_latency_file(graph, analysis, chains, mode=mode, probe=bool(probe), started_ns=started_ns)
     if probe is None:
@@ -293,6 +299,7 @@ class MeasureSession:
                         probe=self._options.probe,
                         latency_out=self._latency_out,
                         started_ns=self._started_ns,
+                        clock=self._options.clock,
                     ),
                 )
             except Exception as exc:  # noqa: BLE001
@@ -303,7 +310,8 @@ class MeasureSession:
             run = self._result["run"]
             summary = self._result["summary"]
             return (
-                f"analysis done in {time.monotonic() - t_begin:.1f} s: {run['window_s']} s window, "
+                f"analysis done in {time.monotonic() - t_begin:.1f} s: {run['window_s']} s window "
+                f"({run['clock']['base']} time), "
                 f"{summary['observed_nodes']}/{summary['design_nodes']} design nodes observed, "
                 f"{len(self._result['links'])} links, {len(self._result['chains'])} chains -> {self._latency_out}"
             )

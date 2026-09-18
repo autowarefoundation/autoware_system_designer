@@ -31,6 +31,7 @@
 #include <rcl/node.h>
 #include <rcl/publisher.h>
 #include <rcl/subscription.h>
+#include <rcl/time.h>
 #include <rcl/timer.h>
 #include <rmw/rmw.h>
 
@@ -176,6 +177,30 @@ static void record_timer(const rcl_timer_t * timer, uint64_t t_ns)
   memset(r->gid, 0, ASD_TRACE_GID_SIZE);
   r->seq = 0;
   asd_writer_commit(r, ASD_REC_TIMER);
+}
+
+// One record per distinct ROS time value: every node clock of a process receives
+// the same /clock message, and the mapping only needs the first.
+static void record_clock(const rcl_clock_t * clock, uint64_t t_ns, int64_t ros_ns)
+{
+  static int64_t last_ros_ns = -1;
+  int64_t previous = __atomic_exchange_n(&last_ros_ns, ros_ns, __ATOMIC_RELAXED);
+  if (previous == ros_ns) {
+    return;
+  }
+  asd_trace_record_t * r = asd_writer_claim(&g_writer);
+  if (r == NULL) {
+    return;
+  }
+  r->flags = 0;
+  r->reserved = 0;
+  r->tid = current_tid();
+  r->t_ns = t_ns;
+  r->t2_ns = (uint64_t)ros_ns;
+  r->handle = (uint64_t)(uintptr_t)clock;
+  memset(r->gid, 0, ASD_TRACE_GID_SIZE);
+  r->seq = 0;
+  asd_writer_commit(r, ASD_REC_CLOCK);
 }
 
 static void gid_hex(const rmw_gid_t * gid, char out[ASD_TRACE_GID_SIZE * 2 + 1])
@@ -372,6 +397,20 @@ rcl_ret_t rcl_timer_init2(
   rcl_ret_t ret = real_init2(timer, clock, context, period, callback, allocator, autostart);
   if (ret == RCL_RET_OK && tracing()) {
     name_timer(timer, period);
+  }
+  return ret;
+}
+
+// ---- clock hook -----------------------------------------------------------------------
+
+// rclcpp's TimeSource sets the override on every /clock message while use_sim_time
+// is on; the records map wall time to ROS time for the analysis.
+rcl_ret_t rcl_set_ros_time_override(rcl_clock_t * clock, rcl_time_point_value_t time_value)
+{
+  REAL(rcl_set_ros_time_override);
+  rcl_ret_t ret = real_rcl_set_ros_time_override(clock, time_value);
+  if (ret == RCL_RET_OK && tracing()) {
+    record_clock(clock, asd_now_realtime_ns(), time_value);
   }
   return ret;
 }

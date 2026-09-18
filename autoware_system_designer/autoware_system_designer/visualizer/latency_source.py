@@ -62,6 +62,9 @@ LATENCY_SCHEMAS = (LATENCY_SCHEMA_V1, LATENCY_SCHEMA)
 
 # Directory beside a system definition file that holds <mode>_latency.json files.
 LATENCY_DIR_NAME = "latency"
+# Global the script twin of a latency file assigns to, keyed by mode; a page
+# opened from file:// cannot fetch the JSON and loads the script instead.
+LATENCY_SCRIPT_GLOBAL = "latencyData"
 
 _PROCESS_REQUIRED = ("node_path", "process", "min_ms", "max_ms")
 _LINK_REQUIRED = ("topic", "min_ms", "max_ms")
@@ -139,8 +142,16 @@ def latency_dir_for(system_file: str | None) -> str | None:
     return os.path.join(os.path.dirname(system_file), LATENCY_DIR_NAME)
 
 
+def latency_script_text(mode: str, data: Dict[str, Any]) -> str:
+    """The script twin of a latency file: the same object under the page's latency global."""
+    return (
+        f"window.{LATENCY_SCRIPT_GLOBAL} = window.{LATENCY_SCRIPT_GLOBAL} || {{}};\n"
+        f"window.{LATENCY_SCRIPT_GLOBAL}[{json.dumps(mode)}] = {json.dumps(data, indent=2)};\n"
+    )
+
+
 def copy_latency_files(latency_dir: str | None, modes: List[str], web_data_dir: str) -> List[str]:
-    """Place each mode's validated latency file in the web bundle; returns the modes served."""
+    """Place each mode's validated latency file and its script twin in the web bundle; returns the modes served."""
     if not latency_dir or not os.path.isdir(latency_dir):
         return []
     served: List[str] = []
@@ -149,12 +160,14 @@ def copy_latency_files(latency_dir: str | None, modes: List[str], web_data_dir: 
         if not source.is_file():
             continue
         try:
-            load_latency_file(source)
+            data = load_latency_file(source)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             logger.warning(f"Latency file ignored: {source} ({exc})")
             continue
         os.makedirs(web_data_dir, exist_ok=True)
         shutil.copy2(source, os.path.join(web_data_dir, source.name))
+        script = Path(web_data_dir) / f"{mode}_latency.js"
+        script.write_text(latency_script_text(mode, data), encoding="utf-8")
         served.append(mode)
         logger.info(f"Copied latency file: {source.name}")
     return served

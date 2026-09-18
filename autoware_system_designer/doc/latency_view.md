@@ -52,7 +52,7 @@ What the marks in the panel mean:
 
 ## Measurement file
 
-A run is loaded from `data/<mode>_latency.json` in the web bundle, or by dropping a file on the canvas. The build copies `latency/<mode>_latency.json` from the directory beside the system definition file when it exists and validates.
+A run is loaded from `data/<mode>_latency.json` in the web bundle when the file exists, or by dropping a file on the canvas. A page opened from `file://` cannot fetch JSON, so the same object is also shipped as the script twin `data/<mode>_latency.js` (assigning `window.latencyData["<mode>"]`), which the loader falls back to. The build copies `latency/<mode>_latency.json` from the directory beside the system definition file when it exists and validates, and writes the twin beside it.
 
 The runtime writes the file (schema `autoware_system_designer/latency/2`) from a traced run of the system, by default straight into the export's `visualization/web/data/`; see the [runtime README](../../autoware_system_designer_runtime/README.md#latency-measurement) for the command. It is keyed by node path and topic, never by process name or `unique_id`: ids are name hashes and change whenever the design is edited.
 
@@ -62,6 +62,8 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
   "mode": "Runtime",
   "run": {
     "window_s": 60.0,
+    "window_wall_s": 120.0,
+    "clock": { "base": "ros", "rate": 0.5, "samples": 6000 },
     "probe": true,
     "tracer": "0.1.0",
     "processes": 55,
@@ -162,6 +164,7 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
 }
 ```
 
+- `run.clock` is the time base of every duration and rate: `ros` when the system ran on `/clock` (`use_sim_time`), with its rate against wall time and the number of `/clock` samples, else `wall`. `window_s` is the window in that base, `window_wall_s` the same window in wall time; the recorded graph's rates and the design's declared rates then speak the same time.
 - `nodes[].outputs[].exec` supplies the execution cost of a process gate: the gate takes the record of the output topic it feeds (ports are trusted, process names are not). `trigger` is the dominant detected trigger of that output and `response` the age each input has when the output leaves. In the recorded graph the output _is_ the gate, `trigger` and `response` are its incoming edges, and `timers[]` are the clock roots; the hop panel shows the link, the sampling delay and the measured response side by side, the composed sum beside the direct measurement.
 - `links[]` supplies the transport cost of a topic between an output and the input it feeds, keyed by `topic`; `publisher` and `subscriber` narrow the match and may be left out. A link marked `intra_process` crossed no DDS hop: it is drawn as a zero-length hop and its time is part of the downstream node's `exec`.
 - `chains[]` is the measured end-to-end time from a detected timer to a publish, following the message flow. A group's title shows the measured record of its clock-root node to its sink beside the total composed from `exec` and `links`; the two are measured separately and never derived from one another.

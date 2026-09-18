@@ -34,7 +34,7 @@ from autoware_system_designer_runtime._impl.measure.session import (
 from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir, trace_dir_progress
 from autoware_system_designer_runtime._impl.measure.writer import LATENCY_SCHEMA
 
-from .measure_fixtures import chain_design, write_chain_traces
+from .measure_fixtures import chain_design, write_chain_traces, write_clock_trace
 
 
 class _FakeProc:
@@ -167,12 +167,14 @@ def test_analyze_traces_writes_the_latency_file(tmp_path):
         probe=True,
         latency_out=latency_out,
     )
-    assert list(latency_out.parent.iterdir()) == [latency_out]  # the file is the whole result
+    # The file is the whole result; its script twin carries the same object for file:// pages.
+    assert sorted(latency_out.parent.iterdir()) == [latency_out.with_suffix(".js"), latency_out]
 
     written = json.loads(latency_out.read_text())
     assert written["schema"] == LATENCY_SCHEMA == data["schema"]
     assert written["mode"] == "Test" and written["run"]["probe"] is True
     assert written["run"]["window_s"] == 1.0
+    assert written["run"]["clock"] == {"base": "wall"}
     by_path = {n["node_path"]: n for n in written["nodes"]}
     assert "/cc" not in by_path  # a container has nothing to report
     a_out = by_path["/a"]["outputs"][0]
@@ -341,3 +343,51 @@ def test_console_close_and_analyze_are_idempotent(tmp_path, monkeypatch):
         assert await session.start() == "measurement done; one window per launch"
 
     asyncio.run(run())
+
+
+def test_latency_script_twin_assigns_the_mode(tmp_path):
+    traces = tmp_path / "trace"
+    start, end = write_chain_traces(traces)
+    graph = NodeGraph.from_system_structure(chain_design())
+    latency_out = tmp_path / "data" / "Test_latency.json"
+
+    analyze_traces(
+        traces, graph, window_start_ns=start, window_end_ns=end, mode="Test", probe=True, latency_out=latency_out
+    )
+
+    script = latency_out.with_suffix(".js").read_text()
+    head, _, body = script.partition('window.latencyData["Test"] = ')
+    assert head == "window.latencyData = window.latencyData || {};\n"
+    assert json.loads(body.rstrip().rstrip(";")) == json.loads(latency_out.read_text())
+
+
+def test_analyze_traces_counts_in_ros_time_when_the_run_had_a_clock(tmp_path):
+    traces = tmp_path / "trace"
+    start, end = write_chain_traces(traces)
+    write_clock_trace(traces, start, end, rate=0.5)
+    graph = NodeGraph.from_system_structure(chain_design())
+    latency_out = tmp_path / "latency" / "Test_latency.json"
+
+    data = analyze_traces(
+        traces, graph, window_start_ns=start, window_end_ns=end, mode="Test", probe=True, latency_out=latency_out
+    )
+
+    run = data["run"]
+    assert run["clock"] == {"base": "ros", "rate": 0.5, "samples": 103}
+    assert run["window_s"] == 0.5 and run["window_wall_s"] == 1.0
+    by_path = {n["node_path"]: n for n in data["nodes"]}
+    # 50 fires in 0.5 ROS seconds: the declared 50 Hz timer runs at its declared rate in ROS time.
+    assert by_path["/a"]["timers"] == [{"period_ms": 20.0, "count": 50, "rate_hz": 100.0}]
+    assert by_path["/a"]["outputs"][0]["exec"]["mean_ms"] == 0.5
+
+    wall = analyze_traces(
+        traces,
+        graph,
+        window_start_ns=start,
+        window_end_ns=end,
+        mode="Test",
+        probe=True,
+        latency_out=latency_out,
+        clock="wall",
+    )
+    assert wall["run"]["clock"] == {"base": "wall"} and wall["run"]["window_s"] == 1.0

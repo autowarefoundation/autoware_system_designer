@@ -637,3 +637,68 @@ test("links attach by the topic's only publisher, intra-process costs nothing, u
     /latency\/2/,
   );
 });
+
+// ── Bundled loading ──────────────────────────────────────────────────────────
+
+// A page opened from file:// cannot fetch; the loader falls back to the
+// file's script twin, which assigns window.latencyData[mode].
+function fakeDocument(onAppend) {
+  return {
+    head: {
+      appendChild(script) {
+        setImmediate(() => onAppend(script));
+      },
+    },
+    createElement() {
+      return {};
+    },
+  };
+}
+
+test("loadBundled loads the script twin under file://", async () => {
+  const saved = { location: window.location, document: global.document };
+  window.location = { protocol: "file:" };
+  global.document = fakeDocument((script) => {
+    assert.equal(script.src, "data/Runtime_latency.js");
+    window.latencyData = { Runtime: fileV2() };
+    script.onload();
+  });
+  try {
+    const measured = await L.loadBundled("Runtime");
+    assert.equal(measured.label, "Runtime_latency.json");
+    assert.equal(measured.chains.length, 2);
+  } finally {
+    window.location = saved.location;
+    global.document = saved.document;
+    delete window.latencyData;
+  }
+});
+
+test("loadBundled resolves null when the twin is absent", async () => {
+  const saved = { location: window.location, document: global.document };
+  window.location = { protocol: "file:" };
+  global.document = fakeDocument((script) => script.onerror());
+  try {
+    assert.equal(await L.loadBundled("Runtime"), null);
+  } finally {
+    window.location = saved.location;
+    global.document = saved.document;
+  }
+});
+
+test("labels say when a run counted ROS time", () => {
+  assert.equal(L.clockNote({ clock: { base: "wall" } }), "");
+  assert.equal(L.clockNote(null), "");
+  assert.equal(
+    L.clockNote({ clock: { base: "ros", rate: 0.4998, samples: 12 } }),
+    ", ROS time ×0.5",
+  );
+  const g = new EventGraph();
+  g.build(graphV2());
+  const measured = L.fromJson(
+    fileV2({ run: { window_s: 10, clock: { base: "ros", rate: 1 } } }),
+  );
+  measured.costs(g);
+  assert.match(measured.label, /links matched, ROS time ×1\)$/);
+  assert.match(measured.recordedGraph(g).label, /sampled inputs, ROS time ×1$/);
+});
