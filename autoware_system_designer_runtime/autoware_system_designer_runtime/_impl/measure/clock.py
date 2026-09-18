@@ -18,8 +18,9 @@ Records are stamped in wall time, which is what orders them and matches a take
 to its publish. A system running on ``/clock`` (``use_sim_time``) declares its
 rates and lives its timers in ROS time, so its durations are measured there:
 the tracer records every ROS time override as a (wall, ROS) sample, and the
-ROS clock maps each wall instant onto that piecewise-linear curve. A paused
-bag makes ROS time stand still and the durations inside the pause vanish.
+ROS clock maps each wall instant onto that piecewise-linear curve. A paused bag
+keeps publishing its frozen value; the tracer flags the last sighting of such a
+value, the curve stays flat between the two, and nothing inside the pause counts.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from __future__ import annotations
 from bisect import bisect_right
 from typing import Iterable, Optional, Sequence, Union
 
-from .trace_reader import ClockSample, TraceSet
+from .trace_reader import FLAG_CLOCK_LAST, ClockSample, TraceSet
 
 CLOCK_AUTO = "auto"
 CLOCK_WALL = "wall"
@@ -99,14 +100,23 @@ Clock = Union[WallClock, RosClock]
 
 
 def _monotone(samples: Iterable[ClockSample]) -> tuple[list[int], list[int]]:
-    """Distinct ROS values with the earliest wall time each was seen at, both non-decreasing.
+    """Distinct ROS values at the earliest wall time each was seen, both non-decreasing.
 
+    Several processes see one value at slightly different wall instants; the
+    earliest is its sample. A value the tracer flagged as held (a pause) gets a
+    second point at its last sighting, so the curve is flat across the plateau.
     ROS time zero is the value a clock holds before its first /clock message and
     is no sample.
     """
     first_seen: dict[int, int] = {}
+    last_held: dict[int, int] = {}
     for sample in samples:
         if sample.ros_ns <= 0:
+            continue
+        if sample.flags & FLAG_CLOCK_LAST:
+            held = last_held.get(sample.ros_ns)
+            if held is None or sample.t > held:
+                last_held[sample.ros_ns] = sample.t
             continue
         seen = first_seen.get(sample.ros_ns)
         if seen is None or sample.t < seen:
@@ -119,6 +129,10 @@ def _monotone(samples: Iterable[ClockSample]) -> tuple[list[int], list[int]]:
             continue
         wall.append(t)
         ros.append(ros_ns)
+        end = last_held.get(ros_ns)
+        if end is not None and end > t:
+            wall.append(end)
+            ros.append(ros_ns)
     return wall, ros
 
 

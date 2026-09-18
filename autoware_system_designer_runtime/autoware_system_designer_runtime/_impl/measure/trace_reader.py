@@ -45,6 +45,7 @@ FLAG_FROM_INTRA = 1
 FLAG_SERIALIZED = 2
 FLAG_LOANED = 4
 FLAG_NO_INFO = 8
+FLAG_CLOCK_LAST = 16
 
 
 @dataclass(slots=True)
@@ -79,13 +80,18 @@ class Publish:
 
 @dataclass(slots=True)
 class ClockSample:
-    """A ROS time override: the process saw ROS time ``ros_ns`` at wall time ``t``."""
+    """A ROS time override: the process saw ROS time ``ros_ns`` at wall time ``t``.
+
+    A sample flagged ``FLAG_CLOCK_LAST`` is the last sighting of a value the
+    process held across a pause.
+    """
 
     t: int
     tid: int
     pid: int
     handle: int
     ros_ns: int
+    flags: int = 0
 
 
 @dataclass(slots=True)
@@ -203,19 +209,22 @@ class TraceSet:
 
 def read_trace_file(path: Union[str, Path]) -> ProcessTrace:
     path = Path(path)
-    data = path.read_bytes()
-    if len(data) < _HEADER.size:
-        raise ValueError(f"{path}: truncated header")
-    magic, version, record_size, pid, header_size, capacity, count, start_ns, _ = _HEADER.unpack_from(data, 0)
-    if magic != TRACE_MAGIC:
-        raise ValueError(f"{path}: not a trace file")
-    if version != TRACE_VERSION or record_size != RECORD_SIZE:
-        raise ValueError(f"{path}: unsupported trace version {version} / record size {record_size}")
+    # The file is sized for its capacity; only the claimed slots are read.
+    with path.open("rb") as handle:
+        head = handle.read(_HEADER.size)
+        if len(head) < _HEADER.size:
+            raise ValueError(f"{path}: truncated header")
+        magic, version, record_size, pid, header_size, capacity, count, start_ns, _ = _HEADER.unpack_from(head, 0)
+        if magic != TRACE_MAGIC:
+            raise ValueError(f"{path}: not a trace file")
+        if version != TRACE_VERSION or record_size != RECORD_SIZE:
+            raise ValueError(f"{path}: unsupported trace version {version} / record size {record_size}")
+        handle.seek(header_size)
+        data = handle.read(min(count, capacity) * record_size)
     proc = ProcessTrace(pid=pid, capacity=capacity, claimed=count, start_ns=start_ns)
 
-    available = (len(data) - header_size) // record_size
-    n = min(count, capacity, available)
-    view = memoryview(data)[header_size : header_size + n * record_size]
+    n = len(data) // record_size
+    view = memoryview(data)[: n * record_size]
     for kind, flags, _reserved, tid, t, t2, handle, gid, seq in _RECORD.iter_unpack(view):
         if kind == REC_TAKE:
             proc.takes.append(Take(t, tid, pid, handle, t2, gid.hex(), flags, seq))
@@ -224,7 +233,7 @@ def read_trace_file(path: Union[str, Path]) -> ProcessTrace:
         elif kind == REC_PUBLISH:
             proc.publishes.append(Publish(t, t2, tid, pid, handle, flags))
         elif kind == REC_CLOCK:
-            proc.clocks.append(ClockSample(t, tid, pid, handle, t2))
+            proc.clocks.append(ClockSample(t, tid, pid, handle, t2, flags))
     proc.takes.sort(key=lambda r: r.t)
     proc.timers.sort(key=lambda r: r.t)
     proc.publishes.sort(key=lambda r: r.t_in)

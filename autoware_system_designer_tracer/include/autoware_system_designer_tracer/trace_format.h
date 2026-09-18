@@ -50,6 +50,7 @@ enum asd_record_flags {
   ASD_FLAG_SERIALIZED = 2,  // take/publish of a serialized message
   ASD_FLAG_LOANED = 4,      // take/publish of a loaned message
   ASD_FLAG_NO_INFO = 8,     // take: caller passed no message_info; t2/gid/seq are unset
+  ASD_FLAG_CLOCK_LAST = 16, // clock: last wall time a value was still held (a paused /clock)
 };
 
 // `count` is claimed atomically; slots at or past `capacity` are dropped, so

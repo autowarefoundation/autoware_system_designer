@@ -28,7 +28,7 @@ from autoware_system_designer_runtime._impl.measure.clock import RosClock, clock
 from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
 from autoware_system_designer_runtime._impl.measure.node_stats import analyze
 from autoware_system_designer_runtime._impl.measure.session import locate_tracer, tracer_env
-from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir
+from autoware_system_designer_runtime._impl.measure.trace_reader import FLAG_CLOCK_LAST, read_trace_dir
 
 from .measure_fixtures import in_port, node, out_port, process, system
 
@@ -66,7 +66,8 @@ def _terminate(procs):
             os.killpg(proc.pid, signal.SIGKILL)
 
 
-# Publishes /clock at 50 Hz with ROS time running at half wall speed; untraced.
+# Publishes /clock at 50 Hz with ROS time running at half wall speed, frozen (as a
+# paused bag keeps publishing) between 1.0 s and 2.5 s; untraced.
 CLOCK_PUBLISHER = """
 import time, rclpy
 from rclpy.node import Node
@@ -75,8 +76,11 @@ rclpy.init()
 node = Node("fake_clock")
 pub = node.create_publisher(Clock, "/clock", 10)
 t0 = time.time_ns()
+pause_from, pause_to = t0 + 1_000_000_000, t0 + 2_500_000_000
 while rclpy.ok():
-    ros_ns = (time.time_ns() - t0) // 2 + 1_600_000_000_000_000_000
+    now = time.time_ns()
+    active = min(now, pause_from) - t0 + max(now - pause_to, 0)
+    ros_ns = active // 2 + 1_600_000_000_000_000_000
     msg = Clock()
     msg.clock.sec, msg.clock.nanosec = divmod(ros_ns, 1_000_000_000)
     pub.publish(msg)
@@ -162,8 +166,15 @@ def test_a_node_on_sim_time_records_the_clock_overrides(tmp_path):
     trace_set = read_trace_dir(trace_dir)
     assert len(trace_set.processes) == 1
     samples = [s for s in trace_set.clock_samples() if s.ros_ns > 0]  # zero: the clock before its first message
-    assert len(samples) >= 20
-    assert len({s.ros_ns for s in samples}) == len(samples)  # one record per distinct ROS time
+    moving = [s for s in samples if not s.flags & FLAG_CLOCK_LAST]
+    assert len(moving) >= 20
+    assert len({s.ros_ns for s in moving}) == len(moving)  # one record per distinct ROS time
     clock = clock_for(trace_set)
     assert isinstance(clock, RosClock)
-    assert 0.4 < clock.rate < 0.6
+    # The frozen value is recorded once more at its last sighting; the curve is flat between.
+    held = [s for s in samples if s.flags & FLAG_CLOCK_LAST]
+    assert len(held) == 1
+    first = min(s.t for s in moving if s.ros_ns == held[0].ros_ns)
+    assert held[0].t - first > 1_000_000_000
+    assert clock.elapsed(first + 100_000_000, held[0].t - 100_000_000) == 0
+    assert abs(clock.elapsed(held[0].t + 200_000_000, held[0].t + 800_000_000) - 300_000_000) < 60_000_000

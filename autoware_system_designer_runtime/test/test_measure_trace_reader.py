@@ -16,7 +16,7 @@
 
 import pytest
 
-from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir, read_trace_file
+from autoware_system_designer_runtime._impl.measure.trace_reader import FLAG_CLOCK_LAST, read_trace_dir, read_trace_file
 
 from .measure_fixtures import MS, T0, TraceBuilder, gid
 
@@ -86,6 +86,25 @@ def test_bad_magic_is_rejected(tmp_path):
     path.write_bytes(b"X" * 64)
     with pytest.raises(ValueError):
         read_trace_file(path)
+
+
+def test_only_the_claimed_records_of_a_capacity_sized_file_are_read(tmp_path):
+    from .measure_fixtures import T0, TraceBuilder
+
+    path = TraceBuilder(77).fire(T0, 1, 0xA).write(tmp_path, capacity=1 << 16)
+    # The tracer sizes the file for its capacity; the reader stops at the claimed count.
+    with path.open("r+b") as handle:
+        handle.truncate(64 + (1 << 16) * 64)
+    proc = read_trace_file(path)
+    assert proc.capacity == 1 << 16 and proc.claimed == 1 and len(proc.timers) == 1
+
+
+def test_clock_records_carry_their_flags(tmp_path):
+    from .measure_fixtures import T0, TraceBuilder
+
+    TraceBuilder(78).clock(T0, 5, flags=0).clock(T0 + 10, 5, flags=FLAG_CLOCK_LAST).write(tmp_path)
+    clocks = read_trace_file(tmp_path / "78.trace").clocks
+    assert [(c.ros_ns, c.flags) for c in clocks] == [(5, 0), (5, FLAG_CLOCK_LAST)]
 
 
 def test_clock_records_are_read_and_merged_by_wall_time(tmp_path):

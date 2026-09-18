@@ -106,12 +106,12 @@ __attribute__((constructor)) static void tracer_init(void)
   (void)tracing();
 }
 
+// Exit only turns the hooks off: a spinner thread may still be inside one, and
+// the shared mapping and the flushed name table are complete without a close.
 __attribute__((destructor)) static void tracer_fini(void)
 {
-  if (g_state == TRACER_ON) {
-    asd_writer_close(&g_writer);
-    g_state = TRACER_OFF;
-  }
+  int on = TRACER_ON;
+  __atomic_compare_exchange_n(&g_state, &on, TRACER_OFF, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
 }
 
 // ---- record helpers -----------------------------------------------------------
@@ -179,20 +179,13 @@ static void record_timer(const rcl_timer_t * timer, uint64_t t_ns)
   asd_writer_commit(r, ASD_REC_TIMER);
 }
 
-// One record per distinct ROS time value: every node clock of a process receives
-// the same /clock message, and the mapping only needs the first.
-static void record_clock(const rcl_clock_t * clock, uint64_t t_ns, int64_t ros_ns)
+static void write_clock_record(const rcl_clock_t * clock, uint64_t t_ns, int64_t ros_ns, uint8_t flags)
 {
-  static int64_t last_ros_ns = -1;
-  int64_t previous = __atomic_exchange_n(&last_ros_ns, ros_ns, __ATOMIC_RELAXED);
-  if (previous == ros_ns) {
-    return;
-  }
   asd_trace_record_t * r = asd_writer_claim(&g_writer);
   if (r == NULL) {
     return;
   }
-  r->flags = 0;
+  r->flags = flags;
   r->reserved = 0;
   r->tid = current_tid();
   r->t_ns = t_ns;
@@ -201,6 +194,44 @@ static void record_clock(const rcl_clock_t * clock, uint64_t t_ns, int64_t ros_n
   memset(r->gid, 0, ASD_TRACE_GID_SIZE);
   r->seq = 0;
   asd_writer_commit(r, ASD_REC_CLOCK);
+}
+
+// One record per distinct ROS time value: every node clock of a process receives
+// the same /clock message, and the mapping only needs the first. A value held for
+// longer than twice the gap before it (a paused /clock keeps publishing its frozen
+// value) also records the last wall time it was seen, so the reader keeps the
+// plateau flat.
+static void record_clock(const rcl_clock_t * clock, uint64_t t_ns, int64_t ros_ns)
+{
+  static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+  static int64_t held_ros_ns = -1;
+  static uint64_t held_first_ns = 0;
+  static uint64_t held_last_ns = 0;
+  static uint64_t gap_before_ns = 0;
+
+  pthread_mutex_lock(&lock);
+  if (ros_ns == held_ros_ns) {
+    if (t_ns > held_last_ns) {
+      held_last_ns = t_ns;
+    }
+    pthread_mutex_unlock(&lock);
+    return;
+  }
+  int64_t previous = held_ros_ns;
+  uint64_t plateau_end = 0;
+  if (previous >= 0 && gap_before_ns > 0 && held_last_ns - held_first_ns > 2 * gap_before_ns) {
+    plateau_end = held_last_ns;
+  }
+  gap_before_ns = (previous >= 0 && t_ns > held_last_ns) ? t_ns - held_last_ns : 0;
+  held_ros_ns = ros_ns;
+  held_first_ns = t_ns;
+  held_last_ns = t_ns;
+  pthread_mutex_unlock(&lock);
+
+  if (plateau_end != 0) {
+    write_clock_record(clock, plateau_end, previous, ASD_FLAG_CLOCK_LAST);
+  }
+  write_clock_record(clock, t_ns, ros_ns, 0);
 }
 
 static void gid_hex(const rmw_gid_t * gid, char out[ASD_TRACE_GID_SIZE * 2 + 1])

@@ -62,8 +62,8 @@ class TraceBuilder:
         self.records.append(RECORD.pack(3, 0, 0, tid, t_in, t_out, handle, bytes(24), 0))
         return self
 
-    def clock(self, t: int, ros_ns: int, tid: int = 9, handle: int = 0xC10C) -> "TraceBuilder":
-        self.records.append(RECORD.pack(4, 0, 0, tid, t, ros_ns, handle, bytes(24), 0))
+    def clock(self, t: int, ros_ns: int, tid: int = 9, handle: int = 0xC10C, flags: int = 0) -> "TraceBuilder":
+        self.records.append(RECORD.pack(4, flags, 0, tid, t, ros_ns, handle, bytes(24), 0))
         return self
 
     def write(self, directory: Path, capacity: int | None = None, unfinished: int = 0) -> Path:

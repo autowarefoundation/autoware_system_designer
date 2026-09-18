@@ -19,7 +19,7 @@ import pytest
 from autoware_system_designer_runtime._impl.measure.clock import RosClock, WallClock, clock_for
 from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
 from autoware_system_designer_runtime._impl.measure.node_stats import analyze
-from autoware_system_designer_runtime._impl.measure.trace_reader import ClockSample, read_trace_dir
+from autoware_system_designer_runtime._impl.measure.trace_reader import FLAG_CLOCK_LAST, ClockSample, read_trace_dir
 
 from .measure_fixtures import MS, T0, S, TraceBuilder, chain_design, write_chain_traces, write_clock_trace
 
@@ -28,6 +28,11 @@ R0 = 1_600_000_000 * S  # ROS time origin of the samples; zero is the unset valu
 
 def sample(t, ros):
     return ClockSample(t, 1, 1, 0xC, R0 + ros)
+
+
+def held(t, ros):
+    """The tracer's last sighting of a value that outlived the gap before it."""
+    return ClockSample(t, 1, 1, 0xC, R0 + ros, FLAG_CLOCK_LAST)
 
 
 def test_wall_clock_is_the_identity():
@@ -48,12 +53,23 @@ def test_ros_clock_interpolates_between_samples_and_continues_past_them():
 
 
 def test_ros_clock_stands_still_while_the_bag_is_paused():
+    # ROS 10 ms was held from 10 ms to 500 ms wall; the tracer flagged the last sighting.
     clock = RosClock(
-        [sample(T0, 0), sample(T0 + 10 * MS, 10 * MS), sample(T0 + 510 * MS, 20 * MS), sample(T0 + 520 * MS, 30 * MS)]
+        [
+            sample(T0, 0),
+            sample(T0 + 10 * MS, 10 * MS),
+            held(T0 + 500 * MS, 10 * MS),
+            sample(T0 + 510 * MS, 20 * MS),
+            sample(T0 + 520 * MS, 30 * MS),
+        ]
     )
-    # Between 10 ms and 510 ms wall only 10 ms of ROS time passed: a pause of ~490 ms vanishes.
+    assert clock.samples == 5
+    assert clock.elapsed(T0 + 20 * MS, T0 + 490 * MS) == 0  # inside the pause nothing counts
     assert clock.elapsed(T0 + 10 * MS, T0 + 510 * MS) == 10 * MS
-    assert clock.elapsed(T0 + 510 * MS, T0 + 520 * MS) == 10 * MS
+    assert clock.elapsed(T0 + 505 * MS, T0 + 520 * MS) == 15 * MS  # the resume segment is linear again
+    # A held sighting at or before the first one adds no point.
+    flat = RosClock([sample(T0, 0), held(T0, 0), sample(T0 + 10 * MS, 10 * MS)])
+    assert flat.samples == 2
 
 
 def test_ros_clock_merges_the_same_value_seen_by_several_processes():
