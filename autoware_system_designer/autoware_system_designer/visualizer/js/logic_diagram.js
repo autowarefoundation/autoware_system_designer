@@ -60,7 +60,8 @@
     process: {
       title: "process events",
       button: "process events",
-      transparent: (event) => event.kind !== "process",
+      transparent: (event) =>
+        event.kind !== "process" && event.kind !== "queue",
       vertexOf: (event) => event.id,
     },
     events: {
@@ -96,6 +97,7 @@
     ["and", "and — waits for every trigger"],
     ["or", "or — fires on any trigger"],
     ["box", "on_input / on_trigger — runs on one trigger"],
+    ["queue", "queue — data a process parks for the processes reading it"],
     ["unknown", "type not declared"],
   ];
 
@@ -106,6 +108,7 @@
     "a process event is one the node design declares under events:",
     "box — the node owning the events in it",
     "solid edge — crosses a node, dashed — inside one",
+    "dotted edge — a queue read: the reader runs on its own trigger, so no chain, rate or wait follows it",
     "an edge carries the events the level folds away",
   ];
 
@@ -252,6 +255,24 @@
             stack.push({ id: nextId, via: [...step.via, nextId], edges });
           });
         }
+      });
+
+      // A read is its own edge, never merged with a trigger between the same
+      // vertices, and carries no folded events.
+      this.graph.readEdges.forEach((readEdge) => {
+        const from = this.vertexOf.get(readEdge.from);
+        const to = this.vertexOf.get(readEdge.to);
+        if (!from || !to || from === to) return;
+        const edge = {
+          id: `lv_${this.viewEdges.length}`,
+          from,
+          to,
+          sourceEventId: readEdge.from,
+          via: [],
+          read: true,
+        };
+        this.viewEdges.push(edge);
+        this.viewEdgeById.set(edge.id, edge);
       });
 
       this.vertices.forEach((vertex) => this._decorateVertex(vertex));
@@ -458,6 +479,10 @@
     // The relation an edge stands for, named once: the first event it folds, or
     // its source event when the source vertex does not already carry that name.
     _labelEdge(edge) {
+      if (edge.read) {
+        edge.label = "";
+        return;
+      }
       const source = this.graph.events.get(edge.via[0] ?? edge.sourceEventId);
       const label = this._shortLabel(this._bareName(source.name));
       edge.label = label === this.vertices.get(edge.from).label ? "" : label;
@@ -1071,7 +1096,11 @@
     }
 
     buildVertexGlyph(vertex, style) {
-      if (vertex.kind === "process" || vertex.kind === "instance") {
+      if (
+        vertex.kind === "process" ||
+        vertex.kind === "queue" ||
+        vertex.kind === "instance"
+      ) {
         const shape = this.buildTypeShape(
           vertex.type,
           VIEW.glyphW,
@@ -1114,8 +1143,9 @@
       path.classList.add(
         crossesInstance ? "logic-edge-link" : "logic-edge-trigger",
       );
+      if (edge.read) path.classList.add("logic-edge-read");
       if (!to.clocked) path.classList.add("logic-unclocked");
-      if (!crossesInstance) {
+      if (!crossesInstance && !edge.read) {
         const w = parseFloat(style.edgeW);
         path.setAttribute("stroke-dasharray", `${w * 4} ${w * 3}`);
       }
@@ -1273,15 +1303,25 @@
 
     describeEvent(event, mismatch = null) {
       const parts = [
-        `${event.kind} · ${event.type || "type not declared"}`,
+        event.kind === "queue"
+          ? "queue"
+          : `${event.kind} · ${event.type || "type not declared"}`,
         this.rateLabel(event.frequency) || "no clock",
       ];
       if (mismatch) parts.push(`trigger rates: ${mismatch.join(" / ")}`);
+      const names = (ids) =>
+        ids.map((id) => this.graph.events.get(id)?.name || id).join(", ");
+      const reads = this.graph.queuesReadBy(event.id);
+      if (reads.length) parts.push(`reads queue ${names(reads)}`);
+      const readers = this.graph.readersOfQueue(event.id);
+      if (readers.length) parts.push(`read by ${names(readers)}`);
       return `${event.name}\n${parts.join("\n")}`;
     }
 
     describeEdge(edge) {
       const head = `${this.vertices.get(edge.from).name} → ${this.vertices.get(edge.to).name}`;
+      if (edge.read)
+        return `${head}\nqueue read: taken on the reader's own trigger`;
       if (!edge.via.length) return head;
       return `${head}\n${edge.via.map((id) => this.graph.events.get(id).name).join("\n")}`;
     }
@@ -1330,6 +1370,12 @@
       };
     }
 
+    // Event names joined for a panel row; undefined when there are none.
+    _eventNames(ids) {
+      if (!ids.length) return undefined;
+      return ids.map((id) => this.graph.events.get(id)?.name || id).join(", ");
+    }
+
     describeChain(event, upstream, downstream) {
       const owner = this.graph.instances.get(event.ownerId)?.data || {};
       return {
@@ -1343,6 +1389,8 @@
           warn_rate: event.warn_rate,
           error_rate: event.error_rate,
           timeout: event.timeout,
+          reads: this._eventNames(this.graph.queuesReadBy(event.id)),
+          readers: this._eventNames(this.graph.readersOfQueue(event.id)),
           mismatch: this.graph.rateMismatch(event),
         },
         chain: this.chainReport(
@@ -1826,7 +1874,9 @@
           shape === "port"
             ? this.buildPortGlyph("input", VIEW.glyphW, VIEW.glyphH)
             : this.buildTypeShape(
-                { clock: "periodic", and: "and", or: "or" }[shape] || null,
+                { clock: "periodic", and: "and", or: "or", queue: "queue" }[
+                  shape
+                ] || null,
                 24,
                 12,
                 { cornerR: 2 },

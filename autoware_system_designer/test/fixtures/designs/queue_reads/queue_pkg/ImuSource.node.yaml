@@ -1,0 +1,30 @@
+autoware_system_design_format: 0.4.1
+
+name: ImuSource.node
+
+description: Dummy IMU driver publishing at a high rate.
+
+package:
+  name: queue_pkg
+  provider: dummy
+
+launch:
+  plugin: queue::ImuSource
+  executable: imu_source_node
+  node_output: screen
+
+subscribers: []
+
+publishers:
+  - name: imu
+    message_type: sensor_msgs/msg/Imu
+
+param_files: []
+param_values: []
+
+processes:
+  - name: sample
+    trigger_conditions:
+      - periodic: 100.0
+    outcomes:
+      - to_output: imu

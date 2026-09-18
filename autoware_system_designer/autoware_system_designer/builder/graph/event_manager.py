@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, List
+from typing import TYPE_CHECKING, Any, Callable, Dict, List
 
 from autoware_system_designer.common.exceptions import NodeConfigurationError
 from autoware_system_designer.common.source_location import format_source, source_from_config
-from autoware_system_designer.model.events import Event, Process
+from autoware_system_designer.model.events import Event, Process, QueueEvent
 
 if TYPE_CHECKING:
     from autoware_system_designer.builder.instances.instances import Instance
@@ -44,6 +44,8 @@ class EventManager:
 
         # processes
         self.processes: List[Process] = []
+        # node-owned queues, keyed by the name `to_queue` gives them
+        self.queues: Dict[str, QueueEvent] = {}
         self.event_list: List[Event] = []
 
     def initialize_processes(self):
@@ -88,7 +90,13 @@ class EventManager:
         for process, src in zip(self.processes, sources):
             try:
                 process.set_condition(process_event_list, on_input_events)
-                process.set_outcomes(process_event_list, to_output_events)
+                process.set_outcomes(process_event_list, to_output_events, self.queues)
+            except ValueError as exc:
+                raise NodeConfigurationError(f"{exc}{format_source(src)}") from exc
+        # reads resolve after every outcome, so a queue may be filled by a later process
+        for process, src in zip(self.processes, sources):
+            try:
+                process.set_reads(self.queues)
             except ValueError as exc:
                 raise NodeConfigurationError(f"{exc}{format_source(src)}") from exc
 
@@ -96,7 +104,7 @@ class EventManager:
         process_event_list = []
         for process in self.processes:
             process_event_list.extend(process.get_event_list())
-        self.event_list = process_event_list
+        self.event_list = process_event_list + list(self.queues.values())
 
     def set_event_tree(self):
         """Set up the event tree for the current instance."""

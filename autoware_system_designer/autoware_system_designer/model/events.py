@@ -14,7 +14,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import ClassVar, List, Optional
+from typing import ClassVar, Dict, List, Optional
 
 from autoware_system_designer.common.naming import generate_unique_id
 
@@ -28,6 +28,7 @@ class Event:
     # on_trigger: activate the event when the trigger is activated
     # once: fulfill the condition if the input is received once
     # periodic: periodically activate this event
+    # queue: data parked by a process for whichever process reads it next
     type_list: ClassVar[List[str]] = [
         "on_input",
         "on_trigger",
@@ -35,6 +36,7 @@ class Event:
         "periodic",
         "to_trigger",
         "to_output",
+        "queue",
     ]
 
     name: str
@@ -45,6 +47,8 @@ class Event:
     triggers: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "trigger_ids"})
     # events to trigger when this event is activated
     actions: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "action_ids"})
+    # queues this event reads when it runs; a read neither fires it nor paces it
+    reads: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "read_ids"})
     trigger_root_ids: List[str] = field(default_factory=list, metadata={"exclude": True})
     frequency: Optional[float] = None
     warn_rate: Optional[float] = None
@@ -62,6 +66,7 @@ class Event:
 
         self.triggers = []
         self.actions = []
+        self.reads = []
         self.trigger_root_ids = []
 
         self.frequency = None
@@ -122,6 +127,16 @@ class Event:
         logger.debug(f"Event '{self.unique_id}' added action '{event.unique_id}'")
         if vise_versa:
             event.add_trigger_event(self, False)
+
+    def add_read_event(self, queue: "QueueEvent"):
+        if queue.unique_id == self.unique_id:
+            raise ValueError(f"Event cannot read itself: {self.unique_id}")
+        for e in self.reads:
+            if e.unique_id == queue.unique_id:
+                return
+        self.reads.append(queue)
+        queue.add_reader_event(self)
+        logger.debug(f"Event '{self.unique_id}' added read '{queue.unique_id}'")
 
     def determine_type(self, config_yaml):
         if len(config_yaml) == 0:
@@ -252,6 +267,33 @@ class Event:
             pass
 
 
+@dataclass(init=False, eq=False, repr=False)
+class QueueEvent(Event):
+    """Node-owned buffer between a process that fills it and the processes that read it.
+
+    Filling is a trigger relation, so the fill rate propagates to the queue and stops there;
+    reading is recorded on both ends and carries no rate.
+    """
+
+    # events reading this queue when they run
+    readers: List[Event] = field(default_factory=list, metadata={"ref": True, "alias": "reader_ids"})
+
+    def __init__(self, name: str, namespace: List[str]):
+        super().__init__(name, namespace)
+        self.readers = []
+        self.set_type("queue")
+
+    @property
+    def unique_id(self):
+        return generate_unique_id(self.namespace, "queue", self.name)
+
+    def add_reader_event(self, event: Event):
+        for e in self.readers:
+            if e.unique_id == event.unique_id:
+                return
+        self.readers.append(event)
+
+
 class EventChain(Event):
     def __init__(self, name: str, namespace: List[str] = [], is_process_event=True):
         super().__init__(name, namespace, is_process_event)
@@ -326,31 +368,53 @@ class Process:
         logger.debug(f"Process '{self.unique_id}' setting trigger condition: {trigger_condition_config}")
         self.event.set_chain(trigger_condition_config, process_list, on_input_list)
 
-    def set_outcomes(self, process_list, to_output_events):
+    def set_outcomes(self, process_list, to_output_events, queues: Dict[str, QueueEvent]):
+        """Wire the process to what it produces; a `to_queue` outcome declares the queue on first use."""
         outcome_config = self.config_yaml.get("outcomes")
         for outcome in outcome_config:
             outcome_type = list(outcome.keys())[0]
             outcome_value = outcome[outcome_type]
             if outcome_type == "to_output":
-                for event in to_output_events:
-                    if event.name == ("output_" + outcome_value):
-                        self.event.add_action_event(event)
-                        break
-                if self.event.actions == []:
+                target = next((e for e in to_output_events if e.name == ("output_" + outcome_value)), None)
+                if target is None:
                     raise ValueError(f"Output event not found: {outcome_value}")
+                self.event.add_action_event(target)
             elif outcome_type == "to_trigger":
-                for event in process_list:
-                    if event.name == outcome_value:
-                        self.event.add_action_event(event)
-                        break
-                if self.event.actions == []:
+                target = next((e for e in process_list if e.name == outcome_value), None)
+                if target is None:
                     raise ValueError(f"Trigger event not found: {outcome_value}")
+                self.event.add_action_event(target)
+            elif outcome_type == "to_queue":
+                if not isinstance(outcome_value, str) or not outcome_value:
+                    raise ValueError(f"'to_queue' must name a queue, got {outcome_value!r}")
+                queue = queues.get(outcome_value)
+                if queue is None:
+                    queue = QueueEvent(outcome_value, self.namespace)
+                    queues[outcome_value] = queue
+                self.event.add_action_event(queue)
             elif outcome_type == "terminal":
                 # end of event chain
                 break
+            else:
+                raise ValueError(f"Invalid outcome type: {outcome_type}")
         logger.debug(
             f"Process '{self.unique_id}' outcomes configured: actions={[a.unique_id for a in self.event.actions]}"
         )
+
+    def set_reads(self, queues: Dict[str, QueueEvent]):
+        """Bind the queues the process reads; every queue must be filled by a `to_queue` of this node."""
+        for read in self.config_yaml.get("reads") or []:
+            if not isinstance(read, dict) or len(read) != 1:
+                raise ValueError(f"Invalid read entry: {read!r}")
+            read_type, read_value = next(iter(read.items()))
+            if read_type != "from_queue":
+                raise ValueError(f"Invalid read type: {read_type}")
+            queue = queues.get(read_value)
+            if queue is None:
+                raise ValueError(
+                    f"Queue not found: {read_value} (no process of this node has 'to_queue: {read_value}')"
+                )
+            self.event.add_read_event(queue)
 
     def get_event_list(self):
         return self.event.get_children() + [self.event]

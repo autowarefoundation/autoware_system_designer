@@ -93,7 +93,25 @@ Represents a single ROS 2 node.
   - `outcomes`: Result of process.
     - `to_output`: Sends result to output port (`to_output: port_name`).
     - `to_trigger`: Triggers another process (`to_trigger: process_name`).
+    - `to_queue`: Parks the result in a node-owned queue (`to_queue: queue_name`). The queue exists once any process of the node names it; its fill rate is the filling process's rate.
     - `terminal`: Ends the chain (`terminal: null`).
+  - `reads`: (Optional) Queues the process reads when it runs (`- from_queue: queue_name`). A read is a loose connection: it neither triggers the process nor paces it, so the process keeps the rate of its `trigger_conditions` and the filling chain ends at the queue. Every queue read must be filled by a `to_queue` of the same node. A distortion corrector queues IMU samples on their own callback and reads the queue when a point cloud arrives:
+
+    ```yaml
+    processes:
+      - name: queue_imu
+        trigger_conditions:
+          - on_input: imu
+        outcomes:
+          - to_queue: imu
+      - name: undistort
+        trigger_conditions:
+          - on_input: pointcloud
+        reads:
+          - from_queue: imu
+        outcomes:
+          - to_output: pointcloud
+    ```
 
 ### 4.2. Module Configuration (`.module.yaml`)
 

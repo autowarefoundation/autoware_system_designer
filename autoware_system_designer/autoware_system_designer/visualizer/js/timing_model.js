@@ -627,12 +627,20 @@
   }
 
   // How a chain stops at an event. `loop`: an edge leaving it was cut as
-  // loop-closing, the chain rejoins itself. `open`: nothing in the graph
-  // follows it. `limit`: its successors lie beyond the hop limit.
+  // loop-closing, the chain rejoins itself. `queued`: the event is a queue,
+  // the message is parked for readers that other chains pace. `open`: nothing
+  // in the graph follows it. `limit`: its successors lie beyond the hop limit.
   function endOf(solution, graph, eventId) {
     const loops = loopExits(solution, graph, eventId);
     if (loops.length) {
       return { kind: "loop", rejoins: loops.map((exit) => exit.toId) };
+    }
+    if (graph.events.get(eventId)?.kind === "queue") {
+      return {
+        kind: "queued",
+        rejoins: [],
+        readers: graph.readersOfQueue(eventId),
+      };
     }
     const beyond = (graph.succ.get(eventId) || []).some((id) => {
       const next = graph.events.get(id);

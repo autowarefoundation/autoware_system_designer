@@ -1,0 +1,583 @@
+{
+  "data": {
+    "children": [
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [
+              "id_efd4ea225b784ccd"
+            ],
+            "error_rate": null,
+            "frequency": 100.0,
+            "name": "sample",
+            "process_event": true,
+            "read_ids": [],
+            "timeout": null,
+            "trigger_ids": [],
+            "type": "periodic",
+            "unique_id": "id_527c0cc88a464c9d",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [],
+        "launcher": {
+          "args": "",
+          "executable": "imu_source_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "queue_pkg",
+          "param_files": [],
+          "param_values": [],
+          "ports": [
+            {
+              "name": "imu",
+              "remap_target": "~/output/imu",
+              "topic": "/sensing/imu/imu"
+            }
+          ]
+        },
+        "links": [],
+        "name": "imu",
+        "namespace": "/sensing",
+        "out_ports": [
+          {
+            "connected_ids": [
+              "id_7827c31ff2433865"
+            ],
+            "event": {
+              "action_ids": [
+                "id_7827c31ff2433865"
+              ],
+              "error_rate": null,
+              "frequency": 100.0,
+              "name": "output_imu",
+              "process_event": false,
+              "read_ids": [],
+              "timeout": null,
+              "trigger_ids": [
+                "id_527c0cc88a464c9d"
+              ],
+              "type": "to_output",
+              "unique_id": "id_efd4ea225b784ccd",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "sensor_msgs/msg/Imu",
+            "name": "imu",
+            "namespace": [
+              "sensing",
+              "imu"
+            ],
+            "port_path": "/sensing/imu/output/imu",
+            "remap_target": "~/output/imu",
+            "topic": [
+              "sensing",
+              "imu",
+              "imu"
+            ],
+            "unique_id": "id_efd4ea225b784ccd"
+          }
+        ],
+        "package": "queue_pkg",
+        "parameter_files_all": [],
+        "parameters": [],
+        "path": "/sensing/imu",
+        "source_file": "${workspace_root}/ws/queue_pkg/ImuSource.node.yaml",
+        "unique_id": "id_ae3f02d61de4a985"
+      },
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [
+              "id_18f50af36c8979a4"
+            ],
+            "error_rate": null,
+            "frequency": 10.0,
+            "name": "capture",
+            "process_event": true,
+            "read_ids": [],
+            "timeout": null,
+            "trigger_ids": [],
+            "type": "periodic",
+            "unique_id": "id_38242bb2b53cdf1e",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [],
+        "launcher": {
+          "args": "",
+          "executable": "lidar_source_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "queue_pkg",
+          "param_files": [],
+          "param_values": [],
+          "ports": [
+            {
+              "name": "pointcloud",
+              "remap_target": "~/output/pointcloud",
+              "topic": "/sensing/lidar/pointcloud"
+            }
+          ]
+        },
+        "links": [],
+        "name": "lidar",
+        "namespace": "/sensing",
+        "out_ports": [
+          {
+            "connected_ids": [
+              "id_71dd89ed7dc00618"
+            ],
+            "event": {
+              "action_ids": [
+                "id_71dd89ed7dc00618"
+              ],
+              "error_rate": null,
+              "frequency": 10.0,
+              "name": "output_pointcloud",
+              "process_event": false,
+              "read_ids": [],
+              "timeout": null,
+              "trigger_ids": [
+                "id_38242bb2b53cdf1e"
+              ],
+              "type": "to_output",
+              "unique_id": "id_18f50af36c8979a4",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "sensor_msgs/msg/PointCloud2",
+            "name": "pointcloud",
+            "namespace": [
+              "sensing",
+              "lidar"
+            ],
+            "port_path": "/sensing/lidar/output/pointcloud",
+            "remap_target": "~/output/pointcloud",
+            "topic": [
+              "sensing",
+              "lidar",
+              "pointcloud"
+            ],
+            "unique_id": "id_18f50af36c8979a4"
+          }
+        ],
+        "package": "queue_pkg",
+        "parameter_files_all": [],
+        "parameters": [],
+        "path": "/sensing/lidar",
+        "source_file": "${workspace_root}/ws/queue_pkg/LidarSource.node.yaml",
+        "unique_id": "id_e390d25133386f60"
+      },
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [
+              "id_673b9db745ccec66"
+            ],
+            "error_rate": null,
+            "frequency": 100.0,
+            "name": "queue_imu",
+            "process_event": true,
+            "read_ids": [],
+            "timeout": null,
+            "trigger_ids": [
+              "id_7827c31ff2433865"
+            ],
+            "type": "on_input",
+            "unique_id": "id_da143bd22db9be0c",
+            "warn_rate": null
+          },
+          {
+            "action_ids": [
+              "id_1ff122dec5eb249e"
+            ],
+            "error_rate": null,
+            "frequency": 10.0,
+            "name": "undistort",
+            "process_event": true,
+            "read_ids": [
+              "id_673b9db745ccec66"
+            ],
+            "timeout": null,
+            "trigger_ids": [
+              "id_71dd89ed7dc00618"
+            ],
+            "type": "on_input",
+            "unique_id": "id_fc835dc07bd520a5",
+            "warn_rate": null
+          },
+          {
+            "action_ids": [],
+            "error_rate": null,
+            "frequency": 100.0,
+            "name": "imu",
+            "process_event": false,
+            "read_ids": [],
+            "reader_ids": [
+              "id_fc835dc07bd520a5"
+            ],
+            "timeout": null,
+            "trigger_ids": [
+              "id_da143bd22db9be0c"
+            ],
+            "type": "queue",
+            "unique_id": "id_673b9db745ccec66",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [
+          {
+            "connected_ids": [
+              "id_18f50af36c8979a4"
+            ],
+            "event": {
+              "action_ids": [
+                "id_fc835dc07bd520a5"
+              ],
+              "error_rate": null,
+              "frequency": 10.0,
+              "name": "input_pointcloud",
+              "process_event": false,
+              "read_ids": [],
+              "timeout": null,
+              "trigger_ids": [
+                "id_18f50af36c8979a4"
+              ],
+              "type": "on_input",
+              "unique_id": "id_71dd89ed7dc00618",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "sensor_msgs/msg/PointCloud2",
+            "name": "pointcloud",
+            "namespace": [
+              "sensing",
+              "corrector"
+            ],
+            "port_path": "/sensing/corrector/input/pointcloud",
+            "remap_target": "~/input/pointcloud",
+            "topic": [
+              "sensing",
+              "lidar",
+              "pointcloud"
+            ],
+            "unique_id": "id_71dd89ed7dc00618"
+          },
+          {
+            "connected_ids": [
+              "id_efd4ea225b784ccd"
+            ],
+            "event": {
+              "action_ids": [
+                "id_da143bd22db9be0c"
+              ],
+              "error_rate": null,
+              "frequency": 100.0,
+              "name": "input_imu",
+              "process_event": false,
+              "read_ids": [],
+              "timeout": null,
+              "trigger_ids": [
+                "id_efd4ea225b784ccd"
+              ],
+              "type": "on_input",
+              "unique_id": "id_7827c31ff2433865",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "sensor_msgs/msg/Imu",
+            "name": "imu",
+            "namespace": [
+              "sensing",
+              "corrector"
+            ],
+            "port_path": "/sensing/corrector/input/imu",
+            "remap_target": "~/input/imu",
+            "topic": [
+              "sensing",
+              "imu",
+              "imu"
+            ],
+            "unique_id": "id_7827c31ff2433865"
+          }
+        ],
+        "launcher": {
+          "args": "",
+          "executable": "corrector_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "queue_pkg",
+          "param_files": [],
+          "param_values": [],
+          "ports": [
+            {
+              "name": "pointcloud",
+              "remap_target": "~/input/pointcloud",
+              "topic": "/sensing/lidar/pointcloud"
+            },
+            {
+              "name": "imu",
+              "remap_target": "~/input/imu",
+              "topic": "/sensing/imu/imu"
+            },
+            {
+              "name": "pointcloud",
+              "remap_target": "~/output/pointcloud",
+              "topic": "/sensing/corrector/pointcloud"
+            }
+          ]
+        },
+        "links": [],
+        "name": "corrector",
+        "namespace": "/sensing",
+        "out_ports": [
+          {
+            "connected_ids": [],
+            "event": {
+              "action_ids": [],
+              "error_rate": null,
+              "frequency": 10.0,
+              "name": "output_pointcloud",
+              "process_event": false,
+              "read_ids": [],
+              "timeout": null,
+              "trigger_ids": [
+                "id_fc835dc07bd520a5"
+              ],
+              "type": "to_output",
+              "unique_id": "id_1ff122dec5eb249e",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "sensor_msgs/msg/PointCloud2",
+            "name": "pointcloud",
+            "namespace": [
+              "sensing",
+              "corrector"
+            ],
+            "port_path": "/sensing/corrector/output/pointcloud",
+            "remap_target": "~/output/pointcloud",
+            "topic": [
+              "sensing",
+              "corrector",
+              "pointcloud"
+            ],
+            "unique_id": "id_1ff122dec5eb249e"
+          }
+        ],
+        "package": "queue_pkg",
+        "parameter_files_all": [],
+        "parameters": [],
+        "path": "/sensing/corrector",
+        "source_file": "${workspace_root}/ws/queue_pkg/Corrector.node.yaml",
+        "unique_id": "id_d10fdee2c0ee1f3e"
+      }
+    ],
+    "compute_unit": "",
+    "entity_type": "system",
+    "events": [],
+    "in_ports": [],
+    "links": [
+      {
+        "connection_type": "INTERNAL_TO_INTERNAL",
+        "from_port": {
+          "connected_ids": [
+            "id_7827c31ff2433865"
+          ],
+          "event": {
+            "action_ids": [
+              "id_7827c31ff2433865"
+            ],
+            "error_rate": null,
+            "frequency": 100.0,
+            "name": "output_imu",
+            "process_event": false,
+            "read_ids": [],
+            "timeout": null,
+            "trigger_ids": [
+              "id_527c0cc88a464c9d"
+            ],
+            "type": "to_output",
+            "unique_id": "id_efd4ea225b784ccd",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "sensor_msgs/msg/Imu",
+          "name": "imu",
+          "namespace": [
+            "sensing",
+            "imu"
+          ],
+          "port_path": "/sensing/imu/output/imu",
+          "remap_target": "~/output/imu",
+          "topic": [
+            "sensing",
+            "imu",
+            "imu"
+          ],
+          "unique_id": "id_efd4ea225b784ccd"
+        },
+        "msg_type": "sensor_msgs/msg/Imu",
+        "to_port": {
+          "connected_ids": [
+            "id_efd4ea225b784ccd"
+          ],
+          "event": {
+            "action_ids": [
+              "id_da143bd22db9be0c"
+            ],
+            "error_rate": null,
+            "frequency": 100.0,
+            "name": "input_imu",
+            "process_event": false,
+            "read_ids": [],
+            "timeout": null,
+            "trigger_ids": [
+              "id_efd4ea225b784ccd"
+            ],
+            "type": "on_input",
+            "unique_id": "id_7827c31ff2433865",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "sensor_msgs/msg/Imu",
+          "name": "imu",
+          "namespace": [
+            "sensing",
+            "corrector"
+          ],
+          "port_path": "/sensing/corrector/input/imu",
+          "remap_target": "~/input/imu",
+          "topic": [
+            "sensing",
+            "imu",
+            "imu"
+          ],
+          "unique_id": "id_7827c31ff2433865"
+        },
+        "topic": "/sensing/imu/imu",
+        "unique_id": "id_8182f2f47ef5568f"
+      },
+      {
+        "connection_type": "INTERNAL_TO_INTERNAL",
+        "from_port": {
+          "connected_ids": [
+            "id_71dd89ed7dc00618"
+          ],
+          "event": {
+            "action_ids": [
+              "id_71dd89ed7dc00618"
+            ],
+            "error_rate": null,
+            "frequency": 10.0,
+            "name": "output_pointcloud",
+            "process_event": false,
+            "read_ids": [],
+            "timeout": null,
+            "trigger_ids": [
+              "id_38242bb2b53cdf1e"
+            ],
+            "type": "to_output",
+            "unique_id": "id_18f50af36c8979a4",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "sensor_msgs/msg/PointCloud2",
+          "name": "pointcloud",
+          "namespace": [
+            "sensing",
+            "lidar"
+          ],
+          "port_path": "/sensing/lidar/output/pointcloud",
+          "remap_target": "~/output/pointcloud",
+          "topic": [
+            "sensing",
+            "lidar",
+            "pointcloud"
+          ],
+          "unique_id": "id_18f50af36c8979a4"
+        },
+        "msg_type": "sensor_msgs/msg/PointCloud2",
+        "to_port": {
+          "connected_ids": [
+            "id_18f50af36c8979a4"
+          ],
+          "event": {
+            "action_ids": [
+              "id_fc835dc07bd520a5"
+            ],
+            "error_rate": null,
+            "frequency": 10.0,
+            "name": "input_pointcloud",
+            "process_event": false,
+            "read_ids": [],
+            "timeout": null,
+            "trigger_ids": [
+              "id_18f50af36c8979a4"
+            ],
+            "type": "on_input",
+            "unique_id": "id_71dd89ed7dc00618",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "sensor_msgs/msg/PointCloud2",
+          "name": "pointcloud",
+          "namespace": [
+            "sensing",
+            "corrector"
+          ],
+          "port_path": "/sensing/corrector/input/pointcloud",
+          "remap_target": "~/input/pointcloud",
+          "topic": [
+            "sensing",
+            "lidar",
+            "pointcloud"
+          ],
+          "unique_id": "id_71dd89ed7dc00618"
+        },
+        "topic": "/sensing/lidar/pointcloud",
+        "unique_id": "id_df7a255d069038ab"
+      }
+    ],
+    "name": "Queued_default",
+    "namespace": "/",
+    "out_ports": [],
+    "parameters": [],
+    "path": "/",
+    "source_file": "${workspace_root}/ws/queue_pkg/Queued.system.yaml",
+    "unique_id": "id_732f5f5fc9166a18"
+  },
+  "metadata": {
+    "mode": "default",
+    "system_name": "Queued"
+  },
+  "schema_version": "1.1"
+}

@@ -1,8 +1,10 @@
 // Event Graph Module
-// The trigger graph of an exported system: every port and process event is a
-// vertex, every trigger relation an edge. Built once from the instance tree and
-// read by the diagrams that draw chains over it. Free of the DOM, so the same
-// module runs under node for the solver tests.
+// The trigger graph of an exported system: every port, process and queue event
+// is a vertex, every trigger relation an edge. A queue read is a second, loose
+// relation kept beside the edges: the reader takes what the queue holds when
+// its own trigger fires, so no chain, rate or wait runs through it. Built once
+// from the instance tree and read by the diagrams that draw chains over it.
+// Free of the DOM, so the same module runs under node for the solver tests.
 
 (function () {
   // Frequency is propagated from clock roots only, so these types start a chain.
@@ -22,8 +24,12 @@
       this.edgeIdByKey = new Map(); // "from>to" → edgeId
       this.clocksOf = new Map(); // eventId → Set(clock root id)
       this.clockRootIds = [];
-      this.activeIds = new Set(); // events carrying at least one trigger relation
+      this.activeIds = new Set(); // events carrying at least one relation
       this.chainEndIds = new Set(); // events the chain stops at
+      this.readsOf = new Map(); // reader eventId → [queue eventId]
+      this.readersOf = new Map(); // queue eventId → [reader eventId]
+      this.readEdges = []; // { id, from: queue, to: reader }
+      this.readEdgeById = new Map();
     }
 
     // ── Construction ────────────────────────────────────────────────────────────
@@ -38,6 +44,10 @@
       this.edgeIdByKey.clear();
       this.edgeList = [];
       this.activeIds.clear();
+      this.readsOf.clear();
+      this.readersOf.clear();
+      this.readEdges = [];
+      this.readEdgeById.clear();
 
       const addEvent = (event, instance, kind, port) => {
         if (!event?.unique_id || this.events.has(String(event.unique_id))) {
@@ -56,6 +66,8 @@
           timeout: event.timeout ?? null,
           triggers: (event.trigger_ids || []).map(String),
           actions: (event.action_ids || []).map(String),
+          reads: (event.read_ids || []).map(String),
+          readers: (event.reader_ids || []).map(String),
         });
       };
 
@@ -73,7 +85,12 @@
           addEvent(port.event, instance, "output", port),
         );
         (instance.events || []).forEach((event) =>
-          addEvent(event, instance, "process", null),
+          addEvent(
+            event,
+            instance,
+            event.type === "queue" ? "queue" : "process",
+            null,
+          ),
         );
         (instance.children || []).forEach((child) => visit(child, depth + 1));
       };
@@ -109,8 +126,38 @@
         event.actions.forEach((actionId) => link(event.id, actionId));
       });
 
+      // read_ids and reader_ids are one relation read from either end.
+      const read = (queueId, readerId) => {
+        if (queueId === readerId) return;
+        if (!this.events.has(queueId) || !this.events.has(readerId)) return;
+        const readers = this.readersOf.get(queueId) || [];
+        if (readers.includes(readerId)) return;
+        readers.push(readerId);
+        this.readersOf.set(queueId, readers);
+        if (!this.readsOf.has(readerId)) this.readsOf.set(readerId, []);
+        this.readsOf.get(readerId).push(queueId);
+        const edge = {
+          id: `re_${this.readEdges.length}`,
+          from: queueId,
+          to: readerId,
+        };
+        this.readEdges.push(edge);
+        this.readEdgeById.set(edge.id, edge);
+      };
+      this.events.forEach((event) => {
+        event.reads.forEach((queueId) => read(queueId, event.id));
+        event.readers.forEach((readerId) => read(event.id, readerId));
+      });
+
       this.events.forEach((event, id) => {
-        if (this.succ.has(id) || this.pred.has(id)) this.activeIds.add(id);
+        if (
+          this.succ.has(id) ||
+          this.pred.has(id) ||
+          this.readsOf.has(id) ||
+          this.readersOf.has(id)
+        ) {
+          this.activeIds.add(id);
+        }
       });
 
       this.chainEndIds = new Set(
@@ -171,6 +218,15 @@
     // The message type a port event carries; a process event carries none.
     msgType(event) {
       return event?.port?.msg_type || null;
+    }
+
+    // The queues an event reads when it runs, and the events reading a queue.
+    queuesReadBy(eventId) {
+      return this.readsOf.get(eventId) || [];
+    }
+
+    readersOfQueue(queueId) {
+      return this.readersOf.get(queueId) || [];
     }
 
     // The clock roots at the head of a port's stream: the walk upstream that

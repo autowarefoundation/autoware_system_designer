@@ -1,0 +1,41 @@
+autoware_system_design_format: 0.4.1
+
+name: Corrector.node
+
+description: Dummy corrector that queues IMU samples and consumes them when a cloud arrives.
+
+package:
+  name: queue_pkg
+  provider: dummy
+
+launch:
+  plugin: queue::Corrector
+  executable: corrector_node
+  node_output: screen
+
+subscribers:
+  - name: pointcloud
+    message_type: sensor_msgs/msg/PointCloud2
+  - name: imu
+    message_type: sensor_msgs/msg/Imu
+
+publishers:
+  - name: pointcloud
+    message_type: sensor_msgs/msg/PointCloud2
+
+param_files: []
+param_values: []
+
+processes:
+  - name: queue_imu
+    trigger_conditions:
+      - on_input: imu
+    outcomes:
+      - to_queue: imu
+  - name: undistort
+    trigger_conditions:
+      - on_input: pointcloud
+    reads:
+      - from_queue: twist
+    outcomes:
+      - to_output: pointcloud

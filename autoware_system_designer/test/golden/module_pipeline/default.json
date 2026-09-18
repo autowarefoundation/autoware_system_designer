@@ -14,6 +14,7 @@
             "frequency": null,
             "name": "capture",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "or",
@@ -58,6 +59,7 @@
               "frequency": null,
               "name": "output_pointcloud",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_38242bb2b53cdf1e"
@@ -107,6 +109,7 @@
                 "frequency": null,
                 "name": "detect",
                 "process_event": true,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_c4b21ed742016d26"
@@ -129,6 +132,7 @@
                   "frequency": null,
                   "name": "input_pointcloud",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_18f50af36c8979a4"
@@ -203,6 +207,7 @@
                   "frequency": null,
                   "name": "output_objects",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_748817e93f2d4436"
@@ -279,6 +284,7 @@
                 "frequency": null,
                 "name": "detect",
                 "process_event": true,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_322c582a8701f017"
@@ -301,6 +307,7 @@
                   "frequency": null,
                   "name": "input_pointcloud",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_18f50af36c8979a4"
@@ -375,6 +382,7 @@
                   "frequency": null,
                   "name": "output_objects",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_7839d3dadf463b85"
@@ -451,6 +459,7 @@
                 "frequency": null,
                 "name": "merge",
                 "process_event": true,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_ff267d71fa342146",
@@ -474,6 +483,7 @@
                   "frequency": null,
                   "name": "input_objects1",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_2663caa227eef79c"
@@ -514,6 +524,7 @@
                   "frequency": null,
                   "name": "input_objects2",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_7897856f8263f415"
@@ -587,6 +598,7 @@
                   "frequency": null,
                   "name": "output_objects",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_0f995ca16525da61"
@@ -637,6 +649,7 @@
               "frequency": null,
               "name": "input_pointcloud",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_18f50af36c8979a4"
@@ -677,6 +690,7 @@
                 "frequency": null,
                 "name": "input_pointcloud",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_18f50af36c8979a4"
@@ -716,6 +730,7 @@
                 "frequency": null,
                 "name": "input_pointcloud",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_18f50af36c8979a4"
@@ -756,6 +771,7 @@
                 "frequency": null,
                 "name": "input_pointcloud",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "on_input",
@@ -789,6 +805,7 @@
                 "frequency": null,
                 "name": "input_pointcloud",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_18f50af36c8979a4"
@@ -833,6 +850,7 @@
                 "frequency": null,
                 "name": "output_objects",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_748817e93f2d4436"
@@ -874,6 +892,7 @@
                 "frequency": null,
                 "name": "input_objects1",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_2663caa227eef79c"
@@ -919,6 +938,7 @@
                 "frequency": null,
                 "name": "output_objects",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_7839d3dadf463b85"
@@ -960,6 +980,7 @@
                 "frequency": null,
                 "name": "input_objects2",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_7897856f8263f415"
@@ -1005,6 +1026,7 @@
                 "frequency": null,
                 "name": "output_objects",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_0f995ca16525da61"
@@ -1041,6 +1063,7 @@
                 "frequency": null,
                 "name": "output_objects",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "to_output",
@@ -1080,6 +1103,7 @@
               "frequency": null,
               "name": "output_objects",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [],
               "type": "to_output",
@@ -1121,6 +1145,7 @@
             "frequency": null,
             "name": "consume",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_479e63bffcf97b31"
@@ -1143,6 +1168,7 @@
               "frequency": null,
               "name": "input_objects",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_740e3caab1cbd9ba"
@@ -1247,6 +1273,7 @@
             "frequency": null,
             "name": "output_pointcloud",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_38242bb2b53cdf1e"
@@ -1284,6 +1311,7 @@
             "frequency": null,
             "name": "input_pointcloud",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_18f50af36c8979a4"
@@ -1323,6 +1351,7 @@
             "frequency": null,
             "name": "output_objects",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "to_output",
@@ -1360,6 +1389,7 @@
             "frequency": null,
             "name": "input_objects",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_740e3caab1cbd9ba"

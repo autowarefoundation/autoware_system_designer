@@ -46,6 +46,7 @@ class ProcessDict(TypedDict, total=False):
     name: str
     trigger_conditions: List[Any]
     outcomes: List[Any]
+    reads: List[Any]
 
 
 class InstanceRefDict(TypedDict, total=False):

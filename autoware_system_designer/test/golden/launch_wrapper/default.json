@@ -14,6 +14,7 @@
             "frequency": null,
             "name": "load",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "or",
@@ -61,6 +62,7 @@
               "frequency": null,
               "name": "output_vector_map",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_ad4ed36b628371e3"
@@ -117,6 +119,7 @@
             "frequency": null,
             "name": "consume",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_0f747866032a06a9"
@@ -139,6 +142,7 @@
               "frequency": null,
               "name": "input_vector_map",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_b589da255604a9e8"
@@ -211,6 +215,7 @@
             "frequency": null,
             "name": "output_vector_map",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_ad4ed36b628371e3"
@@ -248,6 +253,7 @@
             "frequency": null,
             "name": "input_vector_map",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_b589da255604a9e8"
