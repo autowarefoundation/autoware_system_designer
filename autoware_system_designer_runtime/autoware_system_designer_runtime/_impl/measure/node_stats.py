@@ -46,8 +46,9 @@ logger = logging.getLogger(__name__)
 NS_PER_MS = 1_000_000
 NS_PER_S = 1_000_000_000
 
-# An upstream intra-process publish older than this cannot be the trigger.
-INTRA_LOOKBACK_NS = 1 * NS_PER_S
+# A take, timer fire or upstream intra-process publish older than this cannot be
+# the trigger; a publish from an untraced callback keeps no stale marker.
+TRIGGER_HORIZON_NS = 1 * NS_PER_S
 # An input older than this is not part of the response to an output.
 RESPONSE_HORIZON_NS = 5 * NS_PER_S
 # Communication values outside this range come from unrelated clocks and are dropped.
@@ -56,7 +57,10 @@ COMM_LIMIT_NS = 10 * NS_PER_S
 PREROLL_NS = 1 * NS_PER_S
 # Tolerance around a publish call when placing a source timestamp inside it.
 MATCH_SLACK_NS = 200_000
-# Endpoints every node owns before its own code runs; they say nothing about initialization.
+# A publish call longer than this is not searched for a source timestamp.
+MATCH_SPAN_LIMIT_NS = 1 * NS_PER_S
+# Endpoints every node owns before its own code runs; they say nothing about
+# initialization and their messages are no inputs.
 LIFECYCLE_TOPICS = INFRA_TOPICS | {"/clock"}
 
 # What became of a node's process over the window.
@@ -180,6 +184,9 @@ class NodeObs:
     takes_by_topic: dict[str, list[TakeEvent]] = field(default_factory=dict)
     dup_takes: dict[str, int] = field(default_factory=dict)
     pubs_by_topic: dict[str, list[PubEvent]] = field(default_factory=dict)
+    # Parallel sorted times of the two lists above, for bisection.
+    take_times_by_topic: dict[str, list[int]] = field(default_factory=dict)
+    pub_times_by_topic: dict[str, list[int]] = field(default_factory=dict)
     # Timer handles that triggered this node's outputs: (pid, handle) → period.
     timer_handles: dict[tuple[int, int], Optional[int]] = field(default_factory=dict)
     intra_inputs: set[str] = field(default_factory=set)
@@ -329,46 +336,60 @@ def analyze(
         _scan_process(events, analysis)
 
     for node in nodes.values():
-        for takes in node.takes_by_topic.values():
+        for topic, takes in node.takes_by_topic.items():
             takes.sort(key=lambda e: e.t)
-        for pubs in node.pubs_by_topic.values():
+            node.take_times_by_topic[topic] = [e.t for e in takes]
+        for topic, pubs in node.pubs_by_topic.items():
             pubs.sort(key=lambda e: e.t_in)
+            node.pub_times_by_topic[topic] = [e.t_in for e in pubs]
     for takes in analysis.takes_by_pub.values():
         takes.sort(key=lambda e: e.t)
     return analysis
 
 
 class _PublishIndex:
-    """Publishes of every topic ordered by entry time, for placing source timestamps."""
+    """Publishes of every topic ordered by entry time, for placing source timestamps.
+
+    Every publish call that contains the source timestamp is a candidate; the
+    scan reaches back over the longest call of the topic. A same-process gid
+    picks among overlapping candidates, the nearest call midpoint otherwise.
+    """
 
     def __init__(self, pubs) -> None:
-        self._by_topic: dict[str, tuple[list[int], list[PubEvent]]] = {}
+        self._by_topic: dict[str, tuple[list[int], list[PubEvent], int]] = {}
         grouped: dict[str, list[PubEvent]] = {}
         for pub in pubs:
             grouped.setdefault(pub.topic, []).append(pub)
         for topic, events in grouped.items():
             events.sort(key=lambda e: e.t_in)
-            self._by_topic[topic] = ([e.t_in for e in events], events)
+            span = max((e.t_out - e.t_in for e in events), default=0)
+            self._by_topic[topic] = ([e.t_in for e in events], events, min(max(span, 0), MATCH_SPAN_LIMIT_NS))
 
-    def match(self, topic: str, source_ts: int) -> Optional[PubEvent]:
+    def match(self, topic: str, source_ts: int, gid: str = "", pid: Optional[int] = None) -> Optional[PubEvent]:
         entry = self._by_topic.get(topic)
         if entry is None or source_ts <= 0:
             return None
-        t_ins, events = entry
+        t_ins, events, span = entry
         index = bisect_right(t_ins, source_ts + MATCH_SLACK_NS) - 1
-        best: Optional[PubEvent] = None
-        best_distance = None
-        for candidate in range(index, max(index - 4, -1), -1):
-            pub = events[candidate]
+        earliest = source_ts - MATCH_SLACK_NS - span
+        candidates: list[PubEvent] = []
+        for position in range(index, -1, -1):
+            pub = events[position]
+            if pub.t_in < earliest:
+                break
             if pub.t_in - MATCH_SLACK_NS <= source_ts <= pub.t_out + MATCH_SLACK_NS:
-                distance = abs(source_ts - (pub.t_in + pub.t_out) // 2)
-                if best is None or distance < best_distance:
-                    best, best_distance = pub, distance
-        return best
+                candidates.append(pub)
+        if not candidates:
+            return None
+        if len(candidates) > 1 and gid:
+            same = [p for p in candidates if p.pid == pid and p.gid == gid]
+            if same:
+                candidates = same
+        return min(candidates, key=lambda p: abs(source_ts - (p.t_in + p.t_out) // 2))
 
 
 def _match_take(take: TakeEvent, index: _PublishIndex, gid_owner: dict[str, NodeObs], graph: NodeGraph) -> None:
-    pub = index.match(take.topic, take.source_ts)
+    pub = index.match(take.topic, take.source_ts, take.gid, take.pid)
     if pub is not None:
         take.source_pub = pub
         take.publisher = pub.node
@@ -401,7 +422,7 @@ def _process_events(proc, analysis: Analysis, obs_for) -> list[Event]:
         if take.t < t0 or take.t > t1:
             continue
         endpoint = proc.endpoint(take.handle, take.t)
-        if endpoint is None or endpoint.topic in INFRA_TOPICS:
+        if endpoint is None or endpoint.topic in LIFECYCLE_TOPICS:
             continue
         events.append(
             TakeEvent(
@@ -440,7 +461,7 @@ def _process_events(proc, analysis: Analysis, obs_for) -> list[Event]:
         if pub.t_in < t0 or pub.t_in > t1:
             continue
         endpoint = proc.endpoint(pub.handle, pub.t_in)
-        if endpoint is None or endpoint.topic in INFRA_TOPICS:
+        if endpoint is None or endpoint.topic in LIFECYCLE_TOPICS:
             continue
         node = obs_for(endpoint)
         events.append(
@@ -501,7 +522,7 @@ def _scan_process(events: list[Event], analysis: Analysis) -> None:
             node = event.node
             note_node(node)
             marker = last_marker.get(event.tid)
-            own = _own_marker(marker, node, analysis)
+            own = _own_marker(marker, node, analysis, event.t_in)
             upstream = _latest_intra_upstream(node, recent_pubs, event.t_in, analysis)
             trigger = _choose_trigger(own, upstream, node, analysis)
             event.trigger = trigger
@@ -535,7 +556,7 @@ def _latest_intra_upstream(
                 continue
             if candidate.t_in >= t_in:
                 continue
-            if analysis.clock.elapsed(candidate.t_in, t_in) > INTRA_LOOKBACK_NS:
+            if analysis.clock.elapsed(candidate.t_in, t_in) > TRIGGER_HORIZON_NS:
                 break
             if best is None or candidate.t_in > best.t_in:
                 best = candidate
@@ -581,9 +602,12 @@ def _note_link(analysis: Analysis, take: TakeEvent) -> None:
 
 # A take marker is the node's own when the same node took it. A timer belongs to
 # no node in rcl, so a timer marker is the node's own unless an earlier publish
-# already attributed that timer to another node.
-def _own_marker(marker: Optional[Union[TakeEvent, TimerEvent]], node: NodeObs, analysis: Analysis):
+# already attributed that timer to another node. A marker older than the trigger
+# horizon is stale: the publish came from a callback the tracer does not see.
+def _own_marker(marker: Optional[Union[TakeEvent, TimerEvent]], node: NodeObs, analysis: Analysis, t_in: int):
     if marker is None:
+        return None
+    if analysis.clock.elapsed(marker.t, t_in) > TRIGGER_HORIZON_NS:
         return None
     if isinstance(marker, TimerEvent):
         owner = analysis.timer_owner.get((marker.pid, marker.handle))

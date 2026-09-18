@@ -140,11 +140,15 @@ def analyze_traces(
     started_ns: Optional[int] = None,
     clock: str = CLOCK_AUTO,
     exits: Optional[dict[int, ProcessExit]] = None,
+    settle_ns: int = 0,
 ) -> dict[str, Any]:
-    """Blocking: read the trace directory, analyze, write the latency file."""
+    """Blocking: read the trace directory, analyze, write the latency file.
+
+    ``settle_ns`` is skipped after the window start, whether given or the first record.
+    """
     trace_set = read_trace_dir(trace_dir)
     span_start, span_end = trace_set.time_span()
-    t0 = window_start_ns if window_start_ns is not None else span_start
+    t0 = (window_start_ns if window_start_ns is not None else span_start) + settle_ns
     t1 = window_end_ns if window_end_ns is not None else span_end
     time_base = clock_for(trace_set, clock)
     logger.info("measure: durations in %s", time_base.describe())

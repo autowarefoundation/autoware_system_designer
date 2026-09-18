@@ -71,14 +71,12 @@ def _continuations(analysis: Analysis, take: TakeEvent) -> list[PubEvent]:
         return direct
     node = take.node
     out: list[PubEvent] = []
-    takes = node.takes_by_topic.get(take.topic, [])
-    times = [t.t for t in takes]
-    index = bisect_right(times, take.t)
-    next_take_t = takes[index].t if index < len(takes) else None
+    take_times = node.take_times_by_topic.get(take.topic, [])
+    index = bisect_right(take_times, take.t)
+    next_take_t = take_times[index] if index < len(take_times) else None
     elapsed = analysis.clock.elapsed
     for topic, pubs in node.pubs_by_topic.items():
-        pub_times = [p.t_in for p in pubs]
-        start = bisect_right(pub_times, take.t)
+        start = bisect_right(node.pub_times_by_topic[topic], take.t)
         for pub in pubs[start:]:
             if (next_take_t is not None and pub.t_in > next_take_t) or elapsed(take.t, pub.t_in) > SAMPLE_HORIZON_NS:
                 break

@@ -86,19 +86,11 @@ def main() -> None:
 
     latency_out = args.latency_out or default_latency_out(mode, args.json_file, args.trace_dir.resolve().parent)
 
-    window_start = _parse_time(args.window_start)
-    if args.settle and window_start is not None:
-        window_start += int(args.settle * NS_PER_S)
-    elif args.settle:
-        from ._impl.measure.trace_reader import read_trace_dir
-
-        span_start, _ = read_trace_dir(args.trace_dir).time_span()
-        window_start = span_start + int(args.settle * NS_PER_S)
-
     result = analyze_traces(
         args.trace_dir,
         graph,
-        window_start_ns=window_start,
+        window_start_ns=_parse_time(args.window_start),
+        settle_ns=int(args.settle * NS_PER_S),
         window_end_ns=_parse_time(args.window_end),
         mode=mode,
         probe=args.probe,

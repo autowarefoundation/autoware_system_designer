@@ -27,7 +27,7 @@ from autoware_system_designer_runtime._impl.measure.node_stats import (
 )
 from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir
 
-from .measure_fixtures import MS, S, TraceBuilder, chain_design, write_chain_traces
+from .measure_fixtures import MS, T0, S, TraceBuilder, chain_design, gid, write_chain_traces
 
 
 @pytest.fixture
@@ -94,6 +94,55 @@ def test_publish_without_a_visible_trigger_is_unknown(analysis):
     f = analysis.nodes["/f"]
     assert _labels(f, "/w") == {"unknown"}
     assert all(p.exec_ns is None for p in f.pubs_by_topic["/w"])
+
+
+def test_a_stale_marker_does_not_trigger_a_later_publish(tmp_path):
+    # /a takes /x at T0 and publishes /y 2 ms later; a publish 3 s later on the same thread
+    # came from a callback the tracer does not see and keeps no trigger.
+    b = TraceBuilder(700).sub(0x1, "/a", "/x").pub(0x2, "/a", "/y", gid(7))
+    b.take(T0, 5, 0x1, T0 - MS, gid(1)).publish(T0 + 2 * MS, T0 + 2 * MS + 100, 5, 0x2)
+    b.publish(T0 + 3 * S, T0 + 3 * S + 100, 5, 0x2)
+    b.write(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    analysis = analyze(read_trace_dir(tmp_path), graph, T0 - S, T0 + 4 * S)
+    pubs = analysis.nodes["/a"].pubs_by_topic["/y"]
+    assert [p.trigger.kind for p in pubs] == ["input", "unknown"]
+    assert pubs[0].exec_ns == 2 * MS and pubs[1].exec_ns is None
+
+
+def test_clock_messages_are_no_inputs(tmp_path):
+    b = TraceBuilder(701).sub(0x1, "/a", "/clock").sub(0x3, "/a", "/x").pub(0x2, "/a", "/y", gid(7))
+    b.take(T0, 5, 0x1, T0 - MS, gid(1)).take(T0 + MS, 5, 0x3, T0, gid(2))
+    b.publish(T0 + 2 * MS, T0 + 2 * MS + 100, 5, 0x2)
+    b.write(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    analysis = analyze(read_trace_dir(tmp_path), graph, T0 - S, T0 + S)
+    a = analysis.nodes["/a"]
+    assert set(a.takes_by_topic) == {"/x"} and "/clock" not in a.last_arrival
+    assert a.subscribed == {"/clock", "/x"}  # the endpoint is still known
+    assert [p.trigger.topic for p in a.pubs_by_topic["/y"]] == ["/x"]
+
+
+def test_overlapping_publish_calls_are_told_apart_by_the_same_process_gid(tmp_path):
+    # Two publishers of /x in one process, calls overlapping around the source timestamp.
+    b = TraceBuilder(702).pub(0x1, "/a", "/x", gid(1)).pub(0x2, "/b", "/x", gid(2)).sub(0x3, "/c", "/x")
+    b.publish(T0, T0 + 3 * MS, 5, 0x1).publish(T0 + MS, T0 + 4 * MS, 6, 0x2)
+    b.take(T0 + 5 * MS, 7, 0x3, T0 + 2 * MS, gid(2))
+    b.write(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    analysis = analyze(read_trace_dir(tmp_path), graph, T0 - S, T0 + S)
+    take = analysis.nodes["/c"].takes_by_topic["/x"][0]
+    assert take.publisher is analysis.nodes["/b"]
+    # Ten quick publishes before the matching one do not push it out of reach.
+    b = TraceBuilder(703).pub(0x1, "/a", "/x", gid(1)).sub(0x3, "/c", "/x")
+    b.publish(T0, T0 + 20 * MS, 5, 0x1)
+    for i in range(1, 11):
+        b.publish(T0 + i * MS, T0 + i * MS + 10, 6, 0x1)
+    b.take(T0 + 25 * MS, 7, 0x3, T0 + 15 * MS, gid(1))
+    b.write(tmp_path / "long_call")
+    analysis = analyze(read_trace_dir(tmp_path / "long_call"), graph, T0 - S, T0 + S)
+    take = analysis.nodes["/c"].takes_by_topic["/x"][0]
+    assert take.source_pub is not None and take.source_pub.t_in == T0
 
 
 def test_window_excludes_records_outside_it(tmp_path):
