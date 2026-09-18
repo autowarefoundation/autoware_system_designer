@@ -251,8 +251,13 @@
 
   // ── Solver ──────────────────────────────────────────────────────────────────
 
-  // Gates of this type fire once at start-up and take no part in a steady chain.
+  // Gates of this type fire once at start-up and take no part in a steady chain;
+  // a latch edge into a gate is the same thing recorded on the edge.
   const EXCLUDED_TYPES = new Set(["once"]);
+
+  function isLatch(event, fromId) {
+    return (event.latches || []).includes(fromId);
+  }
 
   // How a gate combines its triggers: `and` waits for every one, anything else
   // fires on the first; a gate with no declared type is folded as `or` and
@@ -294,6 +299,7 @@
         const branches = [];
         (graph.pred.get(id) || []).forEach((fromId) => {
           if (!reach.has(fromId) || sourceIds.has(id)) return;
+          if (isLatch(event, fromId)) return;
           const edgeId = graph.edgeId(fromId, id);
           if (loopEdges.has(edgeId)) return;
           const from = graph.events.get(fromId);
@@ -373,7 +379,7 @@
         (graph.succ.get(id) || []).forEach((nextId) => {
           const next = graph.events.get(nextId);
           if (!next || hops.has(nextId)) return;
-          if (EXCLUDED_TYPES.has(next.type)) return;
+          if (EXCLUDED_TYPES.has(next.type) || isLatch(next, id)) return;
           const hop = hops.get(id) + (next.kind === "process" ? 1 : 0);
           if (hopLimit !== null && hop > hopLimit) return;
           hops.set(nextId, hop);
@@ -644,7 +650,7 @@
     }
     const beyond = (graph.succ.get(eventId) || []).some((id) => {
       const next = graph.events.get(id);
-      return next && !EXCLUDED_TYPES.has(next.type);
+      return next && !EXCLUDED_TYPES.has(next.type) && !isLatch(next, eventId);
     });
     return { kind: beyond ? "limit" : "open", rejoins: [] };
   }

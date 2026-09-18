@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import logging
+from collections import deque
 from dataclasses import dataclass, field
-from typing import ClassVar, Dict, List, Optional
+from typing import ClassVar, Dict, Iterable, List, Optional, Tuple
 
 from autoware_system_designer.common.naming import generate_unique_id
 
@@ -45,11 +46,12 @@ class Event:
     process_event: bool = False
     # children triggers
     triggers: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "trigger_ids"})
+    # triggers that only gate this event: satisfied for good once they arrive, so they set no rate
+    latches: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "latch_ids"})
     # events to trigger when this event is activated
     actions: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "action_ids"})
     # queues this event reads when it runs; a read neither fires it nor paces it
     reads: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "read_ids"})
-    trigger_root_ids: List[str] = field(default_factory=list, metadata={"exclude": True})
     frequency: Optional[float] = None
     warn_rate: Optional[float] = None
     error_rate: Optional[float] = None
@@ -65,9 +67,9 @@ class Event:
         self.process_event = is_process_event
 
         self.triggers = []
+        self.latches = []
         self.actions = []
         self.reads = []
-        self.trigger_root_ids = []
 
         self.frequency = None
         self.warn_rate = None
@@ -82,6 +84,17 @@ class Event:
     @property
     def is_port_event(self):
         return False
+
+    @property
+    def is_clock(self):
+        """A condition that carries its own rate: `periodic` repeats at it, `once` never repeats."""
+        return self.type in ("periodic", "once")
+
+    @property
+    def pacing_triggers(self) -> List["Event"]:
+        """The triggers that set the rate of this event; a latch only gates it."""
+        latch_ids = {latch.unique_id for latch in self.latches}
+        return [trigger for trigger in self.triggers if trigger.unique_id not in latch_ids]
 
     @staticmethod
     def _as_rate(key: str, value) -> float:
@@ -98,13 +111,6 @@ class Event:
             raise ValueError(f"Invalid event type: {type_str}")
         self.type = type_str
         logger.debug(f"Event '{self.unique_id}' set type '{type_str}'")
-
-    def check_trigger_root_ids(self, trigger_root_id):
-        if trigger_root_id in self.trigger_root_ids:
-            return True
-        else:
-            self.trigger_root_ids.append(trigger_root_id)
-            return False
 
     def add_trigger_event(self, event, vise_versa=True):
         if event.unique_id == self.unique_id:
@@ -127,6 +133,14 @@ class Event:
         logger.debug(f"Event '{self.unique_id}' added action '{event.unique_id}'")
         if vise_versa:
             event.add_trigger_event(self, False)
+
+    def add_latch_event(self, event: "Event"):
+        self.add_trigger_event(event)
+        for e in self.latches:
+            if e.unique_id == event.unique_id:
+                return
+        self.latches.append(event)
+        logger.debug(f"Event '{self.unique_id}' added latch '{event.unique_id}'")
 
     def add_read_event(self, queue: "QueueEvent"):
         if queue.unique_id == self.unique_id:
@@ -171,18 +185,23 @@ class Event:
                 self.frequency = self._as_rate("periodic", config_value)
                 self.is_set = True
             elif config_key == "once" and config_value is None:
-                self.frequency = 0.0
-                self.warn_rate = 0.0
-                self.error_rate = 0.0
-                self.timeout = 0.0
-                self.is_set = True
+                # a bare `once` folded into a chain only gates it; alone it is the condition itself
+                if self.type == "once":
+                    self.frequency = 0.0
+                    self.warn_rate = 0.0
+                    self.error_rate = 0.0
+                    self.timeout = 0.0
+                    self.is_set = True
             elif config_key == "on_input" or config_key == "once":
                 self.condition_value = config_value
                 # search the event in the on_input_list
                 is_found = False
                 for event in on_input_list:
                     if event.name == ("input_" + config_value):
-                        self.add_trigger_event(event)
+                        if config_key == "once" and self.type != "once":
+                            self.add_latch_event(event)
+                        else:
+                            self.add_trigger_event(event)
                         is_found = True
                         break
                 # if not found, warn
@@ -216,55 +235,6 @@ class Event:
             )
         else:
             raise ValueError(f"Invalid event type: {config_key}")
-
-    def set_event_frequency(
-        self,
-        trigger_root_id: str,
-        frequency: float,
-        warn_rate: float,
-        error_rate: float,
-        timeout: float,
-    ):
-        if self.check_trigger_root_ids(trigger_root_id):
-            logger.debug(
-                f"Event '{self.unique_id}' already processed for root '{trigger_root_id}', skipping propagation"
-            )
-            return
-
-        if frequency is not None:
-            if self.frequency is None or frequency > self.frequency:
-                self.frequency = frequency
-        if warn_rate is not None:
-            if self.warn_rate is None or warn_rate > self.warn_rate:
-                self.warn_rate = warn_rate
-        if error_rate is not None:
-            if self.error_rate is None or error_rate > self.error_rate:
-                self.error_rate = error_rate
-        if timeout is not None:
-            if self.timeout is None or timeout > self.timeout:
-                self.timeout = timeout
-
-        self.is_set = True
-        logger.debug(
-            f"Event '{self.unique_id}' frequency set: freq={self.frequency}, warn={self.warn_rate}, error={self.error_rate}, timeout={self.timeout}"
-        )
-        for action in self.actions:
-            action.set_event_frequency(trigger_root_id, frequency, warn_rate, error_rate, timeout)
-
-    def set_frequency_tree(self):
-        trigger_root_id = self.unique_id
-        if self.type == "periodic" and self.is_set:
-            # propagate the frequency to the children
-            for action in self.actions:
-                action.set_event_frequency(
-                    trigger_root_id, self.frequency, self.warn_rate, self.error_rate, self.timeout
-                )
-        elif self.type == "once" and self.is_set:
-            # propagate the frequency to the children
-            for action in self.actions:
-                action.set_event_frequency(trigger_root_id, 0.0, 0.0, 0.0, 0.0)
-        else:
-            pass
 
 
 @dataclass(init=False, eq=False, repr=False)
@@ -418,3 +388,70 @@ class Process:
 
     def get_event_list(self):
         return self.event.get_children() + [self.event]
+
+
+RateProfile = Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]
+
+
+def _profile(event: Event) -> RateProfile:
+    return (event.frequency, event.warn_rate, event.error_rate, event.timeout)
+
+
+def _inherit(values: List[Optional[float]], slowest: bool) -> Optional[float]:
+    """The value an event takes from its pacing triggers; a `0.0` rate is a one-shot and paces nothing."""
+    known = [value for value in values if value is not None]
+    if not known:
+        return None
+    if not slowest:
+        return max(known)
+    paced = [value for value in known if value]
+    return min(paced) if paced else 0.0
+
+
+def _settle(event: Event, declared: RateProfile) -> bool:
+    """Recompute the rate profile of one event; True when it moved."""
+    before = _profile(event)
+    if event.is_clock:
+        frequency = declared[0] if declared[0] is not None else 0.0
+        profile: RateProfile = (frequency, declared[1], declared[2], declared[3])
+    else:
+        # an `and` fires no faster than its slowest condition, every other event as fast as its
+        # quickest; `timeout` is a duration, so the slowest condition allows the longest wait
+        slowest = event.type == "and"
+        triggers = event.pacing_triggers
+        inherited = (
+            _inherit([trigger.frequency for trigger in triggers], slowest),
+            _inherit([trigger.warn_rate for trigger in triggers], slowest),
+            _inherit([trigger.error_rate for trigger in triggers], slowest),
+            _inherit([trigger.timeout for trigger in triggers], False),
+        )
+        profile = tuple(own if own is not None else value for own, value in zip(declared, inherited))
+    event.frequency, event.warn_rate, event.error_rate, event.timeout = profile
+    return profile != before
+
+
+def resolve_event_rates(events: Iterable[Event], max_visits: int = 8) -> None:
+    """Settle the rate of every event from the clocks that reach it.
+
+    A clock keeps the rate it declares; every other event takes the rate of the conditions that
+    pace it, along the trigger edges. Chains that loop settle by revisiting, bounded per event.
+    """
+    events = list(events)
+    declared = {event.unique_id: _profile(event) for event in events}
+    queue = deque(events)
+    queued = {event.unique_id for event in events}
+    visits: Dict[str, int] = {}
+    while queue:
+        event = queue.popleft()
+        queued.discard(event.unique_id)
+        if not _settle(event, declared[event.unique_id]):
+            continue
+        visits[event.unique_id] = visits.get(event.unique_id, 0) + 1
+        if visits[event.unique_id] > max_visits:
+            logger.warning(f"Event '{event.unique_id}' rate does not settle: the chain it sits on mixes rates")
+            continue
+        logger.debug(f"Event '{event.unique_id}' rate settled: freq={event.frequency}")
+        for action in event.actions:
+            if action.unique_id not in queued:
+                queue.append(action)
+                queued.add(action.unique_id)
