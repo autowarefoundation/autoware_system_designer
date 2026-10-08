@@ -33,8 +33,13 @@ source install/setup.bash
 
 ```bash
 ros2 run autoware_system_designer_runtime autoware-system-designer-launch \
-    /path/to/system_structure/MySystem.json
+    /path/to/system_structure/MySystem.json --deploy my_vehicle
 ```
+
+System arguments (`$(var vehicle_id)` and friends) are bound at launch time from the
+deploy variant named by `--deploy`, read from the `deployment.json` beside
+`system_structure/`; `--arg NAME=VALUE` binds or overrides one argument directly.
+A system that declares no arguments needs neither.
 
 The console script installs under `lib/<package>/`, so `ros2 run` is the way to reach it;
 `install/setup.bash` does not put it on `PATH`.
@@ -47,6 +52,8 @@ member, each actor `SIGTERM`s its process group, waits 5s, then `SIGKILL`s.
 ```bash
 ros2 run autoware_system_designer_runtime autoware-system-designer-launch SYSTEM.json \
     --ecu main_ecu \                    # only launch nodes with compute_unit=main_ecu
+    --deploy my_vehicle \               # deploy variant whose arguments bind $(var ...)
+    --arg map_path=/data/map \          # bind/override one system argument (repeatable)
     --log-dir /tmp/run1 \               # per-node logs land in /tmp/run1/<member>/
     --respawn \                         # restart any node that exits for any reason
     --respawn-delay 1.0 \

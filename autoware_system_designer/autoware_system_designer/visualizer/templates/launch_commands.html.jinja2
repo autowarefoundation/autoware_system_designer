@@ -40,7 +40,7 @@
             {% endif %}
         </div>
         <p class="page-description method-note" id="method-note-xml"{% if default_method != 'xml' %} hidden{% endif %}>Runs the exported XML launcher through <code>ros2 launch</code>.</p>
-        <p class="page-description method-note" id="method-note-native"{% if default_method != 'native' %} hidden{% endif %}>Runs the exported system structure under the designer runtime supervisor, one supervised process per node.{% if has_deploy_variants %} Deploy arguments are applied by the XML wrappers only, so every deploy shares the same runtime command.{% endif %}</p>
+        <p class="page-description method-note" id="method-note-native"{% if default_method != 'native' %} hidden{% endif %}>Runs the exported system structure under the designer runtime supervisor, one supervised process per node.{% if has_deploy_variants %} The selected deploy's arguments are bound with <code>--deploy</code>.{% endif %}</p>
         {% if command_rows %}
         <table>
             <thead>

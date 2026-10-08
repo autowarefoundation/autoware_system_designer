@@ -31,12 +31,13 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 from ._impl.core.config import ActorConfig
 from ._impl.core.coordinator import ensure_output_dir
 from ._impl.core.stdin_console import run_console
 from ._impl.ros2.builder import populate_builder
+from ._impl.ros2.common.substitutions import resolve_argument_values, resolve_in_structure, unresolved_var_names
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -50,16 +51,23 @@ _WORKSPACE_ROOT_ENV = "AUTOWARE_SYSTEM_DESIGNER_WORKSPACE_ROOT"
 _ARTIFACTS_FILENAME = "deployment.json"
 
 
+def _read_manifest(json_path: Path) -> dict[str, Any]:
+    """The export manifest sits at <output_root>/exports/<system>/deployment.json, beside system_structure."""
+    manifest = json_path.parent.parent / _ARTIFACTS_FILENAME
+    try:
+        payload = json.loads(manifest.read_text())
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def _derive_workspace_root(json_path: Path) -> Optional[str]:
     """Workspace root implied by where the export tree actually resides."""
     env_root = os.environ.get(_WORKSPACE_ROOT_ENV)
     if env_root:
         return os.path.realpath(env_root)
-    # <output_root>/exports/<system>/deployment.json, beside the system_structure dir.
-    manifest = json_path.parent.parent / _ARTIFACTS_FILENAME
-    try:
-        tokenized = json.loads(manifest.read_text()).get("deployment_package_path", "")
-    except (OSError, ValueError):
+    tokenized = _read_manifest(json_path).get("deployment_package_path", "")
+    if not isinstance(tokenized, str):
         return None
     if not tokenized.startswith(_WORKSPACE_ROOT_TOKEN):
         return None
@@ -104,6 +112,59 @@ def _resolve_structure_paths(data: Any, json_path: str) -> Any:
     return _expand_workspace_paths(data, root)
 
 
+def _deploy_arguments(
+    manifest: Mapping[str, Any],
+    deploy: Optional[str],
+    overrides: Mapping[str, str],
+) -> dict[str, str]:
+    """Argument bindings for one deploy variant, with ``--arg`` values layered on top."""
+    variants = {v.get("name"): v for v in manifest.get("deploy_variants", []) if isinstance(v, dict)}
+    arguments: dict[str, str] = {}
+    if deploy is not None:
+        variant = variants.get(deploy)
+        if variant is None:
+            known = ", ".join(sorted(n for n in variants if n)) or "none"
+            raise RuntimeError(f"Unknown deploy variant {deploy!r}; available: {known}")
+        for item in variant.get("arguments", variant.get("variables", [])):
+            if isinstance(item, dict) and item.get("name"):
+                arguments[item["name"]] = str(item.get("value", ""))
+    arguments.update({k: str(v) for k, v in overrides.items()})
+    return resolve_argument_values(arguments)
+
+
+def _bind_deploy_arguments(
+    data: Any,
+    json_path: str,
+    *,
+    deploy: Optional[str],
+    overrides: Mapping[str, str],
+) -> Any:
+    """Resolve the system arguments a structure leaves as ``$(var ...)``; every one must be bound."""
+    manifest = _read_manifest(Path(json_path))
+    arguments = _deploy_arguments(manifest, deploy, overrides)
+    if arguments:
+        logger.info("deploy arguments: %s", ", ".join(f"{k}={v}" for k, v in sorted(arguments.items())))
+    resolved = resolve_in_structure(data, arguments)
+    missing = unresolved_var_names(resolved)
+    if missing:
+        variants = [v.get("name") for v in manifest.get("deploy_variants", []) if isinstance(v, dict)]
+        hint = f"--deploy <{'|'.join(n for n in variants if n)}>" if variants else "--arg NAME=VALUE"
+        raise RuntimeError(
+            f"Unbound system argument(s) in {json_path}: {', '.join(sorted(missing))}; bind them with {hint}."
+        )
+    return resolved
+
+
+def _parse_arg_overrides(items: Optional[Sequence[str]]) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for item in items or []:
+        name, sep, value = item.partition("=")
+        if not sep or not name:
+            raise SystemExit(f"--arg expects NAME=VALUE, got {item!r}")
+        overrides[name] = value
+    return overrides
+
+
 class _ShortNameFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
@@ -121,6 +182,8 @@ def launch_from_json(
     json_path: str,
     *,
     ecu: Optional[str] = None,
+    deploy: Optional[str] = None,
+    arguments: Optional[Mapping[str, str]] = None,
     output_dir: Optional[Path] = None,
     respawn: bool = False,
     respawn_delay: float = 1.0,
@@ -131,6 +194,7 @@ def launch_from_json(
     with open(json_path) as f:
         data = json.load(f)
     data = _resolve_structure_paths(data, json_path)
+    data = _bind_deploy_arguments(data, json_path, deploy=deploy, overrides=arguments or {})
 
     out_dir = output_dir or ensure_output_dir()
     logger.info("logs: %s", out_dir)
@@ -181,6 +245,19 @@ def main() -> None:
         default=None,
         help="Only launch nodes whose compute_unit matches this value "
         "(e.g. main_ecu, dummy_ecu). When omitted, all nodes are launched.",
+    )
+    parser.add_argument(
+        "--deploy",
+        default=None,
+        help="Deploy variant from the export's deployment.json whose arguments bind "
+        "the system arguments ($(var ...)).",
+    )
+    parser.add_argument(
+        "--arg",
+        action="append",
+        metavar="NAME=VALUE",
+        default=None,
+        help="Bind one system argument directly; overrides the deploy variant's value. Repeatable.",
     )
     parser.add_argument(
         "--log-dir",
@@ -235,6 +312,8 @@ def main() -> None:
         launch_from_json(
             args.json_file,
             ecu=args.ecu,
+            deploy=args.deploy,
+            arguments=_parse_arg_overrides(args.arg),
             output_dir=args.log_dir,
             respawn=args.respawn,
             respawn_delay=args.respawn_delay,
