@@ -67,7 +67,7 @@ LATENCY_DIR_NAME = "latency"
 # can load where it cannot fetch. Both shapes are read; the bundle gets the script.
 LATENCY_SCRIPT_GLOBAL = "latencyData"
 LATENCY_SCRIPT_SUFFIX = ".js"
-_SCRIPT_ASSIGN = re.compile(r"window\." + LATENCY_SCRIPT_GLOBAL + r"\[(\"(?:[^\"\\\\]|\\\\.)*\")\]\s*=\s*")
+_SCRIPT_ASSIGN = re.compile(r"window\." + LATENCY_SCRIPT_GLOBAL + r"\[(\"(?:[^\"\\]|\\.)*\")\]\s*=\s*")
 
 _PROCESS_REQUIRED = ("node_path", "process", "min_ms", "max_ms")
 _LINK_REQUIRED = ("topic", "min_ms", "max_ms")

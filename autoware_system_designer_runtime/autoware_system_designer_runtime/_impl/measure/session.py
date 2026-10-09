@@ -325,7 +325,7 @@ class MeasureSession:
                         latency_out=self._latency_out,
                         started_ns=self._started_ns,
                         clock=self._options.clock,
-                        exits=self._exits,
+                        exits=self.exits,
                     ),
                 )
             except Exception as exc:  # noqa: BLE001

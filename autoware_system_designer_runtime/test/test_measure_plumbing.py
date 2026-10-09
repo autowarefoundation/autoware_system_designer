@@ -17,6 +17,7 @@
 import asyncio
 import json
 import logging
+import time
 from pathlib import Path
 
 from autoware_system_designer_runtime._impl.core import events as ev
@@ -471,3 +472,63 @@ def test_analyze_traces_counts_in_ros_time_when_the_run_had_a_clock(tmp_path):
         clock="wall",
     )
     assert wall["run"]["clock"] == {"base": "wall"} and wall["run"]["window_s"] == 1.0
+
+
+def test_analysis_reads_a_snapshot_of_the_exits(tmp_path, monkeypatch):
+    session, _worker = _session(tmp_path, monkeypatch, settle=0.0)
+    seen = {}
+
+    def fake_analyze_traces(trace_dir, graph, **kwargs):
+        seen["exits"] = kwargs["exits"]
+        return {
+            "run": {"window_s": 0, "clock": {"base": "wall"}},
+            "summary": {"observed_nodes": 0, "design_nodes": 0},
+            "links": [],
+            "chains": [],
+        }
+
+    monkeypatch.setattr("autoware_system_designer_runtime._impl.measure.session.analyze_traces", fake_analyze_traces)
+    session.on_state_event(ev.Started(name="/n", pid=77))
+    session.on_state_event(ev.Exited(name="/n", exit_code=0))
+
+    async def run():
+        await session.start()
+        await session.close("console stop")
+        await session.analyze()
+
+    asyncio.run(run())
+    assert seen["exits"] == session.exits
+    assert seen["exits"] is not session._exits
+
+
+def test_coordinator_run_ends_as_soon_as_the_last_task_finishes_after_shutdown(monkeypatch, tmp_path):
+    async def fake_spawn(cmd, *, env=None, stdout_path=None, stderr_path=None, cwd=None):
+        return _FakeProc()
+
+    monkeypatch.setattr(regular_actor, "spawn_pgrp", fake_spawn)
+    builder = CoordinatorBuilder(
+        default_config=ActorConfig(output_dir=tmp_path, respawn_enabled=False, graceful_shutdown_timeout=0.1)
+    )
+    builder.add_node(NodeSpec(name="/n", cmd=["true"]))
+    task_done = asyncio.Event()
+
+    # A task that outlives the last actor: it ends shortly after the Terminated event,
+    # with no actor event left to wake the run loop before its shutdown deadline.
+    async def extra():
+        await task_done.wait()
+
+    def hook(event):
+        if isinstance(event, ev.Exited):
+            coord.request_shutdown()
+        if isinstance(event, ev.Terminated):
+            asyncio.get_running_loop().call_later(0.1, task_done.set)
+
+    async def post_start(c):
+        c.schedule_task(extra())
+
+    builder.add_state_hook(hook)
+    builder.add_post_start_hook(post_start)
+    coord = builder.build()
+    began = time.monotonic()
+    assert asyncio.run(asyncio.wait_for(coord.run(), timeout=10)) == 0
+    assert time.monotonic() - began < 2.0  # the deadline is the grace period + 5 s

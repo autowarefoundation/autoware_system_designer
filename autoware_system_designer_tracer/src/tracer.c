@@ -44,6 +44,7 @@ enum tracer_state { TRACER_UNSET = 0, TRACER_OFF = 1, TRACER_ON = 2 };
 static asd_writer_t g_writer;
 static int g_state = TRACER_UNSET;
 static pthread_mutex_t g_state_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_clock_lock = PTHREAD_MUTEX_INITIALIZER;
 static __thread uint32_t tls_tid = 0;
 
 static uint32_t current_tid(void)
@@ -54,9 +55,25 @@ static uint32_t current_tid(void)
   return tls_tid;
 }
 
+// Both tracer locks are held across fork() so no other thread is inside a
+// locked section when the child is cut; the child starts with them released.
+static void on_fork_prepare(void)
+{
+  pthread_mutex_lock(&g_state_lock);
+  pthread_mutex_lock(&g_clock_lock);
+}
+
+static void on_fork_parent(void)
+{
+  pthread_mutex_unlock(&g_clock_lock);
+  pthread_mutex_unlock(&g_state_lock);
+}
+
 // The file belongs to one pid; a forked child starts over on its first hook.
 static void on_fork_child(void)
 {
+  pthread_mutex_unlock(&g_clock_lock);
+  pthread_mutex_unlock(&g_state_lock);
   g_state = TRACER_UNSET;
   tls_tid = 0;
   memset(&g_writer, 0, sizeof(g_writer));
@@ -102,7 +119,7 @@ static inline bool tracing(void)
 
 __attribute__((constructor)) static void tracer_init(void)
 {
-  pthread_atfork(NULL, NULL, on_fork_child);
+  pthread_atfork(on_fork_prepare, on_fork_parent, on_fork_child);
   (void)tracing();
 }
 
@@ -203,18 +220,17 @@ static void write_clock_record(const rcl_clock_t * clock, uint64_t t_ns, int64_t
 // plateau flat.
 static void record_clock(const rcl_clock_t * clock, uint64_t t_ns, int64_t ros_ns)
 {
-  static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
   static int64_t held_ros_ns = -1;
   static uint64_t held_first_ns = 0;
   static uint64_t held_last_ns = 0;
   static uint64_t gap_before_ns = 0;
 
-  pthread_mutex_lock(&lock);
+  pthread_mutex_lock(&g_clock_lock);
   if (ros_ns == held_ros_ns) {
     if (t_ns > held_last_ns) {
       held_last_ns = t_ns;
     }
-    pthread_mutex_unlock(&lock);
+    pthread_mutex_unlock(&g_clock_lock);
     return;
   }
   int64_t previous = held_ros_ns;
@@ -226,7 +242,7 @@ static void record_clock(const rcl_clock_t * clock, uint64_t t_ns, int64_t ros_n
   held_ros_ns = ros_ns;
   held_first_ns = t_ns;
   held_last_ns = t_ns;
-  pthread_mutex_unlock(&lock);
+  pthread_mutex_unlock(&g_clock_lock);
 
   if (plateau_end != 0) {
     write_clock_record(clock, plateau_end, previous, ASD_FLAG_CLOCK_LAST);
@@ -391,6 +407,29 @@ rcl_ret_t rcl_timer_call(rcl_timer_t * timer)
     return real_rcl_timer_call(timer);
   }
   rcl_ret_t ret = real_rcl_timer_call(timer);
+  if (ret == RCL_RET_OK) {
+    record_timer(timer, asd_now_realtime_ns());
+  }
+  return ret;
+}
+
+// Jazzy and later fire timers through this entry point; Humble has no such symbol,
+// and a process that never calls it never reaches the NULL forward.
+struct rcl_timer_call_info_s;
+rcl_ret_t rcl_timer_call_with_info(rcl_timer_t * timer, struct rcl_timer_call_info_s * call_info)
+{
+  typedef rcl_ret_t (*call_with_info_fn)(rcl_timer_t *, struct rcl_timer_call_info_s *);
+  static call_with_info_fn real_call = NULL;
+  if (real_call == NULL) {
+    real_call = (call_with_info_fn)dlsym(RTLD_NEXT, "rcl_timer_call_with_info");
+    if (real_call == NULL) {
+      return RCL_RET_ERROR;
+    }
+  }
+  if (!tracing()) {
+    return real_call(timer, call_info);
+  }
+  rcl_ret_t ret = real_call(timer, call_info);
   if (ret == RCL_RET_OK) {
     record_timer(timer, asd_now_realtime_ns());
   }

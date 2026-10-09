@@ -190,6 +190,8 @@ class NodeObs:
     # Timer handles that triggered this node's outputs: (pid, handle) → period.
     timer_handles: dict[tuple[int, int], Optional[int]] = field(default_factory=dict)
     intra_inputs: set[str] = field(default_factory=set)
+    # Output topics the design produces from a periodic process.
+    periodic_outputs: set[str] = field(default_factory=set)
     last_arrival: dict[str, int] = field(default_factory=dict)
     # (output topic, input topic) → response values
     response: dict[tuple[str, str], list[int]] = field(default_factory=dict)
@@ -313,6 +315,9 @@ def analyze(
             node = NodeObs(key=key, fqn=endpoint.fqn, info=info)
             if info is not None:
                 node.intra_inputs = graph.intra_inputs(info)
+                node.periodic_outputs = {
+                    topic for topic in info.outputs if graph.declared_trigger(info, topic).kind == "periodic"
+                }
             nodes[key] = node
         node.pids.add(endpoint.pid)
         return node
@@ -322,9 +327,12 @@ def analyze(
             node = obs_for(endpoint)
             (node.subscribed if endpoint.kind == "sub" else node.advertised).add(endpoint.topic)
 
-    gid_owner: dict[str, NodeObs] = {}
-    for gid, endpoint in trace_set.publishers_by_gid.items():
-        gid_owner[gid] = obs_for(endpoint)
+    # A gid is process-local under some RMWs, so a publisher is only looked up by gid on its topic.
+    gid_owner: dict[tuple[str, str], NodeObs] = {}
+    for proc in trace_set.processes.values():
+        for endpoint in proc.endpoints.values():
+            if endpoint.kind == "pub" and endpoint.gid:
+                gid_owner[(endpoint.gid, endpoint.topic)] = obs_for(endpoint)
 
     per_process = [_process_events(proc, analysis, obs_for) for proc in trace_set.processes.values()]
     index = _PublishIndex(event for events in per_process for event in events if isinstance(event, PubEvent))
@@ -388,14 +396,16 @@ class _PublishIndex:
         return min(candidates, key=lambda p: abs(source_ts - (p.t_in + p.t_out) // 2))
 
 
-def _match_take(take: TakeEvent, index: _PublishIndex, gid_owner: dict[str, NodeObs], graph: NodeGraph) -> None:
+def _match_take(
+    take: TakeEvent, index: _PublishIndex, gid_owner: dict[tuple[str, str], NodeObs], graph: NodeGraph
+) -> None:
     pub = index.match(take.topic, take.source_ts, take.gid, take.pid)
     if pub is not None:
         take.source_pub = pub
         take.publisher = pub.node
         same_pid = pub.pid == take.pid
     else:
-        take.publisher = gid_owner.get(take.gid)
+        take.publisher = gid_owner.get((take.gid, take.topic))
         same_pid = take.publisher is not None and take.pid in take.publisher.pids and len(take.publisher.pids) == 1
     take.dup = _is_duplicate(take.node, take.publisher, same_pid, graph, take.topic)
 
@@ -524,7 +534,7 @@ def _scan_process(events: list[Event], analysis: Analysis) -> None:
             marker = last_marker.get(event.tid)
             own = _own_marker(marker, node, analysis, event.t_in)
             upstream = _latest_intra_upstream(node, recent_pubs, event.t_in, analysis)
-            trigger = _choose_trigger(own, upstream, node, analysis)
+            trigger = _choose_trigger(own, upstream, node, event.topic, analysis)
             event.trigger = trigger
             if trigger.kind != "unknown":
                 event.exec_ns = elapsed(trigger.t, event.t_in)
@@ -568,13 +578,18 @@ def _choose_trigger(
     own: Optional[Union[TakeEvent, TimerEvent]],
     upstream: Optional[PubEvent],
     node: NodeObs,
+    topic: str,
     analysis: Analysis,
 ) -> Trigger:
     """The later of the node's own thread marker and an intra-process upstream publish.
 
     A timer marker belongs to no node in rcl; it is attributed through the publish
     that follows it on the same thread, so a timer marker counts as the node's own.
+    An unclaimed timer left on the thread by another node's callback is not credited
+    to an output the design drives from an input when such an upstream is in reach.
     """
+    if isinstance(own, TimerEvent) and upstream is not None and not _timer_claimable(own, node, topic, analysis):
+        own = None
     own_t = own.t if own is not None else None
     up_t = upstream.t_in if upstream is not None else None
     if own is not None and (up_t is None or own_t >= up_t):
@@ -586,6 +601,14 @@ def _choose_trigger(
     if upstream is not None:
         return Trigger(kind="input", t=upstream.t_in, topic=upstream.topic, intra=True, ref=upstream)
     return Trigger(kind="unknown", t=0)
+
+
+# A timer the node already owns stays its own; a timer nobody owns yet is claimed
+# for an output the design makes periodic, or by a node the design does not know.
+def _timer_claimable(marker: TimerEvent, node: NodeObs, topic: str, analysis: Analysis) -> bool:
+    if analysis.timer_owner.get((marker.pid, marker.handle)) == node.key:
+        return True
+    return node.info is None or topic in node.periodic_outputs
 
 
 def _note_link(analysis: Analysis, take: TakeEvent) -> None:

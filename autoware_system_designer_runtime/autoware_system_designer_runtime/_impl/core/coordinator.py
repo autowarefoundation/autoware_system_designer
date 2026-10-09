@@ -195,6 +195,8 @@ class Coordinator:
         """Track an extra task (e.g. composable-node loader) for shutdown."""
         task = asyncio.ensure_future(coro)
         self._extra_tasks.append(task)
+        # The run loop re-checks its exit condition only on an event.
+        task.add_done_callback(lambda t: self._state_q.put_nowait(ev.TaskFinished(name=t.get_name())))
         return task
 
     def ready_signal(self, name: str) -> "asyncio.Future[int]":
@@ -400,6 +402,8 @@ class Coordinator:
         elif isinstance(event, ev.LoadFailed):
             logger.error("[%s] load failed: %s", event.name, event.error)
             self._mark_launch_ready()  # unblock console/waiters even on load failure
+        elif isinstance(event, ev.TaskFinished):
+            logger.debug("task %s finished", event.name)
 
     def _mark_launch_ready(self) -> None:
         if not self._launch_ready.is_set():

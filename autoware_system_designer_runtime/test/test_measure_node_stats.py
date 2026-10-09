@@ -230,3 +230,52 @@ def test_an_exit_inside_the_window_marks_the_node_exited_and_the_shutdown_does_n
     b, e = result.nodes["/b"], result.nodes["/e"]
     assert result.node_state(b) == STATE_EXITED and result.exit_of(b).exit_code == -6
     assert result.node_state(e) == STATE_RUNNING and result.exit_of(e) is None
+
+
+def test_gid_fallback_is_confined_to_the_take_topic(tmp_path):
+    # Two processes whose publishers carry the same gid bytes: one on /x, one on /other.
+    TraceBuilder(801).pub(0x1, "/a", "/x", gid(7)).write(tmp_path)
+    other = TraceBuilder(802).pub(0x1, "/z", "/other", gid(7)).sub(0x3, "/c", "/x")
+    # A take of /x whose publish no traced process recorded.
+    other.take(T0 + 5 * MS, 7, 0x3, T0 - 500 * MS, gid(7))
+    other.write(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    analysis = analyze(read_trace_dir(tmp_path), graph, T0 - S, T0 + S)
+    take = analysis.nodes["/c"].takes_by_topic["/x"][0]
+    assert take.publisher is analysis.nodes["/a"]
+    assert ("/x", "/a", "/c") in analysis.links
+    # No same-topic publisher with that gid: the publisher stays unknown.
+    TraceBuilder(803).pub(0x1, "/z", "/other", gid(8)).sub(0x3, "/c", "/x").take(
+        T0 + 5 * MS, 7, 0x3, T0 - 500 * MS, gid(8)
+    ).write(tmp_path / "unknown")
+    analysis = analyze(read_trace_dir(tmp_path / "unknown"), graph, T0 - S, T0 + S)
+    take = analysis.nodes["/c"].takes_by_topic["/x"][0]
+    assert take.publisher is None and not take.dup
+    assert ("/x", None, "/c") in analysis.links
+
+
+def test_a_foreign_timer_marker_does_not_claim_an_input_driven_output(tmp_path):
+    # In container /cc, /c's second timer (publishes nothing) fires on the executor
+    # thread between /c's /p publish and /d's intra-process-triggered /q publish.
+    cc = (
+        TraceBuilder(804)
+        .timer(0xC1, 50 * MS)
+        .timer(0xC9, 10 * MS)
+        .pub(0xC2, "/c", "/p", gid(3))
+        .pub(0xD2, "/d", "/q", gid(4))
+    )
+    t = T0
+    while t < T0 + S:
+        cc.fire(t, 4, 0xC1)
+        cc.publish(t + 1 * MS, t + 1 * MS + 40 * 1000, 4, 0xC2)
+        cc.fire(t + 2 * MS, 4, 0xC9)
+        cc.publish(t + 3 * MS, t + 3 * MS + 40 * 1000, 4, 0xD2)
+        t += 50 * MS
+    cc.write(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    analysis = analyze(read_trace_dir(tmp_path), graph, T0, T0 + S)
+    assert _labels(analysis.nodes["/c"], "/p") == {"timer(50 ms)"}
+    assert _labels(analysis.nodes["/d"], "/q") == {"input(/p, intra_process)"}
+    assert {p.exec_ns for p in analysis.nodes["/d"].pubs_by_topic["/q"]} == {2 * MS}
+    assert (804, 0xC9) not in analysis.timer_owner
+    assert analysis.nodes["/d"].timer_handles == {}

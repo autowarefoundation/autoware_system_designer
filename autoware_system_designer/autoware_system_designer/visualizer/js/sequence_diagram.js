@@ -815,9 +815,13 @@
     // ── Render ──────────────────────────────────────────────────────────────────
 
     // keepView redraws under the current viewport, for a change of scale
-    // alone; otherwise the page opens at its top.
+    // alone, and keeps the toolbar as it is; otherwise the page opens at its
+    // top under a fresh toolbar.
     render({ keepView = false } = {}) {
       this.prepareScale();
+      const toolbar = keepView
+        ? this.container.querySelector(".seq-toolbar")
+        : null;
       const { layer } = this.createCanvas();
       this.container.classList.add("sequence-diagram-container");
 
@@ -863,7 +867,8 @@
       });
       this.activeGroup?.element?.classList.add("seq-group-active");
 
-      this.renderToolbar();
+      if (toolbar) this.container.appendChild(toolbar);
+      else this.renderToolbar();
       this.placeCanvas();
       if (keepView) this.updateTransform();
       else this.fitToScreen();
