@@ -37,7 +37,7 @@ from ._impl.core.config import ActorConfig
 from ._impl.core.coordinator import ensure_output_dir
 from ._impl.core.stdin_console import run_console
 from ._impl.ros2.builder import populate_builder
-from ._impl.ros2.common.substitutions import resolve_argument_values, resolve_in_structure, unresolved_var_names
+from ._impl.ros2.common.substitutions import bind_variables, resolve_argument_values, unresolved_var_names
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -51,14 +51,18 @@ _WORKSPACE_ROOT_ENV = "AUTOWARE_SYSTEM_DESIGNER_WORKSPACE_ROOT"
 _ARTIFACTS_FILENAME = "deployment.json"
 
 
-def _read_manifest(json_path: Path) -> dict[str, Any]:
+def _manifest_path(json_path: Path) -> Path:
     """The export manifest sits at <output_root>/exports/<system>/deployment.json, beside system_structure."""
-    manifest = json_path.parent.parent / _ARTIFACTS_FILENAME
+    return json_path.parent.parent / _ARTIFACTS_FILENAME
+
+
+def _read_manifest(json_path: Path) -> Optional[dict[str, Any]]:
+    """Manifest payload, or None when there is no readable manifest beside the export."""
     try:
-        payload = json.loads(manifest.read_text())
+        payload = json.loads(_manifest_path(json_path).read_text())
     except (OSError, ValueError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _derive_workspace_root(json_path: Path) -> Optional[str]:
@@ -66,7 +70,7 @@ def _derive_workspace_root(json_path: Path) -> Optional[str]:
     env_root = os.environ.get(_WORKSPACE_ROOT_ENV)
     if env_root:
         return os.path.realpath(env_root)
-    tokenized = _read_manifest(json_path).get("deployment_package_path", "")
+    tokenized = (_read_manifest(json_path) or {}).get("deployment_package_path", "")
     if not isinstance(tokenized, str):
         return None
     if not tokenized.startswith(_WORKSPACE_ROOT_TOKEN):
@@ -141,13 +145,17 @@ def _bind_deploy_arguments(
 ) -> Any:
     """Resolve the system arguments a structure leaves as ``$(var ...)``; every one must be bound."""
     manifest = _read_manifest(Path(json_path))
-    arguments = _deploy_arguments(manifest, deploy, overrides)
+    if deploy is not None and manifest is None:
+        raise RuntimeError(
+            f"--deploy {deploy!r} needs the export manifest {_manifest_path(Path(json_path))}, not found"
+        )
+    arguments = _deploy_arguments(manifest or {}, deploy, overrides)
     if arguments:
         logger.info("deploy arguments: %s", ", ".join(f"{k}={v}" for k, v in sorted(arguments.items())))
-    resolved = resolve_in_structure(data, arguments)
+    resolved = bind_variables(data, arguments)
     missing = unresolved_var_names(resolved)
     if missing:
-        variants = [v.get("name") for v in manifest.get("deploy_variants", []) if isinstance(v, dict)]
+        variants = [v.get("name") for v in (manifest or {}).get("deploy_variants", []) if isinstance(v, dict)]
         hint = f"--deploy <{'|'.join(n for n in variants if n)}>" if variants else "--arg NAME=VALUE"
         raise RuntimeError(
             f"Unbound system argument(s) in {json_path}: {', '.join(sorted(missing))}; bind them with {hint}."

@@ -28,9 +28,10 @@ from typing import Any, Mapping
 
 logger = logging.getLogger(__name__)
 
-_VAR_SUB = re.compile(r"\$\(var\s+([^)\s]+)\s*\)")
-_ENV_SUB = re.compile(r"\$\(env\s+([^)\s]+)(?:\s+([^)]*?))?\s*\)")
-_PKG_SHARE_SUB = re.compile(r"\$\(find-pkg-share\s+([^)\s]+)\s*\)")
+# Operands exclude parentheses so a token wrapping another one matches only after the inner one resolved.
+_VAR_SUB = re.compile(r"\$\(var\s+([^()\s]+)\s*\)")
+_ENV_SUB = re.compile(r"\$\(env\s+([^()\s]+)(?:\s+([^()]*?))?\s*\)")
+_PKG_SHARE_SUB = re.compile(r"\$\(find-pkg-share\s+([^()\s]+)\s*\)")
 
 _MAX_PASSES = 10
 
@@ -85,14 +86,22 @@ def resolve_substitutions(text: str, variables: Mapping[str, str]) -> str:
     return result
 
 
-def resolve_in_structure(value: Any, variables: Mapping[str, str]) -> Any:
-    """Apply :func:`resolve_substitutions` to every string in a JSON payload."""
+def bind_variables(value: Any, variables: Mapping[str, str]) -> Any:
+    """Replace ``$(var name)`` with its binding in every string of a JSON payload.
+
+    Only ``$(var)`` is touched: the bindings are already fully expanded, and any
+    other token in the structure is the node's to see.
+    """
+    if not variables:
+        return value
     if isinstance(value, str):
-        return resolve_substitutions(value, variables)
+        if "$(var" not in value:
+            return value
+        return _VAR_SUB.sub(lambda m: str(variables[m.group(1)]) if m.group(1) in variables else m.group(0), value)
     if isinstance(value, dict):
-        return {k: resolve_in_structure(v, variables) for k, v in value.items()}
+        return {k: bind_variables(v, variables) for k, v in value.items()}
     if isinstance(value, list):
-        return [resolve_in_structure(item, variables) for item in value]
+        return [bind_variables(item, variables) for item in value]
     return value
 
 
