@@ -6,7 +6,7 @@ This document describes how to create and manage Autoware System Designer config
 
 ## 2. File Format Version
 
-All YAML files MUST start with the format version specification. The tool supports files whose _major_ version matches and whose _minor_ version is less-than-or-equal-to `DESIGN_FORMAT_VERSION`. All entity types (Nodes, Modules, Systems, Parameter Sets) must use a version up to `DESIGN_FORMAT_VERSION`.
+All YAML files MUST start with the format version specification. The tool supports files whose _major_ version matches and whose _minor_ version is less-than-or-equal-to `DESIGN_FORMAT_VERSION`. All entity types (Nodes, Modules, Systems, Parameter Sets, Data) must use a version up to `DESIGN_FORMAT_VERSION`.
 
 **Note**: The supported format version is defined in `autoware_system_designer/__init__.py` as `DESIGN_FORMAT_VERSION`.
 
@@ -19,6 +19,8 @@ Follow this directory structure for consistency (not mandatory).
 - **Modules**: `src/<package_name>/design/module/` (suffix: `.module.yaml`)
 - **Systems**: `src/<package_name>/design/system/` (suffix: `.system.yaml`)
 - **Parameter Sets**: `src/<package_name>/design/parameter_set/` (suffix: `.parameter_set.yaml`)
+- **Data**: `src/<package_name>/design/data/` (suffix: `.data.yaml`). The artifactory layout
+  follows the entity's `path_pattern` and manifest declaration.
 
 ## 4. Configuration Entities & Schemas
 
@@ -81,6 +83,14 @@ Represents a single ROS 2 node.
   - `type`: Parameter type (`bool`, `int`, `double`, `string`, `array`, etc.).
   - `default`: Default value.
   - `description`: (Optional) Brief explanation of the parameter.
+- `required_data`: (Optional) Data bundles the node consumes, one entry per data entity (Section 4.5).
+  - `entity`: The data entity (e.g. `LidarCenterPointModel.data`).
+  - `description`: (Optional) What the node does with the bundle.
+  - `type`: (Optional) Expected `category` of the entity; a mismatch fails the system build.
+  - `requires_version`: (Optional) `{major, min_minor?}` the node supports; checked against the
+    version the bundle records.
+  - `requires_paths`: (Optional) Manifest keys naming files the node opens; existence-checked.
+  - `binding`: Maps the node's own parameters onto `bundle:` references (`param_values`).
 - `processes`: Execution logic / Event chains.
   - `name`: Name of the process/callback.
   - `description`: (Optional) Brief explanation of the process.
@@ -231,9 +241,104 @@ Overrides parameters for specific nodes within the system hierarchy.
     - `type`: Parameter type (`bool`, `int`, `double`, `string`, etc.).
     - `value`: Override value (not `default`).
 
+### 4.5. Data Configuration (`.data.yaml`)
+
+Describes an artifact bundle (map, calibration set, ML model) as an addressing contract: how the
+bundle's on-disk variants are laid out under a system-provided `root`, and where the bundle's own
+manifest lives. The manifest — a file inside the bundle recording the version and its file names —
+is the sole source of the bundle's contents. Data entities are system/project-side definitions
+(like parameter sets) in `design/data/`; consuming nodes declare only their contract via
+`required_data` (Section 4.1).
+
+**Required Fields:**
+
+- `autoware_system_design_format`: Must be a version up to the supported `DESIGN_FORMAT_VERSION`.
+- `name`: Must match filename (e.g., `SampleMap.data`).
+- `category`: One of `map`, `calibration`, `ml_model`.
+
+**Optional Fields:**
+
+- `description`: Human-readable description.
+- `variants`: Variant axes; each axis appears exactly once in `path_pattern`.
+  - `name`: Axis name (e.g., `model_variant`, `vehicle_id`).
+  - `values`: Enumerated allowed values. Required when `sortable: true`.
+  - `default`: Default value. May be `latest` only on a `sortable` axis.
+  - `sortable`: (Optional, default `false`) The axis accepts `latest`, resolving to the greatest
+    declared value that exists on disk (natural ordering).
+- `path_pattern`: Sub-directory layout under `root`, one `$(var <axis>)` segment per axis plus
+  optional fixed folders (e.g., `lidar_centerpoint/$(var model_variant)`). `null` means the bundle
+  lives directly under `root`. One entity describes one layout. Hidden directories are never
+  variant candidates.
+- `manifest`: Defaults to `{file: deploy_metadata.yaml, version_key: version}`.
+  - `file`: YAML or JSON file inside the bundle; path entries in it are bundle-relative file names.
+  - `version_key`: A top-level key or a list of nested keys (e.g., `["/**", ros__parameters, version]`).
+    The value may be `v4.1`, `4.1` or an integer; components after `MAJOR.MINOR` are ignored.
+- `scripts`: Named commands over the bundle, `{name, command, description?}`. Declarative only;
+  never executed by the tool.
+
+Data entities do not support the base-variant pattern (Section 5); on-disk variation is expressed
+through variant axes.
+
+**Consuming (node side).** A node lists the bundles it needs via `required_data`, binding bundle
+references onto its own parameters:
+
+```yaml
+required_data:
+  - entity: LidarCenterPointModel.data
+    requires_version: { major: 4, min_minor: 1 }
+    requires_paths: [encoder_onnx_path, head_onnx_path]
+    binding:
+      param_values:
+        - { name: model_path, from: bundle:path }
+```
+
+- `requires_version`: `{major, min_minor?}` — the bundle's recorded major must equal `major`, its
+  minor be at least `min_minor` (default `0`). An unversioned bundle fails the build. Exact pinning
+  is not expressible; choosing a bundle is the deployment's job via variant axes.
+- `requires_paths`: Manifest keys the node opens; each must exist in the manifest and name a file
+  present in the bundle, checked at build time.
+- `type`: (Optional) Expected `category` of the entity; a mismatch fails the build.
+- `from:` namespaces: `bundle:path` (resolved bundle directory), `bundle:variant.<axis>`,
+  `bundle:version`. The node receives the directory and reads the manifest at launch; file contents
+  are never flattened into the launch.
+- A node launched through `ros2_launch_file` receives overrides as launch arguments, so a dotted
+  parameter name cannot be bound onto it; bind a flat name or launch the node directly.
+- Every `required_data` entry must be covered by a system `data:` instance whose `consumers` match
+  the node; an unbound entry fails the system build.
+
+**Placing (system side).** A system file provides the concrete `root` and selected variant through
+top-level `data` instances (a sibling of `node_groups`):
+
+```yaml
+data:
+  - name: ml_model_data
+    entity: LidarCenterPointModel.data
+    variant:
+      - model_variant: base
+    root: $(var data_path)/ml_models
+    consumers:
+      - /perception/object_recognition/*
+```
+
+- `root`: Required. Directory the `path_pattern` is scanned under; `$(var ...)`, `$(env ...)` and
+  `$(find-pkg-share ...)` substitutions apply.
+- `variant`: Axis values to select; an omitted axis takes its `default`.
+- `consumers`: Node path globs (mirroring `node_groups.nodes`). A glob matching no node is a
+  warning; the same entity bound onto a node twice is an error.
+
+Both `data` and `required_data` participate in `override`/`remove` — keyed by `name` and `entity`
+respectively. A node variant needing a different file set overrides its `required_data` entry as a
+whole; there is no conditional entry.
+
+Variant resolution runs at system build time against the build machine's filesystem: `latest`
+resolves to a concrete directory, `requires_paths` and `requires_version` are checked, and the
+resolved absolute paths are baked into the generated launch files. Data entities are discovered
+through the workspace manifest; a newly added `.data.yaml` is visible after
+`colcon build --packages-select autoware_system_designer`.
+
 ## 5. Base-Variant Pattern
 
-The Autoware System Designer supports a base-variant pattern that allows you to define a base configuration and then create variants that inherit from it. This pattern is useful for creating reusable configurations, reducing duplication, and creating mode-specific configurations (e.g., Runtime vs. Simulation) or vehicle-specific variants.
+The Autoware System Designer supports a base-variant pattern that allows you to define a base configuration and then create variants that inherit from it. This pattern is useful for creating reusable configurations, reducing duplication, and creating mode-specific configurations (e.g., Runtime vs. Simulation) or vehicle-specific variants. It applies to Nodes, Modules, Systems, and Parameter Sets; Data entities use variant axes instead (Section 4.5).
 
 ### 5.1. Using the `base` Field
 
@@ -403,6 +508,23 @@ LoggingSimulation:
           - /sensing
 ```
 
+### Data Example (0.5.0)
+
+```yaml
+autoware_system_design_format: 0.5.0
+name: LidarCenterPointModel.data
+category: ml_model
+description: Lidar detection model bundle consumed by LidarMlDetector.node.
+variants:
+  - name: model_variant
+    values: [base, tiny]
+    default: base
+path_pattern: lidar_centerpoint/$(var model_variant)
+manifest:
+  file: ml_package.param.yaml
+  version_key: ["/**", ros__parameters, version]
+```
+
 ### Parameter Set Example (0.4.0)
 
 ```yaml
@@ -450,4 +572,20 @@ Generates parameter files from JSON schemas.
 
 ```cmake
 autoware_system_designer_parameter()
+```
+
+### Staging data bundles for the deployment build
+
+Data variant resolution globs the real filesystem under each `data:` instance's `root`, so bundles
+must exist before `autoware_system_designer_build_deploy` runs. Bundles outside the workspace
+(e.g., `~/autoware_data`) need nothing. A package shipping a small bundle under its own `share/`
+must stage it into the install prefix ahead of the deploy target, because ament installs `data/`
+only after the build phase:
+
+```cmake
+add_custom_target(${PROJECT_NAME}_stage_data ALL
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/data ${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/data
+)
+add_dependencies(${AUTOWARE_SYSTEM_DESIGNER_DEPLOY_TARGET} ${PROJECT_NAME}_stage_data)
 ```

@@ -103,6 +103,25 @@
       }
     }
 
+    // Blends a hex color toward white (factor > 0) or black (factor < 0).
+    adjustColorBrightness(hexColor, factor) {
+      const hex = hexColor.replace("#", "");
+      const channel = (offset) => {
+        const value = parseInt(hex.substr(offset, 2), 16);
+        const target = factor >= 0 ? 255 : 0;
+        return Math.min(
+          255,
+          Math.max(0, Math.round(value + (target - value) * Math.abs(factor))),
+        );
+      };
+      return (
+        "#" +
+        [0, 2, 4]
+          .map((offset) => channel(offset).toString(16).padStart(2, "0"))
+          .join("")
+      );
+    }
+
     getComputedStyleValue(prop, fallback) {
       return (
         getComputedStyle(document.documentElement)

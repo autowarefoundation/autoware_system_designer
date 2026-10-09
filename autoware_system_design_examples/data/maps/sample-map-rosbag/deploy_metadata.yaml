@@ -1,0 +1,5 @@
+version: v1.0
+lanelet2_map_path: lanelet2_map.osm
+pointcloud_map_path: pointcloud_map.pcd
+pointcloud_map_metadata_path: pointcloud_map_metadata.yaml
+map_projector_info_path: map_projector_info.yaml

@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.5.0
 
 name: TypeAlpha.system
 
@@ -8,8 +8,6 @@ variables:
   - name: vehicle_id
     description: Identifier of the target vehicle, set by the deployment.
   - name: data_path
-  - name: lanelet2_map_file
-  - name: pointcloud_map_file
 
 variable_files: []
 
@@ -40,6 +38,19 @@ components:
   - name: planning
     entity: PlanningDummy.node
     compute_unit: dummy_ecu_2
+  - name: ml_planner
+    entity: MlPlanner_multi_step.node
+    description: ML trajectory planner consuming the planner model bundle.
+    path: /planning/ml_planner
+    compute_unit: dummy_ecu_2
+  - name: control
+    entity: ControlDummy.node
+    path: /control
+    compute_unit: main_ecu
+  - name: vehicle
+    entity: VehicleDummy.node
+    path: /vehicle
+    compute_unit: main_ecu
 
 node_groups:
   - name: pointcloud_container
@@ -48,6 +59,37 @@ node_groups:
       - /sensing/lidar/*
       - /perception/object_recognition/detector_a1/node_detector
       - /perception/object_recognition/detector_a2/node_detector
+      - /perception/object_recognition/node_lidar_ml_detector
+
+data:
+  - name: ml_model_data
+    entity: LidarCenterPointModel.data
+    variant:
+      - model_variant: base
+    root: $(var data_path)/ml_models/
+    consumers:
+      - /perception/object_recognition/*
+  - name: planner_model
+    entity: MlPlannerModel.data
+    variant:
+      - model_release: latest
+    root: $(var data_path)/ml_models/
+    consumers:
+      - /planning/ml_planner
+  - name: map
+    entity: SampleMapDummy.data
+    variant:
+      - location: sample-map-rosbag
+    root: $(var data_path)/maps
+    consumers:
+      - /map
+  - name: sensor_kit_calibration
+    entity: SensorKitDummy.data
+    variant:
+      - vehicle_id: $(var vehicle_id)
+    root: $(var data_path)/calibration
+    consumers:
+      - /vehicle
 
 connections:
   - - object_recognition.subscriber.pointcloud
@@ -56,12 +98,35 @@ connections:
     - planning.subscriber.lanelet_map
   - - object_recognition.publisher.objects
     - planning.subscriber.predicted_objects
+  - - map.publisher.vector_map
+    - ml_planner.subscriber.lanelet_map
+  - - object_recognition.publisher.objects
+    - ml_planner.subscriber.predicted_objects
   - - lidar.publisher.concatenated/pointcloud
     - localization.subscriber.pointcloud
   - - map.publisher.vector_map
     - localization.subscriber.lanelet_map
   - - object_recognition.subscriber.vector_map
     - map.publisher.vector_map
+  - - localization.subscriber.twist
+    - vehicle.publisher.twist
+  - - localization.subscriber.imu
+    - vehicle.publisher.imu
+  # planning -> control -> vehicle
+  - - control.subscriber.mission_planning/route
+    - planning.publisher.mission_planning/route
+  - - control.subscriber.kinematics
+    - localization.publisher.kinematic_state
+  - - control.subscriber.acceleration
+    - localization.publisher.acceleration
+  - - vehicle.subscriber.command/control_cmd
+    - control.publisher.command/control_cmd
+  - - vehicle.subscriber.command/gear_cmd
+    - control.publisher.command/gear_cmd
+  - - vehicle.subscriber.command/hazard_lights_cmd
+    - control.publisher.command/hazard_lights_cmd
+  - - vehicle.subscriber.command/turn_indicators_cmd
+    - control.publisher.command/turn_indicators_cmd
 
 # mode configuration
 simulation:

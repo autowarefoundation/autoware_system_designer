@@ -1,0 +1,16 @@
+autoware_system_design_format: 0.5.0
+
+name: SensorKitDummy.data
+
+category: calibration
+description: Dummy sensor-kit extrinsic calibration bundle (concept demo).
+
+# One directory per vehicle id, with the sensor kit as a fixed segment. The
+# axis is non-sortable (enumerated): there is no "latest" calibration. The
+# manifest is deploy_metadata.yaml (the default), naming the calibration files.
+variants:
+  - name: vehicle_id
+    values: [default, "01", "02"]
+    default: default
+
+path_pattern: $(var vehicle_id)/sample_sensor_kit

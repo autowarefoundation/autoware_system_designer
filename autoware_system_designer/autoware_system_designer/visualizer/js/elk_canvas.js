@@ -92,6 +92,10 @@
         badgePad: Math.round(3 * s),
         badgeCharW: Math.round(3 * s),
         badgeFontSz: Math.round(4 * s),
+        dataIconW: Math.round(8 * s),
+        dataIconH: Math.round(9 * s),
+        dataIconGap: Math.round(2 * s),
+        dataIconPad: Math.round(3 * s),
         arrowW: (2 * s).toFixed(1),
         arrowH: (1.4 * s).toFixed(1),
       };
@@ -125,6 +129,8 @@
         orange: { name: "orange", edge: "#fd7e14", port: "#fd7e14" },
         purple: { name: "purple", edge: "#6f42c1", port: "#6f42c1" },
         teal: { name: "teal", edge: "#20c997", port: "#20c997" },
+        cyan: { name: "cyan", edge: "#17a2b8", port: "#17a2b8" },
+        magenta: { name: "magenta", edge: "#d63384", port: "#d63384" },
       };
 
       this.styleDefaults = {

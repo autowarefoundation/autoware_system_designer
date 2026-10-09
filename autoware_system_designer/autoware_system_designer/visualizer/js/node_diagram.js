@@ -3,6 +3,13 @@
 
   // Topic stars span the whole graph, so they are sized in screen pixels and
   // redrawn against the live zoom instead of a layer scale.
+  // Data bundle category -> color preset key
+  const DATA_CATEGORY_PRESETS = {
+    map: "teal",
+    calibration: "cyan",
+    ml_model: "magenta",
+  };
+
   const STAR_LINE_WIDTH = 1.4;
   const STAR_HUB_RADIUS = 7;
   const STAR_FONT_SIZE = 11;
@@ -382,10 +389,15 @@
       const titleName = instance.name || String(instance.unique_id) || "";
       const titleW = this.measureTextWidth(titleName, style.fontSize);
       const innerPad = style.portSize * 3;
+      // Centered title must clear the data icon row in the top-right corner
+      const iconCount = (instance.data_bindings || []).length;
+      const dataIconRowW = iconCount
+        ? iconCount * (style.dataIconW + style.dataIconGap) + style.dataIconPad
+        : 0;
       return Math.max(
         style.nodeWidth,
         maxWestLabelW + maxEastLabelW + innerPad,
-        titleW + innerPad,
+        titleW + innerPad + dataIconRowW * 2,
       );
     }
 
@@ -455,6 +467,10 @@
       const containerTarget = this.getContainerTarget(userData);
       if (containerTarget) {
         this._appendBadge(g, node, style, containerTarget);
+      }
+
+      if (userData.data_bindings?.length) {
+        this._appendDataIcons(g, node, style, userData.data_bindings);
       }
 
       if (node.labels?.length > 0) {
@@ -634,6 +650,73 @@
       badgeLabel.style.fontSize = style.badgeFontSz + "px";
       badgeLabel.style.fill = this.isDarkMode() ? "#dee2e6" : "#495057";
       g.appendChild(badgeLabel);
+    }
+
+    // Cylinder per bound data bundle, right-aligned in the node's top corner
+    _appendDataIcons(g, node, style, bindings) {
+      const w = style.dataIconW;
+      const h = style.dataIconH;
+      const rx = w / 2;
+      const ry = Math.max(0.8, w * 0.3);
+      const strokeW = (parseFloat(style.borderW) * 0.3).toFixed(1);
+
+      bindings.forEach((binding, i) => {
+        const x =
+          node.width - style.dataIconPad - (i + 1) * w - i * style.dataIconGap;
+        let preset = DATA_CATEGORY_PRESETS[binding.category] || "default";
+        if (!this.colorPresets[preset]) preset = "default";
+        const presetColor = this.colorPresets[preset].port;
+        // Muted body with a darker boundary of the same hue
+        const fillColor = this.adjustColorBrightness(presetColor, 0.4);
+        const strokeColor = this.adjustColorBrightness(presetColor, -0.35);
+
+        const icon = document.createElementNS(SVG_NS, "g");
+        icon.setAttribute("transform", `translate(${x},${style.dataIconPad})`);
+        icon.style.cursor = "pointer";
+
+        const body = document.createElementNS(SVG_NS, "path");
+        body.setAttribute(
+          "d",
+          `M 0,${ry} V ${h - ry} A ${rx},${ry} 0 0 0 ${w},${h - ry} V ${ry}`,
+        );
+        body.setAttribute("fill", fillColor);
+        body.setAttribute("stroke", strokeColor);
+        body.setAttribute("stroke-width", strokeW);
+        icon.appendChild(body);
+
+        const lid = document.createElementNS(SVG_NS, "ellipse");
+        lid.setAttribute("cx", rx);
+        lid.setAttribute("cy", ry);
+        lid.setAttribute("rx", rx);
+        lid.setAttribute("ry", ry);
+        lid.setAttribute("fill", fillColor);
+        lid.setAttribute("stroke", strokeColor);
+        lid.setAttribute("stroke-width", strokeW);
+        icon.appendChild(lid);
+
+        const variantText = Object.entries(binding.variant || {})
+          .map(([axis, value]) => `${axis}=${value}`)
+          .join(", ");
+        const title = document.createElementNS(SVG_NS, "title");
+        title.textContent =
+          `[data:${binding.category}] ${binding.entity}` +
+          (variantText ? ` (${variantText})` : "") +
+          (binding.version ? ` ${binding.version}` : "");
+        icon.appendChild(title);
+
+        icon.onclick = (e) => {
+          if (this.hasDragged) return;
+          e.stopPropagation();
+          this.clearHighlights();
+          icon.classList.add("data-icon-highlighted");
+          [body, lid].forEach((el) => {
+            el.style.strokeWidth = (parseFloat(strokeW) * 3).toFixed(1) + "px";
+          });
+          this.updateInfoPanel({ ...binding, variant: variantText }, "Data");
+        };
+
+        g.appendChild(icon);
+      });
     }
 
     _appendLabels(g, node, userData, style, depth) {
@@ -834,6 +917,12 @@
           el.style.stroke = "";
           el.style.strokeWidth = "";
         }
+      });
+      scope.querySelectorAll(".data-icon-highlighted").forEach((el) => {
+        el.classList.remove("data-icon-highlighted");
+        el.querySelectorAll("path, ellipse").forEach((shape) => {
+          shape.style.strokeWidth = "";
+        });
       });
       scope.querySelectorAll(".module-highlighted").forEach((el) => {
         el.classList.remove("module-highlighted");

@@ -18,7 +18,7 @@ Traditional ROS 2 launch files can become complex and hard to manage as a system
 
 ## Core Concepts
 
-The system is built upon four main entity types:
+The system is built upon five main entity types:
 
 ![Configuration Structure](autoware_system_designer/doc/images/configuration_structure.png)
 
@@ -54,6 +54,16 @@ The top-level description of a complete autonomous driving system. It defines:
 
 A collection of parameter overrides that can be applied to specific nodes in a system, allowing for flexible configuration management without modifying the core node definitions.
 
+### 5. Data (`*.data.yaml`)
+
+A first-class artifact bundle — a map, a calibration set, or an ML model. Every bundle carries its own manifest, the sole source of the bundle's contents. The entity declares:
+
+- **Category**: `map`, `calibration`, or `ml_model`.
+- **Variants**: Axes (e.g., vehicle ID, release version) describing how on-disk bundle variants are addressed under a system-supplied root directory.
+- **Manifest**: Where the bundle records its version and file names (default `deploy_metadata.yaml`).
+
+Nodes consume bundles via `required_data` — `requires_version` and `requires_paths` are checked against the resolved bundle's manifest at build time, and the binding hands the node the bundle directory (`bundle:path`); the node reads the manifest at launch. Systems place bundles with top-level `data:` instances that select the variant and list consumer nodes.
+
 ## Project Structure
 
 To use Autoware System Designer in your ROS 2 package, organize your files as follows:
@@ -64,7 +74,8 @@ src/<package_name>/
 │   ├── node/           # *.node.yaml
 │   ├── module/         # *.module.yaml
 │   ├── system/         # *.system.yaml
-│   └── parameter_set/  # *.parameter_set.yaml
+│   ├── parameter_set/  # *.parameter_set.yaml
+│   └── data/           # *.data.yaml
 ├── deployment/         # *.deployment.yaml (System instantiation)
 ├── schema/             # *.schema.json (Parameter schemas)
 ├── CMakeLists.txt
