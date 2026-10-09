@@ -12,8 +12,10 @@
             ],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "scan",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "or",
@@ -59,8 +61,10 @@
               ],
               "error_rate": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "output_scan",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_8080420635a63b8e"
@@ -115,8 +119,10 @@
             "action_ids": [],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "consume",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_b6a70d0602b75ceb"
@@ -137,8 +143,10 @@
               ],
               "error_rate": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "input_scan",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_3201bc3bcf81555e"
@@ -223,8 +231,10 @@
             ],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "output_scan",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_8080420635a63b8e"
@@ -260,8 +270,10 @@
             ],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "input_scan",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_3201bc3bcf81555e"

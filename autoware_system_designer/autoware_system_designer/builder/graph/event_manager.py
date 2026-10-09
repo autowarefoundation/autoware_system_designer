@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, List
+from typing import TYPE_CHECKING, Any, Callable, Dict, List
 
 from autoware_system_designer.common.exceptions import NodeConfigurationError
 from autoware_system_designer.common.source_location import format_source, source_from_config
-from autoware_system_designer.model.events import Event, Process
+from autoware_system_designer.model.events import Event, Process, QueueEvent, resolve_event_rates
 
 if TYPE_CHECKING:
     from autoware_system_designer.builder.instances.instances import Instance
@@ -44,6 +44,8 @@ class EventManager:
 
         # processes
         self.processes: List[Process] = []
+        # node-owned queues, keyed by the name `to_queue` gives them
+        self.queues: Dict[str, QueueEvent] = {}
         self.event_list: List[Event] = []
 
     def initialize_processes(self):
@@ -88,7 +90,13 @@ class EventManager:
         for process, src in zip(self.processes, sources):
             try:
                 process.set_condition(process_event_list, on_input_events)
-                process.set_outcomes(process_event_list, to_output_events)
+                process.set_outcomes(process_event_list, to_output_events, self.queues)
+            except ValueError as exc:
+                raise NodeConfigurationError(f"{exc}{format_source(src)}") from exc
+        # reads resolve after every outcome, so a queue may be filled by a later process
+        for process, src in zip(self.processes, sources):
+            try:
+                process.set_reads(self.queues)
             except ValueError as exc:
                 raise NodeConfigurationError(f"{exc}{format_source(src)}") from exc
 
@@ -96,18 +104,28 @@ class EventManager:
         process_event_list = []
         for process in self.processes:
             process_event_list.extend(process.get_event_list())
-        self.event_list = process_event_list
+        self.event_list = process_event_list + list(self.queues.values())
 
     def set_event_tree(self):
-        """Set up the event tree for the current instance."""
-        # trigger the event tree from the current instance
-        # in case of module, event_list is empty
-        for event in self.event_list:
-            event.set_frequency_tree()
-        # recursive call for children
-        # in case of node, children is empty
+        """Settle the rates of the subtree; the graph is solved as a whole, since a rate crosses
+        node boundaries along the links."""
+        resolve_event_rates(self.collect_event_graph())
+
+    def collect_event_graph(self) -> List[Event]:
+        """Every event of the subtree, closed over the trigger and action edges the links add."""
+        collected: Dict[str, Event] = {}
+        # in case of module, event_list is empty; in case of node, children is empty
+        stack = list(self.event_list)
         for child in self.instance.children.values():
-            child.event_manager.set_event_tree()
+            stack.extend(child.event_manager.collect_event_graph())
+        while stack:
+            event = stack.pop()
+            if event.unique_id in collected:
+                continue
+            collected[event.unique_id] = event
+            stack.extend(event.triggers)
+            stack.extend(event.actions)
+        return list(collected.values())
 
     def get_all_events(self):
         """Get all events."""

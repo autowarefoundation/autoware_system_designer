@@ -12,8 +12,10 @@
             ],
             "error_rate": null,
             "frequency": 20.0,
+            "latch_ids": [],
             "name": "feed",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "periodic",
@@ -63,8 +65,10 @@
               ],
               "error_rate": null,
               "frequency": 20.0,
+              "latch_ids": [],
               "name": "output_output",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_32139dc6fb3298db"
@@ -121,8 +125,10 @@
                 "action_ids": [],
                 "error_rate": null,
                 "frequency": 20.0,
+                "latch_ids": [],
                 "name": "work",
                 "process_event": true,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_63ab045c521e3470"
@@ -143,8 +149,10 @@
                   ],
                   "error_rate": null,
                   "frequency": 20.0,
+                  "latch_ids": [],
                   "name": "input_input",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_84305ff8ee3fd5b8"
@@ -262,8 +270,10 @@
                 "action_ids": [],
                 "error_rate": null,
                 "frequency": 20.0,
+                "latch_ids": [],
                 "name": "work",
                 "process_event": true,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_a31b807e35cc996c"
@@ -284,8 +294,10 @@
                   ],
                   "error_rate": null,
                   "frequency": 20.0,
+                  "latch_ids": [],
                   "name": "input_input",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_84305ff8ee3fd5b8"
@@ -407,8 +419,10 @@
               "action_ids": [],
               "error_rate": null,
               "frequency": 20.0,
+              "latch_ids": [],
               "name": "input_input",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_84305ff8ee3fd5b8"
@@ -446,8 +460,10 @@
                 "action_ids": [],
                 "error_rate": null,
                 "frequency": 20.0,
+                "latch_ids": [],
                 "name": "input_input",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_84305ff8ee3fd5b8"
@@ -484,8 +500,10 @@
                 ],
                 "error_rate": null,
                 "frequency": 20.0,
+                "latch_ids": [],
                 "name": "input_input",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_84305ff8ee3fd5b8"
@@ -523,8 +541,10 @@
                 "action_ids": [],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "input_input",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "on_input",
@@ -556,8 +576,10 @@
                 ],
                 "error_rate": null,
                 "frequency": 20.0,
+                "latch_ids": [],
                 "name": "input_input",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_84305ff8ee3fd5b8"
@@ -618,8 +640,10 @@
             ],
             "error_rate": null,
             "frequency": 20.0,
+            "latch_ids": [],
             "name": "output_output",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_32139dc6fb3298db"
@@ -653,8 +677,10 @@
             "action_ids": [],
             "error_rate": null,
             "frequency": 20.0,
+            "latch_ids": [],
             "name": "input_input",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_84305ff8ee3fd5b8"
