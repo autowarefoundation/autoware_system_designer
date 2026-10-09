@@ -117,15 +117,32 @@ POSITION_MAP = {
     },
     "planning": [5, 2],
     "control": [6, 2],
+    "vehicle": [7, 2],
+    "api": [7, 3],
     "system": [7, 5],
 }
+
+
+def _shallowest_slot(level: Dict) -> Optional[List[int]]:
+    """First coordinate found breadth-first under a nested map."""
+    queue = [level]
+    while queue:
+        current = queue.pop(0)
+        for value in current.values():
+            if isinstance(value, (list, tuple)) and len(value) == 2:
+                return list(value)
+            if isinstance(value, dict):
+                queue.append(value)
+    return None
 
 
 def get_component_position(namespace: List[str]) -> Optional[List[int]]:
     """Get position [x, y] for a component based on its namespace.
 
     Traverses the POSITION_MAP using the namespace components and returns the
-    most specific coordinate reached.
+    most specific coordinate reached. A namespace that stops at a nested map
+    takes the shallowest coordinate under it, so a component whose slots are
+    refined per sub-component still has a slot of its own.
 
     Args:
         namespace: List of namespace components
@@ -140,10 +157,10 @@ def get_component_position(namespace: List[str]) -> Optional[List[int]]:
         if isinstance(value, (list, tuple)) and len(value) == 2:
             return list(value)
         if not isinstance(value, dict):
-            return None
+            return _shallowest_slot(level) if level is not POSITION_MAP else None
         level = value
 
-    return None
+    return _shallowest_slot(level) if level is not POSITION_MAP else None
 
 
 def build_vis_guide(namespace: List[str]) -> Dict[str, object]:

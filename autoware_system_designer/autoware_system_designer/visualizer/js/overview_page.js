@@ -30,12 +30,7 @@
   };
 
   // Highlight state a module may leave on nodes outside its own container.
-  const HIGHLIGHT_CLASSES = [
-    "highlighted",
-    "port-highlighted",
-    "line-highlight",
-    "line-hover",
-  ];
+  const HIGHLIGHT_CLASSES = ["highlighted", "port-highlighted"];
 
   const SIDEBAR_MIN_WIDTH = 150;
   const SIDEBAR_MAX_WIDTH = 700;
@@ -111,11 +106,7 @@
         window.InfoPanel.render(infoPanel, data, type),
     });
 
-    // Only the graph diagrams populate the detail panel.
-    infoPanel.style.display =
-      diagramType === "node_diagram" || diagramType === "logic_diagram"
-        ? "block"
-        : "none";
+    infoPanel.style.display = "block";
   }
 
   async function loadDiagram(diagramType, mode) {

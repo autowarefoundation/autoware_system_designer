@@ -88,8 +88,14 @@ class CoordinatorBuilder:
     def __init__(self, *, default_config: Optional[ActorConfig] = None) -> None:
         self._default_config = default_config or ActorConfig()
         self._entries: dict[str, _MemberEntry] = {}
+        # Pre-start hooks run before any actor spawns and may still edit member specs.
+        self._pre_start_hooks: list[Callable[["Coordinator"], Awaitable[None]]] = []
         # Post-start hooks schedule additional tasks (e.g. composable loaders) once run() is live.
         self._post_start_hooks: list[Callable[["Coordinator"], Awaitable[None]]] = []
+        # Shutdown hooks run once the event loop ends, while the actors are still alive.
+        self._shutdown_hooks: list[Callable[["Coordinator"], Awaitable[None]]] = []
+        # State hooks see every actor state event (Started, Exited, ...) as the loop pumps it.
+        self._state_hooks: list[Callable[[object], None]] = []
 
     @property
     def default_config(self) -> ActorConfig:
@@ -112,12 +118,30 @@ class CoordinatorBuilder:
         self._entries[spec.name] = entry
         return entry
 
+    def add_pre_start_hook(self, hook: Callable[["Coordinator"], Awaitable[None]]) -> None:
+        """Register a callback invoked before the first actor spawns."""
+        self._pre_start_hooks.append(hook)
+
     def add_post_start_hook(self, hook: Callable[["Coordinator"], Awaitable[None]]) -> None:
         """Register a callback invoked once event processing is live."""
         self._post_start_hooks.append(hook)
 
+    def add_shutdown_hook(self, hook: Callable[["Coordinator"], Awaitable[None]]) -> None:
+        """Register a callback invoked when the run ends, before the actors are torn down."""
+        self._shutdown_hooks.append(hook)
+
+    def add_state_hook(self, hook: Callable[[object], None]) -> None:
+        """Register a synchronous callback invoked with each actor state event."""
+        self._state_hooks.append(hook)
+
     def build(self) -> "Coordinator":
-        return Coordinator(self._entries, list(self._post_start_hooks))
+        return Coordinator(
+            self._entries,
+            list(self._post_start_hooks),
+            pre_start_hooks=list(self._pre_start_hooks),
+            shutdown_hooks=list(self._shutdown_hooks),
+            state_hooks=list(self._state_hooks),
+        )
 
 
 class Coordinator:
@@ -127,9 +151,16 @@ class Coordinator:
         self,
         entries: dict[str, _MemberEntry],
         post_start_hooks: list[Callable[["Coordinator"], Awaitable[None]]],
+        *,
+        pre_start_hooks: Optional[list[Callable[["Coordinator"], Awaitable[None]]]] = None,
+        shutdown_hooks: Optional[list[Callable[["Coordinator"], Awaitable[None]]]] = None,
+        state_hooks: Optional[list[Callable[[object], None]]] = None,
     ) -> None:
         self._entries = entries
+        self._pre_start_hooks = pre_start_hooks or []
         self._post_start_hooks = post_start_hooks
+        self._shutdown_hooks = shutdown_hooks or []
+        self._state_hooks = state_hooks or []
         self._state_q: asyncio.Queue = asyncio.Queue()
         self._shutdown = asyncio.Event()
         self._launch_ready = asyncio.Event()
@@ -138,6 +169,7 @@ class Coordinator:
         self._actor_pids: dict[str, int] = {}
         self._had_failure: bool = False
         self._started_count: int = 0
+        self._launch_ready_at: Optional[float] = None
 
     # ---- public control surface ------------------------------------------
 
@@ -147,6 +179,15 @@ class Coordinator:
     def names(self) -> list[str]:
         return list(self._entries)
 
+    def specs(self) -> list[NodeSpec]:
+        """Member specs in registration order; editable until the actors spawn."""
+        return [entry.spec for entry in self._entries.values()]
+
+    @property
+    def launch_ready_at(self) -> Optional[float]:
+        """Wall-clock time (``time.time()``) at which :attr:`launch_ready` was set."""
+        return self._launch_ready_at
+
     def request_shutdown(self) -> None:
         self._shutdown.set()
 
@@ -154,6 +195,8 @@ class Coordinator:
         """Track an extra task (e.g. composable-node loader) for shutdown."""
         task = asyncio.ensure_future(coro)
         self._extra_tasks.append(task)
+        # The run loop re-checks its exit condition only on an event.
+        task.add_done_callback(lambda t: self._state_q.put_nowait(ev.TaskFinished(name=t.get_name())))
         return task
 
     def ready_signal(self, name: str) -> "asyncio.Future[int]":
@@ -189,6 +232,12 @@ class Coordinator:
                 future: asyncio.Future[int] = loop.create_future()
                 entry.ready_signal = future
                 entry.spec.on_first_running = future
+
+        for hook in self._pre_start_hooks:
+            try:
+                await hook(self)
+            except Exception:  # noqa: BLE001
+                logger.exception("pre-start hook failed")
 
         # Spawn every actor first so each member has a queue to receive control.
         for entry in self._entries.values():
@@ -253,6 +302,11 @@ class Coordinator:
                     event = await self._state_q.get()
 
                 self._log_event(event)
+                for hook in self._state_hooks:
+                    try:
+                        hook(event)
+                    except Exception:  # noqa: BLE001
+                        logger.exception("state hook failed")
                 if isinstance(event, ev.Failed):
                     self._had_failure = True
                     self._shutdown.set()  # cascade: one node failure shuts down everything
@@ -273,6 +327,11 @@ class Coordinator:
                         else:
                             logger.info("all %d actor(s) terminated", total)
         finally:
+            for hook in self._shutdown_hooks:
+                try:
+                    await hook(self)
+                except Exception:  # noqa: BLE001
+                    logger.exception("shutdown hook failed")
             await self._teardown()
 
         return 1 if self._had_failure else 0
@@ -316,7 +375,7 @@ class Coordinator:
             self._actor_pids[event.name] = event.pid
             self._started_count += 1
             if self._started_count >= len(self._entries):
-                self._launch_ready.set()
+                self._mark_launch_ready()
         elif isinstance(event, ev.Exited):
             logger.info("[%s] exited code=%s", event.name, event.exit_code)
             self._actor_pids.pop(event.name, None)
@@ -331,7 +390,7 @@ class Coordinator:
             logger.debug("[%s] terminated", event.name)
         elif isinstance(event, ev.Failed):
             logger.error("[%s] failed: %s", event.name, event.error)
-            self._launch_ready.set()  # unblock console/waiters even on failure
+            self._mark_launch_ready()  # unblock console/waiters even on failure
         elif isinstance(event, ev.LoadStarted):
             logger.info("[%s] loading into container", event.name)
         elif isinstance(event, ev.LoadSucceeded):
@@ -342,7 +401,14 @@ class Coordinator:
             )
         elif isinstance(event, ev.LoadFailed):
             logger.error("[%s] load failed: %s", event.name, event.error)
-            self._launch_ready.set()  # unblock console/waiters even on load failure
+            self._mark_launch_ready()  # unblock console/waiters even on load failure
+        elif isinstance(event, ev.TaskFinished):
+            logger.debug("task %s finished", event.name)
+
+    def _mark_launch_ready(self) -> None:
+        if not self._launch_ready.is_set():
+            self._launch_ready_at = time.time()
+            self._launch_ready.set()
 
     async def _teardown(self) -> None:
         # Ensure shutdown is set on any exception path; actors wait on this event.

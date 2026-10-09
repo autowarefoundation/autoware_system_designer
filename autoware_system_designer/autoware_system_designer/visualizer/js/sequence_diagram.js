@@ -1,435 +1,2561 @@
 // Sequence Diagram Module
-// This module provides functionality to render sequence diagrams in a given container
+// Event-chain latency view drawn as a timeline: time runs left to right, every
+// process gate is a block as wide as its run, and the gaps between blocks are
+// the transport, alignment and sampling delays that separate them. Every chain
+// of the system is drawn: one group per clock root, from its periodic source
+// to the terminals it reaches, stacked down the page on a shared axis; clocks
+// whose streams one gate merges share a group and meet at that gate. Within
+// a group the chain the axis is driven by is the spine on the centre track;
+// the branches that join or leave it are packed onto the tracks above and
+// below. The chains come from the design's event graph; a loaded measurement
+// supplies the time along them: every gate's run, the wait of every input
+// before that run and the transport of every link the run observed. The page
+// is navigated like a document: the wheel scrolls it and ctrl+wheel zooms the
+// time scale; the drawing keeps its size on screen.
 
 (function () {
-  class SequenceDiagramModule extends DiagramBase {
+  const SVG_NS = ElkCanvas.SVG_NS;
+  const T = window.TimingModel;
+
+  // What the numbers are: none, the design's rates alone, or a loaded
+  // measurement with the rates filling the gaps.
+  const STATES = {
+    logical: { button: "logical", timed: false },
+    rates: { button: "rates", timed: true },
+    measured: { button: "measured", timed: true },
+  };
+
+  // The component of every summary the time axis is read from.
+  const DRIVERS = [
+    ["min", "min"],
+    ["mean", "mean"],
+    ["max", "max"],
+    ["sigma1", "mean+1σ"],
+    ["sigma2", "mean+2σ"],
+    ["sigma3", "mean+3σ"],
+  ];
+
+  const CHAIN_CLASS = {
+    max: "seq-on-max",
+    min: "seq-on-min",
+    mean: "seq-on-mean",
+  };
+  const CHAIN_COLOR = { max: "red", min: "green", mean: "orange" };
+
+  const VIEW = {
+    trackH: 52,
+    blockH: 14,
+    blockMinW: 5,
+    logicalBlockW: 40,
+    logicalColW: 150,
+    glyphW: 12,
+    glyphH: 8,
+    fontSize: 12,
+    subSize: 10,
+    padLeft: 24,
+    padRight: 60,
+    padTop: 12,
+    padBottom: 16,
+    axisH: 28,
+    groupHeaderH: 24,
+    groupGap: 14,
+    fallbackWidth: 1400,
+    labelMin: 18,
+    labelTierH: 12,
+    nameChars: 22,
+    endStubW: 10,
+    loopDip: 18,
+  };
+
+  // Time-scale zoom: floor as a fraction of the fit scale, ceiling in px/ms,
+  // and the rate a wheel notch turns into a factor.
+  const TIME_ZOOM_MIN = 0.1;
+  const TIME_ZOOM_MAX = 5000;
+  const WHEEL_ZOOM_RATE = 0.0015;
+  const WHEEL_LINE_PX = 16;
+  // Space between the toolbar's lower edge and the top of the canvas.
+  const TOOLBAR_GAP = 6;
+  const ENUMERATE_LIMIT = 12;
+  const CHAIN_LIST_LIMIT = 40;
+
+  const LEGEND = [
+    ["block", "a process running; width is its execution time"],
+    ["wait", "wait before the run: sampling delay, trigger skew"],
+    ["whisker", "±1 sd at the end of a run"],
+    ["max", "maximum chain — the critical path"],
+    ["min", "minimum chain — the sequential shortest path"],
+    ["mean", "mean chain, dashed where it leaves the other two"],
+    ["late", "late hop: the message lands after the run it feeds started"],
+    [
+      "sampled",
+      "sampled hop: measured wait from the input's arrival to the run that answered it",
+    ],
+    [
+      "loop",
+      "loop end: the chain rejoins itself; the closing edge is cut from the solve",
+    ],
+    ["end", "open end: the last message has no consumer"],
+    [
+      "dead",
+      "a process the recorded run never fired: node gone, never initialized, or output never published; a fold skips it",
+    ],
+  ];
+
+  const LEGEND_NOTES = [
+    "one group per chain, each starting at its own source firing; all groups share the axis",
+    "clocks whose streams of one message type meet at a gate (three lidars into one concatenation) form one group and merge at that gate",
+    "in the measured state a rate is what the run observed; the design's declared rate stands beside it in the panel",
+    "the tinted track is the chain the axis is driven by; branches sit above and below",
+    "≈ marks a mean folded at an and/or gate: one branch's number, not the set's",
+    "? marks a spread that skipped hops with no sd",
+    "a periodic gate needs no measurement: its sampling delay is uniform over one period",
+    "a faint block is a process run no measurement covers; it yields to a measured branch at an or gate",
+    "a measured chain keeps the design's events; the file supplies each gate's run, each input's wait (in→out response less the run) and each link's transport",
+    "scroll to move down the page, shift+scroll to move along the axis, ctrl+scroll (or pinch) to zoom the time scale about the pointer",
+  ];
+
+  class SequenceDiagramModule extends ElkCanvas {
+    // ── Initialization ──────────────────────────────────────────────────────────
+
     constructor(container, options = {}) {
       super(container, options);
+      this.designGraph = new EventGraph();
+      this.graph = this.designGraph;
+      this.groups = [];
+      this.activeGroup = null;
+      this.hopLimit = null;
+      this.showTrivial = false;
+      this.state = "logical";
+      this.driver = "sigma1";
+      this.measured = null; // loaded measurement, see latency_source.js
+      this.pxPerMs = null;
+      this.fitPxPerMs = null;
+      this.legendOpen = false;
+      this.selectedId = null;
+      this.enumerated = null;
+      this.highlightEdges = null; // edge ids of an enumerated chain on show
       this.init();
     }
 
     async init() {
-      await DiagramBase.ensureLibrary("mermaid", DiagramBase.CDN.mermaid);
-      await DiagramBase.ensureLibrary("svgPanZoom", DiagramBase.CDN.svgPanZoom);
-
-      this.initializeMermaid();
-      await this.loadAndRender();
-    }
-
-    initializeMermaid() {
-      mermaid.initialize({
-        startOnLoad: false,
-        maxTextSize: 1000000,
-        theme: this.isDarkMode() ? "dark" : "default",
-        securityLevel: "loose",
-        sequence: {
-          showSequenceNumbers: false,
-          useMaxWidth: false,
-          mirrorActors: true,
-          bottomMarginAdj: 10,
-          messageAlign: "center",
-        },
-      });
-    }
-
-    async loadAndRender() {
       try {
-        // Load data if not already loaded
-        if (
-          !window.sequenceDiagramData ||
-          !window.sequenceDiagramData[this.options.mode]
-        ) {
-          await this.loadDataScript(this.options.mode, "sequence_diagram");
-        }
-
-        if (
-          window.sequenceDiagramData &&
-          window.sequenceDiagramData[this.options.mode]
-        ) {
-          // Render sequence diagram
-          const data = window.sequenceDiagramData[this.options.mode];
-          let mermaidSyntax = "";
-
-          // Check if data is the new object format or legacy string format
-          if (typeof data === "object") {
-            mermaidSyntax = this.generateMermaidSyntax(data);
-          } else {
-            mermaidSyntax = data;
-          }
-
-          await this.renderSequenceDiagram(mermaidSyntax);
-        } else {
-          this.showError(`Failed to load data for mode: ${this.options.mode}`);
-        }
+        await this.loadAndRender();
       } catch (error) {
         console.error("Error loading sequence diagram:", error);
         this.showError(`Error loading sequence diagram: ${error.message}`);
       }
     }
 
-    generateMermaidSyntax(data) {
-      const lines = [];
-      lines.push("sequenceDiagram");
-      lines.push("");
-      lines.push("%% Definitions");
+    async loadAndRender() {
+      if (!window.sequenceDiagramData?.[this.options.mode]) {
+        await this.loadDataScript(this.options.mode, "sequence_diagram");
+      }
+      const data = window.sequenceDiagramData?.[this.options.mode];
+      if (!data) {
+        throw new Error(
+          `No sequence diagram data available for mode: ${this.options.mode}`,
+        );
+      }
+      this.designGraph.build(data);
+      if (window.LatencySource) {
+        const measured = await window.LatencySource.loadBundled(
+          this.options.mode,
+        );
+        if (measured) this.attachMeasurement(measured);
+      }
+      this.solveAndRender();
+    }
 
-      // Build a map of all events for quick lookup
-      const eventMap = new Map();
-      this.collectAllEvents(data, eventMap);
+    // A loaded measurement opens the measured state.
+    attachMeasurement(measured) {
+      this.measured = measured;
+      this.state = "measured";
+      this.activeGroup = null;
+      this.selectedId = null;
+      this.highlightEdges = null;
+      this.enumerated = null;
+    }
 
-      if (data.children && Array.isArray(data.children)) {
-        data.children.forEach((child) => {
-          this.buildLogicGraph(child, lines);
-        });
+    // The sink a group opens on: a chain the run completed before one it did
+    // not, then the deepest, then the longest. Dead chains stay in view as
+    // side branches of the live one where they feed it.
+    defaultSink(solution) {
+      let best = null;
+      solution.sinkIds.forEach((id) => {
+        const arrival = solution.arrivals.get(id);
+        const score = [
+          arrival.total.dead ? 0 : 1,
+          arrival.rank,
+          T.at(arrival.total, "max"),
+        ];
+        const ahead =
+          score.findIndex((value, i) => value !== best?.score[i]) ?? -1;
+        if (!best || (ahead >= 0 && score[ahead] > best.score[ahead])) {
+          best = { id, score };
+        }
+      });
+      return best?.id ?? solution.sourceId;
+    }
+
+    // ── Solve ───────────────────────────────────────────────────────────────────
+
+    costs() {
+      if (this.state === "logical") return T.logicalCosts();
+      if (this.state === "measured" && this.measured) {
+        return T.measuredCosts(this.graph, this.measured.costs(this.graph));
+      }
+      return T.designCosts(this.graph);
+    }
+
+    // One group per set of peer clock roots: the chain a periodic source
+    // drives, analyzed from the graph, with the clocks a gate merges solved
+    // together so their chains meet there. Groups that never leave their
+    // sources' nodes are trivial and hidden unless asked for.
+    solveAndRender() {
+      const solver = new T.ChainSolver(this.graph, this.costs());
+      const specs = this.graph
+        .peerRoots()
+        .map((ids) => ({ sourceIds: ids, key: ids.join("|") }));
+
+      if (!specs.length) {
+        this.showError("The design declares no events to chain.");
+        return;
       }
 
-      lines.push("");
-      lines.push("%% Connections");
+      const activeKey = this.activeGroup?.key ?? null;
+      this.groups = specs.map((spec, index) => {
+        const group = { ...spec, index, sourceId: spec.sourceIds[0] };
+        group.sources = new Set(spec.sourceIds);
+        group.solution = solver.solve(spec.sourceIds, {
+          hopLimit: this.hopLimit,
+        });
+        group.sinkId = this.defaultSink(group.solution);
+        group.title = this.groupTitle(spec.sourceIds);
+        group.rate = this.groupRate(spec.sourceIds);
+        this.buildView(group);
+        const owners = new Set(
+          spec.sourceIds.map((id) => this.graph.events.get(id).ownerId),
+        );
+        group.trivial = group.gates.every((gate) => owners.has(gate.ownerId));
+        return group;
+      });
+      this.groups.sort((a, b) => {
+        const rankA = a.solution.arrivals.get(a.sinkId).rank;
+        const rankB = b.solution.arrivals.get(b.sinkId).rank;
+        if (rankA !== rankB) return rankB - rankA;
+        return a.title.localeCompare(b.title);
+      });
+      this.groups.forEach((group, index) => {
+        group.index = index;
+        group.gates.forEach((gate) => {
+          gate.key = `${index}/${gate.id}`;
+        });
+        group.hops.forEach((hop, hopIndex) => {
+          hop.id = `sq_hop_${index}_${hopIndex}`;
+        });
+      });
+      this.activeGroup =
+        this.groups.find((group) => group.key === activeKey) ||
+        this.visibleGroups()[0] ||
+        this.groups[0];
+      this.render();
+    }
 
-      if (data.children && Array.isArray(data.children)) {
-        data.children.forEach((child) => {
-          this.buildConnectionGraph(child, lines, eventMap);
+    // The title of a group: its source's path and event, or for peer sources
+    // the paths folded into one, the segments they differ in braced:
+    // `/sensing/lidar/{left,right,top}/lidar:decoder_0`.
+    groupTitle(sourceIds) {
+      const sources = sourceIds.map((id) => ({
+        path: this.graph.ownerOf(id)?.path || "",
+        name: this.graph.events.get(id)?.name || "",
+      }));
+      if (sources.length === 1) {
+        return `${sources[0].path}:${sources[0].name}`;
+      }
+      const names = [...new Set(sources.map((s) => s.name))];
+      const split = sources.map((s) => s.path.split("/"));
+      const depth = Math.max(...split.map((s) => s.length));
+      const same = (index) =>
+        split.every(
+          (s) => s.length === split[0].length && s[index] === split[0][index],
+        );
+      let head = 0;
+      while (head < depth && same(head)) head += 1;
+      let tail = 0;
+      while (
+        tail < depth - head &&
+        same(split[0].length - 1 - tail) &&
+        split.every((s) => s.length === split[0].length)
+      ) {
+        tail += 1;
+      }
+      const middle = [
+        ...new Set(
+          split.map((s) => s.slice(head, s.length - tail).join("/") || "·"),
+        ),
+      ].sort();
+      const path = [
+        ...split[0].slice(0, head),
+        `{${middle.join(",")}}`,
+        ...split[0].slice(split[0].length - tail),
+      ].join("/");
+      return `${path}:${names.join("|")}`;
+    }
+
+    // The rate line of a group: the sources' declared rates, each counted.
+    groupRate(sourceIds) {
+      const counts = new Map();
+      sourceIds.forEach((id) => {
+        const rate = this.rateLabel(this.graph.events.get(id)?.frequency);
+        if (rate) counts.set(rate, (counts.get(rate) || 0) + 1);
+      });
+      return [...counts]
+        .map(([rate, n]) => (n > 1 ? `${rate} ×${n}` : rate))
+        .join(" / ");
+    }
+
+    // The rate the run observed at an event, formatted with what it was read
+    // from, or "" when nothing was measured there.
+    measuredRate(event) {
+      if (this.state !== "measured" || !this.measured?.rateOf) return "";
+      const hit = this.measured.rateOf(this.graph, event);
+      if (!hit) return "";
+      return hit.rate_hz === 0 ? "0Hz" : this.rateLabel(hit.rate_hz);
+    }
+
+    // Declared versus observed rate, when both exist and differ by more than
+    // a fifth of the declared rate.
+    rateWarning(event) {
+      if (this.state !== "measured" || !this.measured?.rateOf) return null;
+      const hit = this.measured.rateOf(this.graph, event);
+      const declared = event.frequency;
+      if (!hit || !(declared > 0)) return null;
+      if (Math.abs(hit.rate_hz - declared) <= declared * 0.2) return null;
+      return `declared ${this.rateLabel(declared)} · measured ${this.rateLabel(hit.rate_hz)} (${hit.via})`;
+    }
+
+    visibleGroups() {
+      return this.groups.filter((group) => this.showTrivial || !group.trivial);
+    }
+
+    // ── View model ──────────────────────────────────────────────────────────────
+
+    // The events on some path from the source to the sink, the gates among
+    // them, the hops between gates with the ports folded into them, and the
+    // tracks the gates sit on. Gates are views over the graph's events, since
+    // one event may sit in several groups.
+    buildView(group) {
+      const { solution } = group;
+      const { graph } = this;
+      const onPath = new Set([group.sinkId]);
+      const queue = [group.sinkId];
+      for (let cursor = 0; cursor < queue.length; cursor += 1) {
+        const arrival = solution.arrivals.get(queue[cursor]);
+        (arrival?.branches || []).forEach((branch) => {
+          if (onPath.has(branch.fromId)) return;
+          onPath.add(branch.fromId);
+          queue.push(branch.fromId);
         });
       }
+      group.onPath = onPath;
 
+      group.chains = {};
+      ["min", "mean", "max"].forEach((component) => {
+        const chain = T.chainTo(solution, group.sinkId, component);
+        chain.edgeSet = new Set(chain.edges);
+        group.chains[component] = chain;
+      });
+
+      group.gates = [...onPath]
+        .map((id) => graph.events.get(id))
+        .filter(
+          (event) => event.kind === "process" || group.sources.has(event.id),
+        )
+        .sort((a, b) => this.orderKey(group, a.id) - this.orderKey(group, b.id))
+        .map((event) => ({ ...event, key: `${group.index}/${event.id}` }));
+      group.gateIds = new Set(group.gates.map((gate) => gate.id));
+
+      group.hops = [];
+      group.gates.forEach((gate) => {
+        this.foldBack(group, gate.id).forEach((hop) => group.hops.push(hop));
+      });
+      group.hops.forEach((hop, index) => {
+        hop.id = `sq_hop_${group.index}_${index}`;
+        hop.on = {};
+        ["min", "mean", "max"].forEach((component) => {
+          hop.on[component] = hop.edges.every((edgeId) =>
+            group.chains[component].edgeSet.has(edgeId),
+          );
+        });
+        hop.info = this.hopInfo(hop);
+      });
+      this.chainEnds(group);
+
+      this.assignTracks(group);
+    }
+
+    // Where a group's chain stops and where it folds back. A loop-closing
+    // edge leaving an on-path gate, or a port its message reaches, is a loop
+    // exit of that gate into the gate it rejoins; the sink is a terminal
+    // unless a loop exit leaves it.
+    chainEnds(group) {
+      const { solution } = group;
+      const { graph } = this;
+      const gateAfter = (id) => {
+        let cursor = id;
+        for (let depth = 0; depth < 8 && cursor; depth += 1) {
+          if (group.gateIds.has(cursor)) return cursor;
+          cursor =
+            (graph.succ.get(cursor) || []).find((next) =>
+              group.onPath.has(next),
+            ) ?? null;
+        }
+        return null;
+      };
+      const gateBefore = (id) => {
+        let cursor = id;
+        for (let depth = 0; depth < 8 && cursor; depth += 1) {
+          if (group.gateIds.has(cursor)) return cursor;
+          const arrival = solution.arrivals.get(cursor);
+          const via = arrival?.via[this.spineComponent()];
+          const branch =
+            arrival?.branches.find((b) => b.key === via) ??
+            arrival?.branches[0];
+          cursor = branch?.fromId ?? null;
+        }
+        return null;
+      };
+
+      const loops = [];
+      const claimed = new Set();
+      group.gates.forEach((gate) => {
+        const stack = [[gate.id, 0]];
+        const seen = new Set([gate.id]);
+        while (stack.length) {
+          const [id, depth] = stack.pop();
+          T.loopExits(solution, graph, id).forEach((exit) => {
+            if (claimed.has(exit.edgeId)) return;
+            claimed.add(exit.edgeId);
+            const tail = graph.events.get(id);
+            loops.push({
+              from: gate.id,
+              to: gateAfter(exit.toId),
+              tail: id,
+              head: exit.toId,
+              edgeId: exit.edgeId,
+              topic: tail.kind === "process" ? null : this.topicOf(tail),
+              atSink: id === group.sinkId,
+            });
+          });
+          if (depth >= 6) continue;
+          (graph.succ.get(id) || []).forEach((next) => {
+            const event = graph.events.get(next);
+            if (!event || seen.has(next) || event.kind === "process") return;
+            if (!solution.reach.has(next)) return;
+            if (solution.loopEdges.has(graph.edgeId(id, next))) return;
+            seen.add(next);
+            stack.push([next, depth + 1]);
+          });
+        }
+      });
+
+      const end = T.endOf(solution, graph, group.sinkId);
+      const sink = graph.events.get(group.sinkId);
+      let terminal = null;
+      if (end.kind !== "loop") {
+        const label =
+          end.kind === "limit"
+            ? "hop limit"
+            : sink.kind === "process"
+              ? "no output"
+              : this.shortName(this.topicOf(sink), 30);
+        terminal = {
+          gate: gateBefore(group.sinkId),
+          kind: end.kind,
+          sinkId: group.sinkId,
+          label,
+        };
+      }
+      group.ends = { loops, terminal };
+    }
+
+    // The gates behind one gate, each with the port events between folded into
+    // the hop: the edges it stands for, the transport cost along them, and the
+    // topic the message travelled on.
+    foldBack(group, gateId) {
+      const { solution } = group;
+      const { graph } = this;
+      const hops = [];
+      const walk = (id, edges, comm, topic, branchSummary, depth) => {
+        const arrival = solution.arrivals.get(id);
+        if (!arrival) return;
+        arrival.branches.forEach((branch) => {
+          if (!group.onPath.has(branch.fromId)) return;
+          const from = graph.events.get(branch.fromId);
+          const nextEdges = [branch.key, ...edges];
+          const nextComm = T.add(branch.comm, comm);
+          const nextTopic =
+            topic ??
+            (from.kind === "input" || from.kind === "output"
+              ? this.topicOf(from)
+              : null);
+          if (from.kind === "process" || group.sources.has(branch.fromId)) {
+            hops.push({
+              from: branch.fromId,
+              to: gateId,
+              edges: nextEdges,
+              comm: nextComm,
+              topic: nextTopic,
+              arrival: branchSummary,
+              lastEdge: edges.length ? edges[edges.length - 1] : branch.key,
+            });
+          } else if (depth < 6) {
+            walk(
+              branch.fromId,
+              nextEdges,
+              nextComm,
+              nextTopic,
+              branchSummary,
+              depth + 1,
+            );
+          }
+        });
+      };
+      const arrival = solution.arrivals.get(gateId);
+      (arrival?.branches || []).forEach((branch) => {
+        if (!group.onPath.has(branch.fromId)) return;
+        const from = graph.events.get(branch.fromId);
+        const topic =
+          from.kind === "input" || from.kind === "output"
+            ? this.topicOf(from)
+            : null;
+        if (from.kind === "process" || group.sources.has(branch.fromId)) {
+          hops.push({
+            from: branch.fromId,
+            to: gateId,
+            edges: [branch.key],
+            comm: branch.comm,
+            topic,
+            arrival: branch.summary,
+            lastEdge: branch.key,
+          });
+        } else {
+          walk(
+            branch.fromId,
+            [branch.key],
+            branch.comm,
+            topic,
+            branch.summary,
+            1,
+          );
+        }
+      });
+      return hops;
+    }
+
+    topicOf(event) {
+      const topic = event.port?.topic;
+      if (Array.isArray(topic) && topic.length) return `/${topic.join("/")}`;
+      if (typeof topic === "string" && topic) return topic;
+      return event.port?.name || event.name.replace(/^(input|output)_/, "");
+    }
+
+    // What the measurement says about the edges a hop folds: the link it rode
+    // and the in→out response its wait was taken from.
+    hopInfo(hop) {
+      if (this.state !== "measured" || !this.measured?.hopInfo) return null;
+      const info = { link: null, intra: false, response: null, run: null };
+      let any = false;
+      hop.edges.forEach((edgeId) => {
+        const edge = this.graph.edgeById.get(edgeId);
+        if (!edge) return;
+        const hit = this.measured.hopInfo(
+          this.graph,
+          edge,
+          this.graph.events.get(edge.from),
+          this.graph.events.get(edge.to),
+        );
+        if (!hit) return;
+        any = true;
+        if (hit.link) info.link = hit.link;
+        if (hit.intra) info.intra = true;
+        if (hit.response) {
+          info.response = hit.response;
+          info.run = hit.run;
+        }
+      });
+      return any ? info : null;
+    }
+
+    // Where an event sits along the axis the view is driven by.
+    orderKey(group, eventId) {
+      const arrival = group.solution.arrivals.get(eventId);
+      if (!arrival) return Infinity;
+      if (!STATES[this.state].timed) return arrival.rank;
+      return T.at(arrival.start, this.driver);
+    }
+
+    // The chain the spine follows: the axis driver, the mean under a σ driver.
+    spineComponent() {
+      if (!STATES[this.state].timed) return "max";
+      return ["min", "mean", "max"].includes(this.driver)
+        ? this.driver
+        : "mean";
+    }
+
+    // Tracks: the spine on track 0; every other gate continues the track of
+    // the gate it feeds, or takes the nearest track beside the spine that is
+    // free over its span, sides alternating. Successors are placed before the
+    // gates that feed them, so a branch reads as one run leaving the spine.
+    // Spans are in time, so gates with no cost share a track at one instant.
+    assignTracks(group) {
+      const spans = new Map();
+      group.gates.forEach((gate) =>
+        spans.set(gate.id, this.spanOf(group, gate.id)),
+      );
+      const trackOf = new Map();
+      const occupancy = new Map();
+      const overlaps = (track, [x0, x1]) =>
+        (occupancy.get(track) || []).some(([a, b]) => x0 < b && a < x1);
+      const claim = (id, track) => {
+        trackOf.set(id, track);
+        if (!occupancy.has(track)) occupancy.set(track, []);
+        occupancy.get(track).push(spans.get(id));
+      };
+      const nearestFree = (from, dir, id) => {
+        let track = from;
+        while (track === 0 || overlaps(track, spans.get(id))) track += dir;
+        return track;
+      };
+
+      const spine = group.chains[this.spineComponent()].events.filter((id) =>
+        group.gateIds.has(id),
+      );
+      spine.forEach((id) => claim(id, 0));
+      if (!trackOf.has(group.sinkId) && group.gateIds.has(group.sinkId)) {
+        claim(group.sinkId, 0);
+      }
+
+      const hopsInto = new Map();
+      group.hops.forEach((hop) => {
+        if (!hopsInto.has(hop.to)) hopsInto.set(hop.to, []);
+        hopsInto.get(hop.to).push(hop);
+      });
+      const rankHop = (hop) =>
+        hop.on.max ? 0 : hop.on.mean ? 1 : hop.on.min ? 2 : 3;
+
+      let side = 1;
+      const queue = [...spine].reverse();
+      const seen = new Set(queue);
+      for (let cursor = 0; cursor < queue.length; cursor += 1) {
+        const id = queue[cursor];
+        const track = trackOf.get(id);
+        let continued = track === 0;
+        (hopsInto.get(id) || [])
+          .slice()
+          .sort(
+            (a, b) =>
+              rankHop(a) - rankHop(b) ||
+              spans.get(b.from)[1] - spans.get(a.from)[1],
+          )
+          .forEach((hop) => {
+            if (!trackOf.has(hop.from)) {
+              if (!continued && !overlaps(track, spans.get(hop.from))) {
+                claim(hop.from, track);
+                continued = true;
+              } else if (track !== 0) {
+                const dir = Math.sign(track);
+                claim(hop.from, nearestFree(track + dir, dir, hop.from));
+              } else {
+                claim(hop.from, nearestFree(side, side, hop.from));
+                side = -side;
+              }
+            }
+            if (!seen.has(hop.from)) {
+              seen.add(hop.from);
+              queue.push(hop.from);
+            }
+          });
+      }
+      group.gates.forEach((gate) => {
+        if (!trackOf.has(gate.id))
+          claim(gate.id, nearestFree(side, side, gate.id));
+      });
+
+      // Rows: the tracks in use, top to bottom, empty ones dropped.
+      const tracks = [...new Set(trackOf.values())].sort((a, b) => a - b);
+      group.rowOf = new Map();
+      group.gates.forEach((gate) => {
+        group.rowOf.set(gate.id, tracks.indexOf(trackOf.get(gate.id)));
+      });
+      group.rows = tracks.map((track, index) => ({
+        index,
+        track,
+        spine: track === 0,
+        gates: group.gates
+          .filter((gate) => trackOf.get(gate.id) === track)
+          .sort((a, b) => spans.get(a.id)[0] - spans.get(b.id)[0]),
+      }));
+    }
+
+    componentOf(path) {
+      return `/${(path || "").split("/").filter(Boolean).slice(0, 1).join("/")}`;
+    }
+
+    // Top-level components the drawn chains pass, in order of first appearance.
+    componentsOnChain() {
+      const seen = new Map();
+      this.visibleGroups().forEach((group) => {
+        group.gates.forEach((gate) => {
+          const instance = this.graph.instances.get(gate.ownerId)?.data || {};
+          const component = this.componentOf(instance.path);
+          if (!seen.has(component)) {
+            seen.set(component, {
+              component,
+              instance: this.graph.instanceByPath.get(component) || {},
+            });
+          }
+        });
+      });
+      return [...seen.values()];
+    }
+
+    shortName(name, limit = VIEW.nameChars) {
+      if (name.length <= limit) return name;
+      return `…${name.slice(name.length - limit + 1)}`;
+    }
+
+    // ── Geometry ────────────────────────────────────────────────────────────────
+
+    // Time to x. In the logical state one column per rank; in a timed state the
+    // scale is shared by every group and set so the longest sink chain fills
+    // the viewport width, then zoomed. Gates off the sink chains may run past
+    // it: a rarely published output samples over a long period.
+    prepareScale() {
+      const timed = STATES[this.state].timed;
+      this.originX = VIEW.padLeft;
+      this.originY = VIEW.padTop + VIEW.axisH;
+      if (!timed) {
+        this.pxPerMs = null;
+        return;
+      }
+      if (this.pxPerMs === null) {
+        let extent = 0;
+        this.visibleGroups().forEach((group) => {
+          const sink = group.solution.arrivals.get(group.sinkId);
+          extent = Math.max(
+            extent,
+            T.at(sink.total, this.driver) + sink.total.sd,
+          );
+        });
+        const width =
+          (this.container.clientWidth || VIEW.fallbackWidth) -
+          VIEW.padLeft -
+          VIEW.padRight;
+        this.fitPxPerMs = extent > 0 ? width / extent : 1;
+        this.pxPerMs = this.fitPxPerMs;
+      }
+    }
+
+    xOf(summary) {
+      return this.originX + T.at(summary, this.driver) * this.pxPerMs;
+    }
+
+    // Arrival, left and right edge of a gate's block along the axis. Track
+    // assignment happens before the scale is known, so a unit scale stands in
+    // there: spans are compared, never drawn.
+    gateBox(group, gateId) {
+      const arrival = group.solution.arrivals.get(gateId);
+      if (!STATES[this.state].timed) {
+        const left = VIEW.padLeft + arrival.rank * VIEW.logicalColW;
+        return {
+          arrive: left,
+          left,
+          right: left + VIEW.logicalBlockW,
+          end: left + VIEW.logicalBlockW,
+          sdPx: 0,
+        };
+      }
+      const scale = this.pxPerMs ?? 1;
+      const x = (summary) => VIEW.padLeft + T.at(summary, this.driver) * scale;
+      const arrive = x(arrival.arrive);
+      const left = x(arrival.start);
+      const end = x(arrival.total);
+      return {
+        arrive,
+        left,
+        right: Math.max(end, left + VIEW.blockMinW),
+        end,
+        sdPx: arrival.total.sd * scale,
+      };
+    }
+
+    // The time a gate occupies on its track, wait included.
+    spanOf(group, gateId) {
+      const box = this.gateBox(group, gateId);
+      return [box.arrive, box.end];
+    }
+
+    rowY(group, gateId) {
+      return group.y0 + group.rowOf.get(gateId) * VIEW.trackH + VIEW.trackH / 2;
+    }
+
+    // Groups stack down the page, each under its header.
+    layoutGroups() {
+      let y = this.originY;
+      this.visibleGroups().forEach((group) => {
+        group.headerY = y;
+        group.y0 = y + VIEW.groupHeaderH;
+        group.y1 = group.y0 + group.rows.length * VIEW.trackH;
+        y = group.y1 + VIEW.groupGap;
+      });
+      return y - VIEW.groupGap;
+    }
+
+    // ── Render ──────────────────────────────────────────────────────────────────
+
+    // keepView redraws under the current viewport, for a change of scale
+    // alone, and keeps the toolbar as it is; otherwise the page opens at its
+    // top under a fresh toolbar.
+    render({ keepView = false } = {}) {
+      this.prepareScale();
+      const toolbar = keepView
+        ? this.container.querySelector(".seq-toolbar")
+        : null;
+      const { layer } = this.createCanvas();
+      this.container.classList.add("sequence-diagram-container");
+
+      this.trackLayer = document.createElementNS(SVG_NS, "g");
+      this.axisLayer = document.createElementNS(SVG_NS, "g");
+      this.hopLayer = document.createElementNS(SVG_NS, "g");
+      this.gateLayer = document.createElementNS(SVG_NS, "g");
+      this.labelLayer = document.createElementNS(SVG_NS, "g");
+      this.rulerLayer = document.createElementNS(SVG_NS, "g");
+      [
+        this.trackLayer,
+        this.axisLayer,
+        this.hopLayer,
+        this.gateLayer,
+        this.labelLayer,
+        this.rulerLayer,
+      ].forEach((g) => layer.appendChild(g));
+
+      const groups = this.visibleGroups();
+      let right = this.originX + VIEW.logicalColW;
+      groups.forEach((group) => {
+        group.boxes = new Map();
+        group.gates.forEach((gate) => {
+          const box = this.gateBox(group, gate.id);
+          group.boxes.set(gate.id, box);
+          right = Math.max(right, box.right + box.sdPx);
+        });
+        const terminal = group.ends.terminal;
+        const leaf = terminal && group.boxes.get(terminal.gate);
+        if (leaf) right = Math.max(right, leaf.right + 2 * VIEW.endStubW);
+      });
+      this.width = right + VIEW.padRight;
+      this.height = this.layoutGroups() + VIEW.padBottom;
+
+      groups.forEach((group) => this.drawGroup(group));
+      this.drawAxis();
+      groups.forEach((group) => {
+        group.hops.forEach((hop) => this.drawHop(group, hop));
+        group.gates.forEach((gate) => this.drawGate(group, gate));
+        this.drawEnds(group);
+        this.fitLabels(group);
+        this.applyEmphasis(group);
+      });
+      this.activeGroup?.element?.classList.add("seq-group-active");
+
+      if (toolbar) this.container.appendChild(toolbar);
+      else this.renderToolbar();
+      this.placeCanvas();
+      if (keepView) this.updateTransform();
+      else this.fitToScreen();
+      if (this.selectedId) this.select(this.selectedId, false);
+    }
+
+    // A group is its header line and a stripe per track, the spine's tinted.
+    drawGroup(group) {
+      const g = document.createElementNS(SVG_NS, "g");
+      g.classList.add("seq-group");
+      g.dataset.group = group.index;
+      group.element = g;
+
+      const header = document.createElementNS(SVG_NS, "text");
+      header.setAttribute("x", this.originX);
+      header.setAttribute("y", group.headerY + VIEW.groupHeaderH - 6);
+      header.classList.add("seq-group-title");
+      header.style.fontSize = `${VIEW.fontSize}px`;
+      const title = document.createElementNS(SVG_NS, "tspan");
+      title.textContent = group.title;
+      header.appendChild(title);
+      const detail = document.createElementNS(SVG_NS, "tspan");
+      detail.classList.add("seq-group-detail");
+      detail.textContent = ` · ${this.describeGroup(group)}`;
+      header.appendChild(detail);
+      header.style.cursor = "pointer";
+      header.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.selectGroup(group);
+      };
+      const tip = document.createElementNS(SVG_NS, "title");
+      tip.textContent = `${group.title}\nto ${this.graph.ownerOf(group.sinkId)?.path || ""}:${this.graph.events.get(group.sinkId)?.name || ""}`;
+      header.appendChild(tip);
+      g.appendChild(header);
+
+      group.rows.forEach((row) => {
+        const rect = document.createElementNS(SVG_NS, "rect");
+        rect.setAttribute("x", this.originX - VIEW.padLeft / 2);
+        rect.setAttribute("y", group.y0 + row.index * VIEW.trackH);
+        rect.setAttribute("width", this.width - this.originX);
+        rect.setAttribute("height", VIEW.trackH);
+        rect.classList.add("seq-track");
+        if (row.spine) rect.classList.add("seq-track-spine");
+        else if (row.index % 2) rect.classList.add("seq-track-alt");
+        g.appendChild(rect);
+      });
+      this.trackLayer.appendChild(g);
+    }
+
+    describeGroup(group) {
+      const sink = group.solution.arrivals.get(group.sinkId);
+      const parts = [];
+      if (group.rate) parts.push(group.rate);
+      const observed = [
+        ...new Set(
+          [...group.sources]
+            .map((id) => this.measuredRate(this.graph.events.get(id)))
+            .filter(Boolean),
+        ),
+      ];
+      if (observed.length) parts.push(`measured ${observed.join(" / ")}`);
+      if (group.sources.size > 1) parts.push(`${group.sources.size} sources`);
+      parts.push(`${group.gates.length} gates`);
+      if (STATES[this.state].timed) {
+        parts.push(`total ${T.formatSummary(sink.total)}`);
+      } else {
+        parts.push(`depth ${sink.rank}`);
+      }
+      const measured = this.measuredChain(group);
+      if (measured && STATES[this.state].timed) {
+        parts.push(`measured ${T.formatSummary(measured.summary)}`);
+      }
+      const { terminal } = group.ends;
+      parts.push(
+        !terminal
+          ? "loop end"
+          : terminal.kind === "open"
+            ? "open end"
+            : "hop limit",
+      );
+      if (group.solution.loopEdges.size) {
+        parts.push(`${group.solution.loopEdges.size} loop cut`);
+      }
+      return parts.join(" · ");
+    }
+
+    // The measured end-to-end record matching a group: from a timer of the
+    // source's node to the sink's node and topic. An input sink is reached
+    // through the output feeding it, since chains end at publishes.
+    measuredChain(group) {
+      if (!this.measured?.chainFor) return null;
+      let sinkId = group.sinkId;
+      let sink = this.graph.events.get(sinkId);
+      if (sink?.kind === "input") {
+        const feeder = (this.graph.pred.get(sinkId) || []).find(
+          (id) => this.graph.events.get(id)?.kind === "output",
+        );
+        if (feeder) {
+          sinkId = feeder;
+          sink = this.graph.events.get(sinkId);
+        }
+      }
+      const toNode = this.graph.ownerOf(sinkId)?.path;
+      let topic = sink?.kind === "output" ? this.topicOf(sink) : null;
+      if (sink?.kind === "process" && window.LatencySource) {
+        topic =
+          window.LatencySource.outputTopicsOf(this.graph, sink)[0] ?? null;
+      }
+      for (const sourceId of group.sources) {
+        const fromNode = this.graph.ownerOf(sourceId)?.path;
+        const hit = this.measured.chainFor(fromNode, toNode, topic);
+        if (hit) return hit;
+      }
+      return null;
+    }
+
+    measuredRows(group) {
+      const measured = this.measuredChain(group);
+      if (!measured) return [];
+      return [
+        {
+          label: `measured e2e${measured.hops ? ` (${measured.hops} hops)` : ""}`,
+          value: T.formatSummary(measured.summary),
+          source: "measured",
+          count: measured.summary.count,
+        },
+      ];
+    }
+
+    // Ticks along the top: milliseconds in a timed state, ranks otherwise, each
+    // with a hairline down through every group. The hairlines belong to the
+    // page; the ruler with the labels is pinned to the top of the viewport.
+    drawAxis() {
+      const g = document.createElementNS(SVG_NS, "g");
+      g.classList.add("seq-axis");
+      const ruler = document.createElementNS(SVG_NS, "g");
+      ruler.classList.add("seq-axis-ruler");
+      const y = this.originY - 4;
+      const bg = document.createElementNS(SVG_NS, "rect");
+      bg.setAttribute("x", 0);
+      bg.setAttribute("y", 0);
+      bg.setAttribute("width", this.width);
+      bg.setAttribute("height", this.originY - 2);
+      bg.classList.add("seq-axis-bg");
+      ruler.appendChild(bg);
+      const axis = document.createElementNS(SVG_NS, "line");
+      axis.setAttribute("x1", this.originX);
+      axis.setAttribute("x2", this.width - VIEW.padRight / 2);
+      axis.setAttribute("y1", y);
+      axis.setAttribute("y2", y);
+      axis.classList.add("seq-axis-line");
+      ruler.appendChild(axis);
+
+      const tick = (x, label) => {
+        const hair = document.createElementNS(SVG_NS, "line");
+        hair.setAttribute("x1", x);
+        hair.setAttribute("x2", x);
+        hair.setAttribute("y1", this.originY - 2);
+        hair.setAttribute("y2", this.height - VIEW.padBottom / 2);
+        hair.classList.add("seq-axis-tick");
+        g.appendChild(hair);
+        const mark = document.createElementNS(SVG_NS, "line");
+        mark.setAttribute("x1", x);
+        mark.setAttribute("x2", x);
+        mark.setAttribute("y1", y - 3);
+        mark.setAttribute("y2", y + 2);
+        mark.classList.add("seq-axis-line");
+        ruler.appendChild(mark);
+        const text = document.createElementNS(SVG_NS, "text");
+        text.setAttribute("x", x);
+        text.setAttribute("y", y - 6);
+        text.setAttribute("text-anchor", "middle");
+        text.textContent = label;
+        text.classList.add("seq-axis-label");
+        text.style.fontSize = `${VIEW.subSize}px`;
+        ruler.appendChild(text);
+      };
+
+      const spanPx = this.width - VIEW.padRight - this.originX;
+      if (!STATES[this.state].timed) {
+        const columns = Math.round(spanPx / VIEW.logicalColW);
+        for (let rank = 0; rank <= columns; rank += 1) {
+          tick(this.originX + rank * VIEW.logicalColW, `rank ${rank}`);
+        }
+      } else {
+        const spanMs = spanPx / this.pxPerMs;
+        const step = niceStep(spanMs / 10);
+        for (let ms = 0; ms <= spanMs + 1e-9; ms += step) {
+          tick(this.originX + ms * this.pxPerMs, T.formatMs(ms, 1));
+        }
+      }
+      const title = document.createElementNS(SVG_NS, "text");
+      title.setAttribute("x", this.width - VIEW.padRight / 2);
+      title.setAttribute("y", y - 6);
+      title.setAttribute("text-anchor", "end");
+      title.textContent = STATES[this.state].timed
+        ? `${this.driverLabel()} · ${this.state}`
+        : "rank · logical";
+      title.classList.add("seq-axis-label", "seq-axis-title");
+      title.style.fontSize = `${VIEW.subSize}px`;
+      ruler.appendChild(title);
+      this.axisLayer.appendChild(g);
+      this.rulerLayer.appendChild(ruler);
+      this.axisRuler = ruler;
+      this.pinAxis();
+    }
+
+    driverLabel() {
+      return DRIVERS.find(([key]) => key === this.driver)?.[1] || this.driver;
+    }
+
+    // A hop runs from the end of one block to the arrival at the next gate:
+    // straight along a shared track, a curve between tracks, dashed when both
+    // gates belong to one node. A hop landing after its block started is late:
+    // the gate fired from another branch. The topic labels the gap.
+    drawHop(group, hop) {
+      const fromBox = group.boxes.get(hop.from);
+      const toBox = group.boxes.get(hop.to);
+      if (!fromBox || !toBox) return;
+      const timed = STATES[this.state].timed;
+      const y1 = this.rowY(group, hop.from);
+      const y2 = this.rowY(group, hop.to);
+      const x1 = fromBox.right;
+      const arrive = timed ? this.xOf(hop.arrival) : toBox.left;
+      const x2 = Math.max(arrive, x1 + 4);
+      const same = y1 === y2;
+
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("id", hop.id);
+      if (same) {
+        path.setAttribute("d", `M ${x1} ${y1} L ${x2} ${y2}`);
+      } else {
+        const dx = Math.max(10, (x2 - x1) / 2);
+        path.setAttribute(
+          "d",
+          `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`,
+        );
+      }
+      const fromOwner = this.graph.events.get(hop.from).ownerId;
+      const toOwner = this.graph.events.get(hop.to).ownerId;
+      if (fromOwner === toOwner) path.classList.add("seq-hop-internal");
+      if (hop.comm?.source === "intra_process")
+        path.classList.add("seq-hop-intra");
+      if (hop.info?.response) path.classList.add("seq-hop-sampled");
+      if (hop.arrival?.dead) path.classList.add("seq-hop-dead");
+      if (timed && arrive > toBox.left + 0.5)
+        path.classList.add("seq-hop-late");
+      path.classList.add("seq-hop");
+      path.setAttribute("marker-end", "url(#arrowhead-depth-0)");
+      hop.element = path;
+      hop.gap = [x1, x2, same];
+
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = this.describeHop(group, hop);
+      path.appendChild(title);
+      path.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.select(hop.id);
+      };
+      this.hopLayer.appendChild(path);
+
+      // A wider transparent stroke keeps thin arrows clickable.
+      const hit = path.cloneNode(false);
+      hit.removeAttribute("id");
+      hit.removeAttribute("marker-end");
+      hit.classList.add("seq-hop-hit");
+      hit.onclick = path.onclick;
+      hit.appendChild(title.cloneNode(true));
+      this.hopLayer.appendChild(hit);
+
+      if (hop.topic) {
+        const label = document.createElementNS(SVG_NS, "text");
+        label.setAttribute("x", (x1 + x2) / 2);
+        label.setAttribute(
+          "y",
+          same ? y1 + VIEW.blockH / 2 + VIEW.subSize : (y1 + y2) / 2 - 3,
+        );
+        label.setAttribute("text-anchor", "middle");
+        label.textContent = this.shortName(hop.topic, 30);
+        label.classList.add("seq-hop-label");
+        label.style.fontSize = `${VIEW.subSize}px`;
+        hop.label = label;
+        this.labelLayer.appendChild(label);
+      }
+    }
+
+    // A loop exit is a return wire: out of the end of its gate, down under
+    // the track and back along it, up into the start of the gate it rejoins.
+    // An open terminal is a stub with an end stop after the last gate, named
+    // under the block for the message nobody takes; at the hop limit the stub
+    // trails off instead.
+    drawEnds(group) {
+      const dip = VIEW.loopDip;
+      const hook = VIEW.endStubW;
+      group.ends.loops.forEach((loop, index) => {
+        const fromBox = group.boxes.get(loop.from);
+        if (!fromBox) return;
+        const toBox = loop.to ? group.boxes.get(loop.to) : null;
+        const y1 = this.rowY(group, loop.from);
+        const y2 = toBox ? this.rowY(group, loop.to) : y1;
+        const x1 = fromBox.right;
+        const x2 = toBox ? toBox.left : x1 - 2 * hook;
+        const path = document.createElementNS(SVG_NS, "path");
+        loop.id = `sq_end_${group.index}_${index}`;
+        path.setAttribute("id", loop.id);
+        path.setAttribute(
+          "d",
+          `M ${x1} ${y1} h ${hook} V ${y1 + dip} H ${x2 - hook} V ${y2} h ${hook}`,
+        );
+        path.classList.add("seq-hop", "seq-loop");
+        if (loop.atSink) path.classList.add("seq-loop-sink");
+        path.setAttribute("marker-end", "url(#arrowhead-depth-0)");
+        loop.element = path;
+        const title = document.createElementNS(SVG_NS, "title");
+        title.textContent = this.describeEnd(group, loop);
+        path.appendChild(title);
+        path.onclick = (e) => {
+          if (this.hasDragged) return;
+          e.stopPropagation();
+          this.select(loop.id);
+        };
+        this.hopLayer.appendChild(path);
+        const hit = path.cloneNode(false);
+        hit.removeAttribute("id");
+        hit.removeAttribute("marker-end");
+        hit.classList.add("seq-hop-hit");
+        hit.onclick = path.onclick;
+        hit.appendChild(title.cloneNode(true));
+        this.hopLayer.appendChild(hit);
+
+        const label = document.createElementNS(SVG_NS, "text");
+        label.setAttribute("x", x1 + hook + 3);
+        label.setAttribute("y", y1 + dip - 2);
+        label.classList.add("seq-hop-label", "seq-loop-label");
+        label.style.fontSize = `${VIEW.subSize}px`;
+        const toName = loop.to
+          ? this.graph.events.get(loop.to).name
+          : this.graph.events.get(loop.head).name;
+        this._truncateSVGText(label, `↺ ${toName}`, 160, VIEW.subSize);
+        loop.label = label;
+        this.labelLayer.appendChild(label);
+      });
+
+      const { terminal } = group.ends;
+      const box = terminal && group.boxes.get(terminal.gate);
+      if (!box) return;
+      const y = this.rowY(group, terminal.gate);
+      const x0 = Math.max(box.right, box.end + box.sdPx) + 2;
+      const x1 = x0 + VIEW.endStubW;
+      const stop = document.createElementNS(SVG_NS, "path");
+      terminal.id = `sq_end_${group.index}_t`;
+      stop.setAttribute("id", terminal.id);
+      stop.classList.add("seq-end");
+      if (terminal.kind === "limit") {
+        stop.setAttribute("d", `M ${x0} ${y} L ${x1} ${y}`);
+        stop.classList.add("seq-end-limit");
+      } else {
+        stop.setAttribute(
+          "d",
+          `M ${x0} ${y} L ${x1} ${y} M ${x1} ${y - 5} L ${x1} ${y + 5}`,
+        );
+      }
+      terminal.element = stop;
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = this.describeEnd(group, terminal);
+      stop.appendChild(title);
+      stop.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.select(terminal.id);
+      };
+      this.gateLayer.appendChild(stop);
+      const hit = stop.cloneNode(false);
+      hit.removeAttribute("id");
+      hit.classList.add("seq-hop-hit");
+      hit.onclick = stop.onclick;
+      hit.appendChild(title.cloneNode(true));
+      this.gateLayer.appendChild(hit);
+
+      const label = document.createElementNS(SVG_NS, "text");
+      label.setAttribute("x", x1);
+      label.setAttribute("y", y + VIEW.blockH / 2 + VIEW.subSize + 1);
+      label.setAttribute("text-anchor", "end");
+      label.classList.add("seq-hop-label", "seq-end-label");
+      label.style.fontSize = `${VIEW.subSize}px`;
+      // The label may reach back to the middle of the gap before the block.
+      const row = group.rows[group.rowOf.get(terminal.gate)];
+      const before = row.gates
+        .map((gate) => group.boxes.get(gate.id))
+        .filter((other) => other.left < box.left)
+        .reduce((edge, other) => Math.max(edge, other.right), -Infinity);
+      const room = Number.isFinite(before)
+        ? Math.min(160, x1 - (before + box.left) / 2 - 2)
+        : 160;
+      if (room < VIEW.labelMin) label.classList.add("seq-label-hidden");
+      else this._truncateSVGText(label, terminal.label, room, VIEW.subSize);
+      terminal.labelElement = label;
+      this.labelLayer.appendChild(label);
+    }
+
+    // A gate is a block on its track: the wait segment leads into it, the
+    // whisker trails its end, and the line above carries the trigger glyph,
+    // node, process and the time it completes.
+    drawGate(group, gate) {
+      const box = group.boxes.get(gate.id);
+      if (!box) return;
+      const y = this.rowY(group, gate.id);
+      const arrival = group.solution.arrivals.get(gate.id);
+      const instance = this.graph.instances.get(gate.ownerId)?.data || {};
+      const guide = instance.vis_guide;
+      const defaults = this.isDarkMode()
+        ? this.styleDefaults.dark
+        : this.styleDefaults.light;
+      const style = { cornerR: 2 };
+
+      const g = document.createElementNS(SVG_NS, "g");
+      g.setAttribute("id", `sq_gate_${group.index}_${gate.id}`);
+      g.classList.add("seq-gate");
+      g.dataset.eventId = gate.id;
+      g.style.cursor = "pointer";
+      gate.element = g;
+
+      if (box.arrive < box.left - 0.5) {
+        const wait = document.createElementNS(SVG_NS, "rect");
+        wait.setAttribute("x", box.arrive);
+        wait.setAttribute("y", y - VIEW.blockH / 6);
+        wait.setAttribute("width", box.left - box.arrive);
+        wait.setAttribute("height", VIEW.blockH / 3);
+        wait.classList.add("seq-wait");
+        g.appendChild(wait);
+      }
+
+      const block = document.createElementNS(SVG_NS, "rect");
+      block.setAttribute("x", box.left);
+      block.setAttribute("y", y - VIEW.blockH / 2);
+      block.setAttribute(
+        "width",
+        Math.max(VIEW.blockMinW, box.right - box.left),
+      );
+      block.setAttribute("height", VIEW.blockH);
+      block.setAttribute("rx", 1.5);
+      block.setAttribute(
+        "fill",
+        this.themed(guide, "medium_color", defaults.nodeBg),
+      );
+      block.setAttribute(
+        "stroke",
+        this.themed(guide, "color", defaults.stroke),
+      );
+      block.classList.add("seq-bar");
+      if (arrival.exec.source === "unmeasured" && STATES[this.state].timed) {
+        block.classList.add("seq-unmeasured");
+      }
+      if (arrival.exec.dead) block.classList.add("seq-dead");
+      g.appendChild(block);
+
+      if (box.sdPx > 0.5) {
+        const whisker = document.createElementNS(SVG_NS, "path");
+        const x0 = Math.max(box.left, box.end - box.sdPx);
+        const x1 = box.end + box.sdPx;
+        const w = 3;
+        whisker.setAttribute(
+          "d",
+          `M ${x0} ${y} L ${x1} ${y} M ${x0} ${y - w} L ${x0} ${y + w} M ${x1} ${y - w} L ${x1} ${y + w}`,
+        );
+        whisker.classList.add("seq-whisker");
+        if (arrival.total.missingSd)
+          whisker.classList.add("seq-whisker-partial");
+        g.appendChild(whisker);
+      }
+
+      const labelY = y - VIEW.blockH / 2 - 3;
+      const glyph = this.buildTypeShape(
+        gate.type,
+        VIEW.glyphW,
+        VIEW.glyphH,
+        style,
+      );
+      glyph.setAttribute(
+        "transform",
+        `translate(${box.left},${labelY - VIEW.glyphH + 1})`,
+      );
+      glyph.classList.add("logic-process", "seq-glyph");
+      if (!gate.type) glyph.classList.add("logic-process-unknown");
+      g.appendChild(glyph);
+
+      const label = document.createElementNS(SVG_NS, "text");
+      label.setAttribute("x", box.left + VIEW.glyphW + 3);
+      label.setAttribute("y", labelY);
+      label.classList.add("seq-gate-name");
+      label.style.fontSize = `${VIEW.subSize}px`;
+      const tail = STATES[this.state].timed
+        ? `@${T.formatMs(T.at(arrival.total, this.driver), 1)}`
+        : this.rateLabel(gate.frequency);
+      gate.label = {
+        element: label,
+        x: box.left + VIEW.glyphW + 3,
+        y: labelY,
+        node: this.shortName(instance.name || gate.ownerId),
+        process: gate.name,
+        tail,
+      };
+      this.setLabel(gate.label, true);
+      label.style.cursor = "pointer";
+      label.style.pointerEvents = "auto";
+      label.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.selectNode(gate.ownerId);
+      };
+      const tip = document.createElementNS(SVG_NS, "title");
+      tip.textContent = instance.path || "";
+      label.appendChild(tip);
+      g.appendChild(label);
+
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = this.describeGate(group, gate);
+      g.appendChild(title);
+      g.onclick = (e) => {
+        if (this.hasDragged) return;
+        e.stopPropagation();
+        this.select(gate.key);
+      };
+      this.gateLayer.appendChild(g);
+    }
+
+    // node · process @time as three spans; the node span is dropped first when
+    // the room is short.
+    setLabel(label, withNode) {
+      const text = label.element;
+      [...text.querySelectorAll("tspan")].forEach((span) => span.remove());
+      const tip = text.querySelector("title");
+      const span = (content, cls) => {
+        const el = document.createElementNS(SVG_NS, "tspan");
+        el.textContent = content;
+        if (cls) el.classList.add(cls);
+        text.insertBefore(el, tip);
+      };
+      if (withNode) span(`${label.node} · `, "seq-gate-node");
+      span(label.process);
+      if (label.tail) span(` ${label.tail}`, "seq-gate-rate");
+    }
+
+    labelWidth(label, withNode) {
+      const text = `${withNode ? `${label.node} · ` : ""}${label.process}${label.tail ? ` ${label.tail}` : ""}`;
+      return this.measureTextWidth(text, VIEW.subSize);
+    }
+
+    // Labels sit on two tiers above the blocks of a track. A label takes the
+    // lower tier when it fits before the next block, the upper tier when it
+    // fits before the block after that; otherwise the node part goes first,
+    // then the process name is clipped, then the label is hidden. Hop labels
+    // are clipped to their gap the same way.
+    fitLabels(group) {
+      group.rows.forEach((row) => {
+        const tierEnd = [-Infinity, -Infinity];
+        row.gates.forEach((gate, index) => {
+          const label = gate.label;
+          if (!label) return;
+          const startOf = (offset) => {
+            const next = row.gates[index + offset];
+            return next ? group.boxes.get(next.id).left : Infinity;
+          };
+          const full = this.labelWidth(label, true);
+          const short = this.labelWidth(label, false);
+          const room = [startOf(1), startOf(2)].map((edge, tier) =>
+            label.x < tierEnd[tier] ? -1 : edge - label.x - 4,
+          );
+          const tier =
+            full <= room[0] ? 0 : full <= room[1] || room[1] > room[0] ? 1 : 0;
+          const available = room[tier];
+          label.element.setAttribute(
+            "y",
+            label.y - (tier ? VIEW.labelTierH : 0),
+          );
+          label.element.classList.toggle("seq-gate-name-upper", tier === 1);
+          label.element.classList.remove("seq-label-hidden");
+          if (full <= available) {
+            this.setLabel(label, true);
+            tierEnd[tier] = label.x + full;
+          } else if (short <= available) {
+            this.setLabel(label, false);
+            tierEnd[tier] = label.x + short;
+          } else if (available < VIEW.labelMin) {
+            label.element.classList.add("seq-label-hidden");
+          } else {
+            const chars = Math.max(
+              3,
+              Math.floor((label.process.length * available) / short),
+            );
+            this.setLabel(
+              { ...label, process: `${label.process.slice(0, chars - 1)}…` },
+              false,
+            );
+            tierEnd[tier] = label.x + available;
+          }
+        });
+      });
+      group.hops.forEach((hop) => {
+        if (!hop.label || !hop.gap) return;
+        const [x1, x2, same] = hop.gap;
+        const room = same ? x2 - x1 - 4 : Math.max(x2 - x1, 40);
+        if (room < VIEW.labelMin) {
+          hop.label.classList.add("seq-label-hidden");
+        } else {
+          this._truncateSVGText(
+            hop.label,
+            this.shortName(hop.topic, 30),
+            room,
+            VIEW.subSize,
+          );
+        }
+      });
+    }
+
+    rateLabel(frequency) {
+      if (frequency === null || frequency === undefined) return "";
+      if (frequency === 0) return "once";
+      return `${Number(frequency.toFixed(3))}Hz`;
+    }
+
+    // Declared rate, with the observed one after it in the measured state.
+    rateText(event) {
+      const declared = this.rateLabel(event.frequency) || "no clock";
+      const observed = this.measuredRate(event);
+      return observed ? `${declared} · measured ${observed}` : declared;
+    }
+
+    // The three chains of a group at full strength, everything else dimmed; an
+    // enumerated chain on show takes the place of all three in its group.
+    applyEmphasis(group) {
+      const highlight = group === this.activeGroup ? this.highlightEdges : null;
+      const chainOf = (hop) => {
+        if (highlight) {
+          return hop.edges.every((id) => highlight.has(id)) ? "max" : null;
+        }
+        if (hop.on.max) return "max";
+        if (hop.on.min) return "min";
+        if (hop.on.mean) return "mean";
+        return null;
+      };
+      const onGate = new Map();
+      group.hops.forEach((hop) => {
+        const component = chainOf(hop);
+        const element = hop.element;
+        if (!element) return;
+        element.classList.remove(
+          ...Object.values(CHAIN_CLASS),
+          "seq-dim",
+          "seq-on-mean-too",
+          "seq-mean-diverges",
+        );
+        hop.label?.classList.remove(...Object.values(CHAIN_CLASS), "seq-dim");
+        if (component) {
+          element.classList.add(CHAIN_CLASS[component]);
+          hop.label?.classList.add(CHAIN_CLASS[component]);
+          element.setAttribute(
+            "marker-end",
+            `url(#arrowhead-highlighted-${CHAIN_COLOR[component]}-depth-0)`,
+          );
+          if (hop.on.mean && component !== "mean" && !highlight) {
+            element.classList.add("seq-on-mean-too");
+          }
+          onGate.set(hop.to, true);
+          onGate.set(hop.from, true);
+        } else {
+          element.classList.add("seq-dim");
+          hop.label?.classList.add("seq-dim");
+          element.setAttribute("marker-end", "url(#arrowhead-depth-0)");
+        }
+        if (hop.on.mean && !hop.on.max && !hop.on.min && !highlight) {
+          element.classList.add("seq-mean-diverges");
+        }
+      });
+      group.gates.forEach((gate) => {
+        gate.element?.classList.toggle(
+          "seq-dim",
+          !onGate.get(gate.id) &&
+            !group.sources.has(gate.id) &&
+            gate.id !== group.sinkId,
+        );
+      });
+    }
+
+    // ── Navigation ──────────────────────────────────────────────────────────────
+
+    // The page reads like a document: the wheel scrolls it, shift+wheel or a
+    // sideways swipe moves along the axis, ctrl+wheel and a pinch zoom the
+    // time scale about the pointer. The drawing keeps its size on screen.
+    onWheel(e, svgRoot) {
+      e.preventDefault();
+      const unit =
+        e.deltaMode === 1
+          ? WHEEL_LINE_PX
+          : e.deltaMode === 2
+            ? this.viewRect().height
+            : 1;
+      if (e.ctrlKey || e.metaKey) {
+        const anchorX = e.clientX - svgRoot.getBoundingClientRect().left;
+        this.zoomTimeAt(Math.exp(-e.deltaY * unit * WHEEL_ZOOM_RATE), anchorX);
+        return;
+      }
+      let dx = e.deltaX * unit;
+      let dy = e.deltaY * unit;
+      if (e.shiftKey && dx === 0) [dx, dy] = [dy, 0];
+      this.transform.x -= dx;
+      this.transform.y -= dy;
+      this.updateTransform();
+    }
+
+    // Time under a viewport x at the current scale.
+    msAt(viewX) {
+      return (
+        ((viewX - this.transform.x) / this.transform.k - this.originX) /
+        this.pxPerMs
+      );
+    }
+
+    // Rescales the axis with the time under `anchorX` held in place. Wheel
+    // events arrive faster than a render, so factors accumulate and the page
+    // is redrawn once per frame.
+    zoomTimeAt(factor, anchorX) {
+      if (!STATES[this.state].timed || !(this.pxPerMs > 0)) return;
+      const pending = this._timeZoom || { factor: 1 };
+      pending.factor *= factor;
+      pending.anchorX = anchorX;
+      pending.ms = this.msAt(anchorX);
+      this._timeZoom = pending;
+      if (pending.frame) return;
+      pending.frame = requestAnimationFrame(() => {
+        this._timeZoom = null;
+        const floor = (this.fitPxPerMs || this.pxPerMs) * TIME_ZOOM_MIN;
+        this.pxPerMs = Math.min(
+          Math.max(this.pxPerMs * pending.factor, floor),
+          TIME_ZOOM_MAX,
+        );
+        this.render({ keepView: true });
+        this.transform.x =
+          pending.anchorX -
+          (this.originX + pending.ms * this.pxPerMs) * this.transform.k;
+        this.updateTransform();
+      });
+    }
+
+    // The toolbar takes the top of the container and the canvas is laid out
+    // below it, so nothing is drawn or scrolled under the menu. Re-run
+    // whenever the toolbar changes height.
+    placeCanvas() {
+      const bar = this.container.querySelector(".seq-toolbar");
+      const svg = this.currentSvgRoot;
+      if (!bar || !svg) return;
+      const top = Math.ceil(
+        bar.getBoundingClientRect().bottom -
+          this.container.getBoundingClientRect().top +
+          TOOLBAR_GAP,
+      );
+      svg.style.position = "absolute";
+      svg.style.top = `${top}px`;
+      svg.style.height = `calc(100% - ${top}px)`;
+      if (!this._toolbarObserver && typeof ResizeObserver !== "undefined") {
+        this._toolbarObserver = new ResizeObserver(() => {
+          this.placeCanvas();
+          this.updateTransform();
+        });
+      }
+      this._toolbarObserver?.disconnect();
+      this._toolbarObserver?.observe(bar);
+    }
+
+    // The visible canvas, in screen pixels.
+    viewRect() {
+      return (this.currentSvgRoot || this.container).getBoundingClientRect();
+    }
+
+    // The viewport never leaves the page: the page's top-left corner sits at
+    // the view's origin, its far side stops at the page edge, and a page
+    // smaller than the view stays at the origin.
+    clampViewport() {
+      if (!(this.width > 0 && this.height > 0)) return;
+      const k = this.transform.k;
+      const view = this.viewRect();
+      const minX = Math.min(0, view.width - this.width * k);
+      const minY = Math.min(0, view.height - this.height * k);
+      this.transform.x = Math.min(0, Math.max(minX, this.transform.x));
+      this.transform.y = Math.min(0, Math.max(minY, this.transform.y));
+    }
+
+    updateTransform(svg) {
+      this.clampViewport();
+      super.updateTransform(svg);
+    }
+
+    // The page opens at its top-left corner, at screen scale.
+    fitToScreen() {
+      this.transform = { x: 0, y: 0, k: 1 };
+      this.updateTransform();
+    }
+
+    // The ruler stays at the top of the viewport while the page scrolls under it.
+    pinAxis() {
+      if (!this.axisRuler) return;
+      const y = Math.max(0, -this.transform.y / this.transform.k);
+      this.axisRuler.setAttribute("transform", `translate(0,${y})`);
+    }
+
+    onTransform() {
+      this.pinAxis();
+    }
+
+    updateTheme() {
+      this.render();
+    }
+
+    // ── Descriptions ────────────────────────────────────────────────────────────
+
+    describeGate(group, gate) {
+      const arrival = group.solution.arrivals.get(gate.id);
+      const observed = this.measuredRate(gate);
+      const lines = [
+        `${this.graph.ownerOf(gate.id)?.path || ""}:${gate.name}`,
+        `${gate.type || "type not declared"} · ${this.rateLabel(gate.frequency) || "no clock"}${observed ? ` · measured ${observed}` : ""}`,
+        `chain ${group.title}`,
+      ];
+      if (STATES[this.state].timed) {
+        lines.push(`cumulative ${T.formatSummary(arrival.total)}`);
+      } else {
+        lines.push(`rank ${arrival.rank}`);
+      }
       return lines.join("\n");
     }
 
-    collectAllEvents(instance, eventMap) {
-      // Collect events from this instance
-      if (instance.events && Array.isArray(instance.events)) {
-        instance.events.forEach((e) => {
-          // If process_event is undefined, assume true for instance events
-          if (e.process_event === undefined) e.process_event = true;
-          eventMap.set(e.unique_id, e);
-        });
+    describeHop(group, hop) {
+      const from = this.graph.events.get(hop.from);
+      const to = this.graph.events.get(hop.to);
+      const lines = [
+        `${this.graph.ownerOf(hop.from)?.name}:${from.name} → ${this.graph.ownerOf(hop.to)?.name}:${to.name}`,
+      ];
+      if (hop.topic) lines.push(hop.topic);
+      if (STATES[this.state].timed) {
+        lines.push(`comm ${T.formatSummary(hop.comm)}`);
+        lines.push(`arrives ${T.formatSummary(hop.arrival)}`);
       }
-      // Collect events from ports
-      if (instance.in_ports && Array.isArray(instance.in_ports)) {
-        instance.in_ports.forEach((p) => {
-          if (p.event) {
-            if (p.event.process_event === undefined)
-              p.event.process_event = false;
-            eventMap.set(p.event.unique_id, p.event);
-          }
-        });
-      }
-      if (instance.out_ports && Array.isArray(instance.out_ports)) {
-        instance.out_ports.forEach((p) => {
-          if (p.event) {
-            if (p.event.process_event === undefined)
-              p.event.process_event = false;
-            eventMap.set(p.event.unique_id, p.event);
-          }
-        });
-      }
-
-      // Recurse
-      if (instance.children && Array.isArray(instance.children)) {
-        instance.children.forEach((child) =>
-          this.collectAllEvents(child, eventMap),
-        );
-      }
-    }
-
-    buildLogicGraph(instance, lines) {
-      if (instance.entity_type === "node") {
-        if (instance.events && Array.isArray(instance.events)) {
-          instance.events.forEach((event) => {
-            const nsLabel = instance.path;
-            const fullLabel = `${nsLabel}<br/><br/>[${event.name}]`;
-            // Using unique_id from data
-            lines.push(`participant ${event.unique_id} as ${fullLabel}`);
-          });
-        }
-      } else if (instance.entity_type === "module") {
-        if (instance.children && Array.isArray(instance.children)) {
-          instance.children.forEach((child) => {
-            this.buildLogicGraph(child, lines);
-          });
-        }
-      }
-    }
-
-    buildConnectionGraph(instance, lines, eventMap) {
-      if (instance.entity_type === "node") {
-        if (instance.events && Array.isArray(instance.events)) {
-          instance.events.forEach((event) => {
-            if (event.process_event === true) {
-              if (event.trigger_ids && Array.isArray(event.trigger_ids)) {
-                event.trigger_ids.forEach((triggerId) => {
-                  const trigger = eventMap.get(triggerId);
-                  if (trigger) {
-                    this.eventConnection(
-                      instance.name,
-                      event,
-                      trigger.name,
-                      trigger,
-                      lines,
-                      eventMap,
-                    );
-                  }
-                });
-              }
-            }
-          });
-        }
-      } else if (instance.entity_type === "module") {
-        if (instance.children && Array.isArray(instance.children)) {
-          instance.children.forEach((child) => {
-            this.buildConnectionGraph(child, lines, eventMap);
-          });
-        }
-      }
-    }
-
-    eventConnection(
-      rootName,
-      eventOrigin,
-      connectionName,
-      eventTarget,
-      lines,
-      eventMap,
-    ) {
-      if (
-        (eventTarget.type === "on_input" || eventTarget.type === "to_output") &&
-        eventTarget.process_event === false
-      ) {
-        const newConnectionName = eventTarget.name;
-        if (eventTarget.trigger_ids && Array.isArray(eventTarget.trigger_ids)) {
-          eventTarget.trigger_ids.forEach((triggerId) => {
-            const trigger = eventMap.get(triggerId);
-            if (trigger) {
-              this.eventConnection(
-                rootName,
-                eventOrigin,
-                newConnectionName,
-                trigger,
-                lines,
-                eventMap,
-              );
-            }
-          });
-        }
-      } else {
-        const targetNamespace =
-          eventTarget.namespace && eventTarget.namespace.length > 0
-            ? eventTarget.namespace[eventTarget.namespace.length - 1]
-            : "";
-        const label = `${targetNamespace} to ${rootName}_${connectionName}`;
+      if (hop.info?.response) {
         lines.push(
-          `${eventTarget.unique_id}->>${eventOrigin.unique_id}: ${label}`,
+          `response ${T.formatSummary(T.fromRecord(hop.info.response, "measured"))}`,
         );
+      }
+      return lines.join("\n");
+    }
+
+    // How a chain stops: the loop it closes, or what its last message met.
+    describeEnd(group, end) {
+      if (end.edgeId) {
+        const tail = this.graph.events.get(end.tail);
+        const head = this.graph.events.get(end.head);
+        const lines = [
+          `loop end: ${this.graph.ownerOf(end.tail)?.name}:${tail.name} → ${this.graph.ownerOf(end.head)?.name}:${head.name}`,
+        ];
+        if (end.topic) lines.push(end.topic);
+        lines.push(
+          "the chain rejoins itself here; the edge is cut from the solve",
+        );
+        return lines.join("\n");
+      }
+      const sink = this.graph.events.get(end.sinkId);
+      const owner = this.graph.ownerOf(end.sinkId)?.name || "";
+      if (end.kind === "limit") {
+        return `cut at the hop limit after ${owner}:${sink.name}`;
+      }
+      if (sink.kind === "output") {
+        return `open end: nothing subscribes to ${this.topicOf(sink)}`;
+      }
+      if (sink.kind === "input") {
+        return `open end: ${owner}:${sink.name} triggers no process`;
+      }
+      return `open end: ${owner}:${sink.name} publishes nothing`;
+    }
+
+    // ── Selection / info panel ──────────────────────────────────────────────────
+
+    findHop(id) {
+      for (const group of this.groups) {
+        const hop = group.hops.find((h) => h.id === id);
+        if (hop) return { group, hop };
+      }
+      return null;
+    }
+
+    findGate(key) {
+      for (const group of this.groups) {
+        const gate = group.gates.find((g) => g.key === key);
+        if (gate) return { group, gate };
+      }
+      return null;
+    }
+
+    findEnd(id) {
+      for (const group of this.groups) {
+        const { loops, terminal } = group.ends;
+        const end = loops.find((loop) => loop.id === id);
+        if (end) return { group, end };
+        if (terminal?.id === id) return { group, end: terminal };
+      }
+      return null;
+    }
+
+    // Selecting anything in a group makes it the group enumeration acts on.
+    select(id, focus = true) {
+      this.container
+        .querySelectorAll(".seq-selected")
+        .forEach((el) => el.classList.remove("seq-selected"));
+      this.selectedId = id;
+      const hopHit = this.findHop(id);
+      if (hopHit) {
+        this.setActiveGroup(hopHit.group);
+        hopHit.hop.element?.classList.add("seq-selected");
+        this.updateInfoPanel(
+          this.describeHopPanel(hopHit.group, hopHit.hop),
+          "Hop",
+        );
+        return;
+      }
+      const endHit = this.findEnd(id);
+      if (endHit) {
+        this.setActiveGroup(endHit.group);
+        endHit.end.element?.classList.add("seq-selected");
+        this.updateInfoPanel(
+          this.describeEndPanel(endHit.group, endHit.end),
+          "Chain end",
+        );
+        return;
+      }
+      const gateHit = this.findGate(id);
+      if (!gateHit) return;
+      this.setActiveGroup(gateHit.group);
+      gateHit.gate.element?.classList.add("seq-selected");
+      this.updateInfoPanel(
+        this.describeGatePanel(gateHit.group, gateHit.gate),
+        "Event",
+      );
+      if (focus) this.focusElement(gateHit.gate.element);
+    }
+
+    setActiveGroup(group) {
+      if (this.activeGroup === group) return;
+      const previous = this.activeGroup;
+      this.activeGroup = group;
+      if (this.highlightEdges) {
+        this.highlightEdges = null;
+        this.enumerated = null;
+        if (previous) this.applyEmphasis(previous);
+      }
+      this.container
+        .querySelectorAll(".seq-group-active")
+        .forEach((el) => el.classList.remove("seq-group-active"));
+      group.element?.classList.add("seq-group-active");
+      this.updateCounters();
+    }
+
+    selectGroup(group) {
+      this.setActiveGroup(group);
+      const sink = group.solution.arrivals.get(group.sinkId);
+      const sinkEvent = this.graph.events.get(group.sinkId);
+      const sourceIds = [...group.sources];
+      this.updateInfoPanel(
+        {
+          name: group.title,
+          from: sourceIds
+            .map(
+              (id) =>
+                `${this.graph.ownerOf(id)?.path || ""}:${this.graph.events.get(id).name}`,
+            )
+            .join(", "),
+          to: `${this.graph.ownerOf(group.sinkId)?.path || ""}:${sinkEvent.name}`,
+          latency: {
+            state: this.state,
+            rank: sink.rank,
+            rows: [...this.latencyRows(sink), ...this.measuredRows(group)],
+            branches: [],
+          },
+          chain: this.chainReport(
+            this.graph.walk(sourceIds, "up"),
+            this.graph.walk(sourceIds, "down"),
+            sourceIds,
+          ),
+        },
+        "Chain",
+      );
+    }
+
+    selectNode(ownerId) {
+      const instance = this.graph.instances.get(ownerId)?.data || {};
+      const gates = new Set();
+      this.groups.forEach((group) =>
+        group.gates.forEach((gate) => {
+          if (gate.ownerId === ownerId) gates.add(gate.id);
+        }),
+      );
+      const measurement = this.measured?.nodeRecord?.(instance.path) || null;
+      this.updateInfoPanel(
+        { ...instance, gates: gates.size, measurement },
+        "Node",
+      );
+    }
+
+    latencyRows(arrival, comm) {
+      const timed = STATES[this.state].timed;
+      const row = (label, summary) => ({
+        label,
+        value: timed ? T.formatSummary(summary) : "—",
+        source: summary?.source,
+        count: summary?.count,
+      });
+      const rows = [];
+      if (comm) rows.push(row("comm", comm));
+      rows.push(row("wait", arrival.wait));
+      rows.push(row("exec", arrival.exec));
+      rows.push(row("cumulative", arrival.total));
+      return rows;
+    }
+
+    // The records behind a measured hop: the link's own transport, the node's
+    // in→out response from the input to the publish, the run it contains, and
+    // the wait left between them.
+    recordRows(hop) {
+      const info = hop.info;
+      if (!info) return [];
+      const rows = [];
+      const row = (label, summary) =>
+        summary &&
+        rows.push({
+          label,
+          value: T.formatSummary(summary),
+          source: summary.source,
+          count: summary.count,
+        });
+      if (info.link) row("link", T.fromRecord(info.link, "measured"));
+      if (info.intra) rows.push({ label: "link", value: "intra-process" });
+      if (info.response) {
+        const response = T.fromRecord(info.response, "measured");
+        const run = info.run ? T.fromRecord(info.run, "measured") : null;
+        row(`in→out (${info.response.from})`, response);
+        if (run) {
+          row("run", run);
+          row("wait", T.sampling(response, run));
+        }
+      }
+      return rows;
+    }
+
+    // Why a gate never ran, or why nothing arrives over a hop, when the record says so.
+    stateRows(arrival, hopArrival = null) {
+      const rows = [];
+      if (arrival?.exec?.dead) {
+        rows.push({
+          label: "state",
+          value: `never ran: ${arrival.exec.reason || "no run recorded"}`,
+        });
+      } else if (hopArrival?.dead) {
+        rows.push({
+          label: "state",
+          value: `never arrives: ${hopArrival.reason || "upstream never ran"}`,
+        });
+      }
+      return rows;
+    }
+
+    // The trigger the run detected for the output a gate feeds.
+    triggerRows(gate) {
+      if (this.state !== "measured" || !this.measured?.triggerOf) return [];
+      const trigger = this.measured.triggerOf(this.graph, gate);
+      if (!trigger) return [];
+      const what =
+        trigger.kind === "timer"
+          ? `timer ${trigger.period_ms ?? "?"} ms`
+          : trigger.kind === "input"
+            ? `input ${trigger.topic}${trigger.intra_process ? " (intra-process)" : ""}`
+            : "not visible on the publishing thread";
+      const share =
+        trigger.share === null ? "" : ` · ${Math.round(trigger.share * 100)}%`;
+      return [{ label: "trigger", value: `${what}${share}` }];
+    }
+
+    describeGatePanel(group, gate) {
+      const arrival = group.solution.arrivals.get(gate.id);
+      const owner = this.graph.ownerOf(gate.id) || {};
+      const upstream = this.graph.walk([gate.id], "up");
+      const downstream = this.graph.walk([gate.id], "down");
+      return {
+        name: gate.name,
+        path: owner.path || "",
+        source_file: owner.source_file,
+        event: {
+          kind: gate.kind,
+          type: gate.type || "not declared",
+          rate: this.rateLabel(gate.frequency) || "no clock",
+          measured_rate: this.measuredRate(gate) || undefined,
+          rate_warn: this.rateWarning(gate),
+          warn_rate: gate.warn_rate,
+          error_rate: gate.error_rate,
+          timeout: gate.timeout,
+          mismatch: this.graph.rateMismatch(gate),
+        },
+        latency: {
+          state: this.state,
+          rank: arrival.rank,
+          fold: arrival.fold,
+          rows: [
+            ...this.stateRows(arrival),
+            ...this.triggerRows(gate),
+            ...this.latencyRows(arrival),
+          ],
+          branches: arrival.branches.map((branch) => ({
+            name: this.branchName(branch),
+            value: T.formatSummary(branch.summary),
+            via: Object.entries(arrival.via)
+              .filter(([, key]) => key === branch.key)
+              .map(([component]) => component),
+          })),
+          unknownType: gate.kind === "process" && !gate.type,
+          diff: this.declaredDiff(owner.path, gate),
+        },
+        chain: this.chainReport(upstream, downstream, gate.id),
+      };
+    }
+
+    // The measurement's declared-versus-observed rows for the outputs a gate feeds.
+    declaredDiff(path, gate) {
+      if (!this.measured?.diffFor || !path || gate.kind !== "process")
+        return [];
+      const topics = window.LatencySource.outputTopicsOf(this.graph, gate);
+      return topics.length ? this.measured.diffFor(path, topics) : [];
+    }
+
+    describeHopPanel(group, hop) {
+      const from = this.graph.events.get(hop.from);
+      const to = this.graph.events.get(hop.to);
+      const arrival = group.solution.arrivals.get(hop.to);
+      return {
+        name: `${from.name} → ${to.name}`,
+        from: `${this.graph.ownerOf(hop.from)?.path}:${from.name}`,
+        to: `${this.graph.ownerOf(hop.to)?.path}:${to.name}`,
+        topic: hop.topic || undefined,
+        latency: {
+          state: this.state,
+          fold: arrival.fold,
+          rows: [
+            ...this.stateRows(arrival, hop.arrival),
+            ...this.hopRateRows(hop),
+            ...this.recordRows(hop),
+            ...this.latencyRows(arrival, hop.comm),
+          ],
+          arrives: T.formatSummary(hop.arrival),
+          on: Object.entries(hop.on)
+            .filter(([, yes]) => yes)
+            .map(([component]) => component),
+          branches: arrival.branches.map((branch) => ({
+            name: this.branchName(branch),
+            value: T.formatSummary(branch.summary),
+            via: Object.entries(arrival.via)
+              .filter(([, key]) => key === branch.key)
+              .map(([component]) => component),
+          })),
+        },
+      };
+    }
+
+    describeEndPanel(group, end) {
+      const [summary, ...notes] = this.describeEnd(group, end).split("\n");
+      const eventId = end.edgeId ? end.tail : end.sinkId;
+      const arrival = group.solution.arrivals.get(eventId);
+      const event = this.graph.events.get(eventId);
+      const panel = {
+        name: summary,
+        from: `${this.graph.ownerOf(eventId)?.path}:${event.name}`,
+        topic: end.topic || undefined,
+        latency: {
+          state: this.state,
+          rank: arrival?.rank,
+          rows: [
+            ...notes.map((note) => ({ label: "end", value: note })),
+            ...(arrival ? this.latencyRows(arrival) : []),
+          ],
+          branches: [],
+        },
+      };
+      if (end.edgeId) {
+        const head = this.graph.events.get(end.head);
+        panel.to = `${this.graph.ownerOf(end.head)?.path}:${head.name}`;
+      }
+      return panel;
+    }
+
+    // The rate the run observed on the ports a hop folds: the input the gate
+    // took the message on, and the output it was published from.
+    hopRateRows(hop) {
+      if (this.state !== "measured") return [];
+      const rows = [];
+      const seen = new Set();
+      hop.edges.forEach((edgeId) => {
+        const edge = this.graph.edgeById.get(edgeId);
+        if (!edge) return;
+        [edge.from, edge.to].forEach((id) => {
+          const event = this.graph.events.get(id);
+          if (!event || seen.has(id) || event.kind === "process") return;
+          seen.add(id);
+          const observed = this.measuredRate(event);
+          if (!observed) return;
+          rows.push({
+            label: `${event.kind} rate`,
+            value: `${observed}${event.frequency ? ` (declared ${this.rateLabel(event.frequency)})` : ""}`,
+            source: "measured",
+          });
+        });
+      });
+      return rows;
+    }
+
+    branchName(branch) {
+      const from = this.graph.events.get(branch.fromId);
+      const owner = this.graph.ownerOf(branch.fromId);
+      return `${owner?.name || ""}:${from?.name || branch.fromId}`;
+    }
+
+    chainReport(upstream, downstream, eventIds) {
+      const clockIds = new Set(
+        []
+          .concat(eventIds)
+          .flatMap((id) => [...(this.graph.clocksOf.get(id) || [])]),
+      );
+      const entry = (id, hops) => {
+        const item = this.graph.events.get(id);
+        const instance = this.graph.ownerOf(id) || {};
+        return {
+          name: item.name,
+          path: instance.path || instance.name || "",
+          type: item.type || "—",
+          rate: this.rateText(item),
+          hops: hops.get(id) || 0,
+        };
+      };
+      const list = (walk) =>
+        walk.order.slice(0, CHAIN_LIST_LIMIT).map((id) => entry(id, walk.hops));
+      return {
+        clocks: [...clockIds].map((id) => {
+          const clock = this.graph.events.get(id);
+          return {
+            name: clock.name,
+            path: this.graph.ownerOf(id)?.path || "",
+            rate: this.rateText(clock),
+          };
+        }),
+        upstream: list(upstream),
+        downstream: list(downstream),
+        upstream_total: upstream.order.length,
+        downstream_total: downstream.order.length,
+        limit: CHAIN_LIST_LIMIT,
+      };
+    }
+
+    focusElement(element) {
+      if (!element) return;
+      const target = element.getBoundingClientRect();
+      const view = this.viewRect();
+      this.transform.x +=
+        view.x + view.width / 2 - (target.x + target.width / 2);
+      this.transform.y +=
+        view.y + view.height / 2 - (target.y + target.height / 2);
+      this.updateTransform();
+    }
+
+    // ── Chain enumeration ───────────────────────────────────────────────────────
+
+    // Every distinct chain of the active group, ranked by max.
+    enumerate() {
+      const group = this.activeGroup;
+      if (!group) return;
+      const { chains, total } = T.enumerateChains(
+        group.solution,
+        group.sinkId,
+        { limit: ENUMERATE_LIMIT },
+      );
+      this.enumerated = chains;
+      this.updateInfoPanel(
+        {
+          name: `chains of ${group.title}`,
+          chains: {
+            title: `Chains (${chains.length} of ${total})`,
+            total,
+            items: chains.map((chain, index) => ({
+              label: `#${index + 1} ${STATES[this.state].timed ? T.formatSummary(chain.summary) : `${chain.events.size} events`}`,
+              detail: `${[...chain.events].filter((id) => group.gateIds.has(id)).length} gates`,
+              onSelect: () => this.showChain(index),
+            })),
+          },
+        },
+        "Chains",
+      );
+      this.showChain(0);
+    }
+
+    showChain(index) {
+      const chain = this.enumerated?.[index];
+      this.highlightEdges = chain ? new Set(chain.edges) : null;
+      if (this.activeGroup) this.applyEmphasis(this.activeGroup);
+      this.updateCounters();
+    }
+
+    clearChain() {
+      this.highlightEdges = null;
+      this.enumerated = null;
+      if (this.activeGroup) this.applyEmphasis(this.activeGroup);
+      this.updateCounters();
+    }
+
+    // ── Measurement ─────────────────────────────────────────────────────────────
+
+    // A measurement file dropped on the canvas replaces the loaded one.
+    async loadMeasurement(file) {
+      if (!window.LatencySource) return;
+      try {
+        this.attachMeasurement(await window.LatencySource.fromFile(file));
+        this.pxPerMs = null;
+        this.solveAndRender();
+      } catch (error) {
+        console.error("Failed to load measurement:", error);
+        this._setStatus(`measurement rejected: ${error.message}`);
       }
     }
 
-    async renderSequenceDiagram(mermaidSyntax) {
-      // Clear container
-      this.container.innerHTML = "";
+    // ── Toolbar ─────────────────────────────────────────────────────────────────
 
-      // Create mermaid container that takes full height
-      const mermaidContainer = document.createElement("div");
-      mermaidContainer.className = "mermaid";
-      mermaidContainer.style.width = "1200px"; // Set explicit width for Mermaid to generate larger SVG
-      mermaidContainer.style.height = "100%"; // Take full height of parent
-      mermaidContainer.style.minHeight = "800px"; // Minimum height fallback
-      mermaidContainer.style.overflow = "visible";
-      mermaidContainer.style.display = "flex";
-      mermaidContainer.style.alignItems = "stretch";
+    setState(state) {
+      if (this.state === state) return;
+      if (state === "measured" && !this.measured) return;
+      this.state = state;
+      this.pxPerMs = null;
+      this.solveAndRender();
+    }
 
-      const bgColor = this.getComputedStyleValue(
-        "--bg-secondary",
-        this.isDarkMode() ? "#1a1a1a" : "#ffffff",
+    setDriver(driver) {
+      if (this.driver === driver) return;
+      this.driver = driver;
+      this.pxPerMs = null;
+      this.groups.forEach((group) => this.buildView(group));
+      this.render();
+    }
+
+    destroy() {
+      this._toolbarObserver?.disconnect();
+      this._toolbarObserver = null;
+      super.destroy();
+    }
+
+    // Toolbar zoom, about the centre of the viewport.
+    zoomTime(factor) {
+      this.zoomTimeAt(factor, this.viewRect().width / 2);
+    }
+
+    // Back to the scale that fits the longest chain, at the top of the page.
+    resetScale() {
+      this.pxPerMs = null;
+      this.render();
+    }
+
+    renderToolbar() {
+      const bar = document.createElement("div");
+      bar.className = "logic-toolbar seq-toolbar";
+
+      const row = (...children) => {
+        const div = document.createElement("div");
+        div.className = "logic-toolbar-row";
+        children.forEach((child) => div.appendChild(child));
+        return div;
+      };
+      const label = (text) => {
+        const span = document.createElement("span");
+        span.className = "logic-toolbar-label";
+        span.textContent = text;
+        return span;
+      };
+      const button = (text, onClick, active = false, disabled = false) => {
+        const btn = document.createElement("button");
+        btn.className = "logic-btn";
+        btn.textContent = text;
+        btn.classList.toggle("active", active);
+        btn.disabled = disabled;
+        btn.onclick = onClick;
+        return btn;
+      };
+
+      bar.appendChild(
+        row(
+          label("State"),
+          ...Object.entries(STATES).map(([state, spec]) =>
+            button(
+              state === "measured" && !this.measured
+                ? "measured (drop a latency file)"
+                : spec.button,
+              () => this.setState(state),
+              this.state === state,
+              state === "measured" && !this.measured,
+            ),
+          ),
+        ),
       );
 
-      mermaidContainer.style.backgroundColor = bgColor;
-      mermaidContainer.style.padding = "20px";
-      mermaidContainer.style.borderRadius = "8px";
-      this.container.appendChild(mermaidContainer);
+      bar.appendChild(
+        row(
+          label("Axis"),
+          ...DRIVERS.map(([driver, text]) =>
+            button(
+              text,
+              () => this.setDriver(driver),
+              this.driver === driver,
+              !STATES[this.state].timed,
+            ),
+          ),
+          button(
+            "time +",
+            () => this.zoomTime(2),
+            false,
+            !STATES[this.state].timed,
+          ),
+          button(
+            "time −",
+            () => this.zoomTime(0.5),
+            false,
+            !STATES[this.state].timed,
+          ),
+        ),
+      );
 
-      try {
-        // Render with Mermaid
-        const { svg } = await mermaid.render(
-          "sequence-diagram-svg-" + Date.now(),
-          mermaidSyntax,
+      bar.appendChild(
+        row(
+          label("Chains"),
+          this.buildTrivialToggle(),
+          this.buildHopLimit(),
+          button("enumerate chains", () => this.enumerate()),
+          button(
+            "three chains",
+            () => this.clearChain(),
+            false,
+            !this.highlightEdges,
+          ),
+          button("fit", () => this.resetScale()),
+        ),
+      );
+
+      bar.appendChild(this.buildCounters());
+      bar.appendChild(this.buildLegend());
+      this.container.appendChild(bar);
+      this.installDropZone();
+    }
+
+    buildTrivialToggle() {
+      const trivial = this.groups.filter((group) => group.trivial).length;
+      const wrap = document.createElement("label");
+      wrap.className = "logic-toggle";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = this.showTrivial;
+      input.disabled = trivial === 0;
+      input.onchange = () => {
+        this.showTrivial = input.checked;
+        this.pxPerMs = null;
+        if (this.activeGroup?.trivial && !this.showTrivial) {
+          this.activeGroup = this.visibleGroups()[0] || this.activeGroup;
+        }
+        this.render();
+      };
+      wrap.appendChild(input);
+      wrap.appendChild(
+        document.createTextNode(` single-node chains (${trivial})`),
+      );
+      return wrap;
+    }
+
+    buildHopLimit() {
+      const wrap = document.createElement("label");
+      wrap.className = "logic-toggle";
+      wrap.appendChild(document.createTextNode("hops ≤ "));
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = "1";
+      input.className = "seq-hop-limit";
+      input.value = this.hopLimit ?? "";
+      input.placeholder = "∞";
+      input.onchange = () => {
+        const value = Number(input.value);
+        this.hopLimit = input.value === "" || !(value > 0) ? null : value;
+        this.pxPerMs = null;
+        this.solveAndRender();
+      };
+      wrap.appendChild(input);
+      return wrap;
+    }
+
+    _setStatus(text) {
+      const counters = this.container.querySelector(".logic-counters");
+      if (counters) counters.textContent = text;
+    }
+
+    countersText() {
+      const groups = this.visibleGroups();
+      const hidden = this.groups.length - groups.length;
+      const nodes = new Set();
+      let gates = 0;
+      let hops = 0;
+      let loops = 0;
+      let unknown = 0;
+      groups.forEach((group) => {
+        group.gates.forEach((gate) => nodes.add(gate.ownerId));
+        gates += group.gates.length;
+        hops += group.hops.length;
+        loops += group.solution.loopEdges.size;
+        unknown += group.solution.unknownGates.length;
+      });
+      const parts = [
+        `${groups.length} chain${groups.length === 1 ? "" : "s"}${hidden ? ` (${hidden} single-node hidden)` : ""}`,
+        `${nodes.size} nodes`,
+        `${gates} gates`,
+        `${hops} hops`,
+        `${loops} loop edge${loops === 1 ? "" : "s"} cut`,
+      ];
+      if (unknown) parts.push(`${unknown} gates without a type (folded as or)`);
+      if (this.activeGroup) parts.push(`active: ${this.activeGroup.title}`);
+      if (this.highlightEdges) parts.push("showing one enumerated chain");
+      if (this.measured) parts.push(`measurement: ${this.measured.label}`);
+      return parts.join(" · ");
+    }
+
+    buildCounters() {
+      const div = document.createElement("div");
+      div.className = "logic-counters";
+      div.textContent = this.countersText();
+      return div;
+    }
+
+    updateCounters() {
+      this._setStatus(this.countersText());
+    }
+
+    buildLegend() {
+      const details = document.createElement("details");
+      details.className = "logic-legend";
+      details.open = this.legendOpen;
+      details.ontoggle = () => {
+        this.legendOpen = details.open;
+      };
+      const summary = document.createElement("summary");
+      summary.textContent = "Legend";
+      details.appendChild(summary);
+
+      LEGEND.forEach(([kind, text]) => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "logic-legend-row";
+        const svg = document.createElementNS(SVG_NS, "svg");
+        svg.setAttribute("width", "26");
+        svg.setAttribute("height", "14");
+        svg.setAttribute("viewBox", "0 0 26 14");
+        svg.appendChild(this.legendGlyph(kind));
+        rowEl.appendChild(svg);
+        const span = document.createElement("span");
+        span.textContent = text;
+        rowEl.appendChild(span);
+        details.appendChild(rowEl);
+      });
+      LEGEND_NOTES.forEach((text) => {
+        const note = document.createElement("div");
+        note.className = "logic-legend-note";
+        note.textContent = text;
+        details.appendChild(note);
+      });
+
+      const defaults = this.isDarkMode()
+        ? this.styleDefaults.dark
+        : this.styleDefaults.light;
+      this.componentsOnChain().forEach(({ component, instance }) => {
+        const rowEl = document.createElement("div");
+        rowEl.className = "logic-legend-row";
+        const svg = document.createElementNS(SVG_NS, "svg");
+        svg.setAttribute("width", "26");
+        svg.setAttribute("height", "14");
+        svg.setAttribute("viewBox", "0 0 26 14");
+        const rect = document.createElementNS(SVG_NS, "rect");
+        rect.setAttribute("x", 2);
+        rect.setAttribute("y", 3);
+        rect.setAttribute("width", 22);
+        rect.setAttribute("height", 8);
+        rect.setAttribute("rx", 1.5);
+        const guide = instance.vis_guide;
+        rect.setAttribute(
+          "fill",
+          this.themed(guide, "medium_color", defaults.nodeBg),
         );
-        mermaidContainer.innerHTML = svg;
-
-        const svgElement = mermaidContainer.querySelector("svg");
-        if (svgElement) {
-          // Configure SVG to take full height of container
-          svgElement.style.maxWidth = "100%";
-          svgElement.style.width = "100%";
-          svgElement.style.height = "100%"; // Take full height
-          svgElement.style.minHeight = "800px"; // Minimum height fallback
-
-          // Keep the original dimensions for proper aspect ratio
-          // but allow it to scale down if needed
-          if (
-            !svgElement.getAttribute("viewBox") &&
-            svgElement.getAttribute("width") &&
-            svgElement.getAttribute("height")
-          ) {
-            const width = parseFloat(svgElement.getAttribute("width"));
-            const height = parseFloat(svgElement.getAttribute("height"));
-            if (width > 0 && height > 0) {
-              svgElement.setAttribute("viewBox", `0 0 ${width} ${height}`);
-            }
-          }
-
-          // Remove fixed dimensions to allow CSS control
-          svgElement.removeAttribute("width");
-          svgElement.removeAttribute("height");
-
-          // Keep container at full height
-          mermaidContainer.style.width = "100%";
-          mermaidContainer.style.height = "100%";
-
-          // Add interaction listeners
-          this.addInteractionListeners(svgElement);
-
-          this.createPanZoom(svgElement, {
-            fit: true,
-            center: true,
-            minZoom: 0.5,
-            maxZoom: 50,
-            zoomScaleSensitivity: 0.4,
-            dblClickZoomEnabled: false,
-          });
-
-          setTimeout(() => this.fitPanZoom({ maxZoom: Infinity }), 200);
-        }
-      } catch (e) {
-        console.error("Mermaid rendering failed:", e);
-        throw new Error("Error rendering sequence diagram: " + e.message);
-      }
+        rect.setAttribute(
+          "stroke",
+          this.themed(guide, "color", defaults.stroke),
+        );
+        rect.classList.add("seq-bar");
+        svg.appendChild(rect);
+        rowEl.appendChild(svg);
+        const span = document.createElement("span");
+        span.textContent = component;
+        rowEl.appendChild(span);
+        details.appendChild(rowEl);
+      });
+      return details;
     }
 
-    addInteractionListeners(svgElement) {
-      let selectedLine = null; // Track currently selected line
-
-      // Helper to check if element is a visible message line
-      const isLine = (el) => {
-        if (!el || !el.getAttribute) return false;
-        const cls = el.getAttribute("class") || "";
-        return cls && cls.split(" ").some((c) => c.startsWith("messageLine"));
-      };
-
-      // Helper to check if element is message text
-      const isText = (el) => {
-        if (!el || !el.getAttribute) return false;
-        const cls = el.getAttribute("class") || "";
-        return cls && cls.split(" ").some((c) => c.startsWith("messageText"));
-      };
-
-      // Apply highlight styles to a line
-      const applyHighlight = (lineElement) => {
-        lineElement.classList.remove("line-hover"); // Remove hover effect first
-        lineElement.classList.add("line-highlight");
-      };
-
-      // Remove highlight styles from a line
-      const removeHighlight = (lineElement) => {
-        lineElement.classList.remove("line-highlight");
-      };
-
-      // Clear all highlights
-      const clearAllHighlights = () => {
-        svgElement
-          .querySelectorAll('[class*="messageLine"]')
-          .forEach((line) => {
-            removeHighlight(line);
-            line.classList.remove("line-hover"); // Also remove any hover effects
-          });
-        selectedLine = null;
-      };
-
-      // Add hover effects
-      svgElement.addEventListener("mouseover", (e) => {
-        const target = e.target;
-        if (
-          (target.tagName === "path" || target.tagName === "line") &&
-          isLine(target)
-        ) {
-          if (target !== selectedLine) {
-            target.classList.add("line-hover");
-          }
-        }
-      });
-
-      svgElement.addEventListener("mouseout", (e) => {
-        const target = e.target;
-        if (
-          (target.tagName === "path" || target.tagName === "line") &&
-          isLine(target)
-        ) {
-          // If this line is not selected, remove hover highlight
-          if (target !== selectedLine) {
-            target.classList.remove("line-hover");
-          }
-        }
-      });
-
-      // Add click interactions
-      svgElement.addEventListener("click", (e) => {
-        let target = e.target;
-        let lineElement = null;
-
-        // 1. Check if clicked element is the line itself
-        if (target.tagName === "path" || target.tagName === "line") {
-          if (isLine(target)) {
-            lineElement = target;
-          }
-        }
-        // 2. Check if clicked element is text
-        else if (target.tagName === "text" || target.tagName === "tspan") {
-          // If text is clicked, find the associated message line.
-          const textEl = target.closest("text");
-          if (textEl && isText(textEl)) {
-            let next = textEl.nextElementSibling;
-            while (next) {
-              // If we find a line, that's our target
-              if (isLine(next)) {
-                lineElement = next;
-                break;
-              }
-              // If we hit another text, we've likely gone too far
-              if (next.tagName === "text" && isText(next)) {
-                break;
-              }
-              next = nextElementSibling;
-            }
-          }
-        }
-
-        if (lineElement) {
-          // If clicking the same line that's already selected, deselect it
-          if (selectedLine === lineElement) {
-            clearAllHighlights();
-          } else {
-            // Clear previous selection and select new line
-            clearAllHighlights();
-            selectedLine = lineElement;
-            applyHighlight(selectedLine);
-          }
-          e.stopPropagation(); // Prevent other handlers
-        } else {
-          // Clicked background, clear all highlights
-          clearAllHighlights();
-        }
-      });
+    legendGlyph(kind) {
+      const make = (tag) => document.createElementNS(SVG_NS, tag);
+      if (kind === "block" || kind === "dead") {
+        const rect = make("rect");
+        rect.setAttribute("x", 2);
+        rect.setAttribute("y", 3);
+        rect.setAttribute("width", 22);
+        rect.setAttribute("height", 8);
+        rect.setAttribute("rx", 1.5);
+        rect.classList.add("seq-bar", "seq-legend-bar");
+        if (kind === "dead") rect.classList.add("seq-dead");
+        return rect;
+      }
+      if (kind === "wait") {
+        const rect = make("rect");
+        rect.setAttribute("x", 3);
+        rect.setAttribute("y", 5.5);
+        rect.setAttribute("width", 20);
+        rect.setAttribute("height", 3);
+        rect.classList.add("seq-wait");
+        return rect;
+      }
+      if (kind === "whisker") {
+        const path = make("path");
+        path.setAttribute("d", "M 3 7 L 23 7 M 3 4 L 3 10 M 23 4 L 23 10");
+        path.classList.add("seq-whisker");
+        return path;
+      }
+      if (kind === "loop") {
+        const arc = make("path");
+        arc.setAttribute("d", "M 22 4 C 26 13, 0 13, 4 4");
+        arc.classList.add("seq-hop", "seq-loop");
+        return arc;
+      }
+      if (kind === "end") {
+        const stop = make("path");
+        stop.setAttribute("d", "M 2 7 L 20 7 M 20 2 L 20 12");
+        stop.classList.add("seq-end");
+        return stop;
+      }
+      const line = make("path");
+      line.setAttribute("d", "M 2 7 L 24 7");
+      line.classList.add("seq-hop");
+      if (kind === "late") line.classList.add("seq-hop-late");
+      else if (kind === "sampled") line.classList.add("seq-hop-sampled");
+      else line.classList.add(CHAIN_CLASS[kind]);
+      return line;
     }
 
-    // Mermaid bakes the theme into the rendered SVG, so a theme flip re-renders
-    // from the source data rather than restyling in place.
-    updateTheme() {
-      this.initializeMermaid();
-      if (window.sequenceDiagramData?.[this.options.mode]) {
-        this.loadAndRender();
-      }
+    // Drop a measurement file anywhere on the canvas.
+    installDropZone() {
+      const zone = this.container;
+      zone.ondragover = (e) => {
+        e.preventDefault();
+        zone.classList.add("seq-dropping");
+      };
+      zone.ondragleave = () => zone.classList.remove("seq-dropping");
+      zone.ondrop = (e) => {
+        e.preventDefault();
+        zone.classList.remove("seq-dropping");
+        const file = e.dataTransfer?.files?.[0];
+        if (file) this.loadMeasurement(file);
+      };
     }
   }
 
-  // Export for use in the overview page
+  // 1 / 2 / 5 × 10^k at or above a raw step.
+  function niceStep(raw) {
+    if (!(raw > 0)) return 1;
+    const power = Math.pow(10, Math.floor(Math.log10(raw)));
+    const unit = raw / power;
+    const nice = unit <= 1 ? 1 : unit <= 2 ? 2 : unit <= 5 ? 5 : 10;
+    return nice * power;
+  }
+
   window.SequenceDiagramModule = SequenceDiagramModule;
 })();

@@ -1,0 +1,281 @@
+# Copyright 2026 TIER IV, inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Node statistics on a synthetic run: triggers, process time, response, links, duplicates."""
+
+import pytest
+
+from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
+from autoware_system_designer_runtime._impl.measure.node_stats import (
+    STATE_EXITED,
+    STATE_NOT_INITIALIZED,
+    STATE_RUNNING,
+    ProcessExit,
+    analyze,
+    summarize,
+)
+from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir
+
+from .measure_fixtures import MS, T0, S, TraceBuilder, chain_design, gid, write_chain_traces
+
+
+@pytest.fixture
+def analysis(tmp_path):
+    start, end = write_chain_traces(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    return analyze(read_trace_dir(tmp_path), graph, start, end)
+
+
+def _labels(node, topic):
+    return {p.trigger.label() for p in node.pubs_by_topic[topic]}
+
+
+def test_summarize_is_a_population_summary_in_ms():
+    s = summarize([1 * MS, 3 * MS])
+    assert (s.count, s.min_ms, s.mean_ms, s.max_ms, s.sd_ms) == (2, 1.0, 2.0, 3.0, 1.0)
+    assert summarize([]) is None
+
+
+def test_timer_triggered_output_has_timer_trigger_and_exec(analysis):
+    a = analysis.nodes["/a"]
+    assert _labels(a, "/x") == {"timer(20 ms)"}
+    execs = [p.exec_ns for p in a.pubs_by_topic["/x"]]
+    assert all(e == 1 * MS for e in execs)
+    assert len(a.pubs_by_topic["/x"]) == 50
+    assert analysis.timer_owner[(100, 0xA1)] == "/a"
+    assert analysis.timer_fires[(100, 0xA1)] == 50
+
+
+def test_input_triggered_output_measures_from_the_take(analysis):
+    b = analysis.nodes["/b"]
+    assert _labels(b, "/y") == {"input(/x)"}
+    assert {p.exec_ns for p in b.pubs_by_topic["/y"]} == {2 * MS}
+    assert len(b.takes_by_topic["/x"]) == 50
+
+
+def test_link_communication_is_take_minus_source_timestamp(analysis):
+    values = analysis.links[("/x", "/a", "/b")]
+    assert len(values) == 50
+    # publish out 50 us after in, take 500 us after out, source 20 us after in
+    assert all(v == 530_000 for v in values)
+    assert ("/x", "/a", "/e") in analysis.links
+    assert analysis.comm_invalid == 0
+
+
+def test_sampling_node_reports_response_from_the_sampled_input(analysis):
+    e = analysis.nodes["/e"]
+    assert _labels(e, "/r") == {"timer(10 ms)"}
+    responses = e.response[("/r", "/x")]
+    assert len(responses) == len(e.pubs_by_topic["/r"])
+    assert min(responses) > 0 and max(responses) <= 20 * MS + 1 * MS
+
+
+def test_intra_process_hop_is_folded_into_the_downstream_exec(analysis):
+    d = analysis.nodes["/d"]
+    assert d.dup_takes == {"/p": 20}
+    assert "/p" not in d.takes_by_topic
+    assert _labels(d, "/q") == {"input(/p, intra_process)"}
+    assert {p.exec_ns for p in d.pubs_by_topic["/q"]} == {3 * MS}
+    assert ("/p", "/c", "/d") not in analysis.links
+
+
+def test_publish_without_a_visible_trigger_is_unknown(analysis):
+    f = analysis.nodes["/f"]
+    assert _labels(f, "/w") == {"unknown"}
+    assert all(p.exec_ns is None for p in f.pubs_by_topic["/w"])
+
+
+def test_a_stale_marker_does_not_trigger_a_later_publish(tmp_path):
+    # /a takes /x at T0 and publishes /y 2 ms later; a publish 3 s later on the same thread
+    # came from a callback the tracer does not see and keeps no trigger.
+    b = TraceBuilder(700).sub(0x1, "/a", "/x").pub(0x2, "/a", "/y", gid(7))
+    b.take(T0, 5, 0x1, T0 - MS, gid(1)).publish(T0 + 2 * MS, T0 + 2 * MS + 100, 5, 0x2)
+    b.publish(T0 + 3 * S, T0 + 3 * S + 100, 5, 0x2)
+    b.write(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    analysis = analyze(read_trace_dir(tmp_path), graph, T0 - S, T0 + 4 * S)
+    pubs = analysis.nodes["/a"].pubs_by_topic["/y"]
+    assert [p.trigger.kind for p in pubs] == ["input", "unknown"]
+    assert pubs[0].exec_ns == 2 * MS and pubs[1].exec_ns is None
+
+
+def test_clock_messages_are_no_inputs(tmp_path):
+    b = TraceBuilder(701).sub(0x1, "/a", "/clock").sub(0x3, "/a", "/x").pub(0x2, "/a", "/y", gid(7))
+    b.take(T0, 5, 0x1, T0 - MS, gid(1)).take(T0 + MS, 5, 0x3, T0, gid(2))
+    b.publish(T0 + 2 * MS, T0 + 2 * MS + 100, 5, 0x2)
+    b.write(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    analysis = analyze(read_trace_dir(tmp_path), graph, T0 - S, T0 + S)
+    a = analysis.nodes["/a"]
+    assert set(a.takes_by_topic) == {"/x"} and "/clock" not in a.last_arrival
+    assert a.subscribed == {"/clock", "/x"}  # the endpoint is still known
+    assert [p.trigger.topic for p in a.pubs_by_topic["/y"]] == ["/x"]
+
+
+def test_overlapping_publish_calls_are_told_apart_by_the_same_process_gid(tmp_path):
+    # Two publishers of /x in one process, calls overlapping around the source timestamp.
+    b = TraceBuilder(702).pub(0x1, "/a", "/x", gid(1)).pub(0x2, "/b", "/x", gid(2)).sub(0x3, "/c", "/x")
+    b.publish(T0, T0 + 3 * MS, 5, 0x1).publish(T0 + MS, T0 + 4 * MS, 6, 0x2)
+    b.take(T0 + 5 * MS, 7, 0x3, T0 + 2 * MS, gid(2))
+    b.write(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    analysis = analyze(read_trace_dir(tmp_path), graph, T0 - S, T0 + S)
+    take = analysis.nodes["/c"].takes_by_topic["/x"][0]
+    assert take.publisher is analysis.nodes["/b"]
+    # Ten quick publishes before the matching one do not push it out of reach.
+    b = TraceBuilder(703).pub(0x1, "/a", "/x", gid(1)).sub(0x3, "/c", "/x")
+    b.publish(T0, T0 + 20 * MS, 5, 0x1)
+    for i in range(1, 11):
+        b.publish(T0 + i * MS, T0 + i * MS + 10, 6, 0x1)
+    b.take(T0 + 25 * MS, 7, 0x3, T0 + 15 * MS, gid(1))
+    b.write(tmp_path / "long_call")
+    analysis = analyze(read_trace_dir(tmp_path / "long_call"), graph, T0 - S, T0 + S)
+    take = analysis.nodes["/c"].takes_by_topic["/x"][0]
+    assert take.source_pub is not None and take.source_pub.t_in == T0
+
+
+def test_window_excludes_records_outside_it(tmp_path):
+    start, end = write_chain_traces(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    half = analyze(read_trace_dir(tmp_path), graph, start + 500 * MS, end)
+    assert len(half.nodes["/a"].pubs_by_topic["/x"]) == 25
+    assert abs(half.window_s - 0.5) < 1e-9
+    assert half.rate(25) == pytest.approx(50.0)
+
+
+def test_unmatched_nodes_are_kept_by_ros_name(tmp_path):
+    start, end = write_chain_traces(tmp_path)
+    design = chain_design()
+    design["data"]["children"] = [c for c in design["data"]["children"] if c["path"] != "/f"]
+    graph = NodeGraph.from_system_structure(design)
+    result = analyze(read_trace_dir(tmp_path), graph, start, end)
+    assert [n.fqn for n in result.unmatched_nodes()] == ["/f"]
+
+
+def test_endpoints_are_recorded_whether_or_not_messages_moved(analysis):
+    b = analysis.nodes["/b"]
+    assert b.subscribed == {"/x"} and b.advertised == {"/y"}
+    assert b.initialized
+    assert analysis.node_state(b) == STATE_RUNNING
+    assert analysis.last_record_of(b) == max(p.t_in for p in b.pubs_by_topic["/y"])
+
+
+def test_a_node_owning_only_lifecycle_endpoints_is_not_initialized(tmp_path):
+    start, end = write_chain_traces(tmp_path)
+    # /g stalls in its constructor: the endpoints every node creates exist, nothing of its own does.
+    g = (
+        TraceBuilder(700)
+        .pub(0x71, "/g", "/rosout", "7" * 48)
+        .sub(0x72, "/g", "/clock")
+        .sub(0x73, "/g", "/parameter_events")
+    )
+    for i in range(10):
+        g.take(start + i * 100 * MS, 7, 0x72, start + i * 100 * MS - MS, "0" * 48)
+    g.write(tmp_path)
+    design = chain_design()
+    g_node = {
+        "name": "g",
+        "namespace": "/",
+        "path": "/g",
+        "entity_type": "node",
+        "in_ports": [],
+        "out_ports": [
+            {
+                "name": "out",
+                "msg_type": "std_msgs/msg/String",
+                "topic": ["g_out"],
+                "event": {"unique_id": "g.out", "type": "to_output", "trigger_ids": [], "action_ids": []},
+            }
+        ],
+        "events": [],
+        "launcher": {"launch_state": "single_node", "package": "pkg", "executable": "g", "ports": []},
+    }
+    design["data"]["children"].append(g_node)
+    graph = NodeGraph.from_system_structure(design)
+    result = analyze(read_trace_dir(tmp_path), graph, start, end)
+    node = result.nodes["/g"]
+    assert node.subscribed == {"/clock", "/parameter_events"} and node.advertised == {"/rosout"}
+    assert not node.initialized
+    assert result.node_state(node) == STATE_NOT_INITIALIZED
+    assert result.last_record_of(node) == start + 9 * 100 * MS
+
+    # A node whose design declares no topic port (services only) cannot be judged by topic endpoints.
+    g_node["out_ports"] = []
+    graph = NodeGraph.from_system_structure(design)
+    result = analyze(read_trace_dir(tmp_path), graph, start, end)
+    assert result.node_state(result.nodes["/g"]) == STATE_RUNNING
+
+
+def test_an_exit_inside_the_window_marks_the_node_exited_and_the_shutdown_does_not(tmp_path):
+    start, end = write_chain_traces(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    exits = {
+        200: ProcessExit(pid=200, t_ns=start + 500 * MS, exit_code=-6, actor="b"),
+        300: ProcessExit(pid=300, t_ns=end + 2 * S, exit_code=0, actor="e"),
+        999: ProcessExit(pid=999, t_ns=start, exit_code=1, actor="untraced"),
+    }
+    result = analyze(read_trace_dir(tmp_path), graph, start, end, exits=exits)
+    assert set(result.process_exits) == {200, 300}  # an exit of a process the trace never saw is dropped
+    b, e = result.nodes["/b"], result.nodes["/e"]
+    assert result.node_state(b) == STATE_EXITED and result.exit_of(b).exit_code == -6
+    assert result.node_state(e) == STATE_RUNNING and result.exit_of(e) is None
+
+
+def test_gid_fallback_is_confined_to_the_take_topic(tmp_path):
+    # Two processes whose publishers carry the same gid bytes: one on /x, one on /other.
+    TraceBuilder(801).pub(0x1, "/a", "/x", gid(7)).write(tmp_path)
+    other = TraceBuilder(802).pub(0x1, "/z", "/other", gid(7)).sub(0x3, "/c", "/x")
+    # A take of /x whose publish no traced process recorded.
+    other.take(T0 + 5 * MS, 7, 0x3, T0 - 500 * MS, gid(7))
+    other.write(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    analysis = analyze(read_trace_dir(tmp_path), graph, T0 - S, T0 + S)
+    take = analysis.nodes["/c"].takes_by_topic["/x"][0]
+    assert take.publisher is analysis.nodes["/a"]
+    assert ("/x", "/a", "/c") in analysis.links
+    # No same-topic publisher with that gid: the publisher stays unknown.
+    TraceBuilder(803).pub(0x1, "/z", "/other", gid(8)).sub(0x3, "/c", "/x").take(
+        T0 + 5 * MS, 7, 0x3, T0 - 500 * MS, gid(8)
+    ).write(tmp_path / "unknown")
+    analysis = analyze(read_trace_dir(tmp_path / "unknown"), graph, T0 - S, T0 + S)
+    take = analysis.nodes["/c"].takes_by_topic["/x"][0]
+    assert take.publisher is None and not take.dup
+    assert ("/x", None, "/c") in analysis.links
+
+
+def test_a_foreign_timer_marker_does_not_claim_an_input_driven_output(tmp_path):
+    # In container /cc, /c's second timer (publishes nothing) fires on the executor
+    # thread between /c's /p publish and /d's intra-process-triggered /q publish.
+    cc = (
+        TraceBuilder(804)
+        .timer(0xC1, 50 * MS)
+        .timer(0xC9, 10 * MS)
+        .pub(0xC2, "/c", "/p", gid(3))
+        .pub(0xD2, "/d", "/q", gid(4))
+    )
+    t = T0
+    while t < T0 + S:
+        cc.fire(t, 4, 0xC1)
+        cc.publish(t + 1 * MS, t + 1 * MS + 40 * 1000, 4, 0xC2)
+        cc.fire(t + 2 * MS, 4, 0xC9)
+        cc.publish(t + 3 * MS, t + 3 * MS + 40 * 1000, 4, 0xD2)
+        t += 50 * MS
+    cc.write(tmp_path)
+    graph = NodeGraph.from_system_structure(chain_design())
+    analysis = analyze(read_trace_dir(tmp_path), graph, T0, T0 + S)
+    assert _labels(analysis.nodes["/c"], "/p") == {"timer(50 ms)"}
+    assert _labels(analysis.nodes["/d"], "/q") == {"input(/p, intra_process)"}
+    assert {p.exec_ns for p in analysis.nodes["/d"].pubs_by_topic["/q"]} == {2 * MS}
+    assert (804, 0xC9) not in analysis.timer_owner
+    assert analysis.nodes["/d"].timer_handles == {}

@@ -25,6 +25,9 @@
     "global_topic",
     "event",
     "chain",
+    "latency",
+    "chains",
+    "measurement",
   ]);
 
   // Parameter source -> badge label; the matching colors live in css/styles.css.
@@ -124,12 +127,14 @@
     return card(`Global Topic ${globalTopic.topic}`, ...groups);
   }
 
-  // One event of the trigger graph: what fires it and at what rate.
+  // One event of the trigger graph: what fires it, at what declared rate and,
+  // when a run was measured, at what observed rate.
   function eventCard(event) {
     const rows = [
       ["kind", event.kind],
       ["type", event.type],
       ["rate", event.rate],
+      ["measured rate", event.measured_rate],
       ["warn rate", event.warn_rate],
       ["error rate", event.error_rate],
       ["timeout", event.timeout],
@@ -147,6 +152,14 @@
       row.appendChild(element("span", "info-label", "mixed trigger rates:"));
       row.appendChild(
         element("span", "info-value chain-warn", event.mismatch.join(" / ")),
+      );
+      rows.push(row);
+    }
+    if (event.rate_warn) {
+      const row = element("div", "info-row");
+      row.appendChild(element("span", "info-label", "rate differs:"));
+      row.appendChild(
+        element("span", "info-value chain-warn", event.rate_warn),
       );
       rows.push(row);
     }
@@ -225,6 +238,205 @@
       );
     }
     return card(chain.title || "Chain", ...groups);
+  }
+
+  // Costs of one hop or gate as min / mean ± sd / max, each row naming where
+  // its numbers came from, then the branches a gate folded.
+  function latencyCard(latency) {
+    const children = [];
+    if (latency.state === "logical") {
+      children.push(
+        element(
+          "div",
+          "port-type",
+          `logical view · rank ${latency.rank ?? "—"}`,
+        ),
+      );
+    }
+    latency.rows.forEach((row) => {
+      const line = element("div", "latency-row");
+      line.appendChild(element("span", "latency-label", row.label));
+      const value = element("span", "latency-value", row.value);
+      if (row.source && row.source !== "none") {
+        const source = element("span", "latency-source", row.source);
+        if (row.count) source.textContent += ` n=${row.count}`;
+        value.appendChild(source);
+      }
+      line.appendChild(value);
+      children.push(line);
+    });
+    if (latency.arrives) {
+      const line = element("div", "latency-row");
+      line.appendChild(element("span", "latency-label", "arrives"));
+      line.appendChild(element("span", "latency-value", latency.arrives));
+      children.push(line);
+    }
+    if (latency.on?.length) {
+      children.push(
+        element("div", "port-type", `on the ${latency.on.join(", ")} chain`),
+      );
+    }
+    if (latency.unknownType) {
+      children.push(
+        element(
+          "div",
+          "port-type latency-flag",
+          "type not declared — folded as or",
+        ),
+      );
+    }
+    if (latency.diff?.length) children.push(diffGroup(latency.diff));
+    if (latency.branches?.length > 1) {
+      const group = element("div", "info-group");
+      group.appendChild(
+        element(
+          "div",
+          "info-subtitle",
+          `${latency.fold === "max" ? "and — every branch" : "or — first branch"} (${latency.branches.length})`,
+        ),
+      );
+      latency.branches.forEach((branch) => {
+        const entry = element("div", "port-entry");
+        const head = branch.via.length
+          ? `${branch.name}  ← ${branch.via.join("/")}`
+          : branch.name;
+        entry.appendChild(element("div", "port-name", head));
+        entry.appendChild(element("div", "port-type", branch.value));
+        group.appendChild(entry);
+      });
+      children.push(group);
+    }
+    return card("Latency", ...children);
+  }
+
+  // Declared trigger of each output beside what the measurement observed.
+  function diffGroup(rows) {
+    const group = element("div", "info-group");
+    group.appendChild(element("div", "info-subtitle", "declared vs observed"));
+    rows.forEach((row) => {
+      const entry = element("div", "port-entry");
+      const head = element("div", "port-name", `${row.output} · ${row.status}`);
+      if (row.status !== "match") head.classList.add("latency-flag");
+      entry.appendChild(head);
+      const detail = [`declared ${row.declared}`, `observed ${row.observed}`];
+      if (row.note) detail.push(row.note);
+      entry.appendChild(element("div", "port-type", detail.join(" · ")));
+      group.appendChild(entry);
+    });
+    return group;
+  }
+
+  const rate = (value) =>
+    value === null || value === undefined
+      ? "—"
+      : `${Number(value).toFixed(1)} Hz`;
+
+  // A node's measured record: input, timer and output rates, the trigger and
+  // process time of each output, and the declared diff.
+  function measurementCard(record) {
+    const children = [];
+    if (record.process) {
+      const process = record.process;
+      const parts = [
+        process.state,
+        process.pids?.length ? `pid ${process.pids.join(", ")}` : null,
+        process.exit
+          ? `exit code ${process.exit.code ?? "?"}${process.exit.at ? ` at ${process.exit.at}` : ""}`
+          : null,
+        process.last_record ? `last record ${process.last_record}` : null,
+      ].filter(Boolean);
+      children.push(
+        element(
+          "div",
+          process.state === "running" ? "port-type" : "port-type latency-flag",
+          parts.join(" · "),
+        ),
+      );
+    }
+    if (record.notes) {
+      Object.entries(record.notes).forEach(([note, topics]) => {
+        const group = element("div", "info-group");
+        group.appendChild(
+          element("div", "info-subtitle", note.replaceAll("_", " ")),
+        );
+        topics.forEach((topic) =>
+          group.appendChild(element("div", "port-type", topic)),
+        );
+        children.push(group);
+      });
+    }
+    const list = (title, items, describe) => {
+      if (!items?.length) return;
+      const group = element("div", "info-group");
+      group.appendChild(element("div", "info-subtitle", title));
+      items.forEach((item) => {
+        const entry = element("div", "port-entry");
+        const [name, detail] = describe(item);
+        entry.appendChild(element("div", "port-name", name));
+        if (detail) entry.appendChild(element("div", "port-type", detail));
+        group.appendChild(entry);
+      });
+      children.push(group);
+    };
+    list("inputs", record.inputs, (input) => [
+      input.topic,
+      [
+        rate(input.rate_hz),
+        input.intra_process ? "intra-process" : null,
+        input.duplicate_count
+          ? `${input.duplicate_count} duplicate takes`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    ]);
+    list("timers", record.timers, (timer) => [
+      `${timer.period_ms ?? "?"} ms`,
+      rate(timer.rate_hz),
+    ]);
+    list("outputs", record.outputs, (output) => {
+      const parts = [rate(output.rate_hz)];
+      if (output.trigger) {
+        const t = output.trigger;
+        const what =
+          t.kind === "timer"
+            ? `timer ${t.period_ms ?? "?"} ms`
+            : t.kind === "input"
+              ? `input ${t.topic}${t.intra_process ? " (intra-process)" : ""}`
+              : "unknown trigger";
+        parts.push(`${what} ${Math.round((t.share ?? 0) * 100)}%`);
+      }
+      if (output.exec) {
+        parts.push(
+          `exec ${output.exec.min_ms} / ${output.exec.mean_ms} / ${output.exec.max_ms} ms`,
+        );
+      }
+      return [output.topic, parts.join(" · ")];
+    });
+    if (record.declared_diff?.length)
+      children.push(diffGroup(record.declared_diff));
+    if (!children.length) return null;
+    return card("Measurement", ...children);
+  }
+
+  // Enumerated chains; each entry selects the chain it names.
+  function chainsCard(chains) {
+    const items = chains.items.map((item) => {
+      const entry = element("div", "port-entry chain-item");
+      entry.appendChild(element("div", "port-name", item.label));
+      if (item.detail)
+        entry.appendChild(element("div", "port-type", item.detail));
+      entry.onclick = () => {
+        chains.items.forEach((other) =>
+          other.element?.classList.remove("active"),
+        );
+        entry.classList.add("active");
+        item.onSelect?.();
+      };
+      item.element = entry;
+      return entry;
+    });
+    return card(chains.title, ...items);
   }
 
   function interfaceCard(data) {
@@ -311,6 +523,9 @@
       data.topic ? topicCard(data.topic) : null,
       data.global_topic ? globalTopicCard(data.global_topic) : null,
       data.event ? eventCard(data.event) : null,
+      data.latency ? latencyCard(data.latency) : null,
+      data.measurement ? measurementCard(data.measurement) : null,
+      data.chains ? chainsCard(data.chains) : null,
       data.chain ? chainCard(data.chain) : null,
       infoCard(data),
       interfaceCard(data),

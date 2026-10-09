@@ -100,6 +100,13 @@ class LoadFailed:
     error: str
 
 
+@dataclass
+class TaskFinished:
+    """A task registered through ``schedule_task`` has ended."""
+
+    name: str
+
+
 # ---- Shared emit helper --------------------------------------------------
 
 

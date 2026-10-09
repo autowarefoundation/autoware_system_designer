@@ -10,6 +10,7 @@
   --text-primary: #212529;
   --text-secondary: #495057;
   --text-muted: #6c757d;
+  --seq-loop: #8e5ea2;
   --border-color: #e9ecef;
   --border-hover: #adb5bd;
   --border-active: #007bff;
@@ -35,6 +36,7 @@
   --text-primary: #e9ecef;
   --text-secondary: #adb5bd;
   --text-muted: #6c757d;
+  --seq-loop: #b48ccf;
   --border-color: #495057;
   --border-hover: #6c757d;
   --border-active: #0d6efd;
@@ -935,37 +937,308 @@ svg.lod-rate .logic-vertex-sub {
   color: var(--text-muted);
 }
 
-/* --- Sequence Diagram Integrated Styles --- */
-.mermaid g [class^="messageLine"],
-.mermaid g [class^="messageText"] {
-  cursor: pointer !important;
-  pointer-events: all;
-}
-.mermaid g [class^="messageLine"] {
-  stroke-width: 7px !important;
-}
-[data-theme="light"] .mermaid g [class^="messageLine"] {
-  stroke: #888888;
-}
-[data-theme="dark"] .mermaid g [class^="messageLine"] {
-  stroke: #aaaaaa;
+/* --- Sequence Diagram (event-chain latency view) --- */
+.sequence-diagram-container {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  position: relative;
+  overflow: hidden;
 }
 
-.mermaid .line-hover {
-  stroke-width: 8px !important;
-}
-[data-theme="light"] .mermaid .line-hover {
-  stroke: #555555;
-}
-[data-theme="dark"] .mermaid .line-hover {
-  stroke: #ffffff;
+.sequence-diagram-container.seq-dropping {
+  outline: 2px dashed var(--highlight);
+  outline-offset: -4px;
 }
 
-.mermaid .line-highlight {
+/* Groups: one timeline per chain under its title; the active group's title
+   is emphasised. */
+.seq-group-title {
+  font-family: "Segoe UI", sans-serif;
+  font-weight: 600;
+  fill: var(--text-primary);
+}
+
+.seq-group-detail {
+  font-weight: 400;
+  fill: var(--text-muted);
+}
+
+.seq-group-active .seq-group-title {
+  fill: var(--highlight);
+}
+
+/* Tracks: one stripe per row of blocks, the spine tinted. */
+.seq-track {
+  fill: var(--text-muted);
+  opacity: 0.04;
+}
+
+.seq-track-alt {
+  opacity: 0.09;
+}
+
+.seq-track-spine {
+  fill: var(--highlight);
+  opacity: 0.09;
+}
+
+.seq-axis-line {
+  stroke: var(--text-muted);
+  stroke-width: 0.8px;
+}
+
+.seq-axis-tick {
+  stroke: var(--border-color);
+  stroke-width: 0.4px;
+}
+
+.seq-axis-label {
+  font-family: "Segoe UI", sans-serif;
+  fill: var(--text-muted);
+  pointer-events: none;
+}
+
+/* The ruler is pinned to the top of the viewport and covers what scrolls under it. */
+.seq-axis-bg {
+  fill: var(--bg-primary);
+}
+
+/* A hop: the arrow from the end of one block to the arrival at the next gate. */
+.seq-hop {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: 0.8px;
+  cursor: pointer;
+}
+
+.seq-hop-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 8px;
+  cursor: pointer;
+  marker-end: none;
+}
+
+.seq-hop-internal {
+  stroke-dasharray: 3 2;
+}
+
+/* The message never crossed DDS: delivered inside one process, its transport is
+   folded into the next run. */
+.seq-hop-intra {
+  stroke-dasharray: 1 1.5;
+  stroke: var(--accent-color, #4a90d9);
+}
+
+/* The message did not fire its gate: it waited in the subscription for the
+   gate's next run, and the hop carries that sampling delay. */
+.seq-hop-sampled {
+  stroke-dasharray: 6 2;
+}
+
+/* The message lands after the run it feeds has started: the gate fired from
+   another branch. */
+.seq-hop-late {
+  stroke-dasharray: 1.5 2.5;
+  opacity: 0.6;
+}
+
+/* The three chains one solve yields; everything off them is dimmed. */
+.seq-on-max {
+  stroke: #dc3545;
+  stroke-width: 1.8px;
+}
+
+.seq-on-min {
+  stroke: #28a745;
+  stroke-width: 1.4px;
+}
+
+.seq-on-mean {
+  stroke: #fd7e14;
+  stroke-width: 1.2px;
+  stroke-dasharray: 4 2;
+}
+
+text.seq-on-max {
+  fill: #dc3545;
+  stroke: none;
+}
+
+text.seq-on-min {
+  fill: #28a745;
+  stroke: none;
+}
+
+text.seq-on-mean {
+  fill: #fd7e14;
+  stroke: none;
+}
+
+.seq-dim {
+  opacity: 0.28;
+}
+
+/* A loop end: the arc from a gate back to the one its message rejoins; the
+   edge is cut from the solve. */
+.seq-loop {
+  stroke-dasharray: 3 2;
+  stroke: var(--seq-loop, #8e5ea2);
+  stroke-width: 1.1px;
+}
+
+.seq-loop-sink {
+  stroke-width: 1.5px;
+}
+
+.seq-loop-label {
+  fill: var(--seq-loop, #8e5ea2);
+}
+
+/* An open end: the stop after the last gate, where nothing takes the message. */
+.seq-end {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: 1.2px;
+  cursor: pointer;
+}
+
+.seq-end-limit {
+  stroke-dasharray: 1 2;
+}
+
+.seq-end-label {
+  fill: var(--text-secondary);
+}
+
+.seq-selected {
+  filter: drop-shadow(0 0 2px var(--highlight));
+}
+
+.seq-selected .seq-bar,
+path.seq-selected {
   stroke: var(--highlight) !important;
-  stroke-width: 8px !important;
-  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.3)) !important;
-  stroke-dasharray: none !important;
+  stroke-width: 2.2px !important;
+}
+
+.seq-bar {
+  stroke-width: 0.8px;
+}
+
+.seq-legend-bar {
+  fill: var(--bg-tertiary);
+  stroke: var(--text-secondary);
+}
+
+/* A process run no measurement covers is a faint placeholder. */
+.seq-unmeasured {
+  fill-opacity: 0.15;
+}
+
+/* A process the recorded run never fired: outlined only, dashed. */
+.seq-dead {
+  fill-opacity: 0.04;
+  stroke-dasharray: 2 2;
+  stroke-opacity: 0.7;
+}
+
+/* Nothing travels this hop: its source never ran. */
+.seq-hop-dead {
+  stroke-dasharray: 1 3;
+  opacity: 0.35;
+}
+
+.seq-wait {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 0.8px;
+}
+
+.seq-whisker {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: 0.7px;
+}
+
+.seq-whisker-partial {
+  stroke-dasharray: 1.5 1.5;
+}
+
+.seq-hop-label,
+.seq-gate-name,
+.seq-gate-rate {
+  font-family: "Segoe UI", sans-serif;
+  pointer-events: none;
+}
+
+.seq-hop-label {
+  fill: var(--text-muted);
+}
+
+.seq-gate-name {
+  fill: var(--text-primary);
+}
+
+.seq-gate-node,
+.seq-gate-rate {
+  fill: var(--text-muted);
+}
+
+.seq-gate-name-upper {
+  opacity: 0.85;
+}
+
+.seq-label-hidden {
+  display: none !important;
+}
+
+.seq-hop-limit {
+  width: 40px;
+  padding: 1px 3px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+/* Latency card: one row per cost, min / mean ± sd / max */
+.latency-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.latency-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.latency-value {
+  font-family: var(--mono-font);
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.latency-source {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.latency-flag {
+  color: var(--error-color);
+}
+
+.chain-item {
+  cursor: pointer;
+}
+
+.chain-item:hover .port-name {
+  color: var(--highlight);
 }
 
 /* --- Simple content pages (systems index, launch commands) --- */

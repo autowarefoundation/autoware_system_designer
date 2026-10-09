@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>autoware_system_designer_tracer</name>
+  <version>0.4.3</version>
+  <description>LD_PRELOAD recorder of rcl publish, take and timer calls for runtime latency measurement</description>
+
+  <maintainer email="taekjin.lee@tier4.jp">Taekjin Lee</maintainer>
+  <license>Apache License 2.0</license>
+  <author email="taekjin.lee@tier4.jp">Taekjin Lee</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rcl</depend>
+  <depend>rmw</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

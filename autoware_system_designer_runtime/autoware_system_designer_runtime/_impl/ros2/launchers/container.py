@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import queue
 import threading
-from typing import Iterable, Mapping, Optional
+from typing import Callable, Iterable, Mapping, Optional
 
 from ..common.params import _ros_args, build_cmd
 
@@ -60,6 +61,9 @@ class RosWorker:
         self._clients_lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._init_error: Optional[Exception] = None
+        # Callables run on the rclpy thread between spins; entity creation happens there.
+        self._jobs: "queue.Queue[tuple[Callable[[], object], asyncio.Future]]" = queue.Queue()
+        self._probes: list = []
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -110,6 +114,7 @@ class RosWorker:
             self._ready.set()
 
             while not self._stop.is_set():
+                self._run_jobs()
                 self._executor.spin_once(timeout_sec=0.1)
         except Exception as exc:  # noqa: BLE001
             logger.exception("ros worker crashed")
@@ -126,6 +131,72 @@ class RosWorker:
             if not self._stop.is_set():
                 logger.error("ros worker exited unexpectedly")
                 self._crashed.set()
+
+    def _run_jobs(self) -> None:
+        while True:
+            try:
+                fn, future = self._jobs.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                result = fn()
+            except Exception as exc:  # noqa: BLE001
+                self._loop.call_soon_threadsafe(_resolve, future, None, exc)
+            else:
+                self._loop.call_soon_threadsafe(_resolve, future, result, None)
+
+    async def run_on_ros_thread(self, fn: Callable[[], object], timeout: float = 10.0):
+        """Run *fn* on the rclpy thread and return its result."""
+        if self._thread is None or self._loop is None:
+            raise RuntimeError("ros worker not running")
+        if self._crashed.is_set():
+            raise RuntimeError("ros worker has crashed")
+        future: asyncio.Future = self._loop.create_future()
+        self._jobs.put((fn, future))
+        try:
+            self._executor.wake()
+        except Exception:  # noqa: BLE001
+            pass
+        return await asyncio.wait_for(future, timeout=timeout)
+
+    # ------------------------------------------------------------------
+    # Probe subscriptions (latency measurement)
+    # ------------------------------------------------------------------
+
+    async def add_probe(self, topic: str, msg_type: str) -> None:
+        """Subscribe best-effort/volatile to *topic*; messages are dropped unread."""
+
+        def _create() -> None:
+            from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+            from rosidl_runtime_py.utilities import get_message
+
+            qos = QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.BEST_EFFORT,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+            sub = self._node.create_subscription(get_message(msg_type), topic, _discard, qos, raw=True)
+            self._probes.append(sub)
+
+        await self.run_on_ros_thread(_create)
+
+    async def remove_probes(self) -> int:
+        def _destroy() -> int:
+            count = 0
+            for sub in self._probes:
+                try:
+                    self._node.destroy_subscription(sub)
+                    count += 1
+                except Exception:  # noqa: BLE001
+                    pass
+            self._probes.clear()
+            return count
+
+        return await self.run_on_ros_thread(_destroy)
+
+    @property
+    def probe_count(self) -> int:
+        return len(self._probes)
 
     # ------------------------------------------------------------------
     # LoadNode dispatch
@@ -208,3 +279,16 @@ class RosWorker:
                 client = self._node.create_client(LoadNode, service_name)
                 self._clients[service_name] = client
             return client
+
+
+def _discard(_msg) -> None:
+    return None
+
+
+def _resolve(future: asyncio.Future, result, exc: Optional[BaseException]) -> None:
+    if future.done():
+        return
+    if exc is not None:
+        future.set_exception(exc)
+    else:
+        future.set_result(result)
