@@ -97,7 +97,7 @@ def _build_commands(
 
     Without deploy variants the launchers sit directly under launcher/<mode>/<ecu>/; with them
     each variant has its own tree under launcher/deployments/<deploy>/<mode>/<ecu>/. The runtime
-    method reads system_structure/<mode>.json, which carries no deploy-variant arguments.
+    method reads system_structure/<mode>.json and binds the variant's arguments via --deploy.
     """
     launcher_root = Path(launcher_dir).resolve()
     structure_root = Path(system_structure_dir).resolve() if system_structure_dir else None
@@ -134,8 +134,10 @@ def _build_commands(
                         structure_root,
                         web_dir,
                     )
+                    deploy_arg = f" --deploy {deploy_name}" if deploy_name else ""
                     native_cmd = (
-                        f"ros2 run {RUNTIME_PACKAGE} {RUNTIME_EXECUTABLE} {structure_path} --ecu {compute_unit}"
+                        f"ros2 run {RUNTIME_PACKAGE} {RUNTIME_EXECUTABLE} {structure_path}"
+                        f" --ecu {compute_unit}{deploy_arg}"
                     )
                 mode_entries.append(Command(mode_key, compute_unit, deploy_name, f"ros2 launch {xml_path}", native_cmd))
         mode_entries.sort(key=lambda entry: (entry.ecu, entry.deploy))
