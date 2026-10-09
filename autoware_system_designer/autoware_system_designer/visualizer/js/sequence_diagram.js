@@ -43,25 +43,25 @@
   const CHAIN_COLOR = { max: "red", min: "green", mean: "orange" };
 
   const VIEW = {
-    trackH: 46,
+    trackH: 52,
     blockH: 14,
     blockMinW: 5,
     logicalBlockW: 40,
     logicalColW: 150,
     glyphW: 12,
     glyphH: 8,
-    fontSize: 10,
-    subSize: 8,
+    fontSize: 12,
+    subSize: 10,
     padLeft: 24,
     padRight: 60,
     padTop: 12,
     padBottom: 16,
-    axisH: 24,
-    groupHeaderH: 20,
+    axisH: 28,
+    groupHeaderH: 24,
     groupGap: 14,
     fallbackWidth: 1400,
     labelMin: 18,
-    labelTierH: 10,
+    labelTierH: 12,
     nameChars: 22,
     endStubW: 10,
     loopDip: 18,
@@ -126,7 +126,7 @@
       this.hopLimit = null;
       this.showTrivial = false;
       this.state = "logical";
-      this.driver = "max";
+      this.driver = "sigma1";
       this.measured = null; // loaded measurement, see latency_source.js
       this.pxPerMs = null;
       this.fitPxPerMs = null;

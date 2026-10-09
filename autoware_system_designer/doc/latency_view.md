@@ -27,7 +27,7 @@ The vertices are the process and port events the node designs declare; clock roo
 | rates    | milliseconds                         | a periodic gate's sampling delay from its rate; every process run is an unmeasured placeholder of zero width                                                                                                                                                              |
 | measured | milliseconds                         | a loaded measurement file; a run without a sample stays the placeholder and is drawn faint; a gate the record says never ran is dead, drawn dashed, and delivers nothing downstream; a gate the run observed waits nothing of its own, its inputs carry the measured wait |
 
-The axis is driven by one component of every summary: `min`, `mean`, `max`, or `mean + kσ` (k = 1, 2, 3).
+The axis is driven by one component of every summary: `min`, `mean`, `max`, or `mean + kσ` (k = 1, 2, 3); it opens on `mean + 1σ`.
 
 ## Navigation
 
