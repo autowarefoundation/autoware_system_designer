@@ -12,8 +12,10 @@
             ],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "capture",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "or",
@@ -56,8 +58,10 @@
               ],
               "error_rate": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "output_pointcloud",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_38242bb2b53cdf1e"
@@ -105,8 +109,10 @@
                 ],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "detect",
                 "process_event": true,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_c4b21ed742016d26"
@@ -127,8 +133,10 @@
                   ],
                   "error_rate": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "input_pointcloud",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_18f50af36c8979a4"
@@ -201,8 +209,10 @@
                   ],
                   "error_rate": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "output_objects",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_748817e93f2d4436"
@@ -277,8 +287,10 @@
                 ],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "detect",
                 "process_event": true,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_322c582a8701f017"
@@ -299,8 +311,10 @@
                   ],
                   "error_rate": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "input_pointcloud",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_18f50af36c8979a4"
@@ -373,8 +387,10 @@
                   ],
                   "error_rate": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "output_objects",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_7839d3dadf463b85"
@@ -449,8 +465,10 @@
                 ],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "merge",
                 "process_event": true,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_ff267d71fa342146",
@@ -472,8 +490,10 @@
                   ],
                   "error_rate": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "input_objects1",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_2663caa227eef79c"
@@ -512,8 +532,10 @@
                   ],
                   "error_rate": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "input_objects2",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_7897856f8263f415"
@@ -585,8 +607,10 @@
                   ],
                   "error_rate": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "output_objects",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_0f995ca16525da61"
@@ -635,8 +659,10 @@
               "action_ids": [],
               "error_rate": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "input_pointcloud",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_18f50af36c8979a4"
@@ -675,8 +701,10 @@
                 "action_ids": [],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "input_pointcloud",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_18f50af36c8979a4"
@@ -714,8 +742,10 @@
                 ],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "input_pointcloud",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_18f50af36c8979a4"
@@ -754,8 +784,10 @@
                 "action_ids": [],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "input_pointcloud",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "on_input",
@@ -787,8 +819,10 @@
                 ],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "input_pointcloud",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_18f50af36c8979a4"
@@ -831,8 +865,10 @@
                 ],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_objects",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_748817e93f2d4436"
@@ -872,8 +908,10 @@
                 ],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "input_objects1",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_2663caa227eef79c"
@@ -917,8 +955,10 @@
                 ],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_objects",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_7839d3dadf463b85"
@@ -958,8 +998,10 @@
                 ],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "input_objects2",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_7897856f8263f415"
@@ -1003,8 +1045,10 @@
                 ],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_objects",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_0f995ca16525da61"
@@ -1039,8 +1083,10 @@
                 "action_ids": [],
                 "error_rate": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_objects",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "to_output",
@@ -1078,8 +1124,10 @@
               "action_ids": [],
               "error_rate": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "output_objects",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [],
               "type": "to_output",
@@ -1119,8 +1167,10 @@
             "action_ids": [],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "consume",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_479e63bffcf97b31"
@@ -1141,8 +1191,10 @@
               ],
               "error_rate": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "input_objects",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_740e3caab1cbd9ba"
@@ -1245,8 +1297,10 @@
             ],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "output_pointcloud",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_38242bb2b53cdf1e"
@@ -1282,8 +1336,10 @@
             "action_ids": [],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "input_pointcloud",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_18f50af36c8979a4"
@@ -1321,8 +1377,10 @@
             "action_ids": [],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "output_objects",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "to_output",
@@ -1358,8 +1416,10 @@
             ],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "input_objects",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_740e3caab1cbd9ba"

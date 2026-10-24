@@ -12,8 +12,10 @@
             ],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "publish",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "or",
@@ -67,8 +69,10 @@
               "action_ids": [],
               "error_rate": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "output_status",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_608583f5023b734e"

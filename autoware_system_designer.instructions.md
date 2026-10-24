@@ -84,16 +84,34 @@ Represents a single ROS 2 node.
 - `processes`: Execution logic / Event chains.
   - `name`: Name of the process/callback.
   - `description`: (Optional) Brief explanation of the process.
-  - `trigger_conditions`: Logic to start process. Can be nested with `or`/`and`.
+  - `trigger_conditions`: Logic to start process. Can be nested with `or`/`and`. The process runs at the rate of the conditions that pace it, and that rate follows its outcomes to the ports it publishes: an `and` runs at its slowest condition, any other at its quickest.
     - `on_input`: Triggered by input port (`on_input: port_name`).
     - `on_trigger`: Triggered by another process (`on_trigger: process_name`).
     - `periodic`: Triggered periodically (`periodic: 10.0` [Hz]). The rate may reference the node's effective parameter (`periodic: ${parameter rate}`), so a parameter set that retunes the parameter retunes the design rate.
-    - `once`: Triggered once. Can be `once: null` or `once: <port_name>` to trigger once when a specific port receives data.
+    - `once`: Triggered once. Can be `once: null` or `once: <port_name>` to trigger once when a specific port receives data. Inside an `and`/`or` it is a latch: it gates the chain and leaves the rate to the other conditions.
     - **Monitoring**: Optional fields `warn_rate`, `error_rate`, `timeout` can be added to trigger definitions. Like `periodic`, each is a number or a `${parameter ...}` reference that resolves to one.
   - `outcomes`: Result of process.
     - `to_output`: Sends result to output port (`to_output: port_name`).
     - `to_trigger`: Triggers another process (`to_trigger: process_name`).
+    - `to_queue`: Parks the result in a node-owned queue (`to_queue: queue_name`). The queue exists once any process of the node names it; its fill rate is the filling process's rate.
     - `terminal`: Ends the chain (`terminal: null`).
+  - `reads`: (Optional) Queues the process reads when it runs (`- from_queue: queue_name`). A read is a loose connection: it neither triggers the process nor paces it, so the process keeps the rate of its `trigger_conditions` and the filling chain ends at the queue. Every queue read must be filled by a `to_queue` of the same node. A distortion corrector queues IMU samples on their own callback and reads the queue when a point cloud arrives:
+
+    ```yaml
+    processes:
+      - name: queue_imu
+        trigger_conditions:
+          - on_input: imu
+        outcomes:
+          - to_queue: imu
+      - name: undistort
+        trigger_conditions:
+          - on_input: pointcloud
+        reads:
+          - from_queue: imu
+        outcomes:
+          - to_output: pointcloud
+    ```
 
 ### 4.2. Module Configuration (`.module.yaml`)
 

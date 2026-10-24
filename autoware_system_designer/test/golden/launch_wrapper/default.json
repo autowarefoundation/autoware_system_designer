@@ -12,8 +12,10 @@
             ],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "load",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "or",
@@ -59,8 +61,10 @@
               ],
               "error_rate": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "output_vector_map",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_ad4ed36b628371e3"
@@ -115,8 +119,10 @@
             "action_ids": [],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "consume",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_0f747866032a06a9"
@@ -137,8 +143,10 @@
               ],
               "error_rate": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "input_vector_map",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_b589da255604a9e8"
@@ -209,8 +217,10 @@
             ],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "output_vector_map",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_ad4ed36b628371e3"
@@ -246,8 +256,10 @@
             ],
             "error_rate": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "input_vector_map",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_b589da255604a9e8"

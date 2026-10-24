@@ -1,0 +1,30 @@
+autoware_system_design_format: 0.4.1
+
+name: Unknown.system
+
+description: A corrector reading a queued IMU stream while the lidar stream paces it.
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+
+components:
+  - name: imu
+    entity: ImuSource.node
+    path: /sensing/imu
+    compute_unit: main_ecu
+  - name: lidar
+    entity: LidarSource.node
+    path: /sensing/lidar
+    compute_unit: main_ecu
+  - name: corrector
+    entity: Corrector.node
+    path: /sensing/corrector
+    compute_unit: main_ecu
+
+connections:
+  - - imu.publisher.imu
+    - corrector.subscriber.imu
+  - - lidar.publisher.pointcloud
+    - corrector.subscriber.pointcloud
