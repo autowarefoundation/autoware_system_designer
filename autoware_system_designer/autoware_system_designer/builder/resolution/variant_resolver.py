@@ -197,6 +197,7 @@ class SystemVariantResolver(VariantResolver):
             {"field": "components", "key_field": "name"},
             {"field": "connections", "key_field": None},
             {"field": "node_groups", "key_field": "name"},
+            {"field": "data", "key_field": "name"},
             {
                 "field": "remaps",
                 "key_field": "source",
@@ -236,6 +237,7 @@ class SystemVariantResolver(VariantResolver):
             {"field": "variables", "key_field": "name"},
             {"field": "connections", "key_field": None},
             {"field": "node_groups", "key_field": "name"},
+            {"field": "data", "key_field": "name"},
             {"field": "remaps", "key_field": "source"},
         ]
         self._resolve_removals(system_config, remove_config, remove_specs)
@@ -268,6 +270,7 @@ class NodeVariantResolver(VariantResolver):
             {"field": "param_files", "key_field": "name", "converter": ParameterFileDefinition.from_dict},
             {"field": "param_values", "key_field": "name", "converter": ParameterValueDefinition.from_dict},
             {"field": "processes", "key_field": "name"},
+            {"field": "required_data", "key_field": "entity"},
         ]
         self._resolve_merges(node_config, config_yaml, merge_specs)
 
@@ -278,6 +281,7 @@ class NodeVariantResolver(VariantResolver):
             {"field": "param_files", "key_field": "name"},
             {"field": "param_values", "key_field": "name"},
             {"field": "processes", "key_field": "name"},  # processes remain as dicts
+            {"field": "required_data", "key_field": "entity"},
         ]
         self._resolve_removals(node_config, remove_config, remove_specs)
 

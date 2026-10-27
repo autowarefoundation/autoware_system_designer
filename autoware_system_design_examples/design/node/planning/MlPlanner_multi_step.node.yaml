@@ -1,0 +1,24 @@
+autoware_system_design_format: 0.5.0
+
+name: MlPlanner_multi_step.node
+
+description: MlPlanner variant loading the multi-step (encoder/decoder) model set.
+
+base: MlPlanner.node
+
+# `required_data` entries merge by `entity`, so the whole binding is replaced.
+override:
+  required_data:
+    - entity: MlPlannerModel.data
+      description: Planner model bundle; the node loads the encoder/decoder pair and the turn indicator head.
+      requires_version: { major: 5 }
+      requires_paths:
+        [encoder_onnx_path, decoder_onnx_path, turn_indicator_onnx_path]
+      binding:
+        param_values:
+          - name: model.base_model_directory
+            from: bundle:path
+  param_values:
+    - name: model.type
+      type: string
+      default: multi_step

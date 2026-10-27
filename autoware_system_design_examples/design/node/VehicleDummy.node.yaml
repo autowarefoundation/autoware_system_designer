@@ -1,0 +1,81 @@
+autoware_system_design_format: 0.5.0
+
+name: VehicleDummy.node
+
+description: Dummy vehicle interface node that applies control commands and reports vehicle status, kinematics and raw sensor data.
+
+package:
+  name: autoware_system_dummy_modules
+  provider: dummy
+
+launch:
+  plugin: autoware::system_dummy_modules::Vehicle
+
+# interfaces
+subscribers:
+  - name: command/control_cmd
+    message_type: autoware_control_msgs/msg/Control
+  - name: command/gear_cmd
+    message_type: autoware_vehicle_msgs/msg/GearCommand
+  - name: command/hazard_lights_cmd
+    message_type: autoware_vehicle_msgs/msg/HazardLightsCommand
+  - name: command/turn_indicators_cmd
+    message_type: autoware_vehicle_msgs/msg/TurnIndicatorsCommand
+
+publishers:
+  - name: status/velocity_status
+    message_type: autoware_vehicle_msgs/msg/VelocityReport
+  - name: status/steering_status
+    message_type: autoware_vehicle_msgs/msg/SteeringReport
+  - name: status/gear_status
+    message_type: autoware_vehicle_msgs/msg/GearReport
+  - name: status/turn_indicators_status
+    message_type: autoware_vehicle_msgs/msg/TurnIndicatorsReport
+  - name: status/hazard_lights_status
+    message_type: autoware_vehicle_msgs/msg/HazardLightsReport
+  - name: status/control_mode
+    message_type: autoware_vehicle_msgs/msg/ControlModeReport
+  - name: twist
+    message_type: geometry_msgs/msg/TwistWithCovarianceStamped
+  - name: imu
+    message_type: sensor_msgs/msg/Imu
+
+required_data:
+  - entity: SensorKitDummy.data
+    description: Sensor-kit calibration bundle for this vehicle; the node reads its manifest for the file names.
+    requires_paths:
+      [
+        sensor_kit_calibration_path,
+        sensors_calibration_path,
+        imu_corrector_param_path,
+      ]
+    binding:
+      param_values:
+        - name: calibration_path
+          from: bundle:path
+
+param_files: []
+
+param_values: []
+
+# processes
+processes:
+  - name: simulate
+    trigger_conditions:
+      - periodic: 100 # Hz
+    outcomes:
+      - to_output: status/velocity_status
+      - to_output: status/steering_status
+      - to_output: twist
+      - to_output: imu
+  - name: report_state
+    trigger_conditions:
+      - or:
+          - on_input: command/gear_cmd
+          - on_input: command/hazard_lights_cmd
+          - on_input: command/turn_indicators_cmd
+    outcomes:
+      - to_output: status/gear_status
+      - to_output: status/hazard_lights_status
+      - to_output: status/turn_indicators_status
+      - to_output: status/control_mode

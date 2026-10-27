@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.path_utils import canonical_path
 from autoware_system_designer.model.config import SystemConfig
-from autoware_system_designer.parser.data_validator import entity_name_decode
+from autoware_system_designer.parser.config_validator import entity_name_decode
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
 

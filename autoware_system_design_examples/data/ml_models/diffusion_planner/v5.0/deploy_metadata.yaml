@@ -1,0 +1,4 @@
+version: v5.0
+encoder_onnx_path: diffusion_planner_encoder.onnx
+decoder_onnx_path: diffusion_planner_decoder.onnx
+turn_indicator_onnx_path: diffusion_planner_turn_indicator.onnx

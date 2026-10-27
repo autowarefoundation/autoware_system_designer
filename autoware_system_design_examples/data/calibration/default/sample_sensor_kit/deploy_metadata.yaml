@@ -1,0 +1,4 @@
+version: v1.0
+sensor_kit_calibration_path: sensor_kit_calibration.yaml
+sensors_calibration_path: sensors_calibration.yaml
+imu_corrector_param_path: imu_corrector.param.yaml

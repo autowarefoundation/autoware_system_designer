@@ -18,7 +18,7 @@ import pytest
 from document_processor import DocumentProcessor
 from registry_manager import RegistryManager
 
-from autoware_system_designer.parser.data_parser import ConfigParser
+from autoware_system_designer.parser.config_parser import ConfigParser
 
 
 class RecordingServer:

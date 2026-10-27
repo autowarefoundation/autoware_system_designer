@@ -19,7 +19,7 @@
 # ``autoware_system_design_format`` field (e.g. ``0.2.0``).
 # The tool accepts files whose *major* version matches and whose
 # *minor* version is less-than-or-equal-to the version below.
-DESIGN_FORMAT_VERSION = "0.4.0"
+DESIGN_FORMAT_VERSION = "0.5.0"
 
 __all__ = [
     "common",

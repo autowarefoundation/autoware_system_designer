@@ -140,6 +140,12 @@ class SystemValidator(BaseValidator):
     ENTITY_TYPE = ConfigType.SYSTEM
 
 
+class DataValidator(BaseValidator):
+    """Validator for data entities (map | calibration | ml_model artifact bundles)."""
+
+    ENTITY_TYPE = ConfigType.DATA
+
+
 class ValidatorFactory:
     """Factory for creating validators."""
 
@@ -148,6 +154,7 @@ class ValidatorFactory:
         ConfigType.MODULE: ModuleValidator,
         ConfigType.PARAMETER_SET: ParameterSetValidator,
         ConfigType.SYSTEM: SystemValidator,
+        ConfigType.DATA: DataValidator,
     }
 
     @classmethod

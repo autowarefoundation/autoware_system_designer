@@ -22,6 +22,7 @@
     "out_ports",
     "parameters",
     "topic",
+    "data_bindings",
     "global_topic",
     "event",
     "chain",
@@ -508,6 +509,37 @@
     return card("Parameter", ...entries);
   }
 
+  // One bound bundle: entity and category/version on the head row, the
+  // resolved variant axes below it.
+  function dataBindingEntry(binding) {
+    const entry = element("div", "param-entry");
+    const head = element("div", "param-head");
+
+    head.appendChild(
+      element("span", "param-name", binding.entity || "Unnamed"),
+    );
+    const tags = [binding.category, binding.version].filter(Boolean).join(" ");
+    head.appendChild(element("span", "param-value", tags));
+    entry.appendChild(head);
+
+    const variant = binding.variant;
+    const variantText =
+      variant && typeof variant === "object"
+        ? Object.entries(variant)
+            .map(([axis, value]) => `${axis}=${value}`)
+            .join(", ")
+        : variant || "";
+    if (variantText) {
+      entry.appendChild(element("div", "info-value", variantText));
+    }
+    return entry;
+  }
+
+  function dataCard(bindings) {
+    if (isEmpty(bindings)) return null;
+    return card("Data", ...bindings.map(dataBindingEntry));
+  }
+
   function sourceCard(filePath) {
     const row = element("div", "info-row");
     row.appendChild(window.createSourceLink(filePath, 1));
@@ -529,6 +561,7 @@
       data.chain ? chainCard(data.chain) : null,
       infoCard(data),
       interfaceCard(data),
+      dataCard(data.data_bindings),
       parameterCard(data.parameters),
     ].filter(Boolean);
 

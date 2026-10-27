@@ -100,11 +100,12 @@ class ConfigType:
     MODULE = "module"
     PARAMETER_SET = "parameter_set"
     SYSTEM = "system"
+    DATA = "data"
 
     @classmethod
     def get_all_types(cls) -> List[str]:
         """Get all valid entity types."""
-        return [cls.NODE, cls.MODULE, cls.PARAMETER_SET, cls.SYSTEM]
+        return [cls.NODE, cls.MODULE, cls.PARAMETER_SET, cls.SYSTEM, cls.DATA]
 
 
 class ConfigSubType:
@@ -152,6 +153,7 @@ class NodeConfig(Config):
     param_files: Optional[List[ParameterFileDefinition]] = None
     param_values: Optional[List[ParameterValueDefinition]] = None
     processes: Optional[List[ProcessDict]] = None
+    required_data: Optional[List[Dict[str, Any]]] = None  # [{entity, type, requires_version, requires_paths, binding}]
 
 
 @dataclass
@@ -174,6 +176,21 @@ class ParameterSetConfig(Config):
 
 
 @dataclass
+class DataConfig(Config):
+    """Data structure for data entities (map | calibration | ml_model artifact bundles).
+
+    Data entities do not support the base-variant pattern; on-disk variation is
+    expressed through variant axes instead.
+    """
+
+    category: Optional[str] = None  # 'map' | 'calibration' | 'ml_model'
+    variants: Optional[List[Dict[str, Any]]] = None  # variant axes: {name, values?, default, sortable?}
+    path_pattern: Optional[str] = None  # $(var <axis>) segment pattern; null = root-level bundle
+    manifest: Optional[Dict[str, Any]] = None  # the bundle's own manifest: {file?, version_key?}
+    scripts: Optional[List[Dict[str, Any]]] = None  # {name, command, description?}
+
+
+@dataclass
 class SystemConfig(Config):
     """Data structure for system entities."""
 
@@ -188,3 +205,4 @@ class SystemConfig(Config):
     variable_files: Optional[List[VariableFileDict]] = None
     node_groups: Optional[List[NodeGroupDict]] = None
     remaps: Optional[List[RemapEntry]] = None
+    data: Optional[List[Dict[str, Any]]] = None  # data bundle instances {name, entity, variant, root, consumers}

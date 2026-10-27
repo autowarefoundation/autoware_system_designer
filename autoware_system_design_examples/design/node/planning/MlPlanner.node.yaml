@@ -1,0 +1,52 @@
+autoware_system_design_format: 0.5.0
+
+name: MlPlanner.node
+
+description: Dummy ML planner (single-step model) that produces a trajectory from the lanelet map and predicted objects.
+
+package:
+  name: autoware_system_dummy_modules
+  provider: dummy
+
+launch:
+  plugin: autoware::system_dummy_modules::MlPlanner
+  executable: ml_planner_node
+
+# interfaces
+subscribers:
+  - name: lanelet_map
+    message_type: autoware_map_msgs/msg/LaneletMapBin
+  - name: predicted_objects
+    message_type: autoware_perception_msgs/msg/PredictedObjects
+
+publishers:
+  - name: trajectory
+    message_type: autoware_planning_msgs/msg/Trajectory
+
+required_data:
+  - entity: MlPlannerModel.data
+    description: Planner model bundle; the node loads the single-step model from its directory.
+    requires_version: { major: 4 }
+    requires_paths: [onnx_path]
+    binding:
+      param_values:
+        - name: model.base_model_directory
+          from: bundle:path
+
+param_files: []
+
+param_values:
+  - name: model.type
+    type: string
+    default: single_step
+    description: Inference graph shape the node builds.
+
+# processes
+processes:
+  - name: plan
+    trigger_conditions:
+      - and:
+          - once: lanelet_map
+          - on_input: predicted_objects
+    outcomes:
+      - to_output: trajectory

@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 from autoware_system_designer.builder.config.launch_manager import LaunchManager
 from autoware_system_designer.common.exceptions import ValidationError
@@ -68,7 +68,7 @@ def apply_node_groups(instance: "Instance") -> None:
         raise ValidationError("'node_groups' must be a list")
 
     validated_groups = _validate_node_groups(node_groups)
-    all_node_instances = list(_iter_node_instances(instance))
+    all_node_instances = list(iter_node_instances(instance))
 
     for group in validated_groups:
         group_name = group.get("name")
@@ -240,9 +240,10 @@ def _create_container_node_instance(
     return container_instance
 
 
-def _iter_node_instances(instance: "Instance"):
+def iter_node_instances(instance: "Instance") -> Iterator["Instance"]:
+    """Yield every node instance in the subtree rooted at ``instance``."""
     if instance.entity_type == "node":
         yield instance
 
     for child in instance.children.values():
-        yield from _iter_node_instances(child)
+        yield from iter_node_instances(child)

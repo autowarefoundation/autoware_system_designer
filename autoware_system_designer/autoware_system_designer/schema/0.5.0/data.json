@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Data Entity Schema 0.5.0",
+  "description": "Schema for autoware_system_design_format data entities (map | calibration | ml_model artifact bundles)",
+  "type": "object",
+  "required": ["name", "category"],
+  "properties": {
+    "autoware_system_design_format": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["map", "calibration", "ml_model"]
+    },
+    "variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": ["string", "number", "boolean"]
+            }
+          },
+          "default": {
+            "type": ["string", "number", "boolean"]
+          },
+          "sortable": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "path_pattern": {
+      "type": ["string", "null"]
+    },
+    "manifest": {
+      "type": "object",
+      "description": "The bundle's own manifest: where the version is recorded (default deploy_metadata.yaml key 'version'); consumers check their requires_paths keys against it",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "version_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "scripts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "command"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

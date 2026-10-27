@@ -21,6 +21,9 @@ Compatibility rule (semver-like):
   * **Major** must match exactly - a mismatch is an error that stops processing.
   * **Minor** of the file newer than the tool → warning.
   * **Patch** is ignored for compatibility purposes.
+
+Artifact bundle versions (``deploy_metadata.yaml``) follow a different policy
+and live in :mod:`...building.resolution.bundle_version`.
 """
 
 from __future__ import annotations

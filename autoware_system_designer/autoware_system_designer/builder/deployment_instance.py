@@ -17,6 +17,7 @@ from typing import Callable, Dict
 
 from autoware_system_designer.builder.instances.instance_tree import set_instances
 from autoware_system_designer.builder.instances.instances import Instance
+from autoware_system_designer.builder.parameters.data_binding_applier import apply_data_bindings
 from autoware_system_designer.builder.parameters.parameter_resolver import ParameterResolver
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.model.config import SystemConfig
@@ -72,6 +73,12 @@ class DeploymentInstance(Instance):
 
             # Propagate parameter resolver to all instances in the tree (now that they exist)
             self.set_parameter_resolver(self.parameter_resolver)
+
+            # 1b. apply data bindings (bind resolved bundle references onto consumer nodes)
+            current_step = "data_bindings"
+            logger.info(f"Instance '{self.name}': applying data bindings")
+            apply_data_bindings(self, config_registry)
+            _snapshot("1b_data_bindings")
 
             # 2. set connections
             current_step = "connections"

@@ -40,6 +40,9 @@ LauncherPortData = Dict[str, Any]
 LauncherParamValueData = Dict[str, Any]
 LauncherParamFileData = Dict[str, Any]
 
+# One data bundle handed to a consumer node: resolved variant, bundle dir, version contract.
+DataBindingData = Dict[str, Any]
+
 # One instance-tree node: identity, ports, links, events, parameters, children.
 InstanceData = Dict[str, Any]
 
@@ -60,6 +63,7 @@ __all__ = [
     "LauncherPortData",
     "LauncherParamValueData",
     "LauncherParamFileData",
+    "DataBindingData",
     "InstanceData",
     "SystemStructureMetadata",
     "SystemStructurePayload",

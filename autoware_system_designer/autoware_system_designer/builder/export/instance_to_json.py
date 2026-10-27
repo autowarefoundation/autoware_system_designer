@@ -85,6 +85,7 @@ def collect_instance_data(instance: "Instance") -> InstanceData:
         data["package"] = instance.launch_manager.package_name
         data["parameter_files_all"] = _collect_parameter_files(instance)
         data["launcher"] = collect_launcher_data(instance)
+        data["data_bindings"] = list(getattr(instance, "data_bindings", None) or [])
 
     return data
 

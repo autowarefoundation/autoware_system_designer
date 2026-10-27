@@ -1,0 +1,20 @@
+autoware_system_design_format: 0.5.0
+
+name: LidarCenterPointModel.data
+
+category: ml_model
+description: Lidar detection model bundle consumed by LidarMlDetector.node (concept demo).
+
+# One directory per model variant; the bundle manifest (ml_package.param.yaml) is
+# the sole source of contents, read by the node at launch via its model_path.
+# Consumers declare the manifest keys they require (requires_paths).
+variants:
+  - name: model_variant
+    values: [base, tiny, legacy]
+    default: base
+
+path_pattern: lidar_centerpoint/$(var model_variant)
+
+manifest:
+  file: ml_package.param.yaml
+  version_key: ["/**", ros__parameters, version]

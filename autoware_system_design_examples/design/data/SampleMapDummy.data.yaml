@@ -1,0 +1,14 @@
+autoware_system_design_format: 0.5.0
+
+name: SampleMapDummy.data
+
+category: map
+description: Dummy map bundle (lanelet2 + pointcloud + projection) (concept demo).
+
+# One directory per location, matching ~/autoware_data/maps/<location>; the
+# manifest is deploy_metadata.yaml (the default), naming the map files.
+variants:
+  - name: location
+    default: sample-map-rosbag
+
+path_pattern: $(var location)

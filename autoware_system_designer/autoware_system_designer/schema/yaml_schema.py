@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -148,6 +149,114 @@ def _parameter_type_semantics(parameters: Any, *, base_path: str) -> Iterable[Sc
     return issues
 
 
+_LATEST = "latest"
+
+# ``$(var NAME)`` substitution token, as used in a data path_pattern
+VAR_TOKEN = re.compile(r"\$\(var\s+([A-Za-z0-9_]+)\s*\)")
+
+
+def data_semantics(config: Dict[str, Any]) -> List[SchemaIssue]:
+    """Cross-field checks for data entities (variant axes + path_pattern).
+
+    Single source of the variant-axis rules for both the linter and
+    :class:`~...building.resolution.data_variant_scanner.DataVariantScanner`.
+    """
+    issues: List[SchemaIssue] = []
+
+    variants = config.get("variants")
+    declared_axes: set = set()
+    if isinstance(variants, list):
+        for idx, axis in enumerate(variants):
+            if not isinstance(axis, dict):
+                continue
+            name = axis.get("name")
+            if name is None:
+                continue
+            sortable = bool(axis.get("sortable"))
+            if name in declared_axes:
+                issues.append(
+                    SchemaIssue(
+                        message=f"Duplicate variant axis name '{name}'",
+                        yaml_path=f"/variants/{idx}/name",
+                    )
+                )
+            declared_axes.add(name)
+
+            # `latest` is only meaningful on a sortable axis.
+            default = axis.get("default")
+            if default == _LATEST and not sortable:
+                issues.append(
+                    SchemaIssue(
+                        message=f"Variant axis '{name}' uses default 'latest' but is not 'sortable: true'",
+                        yaml_path=f"/variants/{idx}/default",
+                    )
+                )
+            values = axis.get("values")
+            if isinstance(values, list) and _LATEST in values and not sortable:
+                issues.append(
+                    SchemaIssue(
+                        message=f"Variant axis '{name}' lists value 'latest' but is not 'sortable: true'",
+                        yaml_path=f"/variants/{idx}/values",
+                    )
+                )
+            # `latest` selects among the declared values, so a sortable axis must enumerate them.
+            if sortable and not (isinstance(values, list) and values):
+                issues.append(
+                    SchemaIssue(
+                        message=f"Variant axis '{name}' is 'sortable: true' but declares no 'values'",
+                        yaml_path=f"/variants/{idx}",
+                    )
+                )
+
+    # path_pattern: one layout; every declared axis appears exactly once as a whole segment.
+    if "path_patterns" in config:
+        issues.append(
+            SchemaIssue(
+                message="'path_patterns' is no longer supported; declare a single 'path_pattern' "
+                "(one data entity per artifactory layout)",
+                yaml_path="/path_patterns",
+            )
+        )
+    pattern = config.get("path_pattern")
+    if isinstance(pattern, str):
+        used: List[str] = []
+        for seg in pattern.split("/"):
+            m = VAR_TOKEN.fullmatch(seg.strip())
+            if m:
+                used.append(m.group(1))
+        for token in VAR_TOKEN.findall(pattern):
+            if token not in declared_axes:
+                issues.append(
+                    SchemaIssue(
+                        message=(
+                            f"path_pattern references unknown variable '{token}'; "
+                            f"only declared variant axes {sorted(declared_axes)} may be used"
+                        ),
+                        yaml_path="/path_pattern",
+                    )
+                )
+        for axis_name in sorted(set(used)):
+            if used.count(axis_name) > 1:
+                issues.append(
+                    SchemaIssue(
+                        message=f"path_pattern uses variant axis '{axis_name}' more than once",
+                        yaml_path="/path_pattern",
+                    )
+                )
+        addressed = set(used)
+    else:
+        addressed = set()
+    for axis_name in sorted(declared_axes - addressed):
+        issues.append(
+            SchemaIssue(
+                message=f"variant axis '{axis_name}' does not appear in path_pattern as a '$(var {axis_name})' segment",
+                yaml_path="/path_pattern",
+            )
+        )
+
+    return issues
+
+
 def _format_version_semantics(config: Dict[str, Any]) -> Iterable[SchemaIssue]:
     """Check the ``autoware_system_design_format`` field for compatibility."""
     raw = config.get("autoware_system_design_format")
@@ -225,6 +334,7 @@ def get_semantic_checks(
                     "param_files",
                     "param_values",
                     "processes",
+                    "required_data",
                 ),
                 message_prefix="Variant rule",
             ),
@@ -255,6 +365,22 @@ def get_semantic_checks(
                     "arguments",
                     "variables",
                     "variable_files",
+                    "data",
+                ),
+                message_prefix="Variant rule",
+            ),
+        )
+    elif entity_type == "data":
+        return (
+            _format_version_semantics,
+            data_semantics,
+            _variant_forbidden_root_fields_semantics(
+                forbidden_fields=(
+                    "category",
+                    "variants",
+                    "path_pattern",
+                    "manifest",
+                    "scripts",
                 ),
                 message_prefix="Variant rule",
             ),

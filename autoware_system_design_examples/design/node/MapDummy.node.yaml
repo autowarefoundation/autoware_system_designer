@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.5.0
 
 name: MapDummy.node
 
@@ -31,6 +31,21 @@ servers:
     message_type: autoware_map_msgs/srv/GetDifferentialPointCloudMap
   - name: get_partial_pointcloud_map
     message_type: autoware_map_msgs/srv/GetPartialPointCloudMap
+
+required_data:
+  - entity: SampleMapDummy.data
+    description: Map bundle providing the lanelet2 and pointcloud maps; the node reads its manifest for the file names.
+    requires_paths:
+      [
+        lanelet2_map_path,
+        pointcloud_map_path,
+        pointcloud_map_metadata_path,
+        map_projector_info_path,
+      ]
+    binding:
+      param_values:
+        - name: map_path
+          from: bundle:path
 
 param_files: []
 

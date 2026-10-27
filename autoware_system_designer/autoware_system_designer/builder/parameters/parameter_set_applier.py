@@ -9,7 +9,7 @@ from autoware_system_designer.model.namespace import (
     resolve_common_namespace_from_paths,
 )
 from autoware_system_designer.model.parameters import ParameterType
-from autoware_system_designer.parser.data_validator import entity_name_decode
+from autoware_system_designer.parser.config_validator import entity_name_decode
 
 if TYPE_CHECKING:
     from autoware_system_designer.builder.config.config_registry import ConfigRegistry

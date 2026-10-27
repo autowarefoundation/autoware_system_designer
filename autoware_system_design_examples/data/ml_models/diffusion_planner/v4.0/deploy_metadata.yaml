@@ -1,0 +1,2 @@
+version: v4.0
+onnx_path: diffusion_planner.onnx

@@ -22,7 +22,7 @@ from autoware_system_designer.common.naming import pascal_to_snake
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.model.config import ConfigType, NodeConfig
 from autoware_system_designer.model.execution import LaunchState
-from autoware_system_designer.parser.data_parser import ConfigParser
+from autoware_system_designer.parser.config_parser import ConfigParser
 
 
 def _process_parameter_path(path: Any, package_name: Optional[str]) -> Any:

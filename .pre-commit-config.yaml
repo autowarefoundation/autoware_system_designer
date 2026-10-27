@@ -32,7 +32,7 @@ repos:
         name: YAML Lint
         args: [-c, .yamllint.yaml]
         files: \.ya?ml$
-        exclude: \.(node|module|system|parameter_set)\.yaml$|\.param\.yaml$
+        exclude: \.(node|module|system|parameter_set|data)\.yaml$|\.param\.yaml$
 
   # Markdown linting - automatically installs markdownlint-cli
   - repo: https://github.com/igorshubovych/markdownlint-cli
@@ -71,7 +71,7 @@ repos:
         description: Lint Autoware System Design Format YAML files
         entry: python3 autoware_system_designer/autoware_system_designer/linter/run_lint.py
         language: system
-        files: \.(node|module|system|parameter_set)\.yaml$
+        files: \.(node|module|system|parameter_set|data)\.yaml$
         exclude: ^autoware_system_designer/test/fixtures/
         pass_filenames: true
         require_serial: false

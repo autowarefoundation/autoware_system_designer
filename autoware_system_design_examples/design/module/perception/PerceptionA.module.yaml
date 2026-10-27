@@ -9,6 +9,8 @@ instances:
     entity: DetectorA.module
   - name: detector_a2
     entity: DetectorA.module
+  - name: node_lidar_ml_detector
+    entity: LidarMlDetector.node
   - name: node_tracker
     entity: Tracker.node
     description: Fuses detections from both detectors into tracked objects.
@@ -27,6 +29,10 @@ connections:
     - detector_a2.subscriber.pointcloud
   - - subscriber.vector_map
     - detector_a2.subscriber.vector_map
+  - - subscriber.pointcloud
+    - node_lidar_ml_detector.subscriber.pointcloud
+  - - node_lidar_ml_detector.publisher.objects
+    - node_tracker.subscriber.objects3
   - - subscriber.vector_map
     - node_predictor.subscriber.lanelet_map
   # wildcard connection

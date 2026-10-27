@@ -75,6 +75,8 @@ def infer_type(filename):
         return "system"
     elif filename.endswith("parameter_set.yaml"):
         return "parameter_set"
+    elif filename.endswith(".data.yaml"):
+        return "data"
     return "unknown"
 
 
