@@ -440,8 +440,18 @@ rcl_ret_t rcl_timer_init(
   rcl_timer_t * timer, rcl_clock_t * clock, rcl_context_t * context, int64_t period,
   const rcl_timer_callback_t callback, rcl_allocator_t allocator)
 {
-  REAL(rcl_timer_init);
-  rcl_ret_t ret = real_rcl_timer_init(timer, clock, context, period, callback, allocator);
+  // Jazzy deprecates rcl_timer_init; the forward type is spelled out so the interposer
+  // does not reference the deprecated declaration.
+  typedef rcl_ret_t (*init_fn)(
+    rcl_timer_t *, rcl_clock_t *, rcl_context_t *, int64_t, const rcl_timer_callback_t, rcl_allocator_t);
+  static init_fn real_init = NULL;
+  if (real_init == NULL) {
+    real_init = (init_fn)dlsym(RTLD_NEXT, "rcl_timer_init");
+    if (real_init == NULL) {
+      return RCL_RET_ERROR;
+    }
+  }
+  rcl_ret_t ret = real_init(timer, clock, context, period, callback, allocator);
   if (ret == RCL_RET_OK && tracing()) {
     name_timer(timer, period);
   }
