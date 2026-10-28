@@ -90,10 +90,11 @@ class Link:
         if is_from_port_internal and is_to_port_internal:
             # propagate and finish the connection
             from_port_list = self.from_port.get_reference_list()
-            to_port_list = self.to_port.get_reference_list()
+            to_port_ref_list = self.to_port.get_reference_list()
 
-            # if the to_port is not in the reference list (meaning it's a proxy/interface port),
-            # add it to the list so it gets updated with topic/servers too.
+            # A module interface port is a proxy: it carries topic and servers like the
+            # node ports it stands for, but holds no event of the trigger chain.
+            to_port_list = list(to_port_ref_list)
             if self.to_port not in to_port_list:
                 to_port_list.append(self.to_port)
 
@@ -137,8 +138,8 @@ class Link:
                 for to_port_ref in to_port_list:
                     to_port_ref.set_topic(self.from_port.namespace, self.from_port.name)
 
-            # set the trigger event of the to-port
-            for to_port_ref in to_port_list:
+            # set the trigger event of the node to-ports
+            for to_port_ref in to_port_ref_list:
                 for server_port in to_port_ref.servers:
                     to_port_ref.event.add_trigger_event(server_port.event)
 

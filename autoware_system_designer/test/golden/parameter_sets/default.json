@@ -60,8 +60,7 @@
             "event": {
               "action_ids": [
                 "id_63ab045c521e3470",
-                "id_a31b807e35cc996c",
-                "id_564b69da424ea0a7"
+                "id_a31b807e35cc996c"
               ],
               "error_rate": null,
               "frequency": 20.0,
@@ -418,15 +417,13 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
-              "frequency": 20.0,
+              "frequency": null,
               "latch_ids": [],
               "name": "input_input",
               "process_event": false,
               "read_ids": [],
               "timeout": null,
-              "trigger_ids": [
-                "id_84305ff8ee3fd5b8"
-              ],
+              "trigger_ids": [],
               "type": "on_input",
               "unique_id": "id_564b69da424ea0a7",
               "warn_rate": null
@@ -459,15 +456,13 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
-                "frequency": 20.0,
+                "frequency": null,
                 "latch_ids": [],
                 "name": "input_input",
                 "process_event": false,
                 "read_ids": [],
                 "timeout": null,
-                "trigger_ids": [
-                  "id_84305ff8ee3fd5b8"
-                ],
+                "trigger_ids": [],
                 "type": "on_input",
                 "unique_id": "id_564b69da424ea0a7",
                 "warn_rate": null
@@ -635,8 +630,7 @@
           "event": {
             "action_ids": [
               "id_63ab045c521e3470",
-              "id_a31b807e35cc996c",
-              "id_564b69da424ea0a7"
+              "id_a31b807e35cc996c"
             ],
             "error_rate": null,
             "frequency": 20.0,
@@ -676,15 +670,13 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
-            "frequency": 20.0,
+            "frequency": null,
             "latch_ids": [],
             "name": "input_input",
             "process_event": false,
             "read_ids": [],
             "timeout": null,
-            "trigger_ids": [
-              "id_84305ff8ee3fd5b8"
-            ],
+            "trigger_ids": [],
             "type": "on_input",
             "unique_id": "id_564b69da424ea0a7",
             "warn_rate": null

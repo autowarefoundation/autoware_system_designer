@@ -25,6 +25,10 @@ components:
     entity: LidarDummy.module
     path: /sensing/lidar
     compute_unit: main_ecu
+  - name: odometry
+    entity: OdometryDummy.node
+    path: /vehicle/odometry
+    compute_unit: main_ecu
   - name: map
     entity: MapDummy.node
     compute_unit: dummy_ecu_1
@@ -50,6 +54,8 @@ node_groups:
       - /perception/object_recognition/detector_a2/node_detector
 
 connections:
+  - - odometry.publisher.odometry
+    - lidar.subscriber.odometry
   - - object_recognition.subscriber.pointcloud
     - lidar.publisher.concatenated/pointcloud
   - - map.publisher.vector_map

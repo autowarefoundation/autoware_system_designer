@@ -53,8 +53,7 @@
             "event": {
               "action_ids": [
                 "id_c4b21ed742016d26",
-                "id_322c582a8701f017",
-                "id_f5ffc893ab0543ea"
+                "id_322c582a8701f017"
               ],
               "error_rate": null,
               "frequency": null,
@@ -664,9 +663,7 @@
               "process_event": false,
               "read_ids": [],
               "timeout": null,
-              "trigger_ids": [
-                "id_18f50af36c8979a4"
-              ],
+              "trigger_ids": [],
               "type": "on_input",
               "unique_id": "id_f5ffc893ab0543ea",
               "warn_rate": null
@@ -706,9 +703,7 @@
                 "process_event": false,
                 "read_ids": [],
                 "timeout": null,
-                "trigger_ids": [
-                  "id_18f50af36c8979a4"
-                ],
+                "trigger_ids": [],
                 "type": "on_input",
                 "unique_id": "id_f5ffc893ab0543ea",
                 "warn_rate": null
@@ -1292,8 +1287,7 @@
           "event": {
             "action_ids": [
               "id_c4b21ed742016d26",
-              "id_322c582a8701f017",
-              "id_f5ffc893ab0543ea"
+              "id_322c582a8701f017"
             ],
             "error_rate": null,
             "frequency": null,
@@ -1341,9 +1335,7 @@
             "process_event": false,
             "read_ids": [],
             "timeout": null,
-            "trigger_ids": [
-              "id_18f50af36c8979a4"
-            ],
+            "trigger_ids": [],
             "type": "on_input",
             "unique_id": "id_f5ffc893ab0543ea",
             "warn_rate": null
