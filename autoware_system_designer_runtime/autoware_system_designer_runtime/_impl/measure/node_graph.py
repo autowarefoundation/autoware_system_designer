@@ -51,6 +51,12 @@ class DeclaredEvent:
     frequency: Optional[float]
     trigger_ids: list[str]
     action_ids: list[str]
+    # triggers that only gate the event; they fire nothing at its rate
+    latch_ids: list[str] = field(default_factory=list)
+
+    @property
+    def pacing_trigger_ids(self) -> list[str]:
+        return [i for i in self.trigger_ids if i not in self.latch_ids]
 
 
 @dataclass
@@ -191,6 +197,7 @@ class NodeGraph:
                 frequency=event.get("frequency"),
                 trigger_ids=[str(i) for i in event.get("trigger_ids", [])],
                 action_ids=[str(i) for i in event.get("action_ids", [])],
+                latch_ids=[str(i) for i in event.get("latch_ids", [])],
             )
         # An input event's trigger_ids point at upstream outputs; an output event's
         # at the producing processes. Consumers of an input are found from the
@@ -323,7 +330,7 @@ class NodeGraph:
                 if process.id in seen:
                     continue
                 seen.add(process.id)
-                for trigger_id in process.trigger_ids:
+                for trigger_id in process.pacing_trigger_ids:
                     input_port = node.input_events.get(trigger_id)
                     if input_port is not None:
                         if input_port.topic not in topics:

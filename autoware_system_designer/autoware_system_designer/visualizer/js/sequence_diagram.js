@@ -1434,16 +1434,20 @@
       const x = box.left + Math.min(6, Math.max(2, (box.right - box.left) / 2));
       const y0 = y + VIEW.blockH / 2;
       const y1 = y0 + VIEW.readDrop;
-      const mark = document.createElementNS(SVG_NS, "path");
-      mark.setAttribute(
+      const queueBox = document.createElementNS(SVG_NS, "path");
+      queueBox.setAttribute(
         "d",
-        `M ${x} ${y1} L ${x} ${y0 + 1} ` +
-          `M ${x - 1.5 * s} ${y1} h ${3 * s} v 5 h ${-3 * s} Z ` +
+        `M ${x - 1.5 * s} ${y1} h ${3 * s} v 5 h ${-3 * s} Z ` +
           `M ${x - 0.5 * s} ${y1} v 5 M ${x + 0.5 * s} ${y1} v 5`,
       );
-      mark.classList.add("seq-read");
-      mark.setAttribute("marker-end", "url(#arrowhead-depth-0)");
-      g.appendChild(mark);
+      queueBox.classList.add("seq-read");
+      g.appendChild(queueBox);
+      // the stem is a path of its own, so the arrowhead sits at its top
+      const stem = document.createElementNS(SVG_NS, "path");
+      stem.setAttribute("d", `M ${x} ${y1} L ${x} ${y0 + 1}`);
+      stem.classList.add("seq-read");
+      stem.setAttribute("marker-end", "url(#arrowhead-depth-0)");
+      g.appendChild(stem);
 
       const label = document.createElementNS(SVG_NS, "text");
       label.setAttribute("x", x + 1.5 * s + 3);
@@ -1457,7 +1461,8 @@
       const title = document.createElementNS(SVG_NS, "title");
       title.textContent = this.readLines(gate.id).join("\n");
       label.appendChild(title);
-      mark.appendChild(title.cloneNode(true));
+      queueBox.appendChild(title.cloneNode(true));
+      stem.appendChild(title.cloneNode(true));
       this.labelLayer.appendChild(label);
       gate.readLabel = label;
     }
@@ -2068,7 +2073,7 @@
           timeout: gate.timeout,
           mismatch: this.graph.rateMismatch(gate),
           reads: this.queueNames(this.graph.queuesReadBy(gate.id)) || undefined,
-          readers: this.queueNames(this.filledQueues(gate.id)) || undefined,
+          fills: this.queueNames(this.filledQueues(gate.id)) || undefined,
         },
         latency: {
           state: this.state,

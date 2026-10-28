@@ -99,6 +99,13 @@ class EventManager:
                 process.set_reads(self.queues)
             except ValueError as exc:
                 raise NodeConfigurationError(f"{exc}{format_source(src)}") from exc
+        for name, queue in self.queues.items():
+            if not queue.readers:
+                src = source_from_config(self.instance.configuration, "/processes")
+                logger.warning(
+                    f"Queue '{name}' of {self.instance.name} is filled but read by no process "
+                    f"(no 'reads: - from_queue: {name}'){format_source(src)}"
+                )
 
         # set the process events
         process_event_list = []
@@ -114,10 +121,7 @@ class EventManager:
     def collect_event_graph(self) -> List[Event]:
         """Every event of the subtree, closed over the trigger and action edges the links add."""
         collected: Dict[str, Event] = {}
-        # in case of module, event_list is empty; in case of node, children is empty
-        stack = list(self.event_list)
-        for child in self.instance.children.values():
-            stack.extend(child.event_manager.collect_event_graph())
+        stack = self.collect_subtree_events()
         while stack:
             event = stack.pop()
             if event.unique_id in collected:
@@ -126,6 +130,14 @@ class EventManager:
             stack.extend(event.triggers)
             stack.extend(event.actions)
         return list(collected.values())
+
+    def collect_subtree_events(self) -> List[Event]:
+        """The events the subtree declares; in case of module, event_list is empty; in case of node,
+        children is empty."""
+        events = list(self.event_list)
+        for child in self.instance.children.values():
+            events.extend(child.event_manager.collect_subtree_events())
+        return events
 
     def get_all_events(self):
         """Get all events."""

@@ -60,6 +60,20 @@ def test_from_queue_without_a_filler_is_rejected(tmp_path):
         run_pipeline(workspace, "queue_pkg/Unknown.system.yaml", tmp_path)
 
 
+def test_queue_without_a_reader_is_reported(tmp_path, capfd):
+    workspace = stage_case("queue_reads", tmp_path)
+    corrector = workspace / "queue_pkg" / "Corrector.node.yaml"
+    corrector.write_text(corrector.read_text().replace("    reads:\n      - from_queue: imu\n", ""))
+    run_pipeline(workspace, "queue_pkg/Queued.system.yaml", tmp_path)
+    assert "Queue 'imu' of corrector is filled but read by no process" in capfd.readouterr().err
+
+
+def test_queue_not_found_names_the_queues_filled():
+    process = Process("run", ["ns"], {"reads": [{"from_queue": "imu"}]})
+    with pytest.raises(ValueError, match="queues filled: imuu"):
+        process.set_reads({"imuu": QueueEvent("imuu", ["ns"])})
+
+
 def test_queue_is_not_a_trigger_condition():
     process = Process("run", ["ns"], {"trigger_conditions": [{"queue": "imu"}], "outcomes": []})
     with pytest.raises(ValueError, match="queue"):

@@ -100,3 +100,35 @@ def test_the_rate_reaches_the_outputs_of_the_process():
     process.set_outcomes([process.event], [output], {})
     resolve_event_rates(list(inputs.values()) + process.get_event_list() + [output])
     assert output.frequency == 10.0
+
+
+def test_an_input_that_also_paces_is_no_latch():
+    for conditions in (
+        [{"on_input": "imu"}, {"on_input": "pointcloud"}, {"once": "imu"}],
+        [{"once": "imu"}, {"on_input": "imu"}, {"on_input": "pointcloud"}],
+    ):
+        inputs = _inputs(imu=100.0, pointcloud=10.0)
+        event = _rate([{"and": conditions}], inputs)
+        assert event.latches == []
+        assert event.frequency == 10.0
+
+
+def _timed_inputs(**profiles):
+    inputs = _inputs(**{name: rate for name, (rate, _) in profiles.items()})
+    for name, (_, timeout) in profiles.items():
+        inputs[name].timeout = timeout
+    return inputs
+
+
+def test_or_takes_the_timeout_of_its_quickest_condition():
+    inputs = _timed_inputs(fast=(100.0, 0.05), slow=(1.0, 2.0))
+    event = _rate([{"or": [{"on_input": "fast"}, {"on_input": "slow"}]}], inputs)
+    assert event.frequency == 100.0
+    assert event.timeout == 0.05
+
+
+def test_and_takes_the_timeout_of_its_slowest_condition():
+    inputs = _timed_inputs(fast=(100.0, 0.05), slow=(1.0, 2.0))
+    event = _rate([{"and": [{"on_input": "fast"}, {"on_input": "slow"}]}], inputs)
+    assert event.frequency == 1.0
+    assert event.timeout == 2.0

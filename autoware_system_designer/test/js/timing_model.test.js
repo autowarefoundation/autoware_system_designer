@@ -520,6 +520,87 @@ test("a latched trigger takes no part in a steady chain", () => {
   assert.ok(!mapChain.reach.has("filter.run"));
 });
 
+// A gate fed by an unclocked input and latched on a clocked one.
+function latchedGateGraph() {
+  return build({
+    nodes: [
+      {
+        name: "map",
+        outputs: ["lanelet"],
+        processes: [
+          { name: "tick", type: "periodic", frequency: 1, to: ["lanelet"] },
+        ],
+      },
+      {
+        name: "filter",
+        inputs: ["lanelet", "cloud"],
+        outputs: ["objects"],
+        processes: [
+          {
+            name: "run",
+            type: "and",
+            on: ["cloud"],
+            latch: ["lanelet"],
+            to: ["objects"],
+          },
+        ],
+      },
+    ],
+    links: [["map", "lanelet", "filter", "lanelet"]],
+  });
+}
+
+test("a clock reaching a gate only through a latch does not clock it", () => {
+  const graph = latchedGateGraph();
+  assert.ok(graph.clocksOf.get("filter.in.lanelet").has("map.tick"));
+  assert.ok(!graph.clocksOf.has("filter.run"));
+  assert.ok(!graph.clocksOf.has("filter.out.objects"));
+  assert.ok(graph.chainEndIds.has("filter.in.lanelet"));
+});
+
+test("a chain stopping at a latch ends at the latched input", () => {
+  // one clock feeds the gate on both inputs, so the gate is in reach
+  const graph = build({
+    nodes: [
+      {
+        name: "src",
+        outputs: ["lanelet", "cloud"],
+        processes: [
+          {
+            name: "tick",
+            type: "periodic",
+            frequency: 10,
+            to: ["lanelet", "cloud"],
+          },
+        ],
+      },
+      {
+        name: "filter",
+        inputs: ["lanelet", "cloud"],
+        outputs: ["objects"],
+        processes: [
+          {
+            name: "run",
+            type: "and",
+            on: ["cloud"],
+            latch: ["lanelet"],
+            to: ["objects"],
+          },
+        ],
+      },
+    ],
+    links: [
+      ["src", "lanelet", "filter", "lanelet"],
+      ["src", "cloud", "filter", "cloud"],
+    ],
+  });
+  const solution = new T.ChainSolver(graph).solve("src.tick");
+  assert.ok(solution.reach.has("filter.run"));
+  assert.ok(solution.sinkIds.includes("filter.in.lanelet"));
+  assert.equal(solution.loopEdges.size, 0);
+  assert.equal(T.endOf(solution, graph, "filter.in.lanelet").kind, "open");
+});
+
 test("hop limit counts process gates", () => {
   const graph = forkGraph("or");
   const solution = new T.ChainSolver(graph).solve("clock.tick", {

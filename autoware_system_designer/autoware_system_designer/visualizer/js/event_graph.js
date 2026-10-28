@@ -162,7 +162,7 @@
       });
 
       this.chainEndIds = new Set(
-        [...this.activeIds].filter((id) => !(this.succ.get(id) || []).length),
+        [...this.activeIds].filter((id) => !this.chainSucc(id).length),
       );
 
       this._computeClocks();
@@ -186,7 +186,7 @@
           seen.add(id);
           if (!this.clocksOf.has(id)) this.clocksOf.set(id, new Set());
           this.clocksOf.get(id).add(rootId);
-          (this.succ.get(id) || []).forEach((next) => {
+          this.chainSucc(id).forEach((next) => {
             if (!seen.has(next)) stack.push(next);
           });
         }
@@ -197,6 +197,18 @@
 
     edgeId(fromId, toId) {
       return this.edgeIdByKey.get(`${fromId}>${toId}`) ?? null;
+    }
+
+    // A latch edge gates its head once and carries no rate or chain on; clocks
+    // and chains follow the other edges.
+    isLatchEdge(fromId, toId) {
+      return (this.events.get(toId)?.latches || []).includes(fromId);
+    }
+
+    chainSucc(id) {
+      return (this.succ.get(id) || []).filter(
+        (next) => !this.isLatchEdge(id, next),
+      );
     }
 
     ownerOf(eventId) {

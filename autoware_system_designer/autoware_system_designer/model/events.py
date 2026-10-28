@@ -134,11 +134,16 @@ class Event:
         if vise_versa:
             event.add_trigger_event(self, False)
 
-    def add_latch_event(self, event: "Event"):
+    def add_pacing_event(self, event: "Event"):
+        """A trigger that sets the rate; it outranks a latch on the same event."""
         self.add_trigger_event(event)
-        for e in self.latches:
-            if e.unique_id == event.unique_id:
-                return
+        self.latches = [e for e in self.latches if e.unique_id != event.unique_id]
+
+    def add_latch_event(self, event: "Event"):
+        # a trigger already wired here either paces the event or is this latch
+        if any(e.unique_id == event.unique_id for e in self.triggers):
+            return
+        self.add_trigger_event(event)
         self.latches.append(event)
         logger.debug(f"Event '{self.unique_id}' added latch '{event.unique_id}'")
 
@@ -201,7 +206,7 @@ class Event:
                         if config_key == "once" and self.type != "once":
                             self.add_latch_event(event)
                         else:
-                            self.add_trigger_event(event)
+                            self.add_pacing_event(event)
                         is_found = True
                         break
                 # if not found, warn
@@ -381,8 +386,10 @@ class Process:
                 raise ValueError(f"Invalid read type: {read_type}")
             queue = queues.get(read_value)
             if queue is None:
+                known = ", ".join(sorted(queues)) or "none"
                 raise ValueError(
-                    f"Queue not found: {read_value} (no process of this node has 'to_queue: {read_value}')"
+                    f"Queue not found: {read_value} (no process of this node has 'to_queue: {read_value}'; "
+                    f"queues filled: {known})"
                 )
             self.event.add_read_event(queue)
 
@@ -408,6 +415,18 @@ def _inherit(values: List[Optional[float]], slowest: bool) -> Optional[float]:
     return min(paced) if paced else 0.0
 
 
+def _inherit_timeout(values: List[Optional[float]], slowest: bool) -> Optional[float]:
+    """The wait an event takes from its pacing triggers, paired with the rate it takes: the
+    longest when it fires at the slowest, else the shortest; a `0.0` timeout is a one-shot."""
+    known = [value for value in values if value is not None]
+    if not known:
+        return None
+    if slowest:
+        return max(known)
+    waits = [value for value in known if value]
+    return min(waits) if waits else 0.0
+
+
 def _settle(event: Event, declared: RateProfile) -> bool:
     """Recompute the rate profile of one event; True when it moved."""
     before = _profile(event)
@@ -416,14 +435,14 @@ def _settle(event: Event, declared: RateProfile) -> bool:
         profile: RateProfile = (frequency, declared[1], declared[2], declared[3])
     else:
         # an `and` fires no faster than its slowest condition, every other event as fast as its
-        # quickest; `timeout` is a duration, so the slowest condition allows the longest wait
+        # quickest; `timeout` is the wait of the condition the rate comes from
         slowest = event.type == "and"
         triggers = event.pacing_triggers
         inherited = (
             _inherit([trigger.frequency for trigger in triggers], slowest),
             _inherit([trigger.warn_rate for trigger in triggers], slowest),
             _inherit([trigger.error_rate for trigger in triggers], slowest),
-            _inherit([trigger.timeout for trigger in triggers], False),
+            _inherit_timeout([trigger.timeout for trigger in triggers], slowest),
         )
         profile = tuple(own if own is not None else value for own, value in zip(declared, inherited))
     event.frequency, event.warn_rate, event.error_rate, event.timeout = profile

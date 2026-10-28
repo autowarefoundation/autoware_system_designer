@@ -255,10 +255,6 @@
   // a latch edge into a gate is the same thing recorded on the edge.
   const EXCLUDED_TYPES = new Set(["once"]);
 
-  function isLatch(event, fromId) {
-    return (event.latches || []).includes(fromId);
-  }
-
   // How a gate combines its triggers: `and` waits for every one, anything else
   // fires on the first; a gate with no declared type is folded as `or` and
   // reported.
@@ -299,7 +295,7 @@
         const branches = [];
         (graph.pred.get(id) || []).forEach((fromId) => {
           if (!reach.has(fromId) || sourceIds.has(id)) return;
-          if (isLatch(event, fromId)) return;
+          if (graph.isLatchEdge(fromId, id)) return;
           const edgeId = graph.edgeId(fromId, id);
           if (loopEdges.has(edgeId)) return;
           const from = graph.events.get(fromId);
@@ -360,10 +356,12 @@
         unknownGates,
         sinkIds: order.filter(
           (id) =>
-            !(graph.succ.get(id) || []).some(
-              (next) =>
-                reach.has(next) && !loopEdges.has(graph.edgeId(id, next)),
-            ),
+            !graph
+              .chainSucc(id)
+              .some(
+                (next) =>
+                  reach.has(next) && !loopEdges.has(graph.edgeId(id, next)),
+              ),
         ),
       };
     }
@@ -376,10 +374,10 @@
       const queue = [...sourceIds];
       for (let cursor = 0; cursor < queue.length; cursor += 1) {
         const id = queue[cursor];
-        (graph.succ.get(id) || []).forEach((nextId) => {
+        graph.chainSucc(id).forEach((nextId) => {
           const next = graph.events.get(nextId);
           if (!next || hops.has(nextId)) return;
-          if (EXCLUDED_TYPES.has(next.type) || isLatch(next, id)) return;
+          if (EXCLUDED_TYPES.has(next.type)) return;
           const hop = hops.get(id) + (next.kind === "process" ? 1 : 0);
           if (hopLimit !== null && hop > hopLimit) return;
           hops.set(nextId, hop);
@@ -403,7 +401,7 @@
       const byDistance = [...sourceIds];
       for (let cursor = 0; cursor < byDistance.length; cursor += 1) {
         const id = byDistance[cursor];
-        (graph.succ.get(id) || []).forEach((nextId) => {
+        graph.chainSucc(id).forEach((nextId) => {
           if (!reach.has(nextId) || distance.has(nextId)) return;
           distance.set(nextId, distance.get(id) + 1);
           byDistance.push(nextId);
@@ -430,7 +428,7 @@
       const loopEdges = new Set();
       const indegree = new Map(byDistance.map((id) => [id, 0]));
       byDistance.forEach((id) => {
-        (graph.succ.get(id) || []).forEach((nextId) => {
+        graph.chainSucc(id).forEach((nextId) => {
           if (!reach.has(nextId)) return;
           const forward = distance.get(nextId) > distance.get(id);
           if (forward || !leadsBack(nextId, id)) {
@@ -648,9 +646,9 @@
         readers: graph.readersOfQueue(eventId),
       };
     }
-    const beyond = (graph.succ.get(eventId) || []).some((id) => {
+    const beyond = graph.chainSucc(eventId).some((id) => {
       const next = graph.events.get(id);
-      return next && !EXCLUDED_TYPES.has(next.type) && !isLatch(next, eventId);
+      return next && !EXCLUDED_TYPES.has(next.type);
     });
     return { kind: beyond ? "limit" : "open", rejoins: [] };
   }

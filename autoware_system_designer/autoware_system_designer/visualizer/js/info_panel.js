@@ -128,8 +128,8 @@
   }
 
   // One event of the trigger graph: what fires it, at what declared rate and,
-  // when a run was measured, at what observed rate; the queues it reads or,
-  // for a queue, the events reading it.
+  // when a run was measured, at what observed rate; the queues it reads and
+  // fills or, for a queue, the events reading it.
   function eventCard(event) {
     const rows = [
       ["kind", event.kind],
@@ -140,6 +140,7 @@
       ["error rate", event.error_rate],
       ["timeout", event.timeout],
       ["reads", event.reads],
+      ["fills", event.fills],
       ["read by", event.readers],
     ]
       .filter(([, value]) => value !== null && value !== undefined)
