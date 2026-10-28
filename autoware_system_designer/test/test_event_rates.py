@@ -132,3 +132,45 @@ def test_and_takes_the_timeout_of_its_slowest_condition():
     event = _rate([{"and": [{"on_input": "fast"}, {"on_input": "slow"}]}], inputs)
     assert event.frequency == 1.0
     assert event.timeout == 2.0
+
+
+def test_and_pairs_the_timeout_with_the_condition_its_rate_comes_from():
+    inputs = _timed_inputs(fast=(10.0, 0.5), slow=(1.0, 0.2))
+    event = _rate([{"and": [{"on_input": "fast"}, {"on_input": "slow"}]}], inputs)
+    assert event.frequency == 1.0
+    assert event.timeout == 0.2
+
+
+def test_or_pairs_the_timeout_with_the_condition_its_rate_comes_from():
+    inputs = _timed_inputs(fast=(50.0, 1.0), slow=(5.0, 0.1))
+    event = _rate([{"or": [{"on_input": "fast"}, {"on_input": "slow"}]}], inputs)
+    assert event.frequency == 50.0
+    assert event.timeout == 1.0
+
+
+def test_an_and_of_latches_alone_never_repeats():
+    inputs = _inputs(vector_map=0.2, calibration=0.1)
+    event = _rate([{"and": [{"once": "vector_map"}, {"once": "calibration"}]}], inputs)
+    assert event.pacing_triggers == []
+    assert event.frequency == 0.0
+
+
+def test_a_wide_or_listed_downstream_first_settles_at_its_quickest_condition():
+    # branch i is i + 1 stages long and carries the faster rate, so the `or` sees a new
+    # quickest condition each time one more branch settles
+    inputs = _inputs(**{f"in_{i}": 10.0 * (i + 1) for i in range(24)})
+    processes = []
+    for i in range(24):
+        for depth in range(i + 1):
+            condition = {"on_input": f"in_{i}"} if depth == 0 else {"on_trigger": f"b{i}_{depth - 1}"}
+            processes.append(Process(f"b{i}_{depth}", ["ns"], {"trigger_conditions": [condition]}))
+    merge = Process("merge", ["ns"], {"trigger_conditions": [{"on_trigger": f"b{i}_{i}"} for i in range(24)]})
+    tail = Process("tail", ["ns"], {"trigger_conditions": [{"on_trigger": "merge"}]})
+    processes += [merge, tail]
+    process_events = [process.event for process in processes]
+    for process in processes:
+        process.set_condition(process_events, list(inputs.values()))
+    events = [event for process in processes for event in process.get_event_list()]
+    resolve_event_rates(list(reversed(events)) + list(inputs.values()))
+    assert merge.event.frequency == 240.0
+    assert tail.event.frequency == 240.0

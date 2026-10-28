@@ -330,7 +330,8 @@ class NodeGraph:
                 if process.id in seen:
                     continue
                 seen.add(process.id)
-                for trigger_id in process.pacing_trigger_ids:
+                # a process gated by latches alone runs once they have all arrived
+                for trigger_id in process.pacing_trigger_ids or process.trigger_ids:
                     input_port = node.input_events.get(trigger_id)
                     if input_port is not None:
                         if input_port.topic not in topics:

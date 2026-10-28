@@ -1309,12 +1309,12 @@
         this.rateLabel(event.frequency) || "no clock",
       ];
       if (mismatch) parts.push(`trigger rates: ${mismatch.join(" / ")}`);
-      const names = (ids) =>
-        ids.map((id) => this.graph.events.get(id)?.name || id).join(", ");
       const reads = this.graph.queuesReadBy(event.id);
-      if (reads.length) parts.push(`reads queue ${names(reads)}`);
+      if (reads.length)
+        parts.push(`reads queue ${this.graph.eventNames(reads)}`);
       const readers = this.graph.readersOfQueue(event.id);
-      if (readers.length) parts.push(`read by ${names(readers)}`);
+      if (readers.length)
+        parts.push(`read by ${this.graph.eventNames(readers)}`);
       return `${event.name}\n${parts.join("\n")}`;
     }
 
@@ -1371,11 +1371,6 @@
     }
 
     // Event names joined for a panel row; undefined when there are none.
-    _eventNames(ids) {
-      if (!ids.length) return undefined;
-      return ids.map((id) => this.graph.events.get(id)?.name || id).join(", ");
-    }
-
     describeChain(event, upstream, downstream) {
       const owner = this.graph.instances.get(event.ownerId)?.data || {};
       return {
@@ -1389,8 +1384,12 @@
           warn_rate: event.warn_rate,
           error_rate: event.error_rate,
           timeout: event.timeout,
-          reads: this._eventNames(this.graph.queuesReadBy(event.id)),
-          readers: this._eventNames(this.graph.readersOfQueue(event.id)),
+          reads:
+            this.graph.eventNames(this.graph.queuesReadBy(event.id)) ||
+            undefined,
+          readers:
+            this.graph.eventNames(this.graph.readersOfQueue(event.id)) ||
+            undefined,
           mismatch: this.graph.rateMismatch(event),
         },
         chain: this.chainReport(

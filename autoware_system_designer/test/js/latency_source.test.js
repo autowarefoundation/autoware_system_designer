@@ -217,8 +217,9 @@ const fileV2 = (overrides = {}) => ({
   ...overrides,
 });
 
-function graphV2() {
-  // /sensing/a ticks → publishes /sensing/cloud → /perception/b runs → /perception/objects
+function graphV2({ latched = false } = {}) {
+  // /sensing/a ticks → publishes /sensing/cloud → /perception/b runs → /perception/objects;
+  // `latched` makes /sensing/cloud a latch of the run
   const data = {
     unique_id: "root",
     path: "/",
@@ -290,6 +291,7 @@ function graphV2() {
             name: "run",
             type: "on_input",
             trigger_ids: ["b.in"],
+            latch_ids: latched ? ["b.in"] : [],
             action_ids: ["b.out"],
           },
         ],
@@ -490,6 +492,16 @@ test("an input→gate edge costs the measured in→out response less the run", (
   const plain = L.fromJson(fileV2()).costs(g);
   assert.equal(
     plain.comm(edge, g.events.get("b.in"), g.events.get("b.run")),
+    null,
+  );
+});
+
+test("a latched input→gate edge is no wait of the run", () => {
+  const g = graphV2({ latched: true });
+  const costs = L.fromJson(withResponse()).costs(g);
+  const edge = g.edgeById.get(g.edgeId("b.in", "b.run"));
+  assert.equal(
+    costs.comm(edge, g.events.get("b.in"), g.events.get("b.run")),
     null,
   );
 });

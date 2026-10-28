@@ -1411,7 +1411,7 @@
       label.appendChild(tip);
       g.appendChild(label);
 
-      this.drawReads(group, gate, box, y, g);
+      this.drawReads(gate, box, y, g);
 
       const title = document.createElementNS(SVG_NS, "title");
       title.textContent = this.describeGate(group, gate);
@@ -1427,7 +1427,7 @@
     // The queues a gate reads are drawn under its block: a slotted box with a
     // dotted arrow up into the run, named for the queues. The read is off every
     // chain, so nothing on the axis is measured by it.
-    drawReads(group, gate, box, y, g) {
+    drawReads(gate, box, y, g) {
       const queueIds = this.graph.queuesReadBy(gate.id);
       if (!queueIds.length) return;
       const s = 3;
@@ -1454,17 +1454,18 @@
       label.setAttribute("y", y1 + 5);
       label.classList.add("seq-hop-label", "seq-read-label");
       label.style.fontSize = `${VIEW.subSize}px`;
-      const names = queueIds
-        .map((id) => this.graph.events.get(id)?.name || id)
-        .join(", ");
-      this._truncateSVGText(label, `⇥ ${names}`, 120, VIEW.subSize);
+      this._truncateSVGText(
+        label,
+        `⇥ ${this.graph.eventNames(queueIds)}`,
+        120,
+        VIEW.subSize,
+      );
       const title = document.createElementNS(SVG_NS, "title");
       title.textContent = this.readLines(gate.id).join("\n");
       label.appendChild(title);
       queueBox.appendChild(title.cloneNode(true));
       stem.appendChild(title.cloneNode(true));
       this.labelLayer.appendChild(label);
-      gate.readLabel = label;
     }
 
     // One line per queue an event reads: the queue, what fills it and at what rate.
@@ -1482,10 +1483,7 @@
 
     // The names of the events reading a queue.
     readerNames(queueId) {
-      return this.graph
-        .readersOfQueue(queueId)
-        .map((id) => this.graph.events.get(id)?.name || id)
-        .join(", ");
+      return this.graph.eventNames(this.graph.readersOfQueue(queueId));
     }
 
     // node · process @time as three spans; the node span is dropped first when

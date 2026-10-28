@@ -263,7 +263,25 @@
             "type": "array"
           },
           "outcomes": {
-            "type": "array"
+            "type": "array",
+            "items": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 1,
+              "properties": {
+                "to_output": {
+                  "type": "string"
+                },
+                "to_trigger": {
+                  "type": "string"
+                },
+                "to_queue": {
+                  "type": "string"
+                },
+                "terminal": {}
+              },
+              "additionalProperties": false
+            }
           },
           "reads": {
             "type": "array",

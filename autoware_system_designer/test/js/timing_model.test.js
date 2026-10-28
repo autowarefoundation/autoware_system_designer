@@ -832,6 +832,35 @@ test("clocks whose streams one gate merges are peers; side inputs and rejoined f
   );
 });
 
+test("latched inputs of one type are gated once, not merged as peers", () => {
+  const camera = (name) => ({
+    name,
+    outputs: [{ name: "info", type: "info" }],
+    processes: [{ name: "tick", type: "periodic", frequency: 1, to: ["info"] }],
+  });
+  const graph = build({
+    nodes: [
+      camera("cam0"),
+      camera("cam1"),
+      {
+        name: "fusion",
+        inputs: [
+          { name: "info0", type: "info" },
+          { name: "info1", type: "info" },
+        ],
+        processes: [{ name: "run", type: "and", latch: ["info0", "info1"] }],
+      },
+    ],
+    links: [
+      ["cam0", "info", "fusion", "info0"],
+      ["cam1", "info", "fusion", "info1"],
+    ],
+  });
+  assert.equal(graph.isLatchEdge("fusion.in.info0", "fusion.run"), true);
+  assert.deepEqual(graph.chainSucc("fusion.in.info0"), []);
+  assert.deepEqual(graph.peerRoots(), [["cam0.tick"], ["cam1.tick"]]);
+});
+
 test("peer sources are solved together and meet at the merging gate", () => {
   const graph = fanInGraph();
   // the left lidar is faster at best and slower at worst than the right one

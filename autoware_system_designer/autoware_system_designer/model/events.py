@@ -148,8 +148,6 @@ class Event:
         logger.debug(f"Event '{self.unique_id}' added latch '{event.unique_id}'")
 
     def add_read_event(self, queue: "QueueEvent"):
-        if queue.unique_id == self.unique_id:
-            raise ValueError(f"Event cannot read itself: {self.unique_id}")
         for e in self.reads:
             if e.unique_id == queue.unique_id:
                 return
@@ -415,10 +413,13 @@ def _inherit(values: List[Optional[float]], slowest: bool) -> Optional[float]:
     return min(paced) if paced else 0.0
 
 
-def _inherit_timeout(values: List[Optional[float]], slowest: bool) -> Optional[float]:
-    """The wait an event takes from its pacing triggers, paired with the rate it takes: the
-    longest when it fires at the slowest, else the shortest; a `0.0` timeout is a one-shot."""
-    known = [value for value in values if value is not None]
+def _inherit_timeout(triggers: List[Event], slowest: bool, frequency: Optional[float]) -> Optional[float]:
+    """The wait of the conditions the rate comes from: the longest when the event fires at the
+    slowest, else the shortest; a `0.0` timeout is a one-shot."""
+    sources = [trigger for trigger in triggers if frequency is not None and trigger.frequency == frequency]
+    known = [trigger.timeout for trigger in sources if trigger.timeout is not None] or [
+        trigger.timeout for trigger in triggers if trigger.timeout is not None
+    ]
     if not known:
         return None
     if slowest:
@@ -430,47 +431,111 @@ def _inherit_timeout(values: List[Optional[float]], slowest: bool) -> Optional[f
 def _settle(event: Event, declared: RateProfile) -> bool:
     """Recompute the rate profile of one event; True when it moved."""
     before = _profile(event)
-    if event.is_clock:
+    triggers = event.pacing_triggers
+    # an event gated by latches alone is satisfied for good once they arrive, so like a clock it
+    # keeps what it declares and never repeats
+    if event.is_clock or (not triggers and event.latches):
         frequency = declared[0] if declared[0] is not None else 0.0
         profile: RateProfile = (frequency, declared[1], declared[2], declared[3])
     else:
         # an `and` fires no faster than its slowest condition, every other event as fast as its
         # quickest; `timeout` is the wait of the condition the rate comes from
         slowest = event.type == "and"
-        triggers = event.pacing_triggers
+        frequency = _inherit([trigger.frequency for trigger in triggers], slowest)
         inherited = (
-            _inherit([trigger.frequency for trigger in triggers], slowest),
+            frequency,
             _inherit([trigger.warn_rate for trigger in triggers], slowest),
             _inherit([trigger.error_rate for trigger in triggers], slowest),
-            _inherit_timeout([trigger.timeout for trigger in triggers], slowest),
+            _inherit_timeout(triggers, slowest, frequency),
         )
         profile = tuple(own if own is not None else value for own, value in zip(declared, inherited))
     event.frequency, event.warn_rate, event.error_rate, event.timeout = profile
     return profile != before
 
 
+def _pacing_components(events: Dict[str, Event]) -> List[List[str]]:
+    """Strongly connected components of the pacing edges, upstream first; a latch edge carries
+    no rate, so it neither orders nor closes a loop."""
+    succ = {
+        uid: [
+            action.unique_id
+            for action in event.actions
+            if action.unique_id in events and all(latch.unique_id != uid for latch in action.latches)
+        ]
+        for uid, event in events.items()
+    }
+    index: Dict[str, int] = {}
+    low: Dict[str, int] = {}
+    stack: List[str] = []
+    on_stack = set()
+    components: List[List[str]] = []
+    for root in events:
+        if root in index:
+            continue
+        index[root] = low[root] = len(index)
+        stack.append(root)
+        on_stack.add(root)
+        work = [(root, iter(succ[root]))]
+        while work:
+            node, successors = work[-1]
+            nxt = next(successors, None)
+            if nxt is not None:
+                if nxt not in index:
+                    index[nxt] = low[nxt] = len(index)
+                    stack.append(nxt)
+                    on_stack.add(nxt)
+                    work.append((nxt, iter(succ[nxt])))
+                elif nxt in on_stack:
+                    low[node] = min(low[node], index[nxt])
+                continue
+            work.pop()
+            if work:
+                parent = work[-1][0]
+                low[parent] = min(low[parent], low[node])
+            if low[node] == index[node]:
+                component = []
+                while True:
+                    member = stack.pop()
+                    on_stack.discard(member)
+                    component.append(member)
+                    if member == node:
+                        break
+                components.append(component)
+    # Tarjan closes downstream components first
+    components.reverse()
+    return components
+
+
 def resolve_event_rates(events: Iterable[Event], max_visits: int = 8) -> None:
     """Settle the rate of every event from the clocks that reach it.
 
     A clock keeps the rate it declares; every other event takes the rate of the conditions that
-    pace it, along the trigger edges. Chains that loop settle by revisiting, bounded per event.
+    pace it, along the trigger edges. Events settle upstream first, so an event off any loop
+    settles once; events on a loop settle by revisiting, bounded per event.
     """
-    events = list(events)
-    declared = {event.unique_id: _profile(event) for event in events}
-    queue = deque(events)
-    queued = {event.unique_id for event in events}
-    visits: Dict[str, int] = {}
-    while queue:
-        event = queue.popleft()
-        queued.discard(event.unique_id)
-        if not _settle(event, declared[event.unique_id]):
-            continue
-        visits[event.unique_id] = visits.get(event.unique_id, 0) + 1
-        if visits[event.unique_id] > max_visits:
-            logger.warning(f"Event '{event.unique_id}' rate does not settle: the chain it sits on mixes rates")
-            continue
-        logger.debug(f"Event '{event.unique_id}' rate settled: freq={event.frequency}")
-        for action in event.actions:
-            if action.unique_id not in queued:
-                queue.append(action)
-                queued.add(action.unique_id)
+    by_id: Dict[str, Event] = {}
+    for event in events:
+        by_id.setdefault(event.unique_id, event)
+    declared = {uid: _profile(event) for uid, event in by_id.items()}
+    for component in _pacing_components(by_id):
+        members = set(component)
+        queue = deque(component)
+        queued = set(component)
+        visits: Dict[str, int] = {}
+        while queue:
+            uid = queue.popleft()
+            queued.discard(uid)
+            event = by_id[uid]
+            if not _settle(event, declared[uid]):
+                continue
+            logger.debug(f"Event '{uid}' rate settled: freq={event.frequency}")
+            if len(members) == 1:
+                continue
+            visits[uid] = visits.get(uid, 0) + 1
+            if visits[uid] > max_visits:
+                logger.warning(f"Event '{uid}' rate does not settle: the loop it sits on mixes rates")
+                continue
+            for action in event.actions:
+                if action.unique_id in members and action.unique_id not in queued:
+                    queue.append(action.unique_id)
+                    queued.add(action.unique_id)
