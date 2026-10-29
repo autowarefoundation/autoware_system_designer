@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
 import logging
 import math
+import operator
 import os
 import re
 from typing import Any, Dict, List, Optional
@@ -24,8 +26,8 @@ from autoware_system_designer.parser.yaml_parser import yaml_parser
 logger = logging.getLogger(__name__)
 
 
+# Names an $(eval ...) expression may reference.
 SAFE_EVAL_SCOPE = {
-    "__builtins__": {},
     "math": math,
     "abs": abs,
     "min": min,
@@ -35,7 +37,6 @@ SAFE_EVAL_SCOPE = {
     "int": int,
     "float": float,
     "str": str,
-    # Add math constants and functions directly to scope for convenience
     "pi": math.pi,
     "sin": math.sin,
     "cos": math.cos,
@@ -43,6 +44,88 @@ SAFE_EVAL_SCOPE = {
     "sqrt": math.sqrt,
     "atan2": math.atan2,
 }
+
+_BINARY_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+}
+_UNARY_OPERATORS = {ast.UAdd: operator.pos, ast.USub: operator.neg, ast.Not: operator.not_}
+_COMPARE_OPERATORS = {
+    ast.Eq: operator.eq,
+    ast.NotEq: operator.ne,
+    ast.Lt: operator.lt,
+    ast.LtE: operator.le,
+    ast.Gt: operator.gt,
+    ast.GtE: operator.ge,
+}
+
+
+def evaluate_safe_expression(expression: str) -> Any:
+    """Value of an arithmetic expression over SAFE_EVAL_SCOPE.
+
+    The expression is interpreted from its syntax tree: literals, the scope
+    names, ``math.*`` attributes, operators, comparisons, conditionals and
+    calls of scope functions. Any other construct raises ValueError.
+    """
+    tree = ast.parse(expression.strip(), mode="eval")
+    return _evaluate_node(tree.body)
+
+
+def _evaluate_node(node: ast.AST) -> Any:
+    if isinstance(node, ast.Constant):
+        if node.value is None or isinstance(node.value, (bool, int, float, str)):
+            return node.value
+        raise ValueError(f"unsupported constant: {node.value!r}")
+    if isinstance(node, ast.Name):
+        if node.id in SAFE_EVAL_SCOPE:
+            return SAFE_EVAL_SCOPE[node.id]
+        raise ValueError(f"unknown name: {node.id}")
+    if isinstance(node, ast.Attribute):
+        if isinstance(node.value, ast.Name) and node.value.id == "math" and not node.attr.startswith("_"):
+            return getattr(math, node.attr)
+        raise ValueError("attribute access is limited to math.*")
+    if isinstance(node, ast.BinOp) and type(node.op) in _BINARY_OPERATORS:
+        return _BINARY_OPERATORS[type(node.op)](_evaluate_node(node.left), _evaluate_node(node.right))
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY_OPERATORS:
+        return _UNARY_OPERATORS[type(node.op)](_evaluate_node(node.operand))
+    if isinstance(node, ast.BoolOp):
+        result: Any = None
+        for value in node.values:
+            result = _evaluate_node(value)
+            if isinstance(node.op, ast.And) and not result:
+                return result
+            if isinstance(node.op, ast.Or) and result:
+                return result
+        return result
+    if isinstance(node, ast.Compare):
+        left = _evaluate_node(node.left)
+        for op, comparator in zip(node.ops, node.comparators):
+            if type(op) not in _COMPARE_OPERATORS:
+                raise ValueError(f"unsupported comparison: {type(op).__name__}")
+            right = _evaluate_node(comparator)
+            if not _COMPARE_OPERATORS[type(op)](left, right):
+                return False
+            left = right
+        return True
+    if isinstance(node, ast.IfExp):
+        return _evaluate_node(node.body) if _evaluate_node(node.test) else _evaluate_node(node.orelse)
+    if isinstance(node, ast.List):
+        return [_evaluate_node(element) for element in node.elts]
+    if isinstance(node, ast.Tuple):
+        return tuple(_evaluate_node(element) for element in node.elts)
+    if isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute)):
+        func = _evaluate_node(node.func)
+        args = [_evaluate_node(arg) for arg in node.args]
+        if any(keyword.arg is None for keyword in node.keywords):
+            raise ValueError("keyword unpacking is not supported")
+        kwargs = {keyword.arg: _evaluate_node(keyword.value) for keyword in node.keywords}
+        return func(*args, **kwargs)
+    raise ValueError(f"unsupported expression element: {type(node).__name__}")
 
 
 class ParameterResolver:
@@ -256,15 +339,14 @@ class ParameterResolver:
         return "".join(result)
 
     def _evaluate_expression(self, expression: str) -> str:
-        """Evaluate a python expression safely."""
+        """Evaluate an $(eval ...) expression; the original text stands when it cannot be evaluated."""
         expression = expression.strip()
 
         if "$" in expression:
             return f"$(eval {expression})"
 
         try:
-            result = eval(expression, SAFE_EVAL_SCOPE)
-            return str(result)
+            return str(evaluate_safe_expression(expression))
         except Exception as e:
             logger.warning(
                 f"Failed to evaluate expression '$(eval {expression})': {e}{format_source(self._source_context)}"

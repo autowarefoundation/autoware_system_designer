@@ -14,7 +14,10 @@
 
 import logging
 import os
+import shlex
 from typing import Any, Dict, Optional, Set
+
+from autoware_system_designer.common.path_utils import export_path
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +116,7 @@ def generate_build_scripts(
             collect_packages(deploy_instance)
 
         # Generate scripts
-        scripts_dir = os.path.join(output_root_dir, "exports", deployment_name, "build_scripts", mode_key)
+        scripts_dir = export_path(output_root_dir, "exports", deployment_name, "build_scripts", mode_key)
         if not os.path.exists(scripts_dir):
             os.makedirs(scripts_dir)
 
@@ -126,14 +129,14 @@ def generate_build_scripts(
                 pkgs.add(system_pkg)
 
             sorted_pkgs = sorted(list(pkgs))
-            script_path = os.path.join(scripts_dir, f"build_{ecu}.sh")
+            script_path = export_path(scripts_dir, f"build_{ecu}.sh")
 
             with open(script_path, "w") as f:
                 f.write("#!/bin/bash\n")
                 f.write("# Auto-generated build script for ECU: " + ecu + "\n")
                 f.write("# Mode: " + mode_key + "\n\n")
                 f.write("colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-up-to \\\n")
-                f.write("  " + " \\\n  ".join(sorted_pkgs) + "\n")
+                f.write("  " + " \\\n  ".join(shlex.quote(pkg) for pkg in sorted_pkgs) + "\n")
 
             os.chmod(script_path, 0o755)
             logger.info(f"Generated build script: {script_path}")

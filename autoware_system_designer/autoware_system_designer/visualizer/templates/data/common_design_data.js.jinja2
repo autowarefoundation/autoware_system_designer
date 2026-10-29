@@ -3,7 +3,7 @@
   if (!window.{{ window_variable }}) window.{{ window_variable }} = {};
 
   // Store data for the specific mode
-  window.{{ window_variable }}["{{ mode if mode else 'default' }}"] = {
+  window.{{ window_variable }}[{{ (mode if mode else 'default') | tojson }}] = {
     "name": {{ name | tojson }},
     "unique_id": {{ unique_id | tojson }},
     "entity_type": {{ entity_type | tojson }},

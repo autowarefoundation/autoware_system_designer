@@ -54,6 +54,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+from autoware_system_designer.common.path_utils import export_path
+
 logger = logging.getLogger(__name__)
 
 LATENCY_SCHEMA_V1 = "autoware_system_designer/latency/1"
@@ -187,7 +189,7 @@ def copy_latency_files(latency_dir: str | None, modes: List[str], web_data_dir: 
             logger.warning(f"Latency file ignored: {source} ({exc})")
             continue
         os.makedirs(web_data_dir, exist_ok=True)
-        target = Path(web_data_dir) / f"{mode}_latency{LATENCY_SCRIPT_SUFFIX}"
+        target = Path(export_path(web_data_dir, f"{mode}_latency{LATENCY_SCRIPT_SUFFIX}"))
         target.write_text(latency_script_text(mode, data), encoding="utf-8")
         served.append(mode)
         logger.info(f"Copied latency file: {source.name}")

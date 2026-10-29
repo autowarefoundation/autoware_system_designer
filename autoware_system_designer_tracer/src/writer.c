@@ -33,14 +33,14 @@ uint64_t asd_now_realtime_ns(void)
 int asd_writer_open(asd_writer_t * w, const char * dir, uint32_t pid, uint64_t capacity)
 {
   memset(w, 0, sizeof(*w));
-  if (capacity == 0) {
+  if (capacity == 0 || capacity > ASD_TRACE_MAX_CAPACITY) {
     errno = EINVAL;
     return -1;
   }
 
   char path[4096];
   snprintf(path, sizeof(path), "%s/%u.trace", dir, pid);
-  int fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+  int fd = open(path, O_RDWR | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0600);
   if (fd < 0) {
     return -1;
   }
@@ -56,8 +56,12 @@ int asd_writer_open(asd_writer_t * w, const char * dir, uint32_t pid, uint64_t c
   }
 
   snprintf(path, sizeof(path), "%s/%u.names", dir, pid);
-  FILE * names = fopen(path, "w");
+  int names_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0600);
+  FILE * names = names_fd < 0 ? NULL : fdopen(names_fd, "w");
   if (names == NULL) {
+    if (names_fd >= 0) {
+      close(names_fd);
+    }
     munmap(map, size);
     return -1;
   }

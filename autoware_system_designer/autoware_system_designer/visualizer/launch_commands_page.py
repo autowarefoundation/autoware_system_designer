@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from autoware_system_designer.common.path_utils import export_path
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.visualizer.paths import get_install_root, systems_index_link
 
@@ -217,7 +218,7 @@ def generate_launch_commands_page(
     default_method = "native" if has_native else "xml"
 
     renderer = TemplateRenderer()
-    output_path = os.path.join(web_dir, f"{system_name}_launch_commands.html")
+    output_path = export_path(web_dir, f"{system_name}_launch_commands.html")
     renderer.render_template_to_file(
         "launch_commands.html.jinja2",
         output_path,

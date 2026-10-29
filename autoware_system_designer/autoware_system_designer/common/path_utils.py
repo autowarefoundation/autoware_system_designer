@@ -15,8 +15,11 @@
 """Canonical path namespace shared by manifest readers, file maps, and duplicate ranking."""
 
 import os
+import re
 from functools import lru_cache
 from typing import Any, Optional
+
+from autoware_system_designer.common.exceptions import ValidationError
 
 # Manifest recording the workspace package map and the anchor for relative entries.
 PACKAGE_MAP_FILENAME = "_package_map.yaml"
@@ -25,6 +28,21 @@ WORKSPACE_ROOT_KEY = "workspace_root"
 # Placeholder for the workspace root in exported files; expanded on load.
 WORKSPACE_ROOT_TOKEN = "${workspace_root}"
 WORKSPACE_ROOT_ENV = "AUTOWARE_SYSTEM_DESIGNER_WORKSPACE_ROOT"
+
+# A design name usable as one component of a generated file path.
+_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]*$")
+
+
+def validate_path_segment(value: Any, what: str = "name") -> str:
+    """*value* as a single path component; separators, dot entries and control characters are rejected."""
+    if not isinstance(value, str) or not _PATH_SEGMENT.match(value):
+        raise ValidationError(f"{what} is not usable as a path segment: {value!r}")
+    return value
+
+
+def export_path(root: str, *segments: Any) -> str:
+    """Path under *root* joined from validated segments, so generated files stay inside the export tree."""
+    return os.path.join(root, *(validate_path_segment(segment) for segment in segments))
 
 
 @lru_cache(maxsize=None)

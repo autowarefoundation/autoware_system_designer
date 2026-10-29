@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
 import subprocess
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
@@ -25,7 +26,7 @@ from .namespace import parent_namespace
 
 logger = logging.getLogger(__name__)
 
-# Matches ROS 2 launch $(command '<shell-cmd>' ['<fallback>']) substitution.
+# Matches ROS 2 launch $(command '<cmd>' ['<fallback>']) substitution.
 _COMMAND_SUB = re.compile(r"^\$\(command\s+'(.+?)'(?:\s+'([^']*)')?\s*\)$", re.DOTALL)
 
 _VALID_PARAM_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_./]*$")
@@ -34,8 +35,8 @@ _VALID_PARAM_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_./]*$")
 def resolve_value(value: Any, type_hint: Optional[str] = None) -> Any:
     """Coerce a JSON param value to a Python value using *type_hint*.
 
-    ``$(command '<cmd>' ...)`` substitutions are resolved by running the shell
-    command and using its stdout.
+    ``$(command '<cmd>' ...)`` substitutions are resolved by running the
+    command, split into arguments without a shell, and using its stdout.
     """
     if isinstance(value, bool):
         return value
@@ -49,7 +50,10 @@ def resolve_value(value: Any, type_hint: Optional[str] = None) -> Any:
         cmd_str = m.group(1)
         fallback = m.group(2) if m.group(2) is not None else ""
         try:
-            result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, timeout=30)
+            argv = shlex.split(cmd_str)
+            if not argv:
+                return fallback
+            result = subprocess.run(argv, capture_output=True, text=True, timeout=30)
             if result.returncode == 0:
                 return result.stdout.strip()
             logger.warning(

@@ -64,7 +64,7 @@
                         {% if cmd %}
                         <div class="command-with-copy">
                             <button type="button" class="copy-btn" data-cmd="{{ cmd | e }}">Copy</button>
-                            <code>{{ cmd }}</code>
+                            <code>{{ cmd | e }}</code>
                         </div>
                         {% else %}
                         <span class="empty-state">—</span>

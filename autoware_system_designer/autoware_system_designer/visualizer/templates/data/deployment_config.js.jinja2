@@ -1,11 +1,11 @@
 const deploymentConfig = {
-    deploymentName: "{{ deployment_name }}",
-    packageName: "{{ package_name }}",
-    systemsIndexPath: "{{ systems_index_path }}",
+    deploymentName: {{ deployment_name | tojson }},
+    packageName: {{ package_name | tojson }},
+    systemsIndexPath: {{ systems_index_path | tojson }},
     availableModes: {{ available_modes | tojson }},
-    defaultMode: "{{ default_mode }}",
+    defaultMode: {{ default_mode | tojson }},
     availableDiagramTypes: {{ available_diagram_types | tojson }},
-    defaultDiagramType: "{{ default_diagram_type }}",
+    defaultDiagramType: {{ default_diagram_type | tojson }},
     editorScheme: {{ editor_scheme | tojson }},
     systemDefinitionFile: {{ system_definition_file | tojson }}
 };

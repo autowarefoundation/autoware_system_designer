@@ -90,6 +90,11 @@ static void open_writer_locked(void)
   const char * cap = getenv(ASD_TRACE_CAPACITY_ENV);
   if (cap != NULL && cap[0] != '\0') {
     unsigned long long parsed = strtoull(cap, NULL, 10);
+    if (parsed > ASD_TRACE_MAX_CAPACITY) {
+      fprintf(stderr, "[asd_tracer] %s=%s exceeds %llu; capped\n", ASD_TRACE_CAPACITY_ENV, cap,
+              (unsigned long long)ASD_TRACE_MAX_CAPACITY);
+      parsed = ASD_TRACE_MAX_CAPACITY;
+    }
     if (parsed > 0) {
       capacity = parsed;
     }

@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
+from autoware_system_designer.common.path_utils import export_path
 from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.generator.ros2_launcher.component_map import (
@@ -59,11 +60,11 @@ def _generate_component_launcher(
 ):
     """Generate component launcher file from serialized system structure."""
 
-    component_dir = os.path.join(output_dir, compute_unit, namespace)
+    component_dir = export_path(output_dir, compute_unit, *[part for part in namespace.split("/") if part])
     _ensure_directory(component_dir)
 
     filename = namespace.replace("/", "__")
-    launcher_file = os.path.join(component_dir, f"{filename}.launch.xml")
+    launcher_file = export_path(component_dir, f"{filename}.launch.xml")
     logger.debug(f"Creating component launcher: {launcher_file}")
 
     all_nodes = []
@@ -88,10 +89,10 @@ def _generate_compute_unit_launcher(
 ):
     """Generate compute unit launcher from serialized system structure."""
 
-    compute_unit_dir = os.path.join(output_dir, compute_unit)
+    compute_unit_dir = export_path(output_dir, compute_unit)
     _ensure_directory(compute_unit_dir)
 
-    launcher_file = os.path.join(compute_unit_dir, f"{compute_unit.lower()}.launch.xml")
+    launcher_file = export_path(compute_unit_dir, f"{compute_unit.lower()}.launch.xml")
     logger.debug(f"Creating compute unit launcher: {launcher_file}")
 
     # Components are included in system-design declaration order; global
