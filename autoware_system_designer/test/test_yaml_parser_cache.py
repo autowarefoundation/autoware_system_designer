@@ -39,6 +39,18 @@ def test_cache_hit_is_unaffected_by_mutation_of_earlier_result(tmp_path):
     assert parser.load_config_with_source(path)[0] == {"a": [1, 2], "b": {"c": 3}}
 
 
+def test_cache_entry_follows_the_file_on_disk(tmp_path):
+    path = tmp_path / "x.yaml"
+    path.write_text("a: 1\n")
+    parser = YamlParser(cache_enabled=True)
+
+    assert parser.load_config(path) == {"a": 1}
+    path.write_text("a: 22\n")
+
+    assert parser.load_config(path) == {"a": 22}
+    assert parser.load_config_with_source(path)[0] == {"a": 22}
+
+
 def test_entity_file_parses_repeatedly_with_cache(monkeypatch):
     import autoware_system_designer.parser.data_parser as data_parser
 

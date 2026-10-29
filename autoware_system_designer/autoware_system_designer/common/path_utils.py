@@ -30,12 +30,12 @@ WORKSPACE_ROOT_TOKEN = "${workspace_root}"
 WORKSPACE_ROOT_ENV = "AUTOWARE_SYSTEM_DESIGNER_WORKSPACE_ROOT"
 
 # A design name usable as one component of a generated file path.
-_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]*$")
+_PATH_SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.\-]*")
 
 
 def validate_path_segment(value: Any, what: str = "name") -> str:
     """*value* as a single path component; separators, dot entries and control characters are rejected."""
-    if not isinstance(value, str) or not _PATH_SEGMENT.match(value):
+    if not isinstance(value, str) or not _PATH_SEGMENT.fullmatch(value):
         raise ValidationError(f"{what} is not usable as a path segment: {value!r}")
     return value
 

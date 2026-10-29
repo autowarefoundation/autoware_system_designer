@@ -16,7 +16,6 @@
 
 from pathlib import Path
 
-import base_server  # noqa: F401  (configures the shared YAML loader)
 from registry_manager import RegistryManager
 
 from autoware_system_designer.parser.data_parser import ConfigParser

@@ -99,6 +99,13 @@ class Port:
         if added:
             logger.debug(f"Port '{self.port_path}' added references: {added}")
 
+    def get_chain_list(self):
+        """This port and every port below it in the reference chain."""
+        ports = [self]
+        for port in self.reference:
+            ports.extend(port.get_chain_list())
+        return ports
+
     def get_reference_list(self):
         """Node ports at the bottom of the reference chain; a node port stands for itself."""
         if self.reference == []:

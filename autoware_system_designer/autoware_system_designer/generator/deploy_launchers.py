@@ -40,7 +40,7 @@ def generate_deploy_launchers(
     renderer = TemplateRenderer()
 
     for mode_key in mode_keys:
-        structure_path = os.path.join(system_structure_dir, f"{mode_key}.json")
+        structure_path = export_path(system_structure_dir, f"{mode_key}.json")
         payload = load_system_structure(structure_path, workspace_root=workspace_root)
         data, _ = extract_system_structure_data(payload)
 

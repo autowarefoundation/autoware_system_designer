@@ -16,6 +16,7 @@ import os
 
 import pytest
 
+from autoware_system_designer.builder.export.json_io import iter_mode_data
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.export_layout import ExportLayout
 from autoware_system_designer.common.path_utils import export_path, validate_path_segment
@@ -28,10 +29,17 @@ def test_identifier_like_segments_are_joined():
     assert validate_path_segment("TypeAlpha.parameter_set") == "TypeAlpha.parameter_set"
 
 
-@pytest.mark.parametrize("segment", ["..", ".", "", "a/b", "a\\b", "/abs", "a\nb", ".hidden", "-x", None, 3])
+@pytest.mark.parametrize("segment", ["..", ".", "", "a/b", "a\\b", "/abs", "a\nb", "a\n", ".hidden", "-x", None, 3])
 def test_segments_that_leave_or_hide_in_the_tree_are_rejected(segment):
     with pytest.raises(ValidationError):
         export_path("/out", "ok", segment)
+
+
+def test_mode_structure_is_read_from_inside_the_export_tree(tmp_path):
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}")
+    with pytest.raises(ValidationError):
+        list(iter_mode_data(["../outside"], str(tmp_path / "structure")))
 
 
 def test_export_layout_validates_system_name():

@@ -16,7 +16,7 @@
 
 import copy
 import logging
-from functools import lru_cache
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -26,6 +26,15 @@ from autoware_system_designer.common.deployment_config import deploy_config
 from autoware_system_designer.common.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _CacheEntry:
+    """Parsed file content, valid while the file's stamp on disk is unchanged."""
+
+    stamp: Tuple[int, int]
+    data: Dict[str, Any]
+    source_map: Optional[Dict[str, Dict[str, int]]] = None
 
 
 class YamlParser:
@@ -38,8 +47,17 @@ class YamlParser:
             cache_enabled: Whether to enable caching. If None, uses global config.
         """
         self.cache_enabled = cache_enabled if cache_enabled is not None else deploy_config.cache_enabled
-        self._cache: Dict[Path, Dict[str, Any]] = {}
-        self._source_cache: Dict[Path, Dict[str, Dict[str, int]]] = {}
+        self._cache: Dict[Path, _CacheEntry] = {}
+
+    @staticmethod
+    def _stamp(path: Path) -> Tuple[int, int]:
+        """Modification time and size of the file; a cache entry is valid while they match."""
+        stat = path.stat()
+        return stat.st_mtime_ns, stat.st_size
+
+    def _cached(self, path: Path, stamp: Tuple[int, int]) -> Optional[_CacheEntry]:
+        entry = self._cache.get(path) if self.cache_enabled else None
+        return entry if entry is not None and entry.stamp == stamp else None
 
     @staticmethod
     def _json_pointer_escape(token: str) -> str:
@@ -111,9 +129,11 @@ class YamlParser:
             raise ValidationError(f"Path is not a file: {path}")
 
         # Callers own the returned data; the cache keeps a private copy.
-        if self.cache_enabled and path in self._cache and path in self._source_cache:
+        stamp = self._stamp(path)
+        entry = self._cached(path, stamp)
+        if entry is not None and entry.source_map is not None:
             logger.debug(f"Loading configuration (with source) from cache: {path}")
-            return copy.deepcopy(self._cache[path]), self._source_cache[path]
+            return copy.deepcopy(entry.data), entry.source_map
 
         try:
             logger.debug(f"Loading configuration file (with source): {path}")
@@ -125,8 +145,7 @@ class YamlParser:
             source_map = self._build_source_map_from_yaml(content)
 
             if self.cache_enabled:
-                self._cache[path] = copy.deepcopy(config_data)
-                self._source_cache[path] = source_map
+                self._cache[path] = _CacheEntry(stamp, copy.deepcopy(config_data), source_map)
 
             return config_data, source_map
         except yaml.YAMLError as exc:
@@ -168,9 +187,11 @@ class YamlParser:
             raise ValidationError(f"Path is not a file: {path}")
 
         # Callers own the returned data; the cache keeps a private copy.
-        if self.cache_enabled and path in self._cache:
+        stamp = self._stamp(path)
+        entry = self._cached(path, stamp)
+        if entry is not None:
             logger.debug(f"Loading configuration from cache: {path}")
-            return copy.deepcopy(self._cache[path])
+            return copy.deepcopy(entry.data)
 
         try:
             logger.debug(f"Loading configuration file: {path}")
@@ -180,8 +201,8 @@ class YamlParser:
             if config_data is None:
                 config_data = {}
 
-            if self.cache_enabled and config_data is not None:
-                self._cache[path] = copy.deepcopy(config_data)
+            if self.cache_enabled:
+                self._cache[path] = _CacheEntry(stamp, copy.deepcopy(config_data))
 
             return config_data
 
@@ -253,20 +274,7 @@ class YamlParser:
     def clear_cache(self):
         """Clear the configuration cache."""
         self._cache.clear()
-        self._source_cache.clear()
         logger.debug("Configuration cache cleared")
-
-    @lru_cache(maxsize=None)
-    def get_cached_config(self, file_path: str) -> Dict[str, Any]:
-        """Get cached configuration using LRU cache.
-
-        Args:
-            file_path: Path to configuration file
-
-        Returns:
-            Parsed configuration
-        """
-        return self.load_config(file_path)
 
 
 # Global parser instance

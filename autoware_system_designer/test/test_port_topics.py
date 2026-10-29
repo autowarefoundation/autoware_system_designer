@@ -35,6 +35,9 @@ def test_nested_input_chain_shares_topic():
     assert outer_in.get_reference_list() == [node_in]
     for port in (source, outer_in, inner_in, node_in):
         assert port.get_topic() == "/sensing/lidar/pointcloud"
+    for port in (outer_in, inner_in, node_in):
+        assert port.servers == [source]
+    assert set(source.users) == {outer_in, inner_in, node_in}
 
 
 def test_nested_output_chain_shares_topic():
@@ -50,6 +53,9 @@ def test_nested_output_chain_shares_topic():
     assert outer_out.get_reference_list() == [node_out]
     for port in (node_out, inner_out, outer_out, sink):
         assert port.get_topic() == "/perception/pipeline/objects"
+    for port in (node_out, inner_out, outer_out):
+        assert port.users == [sink]
+    assert sink.servers == [node_out]
 
 
 def _ports(value, found):

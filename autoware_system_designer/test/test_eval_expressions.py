@@ -59,5 +59,29 @@ def test_unsupported_constructs_are_rejected(expression):
     assert _resolver().resolve_string(text) == text
 
 
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "9 ** 9 ** 9 ** 9",
+        "2 ** 100000",
+        "pow(2, 10 ** 10)",
+        "'x' * 10 ** 8",
+        "[1] * 10 ** 8",
+        "10 ** 1000 * 10 ** 1000",
+        "math.factorial(10 ** 9)",
+        "int('9' * 4096) + 1",
+    ],
+)
+def test_unbounded_results_are_rejected(expression):
+    with pytest.raises(ValueError):
+        evaluate_safe_expression(expression)
+
+
+def test_bounded_results_are_computed():
+    assert evaluate_safe_expression("2 ** 64") == 2**64
+    assert evaluate_safe_expression("'ab' * 3") == "ababab"
+    assert evaluate_safe_expression("math.gcd(12, 18)") == 6
+
+
 def test_syntax_errors_leave_text_unchanged():
     assert _resolver().resolve_string("$(eval 1 +)") == "$(eval 1 +)"

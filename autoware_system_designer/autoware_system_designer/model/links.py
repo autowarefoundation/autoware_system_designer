@@ -92,11 +92,12 @@ class Link:
             from_port_list = self.from_port.get_reference_list()
             to_port_ref_list = self.to_port.get_reference_list()
 
-            # A module interface port is a proxy: it carries topic and servers like the
-            # node ports it stands for, but holds no event of the trigger chain.
+            # Module interface ports are proxies: every port down the chain carries topic,
+            # servers and users like the node ports it stands for, but holds no event of
+            # the trigger chain.
             to_port_list = list(to_port_ref_list)
-            if self.to_port not in to_port_list:
-                to_port_list.append(self.to_port)
+            to_port_list.extend(port for port in self.to_port.get_chain_list() if port not in to_port_list)
+            from_port_chain = self.from_port.get_chain_list()
 
             # check the message type is the same
             from_port_ref = from_port_list[0]
@@ -123,7 +124,8 @@ class Link:
                     )
 
             # link the ports
-            from_port_ref.set_users(to_port_list)
+            for from_port in from_port_chain:
+                from_port.set_users(to_port_list)
             for to_port_ref in to_port_list:
                 to_port_ref.set_servers(from_port_list)
 

@@ -1101,7 +1101,9 @@
             },
             "msg_type": "autoware_perception_msgs/msg/DetectedObjects",
             "to_port": {
-              "connected_ids": [],
+              "connected_ids": [
+                "id_479e63bffcf97b31"
+              ],
               "event": {
                 "action_ids": [],
                 "error_rate": null,
@@ -1143,7 +1145,9 @@
         "namespace": "/perception",
         "out_ports": [
           {
-            "connected_ids": [],
+            "connected_ids": [
+              "id_479e63bffcf97b31"
+            ],
             "event": {
               "action_ids": [],
               "error_rate": null,
@@ -1398,7 +1402,9 @@
       {
         "connection_type": "INTERNAL_TO_INTERNAL",
         "from_port": {
-          "connected_ids": [],
+          "connected_ids": [
+            "id_479e63bffcf97b31"
+          ],
           "event": {
             "action_ids": [],
             "error_rate": null,
