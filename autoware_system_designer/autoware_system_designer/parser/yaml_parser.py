@@ -14,6 +14,7 @@
 
 """YAML configuration parser with caching support."""
 
+import copy
 import logging
 from functools import lru_cache
 from pathlib import Path
@@ -109,9 +110,10 @@ class YamlParser:
         if not path.is_file():
             raise ValidationError(f"Path is not a file: {path}")
 
+        # Callers own the returned data; the cache keeps a private copy.
         if self.cache_enabled and path in self._cache and path in self._source_cache:
             logger.debug(f"Loading configuration (with source) from cache: {path}")
-            return self._cache[path], self._source_cache[path]
+            return copy.deepcopy(self._cache[path]), self._source_cache[path]
 
         try:
             logger.debug(f"Loading configuration file (with source): {path}")
@@ -123,7 +125,7 @@ class YamlParser:
             source_map = self._build_source_map_from_yaml(content)
 
             if self.cache_enabled:
-                self._cache[path] = config_data
+                self._cache[path] = copy.deepcopy(config_data)
                 self._source_cache[path] = source_map
 
             return config_data, source_map
@@ -165,10 +167,10 @@ class YamlParser:
         if not path.is_file():
             raise ValidationError(f"Path is not a file: {path}")
 
-        # Check cache first
+        # Callers own the returned data; the cache keeps a private copy.
         if self.cache_enabled and path in self._cache:
             logger.debug(f"Loading configuration from cache: {path}")
-            return self._cache[path]
+            return copy.deepcopy(self._cache[path])
 
         try:
             logger.debug(f"Loading configuration file: {path}")
@@ -178,9 +180,8 @@ class YamlParser:
             if config_data is None:
                 config_data = {}
 
-            # Cache the result
             if self.cache_enabled and config_data is not None:
-                self._cache[path] = config_data
+                self._cache[path] = copy.deepcopy(config_data)
 
             return config_data
 
