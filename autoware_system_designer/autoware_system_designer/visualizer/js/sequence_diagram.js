@@ -137,7 +137,7 @@
       this.hopLimit = null;
       this.showTrivial = false;
       this.state = "logical";
-      this.driver = "sigma1";
+      this.driver = "mean";
       this.measured = null; // loaded measurement, see latency_source.js
       this.pxPerMs = null;
       this.fitPxPerMs = null;

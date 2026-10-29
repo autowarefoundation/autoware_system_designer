@@ -27,7 +27,7 @@ The vertices are the process, queue and port events the node designs declare; cl
 | rates    | milliseconds                         | every paced gate runs for its expected latency (`expected_latency_ms` of the process, else a tenth of its interval); a timer-paced gate first waits for its next tick, any other gate waits out a run under way; a gate with no rate and no declared latency is an unmeasured placeholder of zero width |
 | measured | milliseconds                         | a loaded measurement file; a run without a sample stays the placeholder and is drawn faint; a gate the record says never ran is dead, drawn dashed, and delivers nothing downstream; a gate the run observed waits nothing of its own, its inputs carry the measured wait                               |
 
-The axis is driven by one component of every summary: `min`, `mean`, `max`, or `mean + kσ` (k = 1, 2, 3); it opens on `mean + 1σ`.
+The axis is driven by one component of every summary: `min`, `mean`, `max`, or `mean + kσ` (k = 1, 2, 3); it opens on `mean`.
 
 ## Navigation
 
