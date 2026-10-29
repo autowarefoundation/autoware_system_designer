@@ -2,7 +2,7 @@ autoware_system_design_format: 0.4.0
 
 name: TypeAlpha.system
 
-description: Demo system Type Alpha - dummy sensing, map, localization, perception and planning components spread over main_ecu and dummy ECUs, with a simulation mode that swaps the perception module.
+description: Demo system Type Alpha - dummy sensing, map, localization, perception, planning, control and vehicle components spread over main_ecu and dummy ECUs, with a simulation mode that swaps the perception module.
 
 variables:
   - name: vehicle_id
@@ -21,13 +21,9 @@ modes:
     description: Simulation mode
 
 components:
-  - name: lidar
-    entity: LidarDummy.module
-    path: /sensing/lidar
-    compute_unit: main_ecu
-  - name: odometry
-    entity: OdometryDummy.node
-    path: /vehicle/odometry
+  - name: sensing
+    entity: SensingDummy.module
+    path: /sensing
     compute_unit: main_ecu
   - name: map
     entity: MapDummy.node
@@ -41,9 +37,19 @@ components:
     path: /perception/object_recognition
     compute_unit: main_ecu
     parameter_set: [PerceptionModuleA.parameter_set]
+  - name: traffic_light_recognition
+    entity: TrafficLightRecognitionDummy.module
+    path: /perception/traffic_light_recognition
+    compute_unit: main_ecu
   - name: planning
     entity: PlanningDummy.node
     compute_unit: dummy_ecu_2
+  - name: control
+    entity: ControlDummy.node
+    compute_unit: dummy_ecu_2
+  - name: vehicle
+    entity: VehicleDummy.node
+    compute_unit: main_ecu
 
 node_groups:
   - name: pointcloud_container
@@ -54,20 +60,39 @@ node_groups:
       - /perception/object_recognition/detector_a2/node_detector
 
 connections:
-  - - odometry.publisher.odometry
-    - lidar.subscriber.odometry
+  - - vehicle.publisher.imu
+    - localization.subscriber.imu
+  - - vehicle.publisher.odometry
+    - localization.subscriber.odometry
+  - - localization.publisher.kinematic_state
+    - sensing.subscriber.odometry
   - - object_recognition.subscriber.pointcloud
-    - lidar.publisher.concatenated/pointcloud
+    - sensing.publisher.lidar/concatenated/pointcloud
   - - map.publisher.vector_map
     - planning.subscriber.lanelet_map
   - - object_recognition.publisher.objects
     - planning.subscriber.predicted_objects
-  - - lidar.publisher.concatenated/pointcloud
+  - - sensing.publisher.lidar/concatenated/pointcloud
     - localization.subscriber.pointcloud
   - - map.publisher.vector_map
     - localization.subscriber.lanelet_map
   - - object_recognition.subscriber.vector_map
     - map.publisher.vector_map
+  # traffic light recognition follows the route it feeds back into planning
+  - - sensing.publisher.camera/camera0/image
+    - traffic_light_recognition.subscriber.image
+  - - sensing.publisher.camera/camera0/camera_info
+    - traffic_light_recognition.subscriber.camera_info
+  - - planning.publisher.mission_planning/route
+    - traffic_light_recognition.subscriber.route
+  - - traffic_light_recognition.publisher.traffic_signals
+    - planning.subscriber.traffic_signals
+  - - planning.publisher.mission_planning/route
+    - control.subscriber.mission_planning/route
+  - - localization.publisher.kinematic_state
+    - control.subscriber.kinematics
+  - - control.publisher.command/control_cmd
+    - vehicle.subscriber.control_cmd
 
 # mode configuration
 simulation:

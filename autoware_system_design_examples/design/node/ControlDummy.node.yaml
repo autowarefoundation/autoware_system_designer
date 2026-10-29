@@ -1,8 +1,8 @@
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.4.1
 
 name: ControlDummy.node
 
-description: Dummy control node that generates vehicle control, gear, hazard-light and turn-indicator commands from the planned route.
+description: Dummy control node that generates vehicle control, gear, hazard-light and turn-indicator commands from the planned route, reading queued kinematics.
 
 package:
   name: autoware_system_dummy_modules
@@ -36,9 +36,16 @@ param_values: []
 
 # processes
 processes:
+  - name: queue_kinematics
+    trigger_conditions:
+      - on_input: kinematics
+    outcomes:
+      - to_queue: kinematics
   - name: vehicle_control
     trigger_conditions:
       - and:
           - on_input: mission_planning/route
+    reads:
+      - from_queue: kinematics
     outcomes:
       - to_output: command/control_cmd

@@ -1,0 +1,28 @@
+autoware_system_design_format: 0.4.0
+
+name: SensingDummy.module
+
+description: Sensing module - LiDAR and camera sensing modules, exposing the concatenated point cloud and the camera image and camera info.
+
+instances:
+  - name: lidar
+    entity: LidarDummy.module
+  - name: camera
+    entity: CameraDummy.module
+
+subscribers:
+  - name: odometry
+publishers:
+  - name: lidar/concatenated/pointcloud
+  - name: camera/camera0/image
+  - name: camera/camera0/camera_info
+
+connections:
+  - - subscriber.odometry
+    - lidar.subscriber.odometry
+  - - lidar.publisher.concatenated/pointcloud
+    - publisher.lidar/concatenated/pointcloud
+  - - camera.publisher.camera0/image
+    - publisher.camera/camera0/image
+  - - camera.publisher.camera0/camera_info
+    - publisher.camera/camera0/camera_info

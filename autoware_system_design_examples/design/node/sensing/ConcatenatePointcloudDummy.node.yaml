@@ -2,7 +2,7 @@ autoware_system_design_format: 0.4.1
 
 name: ConcatenatePointcloudDummy.node
 
-description: Dummy preprocessing node that concatenates up to eight LiDAR point clouds into a single output cloud, reading queued odometry for motion compensation.
+description: Dummy preprocessing node that queues up to eight LiDAR point clouds and odometry, and concatenates them into a single output cloud on its own timer.
 
 package:
   name: autoware_pointcloud_preprocessor
@@ -51,12 +51,7 @@ param_values:
 
 # processes
 processes:
-  - name: queue_odometry
-    trigger_conditions:
-      - on_input: odometry
-    outcomes:
-      - to_queue: odometry
-  - name: update
+  - name: queue_pointcloud
     trigger_conditions:
       - on_input: input1
       - on_input: input2
@@ -67,12 +62,18 @@ processes:
       - on_input: input7
       - on_input: input8
     outcomes:
-      - to_trigger: concatenate
+      - to_queue: pointclouds
+  - name: queue_odometry
+    trigger_conditions:
+      - on_input: odometry
+    outcomes:
+      - to_queue: odometry
   - name: concatenate
     trigger_conditions:
-      - on_trigger: update
+      - on_input: input1
       - periodic: 10.0 # Hz
     reads:
+      - from_queue: pointclouds
       - from_queue: odometry
     outcomes:
       - to_output: output

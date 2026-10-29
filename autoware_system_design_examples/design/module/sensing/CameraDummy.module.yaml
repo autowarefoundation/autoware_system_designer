@@ -2,75 +2,19 @@ autoware_system_design_format: 0.4.0
 
 name: CameraDummy.module
 
-description: Camera sensing module - eight camera driver instances exposing per-camera image and camera_info outputs.
+description: Camera sensing module - one camera driver instance exposing its image and camera_info outputs.
 
 instances:
   - name: camera_0
-    entity: CameraDummyDriver.node
-  - name: camera_1
-    entity: CameraDummyDriver.node
-  - name: camera_2
-    entity: CameraDummyDriver.node
-  - name: camera_3
-    entity: CameraDummyDriver.node
-  - name: camera_4
-    entity: CameraDummyDriver.node
-  - name: camera_5
-    entity: CameraDummyDriver.node
-  - name: camera_6
-    entity: CameraDummyDriver.node
-  - name: camera_7
     entity: CameraDummyDriver.node
 
 subscribers: []
 publishers:
   - name: camera0/image
   - name: camera0/camera_info
-  - name: camera1/image
-  - name: camera1/camera_info
-  - name: camera2/image
-  - name: camera2/camera_info
-  - name: camera3/image
-  - name: camera3/camera_info
-  - name: camera4/image
-  - name: camera4/camera_info
-  - name: camera5/image
-  - name: camera5/camera_info
-  - name: camera6/image
-  - name: camera6/camera_info
-  - name: camera7/image
-  - name: camera7/camera_info
 
 connections:
   - - camera_0.publisher.image
     - publisher.camera0/image
   - - camera_0.publisher.camera_info
     - publisher.camera0/camera_info
-  - - camera_1.publisher.image
-    - publisher.camera1/image
-  - - camera_1.publisher.camera_info
-    - publisher.camera1/camera_info
-  - - camera_2.publisher.image
-    - publisher.camera2/image
-  - - camera_2.publisher.camera_info
-    - publisher.camera2/camera_info
-  - - camera_3.publisher.image
-    - publisher.camera3/image
-  - - camera_3.publisher.camera_info
-    - publisher.camera3/camera_info
-  - - camera_4.publisher.image
-    - publisher.camera4/image
-  - - camera_4.publisher.camera_info
-    - publisher.camera4/camera_info
-  - - camera_5.publisher.image
-    - publisher.camera5/image
-  - - camera_5.publisher.camera_info
-    - publisher.camera5/camera_info
-  - - camera_6.publisher.image
-    - publisher.camera6/image
-  - - camera_6.publisher.camera_info
-    - publisher.camera6/camera_info
-  - - camera_7.publisher.image
-    - publisher.camera7/image
-  - - camera_7.publisher.camera_info
-    - publisher.camera7/camera_info

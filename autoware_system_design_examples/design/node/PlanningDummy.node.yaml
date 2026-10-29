@@ -2,7 +2,7 @@ autoware_system_design_format: 0.4.0
 
 name: PlanningDummy.node
 
-description: Dummy planning node that produces a mission route from the lanelet map and predicted objects.
+description: Dummy planning node that produces a mission route from the lanelet map, predicted objects and traffic signals.
 
 package:
   name: autoware_system_dummy_modules
@@ -37,6 +37,8 @@ processes:
     trigger_conditions:
       - and:
           - once: lanelet_map
-          - on_input: predicted_objects
+          - or:
+              - on_input: predicted_objects
+              - on_input: traffic_signals
     outcomes:
       - to_output: mission_planning/route

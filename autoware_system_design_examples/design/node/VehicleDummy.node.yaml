@@ -1,0 +1,45 @@
+autoware_system_design_format: 0.4.0
+
+name: VehicleDummy.node
+
+description: Dummy vehicle interface that consumes the control command and publishes IMU and odometry at fixed rates.
+
+package:
+  name: autoware_system_dummy_modules
+  provider: dummy
+
+launch:
+  plugin: autoware::system_dummy_modules::Vehicle
+
+# interfaces
+subscribers:
+  - name: control_cmd
+    message_type: autoware_control_msgs/msg/Control
+
+publishers:
+  - name: imu
+    message_type: sensor_msgs/msg/Imu
+  - name: odometry
+    message_type: nav_msgs/msg/Odometry
+
+param_files: []
+
+param_values: []
+
+# processes
+processes:
+  - name: drive
+    trigger_conditions:
+      - on_input: control_cmd
+    outcomes:
+      - terminal:
+  - name: imu
+    trigger_conditions:
+      - periodic: 100.0 # Hz
+    outcomes:
+      - to_output: imu
+  - name: odometry
+    trigger_conditions:
+      - periodic: 50.0 # Hz
+    outcomes:
+      - to_output: odometry
