@@ -84,3 +84,25 @@ def test_config_js_quotes_strings_as_json():
         system_definition_file="/tmp/x.yaml",
     )
     assert f"deploymentName: {json.dumps(hostile)}" in js
+
+
+def test_data_js_keeps_declaration_key_order():
+    js = TemplateRenderer().render_template(
+        "data/common_design_data.js.jinja2",
+        window_variable="w",
+        mode="default",
+        name="n",
+        unique_id="u",
+        entity_type="node",
+        namespace="/ns",
+        path="/ns/n",
+        compute_unit="main",
+        vis_guide={"zeta": 1, "alpha": 2},
+        in_ports=[],
+        out_ports=[],
+        children=[],
+        links=[],
+        events=[],
+        parameters=[],
+    )
+    assert '"vis_guide": {"zeta": 1, "alpha": 2}' in js

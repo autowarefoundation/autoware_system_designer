@@ -202,7 +202,7 @@ Top-level entry point defining the complete system.
   - `description`: (Optional) Brief explanation of the argument.
 - `variables`: List of system variables.
   - `name`: Variable name.
-  - `value`: Variable value (supports `$(find-pkg-share pkg)` and `$(env VAR)` substitutions).
+  - `value`: Variable value (supports `$(find-pkg-share pkg)`, `$(env VAR)` and `$(eval expr)` substitutions). An `$(eval)` expression is arithmetic over literals, `math.*`, `abs`, `min`, `max`, `pow`, `round`, `int`, `float`, `str`, `pi`, `sin`, `cos`, `tan`, `sqrt`, `atan2`, operators, comparisons and `a if c else b`; other Python constructs are left unresolved.
   - `description`: (Optional) Brief explanation of the variable.
 - `variable_files`: (Optional) List of variable file references.
   - `name`: Variable file identifier.

@@ -47,7 +47,7 @@
         "autowareSystemDesigner.languageServer.path": {
           "type": "string",
           "default": "python",
-          "scope": "machine",
+          "scope": "machine-overridable",
           "description": "Path to Python executable for the language server"
         },
         "autowareSystemDesigner.languageServer.debug": {
