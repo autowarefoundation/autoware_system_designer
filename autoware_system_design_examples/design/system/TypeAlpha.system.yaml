@@ -76,6 +76,8 @@ connections:
     - localization.subscriber.pointcloud
   - - map.publisher.vector_map
     - localization.subscriber.lanelet_map
+  - - map.publisher.pointcloud_map
+    - localization.subscriber.pointcloud_map
   - - object_recognition.subscriber.vector_map
     - map.publisher.vector_map
   # traffic light recognition follows the route it feeds back into planning
@@ -91,6 +93,8 @@ connections:
     - control.subscriber.mission_planning/route
   - - localization.publisher.kinematic_state
     - control.subscriber.kinematics
+  - - localization.publisher.acceleration
+    - control.subscriber.acceleration
   - - control.publisher.command/control_cmd
     - vehicle.subscriber.control_cmd
 
