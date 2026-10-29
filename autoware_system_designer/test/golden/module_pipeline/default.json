@@ -789,7 +789,9 @@
           {
             "connection_type": "EXTERNAL_TO_INTERNAL",
             "from_port": {
-              "connected_ids": [],
+              "connected_ids": [
+                "id_18f50af36c8979a4"
+              ],
               "event": {
                 "action_ids": [],
                 "error_rate": null,
@@ -816,7 +818,11 @@
               ],
               "port_path": "/perception/pipeline/input/pointcloud",
               "remap_target": "~/input/pointcloud",
-              "topic": [],
+              "topic": [
+                "sensing",
+                "lidar",
+                "pointcloud"
+              ],
               "unique_id": "id_f5ffc893ab0543ea"
             },
             "msg_type": "sensor_msgs/msg/PointCloud2",

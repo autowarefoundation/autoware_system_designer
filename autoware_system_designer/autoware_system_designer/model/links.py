@@ -145,9 +145,9 @@ class Link:
 
         # case 2: from internal output to external output
         elif is_from_port_internal and not is_to_port_internal:
-            # bring the from-port reference to the to-port reference
+            # The external port references its direct child; nested module ports chain down to the node port.
             # Note: set_references() will validate that OutPort (to_port) has at most one reference
-            reference_port_list = self.from_port.get_reference_list()
+            reference_port_list = [self.from_port]
             self.to_port.set_references(reference_port_list)
             # set the topic name to the external output, whether it is connected or not
             for reference_port in reference_port_list:
@@ -164,9 +164,8 @@ class Link:
 
         # case 3: from external input to internal input
         elif not is_from_port_internal and is_to_port_internal:
-            # bring the to-port reference to the from-port reference
-            reference_port_list = self.to_port.get_reference_list()
-            self.from_port.set_references(reference_port_list)
+            # The external port references its direct child; nested module ports chain down to the node ports.
+            self.from_port.set_references([self.to_port])
 
         # case 4: from-port is InPort and to-port is OutPort
         #   bypass connection, which is invalid

@@ -100,9 +100,13 @@ class Port:
             logger.debug(f"Port '{self.port_path}' added references: {added}")
 
     def get_reference_list(self):
+        """Node ports at the bottom of the reference chain; a node port stands for itself."""
         if self.reference == []:
             return [self]
-        return self.reference
+        leaves = []
+        for port in self.reference:
+            leaves.extend(port.get_reference_list())
+        return leaves
 
     def set_topic(self, topic_namespace: List[str], topic_name: str):
         new_topic = topic_namespace + [topic_name]
@@ -207,12 +211,14 @@ class OutPort(Port):
 
     def set_topic(self, topic_namespace: List[str], topic_name: str):
         """
-        Override to propagate topic changes to all users (InPorts).
-        When topic is set by a higher layer (e.g., external connection),
-        all subscribers need to update their topic as well.
+        Override to propagate topic changes to all users (InPorts) and down the
+        reference chain to the publishing node port. When topic is set by a higher
+        layer (e.g., external connection), all subscribers need to update their topic as well.
         """
         if not super().set_topic(topic_namespace, topic_name):
             return
+        for ref_port in self.reference:
+            ref_port.set_topic(topic_namespace, topic_name)
         # Propagate topic to all users (InPorts that subscribe to this OutPort)
         for user_port in self.users:
             user_port.set_topic(topic_namespace, topic_name)
