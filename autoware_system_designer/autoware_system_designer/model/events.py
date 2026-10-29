@@ -56,6 +56,8 @@ class Event:
     warn_rate: Optional[float] = None
     error_rate: Optional[float] = None
     timeout: Optional[float] = None
+    # run the design expects of a process, in milliseconds; a condition gate runs nothing
+    expected_latency_ms: Optional[float] = None
     is_set: bool = field(default=False, metadata={"exclude": True})
 
     __serde_computed__: ClassVar[tuple] = (("unique_id", "unique_id"),)
@@ -75,6 +77,7 @@ class Event:
         self.warn_rate = None
         self.error_rate = None
         self.timeout = None
+        self.expected_latency_ms = None
         self.is_set = False
 
     @property
@@ -300,7 +303,8 @@ class EventChain(Event):
                     for chain in config_value:
                         chain_key, chain_value = self.determine_type(chain)
                         if chain_key in ["periodic"] + self.chain_list:
-                            event = EventChain(self.name + "_" + str(child_idx), self.namespace)
+                            # a nested condition fires the process; it is no run of its own
+                            event = EventChain(self.name + "_" + str(child_idx), self.namespace, is_process_event=False)
                             child_idx += 1
                             event.set_chain(chain, process_list, on_input_list)
                             self.add_trigger_event(event)
@@ -336,10 +340,19 @@ class Process:
     def unique_id(self):
         return generate_unique_id(self.namespace, "process", self.name)
 
+    @staticmethod
+    def _as_latency(value) -> float:
+        latency = Event._as_rate("expected_latency_ms", value)
+        if latency < 0:
+            raise ValueError(f"'expected_latency_ms' must not be negative, got {value!r}")
+        return latency
+
     def set_condition(self, process_list, on_input_list):
         trigger_condition_config = self.config_yaml.get("trigger_conditions")
         logger.debug(f"Process '{self.unique_id}' setting trigger condition: {trigger_condition_config}")
         self.event.set_chain(trigger_condition_config, process_list, on_input_list)
+        if "expected_latency_ms" in self.config_yaml:
+            self.event.expected_latency_ms = self._as_latency(self.config_yaml.get("expected_latency_ms"))
 
     def set_outcomes(self, process_list, to_output_events, queues: Dict[str, QueueEvent]):
         """Wire the process to what it produces; a `to_queue` outcome declares the queue on first use."""

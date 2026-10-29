@@ -11,6 +11,7 @@
               "id_11899dc5d83f2896"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "publish",
@@ -68,6 +69,7 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "output_status",

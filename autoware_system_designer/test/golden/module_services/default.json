@@ -13,6 +13,7 @@
                   "id_ba3f3b9a856b0a9b"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "report",
@@ -67,6 +68,7 @@
                     "id_4a79de18e4f9eb20"
                   ],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
                   "latch_ids": [],
                   "name": "output_status",
@@ -108,6 +110,7 @@
                     "id_ff3c5abe0a5ff8b4"
                   ],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
                   "latch_ids": [],
                   "name": "output_set_mode",
@@ -147,6 +150,7 @@
                     "id_43a940fd98d50ec8"
                   ],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
                   "latch_ids": [],
                   "name": "output_reset",
@@ -191,6 +195,7 @@
               {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "watch",
@@ -215,6 +220,7 @@
                     "id_40d7e75954b54160"
                   ],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
                   "latch_ids": [],
                   "name": "input_status",
@@ -252,6 +258,7 @@
                 "event": {
                   "action_ids": [],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
                   "latch_ids": [],
                   "name": "input_set_mode",
@@ -289,6 +296,7 @@
                 "event": {
                   "action_ids": [],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
                   "latch_ids": [],
                   "name": "input_reset",
@@ -376,6 +384,7 @@
                   "id_4a79de18e4f9eb20"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "output_status",
@@ -416,6 +425,7 @@
                   "id_40d7e75954b54160"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "input_status",
@@ -462,6 +472,7 @@
                   "id_ff3c5abe0a5ff8b4"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "output_set_mode",
@@ -498,6 +509,7 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "input_set_mode",
@@ -544,6 +556,7 @@
                   "id_43a940fd98d50ec8"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "output_reset",
@@ -580,6 +593,7 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "input_reset",
@@ -626,6 +640,7 @@
                   "id_4a79de18e4f9eb20"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "output_status",
@@ -662,6 +677,7 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "output_status",
@@ -705,6 +721,7 @@
                   "id_ff3c5abe0a5ff8b4"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "output_set_mode",
@@ -739,6 +756,7 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "output_set_mode",
@@ -782,6 +800,7 @@
                   "id_43a940fd98d50ec8"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "output_reset",
@@ -816,6 +835,7 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "output_reset",
@@ -855,6 +875,7 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "output_status",
@@ -887,6 +908,7 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "output_set_mode",
@@ -919,6 +941,7 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "output_reset",
@@ -960,6 +983,7 @@
           {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "watch",
@@ -984,6 +1008,7 @@
                 "id_2c1193a9619b4e22"
               ],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "input_status",
@@ -1020,6 +1045,7 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "input_set_mode",
@@ -1056,6 +1082,7 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "input_reset",
@@ -1136,6 +1163,7 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "output_status",
@@ -1173,6 +1201,7 @@
               "id_2c1193a9619b4e22"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "input_status",
@@ -1212,6 +1241,7 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "output_set_mode",
@@ -1247,6 +1277,7 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "input_set_mode",
@@ -1286,6 +1317,7 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "output_reset",
@@ -1321,6 +1353,7 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "input_reset",

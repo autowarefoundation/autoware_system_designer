@@ -139,6 +139,7 @@
       ["warn rate", event.warn_rate],
       ["error rate", event.error_rate],
       ["timeout", event.timeout],
+      ["expected run", event.expected_run],
       ["reads", event.reads],
       ["fills", event.fills],
       ["read by", event.readers],

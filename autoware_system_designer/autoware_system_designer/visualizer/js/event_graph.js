@@ -68,6 +68,9 @@
           warn_rate: event.warn_rate ?? null,
           error_rate: event.error_rate ?? null,
           timeout: event.timeout ?? null,
+          expected_latency_ms: event.expected_latency_ms ?? null,
+          // a nested trigger condition of a process: a gate that runs nothing
+          condition: kind === "process" && event.process_event === false,
           triggers: (event.trigger_ids || []).map(String),
           latches: (event.latch_ids || []).map(String),
           actions: (event.action_ids || []).map(String),

@@ -453,8 +453,8 @@ test("measured costs feed the solver with the design filling the gaps", () => {
   const run = solution.arrivals.get("b.run");
   assert.equal(run.exec.source, "measured");
   assert.equal(solution.arrivals.get("a.scan").wait.source, "derived");
-  // 100 ms period + 0.9 ms link + 5 ms run
-  assert.ok(Math.abs(run.total.max - 105.9) < 1e-9);
+  // 100 ms period + the scan's expected 10 ms run + 0.9 ms link + 5 ms run
+  assert.ok(Math.abs(run.total.max - 115.9) < 1e-9);
 });
 
 // ── In→out time on the design graph ─────────────────────────────────────────

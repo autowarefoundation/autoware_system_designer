@@ -15,6 +15,8 @@
 """Rates of a trigger condition: an `and` runs at its slowest condition, an `or` at its quickest,
 and a `once` condition gates the chain without pacing it."""
 
+import pytest
+
 from autoware_system_designer.model.events import Event, Process, resolve_event_rates
 
 
@@ -174,3 +176,35 @@ def test_a_wide_or_listed_downstream_first_settles_at_its_quickest_condition():
     resolve_event_rates(list(reversed(events)) + list(inputs.values()))
     assert merge.event.frequency == 240.0
     assert tail.event.frequency == 240.0
+
+
+def test_expected_latency_belongs_to_the_process_gate():
+    inputs = _inputs(pointcloud=10.0)
+    process = Process(
+        "run",
+        ["ns"],
+        {
+            "trigger_conditions": [{"and": [{"on_input": "pointcloud"}, {"periodic": 10.0}]}],
+            "outcomes": [],
+            "expected_latency_ms": 30.0,
+        },
+    )
+    process.set_condition([process.event], list(inputs.values()))
+    assert process.event.expected_latency_ms == 30.0
+    assert process.event.process_event is True
+    # the nested periodic condition is a gate of the chain, not a run of its own
+    (condition,) = process.event.children
+    assert condition.process_event is False
+    assert condition.expected_latency_ms is None
+
+
+def test_expected_latency_must_be_a_non_negative_number():
+    inputs = _inputs(pointcloud=10.0)
+    for value in (-0.1, "fast"):
+        process = Process(
+            "run",
+            ["ns"],
+            {"trigger_conditions": [{"on_input": "pointcloud"}], "outcomes": [], "expected_latency_ms": value},
+        )
+        with pytest.raises(ValueError, match="expected_latency_ms"):
+            process.set_condition([process.event], list(inputs.values()))

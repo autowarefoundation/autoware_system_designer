@@ -262,6 +262,10 @@
           "trigger_conditions": {
             "type": "array"
           },
+          "expected_latency_ms": {
+            "description": "Run the process is expected to take, in milliseconds; a number or a ${parameter ...} reference. Without it the latency view assumes a tenth of the process's interval.",
+            "type": ["number", "string"]
+          },
           "outcomes": {
             "type": "array",
             "items": {

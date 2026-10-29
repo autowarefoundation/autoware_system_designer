@@ -11,6 +11,7 @@
               "id_efd4ea225b784ccd"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": 100.0,
             "latch_ids": [],
             "name": "sample",
@@ -53,6 +54,7 @@
                 "id_7827c31ff2433865"
               ],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": 100.0,
               "latch_ids": [],
               "name": "output_imu",
@@ -102,6 +104,7 @@
               "id_18f50af36c8979a4"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": 10.0,
             "latch_ids": [],
             "name": "capture",
@@ -144,6 +147,7 @@
                 "id_71dd89ed7dc00618"
               ],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": 10.0,
               "latch_ids": [],
               "name": "output_pointcloud",
@@ -193,6 +197,7 @@
               "id_673b9db745ccec66"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": 100.0,
             "latch_ids": [],
             "name": "queue_imu",
@@ -211,6 +216,7 @@
               "id_1ff122dec5eb249e"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": 10.0,
             "latch_ids": [],
             "name": "undistort",
@@ -229,6 +235,7 @@
           {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": 100.0,
             "latch_ids": [],
             "name": "imu",
@@ -256,6 +263,7 @@
                 "id_fc835dc07bd520a5"
               ],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": 10.0,
               "latch_ids": [],
               "name": "input_pointcloud",
@@ -296,6 +304,7 @@
                 "id_da143bd22db9be0c"
               ],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": 100.0,
               "latch_ids": [],
               "name": "input_imu",
@@ -363,6 +372,7 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": 10.0,
               "latch_ids": [],
               "name": "output_pointcloud",
@@ -419,6 +429,7 @@
               "id_7827c31ff2433865"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": 100.0,
             "latch_ids": [],
             "name": "output_imu",
@@ -460,6 +471,7 @@
               "id_da143bd22db9be0c"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": 100.0,
             "latch_ids": [],
             "name": "input_imu",
@@ -505,6 +517,7 @@
               "id_71dd89ed7dc00618"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": 10.0,
             "latch_ids": [],
             "name": "output_pointcloud",
@@ -546,6 +559,7 @@
               "id_fc835dc07bd520a5"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": 10.0,
             "latch_ids": [],
             "name": "input_pointcloud",

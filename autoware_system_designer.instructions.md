@@ -90,6 +90,7 @@ Represents a single ROS 2 node.
     - `periodic`: Triggered periodically (`periodic: 10.0` [Hz]). The rate may reference the node's effective parameter (`periodic: ${parameter rate}`), so a parameter set that retunes the parameter retunes the design rate.
     - `once`: Triggered once. Can be `once: null` or `once: <port_name>` to trigger once when a specific port receives data. Inside an `and`/`or` it is a latch: it gates the chain and leaves the rate to the other conditions.
     - **Monitoring**: Optional fields `warn_rate`, `error_rate`, `timeout` can be added to trigger definitions. Like `periodic`, each is a number or a `${parameter ...}` reference that resolves to one.
+  - `expected_latency_ms`: (Optional) Run the process is expected to take, in milliseconds (`expected_latency_ms: 30.0`); a number or a `${parameter ...}` reference. The latency view times the process by it; without it a tenth of the process's interval is assumed.
   - `outcomes`: Result of process.
     - `to_output`: Sends result to output port (`to_output: port_name`).
     - `to_trigger`: Triggers another process (`to_trigger: process_name`).

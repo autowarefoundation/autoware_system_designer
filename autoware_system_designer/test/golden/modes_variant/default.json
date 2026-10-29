@@ -11,6 +11,7 @@
               "id_3201bc3bcf81555e"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "scan",
@@ -60,6 +61,7 @@
                 "id_b6a70d0602b75ceb"
               ],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "output_scan",
@@ -118,6 +120,7 @@
           {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "consume",
@@ -142,6 +145,7 @@
                 "id_daa4935c6400df48"
               ],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "input_scan",
@@ -230,6 +234,7 @@
               "id_b6a70d0602b75ceb"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "output_scan",
@@ -269,6 +274,7 @@
               "id_daa4935c6400df48"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "input_scan",

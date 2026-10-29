@@ -19,11 +19,13 @@ const T = require(path.join(JS_DIR, "timing_model.js"));
 // ── Graph builder ───────────────────────────────────────────────────────────
 
 // nodes: [{ name, inputs: [name | { name, type }], outputs: [name | { name,
-// type }], processes: [{ name, type, frequency, on: [input names], latch:
-// [input names], to: [output names], after: [process names], fills: [queue
-// names], reads: [queue names] }] }]; links: [[nodeA, output, nodeB, input]]. A port's type
-// is its message type, "cloud" by default. A queue named by `fills` or
-// `reads` is a queue event of the node.
+// type }], processes: [{ name, type, frequency, latency, condition, on:
+// [input names], latch: [input names], to: [output names], after: [process
+// names], fills: [queue names], reads: [queue names] }] }]; links: [[nodeA,
+// output, nodeB, input]]. A port's type is its message type, "cloud" by
+// default. `latency` is the process's expected run in ms; `condition`
+// marks a nested trigger condition, a gate that runs nothing. A queue named
+// by `fills` or `reads` is a queue event of the node.
 function build({ nodes, links = [] }) {
   const events = new Map();
   const event = (id, name, type) => {
@@ -69,6 +71,8 @@ function build({ nodes, links = [] }) {
     const processes = (node.processes || []).map((p) => {
       const e = event(`${node.name}.${p.name}`, p.name, p.type ?? null);
       if (p.frequency !== undefined) e.frequency = p.frequency;
+      if (p.latency !== undefined) e.expected_latency_ms = p.latency;
+      if (p.condition) e.process_event = false;
       return e;
     });
     const queues = [];
@@ -137,10 +141,12 @@ const lat = (min, mean, max, sd) => ({
   sd_ms: sd,
 });
 
-// A measurement answering exec by event id from records { id: lat }; no comm.
+// A measurement answering exec by event id from records { id: lat }; a gate
+// with a record waits nothing of its own, as in the latency source; no comm.
 const measuredFrom = (records) => ({
   exec: (event) =>
     records[event.id] ? T.fromRecord(records[event.id], "measured") : null,
+  wait: (event) => (records[event.id] ? T.summary() : null),
   comm: () => null,
 });
 const measured = (graph, records) =>
@@ -223,6 +229,7 @@ const chainGraph = () =>
           {
             name: "run",
             type: "on_input",
+            frequency: 10,
             on: ["cloud"],
             to: ["clean"],
           },
@@ -234,26 +241,145 @@ const chainGraph = () =>
 const chainCosts = (graph) =>
   measured(graph, { "filter.run": lat(1, 2, 4, 0.5) });
 
-test("the design alone times only the clocks: a run is an unmeasured placeholder", () => {
+test("the design alone: a tenth of the interval per run, a tick wait at the clock, a busy wait after", () => {
   const graph = chainGraph();
   const solution = new T.ChainSolver(graph, T.designCosts(graph)).solve(
     "sensor.scan",
   );
+  const scan = solution.arrivals.get("sensor.scan");
+  assert.equal(scan.wait.source, "derived");
+  near(scan.wait.max, 100);
+  near(scan.wait.mean, 50);
+  near(scan.exec.max, 10);
   const run = solution.arrivals.get("filter.run");
-  assert.equal(run.exec.source, "unmeasured");
-  assert.equal(run.exec.max, 0);
-  assert.equal(solution.arrivals.get("sensor.scan").wait.source, "derived");
-  near(solution.arrivals.get("filter.out.clean").total.max, 100);
+  assert.equal(run.exec.source, "expected");
+  near(run.exec.min, 10);
+  near(run.exec.max, 10);
+  // busy a tenth of the time, half a run left on average
+  near(run.wait.max, 10);
+  near(run.wait.mean, 0.5);
+  const sink = solution.arrivals.get("filter.out.clean").total;
+  near(sink.min, 20);
+  near(sink.mean, 70.5);
+  near(sink.max, 130);
+});
+
+test("a declared expected latency sets the run and the busy wait grows with it", () => {
+  const graph = build({
+    nodes: [
+      {
+        name: "sensor",
+        outputs: ["cloud"],
+        processes: [
+          { name: "scan", type: "periodic", frequency: 10, to: ["cloud"] },
+        ],
+      },
+      {
+        name: "detector",
+        inputs: ["cloud"],
+        outputs: ["objects"],
+        processes: [
+          {
+            name: "detect",
+            type: "on_input",
+            frequency: 10,
+            latency: 30,
+            on: ["cloud"],
+            to: ["objects"],
+          },
+        ],
+      },
+    ],
+    links: [["sensor", "cloud", "detector", "cloud"]],
+  });
+  const solution = new T.ChainSolver(graph, T.designCosts(graph)).solve(
+    "sensor.scan",
+  );
+  const detect = solution.arrivals.get("detector.detect");
+  near(detect.exec.mean, 30);
+  near(detect.wait.max, 30);
+  near(detect.wait.mean, (30 * 30) / (2 * 100));
+  assert.equal(T.expectedRun(graph.events.get("detector.detect")), 30);
+});
+
+test("busy wait: run squared over twice the interval, capped at always busy", () => {
+  const wait = T.busyWait(20, 100);
+  near(wait.min, 0);
+  near(wait.mean, 2);
+  near(wait.max, 20);
+  const p = 0.2;
+  near(wait.sd, Math.sqrt((p * 400) / 3 - 4));
+  near(T.busyWait(150, 100).mean, 75);
+});
+
+test("a gate with no interval and no declared latency stays an unmeasured placeholder", () => {
+  const graph = build({
+    nodes: [
+      {
+        name: "relay",
+        inputs: ["cloud"],
+        outputs: ["copy"],
+        processes: [
+          { name: "copy", type: "on_input", on: ["cloud"], to: ["copy"] },
+        ],
+      },
+    ],
+  });
+  const costs = T.designCosts(graph);
+  const copy = graph.events.get("relay.copy");
+  assert.equal(costs.exec(copy).source, "unmeasured");
+  assert.equal(costs.wait(copy).max, 0);
+});
+
+test("a nested periodic condition costs nothing; its and gate waits for the tick, an or gate does not", () => {
+  const node = (type) => ({
+    name: "tracker",
+    inputs: ["objects"],
+    outputs: ["tracks"],
+    processes: [
+      { name: "predict_0", type: "periodic", frequency: 10, condition: true },
+      {
+        name: "predict",
+        type,
+        frequency: 10,
+        on: ["objects"],
+        after: ["predict_0"],
+        to: ["tracks"],
+      },
+    ],
+  });
+  const and = build({ nodes: [node("and")] });
+  let solution = new T.ChainSolver(and, T.designCosts(and)).solve(
+    "tracker.predict_0",
+  );
+  const condition = solution.arrivals.get("tracker.predict_0");
+  near(T.add(condition.wait, condition.exec).max, 0);
+  assert.equal(condition.exec.source, "none");
+  let predict = solution.arrivals.get("tracker.predict");
+  near(predict.wait.max, 100);
+  near(predict.wait.mean, 50);
+  near(predict.exec.max, 10);
+  near(solution.arrivals.get("tracker.out.tracks").total.max, 110);
+
+  const or = build({ nodes: [node("or")] });
+  solution = new T.ChainSolver(or, T.designCosts(or)).solve(
+    "tracker.in.objects",
+  );
+  predict = solution.arrivals.get("tracker.predict");
+  near(predict.wait.max, 10);
+  near(predict.wait.mean, 0.5);
 });
 
 test("a two-hop chain: sampling delay plus measured execution", () => {
   const graph = chainGraph();
   const solver = new T.ChainSolver(graph, chainCosts(graph));
   const solution = solver.solve("sensor.scan");
+  // the unmeasured scan runs the design's expected 10 ms after its tick wait;
+  // the measured run waits nothing of its own
   const sink = solution.arrivals.get("filter.out.clean");
-  near(sink.total.min, 1);
-  near(sink.total.mean, 52);
-  near(sink.total.max, 104);
+  near(sink.total.min, 11);
+  near(sink.total.mean, 62);
+  near(sink.total.max, 114);
   near(sink.total.sd, Math.hypot(100 / Math.sqrt(12), 0.5));
   assert.equal(solution.loopEdges.size, 0);
   assert.deepEqual(solution.sinkIds, ["filter.out.clean"]);
@@ -289,8 +415,15 @@ const forkGraph = (type) =>
       {
         name: "clock",
         outputs: ["tick"],
+        // the clock's own run is declared zero so the fold is all that counts
         processes: [
-          { name: "tick", type: "periodic", frequency: 100, to: ["tick"] },
+          {
+            name: "tick",
+            type: "periodic",
+            frequency: 100,
+            latency: 0,
+            to: ["tick"],
+          },
         ],
       },
       {
@@ -445,7 +578,8 @@ test("a cycle is cut once and the arrival stays finite", () => {
   assert.equal(solution.reach.size, 6);
   const back = solution.arrivals.get("planner.in.state");
   assert.ok(Number.isFinite(back.total.max));
-  near(back.total.max, 100);
+  // one tick wait plus the plan's expected run; the drive has no rate of its own
+  near(back.total.max, 110);
   // the loop-closing edge is the one back into the source
   const [cut] = [...solution.loopEdges];
   assert.equal(graph.edgeById.get(cut).to, "planner.plan");
@@ -734,8 +868,9 @@ const lidar = (name) => ({
   name,
   inputs: [{ name: "imu", type: "imu" }],
   outputs: ["cloud"],
+  // the scan's own run is declared zero so the merge is all that counts
   processes: [
-    { name: "scan", type: "periodic", frequency: 10 },
+    { name: "scan", type: "periodic", frequency: 10, latency: 0 },
     {
       name: "correct",
       type: "and",

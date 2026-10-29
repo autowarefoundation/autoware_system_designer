@@ -11,6 +11,7 @@
               "id_b589da255604a9e8"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "load",
@@ -60,6 +61,7 @@
                 "id_0f747866032a06a9"
               ],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "output_vector_map",
@@ -118,6 +120,7 @@
           {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "consume",
@@ -142,6 +145,7 @@
                 "id_ea6043f919d5a417"
               ],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "input_vector_map",
@@ -216,6 +220,7 @@
               "id_0f747866032a06a9"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "output_vector_map",
@@ -255,6 +260,7 @@
               "id_ea6043f919d5a417"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "input_vector_map",

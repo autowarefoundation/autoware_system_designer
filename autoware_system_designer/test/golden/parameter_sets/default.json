@@ -11,6 +11,7 @@
               "id_84305ff8ee3fd5b8"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": 20.0,
             "latch_ids": [],
             "name": "feed",
@@ -63,6 +64,7 @@
                 "id_a31b807e35cc996c"
               ],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": 20.0,
               "latch_ids": [],
               "name": "output_output",
@@ -123,6 +125,7 @@
               {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": 20.0,
                 "latch_ids": [],
                 "name": "work",
@@ -147,6 +150,7 @@
                     "id_d67b6cefe795ad75"
                   ],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": 20.0,
                   "latch_ids": [],
                   "name": "input_input",
@@ -268,6 +272,7 @@
               {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": 20.0,
                 "latch_ids": [],
                 "name": "work",
@@ -292,6 +297,7 @@
                     "id_7efe089f867903b2"
                   ],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": 20.0,
                   "latch_ids": [],
                   "name": "input_input",
@@ -417,6 +423,7 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
               "latch_ids": [],
               "name": "input_input",
@@ -456,6 +463,7 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "input_input",
@@ -494,6 +502,7 @@
                   "id_d67b6cefe795ad75"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": 20.0,
                 "latch_ids": [],
                 "name": "input_input",
@@ -535,6 +544,7 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
                 "latch_ids": [],
                 "name": "input_input",
@@ -570,6 +580,7 @@
                   "id_7efe089f867903b2"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": 20.0,
                 "latch_ids": [],
                 "name": "input_input",
@@ -633,6 +644,7 @@
               "id_a31b807e35cc996c"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": 20.0,
             "latch_ids": [],
             "name": "output_output",
@@ -670,6 +682,7 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
             "latch_ids": [],
             "name": "input_input",

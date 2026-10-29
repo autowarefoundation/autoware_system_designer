@@ -119,7 +119,7 @@
     "the tinted track is the chain the axis is driven by; branches sit above and below",
     "≈ marks a mean folded at an and/or gate: one branch's number, not the set's",
     "? marks a spread that skipped hops with no sd",
-    "a periodic gate needs no measurement: its sampling delay is uniform over one period",
+    "in the rates state a gate runs for its expected latency (declared, else a tenth of its interval); a timer-paced gate first waits for its next tick, any other gate waits out a run already under way",
     "a faint block is a process run no measurement covers; it yields to a measured branch at an or gate",
     "a measured chain keeps the design's events; the file supplies each gate's run, each input's wait (in→out response less the run) and each link's transport",
     "scroll to move down the page, shift+scroll to move along the axis, ctrl+scroll (or pinch) to zoom the time scale about the pointer",
@@ -1346,7 +1346,12 @@
         this.themed(guide, "color", defaults.stroke),
       );
       block.classList.add("seq-bar");
-      if (arrival.exec.source === "unmeasured" && STATES[this.state].timed) {
+      // A placeholder run: nothing known, or the design's expectation standing
+      // in for a sample the measurement lacks.
+      const placeholder =
+        arrival.exec.source === "unmeasured" ||
+        (this.state === "measured" && arrival.exec.source === "expected");
+      if (placeholder && STATES[this.state].timed) {
         block.classList.add("seq-unmeasured");
       }
       if (arrival.exec.dead) block.classList.add("seq-dead");
@@ -1579,6 +1584,18 @@
       if (frequency === null || frequency === undefined) return "";
       if (frequency === 0) return "once";
       return `${Number(frequency.toFixed(3))}Hz`;
+    }
+
+    // The run the design expects of a gate and where the figure comes from.
+    expectedRunText(event) {
+      const run = T.expectedRun(event);
+      if (run === null) return undefined;
+      const origin =
+        event.expected_latency_ms === null ||
+        event.expected_latency_ms === undefined
+          ? `default, ${Math.round(T.DEFAULT_RUN_SHARE * 100)}% of the interval`
+          : "declared";
+      return `${T.formatMs(run, 1)} (${origin})`;
     }
 
     // Declared rate, with the observed one after it in the measured state.
@@ -2069,6 +2086,7 @@
           warn_rate: gate.warn_rate,
           error_rate: gate.error_rate,
           timeout: gate.timeout,
+          expected_run: this.expectedRunText(gate),
           mismatch: this.graph.rateMismatch(gate),
           reads: this.queueNames(this.graph.queuesReadBy(gate.id)) || undefined,
           fills: this.queueNames(this.filledQueues(gate.id)) || undefined,
