@@ -1,0 +1,30 @@
+autoware_system_design_format: 0.4.1
+
+name: LidarSource.node
+
+description: Dummy lidar driver publishing a point cloud.
+
+package:
+  name: queue_pkg
+  provider: dummy
+
+launch:
+  plugin: queue::LidarSource
+  executable: lidar_source_node
+  node_output: screen
+
+subscribers: []
+
+publishers:
+  - name: pointcloud
+    message_type: sensor_msgs/msg/PointCloud2
+
+param_files: []
+param_values: []
+
+processes:
+  - name: capture
+    trigger_conditions:
+      - periodic: 10.0
+    outcomes:
+      - to_output: pointcloud

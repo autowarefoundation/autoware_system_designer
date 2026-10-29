@@ -60,6 +60,16 @@ def test_unresolved_rate_fails(tmp_path):
     assert "Ticker.node.yaml" in message
 
 
+def test_unknown_queue_fails(tmp_path):
+    """A `from_queue` naming a queue no process of the node fills is rejected with the queue named."""
+    workspace = stage_case("errors_unknown_queue", tmp_path)
+    with pytest.raises(SystemDesignerError) as excinfo:
+        run_pipeline(workspace, "queue_pkg/Unknown.system.yaml", tmp_path)
+    message = str(excinfo.value)
+    assert "Queue not found: twist" in message
+    assert "Corrector.node.yaml" in message
+
+
 def test_bad_major_version_fails(tmp_path):
     workspace = stage_case("errors_bad_major", tmp_path)
     with pytest.raises(SystemDesignerError) as excinfo:

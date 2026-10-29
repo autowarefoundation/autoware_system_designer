@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import logging
+from collections import deque
 from dataclasses import dataclass, field
-from typing import ClassVar, List, Optional
+from typing import ClassVar, Dict, Iterable, List, Optional, Tuple
 
 from autoware_system_designer.common.naming import generate_unique_id
 
@@ -28,6 +29,7 @@ class Event:
     # on_trigger: activate the event when the trigger is activated
     # once: fulfill the condition if the input is received once
     # periodic: periodically activate this event
+    # queue: data parked by a process for whichever process reads it next
     type_list: ClassVar[List[str]] = [
         "on_input",
         "on_trigger",
@@ -35,6 +37,7 @@ class Event:
         "periodic",
         "to_trigger",
         "to_output",
+        "queue",
     ]
 
     name: str
@@ -43,13 +46,18 @@ class Event:
     process_event: bool = False
     # children triggers
     triggers: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "trigger_ids"})
+    # triggers that only gate this event: satisfied for good once they arrive, so they set no rate
+    latches: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "latch_ids"})
     # events to trigger when this event is activated
     actions: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "action_ids"})
-    trigger_root_ids: List[str] = field(default_factory=list, metadata={"exclude": True})
+    # queues this event reads when it runs; a read neither fires it nor paces it
+    reads: List["Event"] = field(default_factory=list, metadata={"ref": True, "alias": "read_ids"})
     frequency: Optional[float] = None
     warn_rate: Optional[float] = None
     error_rate: Optional[float] = None
     timeout: Optional[float] = None
+    # run the design expects of a process, in milliseconds; a condition gate runs nothing
+    expected_latency_ms: Optional[float] = None
     is_set: bool = field(default=False, metadata={"exclude": True})
 
     __serde_computed__: ClassVar[tuple] = (("unique_id", "unique_id"),)
@@ -61,13 +69,15 @@ class Event:
         self.process_event = is_process_event
 
         self.triggers = []
+        self.latches = []
         self.actions = []
-        self.trigger_root_ids = []
+        self.reads = []
 
         self.frequency = None
         self.warn_rate = None
         self.error_rate = None
         self.timeout = None
+        self.expected_latency_ms = None
         self.is_set = False
 
     @property
@@ -77,6 +87,17 @@ class Event:
     @property
     def is_port_event(self):
         return False
+
+    @property
+    def is_clock(self):
+        """A condition that carries its own rate: `periodic` repeats at it, `once` never repeats."""
+        return self.type in ("periodic", "once")
+
+    @property
+    def pacing_triggers(self) -> List["Event"]:
+        """The triggers that set the rate of this event; a latch only gates it."""
+        latch_ids = {latch.unique_id for latch in self.latches}
+        return [trigger for trigger in self.triggers if trigger.unique_id not in latch_ids]
 
     @staticmethod
     def _as_rate(key: str, value) -> float:
@@ -93,13 +114,6 @@ class Event:
             raise ValueError(f"Invalid event type: {type_str}")
         self.type = type_str
         logger.debug(f"Event '{self.unique_id}' set type '{type_str}'")
-
-    def check_trigger_root_ids(self, trigger_root_id):
-        if trigger_root_id in self.trigger_root_ids:
-            return True
-        else:
-            self.trigger_root_ids.append(trigger_root_id)
-            return False
 
     def add_trigger_event(self, event, vise_versa=True):
         if event.unique_id == self.unique_id:
@@ -122,6 +136,27 @@ class Event:
         logger.debug(f"Event '{self.unique_id}' added action '{event.unique_id}'")
         if vise_versa:
             event.add_trigger_event(self, False)
+
+    def add_pacing_event(self, event: "Event"):
+        """A trigger that sets the rate; it outranks a latch on the same event."""
+        self.add_trigger_event(event)
+        self.latches = [e for e in self.latches if e.unique_id != event.unique_id]
+
+    def add_latch_event(self, event: "Event"):
+        # a trigger already wired here either paces the event or is this latch
+        if any(e.unique_id == event.unique_id for e in self.triggers):
+            return
+        self.add_trigger_event(event)
+        self.latches.append(event)
+        logger.debug(f"Event '{self.unique_id}' added latch '{event.unique_id}'")
+
+    def add_read_event(self, queue: "QueueEvent"):
+        for e in self.reads:
+            if e.unique_id == queue.unique_id:
+                return
+        self.reads.append(queue)
+        queue.add_reader_event(self)
+        logger.debug(f"Event '{self.unique_id}' added read '{queue.unique_id}'")
 
     def determine_type(self, config_yaml):
         if len(config_yaml) == 0:
@@ -156,18 +191,23 @@ class Event:
                 self.frequency = self._as_rate("periodic", config_value)
                 self.is_set = True
             elif config_key == "once" and config_value is None:
-                self.frequency = 0.0
-                self.warn_rate = 0.0
-                self.error_rate = 0.0
-                self.timeout = 0.0
-                self.is_set = True
+                # a bare `once` folded into a chain only gates it; alone it is the condition itself
+                if self.type == "once":
+                    self.frequency = 0.0
+                    self.warn_rate = 0.0
+                    self.error_rate = 0.0
+                    self.timeout = 0.0
+                    self.is_set = True
             elif config_key == "on_input" or config_key == "once":
                 self.condition_value = config_value
                 # search the event in the on_input_list
                 is_found = False
                 for event in on_input_list:
                     if event.name == ("input_" + config_value):
-                        self.add_trigger_event(event)
+                        if config_key == "once" and self.type != "once":
+                            self.add_latch_event(event)
+                        else:
+                            self.add_pacing_event(event)
                         is_found = True
                         break
                 # if not found, warn
@@ -202,54 +242,32 @@ class Event:
         else:
             raise ValueError(f"Invalid event type: {config_key}")
 
-    def set_event_frequency(
-        self,
-        trigger_root_id: str,
-        frequency: float,
-        warn_rate: float,
-        error_rate: float,
-        timeout: float,
-    ):
-        if self.check_trigger_root_ids(trigger_root_id):
-            logger.debug(
-                f"Event '{self.unique_id}' already processed for root '{trigger_root_id}', skipping propagation"
-            )
-            return
 
-        if frequency is not None:
-            if self.frequency is None or frequency > self.frequency:
-                self.frequency = frequency
-        if warn_rate is not None:
-            if self.warn_rate is None or warn_rate > self.warn_rate:
-                self.warn_rate = warn_rate
-        if error_rate is not None:
-            if self.error_rate is None or error_rate > self.error_rate:
-                self.error_rate = error_rate
-        if timeout is not None:
-            if self.timeout is None or timeout > self.timeout:
-                self.timeout = timeout
+@dataclass(init=False, eq=False, repr=False)
+class QueueEvent(Event):
+    """Node-owned buffer between a process that fills it and the processes that read it.
 
-        self.is_set = True
-        logger.debug(
-            f"Event '{self.unique_id}' frequency set: freq={self.frequency}, warn={self.warn_rate}, error={self.error_rate}, timeout={self.timeout}"
-        )
-        for action in self.actions:
-            action.set_event_frequency(trigger_root_id, frequency, warn_rate, error_rate, timeout)
+    Filling is a trigger relation, so the fill rate propagates to the queue and stops there;
+    reading is recorded on both ends and carries no rate.
+    """
 
-    def set_frequency_tree(self):
-        trigger_root_id = self.unique_id
-        if self.type == "periodic" and self.is_set:
-            # propagate the frequency to the children
-            for action in self.actions:
-                action.set_event_frequency(
-                    trigger_root_id, self.frequency, self.warn_rate, self.error_rate, self.timeout
-                )
-        elif self.type == "once" and self.is_set:
-            # propagate the frequency to the children
-            for action in self.actions:
-                action.set_event_frequency(trigger_root_id, 0.0, 0.0, 0.0, 0.0)
-        else:
-            pass
+    # events reading this queue when they run
+    readers: List[Event] = field(default_factory=list, metadata={"ref": True, "alias": "reader_ids"})
+
+    def __init__(self, name: str, namespace: List[str]):
+        super().__init__(name, namespace)
+        self.readers = []
+        self.set_type("queue")
+
+    @property
+    def unique_id(self):
+        return generate_unique_id(self.namespace, "queue", self.name)
+
+    def add_reader_event(self, event: Event):
+        for e in self.readers:
+            if e.unique_id == event.unique_id:
+                return
+        self.readers.append(event)
 
 
 class EventChain(Event):
@@ -285,7 +303,8 @@ class EventChain(Event):
                     for chain in config_value:
                         chain_key, chain_value = self.determine_type(chain)
                         if chain_key in ["periodic"] + self.chain_list:
-                            event = EventChain(self.name + "_" + str(child_idx), self.namespace)
+                            # a nested condition fires the process; it is no run of its own
+                            event = EventChain(self.name + "_" + str(child_idx), self.namespace, is_process_event=False)
                             child_idx += 1
                             event.set_chain(chain, process_list, on_input_list)
                             self.add_trigger_event(event)
@@ -321,36 +340,215 @@ class Process:
     def unique_id(self):
         return generate_unique_id(self.namespace, "process", self.name)
 
+    @staticmethod
+    def _as_latency(value) -> float:
+        latency = Event._as_rate("expected_latency_ms", value)
+        if latency < 0:
+            raise ValueError(f"'expected_latency_ms' must not be negative, got {value!r}")
+        return latency
+
     def set_condition(self, process_list, on_input_list):
         trigger_condition_config = self.config_yaml.get("trigger_conditions")
         logger.debug(f"Process '{self.unique_id}' setting trigger condition: {trigger_condition_config}")
         self.event.set_chain(trigger_condition_config, process_list, on_input_list)
+        if "expected_latency_ms" in self.config_yaml:
+            self.event.expected_latency_ms = self._as_latency(self.config_yaml.get("expected_latency_ms"))
 
-    def set_outcomes(self, process_list, to_output_events):
+    def set_outcomes(self, process_list, to_output_events, queues: Dict[str, QueueEvent]):
+        """Wire the process to what it produces; a `to_queue` outcome declares the queue on first use."""
         outcome_config = self.config_yaml.get("outcomes")
         for outcome in outcome_config:
             outcome_type = list(outcome.keys())[0]
             outcome_value = outcome[outcome_type]
             if outcome_type == "to_output":
-                for event in to_output_events:
-                    if event.name == ("output_" + outcome_value):
-                        self.event.add_action_event(event)
-                        break
-                if self.event.actions == []:
+                target = next((e for e in to_output_events if e.name == ("output_" + outcome_value)), None)
+                if target is None:
                     raise ValueError(f"Output event not found: {outcome_value}")
+                self.event.add_action_event(target)
             elif outcome_type == "to_trigger":
-                for event in process_list:
-                    if event.name == outcome_value:
-                        self.event.add_action_event(event)
-                        break
-                if self.event.actions == []:
+                target = next((e for e in process_list if e.name == outcome_value), None)
+                if target is None:
                     raise ValueError(f"Trigger event not found: {outcome_value}")
+                self.event.add_action_event(target)
+            elif outcome_type == "to_queue":
+                if not isinstance(outcome_value, str) or not outcome_value:
+                    raise ValueError(f"'to_queue' must name a queue, got {outcome_value!r}")
+                queue = queues.get(outcome_value)
+                if queue is None:
+                    queue = QueueEvent(outcome_value, self.namespace)
+                    queues[outcome_value] = queue
+                self.event.add_action_event(queue)
             elif outcome_type == "terminal":
                 # end of event chain
                 break
+            else:
+                raise ValueError(f"Invalid outcome type: {outcome_type}")
         logger.debug(
             f"Process '{self.unique_id}' outcomes configured: actions={[a.unique_id for a in self.event.actions]}"
         )
 
+    def set_reads(self, queues: Dict[str, QueueEvent]):
+        """Bind the queues the process reads; every queue must be filled by a `to_queue` of this node."""
+        for read in self.config_yaml.get("reads") or []:
+            if not isinstance(read, dict) or len(read) != 1:
+                raise ValueError(f"Invalid read entry: {read!r}")
+            read_type, read_value = next(iter(read.items()))
+            if read_type != "from_queue":
+                raise ValueError(f"Invalid read type: {read_type}")
+            queue = queues.get(read_value)
+            if queue is None:
+                known = ", ".join(sorted(queues)) or "none"
+                raise ValueError(
+                    f"Queue not found: {read_value} (no process of this node has 'to_queue: {read_value}'; "
+                    f"queues filled: {known})"
+                )
+            self.event.add_read_event(queue)
+
     def get_event_list(self):
         return self.event.get_children() + [self.event]
+
+
+RateProfile = Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]
+
+
+def _profile(event: Event) -> RateProfile:
+    return (event.frequency, event.warn_rate, event.error_rate, event.timeout)
+
+
+def _inherit(values: List[Optional[float]], slowest: bool) -> Optional[float]:
+    """The value an event takes from its pacing triggers; a `0.0` rate is a one-shot and paces nothing."""
+    known = [value for value in values if value is not None]
+    if not known:
+        return None
+    if not slowest:
+        return max(known)
+    paced = [value for value in known if value]
+    return min(paced) if paced else 0.0
+
+
+def _inherit_timeout(triggers: List[Event], slowest: bool, frequency: Optional[float]) -> Optional[float]:
+    """The wait of the conditions the rate comes from: the longest when the event fires at the
+    slowest, else the shortest; a `0.0` timeout is a one-shot."""
+    sources = [trigger for trigger in triggers if frequency is not None and trigger.frequency == frequency]
+    known = [trigger.timeout for trigger in sources if trigger.timeout is not None] or [
+        trigger.timeout for trigger in triggers if trigger.timeout is not None
+    ]
+    if not known:
+        return None
+    if slowest:
+        return max(known)
+    waits = [value for value in known if value]
+    return min(waits) if waits else 0.0
+
+
+def _settle(event: Event, declared: RateProfile) -> bool:
+    """Recompute the rate profile of one event; True when it moved."""
+    before = _profile(event)
+    triggers = event.pacing_triggers
+    # an event gated by latches alone is satisfied for good once they arrive, so like a clock it
+    # keeps what it declares and never repeats
+    if event.is_clock or (not triggers and event.latches):
+        frequency = declared[0] if declared[0] is not None else 0.0
+        profile: RateProfile = (frequency, declared[1], declared[2], declared[3])
+    else:
+        # an `and` fires no faster than its slowest condition, every other event as fast as its
+        # quickest; `timeout` is the wait of the condition the rate comes from
+        slowest = event.type == "and"
+        frequency = _inherit([trigger.frequency for trigger in triggers], slowest)
+        inherited = (
+            frequency,
+            _inherit([trigger.warn_rate for trigger in triggers], slowest),
+            _inherit([trigger.error_rate for trigger in triggers], slowest),
+            _inherit_timeout(triggers, slowest, frequency),
+        )
+        profile = tuple(own if own is not None else value for own, value in zip(declared, inherited))
+    event.frequency, event.warn_rate, event.error_rate, event.timeout = profile
+    return profile != before
+
+
+def _pacing_components(events: Dict[str, Event]) -> List[List[str]]:
+    """Strongly connected components of the pacing edges, upstream first; a latch edge carries
+    no rate, so it neither orders nor closes a loop."""
+    succ = {
+        uid: [
+            action.unique_id
+            for action in event.actions
+            if action.unique_id in events and all(latch.unique_id != uid for latch in action.latches)
+        ]
+        for uid, event in events.items()
+    }
+    index: Dict[str, int] = {}
+    low: Dict[str, int] = {}
+    stack: List[str] = []
+    on_stack = set()
+    components: List[List[str]] = []
+    for root in events:
+        if root in index:
+            continue
+        index[root] = low[root] = len(index)
+        stack.append(root)
+        on_stack.add(root)
+        work = [(root, iter(succ[root]))]
+        while work:
+            node, successors = work[-1]
+            nxt = next(successors, None)
+            if nxt is not None:
+                if nxt not in index:
+                    index[nxt] = low[nxt] = len(index)
+                    stack.append(nxt)
+                    on_stack.add(nxt)
+                    work.append((nxt, iter(succ[nxt])))
+                elif nxt in on_stack:
+                    low[node] = min(low[node], index[nxt])
+                continue
+            work.pop()
+            if work:
+                parent = work[-1][0]
+                low[parent] = min(low[parent], low[node])
+            if low[node] == index[node]:
+                component = []
+                while True:
+                    member = stack.pop()
+                    on_stack.discard(member)
+                    component.append(member)
+                    if member == node:
+                        break
+                components.append(component)
+    # Tarjan closes downstream components first
+    components.reverse()
+    return components
+
+
+def resolve_event_rates(events: Iterable[Event], max_visits: int = 8) -> None:
+    """Settle the rate of every event from the clocks that reach it.
+
+    A clock keeps the rate it declares; every other event takes the rate of the conditions that
+    pace it, along the trigger edges. Events settle upstream first, so an event off any loop
+    settles once; events on a loop settle by revisiting, bounded per event.
+    """
+    by_id: Dict[str, Event] = {}
+    for event in events:
+        by_id.setdefault(event.unique_id, event)
+    declared = {uid: _profile(event) for uid, event in by_id.items()}
+    for component in _pacing_components(by_id):
+        members = set(component)
+        queue = deque(component)
+        queued = set(component)
+        visits: Dict[str, int] = {}
+        while queue:
+            uid = queue.popleft()
+            queued.discard(uid)
+            event = by_id[uid]
+            if not _settle(event, declared[uid]):
+                continue
+            logger.debug(f"Event '{uid}' rate settled: freq={event.frequency}")
+            if len(members) == 1:
+                continue
+            visits[uid] = visits.get(uid, 0) + 1
+            if visits[uid] > max_visits:
+                logger.warning(f"Event '{uid}' rate does not settle: the loop it sits on mixes rates")
+                continue
+            for action in event.actions:
+                if action.unique_id in members and action.unique_id not in queued:
+                    queue.append(action.unique_id)
+                    queued.add(action.unique_id)

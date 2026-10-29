@@ -2,7 +2,7 @@ autoware_system_design_format: 0.4.0
 
 name: TrafficLightRecognitionDummy.node
 
-description: Dummy traffic light recognition node that publishes car/pedestrian traffic signals and detection ROIs.
+description: Dummy traffic light recognition node that recognizes traffic lights in the camera image along the route, publishing car/pedestrian traffic signals, detection ROIs and traffic signal groups.
 
 package:
   name: autoware_system_dummy_modules
@@ -12,7 +12,13 @@ launch:
   plugin: autoware::system_dummy_modules::TrafficLightRecognitionDummy
 
 # interfaces
-subscribers: []
+subscribers:
+  - name: image
+    message_type: sensor_msgs/msg/Image
+  - name: camera_info
+    message_type: sensor_msgs/msg/CameraInfo
+  - name: route
+    message_type: autoware_planning_msgs/msg/LaneletRoute
 
 publishers:
   - name: traffic_signal_car
@@ -30,6 +36,8 @@ publishers:
     qos:
       reliability: reliable
       durability: transient_local
+  - name: traffic_signals
+    message_type: autoware_perception_msgs/msg/TrafficLightGroupArray
 
 param_files: []
 param_values: []
@@ -38,11 +46,14 @@ param_values: []
 processes:
   - name: traffic_light_recognition
     trigger_conditions:
-      - periodic: 10.0 # Hz
-        warn_rate: 0.3 # Hz
-        error_rate: 0.3 # Hz
-        timeout: 0.5 # s
+      - or:
+          - on_input: image
+            warn_rate: 0.3 # Hz
+            error_rate: 0.3 # Hz
+            timeout: 0.5 # s
+          - on_input: route
     outcomes:
       - to_output: traffic_signal_car
       - to_output: traffic_signal_pedestrian
       - to_output: traffic_signal_rois
+      - to_output: traffic_signals

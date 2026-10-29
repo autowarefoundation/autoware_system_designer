@@ -183,21 +183,87 @@
 
   // ── Cost providers ──────────────────────────────────────────────────────────
 
+  // Share of a process's interval its run is expected to take when the design
+  // declares no latency.
+  const DEFAULT_RUN_SHARE = 0.1;
+
+  // The run the design expects of a process gate, in ms: its declared
+  // expected latency, else a share of its interval; null where neither is
+  // known. A condition gate runs nothing.
+  function expectedRun(event) {
+    if (event.kind !== "process" || event.condition) return null;
+    if (
+      event.expected_latency_ms !== null &&
+      event.expected_latency_ms !== undefined
+    ) {
+      return event.expected_latency_ms;
+    }
+    if (event.frequency > 0)
+      return (DEFAULT_RUN_SHARE * 1000) / event.frequency;
+    return null;
+  }
+
+  // A run of fixed length the design expects; counted as a placeholder so a
+  // measured branch outranks it at an or gate.
+  function expected(ms) {
+    return summary({
+      min: ms,
+      mean: ms,
+      max: ms,
+      source: "expected",
+      unknown: 1,
+    });
+  }
+
+  // A gate a timer paces: a periodic gate, or an `and` gate with a periodic
+  // condition among its triggers. A message reaching it waits for the next
+  // tick.
+  function timerPaced(graph, event) {
+    if (event.type === "periodic") return true;
+    if (event.type !== "and") return false;
+    return (graph.pred.get(event.id) || []).some((id) => {
+      const condition = graph.events.get(id);
+      return condition?.condition && condition.type === "periodic";
+    });
+  }
+
+  // The wait a message spends on a single process that may be busy: with
+  // probability run / interval a run is under way, and what is left of it is
+  // uniform over the run.
+  function busyWait(run, interval) {
+    const busy = Math.min(1, run / interval);
+    const mean = (busy * run) / 2;
+    const variance = (busy * run * run) / 3 - mean * mean;
+    return summary({
+      min: 0,
+      mean,
+      max: run,
+      sd: Math.sqrt(Math.max(0, variance)),
+      source: "derived",
+    });
+  }
+
   // Costs land on three places: the wait at a gate before it runs, the run of
   // a process gate, and the transport from an output to the input it feeds.
-  // The design provider knows only what the design declares: a periodic
-  // gate's sampling delay from its rate. Execution is a measured quantity, so
-  // every process run is the unmeasured placeholder; transport is zero.
+  // The design provider knows only what the design declares. A process gate
+  // runs for its expected latency; before it, a timer-paced gate samples
+  // uniformly over its interval and any other gate waits out a run already
+  // under way. A condition gate passes its trigger on at once. Transport is
+  // zero.
   function designCosts(graph) {
     return {
       wait(event) {
-        if (event.type === "periodic" && event.frequency > 0) {
-          return uniform(0, 1000 / event.frequency);
-        }
-        return ZERO;
+        const run = expectedRun(event);
+        if (run === null || !(event.frequency > 0)) return ZERO;
+        const interval = 1000 / event.frequency;
+        return timerPaced(graph, event)
+          ? uniform(0, interval)
+          : busyWait(run, interval);
       },
       exec(event) {
-        return event.kind === "process" ? UNMEASURED : ZERO;
+        if (event.kind !== "process" || event.condition) return ZERO;
+        const run = expectedRun(event);
+        return run === null ? UNMEASURED : expected(run);
       },
       comm() {
         return ZERO;
@@ -251,7 +317,8 @@
 
   // ── Solver ──────────────────────────────────────────────────────────────────
 
-  // Gates of this type fire once at start-up and take no part in a steady chain.
+  // Gates of this type fire once at start-up and take no part in a steady chain;
+  // a latch edge into a gate is the same thing recorded on the edge.
   const EXCLUDED_TYPES = new Set(["once"]);
 
   // How a gate combines its triggers: `and` waits for every one, anything else
@@ -294,6 +361,7 @@
         const branches = [];
         (graph.pred.get(id) || []).forEach((fromId) => {
           if (!reach.has(fromId) || sourceIds.has(id)) return;
+          if (graph.isLatchEdge(fromId, id)) return;
           const edgeId = graph.edgeId(fromId, id);
           if (loopEdges.has(edgeId)) return;
           const from = graph.events.get(fromId);
@@ -354,10 +422,12 @@
         unknownGates,
         sinkIds: order.filter(
           (id) =>
-            !(graph.succ.get(id) || []).some(
-              (next) =>
-                reach.has(next) && !loopEdges.has(graph.edgeId(id, next)),
-            ),
+            !graph
+              .chainSucc(id)
+              .some(
+                (next) =>
+                  reach.has(next) && !loopEdges.has(graph.edgeId(id, next)),
+              ),
         ),
       };
     }
@@ -370,7 +440,7 @@
       const queue = [...sourceIds];
       for (let cursor = 0; cursor < queue.length; cursor += 1) {
         const id = queue[cursor];
-        (graph.succ.get(id) || []).forEach((nextId) => {
+        graph.chainSucc(id).forEach((nextId) => {
           const next = graph.events.get(nextId);
           if (!next || hops.has(nextId)) return;
           if (EXCLUDED_TYPES.has(next.type)) return;
@@ -397,7 +467,7 @@
       const byDistance = [...sourceIds];
       for (let cursor = 0; cursor < byDistance.length; cursor += 1) {
         const id = byDistance[cursor];
-        (graph.succ.get(id) || []).forEach((nextId) => {
+        graph.chainSucc(id).forEach((nextId) => {
           if (!reach.has(nextId) || distance.has(nextId)) return;
           distance.set(nextId, distance.get(id) + 1);
           byDistance.push(nextId);
@@ -424,7 +494,7 @@
       const loopEdges = new Set();
       const indegree = new Map(byDistance.map((id) => [id, 0]));
       byDistance.forEach((id) => {
-        (graph.succ.get(id) || []).forEach((nextId) => {
+        graph.chainSucc(id).forEach((nextId) => {
           if (!reach.has(nextId)) return;
           const forward = distance.get(nextId) > distance.get(id);
           if (forward || !leadsBack(nextId, id)) {
@@ -627,14 +697,22 @@
   }
 
   // How a chain stops at an event. `loop`: an edge leaving it was cut as
-  // loop-closing, the chain rejoins itself. `open`: nothing in the graph
-  // follows it. `limit`: its successors lie beyond the hop limit.
+  // loop-closing, the chain rejoins itself. `queued`: the event is a queue,
+  // the message is parked for readers that other chains pace. `open`: nothing
+  // in the graph follows it. `limit`: its successors lie beyond the hop limit.
   function endOf(solution, graph, eventId) {
     const loops = loopExits(solution, graph, eventId);
     if (loops.length) {
       return { kind: "loop", rejoins: loops.map((exit) => exit.toId) };
     }
-    const beyond = (graph.succ.get(eventId) || []).some((id) => {
+    if (graph.events.get(eventId)?.kind === "queue") {
+      return {
+        kind: "queued",
+        rejoins: [],
+        readers: graph.readersOfQueue(eventId),
+      };
+    }
+    const beyond = graph.chainSucc(eventId).some((id) => {
       const next = graph.events.get(id);
       return next && !EXCLUDED_TYPES.has(next.type);
     });
@@ -662,6 +740,9 @@
     chainTo,
     hopsOf,
     enumerateChains,
+    expectedRun,
+    busyWait,
+    DEFAULT_RUN_SHARE,
     countChains,
     loopExits,
     endOf,

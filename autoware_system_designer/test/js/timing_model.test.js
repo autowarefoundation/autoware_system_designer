@@ -19,9 +19,13 @@ const T = require(path.join(JS_DIR, "timing_model.js"));
 // ── Graph builder ───────────────────────────────────────────────────────────
 
 // nodes: [{ name, inputs: [name | { name, type }], outputs: [name | { name,
-// type }], processes: [{ name, type, frequency, on: [input names], to:
-// [output names], after: [process names] }] }]; links: [[nodeA, output,
-// nodeB, input]]. A port's type is its message type, "cloud" by default.
+// type }], processes: [{ name, type, frequency, latency, condition, on:
+// [input names], latch: [input names], to: [output names], after: [process
+// names], fills: [queue names], reads: [queue names] }] }]; links: [[nodeA,
+// output, nodeB, input]]. A port's type is its message type, "cloud" by
+// default. `latency` is the process's expected run in ms; `condition`
+// marks a nested trigger condition, a gate that runs nothing. A queue named
+// by `fills` or `reads` is a queue event of the node.
 function build({ nodes, links = [] }) {
   const events = new Map();
   const event = (id, name, type) => {
@@ -31,7 +35,10 @@ function build({ nodes, links = [] }) {
         name,
         type,
         trigger_ids: [],
+        latch_ids: [],
         action_ids: [],
+        read_ids: [],
+        reader_ids: [],
         frequency: null,
       });
     }
@@ -64,18 +71,37 @@ function build({ nodes, links = [] }) {
     const processes = (node.processes || []).map((p) => {
       const e = event(`${node.name}.${p.name}`, p.name, p.type ?? null);
       if (p.frequency !== undefined) e.frequency = p.frequency;
+      if (p.latency !== undefined) e.expected_latency_ms = p.latency;
+      if (p.condition) e.process_event = false;
       return e;
     });
+    const queues = [];
+    const queue = (name) => {
+      const id = `${node.name}.q.${name}`;
+      if (!events.has(id)) queues.push(event(id, name, "queue"));
+      return events.get(id);
+    };
     (node.processes || []).forEach((p, i) => {
       (p.on || []).forEach((input) =>
         trigger(events.get(`${node.name}.in.${input}`), processes[i]),
       );
+      (p.latch || []).forEach((input) => {
+        const from = events.get(`${node.name}.in.${input}`);
+        trigger(from, processes[i]);
+        processes[i].latch_ids.push(from.unique_id);
+      });
       (p.after || []).forEach((name) =>
         trigger(events.get(`${node.name}.${name}`), processes[i]),
       );
       (p.to || []).forEach((output) =>
         trigger(processes[i], events.get(`${node.name}.out.${output}`)),
       );
+      (p.fills || []).forEach((name) => trigger(processes[i], queue(name)));
+      (p.reads || []).forEach((name) => {
+        const q = queue(name);
+        processes[i].read_ids.push(q.unique_id);
+        q.reader_ids.push(processes[i].unique_id);
+      });
     });
     return {
       unique_id: `n.${node.name}`,
@@ -84,7 +110,7 @@ function build({ nodes, links = [] }) {
       entity_type: "node",
       in_ports: inPorts,
       out_ports: outPorts,
-      events: processes,
+      events: [...processes, ...queues],
       children: [],
     };
   });
@@ -115,10 +141,12 @@ const lat = (min, mean, max, sd) => ({
   sd_ms: sd,
 });
 
-// A measurement answering exec by event id from records { id: lat }; no comm.
+// A measurement answering exec by event id from records { id: lat }; a gate
+// with a record waits nothing of its own, as in the latency source; no comm.
 const measuredFrom = (records) => ({
   exec: (event) =>
     records[event.id] ? T.fromRecord(records[event.id], "measured") : null,
+  wait: (event) => (records[event.id] ? T.summary() : null),
   comm: () => null,
 });
 const measured = (graph, records) =>
@@ -201,6 +229,7 @@ const chainGraph = () =>
           {
             name: "run",
             type: "on_input",
+            frequency: 10,
             on: ["cloud"],
             to: ["clean"],
           },
@@ -212,26 +241,145 @@ const chainGraph = () =>
 const chainCosts = (graph) =>
   measured(graph, { "filter.run": lat(1, 2, 4, 0.5) });
 
-test("the design alone times only the clocks: a run is an unmeasured placeholder", () => {
+test("the design alone: a tenth of the interval per run, a tick wait at the clock, a busy wait after", () => {
   const graph = chainGraph();
   const solution = new T.ChainSolver(graph, T.designCosts(graph)).solve(
     "sensor.scan",
   );
+  const scan = solution.arrivals.get("sensor.scan");
+  assert.equal(scan.wait.source, "derived");
+  near(scan.wait.max, 100);
+  near(scan.wait.mean, 50);
+  near(scan.exec.max, 10);
   const run = solution.arrivals.get("filter.run");
-  assert.equal(run.exec.source, "unmeasured");
-  assert.equal(run.exec.max, 0);
-  assert.equal(solution.arrivals.get("sensor.scan").wait.source, "derived");
-  near(solution.arrivals.get("filter.out.clean").total.max, 100);
+  assert.equal(run.exec.source, "expected");
+  near(run.exec.min, 10);
+  near(run.exec.max, 10);
+  // busy a tenth of the time, half a run left on average
+  near(run.wait.max, 10);
+  near(run.wait.mean, 0.5);
+  const sink = solution.arrivals.get("filter.out.clean").total;
+  near(sink.min, 20);
+  near(sink.mean, 70.5);
+  near(sink.max, 130);
+});
+
+test("a declared expected latency sets the run and the busy wait grows with it", () => {
+  const graph = build({
+    nodes: [
+      {
+        name: "sensor",
+        outputs: ["cloud"],
+        processes: [
+          { name: "scan", type: "periodic", frequency: 10, to: ["cloud"] },
+        ],
+      },
+      {
+        name: "detector",
+        inputs: ["cloud"],
+        outputs: ["objects"],
+        processes: [
+          {
+            name: "detect",
+            type: "on_input",
+            frequency: 10,
+            latency: 30,
+            on: ["cloud"],
+            to: ["objects"],
+          },
+        ],
+      },
+    ],
+    links: [["sensor", "cloud", "detector", "cloud"]],
+  });
+  const solution = new T.ChainSolver(graph, T.designCosts(graph)).solve(
+    "sensor.scan",
+  );
+  const detect = solution.arrivals.get("detector.detect");
+  near(detect.exec.mean, 30);
+  near(detect.wait.max, 30);
+  near(detect.wait.mean, (30 * 30) / (2 * 100));
+  assert.equal(T.expectedRun(graph.events.get("detector.detect")), 30);
+});
+
+test("busy wait: run squared over twice the interval, capped at always busy", () => {
+  const wait = T.busyWait(20, 100);
+  near(wait.min, 0);
+  near(wait.mean, 2);
+  near(wait.max, 20);
+  const p = 0.2;
+  near(wait.sd, Math.sqrt((p * 400) / 3 - 4));
+  near(T.busyWait(150, 100).mean, 75);
+});
+
+test("a gate with no interval and no declared latency stays an unmeasured placeholder", () => {
+  const graph = build({
+    nodes: [
+      {
+        name: "relay",
+        inputs: ["cloud"],
+        outputs: ["copy"],
+        processes: [
+          { name: "copy", type: "on_input", on: ["cloud"], to: ["copy"] },
+        ],
+      },
+    ],
+  });
+  const costs = T.designCosts(graph);
+  const copy = graph.events.get("relay.copy");
+  assert.equal(costs.exec(copy).source, "unmeasured");
+  assert.equal(costs.wait(copy).max, 0);
+});
+
+test("a nested periodic condition costs nothing; its and gate waits for the tick, an or gate does not", () => {
+  const node = (type) => ({
+    name: "tracker",
+    inputs: ["objects"],
+    outputs: ["tracks"],
+    processes: [
+      { name: "predict_0", type: "periodic", frequency: 10, condition: true },
+      {
+        name: "predict",
+        type,
+        frequency: 10,
+        on: ["objects"],
+        after: ["predict_0"],
+        to: ["tracks"],
+      },
+    ],
+  });
+  const and = build({ nodes: [node("and")] });
+  let solution = new T.ChainSolver(and, T.designCosts(and)).solve(
+    "tracker.predict_0",
+  );
+  const condition = solution.arrivals.get("tracker.predict_0");
+  near(T.add(condition.wait, condition.exec).max, 0);
+  assert.equal(condition.exec.source, "none");
+  let predict = solution.arrivals.get("tracker.predict");
+  near(predict.wait.max, 100);
+  near(predict.wait.mean, 50);
+  near(predict.exec.max, 10);
+  near(solution.arrivals.get("tracker.out.tracks").total.max, 110);
+
+  const or = build({ nodes: [node("or")] });
+  solution = new T.ChainSolver(or, T.designCosts(or)).solve(
+    "tracker.in.objects",
+  );
+  predict = solution.arrivals.get("tracker.predict");
+  near(predict.wait.max, 10);
+  near(predict.wait.mean, 0.5);
 });
 
 test("a two-hop chain: sampling delay plus measured execution", () => {
   const graph = chainGraph();
   const solver = new T.ChainSolver(graph, chainCosts(graph));
   const solution = solver.solve("sensor.scan");
+  // the unmeasured scan runs the design's expected 10 ms after its tick wait;
+  // the measured run waits nothing of its own
   const sink = solution.arrivals.get("filter.out.clean");
-  near(sink.total.min, 1);
-  near(sink.total.mean, 52);
-  near(sink.total.max, 104);
+  near(sink.total.min, 11);
+  near(sink.total.mean, 62);
+  near(sink.total.max, 114);
   near(sink.total.sd, Math.hypot(100 / Math.sqrt(12), 0.5));
   assert.equal(solution.loopEdges.size, 0);
   assert.deepEqual(solution.sinkIds, ["filter.out.clean"]);
@@ -267,8 +415,15 @@ const forkGraph = (type) =>
       {
         name: "clock",
         outputs: ["tick"],
+        // the clock's own run is declared zero so the fold is all that counts
         processes: [
-          { name: "tick", type: "periodic", frequency: 100, to: ["tick"] },
+          {
+            name: "tick",
+            type: "periodic",
+            frequency: 100,
+            latency: 0,
+            to: ["tick"],
+          },
         ],
       },
       {
@@ -423,7 +578,8 @@ test("a cycle is cut once and the arrival stays finite", () => {
   assert.equal(solution.reach.size, 6);
   const back = solution.arrivals.get("planner.in.state");
   assert.ok(Number.isFinite(back.total.max));
-  near(back.total.max, 100);
+  // one tick wait plus the plan's expected run; the drive has no rate of its own
+  near(back.total.max, 110);
   // the loop-closing edge is the one back into the source
   const [cut] = [...solution.loopEdges];
   assert.equal(graph.edgeById.get(cut).to, "planner.plan");
@@ -451,6 +607,132 @@ test("a once gate takes no part in a steady chain", () => {
   const solution = new T.ChainSolver(graph).solve("src.tick");
   assert.ok(!solution.reach.has("init.setup"));
   assert.ok(solution.reach.has("init.in.a"));
+});
+
+test("a latched trigger takes no part in a steady chain", () => {
+  const graph = build({
+    nodes: [
+      {
+        name: "map",
+        outputs: ["lanelet"],
+        processes: [{ name: "load", type: "once", to: ["lanelet"] }],
+      },
+      {
+        name: "lidar",
+        outputs: ["cloud"],
+        processes: [
+          { name: "scan", type: "periodic", frequency: 10, to: ["cloud"] },
+        ],
+      },
+      {
+        name: "filter",
+        inputs: ["lanelet", "cloud"],
+        outputs: ["objects"],
+        processes: [
+          {
+            name: "run",
+            type: "and",
+            on: ["cloud"],
+            latch: ["lanelet"],
+            to: ["objects"],
+          },
+        ],
+      },
+    ],
+    links: [
+      ["map", "lanelet", "filter", "lanelet"],
+      ["lidar", "cloud", "filter", "cloud"],
+    ],
+  });
+  const solution = new T.ChainSolver(graph).solve("lidar.scan");
+  assert.deepEqual(
+    solution.arrivals.get("filter.run").branches.map((b) => b.fromId),
+    ["filter.in.cloud"],
+  );
+  const mapChain = new T.ChainSolver(graph).solve("map.load");
+  assert.ok(mapChain.reach.has("filter.in.lanelet"));
+  assert.ok(!mapChain.reach.has("filter.run"));
+});
+
+// A gate fed by an unclocked input and latched on a clocked one.
+function latchedGateGraph() {
+  return build({
+    nodes: [
+      {
+        name: "map",
+        outputs: ["lanelet"],
+        processes: [
+          { name: "tick", type: "periodic", frequency: 1, to: ["lanelet"] },
+        ],
+      },
+      {
+        name: "filter",
+        inputs: ["lanelet", "cloud"],
+        outputs: ["objects"],
+        processes: [
+          {
+            name: "run",
+            type: "and",
+            on: ["cloud"],
+            latch: ["lanelet"],
+            to: ["objects"],
+          },
+        ],
+      },
+    ],
+    links: [["map", "lanelet", "filter", "lanelet"]],
+  });
+}
+
+test("a clock reaching a gate only through a latch does not clock it", () => {
+  const graph = latchedGateGraph();
+  assert.ok(graph.clocksOf.get("filter.in.lanelet").has("map.tick"));
+  assert.ok(!graph.clocksOf.has("filter.run"));
+  assert.ok(!graph.clocksOf.has("filter.out.objects"));
+  assert.ok(graph.chainEndIds.has("filter.in.lanelet"));
+});
+
+test("a chain stopping at a latch ends at the latched input", () => {
+  // one clock feeds the gate on both inputs, so the gate is in reach
+  const graph = build({
+    nodes: [
+      {
+        name: "src",
+        outputs: ["lanelet", "cloud"],
+        processes: [
+          {
+            name: "tick",
+            type: "periodic",
+            frequency: 10,
+            to: ["lanelet", "cloud"],
+          },
+        ],
+      },
+      {
+        name: "filter",
+        inputs: ["lanelet", "cloud"],
+        outputs: ["objects"],
+        processes: [
+          {
+            name: "run",
+            type: "and",
+            on: ["cloud"],
+            latch: ["lanelet"],
+            to: ["objects"],
+          },
+        ],
+      },
+    ],
+    links: [
+      ["src", "lanelet", "filter", "lanelet"],
+      ["src", "cloud", "filter", "cloud"],
+    ],
+  });
+  const solution = new T.ChainSolver(graph).solve("src.tick");
+  assert.ok(solution.reach.has("filter.run"));
+  assert.ok(solution.sinkIds.includes("filter.in.lanelet"));
+  assert.equal(solution.loopEdges.size, 0);
+  assert.equal(T.endOf(solution, graph, "filter.in.lanelet").kind, "open");
 });
 
 test("hop limit counts process gates", () => {
@@ -586,8 +868,9 @@ const lidar = (name) => ({
   name,
   inputs: [{ name: "imu", type: "imu" }],
   outputs: ["cloud"],
+  // the scan's own run is declared zero so the merge is all that counts
   processes: [
-    { name: "scan", type: "periodic", frequency: 10 },
+    { name: "scan", type: "periodic", frequency: 10, latency: 0 },
     {
       name: "correct",
       type: "and",
@@ -682,6 +965,35 @@ test("clocks whose streams one gate merges are peers; side inputs and rejoined f
     sets.map((ids) => ids.sort()),
     [["imu.sample"], ["left.scan", "right.scan"]],
   );
+});
+
+test("latched inputs of one type are gated once, not merged as peers", () => {
+  const camera = (name) => ({
+    name,
+    outputs: [{ name: "info", type: "info" }],
+    processes: [{ name: "tick", type: "periodic", frequency: 1, to: ["info"] }],
+  });
+  const graph = build({
+    nodes: [
+      camera("cam0"),
+      camera("cam1"),
+      {
+        name: "fusion",
+        inputs: [
+          { name: "info0", type: "info" },
+          { name: "info1", type: "info" },
+        ],
+        processes: [{ name: "run", type: "and", latch: ["info0", "info1"] }],
+      },
+    ],
+    links: [
+      ["cam0", "info", "fusion", "info0"],
+      ["cam1", "info", "fusion", "info1"],
+    ],
+  });
+  assert.equal(graph.isLatchEdge("fusion.in.info0", "fusion.run"), true);
+  assert.deepEqual(graph.chainSucc("fusion.in.info0"), []);
+  assert.deepEqual(graph.peerRoots(), [["cam0.tick"], ["cam1.tick"]]);
 });
 
 test("peer sources are solved together and meet at the merging gate", () => {
@@ -852,4 +1164,90 @@ test("a chain cut by the hop limit ends at the limit, not open", () => {
   const full = solver.solve("a.tick");
   assert.deepEqual(full.sinkIds, ["c.sink"]);
   assert.equal(T.endOf(full, graph, "c.sink").kind, "open");
+});
+
+// ── Queues ──────────────────────────────────────────────────────────────────
+
+// An IMU stream queued by a corrector that a lidar stream paces.
+function queuedCorrector() {
+  return build({
+    nodes: [
+      {
+        name: "imu",
+        outputs: [{ name: "imu", type: "imu" }],
+        processes: [
+          { name: "sample", type: "periodic", frequency: 100, to: ["imu"] },
+        ],
+      },
+      {
+        name: "lidar",
+        outputs: ["cloud"],
+        processes: [
+          { name: "capture", type: "periodic", frequency: 10, to: ["cloud"] },
+        ],
+      },
+      {
+        name: "corrector",
+        inputs: ["cloud", { name: "imu", type: "imu" }],
+        outputs: ["cloud"],
+        processes: [
+          { name: "queue_imu", type: "on_input", on: ["imu"], fills: ["imu"] },
+          {
+            name: "undistort",
+            type: "on_input",
+            on: ["cloud"],
+            reads: ["imu"],
+            to: ["cloud"],
+          },
+        ],
+      },
+    ],
+    links: [
+      ["imu", "imu", "corrector", "imu"],
+      ["lidar", "cloud", "corrector", "cloud"],
+    ],
+  });
+}
+
+test("a queue read is a relation beside the edges, not a trigger", () => {
+  const graph = queuedCorrector();
+  const queue = graph.events.get("corrector.q.imu");
+  assert.equal(queue.kind, "queue");
+  assert.deepEqual(graph.pred.get("corrector.q.imu"), ["corrector.queue_imu"]);
+  assert.equal(graph.succ.has("corrector.q.imu"), false);
+  assert.deepEqual(graph.queuesReadBy("corrector.undistort"), [
+    "corrector.q.imu",
+  ]);
+  assert.deepEqual(graph.readersOfQueue("corrector.q.imu"), [
+    "corrector.undistort",
+  ]);
+  assert.equal(graph.readEdges.length, 1);
+  assert.ok(graph.activeIds.has("corrector.q.imu"));
+  // The reader is not clocked by the queue's filler.
+  assert.deepEqual(
+    [...graph.clocksOf.get("corrector.undistort")],
+    ["lidar.capture"],
+  );
+  assert.deepEqual([...graph.clocksOf.get("corrector.q.imu")], ["imu.sample"]);
+});
+
+test("the filling chain ends queued at the queue; the reader's chain never enters it", () => {
+  const graph = queuedCorrector();
+  const solver = new T.ChainSolver(graph, T.designCosts(graph));
+
+  const filling = solver.solve(["imu.sample"]);
+  assert.deepEqual(filling.sinkIds, ["corrector.q.imu"]);
+  assert.deepEqual(T.endOf(filling, graph, "corrector.q.imu"), {
+    kind: "queued",
+    rejoins: [],
+    readers: ["corrector.undistort"],
+  });
+  assert.equal(filling.reach.has("corrector.undistort"), false);
+
+  const paced = solver.solve(["lidar.capture"]);
+  assert.equal(paced.reach.has("corrector.q.imu"), false);
+  assert.equal(paced.reach.has("imu.sample"), false);
+  assert.deepEqual(paced.sinkIds, ["corrector.out.cloud"]);
+  // The two streams carry different message types, so the clocks are not peers.
+  assert.deepEqual(graph.peerRoots(), [["imu.sample"], ["lidar.capture"]]);
 });

@@ -2,22 +2,34 @@ autoware_system_design_format: 0.4.0
 
 name: TrafficLightRecognitionDummy.module
 
-description: Traffic light recognition module wrapping the classification node and exposing car/pedestrian traffic-signal and detection ROI outputs.
+description: Traffic light recognition module wrapping the classification node, taking a camera image and the route and exposing car/pedestrian traffic-signal, detection ROI and traffic signal group outputs.
 
 instances:
   - name: classification
     entity: TrafficLightRecognitionDummy.node
 
-subscribers: []
+subscribers:
+  - name: image
+  - name: camera_info
+  - name: route
 publishers:
   - name: classification/car/traffic_signals
   - name: classification/pedestrian/traffic_signals
   - name: detection/rois
+  - name: traffic_signals
 
 connections:
+  - - subscriber.image
+    - classification.subscriber.image
+  - - subscriber.camera_info
+    - classification.subscriber.camera_info
+  - - subscriber.route
+    - classification.subscriber.route
   - - publisher.classification/car/traffic_signals
     - classification.publisher.traffic_signal_car
   - - classification.publisher.traffic_signal_pedestrian
     - publisher.classification/pedestrian/traffic_signals
   - - classification.publisher.traffic_signal_rois
     - publisher.detection/rois
+  - - classification.publisher.traffic_signals
+    - publisher.traffic_signals

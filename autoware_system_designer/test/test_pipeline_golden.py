@@ -39,6 +39,7 @@ CASES = {
     "parameter_sets": ("tuned_pkg/Tuned.system.yaml", ["default"]),
     "launch_wrapper": ("wrapper_pkg/Wrapped.system.yaml", ["default"]),
     "deployments_table": ("fleet_pkg/deployment/fleet.deployments.yaml", ["default"]),
+    "queue_reads": ("queue_pkg/Queued.system.yaml", ["default"]),
 }
 
 # Text artifacts snapshotted alongside the structure JSON, per case:

@@ -16,7 +16,8 @@ instances:
   - name: lidar_concatenate
     entity: ConcatenatePointcloudDummy.node
 
-subscribers: []
+subscribers:
+  - name: odometry
 publishers:
   - name: top/pointcloud
   - name: left/pointcloud
@@ -25,6 +26,9 @@ publishers:
   - name: concatenated/pointcloud
 
 connections:
+  # odometry for the concatenation node
+  - - subscriber.odometry
+    - lidar_concatenate.subscriber.odometry
   # individual lidar outputs
   - - lidar_top.publisher.pointcloud
     - publisher.top/pointcloud

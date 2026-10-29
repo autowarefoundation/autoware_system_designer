@@ -9,12 +9,14 @@
   const MAX_ZOOM = 5;
 
   // Trigger semantics carried by shape: the type of a process event is what
-  // decides how many of its triggers have to fire before it does.
+  // decides how many of its triggers have to fire before it does; a queue is
+  // the slotted buffer between a filling chain and its readers.
   const TYPE_SHAPES = {
     and: "and",
     or: "or",
     periodic: "clock",
     once: "tag",
+    queue: "queue",
   };
 
   class ElkCanvas extends DiagramBase {
@@ -241,9 +243,18 @@
     }
 
     // Process-event outlines: `and` closes on a single arc, `or` on a concave
-    // back, a clock is a pill and `once` a tag; every other type is a plain box.
+    // back, a clock is a pill, `once` a tag and a queue a box cut into slots;
+    // every other type is a plain box.
     buildTypeShape(type, w, h, style) {
       const shape = TYPE_SHAPES[type];
+      if (shape === "queue") {
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute(
+          "d",
+          `M0,0 H${w} V${h} H0 Z M${w / 3},0 V${h} M${(2 * w) / 3},0 V${h}`,
+        );
+        return path;
+      }
       if (shape === "and") {
         const path = document.createElementNS(SVG_NS, "path");
         path.setAttribute(

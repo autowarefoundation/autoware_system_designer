@@ -11,9 +11,12 @@
               "id_11899dc5d83f2896"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "publish",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "or",
@@ -66,9 +69,12 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "output_status",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_608583f5023b734e"

@@ -1,8 +1,10 @@
 // Event Graph Module
-// The trigger graph of an exported system: every port and process event is a
-// vertex, every trigger relation an edge. Built once from the instance tree and
-// read by the diagrams that draw chains over it. Free of the DOM, so the same
-// module runs under node for the solver tests.
+// The trigger graph of an exported system: every port, process and queue event
+// is a vertex, every trigger relation an edge. A queue read is a second, loose
+// relation kept beside the edges: the reader takes what the queue holds when
+// its own trigger fires, so no chain, rate or wait runs through it. Built once
+// from the instance tree and read by the diagrams that draw chains over it.
+// Free of the DOM, so the same module runs under node for the solver tests.
 
 (function () {
   // Frequency is propagated from clock roots only, so these types start a chain.
@@ -20,10 +22,16 @@
       this.edgeList = []; // { id, from, to, cross }
       this.edgeById = new Map();
       this.edgeIdByKey = new Map(); // "from>to" → edgeId
+      this.latchEdgeKeys = new Set(); // "from>to" of edges a latch gates
+      this.chainSuccOf = new Map(); // eventId → [eventId] it chains on to
       this.clocksOf = new Map(); // eventId → Set(clock root id)
       this.clockRootIds = [];
-      this.activeIds = new Set(); // events carrying at least one trigger relation
+      this.activeIds = new Set(); // events carrying at least one relation
       this.chainEndIds = new Set(); // events the chain stops at
+      this.readsOf = new Map(); // reader eventId → [queue eventId]
+      this.readersOf = new Map(); // queue eventId → [reader eventId]
+      this.readEdges = []; // { id, from: queue, to: reader }
+      this.readEdgeById = new Map();
     }
 
     // ── Construction ────────────────────────────────────────────────────────────
@@ -36,8 +44,14 @@
       this.pred.clear();
       this.edgeById.clear();
       this.edgeIdByKey.clear();
+      this.latchEdgeKeys.clear();
+      this.chainSuccOf.clear();
       this.edgeList = [];
       this.activeIds.clear();
+      this.readsOf.clear();
+      this.readersOf.clear();
+      this.readEdges = [];
+      this.readEdgeById.clear();
 
       const addEvent = (event, instance, kind, port) => {
         if (!event?.unique_id || this.events.has(String(event.unique_id))) {
@@ -54,8 +68,14 @@
           warn_rate: event.warn_rate ?? null,
           error_rate: event.error_rate ?? null,
           timeout: event.timeout ?? null,
+          expected_latency_ms: event.expected_latency_ms ?? null,
+          // a nested trigger condition of a process: a gate that runs nothing
+          condition: kind === "process" && event.process_event === false,
           triggers: (event.trigger_ids || []).map(String),
+          latches: (event.latch_ids || []).map(String),
           actions: (event.action_ids || []).map(String),
+          reads: (event.read_ids || []).map(String),
+          readers: (event.reader_ids || []).map(String),
         });
       };
 
@@ -73,7 +93,12 @@
           addEvent(port.event, instance, "output", port),
         );
         (instance.events || []).forEach((event) =>
-          addEvent(event, instance, "process", null),
+          addEvent(
+            event,
+            instance,
+            event.type === "queue" ? "queue" : "process",
+            null,
+          ),
         );
         (instance.children || []).forEach((child) => visit(child, depth + 1));
       };
@@ -108,13 +133,54 @@
         event.triggers.forEach((triggerId) => link(triggerId, event.id));
         event.actions.forEach((actionId) => link(event.id, actionId));
       });
+      this.events.forEach((event) => {
+        event.latches.forEach((latchId) =>
+          this.latchEdgeKeys.add(`${latchId}>${event.id}`),
+        );
+      });
+      this.succ.forEach((nexts, id) => {
+        this.chainSuccOf.set(
+          id,
+          nexts.filter((next) => !this.isLatchEdge(id, next)),
+        );
+      });
+
+      // read_ids and reader_ids are one relation read from either end.
+      const read = (queueId, readerId) => {
+        if (queueId === readerId) return;
+        if (!this.events.has(queueId) || !this.events.has(readerId)) return;
+        const readers = this.readersOf.get(queueId) || [];
+        if (readers.includes(readerId)) return;
+        readers.push(readerId);
+        this.readersOf.set(queueId, readers);
+        if (!this.readsOf.has(readerId)) this.readsOf.set(readerId, []);
+        this.readsOf.get(readerId).push(queueId);
+        const edge = {
+          id: `re_${this.readEdges.length}`,
+          from: queueId,
+          to: readerId,
+        };
+        this.readEdges.push(edge);
+        this.readEdgeById.set(edge.id, edge);
+      };
+      this.events.forEach((event) => {
+        event.reads.forEach((queueId) => read(queueId, event.id));
+        event.readers.forEach((readerId) => read(event.id, readerId));
+      });
 
       this.events.forEach((event, id) => {
-        if (this.succ.has(id) || this.pred.has(id)) this.activeIds.add(id);
+        if (
+          this.succ.has(id) ||
+          this.pred.has(id) ||
+          this.readsOf.has(id) ||
+          this.readersOf.has(id)
+        ) {
+          this.activeIds.add(id);
+        }
       });
 
       this.chainEndIds = new Set(
-        [...this.activeIds].filter((id) => !(this.succ.get(id) || []).length),
+        [...this.activeIds].filter((id) => !this.chainSucc(id).length),
       );
 
       this._computeClocks();
@@ -138,7 +204,7 @@
           seen.add(id);
           if (!this.clocksOf.has(id)) this.clocksOf.set(id, new Set());
           this.clocksOf.get(id).add(rootId);
-          (this.succ.get(id) || []).forEach((next) => {
+          this.chainSucc(id).forEach((next) => {
             if (!seen.has(next)) stack.push(next);
           });
         }
@@ -151,17 +217,35 @@
       return this.edgeIdByKey.get(`${fromId}>${toId}`) ?? null;
     }
 
+    // A latch edge gates its head once and carries no rate or chain on; clocks
+    // and chains follow the other edges.
+    isLatchEdge(fromId, toId) {
+      return this.latchEdgeKeys.has(`${fromId}>${toId}`);
+    }
+
+    chainSucc(id) {
+      return this.chainSuccOf.get(id) || [];
+    }
+
+    // The names of events, joined for a label; an unknown id stands for itself.
+    eventNames(ids) {
+      return ids.map((id) => this.events.get(id)?.name || id).join(", ");
+    }
+
     ownerOf(eventId) {
       const event = this.events.get(eventId);
       return event ? this.instances.get(event.ownerId)?.data || null : null;
     }
 
-    // An `and` event fires at the slowest of its triggers, so triggers arriving
-    // at different rates mean the declared rate cannot hold for all of them.
+    // An `and` event fires at the slowest of its pacing triggers, so triggers
+    // arriving at different rates mean its rate does not hold for all of them.
+    // A latch is left out: it gates the event and carries no rate of its own.
     rateMismatch(event) {
       if (event.type !== "and") return null;
+      const latches = new Set(event.latches || []);
       const rates = new Set(
         (this.pred.get(event.id) || [])
+          .filter((id) => !latches.has(id))
           .map((id) => this.events.get(id)?.frequency)
           .filter((frequency) => frequency !== null && frequency !== undefined),
       );
@@ -173,12 +257,21 @@
       return event?.port?.msg_type || null;
     }
 
+    // The queues an event reads when it runs, and the events reading a queue.
+    queuesReadBy(eventId) {
+      return this.readsOf.get(eventId) || [];
+    }
+
+    readersOfQueue(queueId) {
+      return this.readersOf.get(queueId) || [];
+    }
+
     // The clock roots at the head of a port's stream: the walk upstream that
     // stays on the port's message type, through links, the gates that publish
     // and the gates that trigger them, and stops at a periodic gate. Inputs of
     // another type along the way are side inputs of the stream, not its
     // sources, so the walk never enters them; that keeps it local in a cyclic
-    // graph.
+    // graph. A latch edge carries no stream.
     streamRoots(portId) {
       const port = this.events.get(portId);
       const type = this.msgType(port);
@@ -198,7 +291,7 @@
         }
         (this.pred.get(id) || []).forEach((predId) => {
           const pred = this.events.get(predId);
-          if (!pred) return;
+          if (!pred || this.isLatchEdge(predId, id)) return;
           if (pred.kind === "process" || this.msgType(pred) === type) {
             stack.push(predId);
           }
@@ -211,7 +304,8 @@
     // gate are peers: the gate merges their chains, so they are analyzed as
     // one. Two streams pair the roots each has and the other lacks; a root
     // both streams share (a fork that rejoins) pairs with nothing there. Every
-    // root is in exactly one set; a root without peers stands alone. Sets are
+    // root is in exactly one set; a root without peers stands alone. A latched
+    // input is gated once, not merged, so it pairs with nothing. Sets are
     // ordered by their first root's owner path.
     peerRoots() {
       const parent = new Map(this.clockRootIds.map((id) => [id, id]));
@@ -232,6 +326,7 @@
         if (gate.kind !== "process") return;
         const byType = new Map();
         (this.pred.get(gate.id) || []).forEach((predId) => {
+          if (this.isLatchEdge(predId, gate.id)) return;
           const pred = this.events.get(predId);
           const type = pred?.kind === "input" ? this.msgType(pred) : null;
           if (!type) return;

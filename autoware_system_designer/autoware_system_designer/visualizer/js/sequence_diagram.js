@@ -7,7 +7,9 @@
 // whose streams one gate merges share a group and meet at that gate. Within
 // a group the chain the axis is driven by is the spine on the centre track;
 // the branches that join or leave it are packed onto the tracks above and
-// below. The chains come from the design's event graph; a loaded measurement
+// below. A queue is where a chain hands off: the filling chain ends at it and
+// its readers take from it on their own triggers, drawn under their blocks.
+// The chains come from the design's event graph; a loaded measurement
 // supplies the time along them: every gate's run, the wait of every input
 // before that run and the transport of every link the run observed. The page
 // is navigated like a document: the wheel scrolls it and ctrl+wheel zooms the
@@ -65,6 +67,7 @@
     nameChars: 22,
     endStubW: 10,
     loopDip: 18,
+    readDrop: 12,
   };
 
   // Time-scale zoom: floor as a fraction of the fit scale, ceiling in px/ms,
@@ -96,6 +99,14 @@
     ],
     ["end", "open end: the last message has no consumer"],
     [
+      "queued",
+      "queued end: the message is parked in a queue for a process another chain paces",
+    ],
+    [
+      "read",
+      "queue read: the gate takes what the queue holds when its own trigger fires",
+    ],
+    [
       "dead",
       "a process the recorded run never fired: node gone, never initialized, or output never published; a fold skips it",
     ],
@@ -108,7 +119,7 @@
     "the tinted track is the chain the axis is driven by; branches sit above and below",
     "≈ marks a mean folded at an and/or gate: one branch's number, not the set's",
     "? marks a spread that skipped hops with no sd",
-    "a periodic gate needs no measurement: its sampling delay is uniform over one period",
+    "in the rates state a gate runs for its expected latency (declared, else a tenth of its interval); a timer-paced gate first waits for its next tick, any other gate waits out a run already under way",
     "a faint block is a process run no measurement covers; it yields to a measured branch at an or gate",
     "a measured chain keeps the design's events; the file supplies each gate's run, each input's wait (in→out response less the run) and each link's transport",
     "scroll to move down the page, shift+scroll to move along the axis, ctrl+scroll (or pinch) to zoom the time scale about the pointer",
@@ -126,7 +137,7 @@
       this.hopLimit = null;
       this.showTrivial = false;
       this.state = "logical";
-      this.driver = "sigma1";
+      this.driver = "mean";
       this.measured = null; // loaded measurement, see latency_source.js
       this.pxPerMs = null;
       this.fitPxPerMs = null;
@@ -466,13 +477,16 @@
         const label =
           end.kind === "limit"
             ? "hop limit"
-            : sink.kind === "process"
-              ? "no output"
-              : this.shortName(this.topicOf(sink), 30);
+            : end.kind === "queued"
+              ? `${sink.name} ⇥ ${this.readerNames(group.sinkId)}`
+              : sink.kind === "process"
+                ? "no output"
+                : this.shortName(this.topicOf(sink), 30);
         terminal = {
           gate: gateBefore(group.sinkId),
           kind: end.kind,
           sinkId: group.sinkId,
+          readers: end.readers || [],
           label,
         };
       }
@@ -946,9 +960,8 @@
       parts.push(
         !terminal
           ? "loop end"
-          : terminal.kind === "open"
-            ? "open end"
-            : "hop limit",
+          : { open: "open end", queued: "queued end" }[terminal.kind] ||
+              "hop limit",
       );
       if (group.solution.loopEdges.size) {
         parts.push(`${group.solution.loopEdges.size} loop cut`);
@@ -1227,6 +1240,16 @@
       if (terminal.kind === "limit") {
         stop.setAttribute("d", `M ${x0} ${y} L ${x1} ${y}`);
         stop.classList.add("seq-end-limit");
+      } else if (terminal.kind === "queued") {
+        // The stub runs into a slotted box: the queue the message is parked in.
+        const s = 3;
+        stop.setAttribute(
+          "d",
+          `M ${x0} ${y} L ${x1} ${y} ` +
+            `M ${x1} ${y - 5} h ${3 * s} v 10 h ${-3 * s} Z ` +
+            `M ${x1 + s} ${y - 5} v 10 M ${x1 + 2 * s} ${y - 5} v 10`,
+        );
+        stop.classList.add("seq-end-queue");
       } else {
         stop.setAttribute(
           "d",
@@ -1255,6 +1278,8 @@
       label.setAttribute("y", y + VIEW.blockH / 2 + VIEW.subSize + 1);
       label.setAttribute("text-anchor", "end");
       label.classList.add("seq-hop-label", "seq-end-label");
+      if (terminal.kind === "queued")
+        label.classList.add("seq-end-queue-label");
       label.style.fontSize = `${VIEW.subSize}px`;
       // The label may reach back to the middle of the gap before the block.
       const row = group.rows[group.rowOf.get(terminal.gate)];
@@ -1321,7 +1346,12 @@
         this.themed(guide, "color", defaults.stroke),
       );
       block.classList.add("seq-bar");
-      if (arrival.exec.source === "unmeasured" && STATES[this.state].timed) {
+      // A placeholder run: nothing known, or the design's expectation standing
+      // in for a sample the measurement lacks.
+      const placeholder =
+        arrival.exec.source === "unmeasured" ||
+        (this.state === "measured" && arrival.exec.source === "expected");
+      if (placeholder && STATES[this.state].timed) {
         block.classList.add("seq-unmeasured");
       }
       if (arrival.exec.dead) block.classList.add("seq-dead");
@@ -1386,6 +1416,8 @@
       label.appendChild(tip);
       g.appendChild(label);
 
+      this.drawReads(gate, box, y, g);
+
       const title = document.createElementNS(SVG_NS, "title");
       title.textContent = this.describeGate(group, gate);
       g.appendChild(title);
@@ -1395,6 +1427,68 @@
         this.select(gate.key);
       };
       this.gateLayer.appendChild(g);
+    }
+
+    // The queues a gate reads are drawn under its block: a slotted box with a
+    // dotted arrow up into the run, named for the queues. The read is off every
+    // chain, so nothing on the axis is measured by it.
+    drawReads(gate, box, y, g) {
+      const queueIds = this.graph.queuesReadBy(gate.id);
+      if (!queueIds.length) return;
+      const s = 3;
+      const x = box.left + Math.min(6, Math.max(2, (box.right - box.left) / 2));
+      const y0 = y + VIEW.blockH / 2;
+      const y1 = y0 + VIEW.readDrop;
+      const queueBox = document.createElementNS(SVG_NS, "path");
+      queueBox.setAttribute(
+        "d",
+        `M ${x - 1.5 * s} ${y1} h ${3 * s} v 5 h ${-3 * s} Z ` +
+          `M ${x - 0.5 * s} ${y1} v 5 M ${x + 0.5 * s} ${y1} v 5`,
+      );
+      queueBox.classList.add("seq-read");
+      g.appendChild(queueBox);
+      // the stem is a path of its own, so the arrowhead sits at its top
+      const stem = document.createElementNS(SVG_NS, "path");
+      stem.setAttribute("d", `M ${x} ${y1} L ${x} ${y0 + 1}`);
+      stem.classList.add("seq-read");
+      stem.setAttribute("marker-end", "url(#arrowhead-depth-0)");
+      g.appendChild(stem);
+
+      const label = document.createElementNS(SVG_NS, "text");
+      label.setAttribute("x", x + 1.5 * s + 3);
+      label.setAttribute("y", y1 + 5);
+      label.classList.add("seq-hop-label", "seq-read-label");
+      label.style.fontSize = `${VIEW.subSize}px`;
+      this._truncateSVGText(
+        label,
+        `⇥ ${this.graph.eventNames(queueIds)}`,
+        120,
+        VIEW.subSize,
+      );
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = this.readLines(gate.id).join("\n");
+      label.appendChild(title);
+      queueBox.appendChild(title.cloneNode(true));
+      stem.appendChild(title.cloneNode(true));
+      this.labelLayer.appendChild(label);
+    }
+
+    // One line per queue an event reads: the queue, what fills it and at what rate.
+    readLines(eventId) {
+      return this.graph.queuesReadBy(eventId).map((queueId) => {
+        const queue = this.graph.events.get(queueId);
+        const fillers = (this.graph.pred.get(queueId) || [])
+          .map((id) => this.graph.events.get(id)?.name)
+          .filter(Boolean)
+          .join(", ");
+        const rate = this.rateLabel(queue?.frequency);
+        return `reads queue ${queue?.name}${fillers ? ` · filled by ${fillers}` : ""}${rate ? ` · ${rate}` : ""}`;
+      });
+    }
+
+    // The names of the events reading a queue.
+    readerNames(queueId) {
+      return this.graph.eventNames(this.graph.readersOfQueue(queueId));
     }
 
     // node · process @time as three spans; the node span is dropped first when
@@ -1490,6 +1584,18 @@
       if (frequency === null || frequency === undefined) return "";
       if (frequency === 0) return "once";
       return `${Number(frequency.toFixed(3))}Hz`;
+    }
+
+    // The run the design expects of a gate and where the figure comes from.
+    expectedRunText(event) {
+      const run = T.expectedRun(event);
+      if (run === null) return undefined;
+      const origin =
+        event.expected_latency_ms === null ||
+        event.expected_latency_ms === undefined
+          ? `default, ${Math.round(T.DEFAULT_RUN_SHARE * 100)}% of the interval`
+          : "declared";
+      return `${T.formatMs(run, 1)} (${origin})`;
     }
 
     // Declared rate, with the observed one after it in the measured state.
@@ -1699,6 +1805,7 @@
       } else {
         lines.push(`rank ${arrival.rank}`);
       }
+      lines.push(...this.readLines(gate.id));
       return lines.join("\n");
     }
 
@@ -1739,6 +1846,13 @@
       const owner = this.graph.ownerOf(end.sinkId)?.name || "";
       if (end.kind === "limit") {
         return `cut at the hop limit after ${owner}:${sink.name}`;
+      }
+      if (sink.kind === "queue") {
+        const readers = this.readerNames(end.sinkId);
+        return [
+          `queued end: ${owner}:${sink.name} is read by ${readers || "no process"}`,
+          "the message waits in the queue; each reader takes it on its own trigger, so the chain hands off here without pacing it",
+        ].join("\n");
       }
       if (sink.kind === "output") {
         return `open end: nothing subscribes to ${this.topicOf(sink)}`;
@@ -1972,7 +2086,10 @@
           warn_rate: gate.warn_rate,
           error_rate: gate.error_rate,
           timeout: gate.timeout,
+          expected_run: this.expectedRunText(gate),
           mismatch: this.graph.rateMismatch(gate),
+          reads: this.queueNames(this.graph.queuesReadBy(gate.id)) || undefined,
+          fills: this.queueNames(this.filledQueues(gate.id)) || undefined,
         },
         latency: {
           state: this.state,
@@ -1995,6 +2112,23 @@
         },
         chain: this.chainReport(upstream, downstream, gate.id),
       };
+    }
+
+    // The queues among the events a gate fires: what it fills.
+    filledQueues(eventId) {
+      return (this.graph.succ.get(eventId) || []).filter(
+        (id) => this.graph.events.get(id)?.kind === "queue",
+      );
+    }
+
+    // "queue a (→ x, y), queue b (→ z)": each queue with the events reading it.
+    queueNames(queueIds) {
+      return queueIds
+        .map((id) => {
+          const readers = this.readerNames(id);
+          return `${this.graph.events.get(id)?.name || id}${readers ? ` → ${readers}` : ""}`;
+        })
+        .join(", ");
     }
 
     // The measurement's declared-versus-observed rows for the outputs a gate feeds.
@@ -2060,6 +2194,13 @@
       if (end.edgeId) {
         const head = this.graph.events.get(end.head);
         panel.to = `${this.graph.ownerOf(end.head)?.path}:${head.name}`;
+      } else if (end.kind === "queued") {
+        panel.to = (end.readers || [])
+          .map(
+            (id) =>
+              `${this.graph.ownerOf(id)?.path}:${this.graph.events.get(id)?.name}`,
+          )
+          .join(", ");
       }
       return panel;
     }
@@ -2521,6 +2662,24 @@
         stop.setAttribute("d", "M 2 7 L 20 7 M 20 2 L 20 12");
         stop.classList.add("seq-end");
         return stop;
+      }
+      if (kind === "queued") {
+        const stop = make("path");
+        stop.setAttribute(
+          "d",
+          "M 2 7 L 14 7 M 14 2 h 9 v 10 h -9 Z M 17 2 v 10 M 20 2 v 10",
+        );
+        stop.classList.add("seq-end", "seq-end-queue");
+        return stop;
+      }
+      if (kind === "read") {
+        const mark = make("path");
+        mark.setAttribute(
+          "d",
+          "M 4 2 h 9 v 5 h -9 Z M 7 2 v 5 M 10 2 v 5 M 13 7 L 24 7",
+        );
+        mark.classList.add("seq-read");
+        return mark;
       }
       const line = make("path");
       line.setAttribute("d", "M 2 7 L 24 7");

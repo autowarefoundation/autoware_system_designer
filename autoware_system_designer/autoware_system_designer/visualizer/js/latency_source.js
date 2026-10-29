@@ -344,7 +344,8 @@
   // subscriber open; an intra-process link costs nothing of its own) and an
   // input→gate edge from the node's response: the time from that input's
   // arrival to the publish, less the run itself, is the wait the message
-  // spent before the gate ran. wait is nothing at a gate the run observed:
+  // spent before the gate ran; a latched input gates once and waits on no
+  // run. wait is nothing at a gate the run observed:
   // its sampling sits on the input edges and a timer's phase is not part of
   // a measured chain.
   function costsFor(measurement, graph) {
@@ -372,6 +373,7 @@
           : T.fromRecord(hit.record, "measured");
       }
       if (from.kind === "input" && to.kind === "process") {
+        if (graph.isLatchEdge(from.id, to.id)) return null;
         const response = responseRecord(measurement, graph, from, to);
         const run = outputRecord(measurement, graph, to);
         if (!response || !run) return null;

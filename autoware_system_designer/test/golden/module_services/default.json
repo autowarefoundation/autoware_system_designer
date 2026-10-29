@@ -13,9 +13,12 @@
                   "id_ba3f3b9a856b0a9b"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "report",
                 "process_event": true,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "or",
@@ -65,9 +68,12 @@
                     "id_4a79de18e4f9eb20"
                   ],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "output_status",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_626f2493bf938b50"
@@ -104,9 +110,12 @@
                     "id_ff3c5abe0a5ff8b4"
                   ],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "output_set_mode",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [],
                   "type": "to_output",
@@ -141,9 +150,12 @@
                     "id_43a940fd98d50ec8"
                   ],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "output_reset",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [],
                   "type": "to_output",
@@ -183,9 +195,12 @@
               {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "watch",
                 "process_event": true,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_5f58bfa9a6854ab8"
@@ -205,9 +220,12 @@
                     "id_40d7e75954b54160"
                   ],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "input_status",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_ba3f3b9a856b0a9b"
@@ -240,9 +258,12 @@
                 "event": {
                   "action_ids": [],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "input_set_mode",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_3c5169a9ffdd939d"
@@ -275,9 +296,12 @@
                 "event": {
                   "action_ids": [],
                   "error_rate": null,
+                  "expected_latency_ms": null,
                   "frequency": null,
+                  "latch_ids": [],
                   "name": "input_reset",
                   "process_event": false,
+                  "read_ids": [],
                   "timeout": null,
                   "trigger_ids": [
                     "id_0af2f1410d28129f"
@@ -360,9 +384,12 @@
                   "id_4a79de18e4f9eb20"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_status",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_626f2493bf938b50"
@@ -398,9 +425,12 @@
                   "id_40d7e75954b54160"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "input_status",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_ba3f3b9a856b0a9b"
@@ -442,9 +472,12 @@
                   "id_ff3c5abe0a5ff8b4"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_set_mode",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "to_output",
@@ -476,9 +509,12 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "input_set_mode",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_3c5169a9ffdd939d"
@@ -520,9 +556,12 @@
                   "id_43a940fd98d50ec8"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_reset",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "to_output",
@@ -554,9 +593,12 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "input_reset",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_0af2f1410d28129f"
@@ -598,9 +640,12 @@
                   "id_4a79de18e4f9eb20"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_status",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [
                   "id_626f2493bf938b50"
@@ -632,9 +677,12 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_status",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "to_output",
@@ -673,9 +721,12 @@
                   "id_ff3c5abe0a5ff8b4"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_set_mode",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "to_output",
@@ -705,9 +756,12 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_set_mode",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "to_output",
@@ -746,9 +800,12 @@
                   "id_43a940fd98d50ec8"
                 ],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_reset",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "to_output",
@@ -778,9 +835,12 @@
               "event": {
                 "action_ids": [],
                 "error_rate": null,
+                "expected_latency_ms": null,
                 "frequency": null,
+                "latch_ids": [],
                 "name": "output_reset",
                 "process_event": false,
+                "read_ids": [],
                 "timeout": null,
                 "trigger_ids": [],
                 "type": "to_output",
@@ -815,9 +875,12 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "output_status",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [],
               "type": "to_output",
@@ -845,9 +908,12 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "output_set_mode",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [],
               "type": "to_output",
@@ -875,9 +941,12 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "output_reset",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [],
               "type": "to_output",
@@ -914,9 +983,12 @@
           {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "watch",
             "process_event": true,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_4a79de18e4f9eb20"
@@ -936,9 +1008,12 @@
                 "id_2c1193a9619b4e22"
               ],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "input_status",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_ba3f3b9a856b0a9b"
@@ -970,9 +1045,12 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "input_set_mode",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_3c5169a9ffdd939d"
@@ -1004,9 +1082,12 @@
             "event": {
               "action_ids": [],
               "error_rate": null,
+              "expected_latency_ms": null,
               "frequency": null,
+              "latch_ids": [],
               "name": "input_reset",
               "process_event": false,
+              "read_ids": [],
               "timeout": null,
               "trigger_ids": [
                 "id_0af2f1410d28129f"
@@ -1082,9 +1163,12 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "output_status",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "to_output",
@@ -1117,9 +1201,12 @@
               "id_2c1193a9619b4e22"
             ],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "input_status",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_ba3f3b9a856b0a9b"
@@ -1154,9 +1241,12 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "output_set_mode",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "to_output",
@@ -1187,9 +1277,12 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "input_set_mode",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_3c5169a9ffdd939d"
@@ -1224,9 +1317,12 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "output_reset",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [],
             "type": "to_output",
@@ -1257,9 +1353,12 @@
           "event": {
             "action_ids": [],
             "error_rate": null,
+            "expected_latency_ms": null,
             "frequency": null,
+            "latch_ids": [],
             "name": "input_reset",
             "process_event": false,
+            "read_ids": [],
             "timeout": null,
             "trigger_ids": [
               "id_0af2f1410d28129f"

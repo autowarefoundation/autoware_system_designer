@@ -1,8 +1,8 @@
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.4.1
 
 name: LocalizationDummy.node
 
-description: Dummy localization node that fuses sensor inputs to publish pose, TF, acceleration and kinematic state.
+description: Dummy localization node that fuses the point cloud with queued IMU and odometry to publish pose, TF, acceleration and kinematic state.
 
 package:
   name: autoware_system_dummy_modules
@@ -21,6 +21,8 @@ subscribers:
     message_type: sensor_msgs/msg/PointCloud2
   - name: imu
     message_type: sensor_msgs/msg/Imu
+  - name: odometry
+    message_type: nav_msgs/msg/Odometry
   - name: twist
     message_type: geometry_msgs/msg/TwistWithCovarianceStamped
   - name: gnss_velocity
@@ -57,6 +59,16 @@ param_values: []
 
 # processes
 processes:
+  - name: queue_imu
+    trigger_conditions:
+      - on_input: imu
+    outcomes:
+      - to_queue: imu
+  - name: queue_odometry
+    trigger_conditions:
+      - on_input: odometry
+    outcomes:
+      - to_queue: odometry
   - name: update
     trigger_conditions:
       - or:
@@ -67,6 +79,10 @@ processes:
   - name: slam
     trigger_conditions:
       - periodic: 100 # Hz
+    reads:
+      - from_queue: imu
+      - from_queue: odometry
     outcomes:
       - to_output: ros_transform
       - to_output: pose_with_covariance
+      - to_output: kinematic_state

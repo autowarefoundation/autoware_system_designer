@@ -107,6 +107,46 @@ def test_declared_trigger_follows_process_chains_to_an_upstream_clock():
     assert trigger.upstream_rate_hz == 100.0
 
 
+def test_declared_trigger_leaves_out_latched_inputs():
+    run = process("run", "f.run", "and", ["f.cloud", "f.map"], ["f.out"])
+    run["latch_ids"] = ["f.map"]
+    design = system(
+        [
+            node(
+                "/filter",
+                in_ports=[in_port("cloud", "/cloud", "f.cloud"), in_port("map", "/map", "f.map")],
+                out_ports=[out_port("objects", "/objects", "f.out", ["f.run"])],
+                events=[run],
+            )
+        ]
+    )
+    graph = NodeGraph.from_system_structure(design)
+
+    trigger = graph.declared_trigger(graph.nodes["/filter"], "/objects")
+    assert trigger.kind == "input"
+    assert trigger.topics == ["/cloud"]
+
+
+def test_declared_trigger_of_a_process_gated_by_latches_alone_names_them():
+    run = process("run", "f.run", "and", ["f.map", "f.calib"], ["f.out"])
+    run["latch_ids"] = ["f.map", "f.calib"]
+    design = system(
+        [
+            node(
+                "/filter",
+                in_ports=[in_port("map", "/map", "f.map"), in_port("calib", "/calib", "f.calib")],
+                out_ports=[out_port("objects", "/objects", "f.out", ["f.run"])],
+                events=[run],
+            )
+        ]
+    )
+    graph = NodeGraph.from_system_structure(design)
+
+    trigger = graph.declared_trigger(graph.nodes["/filter"], "/objects")
+    assert trigger.kind == "input"
+    assert trigger.topics == ["/map", "/calib"]
+
+
 def test_ecu_filter_and_service_ports():
     design = chain_design()
     design["data"]["children"][0]["compute_unit"] = "other"

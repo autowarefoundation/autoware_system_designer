@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.4.1
 
 name: DetectorA.node
 
@@ -45,10 +45,11 @@ param_values:
 
 # processes
 processes:
-  - name: detector
+  - name: detection
     description: Runs detection on each input point cloud.
     trigger_conditions:
       - or:
           - on_input: pointcloud
     outcomes:
       - to_output: objects
+    expected_latency_ms: 30.0

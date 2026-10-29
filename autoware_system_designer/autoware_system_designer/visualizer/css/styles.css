@@ -11,6 +11,7 @@
   --text-secondary: #495057;
   --text-muted: #6c757d;
   --seq-loop: #8e5ea2;
+  --seq-queue: #1f8a70;
   --border-color: #e9ecef;
   --border-hover: #adb5bd;
   --border-active: #007bff;
@@ -37,6 +38,7 @@
   --text-secondary: #adb5bd;
   --text-muted: #6c757d;
   --seq-loop: #b48ccf;
+  --seq-queue: #5cc8a8;
   --border-color: #495057;
   --border-hover: #6c757d;
   --border-active: #0d6efd;
@@ -845,6 +847,13 @@ svg.lod-rate .logic-vertex-sub {
   stroke: var(--text-muted);
 }
 
+/* A queue read: the reader takes what the queue holds on its own trigger, so
+   no chain runs along this edge. */
+.logic-edge-read {
+  stroke: var(--seq-queue, #1f8a70);
+  stroke-dasharray: 1.5 2.5;
+}
+
 /* --- Logic Diagram toolbar --- */
 .logic-toolbar {
   position: absolute;
@@ -1110,6 +1119,28 @@ text.seq-on-mean {
 
 .seq-end-label {
   fill: var(--text-secondary);
+}
+
+/* A queued end: the message is parked in a queue for a process another chain
+   paces. */
+.seq-end-queue {
+  stroke: var(--seq-queue, #1f8a70);
+}
+
+.seq-end-queue-label {
+  fill: var(--seq-queue, #1f8a70);
+}
+
+/* A queue read into a gate: taken at the gate's own pace, off every chain. */
+.seq-read {
+  fill: none;
+  stroke: var(--seq-queue, #1f8a70);
+  stroke-width: 1.1px;
+  stroke-dasharray: 1.5 2.5;
+}
+
+.seq-read-label {
+  fill: var(--seq-queue, #1f8a70);
 }
 
 .seq-selected {
