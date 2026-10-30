@@ -92,9 +92,9 @@ class Link:
             from_port_list = self.from_port.get_reference_list()
             to_port_ref_list = self.to_port.get_reference_list()
 
-            # Module interface ports are proxies: every port down the chain carries topic,
-            # servers and users like the node ports it stands for, but holds no event of
-            # the trigger chain.
+            # Module interface ports are proxies: every port down the chain carries servers
+            # and users like the node ports it stands for, but holds no event of the trigger
+            # chain. Topics resolve from the publishing node port.
             to_port_list = list(to_port_ref_list)
             to_port_list.extend(port for port in self.to_port.get_chain_list() if port not in to_port_list)
             from_port_chain = self.from_port.get_chain_list()
@@ -129,17 +129,6 @@ class Link:
             for to_port_ref in to_port_list:
                 to_port_ref.set_servers(from_port_list)
 
-            # determine the topic, set it to the from-ports to publish and to-ports to subscribe
-            if (from_port_ref.is_remapped or from_port_ref.is_global) and from_port_ref.topic:
-                # Preset topic (remap takes priority over global): propagate to subscribers
-                topic_parts = from_port_ref.topic
-                for to_port_ref in to_port_list:
-                    to_port_ref.set_topic(topic_parts[:-1], topic_parts[-1])
-            else:
-                from_port_ref.set_topic(self.from_port.namespace, self.from_port.name)
-                for to_port_ref in to_port_list:
-                    to_port_ref.set_topic(self.from_port.namespace, self.from_port.name)
-
             # set the trigger event of the node to-ports
             for to_port_ref in to_port_ref_list:
                 for server_port in to_port_ref.servers:
@@ -150,27 +139,31 @@ class Link:
             # The external port references its direct child; nested module ports chain down to the node port.
             # Note: set_references() will validate that OutPort (to_port) has at most one reference
             self.to_port.set_references([self.from_port])
-            # set the topic name to the external output, whether it is connected or not;
-            # a preset topic (remap or global) is owned by the publishing node port
+            # The module output names the published topic in the module layer, whether it is
+            # connected or not; a preset topic (remap or global) is kept.
             node_port = self.from_port.get_reference_list()[0]
             preset_port = next(
                 (port for port in (self.from_port, node_port) if (port.is_remapped or port.is_global) and port.topic),
                 None,
             )
             if preset_port is not None:
-                topic_parts = preset_port.topic
-                self.to_port.set_topic(topic_parts[:-1], topic_parts[-1])
                 if preset_port.is_remapped:
                     self.to_port.is_remapped = True
                 else:
                     self.to_port.is_global = True
             else:
-                self.from_port.set_topic(self.to_port.namespace, self.to_port.name)
+                node_port.set_topic(self.to_port.namespace, self.to_port.name)
 
         # case 3: from external input to internal input
         elif not is_from_port_internal and is_to_port_internal:
             # The external port references its direct child; nested module ports chain down to the node ports.
             self.from_port.set_references([self.to_port])
+            # A port attached after the external port is connected subscribes to the same publishers.
+            if self.from_port.servers:
+                for to_port in self.to_port.get_chain_list():
+                    to_port.set_servers(self.from_port.servers)
+                for server_port in self.from_port.servers:
+                    server_port.set_users(self.to_port.get_chain_list())
 
         # case 4: from-port is InPort and to-port is OutPort
         #   bypass connection, which is invalid

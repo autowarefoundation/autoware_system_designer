@@ -61,7 +61,7 @@ def test_nested_output_chain_shares_topic():
 def test_nested_output_keeps_node_global_topic():
     node_out = OutPort("objects", MSG, ["perception", "pipeline", "inner", "merger"])
     node_out.is_global = True
-    node_out.topic = ["global", "objects"]
+    node_out.set_topic(["global"], "objects")
     inner_out = OutPort("objects", MSG, ["perception", "pipeline", "inner"])
     outer_out = OutPort("objects", MSG, ["perception", "pipeline"])
     inner_out.set_references([node_out])
@@ -85,6 +85,32 @@ def test_input_reference_added_late_takes_topic():
 
     for port in (shared_in, node_a, node_b):
         assert port.get_topic() == "/sensing/lidar/pointcloud"
+
+
+def test_module_output_names_topic_regardless_of_link_order():
+    publisher = OutPort("status", MSG, ["vehicle", "interface"])
+    consumer = InPort("status", MSG, ["vehicle", "converter"])
+    module_out = OutPort("status", MSG, ["vehicle"])
+
+    Link(MSG, publisher, consumer)
+    Link(MSG, publisher, module_out)
+
+    for port in (publisher, consumer, module_out):
+        assert port.get_topic() == "/vehicle/status"
+
+
+def test_interface_ports_hold_no_topic():
+    node_in = InPort("pointcloud", MSG, ["perception", "filter"])
+    module_in = InPort("pointcloud", MSG, ["perception"])
+    node_out = OutPort("objects", MSG, ["perception", "merger"])
+    module_out = OutPort("objects", MSG, ["perception"])
+
+    Link(MSG, module_in, node_in)
+    Link(MSG, node_out, module_out)
+
+    assert module_in.own_topic == [] and module_out.own_topic == []
+    assert module_in.topic == [] and node_in.topic == []
+    assert module_out.topic is node_out.topic
 
 
 def _ports(value, found):

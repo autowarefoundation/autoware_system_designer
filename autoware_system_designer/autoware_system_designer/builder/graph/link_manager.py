@@ -693,7 +693,7 @@ class LinkManager:
     def _force_remap_port(port: OutPort, topic_parts: list[str]):
         """Force-set a remapped topic on an OutPort and mark its whole reference chain remapped.
 
-        set_topic() propagates the topic down the chain and to subscribed InPorts.
+        set_topic() sets the topic on the publishing node port; subscribers resolve it from there.
         """
         port.is_remapped = True
         for ref_port in port.reference:
@@ -726,10 +726,8 @@ class LinkManager:
             )
             if cfg_in_port.global_topic is not None:
                 in_port_instance.is_global = True
-                topic = cfg_in_port.global_topic
-                if topic[0] == "/":
-                    topic = topic[1:]
-                in_port_instance.topic = topic.split("/")
+                topic = cfg_in_port.global_topic.lstrip("/").split("/")
+                in_port_instance.set_topic(topic[:-1], topic[-1])
             self.in_ports[cfg_in_port.name] = in_port_instance
 
         # set out_ports
@@ -743,10 +741,8 @@ class LinkManager:
             )
             if cfg_out_port.global_topic is not None:
                 out_port_instance.is_global = True
-                topic = cfg_out_port.global_topic
-                if topic[0] == "/":
-                    topic = topic[1:]
-                out_port_instance.topic = topic.split("/")
+                topic = cfg_out_port.global_topic.lstrip("/").split("/")
+                out_port_instance.set_topic(topic[:-1], topic[-1])
             self.out_ports[cfg_out_port.name] = out_port_instance
 
     def get_input_events(self):
