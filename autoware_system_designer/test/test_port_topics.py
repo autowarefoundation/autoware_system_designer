@@ -58,6 +58,35 @@ def test_nested_output_chain_shares_topic():
     assert sink.servers == [node_out]
 
 
+def test_nested_output_keeps_node_global_topic():
+    node_out = OutPort("objects", MSG, ["perception", "pipeline", "inner", "merger"])
+    node_out.is_global = True
+    node_out.topic = ["global", "objects"]
+    inner_out = OutPort("objects", MSG, ["perception", "pipeline", "inner"])
+    outer_out = OutPort("objects", MSG, ["perception", "pipeline"])
+    inner_out.set_references([node_out])
+
+    Link(MSG, inner_out, outer_out)
+
+    assert outer_out.is_global
+    for port in (node_out, inner_out, outer_out):
+        assert port.get_topic() == "/global/objects"
+
+
+def test_input_reference_added_late_takes_topic():
+    node_a = InPort("pointcloud", MSG, ["perception", "pipeline", "a"])
+    node_b = InPort("pointcloud", MSG, ["perception", "pipeline", "b"])
+    shared_in = InPort("pointcloud", MSG, ["perception", "pipeline"])
+    source = OutPort("pointcloud", MSG, ["sensing", "lidar"])
+
+    Link(MSG, shared_in, node_a)
+    Link(MSG, source, shared_in)
+    Link(MSG, shared_in, node_b)
+
+    for port in (shared_in, node_a, node_b):
+        assert port.get_topic() == "/sensing/lidar/pointcloud"
+
+
 def _ports(value, found):
     if isinstance(value, dict):
         if "port_path" in value:

@@ -164,6 +164,14 @@ class InPort(Port):
         if added:
             logger.debug(f"InPort '{self.port_path}' added servers: {added}")
 
+    def set_references(self, port_list: List["Port"]):
+        """References attached after the topic is set take the topic already held."""
+        known = len(self.reference)
+        super().set_references(port_list)
+        if self.topic:
+            for ref_port in self.reference[known:]:
+                ref_port.set_topic(self.topic[:-1], self.topic[-1])
+
     def set_topic(self, topic_namespace: List[str], topic_name: str):
         """
         Override to propagate topic changes to all references (Internal InPorts).

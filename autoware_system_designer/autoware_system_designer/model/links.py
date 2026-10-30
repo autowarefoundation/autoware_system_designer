@@ -149,20 +149,23 @@ class Link:
         elif is_from_port_internal and not is_to_port_internal:
             # The external port references its direct child; nested module ports chain down to the node port.
             # Note: set_references() will validate that OutPort (to_port) has at most one reference
-            reference_port_list = [self.from_port]
-            self.to_port.set_references(reference_port_list)
-            # set the topic name to the external output, whether it is connected or not
-            for reference_port in reference_port_list:
-                if (reference_port.is_remapped or reference_port.is_global) and reference_port.topic:
-                    # Preset topic (remap or global): propagate to the external port
-                    topic_parts = reference_port.topic
-                    self.to_port.set_topic(topic_parts[:-1], topic_parts[-1])
-                    if reference_port.is_remapped:
-                        self.to_port.is_remapped = True
-                    else:
-                        self.to_port.is_global = True
+            self.to_port.set_references([self.from_port])
+            # set the topic name to the external output, whether it is connected or not;
+            # a preset topic (remap or global) is owned by the publishing node port
+            node_port = self.from_port.get_reference_list()[0]
+            preset_port = next(
+                (port for port in (self.from_port, node_port) if (port.is_remapped or port.is_global) and port.topic),
+                None,
+            )
+            if preset_port is not None:
+                topic_parts = preset_port.topic
+                self.to_port.set_topic(topic_parts[:-1], topic_parts[-1])
+                if preset_port.is_remapped:
+                    self.to_port.is_remapped = True
                 else:
-                    reference_port.set_topic(self.to_port.namespace, self.to_port.name)
+                    self.to_port.is_global = True
+            else:
+                self.from_port.set_topic(self.to_port.namespace, self.to_port.name)
 
         # case 3: from external input to internal input
         elif not is_from_port_internal and is_to_port_internal:
