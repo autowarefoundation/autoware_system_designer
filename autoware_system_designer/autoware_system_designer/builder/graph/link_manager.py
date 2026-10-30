@@ -335,20 +335,31 @@ class LinkManager:
         from_port = _existing_port(from_info, lambda lm, name: lm.get_out_port(name))
         to_port = _existing_port(to_info, lambda lm, name: lm.get_in_port(name))
 
+        # An external port is one object shared by every connection that names it.
         if connection.type == ConnectionType.EXTERNAL_TO_INTERNAL:
             if to_port is None:
                 raise ValidationError(
                     f"[E_CONN_TARGET_MISSING] EXTERNAL_TO_INTERNAL {connection.from_port_type}.{connection.from_port_name} -> {connection.to_instance}.{connection.to_port_type}.{connection.to_port_name}"
                 )
-            port_name = from_info.port_name if from_info else connection.from_port_name
-            from_port = InPort(port_name, to_port.msg_type, self.instance.resolved_path, role=connection.from_port_type)
+            if from_port is None:
+                port_name = from_info.port_name if from_info else connection.from_port_name
+                from_port = InPort(
+                    port_name, to_port.msg_type, self.instance.resolved_path, role=connection.from_port_type
+                )
+            elif from_port.msg_type != to_port.msg_type:
+                raise ValidationError(self._err_type_mismatch(from_port, to_port.msg_type))
         elif connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
             if from_port is None:
                 raise ValidationError(
                     f"[E_CONN_SOURCE_MISSING] INTERNAL_TO_EXTERNAL {connection.from_instance}.{connection.from_port_type}.{connection.from_port_name} -> {connection.to_port_type}.{connection.to_port_name}"
                 )
-            port_name = to_info.port_name if to_info else connection.to_port_name
-            to_port = OutPort(port_name, from_port.msg_type, self.instance.resolved_path, role=connection.to_port_type)
+            if to_port is None:
+                port_name = to_info.port_name if to_info else connection.to_port_name
+                to_port = OutPort(
+                    port_name, from_port.msg_type, self.instance.resolved_path, role=connection.to_port_type
+                )
+            elif to_port.msg_type != from_port.msg_type:
+                raise ValidationError(self._err_type_mismatch(to_port, from_port.msg_type))
 
         if from_info is not None:
             from_info.port = from_port
@@ -680,17 +691,14 @@ class LinkManager:
 
     @staticmethod
     def _force_remap_port(port: OutPort, topic_parts: list[str]):
-        """Force-set a remapped topic on an OutPort and back-propagate through its reference chain.
+        """Force-set a remapped topic on an OutPort and mark its whole reference chain remapped.
 
-        set_topic() propagates the topic to subscribed InPorts.
+        set_topic() sets the topic on the publishing node port; subscribers resolve it from there.
         """
         port.is_remapped = True
-        if len(topic_parts) == 1:
-            port.set_topic([], topic_parts[0])
-        else:
-            port.set_topic(topic_parts[:-1], topic_parts[-1])
         for ref_port in port.reference:
             LinkManager._force_remap_port(ref_port, topic_parts)
+        port.set_topic(topic_parts[:-1], topic_parts[-1])
 
     def _create_external_ports(self):
         """Create external ports based on link list."""
@@ -718,10 +726,8 @@ class LinkManager:
             )
             if cfg_in_port.global_topic is not None:
                 in_port_instance.is_global = True
-                topic = cfg_in_port.global_topic
-                if topic[0] == "/":
-                    topic = topic[1:]
-                in_port_instance.topic = topic.split("/")
+                topic = cfg_in_port.global_topic.lstrip("/").split("/")
+                in_port_instance.set_topic(topic[:-1], topic[-1])
             self.in_ports[cfg_in_port.name] = in_port_instance
 
         # set out_ports
@@ -735,10 +741,8 @@ class LinkManager:
             )
             if cfg_out_port.global_topic is not None:
                 out_port_instance.is_global = True
-                topic = cfg_out_port.global_topic
-                if topic[0] == "/":
-                    topic = topic[1:]
-                out_port_instance.topic = topic.split("/")
+                topic = cfg_out_port.global_topic.lstrip("/").split("/")
+                out_port_instance.set_topic(topic[:-1], topic[-1])
             self.out_ports[cfg_out_port.name] = out_port_instance
 
     def get_input_events(self):

@@ -14,6 +14,16 @@
     "onLanguage:yaml"
   ],
   "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "The language server executable is taken from user settings only in untrusted workspaces.",
+      "restrictedConfigurations": [
+        "autowareSystemDesigner.languageServer.path"
+      ]
+    },
+    "virtualWorkspaces": false
+  },
   "contributes": {
     "commands": [
       {
@@ -37,6 +47,7 @@
         "autowareSystemDesigner.languageServer.path": {
           "type": "string",
           "default": "python",
+          "scope": "machine-overridable",
           "description": "Path to Python executable for the language server"
         },
         "autowareSystemDesigner.languageServer.debug": {

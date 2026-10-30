@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Tuple
 
 from autoware_system_designer.builder.export.instance_to_json import collect_system_structure
-from autoware_system_designer.common.path_utils import contract_workspace_paths, expand_workspace_paths
+from autoware_system_designer.common.path_utils import contract_workspace_paths, expand_workspace_paths, export_path
 from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.model.export_schema import (
     InstanceData,
@@ -114,7 +114,7 @@ def iter_mode_data(
     """Yield (mode_key, extracted_data) for each mode."""
 
     for mode_key in mode_keys:
-        structure_path = os.path.join(system_structure_dir, f"{mode_key}.json")
+        structure_path = export_path(system_structure_dir, f"{mode_key}.json")
         payload = load_system_structure(structure_path, workspace_root=workspace_root)
         data, _ = extract_system_structure_data(payload)
         yield mode_key, data

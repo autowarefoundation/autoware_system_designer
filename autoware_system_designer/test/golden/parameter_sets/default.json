@@ -540,7 +540,9 @@
           {
             "connection_type": "EXTERNAL_TO_INTERNAL",
             "from_port": {
-              "connected_ids": [],
+              "connected_ids": [
+                "id_84305ff8ee3fd5b8"
+              ],
               "event": {
                 "action_ids": [],
                 "error_rate": null,
@@ -567,7 +569,10 @@
               ],
               "port_path": "/app/duo/input/input",
               "remap_target": "~/input/input",
-              "topic": [],
+              "topic": [
+                "feeder",
+                "output"
+              ],
               "unique_id": "id_564b69da424ea0a7"
             },
             "msg_type": "std_msgs/msg/String",

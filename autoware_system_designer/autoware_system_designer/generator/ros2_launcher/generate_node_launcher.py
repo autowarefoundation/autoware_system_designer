@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.naming import pascal_to_snake
+from autoware_system_designer.common.path_utils import export_path
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.model.config import ConfigType, NodeConfig
 from autoware_system_designer.model.execution import LaunchState
@@ -104,7 +105,7 @@ def generate_node_launcher(
     node_name = pascal_to_snake(config.name)
     launcher_xml = create_node_launcher_xml(config)
 
-    launch_file_path = os.path.join(output_dir, f"{node_name}.launch.xml")
+    launch_file_path = export_path(output_dir, f"{node_name}.launch.xml")
     os.makedirs(os.path.dirname(launch_file_path), exist_ok=True)
 
     with open(launch_file_path, "w") as f:

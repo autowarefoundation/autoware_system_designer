@@ -48,6 +48,7 @@ from autoware_system_designer.common.path_utils import (
     contract_workspace_paths,
     derive_workspace_root,
     expand_workspace_paths,
+    export_path,
     has_workspace_token,
     is_within,
     resolve_manifest_path,
@@ -358,7 +359,7 @@ class DeploymentBuilder:
         """Create callback for saving intermediate snapshots during instance population."""
 
         def snapshot_callback(step: str, error: Exception | None = None) -> None:
-            snapshot_path = os.path.join(artifacts.layout.system_structure_dir, f"{mode_key}_{step}.json")
+            snapshot_path = export_path(artifacts.layout.system_structure_dir, f"{mode_key}_{step}.json")
             payload = save_system_structure_snapshot(
                 snapshot_path,
                 deploy_instance,
@@ -400,7 +401,7 @@ class DeploymentBuilder:
     def _export_mode_structure(self, mode_key: str, deploy_instance: DeploymentInstance, artifacts: BuildArtifacts):
         """Serialize one mode's DeploymentInstance to the system-structure JSON."""
         structure_payload = collect_system_structure(deploy_instance, artifacts.name, mode_key)
-        structure_path = os.path.join(artifacts.layout.system_structure_dir, f"{mode_key}.json")
+        structure_path = export_path(artifacts.layout.system_structure_dir, f"{mode_key}.json")
         save_system_structure(structure_path, structure_payload, workspace_root=artifacts.workspace_root)
 
     def _build_modes(self, system_config: SystemConfig, artifacts: BuildArtifacts) -> None:
@@ -524,7 +525,7 @@ def generate_system_monitor_config(artifacts: BuildArtifacts) -> None:
 
     renderer = TemplateRenderer()
     for mode_key, data in _iter_mode_data(artifacts):
-        mode_monitor_dir = os.path.join(artifacts.layout.system_monitor_dir, mode_key, "component_state_monitor")
+        mode_monitor_dir = export_path(artifacts.layout.system_monitor_dir, mode_key, "component_state_monitor")
         output_path = os.path.join(mode_monitor_dir, "topics.yaml")
         renderer.render_template_to_file(template_name, output_path, **data)
 
@@ -550,7 +551,7 @@ def generate_launchers(artifacts: BuildArtifacts) -> None:
     """Generate ROS 2 launch files from the exported JSON."""
     deploy_variable_names = _collect_deploy_variable_names(artifacts)
     for mode_key, data in _iter_mode_data(artifacts):
-        mode_launcher_dir = os.path.join(artifacts.layout.launcher_dir, mode_key)
+        mode_launcher_dir = export_path(artifacts.layout.launcher_dir, mode_key)
 
         generate_module_launch_file(
             data,
@@ -591,7 +592,7 @@ def export_parameter_set_templates(artifacts: BuildArtifacts) -> Dict[str, List[
 
     output_paths = {}
     for mode_key, data in _iter_mode_data(artifacts):
-        mode_parameter_dir = os.path.join(artifacts.layout.parameter_set_dir, mode_key)
+        mode_parameter_dir = export_path(artifacts.layout.parameter_set_dir, mode_key)
         os.makedirs(mode_parameter_dir, exist_ok=True)
 
         renderer = TemplateRenderer()

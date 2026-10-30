@@ -19,6 +19,7 @@ import os
 from typing import Any, Dict, List
 
 from autoware_system_designer.builder.export.json_io import extract_system_structure_data, load_system_structure
+from autoware_system_designer.common.path_utils import export_path
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ def generate_deploy_launchers(
     renderer = TemplateRenderer()
 
     for mode_key in mode_keys:
-        structure_path = os.path.join(system_structure_dir, f"{mode_key}.json")
+        structure_path = export_path(system_structure_dir, f"{mode_key}.json")
         payload = load_system_structure(structure_path, workspace_root=workspace_root)
         data, _ = extract_system_structure_data(payload)
 
@@ -54,7 +55,7 @@ def generate_deploy_launchers(
                 continue
 
             for compute_unit in compute_units:
-                output_dir = os.path.join(
+                output_dir = export_path(
                     launcher_dir,
                     "deployments",
                     deploy_name,

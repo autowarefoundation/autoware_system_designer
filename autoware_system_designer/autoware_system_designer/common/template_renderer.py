@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import os
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from autoware_system_designer.common.parameter_types import to_launch_param_attr
 
@@ -79,9 +78,11 @@ class TemplateRenderer:
             lstrip_blocks=True,
             keep_trailing_newline=True,
             newline_sequence="\n",
-            autoescape=False,
+            # Markup templates escape every interpolated value; JS templates quote via tojson.
+            autoescape=select_autoescape(enabled_extensions=("html.jinja2", "xml.jinja2"), default=False),
         )
-        self.env.filters["tojson"] = json.dumps
+        # tojson keeps declaration key order; the visualizer renders some objects in that order.
+        self.env.policies["json.dumps_kwargs"] = {}
         self.env.filters["launch_param_attr"] = to_launch_param_attr
 
     def render_template(self, template_name: str, **kwargs) -> str:

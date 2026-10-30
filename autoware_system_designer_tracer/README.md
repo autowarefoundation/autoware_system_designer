@@ -13,10 +13,10 @@ The layout is `include/autoware_system_designer_tracer/trace_format.h`; the Pyth
 
 ## Environment
 
-| Variable             | Role                                                                              |
-| -------------------- | --------------------------------------------------------------------------------- |
-| `ASD_TRACE_DIR`      | arms tracing; the directory the files go to                                       |
-| `ASD_TRACE_CAPACITY` | records per process file (default 4194304); claims past it are counted as dropped |
+| Variable             | Role                                                                                                |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| `ASD_TRACE_DIR`      | arms tracing; the directory the files go to                                                         |
+| `ASD_TRACE_CAPACITY` | records per process file (default 4194304, at most 67108864); claims past it are counted as dropped |
 
 The runtime sets both on the processes it spawns (`--measure`) and locates the library through the ament index or `ASD_TRACER_LIB`.
 

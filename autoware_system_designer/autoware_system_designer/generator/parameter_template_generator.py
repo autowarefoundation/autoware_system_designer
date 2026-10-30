@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
+from autoware_system_designer.common.path_utils import export_path
 from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.model.parameters import ParameterType
 
@@ -59,7 +60,7 @@ class ParameterTemplateGenerator:
             cls._collect_node_parameter_files_recursive_data(comp, nodes)
             component_nodes[comp_name] = nodes
 
-        system_root = os.path.join(output_dir, f"{deployment_name}.parameter_set")
+        system_root = export_path(output_dir, f"{deployment_name}.parameter_set")
         os.makedirs(system_root, exist_ok=True)
 
         for nodes in component_nodes.values():
@@ -69,7 +70,7 @@ class ParameterTemplateGenerator:
         generated: List[str] = []
         for comp_name, nodes in component_nodes.items():
             output_file_name = f"{deployment_name}__{comp_name}.parameter_set"
-            output_path = os.path.join(output_dir, f"{output_file_name}.yaml")
+            output_path = export_path(output_dir, f"{output_file_name}.yaml")
             template_renderer.render_template_to_file(
                 "parameter_set.yaml.jinja2",
                 output_path,
@@ -146,13 +147,13 @@ class ParameterTemplateGenerator:
         node_path = node_data["node"]
         parameter_files = node_data["parameter_files"]
 
-        namespace_dir = os.path.join(parameter_set_root, node_path.lstrip("/"))
+        namespace_dir = export_path(parameter_set_root, *[part for part in node_path.split("/") if part])
         os.makedirs(namespace_dir, exist_ok=True)
 
         updated_parameter_files: Dict[str, str] = {}
         for param_name, original_path in parameter_files.items():
             dest_filename = f"{param_name}.param.yaml"
-            dest_path = os.path.join(namespace_dir, dest_filename)
+            dest_path = export_path(namespace_dir, dest_filename)
 
             cls._create_empty_config_file(dest_path, param_name)
 

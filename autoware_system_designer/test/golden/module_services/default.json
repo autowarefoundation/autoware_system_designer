@@ -673,7 +673,9 @@
             },
             "msg_type": "std_msgs/msg/String",
             "to_port": {
-              "connected_ids": [],
+              "connected_ids": [
+                "id_4a79de18e4f9eb20"
+              ],
               "event": {
                 "action_ids": [],
                 "error_rate": null,
@@ -752,7 +754,9 @@
             },
             "msg_type": "std_srvs/srv/SetBool",
             "to_port": {
-              "connected_ids": [],
+              "connected_ids": [
+                "id_ff3c5abe0a5ff8b4"
+              ],
               "event": {
                 "action_ids": [],
                 "error_rate": null,
@@ -831,7 +835,9 @@
             },
             "msg_type": "std_srvs/srv/Trigger",
             "to_port": {
-              "connected_ids": [],
+              "connected_ids": [
+                "id_43a940fd98d50ec8"
+              ],
               "event": {
                 "action_ids": [],
                 "error_rate": null,
@@ -871,7 +877,9 @@
         "namespace": "/",
         "out_ports": [
           {
-            "connected_ids": [],
+            "connected_ids": [
+              "id_4a79de18e4f9eb20"
+            ],
             "event": {
               "action_ids": [],
               "error_rate": null,
@@ -904,7 +912,9 @@
             "unique_id": "id_b955c14ca2ce8384"
           },
           {
-            "connected_ids": [],
+            "connected_ids": [
+              "id_ff3c5abe0a5ff8b4"
+            ],
             "event": {
               "action_ids": [],
               "error_rate": null,
@@ -937,7 +947,9 @@
             "unique_id": "id_55394dbc3ca101a2"
           },
           {
-            "connected_ids": [],
+            "connected_ids": [
+              "id_43a940fd98d50ec8"
+            ],
             "event": {
               "action_ids": [],
               "error_rate": null,
@@ -1159,7 +1171,9 @@
       {
         "connection_type": "INTERNAL_TO_INTERNAL",
         "from_port": {
-          "connected_ids": [],
+          "connected_ids": [
+            "id_4a79de18e4f9eb20"
+          ],
           "event": {
             "action_ids": [],
             "error_rate": null,
@@ -1237,7 +1251,9 @@
       {
         "connection_type": "INTERNAL_TO_INTERNAL",
         "from_port": {
-          "connected_ids": [],
+          "connected_ids": [
+            "id_ff3c5abe0a5ff8b4"
+          ],
           "event": {
             "action_ids": [],
             "error_rate": null,
@@ -1313,7 +1329,9 @@
       {
         "connection_type": "INTERNAL_TO_INTERNAL",
         "from_port": {
-          "connected_ids": [],
+          "connected_ids": [
+            "id_43a940fd98d50ec8"
+          ],
           "event": {
             "action_ids": [],
             "error_rate": null,

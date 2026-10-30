@@ -128,6 +128,8 @@ Set the Python executable path used for the language server:
 }
 ```
 
+A workspace value for this setting applies only in a trusted workspace; an untrusted workspace uses the user setting.
+
 ### Debug Logging
 
 Enable debug logging for troubleshooting:

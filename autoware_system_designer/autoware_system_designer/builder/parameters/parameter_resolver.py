@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
 import logging
 import math
+import operator
 import os
 import re
 from typing import Any, Dict, List, Optional
@@ -24,18 +26,71 @@ from autoware_system_designer.parser.yaml_parser import yaml_parser
 logger = logging.getLogger(__name__)
 
 
+# Bounds on values an $(eval ...) expression may produce; integers wider than
+# this and sequences longer than this are rejected, before the operation when
+# its size is predictable.
+MAX_EVAL_INT_BITS = 4096
+MAX_EVAL_SEQUENCE_LENGTH = 4096
+
+
+def _checked(value: Any) -> Any:
+    if isinstance(value, int) and not isinstance(value, bool) and value.bit_length() > MAX_EVAL_INT_BITS:
+        raise ValueError("integer result is too large")
+    if isinstance(value, (str, list, tuple)) and len(value) > MAX_EVAL_SEQUENCE_LENGTH:
+        raise ValueError("sequence result is too long")
+    return value
+
+
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _checked_pow(base: Any, exponent: Any, *rest: Any) -> Any:
+    if rest:
+        raise ValueError("modular pow is not supported")
+    if isinstance(exponent, (int, float)) and abs(exponent) > MAX_EVAL_INT_BITS:
+        raise ValueError("exponent is too large")
+    if _is_int(base) and _is_int(exponent) and abs(base) > 1 and base.bit_length() * exponent > MAX_EVAL_INT_BITS:
+        raise ValueError("integer result is too large")
+    return _checked(operator.pow(base, exponent))
+
+
+def _checked_mul(left: Any, right: Any) -> Any:
+    for sequence, count in ((left, right), (right, left)):
+        if (
+            isinstance(sequence, (str, list, tuple))
+            and _is_int(count)
+            and len(sequence) * count > MAX_EVAL_SEQUENCE_LENGTH
+        ):
+            raise ValueError("sequence result is too long")
+    return _checked(operator.mul(left, right))
+
+
+# math.* members an expression may use; functions whose cost grows with the
+# integer argument (factorial, comb, perm, prod) are not among them.
+SAFE_MATH_NAMES = frozenset(
+    {
+        "pi", "e", "tau", "inf", "nan",
+        "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+        "sinh", "cosh", "tanh", "asinh", "acosh", "atanh",
+        "sqrt", "isqrt", "exp", "expm1", "log", "log1p", "log2", "log10", "pow",
+        "floor", "ceil", "trunc", "fabs", "fmod", "remainder", "modf", "hypot", "dist",
+        "radians", "degrees", "copysign", "gcd", "lcm",
+        "isclose", "isfinite", "isinf", "isnan",
+    }
+)  # fmt: skip
+
+# Names an $(eval ...) expression may reference.
 SAFE_EVAL_SCOPE = {
-    "__builtins__": {},
     "math": math,
     "abs": abs,
     "min": min,
     "max": max,
-    "pow": pow,
+    "pow": _checked_pow,
     "round": round,
     "int": int,
     "float": float,
     "str": str,
-    # Add math constants and functions directly to scope for convenience
     "pi": math.pi,
     "sin": math.sin,
     "cos": math.cos,
@@ -43,6 +98,89 @@ SAFE_EVAL_SCOPE = {
     "sqrt": math.sqrt,
     "atan2": math.atan2,
 }
+
+_BINARY_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: _checked_mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: _checked_pow,
+}
+_UNARY_OPERATORS = {ast.UAdd: operator.pos, ast.USub: operator.neg, ast.Not: operator.not_}
+_COMPARE_OPERATORS = {
+    ast.Eq: operator.eq,
+    ast.NotEq: operator.ne,
+    ast.Lt: operator.lt,
+    ast.LtE: operator.le,
+    ast.Gt: operator.gt,
+    ast.GtE: operator.ge,
+}
+
+
+def evaluate_safe_expression(expression: str) -> Any:
+    """Value of an arithmetic expression over SAFE_EVAL_SCOPE.
+
+    The expression is interpreted from its syntax tree: literals, the scope
+    names, SAFE_MATH_NAMES under ``math``, operators, comparisons, conditionals
+    and calls of scope functions. Any other construct, and any value beyond
+    MAX_EVAL_INT_BITS or MAX_EVAL_SEQUENCE_LENGTH, raises ValueError.
+    """
+    tree = ast.parse(expression.strip(), mode="eval")
+    return _evaluate_node(tree.body)
+
+
+def _evaluate_node(node: ast.AST) -> Any:
+    if isinstance(node, ast.Constant):
+        if node.value is None or isinstance(node.value, (bool, int, float, str)):
+            return node.value
+        raise ValueError(f"unsupported constant: {node.value!r}")
+    if isinstance(node, ast.Name):
+        if node.id in SAFE_EVAL_SCOPE:
+            return SAFE_EVAL_SCOPE[node.id]
+        raise ValueError(f"unknown name: {node.id}")
+    if isinstance(node, ast.Attribute):
+        if isinstance(node.value, ast.Name) and node.value.id == "math" and node.attr in SAFE_MATH_NAMES:
+            return getattr(math, node.attr)
+        raise ValueError("attribute access is limited to SAFE_MATH_NAMES under math")
+    if isinstance(node, ast.BinOp) and type(node.op) in _BINARY_OPERATORS:
+        return _checked(_BINARY_OPERATORS[type(node.op)](_evaluate_node(node.left), _evaluate_node(node.right)))
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY_OPERATORS:
+        return _UNARY_OPERATORS[type(node.op)](_evaluate_node(node.operand))
+    if isinstance(node, ast.BoolOp):
+        result: Any = None
+        for value in node.values:
+            result = _evaluate_node(value)
+            if isinstance(node.op, ast.And) and not result:
+                return result
+            if isinstance(node.op, ast.Or) and result:
+                return result
+        return result
+    if isinstance(node, ast.Compare):
+        left = _evaluate_node(node.left)
+        for op, comparator in zip(node.ops, node.comparators):
+            if type(op) not in _COMPARE_OPERATORS:
+                raise ValueError(f"unsupported comparison: {type(op).__name__}")
+            right = _evaluate_node(comparator)
+            if not _COMPARE_OPERATORS[type(op)](left, right):
+                return False
+            left = right
+        return True
+    if isinstance(node, ast.IfExp):
+        return _evaluate_node(node.body) if _evaluate_node(node.test) else _evaluate_node(node.orelse)
+    if isinstance(node, ast.List):
+        return [_evaluate_node(element) for element in node.elts]
+    if isinstance(node, ast.Tuple):
+        return tuple(_evaluate_node(element) for element in node.elts)
+    if isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute)):
+        func = _evaluate_node(node.func)
+        args = [_evaluate_node(arg) for arg in node.args]
+        if any(keyword.arg is None for keyword in node.keywords):
+            raise ValueError("keyword unpacking is not supported")
+        kwargs = {keyword.arg: _evaluate_node(keyword.value) for keyword in node.keywords}
+        return _checked(func(*args, **kwargs))
+    raise ValueError(f"unsupported expression element: {type(node).__name__}")
 
 
 class ParameterResolver:
@@ -256,15 +394,14 @@ class ParameterResolver:
         return "".join(result)
 
     def _evaluate_expression(self, expression: str) -> str:
-        """Evaluate a python expression safely."""
+        """Evaluate an $(eval ...) expression; the original text stands when it cannot be evaluated."""
         expression = expression.strip()
 
         if "$" in expression:
             return f"$(eval {expression})"
 
         try:
-            result = eval(expression, SAFE_EVAL_SCOPE)
-            return str(result)
+            return str(evaluate_safe_expression(expression))
         except Exception as e:
             logger.warning(
                 f"Failed to evaluate expression '$(eval {expression})': {e}{format_source(self._source_context)}"

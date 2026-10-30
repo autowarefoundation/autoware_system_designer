@@ -37,6 +37,7 @@ extern "C" {
 #define ASD_TRACE_DIR_ENV "ASD_TRACE_DIR"
 #define ASD_TRACE_CAPACITY_ENV "ASD_TRACE_CAPACITY"
 #define ASD_TRACE_DEFAULT_CAPACITY (1u << 22)
+#define ASD_TRACE_MAX_CAPACITY (1ull << 26)
 
 enum asd_record_kind {
   ASD_REC_TAKE = 1,

@@ -17,6 +17,8 @@
 import os
 from dataclasses import dataclass
 
+from autoware_system_designer.common.path_utils import validate_path_segment
+
 # Artifacts manifest; sits beside the per-mode directories so no mode name can claim it.
 ARTIFACTS_FILENAME = "deployment.json"
 
@@ -27,6 +29,9 @@ class ExportLayout:
 
     output_root_dir: str
     system_name: str
+
+    def __post_init__(self) -> None:
+        validate_path_segment(self.system_name, "system name")
 
     @property
     def exports_dir(self) -> str:

@@ -21,6 +21,7 @@ import logging
 import os
 from typing import Dict
 
+from autoware_system_designer.common.path_utils import export_path
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.model.export_schema import DeploymentDataByMode
 from autoware_system_designer.visualizer import assets
@@ -36,7 +37,7 @@ EDITOR_SCHEME = "vscode"
 def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str) -> None:
     """Write one data file per diagram type; each assigns the mode's tree to its window variable."""
     for diagram_type, window_variable in assets.DIAGRAM_TYPES.items():
-        output_path = os.path.join(web_data_dir, f"{mode_key}_{diagram_type}.js")
+        output_path = export_path(web_data_dir, f"{mode_key}_{diagram_type}.js")
         renderer.render_template_to_file(
             "data/common_design_data.js.jinja2",
             output_path,
@@ -106,6 +107,6 @@ def visualize_deployment(
     _copy_web_assets(web_dir)
     _generate_config(renderer, web_dir, name, list(deploy_data), system_definition_file or "")
 
-    overview_path = os.path.join(web_dir, f"{name}_overview.html")
+    overview_path = export_path(web_dir, f"{name}_overview.html")
     if assets.copy_asset(assets.OVERVIEW_PAGE, overview_path):
         logger.info(f"Generated deployment overview: {os.path.basename(overview_path)}")

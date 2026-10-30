@@ -58,7 +58,9 @@ class Port:
     # OutPort (publisher) can have at most 1 reference (one topic published by one node).
     # InPort (subscriber) can have multiple references (one topic subscribed by multiple nodes).
     reference: List["Port"] = field(default_factory=list, metadata={"exclude": True})
-    topic: List[str] = field(default_factory=list)
+    # Topic owned by a node port; interface ports of modules hold none and resolve
+    # theirs from the publishing node port.
+    own_topic: List[str] = field(default_factory=list, metadata={"exclude": True})
     event: Optional[Event] = None
     is_global: bool = False
     # True when topic is set by a system remap entry
@@ -67,14 +69,18 @@ class Port:
     # ROS interface kind: publisher/subscriber/server/client
     role: Optional[str] = field(default=None, metadata={"exclude": True})
 
-    __serde_computed__: ClassVar[tuple] = (("unique_id", "unique_id"), ("port_path", "port_path"))
+    __serde_computed__: ClassVar[tuple] = (
+        ("topic", "topic"),
+        ("unique_id", "unique_id"),
+        ("port_path", "port_path"),
+    )
 
     def __init__(self, name: str, msg_type: str, namespace: List[str] = [], remap_target: str = None, role: str = None):
         self.name = name
         self.msg_type = msg_type
         self.namespace = namespace
         self.reference = []
-        self.topic = []
+        self.own_topic = []
         self.event = None
         self.is_global = False
         self.is_remapped = False
@@ -96,21 +102,38 @@ class Port:
             if port.port_path not in reference_name_list:
                 self.reference.append(port)
                 added.append(port.port_path)
+        # an interface port holds no topic of its own
+        self.own_topic = []
         if added:
             logger.debug(f"Port '{self.port_path}' added references: {added}")
 
+    def get_chain_list(self):
+        """This port and every port below it in the reference chain."""
+        ports = [self]
+        for port in self.reference:
+            ports.extend(port.get_chain_list())
+        return ports
+
     def get_reference_list(self):
+        """Node ports at the bottom of the reference chain; a node port stands for itself."""
         if self.reference == []:
             return [self]
-        return self.reference
+        leaves = []
+        for port in self.reference:
+            leaves.extend(port.get_reference_list())
+        return leaves
+
+    @property
+    def is_interface(self) -> bool:
+        """True for a module interface port, which stands for the node ports it references."""
+        return bool(self.reference)
+
+    @property
+    def topic(self) -> List[str]:
+        return self.own_topic
 
     def set_topic(self, topic_namespace: List[str], topic_name: str):
-        new_topic = topic_namespace + [topic_name]
-        # if the topic is already set, return False
-        if self.topic == new_topic:
-            return False
-        self.topic = new_topic
-        return True
+        self.own_topic = topic_namespace + [topic_name]
 
     def get_topic(self) -> str:
         if self.topic == []:
@@ -153,16 +176,12 @@ class InPort(Port):
         if added:
             logger.debug(f"InPort '{self.port_path}' added servers: {added}")
 
-    def set_topic(self, topic_namespace: List[str], topic_name: str):
-        """
-        Override to propagate topic changes to all references (Internal InPorts).
-        When topic is set by a higher layer (e.g., external connection),
-        all internal ports need to update their topic as well.
-        """
-        if not super().set_topic(topic_namespace, topic_name):
-            return
-        for ref_port in self.reference:
-            ref_port.set_topic(topic_namespace, topic_name)
+    @property
+    def topic(self) -> List[str]:
+        """The publisher's topic; a global node subscriber keeps its own, an unconnected interface port has none."""
+        if self.servers and not (self.is_global and self.own_topic):
+            return self.servers[0].topic
+        return self.own_topic
 
 
 @dataclass(init=False, eq=False, repr=False)
@@ -181,8 +200,8 @@ class OutPort(Port):
         self.event = PortEvent("output_" + name, namespace, "output", name)
         self.event.set_type("to_output")
 
-        # set default topic
-        self.set_topic(self.namespace, self.name)
+        # node-local default; a module output exposing the port renames it
+        self.own_topic = self.namespace + [self.name]
 
         if self.remap_target is None:
             self.remap_target = "~/output/" + name
@@ -205,17 +224,19 @@ class OutPort(Port):
         if added:
             logger.debug(f"OutPort '{self.port_path}' added users: {added}")
 
+    @property
+    def topic(self) -> List[str]:
+        """The publishing node port's topic."""
+        if self.is_interface:
+            return self.reference[0].topic
+        return self.own_topic
+
     def set_topic(self, topic_namespace: List[str], topic_name: str):
-        """
-        Override to propagate topic changes to all users (InPorts).
-        When topic is set by a higher layer (e.g., external connection),
-        all subscribers need to update their topic as well.
-        """
-        if not super().set_topic(topic_namespace, topic_name):
+        """Set the topic on the publishing node port; subscribers and interface ports resolve it from there."""
+        if self.is_interface:
+            self.reference[0].set_topic(topic_namespace, topic_name)
             return
-        # Propagate topic to all users (InPorts that subscribe to this OutPort)
-        for user_port in self.users:
-            user_port.set_topic(topic_namespace, topic_name)
+        super().set_topic(topic_namespace, topic_name)
 
     def set_references(self, port_list: List["Port"]):
         """

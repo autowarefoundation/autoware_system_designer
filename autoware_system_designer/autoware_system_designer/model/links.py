@@ -92,11 +92,12 @@ class Link:
             from_port_list = self.from_port.get_reference_list()
             to_port_ref_list = self.to_port.get_reference_list()
 
-            # A module interface port is a proxy: it carries topic and servers like the
-            # node ports it stands for, but holds no event of the trigger chain.
+            # Module interface ports are proxies: every port down the chain carries servers
+            # and users like the node ports it stands for, but holds no event of the trigger
+            # chain. Topics resolve from the publishing node port.
             to_port_list = list(to_port_ref_list)
-            if self.to_port not in to_port_list:
-                to_port_list.append(self.to_port)
+            to_port_list.extend(port for port in self.to_port.get_chain_list() if port not in to_port_list)
+            from_port_chain = self.from_port.get_chain_list()
 
             # check the message type is the same
             from_port_ref = from_port_list[0]
@@ -123,20 +124,10 @@ class Link:
                     )
 
             # link the ports
-            from_port_ref.set_users(to_port_list)
+            for from_port in from_port_chain:
+                from_port.set_users(to_port_list)
             for to_port_ref in to_port_list:
                 to_port_ref.set_servers(from_port_list)
-
-            # determine the topic, set it to the from-ports to publish and to-ports to subscribe
-            if (from_port_ref.is_remapped or from_port_ref.is_global) and from_port_ref.topic:
-                # Preset topic (remap takes priority over global): propagate to subscribers
-                topic_parts = from_port_ref.topic
-                for to_port_ref in to_port_list:
-                    to_port_ref.set_topic(topic_parts[:-1], topic_parts[-1])
-            else:
-                from_port_ref.set_topic(self.from_port.namespace, self.from_port.name)
-                for to_port_ref in to_port_list:
-                    to_port_ref.set_topic(self.from_port.namespace, self.from_port.name)
 
             # set the trigger event of the node to-ports
             for to_port_ref in to_port_ref_list:
@@ -145,28 +136,34 @@ class Link:
 
         # case 2: from internal output to external output
         elif is_from_port_internal and not is_to_port_internal:
-            # bring the from-port reference to the to-port reference
+            # The external port references its direct child; nested module ports chain down to the node port.
             # Note: set_references() will validate that OutPort (to_port) has at most one reference
-            reference_port_list = self.from_port.get_reference_list()
-            self.to_port.set_references(reference_port_list)
-            # set the topic name to the external output, whether it is connected or not
-            for reference_port in reference_port_list:
-                if (reference_port.is_remapped or reference_port.is_global) and reference_port.topic:
-                    # Preset topic (remap or global): propagate to the external port
-                    topic_parts = reference_port.topic
-                    self.to_port.set_topic(topic_parts[:-1], topic_parts[-1])
-                    if reference_port.is_remapped:
-                        self.to_port.is_remapped = True
-                    else:
-                        self.to_port.is_global = True
+            self.to_port.set_references([self.from_port])
+            # The module output names the published topic in the module layer, whether it is
+            # connected or not; a preset topic (remap or global) is kept.
+            node_port = self.from_port.get_reference_list()[0]
+            preset_port = next(
+                (port for port in (self.from_port, node_port) if (port.is_remapped or port.is_global) and port.topic),
+                None,
+            )
+            if preset_port is not None:
+                if preset_port.is_remapped:
+                    self.to_port.is_remapped = True
                 else:
-                    reference_port.set_topic(self.to_port.namespace, self.to_port.name)
+                    self.to_port.is_global = True
+            else:
+                node_port.set_topic(self.to_port.namespace, self.to_port.name)
 
         # case 3: from external input to internal input
         elif not is_from_port_internal and is_to_port_internal:
-            # bring the to-port reference to the from-port reference
-            reference_port_list = self.to_port.get_reference_list()
-            self.from_port.set_references(reference_port_list)
+            # The external port references its direct child; nested module ports chain down to the node ports.
+            self.from_port.set_references([self.to_port])
+            # A port attached after the external port is connected subscribes to the same publishers.
+            if self.from_port.servers:
+                for to_port in self.to_port.get_chain_list():
+                    to_port.set_servers(self.from_port.servers)
+                for server_port in self.from_port.servers:
+                    server_port.set_users(self.to_port.get_chain_list())
 
         # case 4: from-port is InPort and to-port is OutPort
         #   bypass connection, which is invalid
