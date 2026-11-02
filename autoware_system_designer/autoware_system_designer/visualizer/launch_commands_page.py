@@ -106,14 +106,14 @@ def _build_commands(
     mode_keys: list[str],
     deploy_variants: list[dict[str, Any]],
     web_dir: str,
-    compute_units_by_mode: dict[str, list[str]] | None = None,
+    compute_units_by_mode: dict[str, list[str] | None] | None = None,
 ) -> list[Command]:
     """Launch commands ordered by mode > ECU > deploy.
 
     Without deploy variants the launchers sit directly under launcher/<mode>/<ecu>/; with them
     each variant has its own tree under launcher/deployments/<deploy>/<mode>/<ecu>/. The runtime
     method reads system_structure/<mode>.json and binds the variant's arguments via --deploy.
-    ECUs come from the mode's declared compute units when it declares any, otherwise from the
+    ECUs come from the mode's launchable compute units when it declares any, otherwise from the
     launcher directories present.
     """
     launcher_root = Path(launcher_dir).resolve()
@@ -128,7 +128,7 @@ def _build_commands(
         mode_entries: list[Command] = []
         structure_file = f"{mode_key}{STRUCTURE_FILE_SUFFIX}"
         has_structure = structure_root is not None and (structure_root / structure_file).is_file()
-        declared = (compute_units_by_mode or {}).get(mode_key) or None
+        declared = (compute_units_by_mode or {}).get(mode_key)
         for deploy_name in deploy_names:
             prefix = f"{DEPLOYMENTS_SUBDIR}/{deploy_name}/" if deploy_name else ""
             mode_dir = launcher_root / f"{prefix}{mode_key}"
@@ -198,7 +198,7 @@ def generate_launch_commands_page(
     web_dir: str,
     deploy_variants: list[dict[str, Any]] | None = None,
     system_structure_dir: str | None = None,
-    compute_units_by_mode: dict[str, list[str]] | None = None,
+    compute_units_by_mode: dict[str, list[str] | None] | None = None,
 ) -> None:
     """Generate the launch commands HTML page for a deployment.
 
@@ -218,8 +218,8 @@ def generate_launch_commands_page(
         web_dir: Directory to write the HTML file (e.g. visualization/web).
         deploy_variants: Optional list of deploy items (name, arguments); when set, uses launcher/deployments/.
         system_structure_dir: Path to exports/<name>/system_structure/; omitting it drops the runtime method.
-        compute_units_by_mode: Declared compute unit names per mode; modes absent or empty fall back
-            to the launcher directories present.
+        compute_units_by_mode: Launchable compute unit names per mode; a mode mapped to None (or
+            absent) falls back to the launcher directories present.
     """
     deploy_variants = deploy_variants or []
     commands = _build_commands(

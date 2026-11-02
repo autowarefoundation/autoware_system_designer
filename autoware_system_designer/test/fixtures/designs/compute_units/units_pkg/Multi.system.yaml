@@ -2,7 +2,7 @@ autoware_system_design_format: 0.5.0
 
 name: Multi.system
 
-description: Two declared compute units; the solo mode leaves sub_ecu without components.
+description: Physical main_ecu and sub_ecu plus a virtual sim_ecu; the solo mode leaves sub_ecu without components.
 
 modes:
   - name: default
@@ -18,9 +18,11 @@ compute_units:
     launch: native
     description: Primary unit hosting the talker.
   - name: sub_ecu
-    kind: virtual
     platform: jetson_orin
     launch: xml
+  - name: sim_ecu
+    kind: virtual
+    description: Simulation stand-ins; no launcher of its own.
 
 components:
   - name: talker
@@ -29,10 +31,16 @@ components:
   - name: listener
     entity: Listener.node
     compute_unit: sub_ecu
+  - name: monitor
+    entity: Listener.node
+    path: /sim/monitor
+    compute_unit: sim_ecu
 
 connections:
   - - talker.publisher.chatter
     - listener.subscriber.chatter
+  - - talker.publisher.chatter
+    - monitor.subscriber.chatter
 
 solo:
   remove:

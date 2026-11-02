@@ -215,9 +215,9 @@ Top-level entry point defining the complete system.
   - `description`: (Optional) Description of the mode.
   - `default`: (Optional) `true`/`false` to mark as default mode.
 - `parameter_sets`: List of parameter set files. Can be an empty list `[]`.
-- `compute_units`: (Optional) Compute units (ECUs) the system is deployed on. Once declared, every component's `compute_unit` must name one of them, and each unit gets a launcher in every mode even when no component of that mode runs on it.
+- `compute_units`: (Optional) Compute units (ECUs) the system is deployed on. Once declared, every component's `compute_unit` must name one of them, and each physical unit gets a launcher in every mode even when no component of that mode runs on it.
   - `name`: Unit identifier referenced by `components[].compute_unit` (e.g., `main_ecu`).
-  - `kind`: (Optional) `physical` (default) for a real ECU that is a deploy target of its own; `virtual` for a placeholder grouping simulation stand-ins or components outside the design scope.
+  - `kind`: (Optional) `physical` (default) for a real ECU that is a deploy target of its own; `virtual` for a placeholder grouping simulation stand-ins or components outside the design scope. Virtual units get no launcher and no launch-command entry; their components remain in the structure export.
   - `platform`: (Optional) Hardware/OS platform identifier (e.g., `x86_64`, `jetson_orin`).
   - `ros_domain_id`: (Optional) ROS domain the unit's nodes run in.
   - `launch`: (Optional) How the unit's nodes are launched: `native` (designer runtime, default), `xml` (`ros2 launch`) or `container`.

@@ -53,9 +53,13 @@
         "namespace": "/",
         "out_ports": [
           {
-            "connected_ids": [],
+            "connected_ids": [
+              "id_12b449e1df45f8cc"
+            ],
             "event": {
-              "action_ids": [],
+              "action_ids": [
+                "id_12b449e1df45f8cc"
+              ],
               "error_rate": null,
               "expected_latency_ms": null,
               "frequency": 10.0,
@@ -107,13 +111,191 @@
         "path": "/talker",
         "source_file": "${workspace_root}/ws/units_pkg/Talker.node.yaml",
         "unique_id": "id_cfc72b8f1438a23a"
+      },
+      {
+        "children": [],
+        "compute_unit": "sim_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [],
+            "error_rate": null,
+            "expected_latency_ms": null,
+            "frequency": 10.0,
+            "latch_ids": [],
+            "name": "consume",
+            "process_event": true,
+            "read_ids": [],
+            "timeout": null,
+            "trigger_ids": [
+              "id_12b449e1df45f8cc"
+            ],
+            "type": "on_input",
+            "unique_id": "id_42a9f3a22d381232",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [
+          {
+            "connected_ids": [
+              "id_4f980bd05c17c117"
+            ],
+            "event": {
+              "action_ids": [
+                "id_42a9f3a22d381232"
+              ],
+              "error_rate": null,
+              "expected_latency_ms": null,
+              "frequency": 10.0,
+              "latch_ids": [],
+              "name": "input_chatter",
+              "process_event": false,
+              "read_ids": [],
+              "timeout": null,
+              "trigger_ids": [
+                "id_4f980bd05c17c117"
+              ],
+              "type": "on_input",
+              "unique_id": "id_12b449e1df45f8cc",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "std_msgs/msg/String",
+            "name": "chatter",
+            "namespace": [
+              "sim",
+              "monitor"
+            ],
+            "port_path": "/sim/monitor/input/chatter",
+            "remap_target": "~/input/chatter",
+            "topic": [
+              "talker",
+              "chatter"
+            ],
+            "unique_id": "id_12b449e1df45f8cc"
+          }
+        ],
+        "launcher": {
+          "args": "",
+          "executable": "listener_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "units_pkg",
+          "param_files": [],
+          "param_values": [],
+          "ports": [
+            {
+              "name": "chatter",
+              "remap_target": "~/input/chatter",
+              "topic": "/talker/chatter"
+            }
+          ]
+        },
+        "links": [],
+        "name": "monitor",
+        "namespace": "/sim",
+        "out_ports": [],
+        "package": "units_pkg",
+        "parameter_files_all": [],
+        "parameters": [],
+        "path": "/sim/monitor",
+        "source_file": "${workspace_root}/ws/units_pkg/Listener.node.yaml",
+        "unique_id": "id_a22054e53793ff59"
       }
     ],
     "compute_unit": "",
     "entity_type": "system",
     "events": [],
     "in_ports": [],
-    "links": [],
+    "links": [
+      {
+        "connection_type": "INTERNAL_TO_INTERNAL",
+        "from_port": {
+          "connected_ids": [
+            "id_12b449e1df45f8cc"
+          ],
+          "event": {
+            "action_ids": [
+              "id_12b449e1df45f8cc"
+            ],
+            "error_rate": null,
+            "expected_latency_ms": null,
+            "frequency": 10.0,
+            "latch_ids": [],
+            "name": "output_chatter",
+            "process_event": false,
+            "read_ids": [],
+            "timeout": null,
+            "trigger_ids": [
+              "id_608583f5023b734e"
+            ],
+            "type": "to_output",
+            "unique_id": "id_4f980bd05c17c117",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "std_msgs/msg/String",
+          "name": "chatter",
+          "namespace": [
+            "talker"
+          ],
+          "port_path": "/talker/output/chatter",
+          "remap_target": "~/output/chatter",
+          "topic": [
+            "talker",
+            "chatter"
+          ],
+          "unique_id": "id_4f980bd05c17c117"
+        },
+        "msg_type": "std_msgs/msg/String",
+        "to_port": {
+          "connected_ids": [
+            "id_4f980bd05c17c117"
+          ],
+          "event": {
+            "action_ids": [
+              "id_42a9f3a22d381232"
+            ],
+            "error_rate": null,
+            "expected_latency_ms": null,
+            "frequency": 10.0,
+            "latch_ids": [],
+            "name": "input_chatter",
+            "process_event": false,
+            "read_ids": [],
+            "timeout": null,
+            "trigger_ids": [
+              "id_4f980bd05c17c117"
+            ],
+            "type": "on_input",
+            "unique_id": "id_12b449e1df45f8cc",
+            "warn_rate": null
+          },
+          "is_global": false,
+          "is_outward": false,
+          "is_remapped": false,
+          "msg_type": "std_msgs/msg/String",
+          "name": "chatter",
+          "namespace": [
+            "sim",
+            "monitor"
+          ],
+          "port_path": "/sim/monitor/input/chatter",
+          "remap_target": "~/input/chatter",
+          "topic": [
+            "talker",
+            "chatter"
+          ],
+          "unique_id": "id_12b449e1df45f8cc"
+        },
+        "topic": "/talker/chatter",
+        "unique_id": "id_4b55704efefbf6a2"
+      }
+    ],
     "name": "Multi_solo",
     "namespace": "/",
     "out_ports": [],
@@ -134,10 +316,18 @@
       },
       {
         "description": "",
-        "kind": "virtual",
+        "kind": "physical",
         "launch": "xml",
         "name": "sub_ecu",
         "platform": "jetson_orin",
+        "ros_domain_id": null
+      },
+      {
+        "description": "Simulation stand-ins; no launcher of its own.",
+        "kind": "virtual",
+        "launch": "native",
+        "name": "sim_ecu",
+        "platform": "",
         "ros_domain_id": null
       }
     ],

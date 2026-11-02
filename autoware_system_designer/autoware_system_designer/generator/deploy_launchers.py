@@ -19,7 +19,7 @@ import os
 from typing import Any, Dict, List
 
 from autoware_system_designer.builder.export.json_io import (
-    declared_compute_units,
+    launch_target_compute_units,
     extract_system_structure_data,
     load_system_structure,
 )
@@ -48,9 +48,11 @@ def generate_deploy_launchers(
         payload = load_system_structure(structure_path, workspace_root=workspace_root)
         data, metadata = extract_system_structure_data(payload)
 
-        compute_units = declared_compute_units(metadata) or sorted(
-            {child.get("compute_unit") for child in data.get("children", []) if child.get("compute_unit")}
-        )
+        compute_units = launch_target_compute_units(metadata)
+        if compute_units is None:
+            compute_units = sorted(
+                {child.get("compute_unit") for child in data.get("children", []) if child.get("compute_unit")}
+            )
 
         for deploy_item in deploy_variants:
             deploy_name = deploy_item.get("name")

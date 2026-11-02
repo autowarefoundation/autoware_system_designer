@@ -131,10 +131,18 @@ def iter_mode_data(
         yield mode_key, data
 
 
-def declared_compute_units(metadata: SystemStructureMetadata) -> List[str]:
-    """Names of the compute units a mode export declares; empty for exports without a declaration."""
+def launch_target_compute_units(metadata: SystemStructureMetadata) -> List[str] | None:
+    """Names of the declared units that get launchers (every kind but ``virtual``).
+
+    None when the export declares no units, so callers fall back to the units
+    the components reference.
+    """
 
     units = metadata.get("compute_units") if isinstance(metadata, dict) else None
-    if not isinstance(units, list):
-        return []
-    return [unit["name"] for unit in units if isinstance(unit, dict) and unit.get("name")]
+    if not isinstance(units, list) or not units:
+        return None
+    return [
+        unit["name"]
+        for unit in units
+        if isinstance(unit, dict) and unit.get("name") and unit.get("kind", "physical") != "virtual"
+    ]

@@ -119,9 +119,10 @@ def generate_module_launch_file(
 ):
     """Main entry point for launcher generation.
 
-    *compute_units* is the declared unit list; each gets a compute-unit launcher
-    even when no component of this mode runs on it. Without a declaration the
-    units are the ones the components reference.
+    *compute_units* is the list of launchable units; each gets a compute-unit
+    launcher even when no component of this mode runs on it, and components on
+    any other unit get none. Without a declaration the units are the ones the
+    components reference.
     """
 
     logger.debug(f"Generating launcher from system structure data in {output_dir}")
@@ -150,6 +151,8 @@ def generate_module_launch_file(
         )
 
     for (compute_unit, component_name), components in component_map.items():
+        if compute_unit not in launcher_units:
+            continue
         _generate_component_launcher(
             compute_unit,
             component_name,

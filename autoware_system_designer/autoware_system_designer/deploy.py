@@ -33,9 +33,9 @@ from autoware_system_designer.builder.config.config_registry import ConfigRegist
 from autoware_system_designer.builder.deployment_instance import DeploymentInstance
 from autoware_system_designer.builder.export.instance_to_json import collect_system_structure
 from autoware_system_designer.builder.export.json_io import (
-    declared_compute_units,
     iter_mode_data,
     iter_mode_payloads,
+    launch_target_compute_units,
     save_system_structure,
     save_system_structure_snapshot,
 )
@@ -629,18 +629,19 @@ def generate_build_scripts(artifacts: BuildArtifacts) -> None:
 def generate_launchers(artifacts: BuildArtifacts) -> None:
     """Generate ROS 2 launch files from the exported JSON."""
     deploy_variable_names = _collect_deploy_variable_names(artifacts)
-    # Declared units per mode; a mode may declare units no component of it uses.
-    compute_units_by_mode: Dict[str, List[str]] = {}
+    # Launchable units per mode (None: undeclared, derived from the components); a mode
+    # may declare units no component of it uses, and virtual units get no launcher.
+    compute_units_by_mode: Dict[str, List[str] | None] = {}
     for mode_key, data, metadata in _iter_mode_payloads(artifacts):
         mode_launcher_dir = export_path(artifacts.layout.launcher_dir, mode_key)
-        compute_units = declared_compute_units(metadata)
+        compute_units = launch_target_compute_units(metadata)
         compute_units_by_mode[mode_key] = compute_units
 
         generate_module_launch_file(
             data,
             mode_launcher_dir,
             forward_args=deploy_variable_names,
-            compute_units=compute_units or None,
+            compute_units=compute_units,
         )
 
         logger.info(f"Generated launcher for mode: {mode_key}")
