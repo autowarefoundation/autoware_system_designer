@@ -13,13 +13,12 @@ modes:
 
 compute_units:
   - name: main_ecu
-    role: main
     platform: x86_64
     ros_domain_id: 1
     launch: native
     description: Primary unit hosting the talker.
   - name: sub_ecu
-    role: listener
+    kind: virtual
     platform: jetson_orin
     launch: xml
 

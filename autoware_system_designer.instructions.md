@@ -217,7 +217,7 @@ Top-level entry point defining the complete system.
 - `parameter_sets`: List of parameter set files. Can be an empty list `[]`.
 - `compute_units`: (Optional) Compute units (ECUs) the system is deployed on. Once declared, every component's `compute_unit` must name one of them, and each unit gets a launcher in every mode even when no component of that mode runs on it.
   - `name`: Unit identifier referenced by `components[].compute_unit` (e.g., `main_ecu`).
-  - `role`: (Optional) Function of the unit in the system (e.g., `main`, `perception`).
+  - `kind`: (Optional) `physical` (default) for a real ECU that is a deploy target of its own; `virtual` for a placeholder grouping simulation stand-ins or components outside the design scope.
   - `platform`: (Optional) Hardware/OS platform identifier (e.g., `x86_64`, `jetson_orin`).
   - `ros_domain_id`: (Optional) ROS domain the unit's nodes run in.
   - `launch`: (Optional) How the unit's nodes are launched: `native` (designer runtime, default), `xml` (`ros2 launch`) or `container`.
@@ -404,8 +404,10 @@ modes:
 parameter_sets: []
 compute_units:
   - name: main_ecu
-    role: main
     platform: x86_64
+  - name: sim_ecu
+    kind: virtual
+    description: Simulation stand-ins.
 components:
   - name: sensing
     entity: SampleSensorKit.module

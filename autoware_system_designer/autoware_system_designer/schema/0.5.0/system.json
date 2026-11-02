@@ -113,9 +113,10 @@
           "name": {
             "type": "string"
           },
-          "role": {
+          "kind": {
             "type": "string",
-            "description": "Function of the unit in the system (e.g. main, perception)"
+            "enum": ["physical", "virtual"],
+            "description": "physical: a deploy target of its own; virtual: placeholder for simulation stand-ins or components outside the design scope"
           },
           "platform": {
             "type": "string",

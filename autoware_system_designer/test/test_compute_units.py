@@ -36,8 +36,8 @@ modes:
 
 compute_units:
   - name: main_ecu
-    role: main
   - name: sub_ecu
+    kind: virtual
 """
 
 
@@ -170,6 +170,31 @@ compute_units:
     assert any(issue.yaml_path == "/compute_units" for issue in issues)
 
 
+def test_unknown_kind_is_rejected_by_schema(tmp_path):
+    path = tmp_path / "Probe.system.yaml"
+    path.write_text(
+        """\
+autoware_system_design_format: 0.5.0
+
+name: Probe.system
+
+compute_units:
+  - name: main_ecu
+    kind: dummy
+
+components:
+  - name: a
+    entity: A.node
+    compute_unit: main_ecu
+
+connections: []
+"""
+    )
+    with pytest.raises(ValidationError) as excinfo:
+        ConfigParser().parse_entity_file(str(path))
+    assert "/compute_units/0/kind" in str(excinfo.value)
+
+
 def test_parser_builds_typed_compute_units(tmp_path):
     path = tmp_path / "Probe.system.yaml"
     path.write_text(
@@ -185,9 +210,10 @@ connections: []
     )
     config = ConfigParser().parse_entity_file(str(path))
     assert config.compute_units == [
-        ComputeUnit(name="main_ecu", role="main"),
-        ComputeUnit(name="sub_ecu"),
+        ComputeUnit(name="main_ecu"),
+        ComputeUnit(name="sub_ecu", kind="virtual"),
     ]
+    assert config.compute_units[0].kind == "physical"
     assert config.compute_units[1].launch == "native"
 
 
@@ -219,6 +245,8 @@ def test_export_carries_declaration_and_launches_every_declared_unit(tmp_path):
     artifacts = load_build_artifacts(str(run.out_root), run.system_name)
     assert [unit["name"] for unit in artifacts.compute_units] == ["main_ecu", "sub_ecu"]
     assert artifacts.compute_units[0]["ros_domain_id"] == 1
+    assert artifacts.compute_units[0]["kind"] == "physical"
+    assert artifacts.compute_units[1]["kind"] == "virtual"
     assert artifacts.compute_units[1]["launch"] == "xml"
 
     for mode in ("default", "solo"):

@@ -126,18 +126,18 @@
     "compute_units": [
       {
         "description": "Primary unit hosting the talker.",
+        "kind": "physical",
         "launch": "native",
         "name": "main_ecu",
         "platform": "x86_64",
-        "role": "main",
         "ros_domain_id": 1
       },
       {
         "description": "",
+        "kind": "virtual",
         "launch": "xml",
         "name": "sub_ecu",
         "platform": "jetson_orin",
-        "role": "listener",
         "ros_domain_id": null
       }
     ],

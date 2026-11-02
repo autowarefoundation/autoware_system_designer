@@ -26,13 +26,12 @@ modes:
 
 compute_units:
   - name: main_ecu
-    role: main
     description: Sensing, perception and vehicle interface.
   - name: dummy_ecu_1
-    role: localization
+    kind: virtual
     description: Map and localization dummies.
   - name: dummy_ecu_2
-    role: planning
+    kind: virtual
     description: Planning and control dummies.
 
 components:
