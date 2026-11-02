@@ -16,7 +16,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 from autoware_system_designer.builder.resolution.connection_resolver import filter_connections_by_removed_entities
-from autoware_system_designer.model.config import ModuleConfig, NodeConfig, RemapEntry, SystemConfig
+from autoware_system_designer.model.config import ComputeUnit, ModuleConfig, NodeConfig, RemapEntry, SystemConfig
 from autoware_system_designer.model.domain import ParameterFileDefinition, ParameterValueDefinition, PortDefinition
 
 logger = logging.getLogger(__name__)
@@ -194,6 +194,7 @@ class SystemVariantResolver(VariantResolver):
             {"field": "variable_files", "key_field": None},
             {"field": "modes", "key_field": "name"},
             {"field": "parameter_sets", "key_field": None},  # Parameter sets are appended
+            {"field": "compute_units", "key_field": "name", "converter": ComputeUnit.from_dict},
             {"field": "components", "key_field": "name"},
             {"field": "connections", "key_field": None},
             {"field": "node_groups", "key_field": "name"},
@@ -232,6 +233,7 @@ class SystemVariantResolver(VariantResolver):
         remove_specs = [
             {"field": "modes", "key_field": "name"},
             {"field": "parameter_sets", "key_field": None},  # Remove parameter sets by value
+            {"field": "compute_units", "key_field": "name"},
             {"field": "components", "key_field": "name"},
             {"field": "variables", "key_field": "name"},
             {"field": "connections", "key_field": None},

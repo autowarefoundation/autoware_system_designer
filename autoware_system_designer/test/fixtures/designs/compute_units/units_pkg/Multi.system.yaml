@@ -1,0 +1,41 @@
+autoware_system_design_format: 0.5.0
+
+name: Multi.system
+
+description: Two declared compute units; the solo mode leaves sub_ecu without components.
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+  - name: solo
+    description: Talker only
+
+compute_units:
+  - name: main_ecu
+    role: main
+    platform: x86_64
+    ros_domain_id: 1
+    launch: native
+    description: Primary unit hosting the talker.
+  - name: sub_ecu
+    role: listener
+    platform: jetson_orin
+    launch: xml
+
+components:
+  - name: talker
+    entity: Talker.node
+    compute_unit: main_ecu
+  - name: listener
+    entity: Listener.node
+    compute_unit: sub_ecu
+
+connections:
+  - - talker.publisher.chatter
+    - listener.subscriber.chatter
+
+solo:
+  remove:
+    components:
+      - name: listener

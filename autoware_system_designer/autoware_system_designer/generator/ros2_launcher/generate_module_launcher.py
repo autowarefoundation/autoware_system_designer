@@ -111,8 +111,18 @@ def _generate_compute_unit_launcher(
     _render_template_to_file("compute_unit_launcher.xml.jinja2", launcher_file, template_data)
 
 
-def generate_module_launch_file(instance: Dict[str, Any], output_dir: str, forward_args: List[str] | None = None):
-    """Main entry point for launcher generation."""
+def generate_module_launch_file(
+    instance: Dict[str, Any],
+    output_dir: str,
+    forward_args: List[str] | None = None,
+    compute_units: List[str] | None = None,
+):
+    """Main entry point for launcher generation.
+
+    *compute_units* is the declared unit list; each gets a compute-unit launcher
+    even when no component of this mode runs on it. Without a declaration the
+    units are the ones the components reference.
+    """
 
     logger.debug(f"Generating launcher from system structure data in {output_dir}")
 
@@ -124,7 +134,9 @@ def generate_module_launch_file(instance: Dict[str, Any], output_dir: str, forwa
         instance, forward_args
     )
 
-    for compute_unit, components in compute_unit_map.items():
+    launcher_units = compute_units if compute_units is not None else list(compute_unit_map)
+    for compute_unit in launcher_units:
+        components = compute_unit_map.get(compute_unit, [])
         component_args_map = {
             component.get("name", ""): component_args_by_id.get((compute_unit, component.get("name", "")), [])
             for component in components

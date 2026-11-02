@@ -174,8 +174,9 @@
     "unique_id": "id_979ceb833748df4e"
   },
   "metadata": {
+    "compute_units": [],
     "mode": "default",
     "system_name": "Fleet"
   },
-  "schema_version": "1.1"
+  "schema_version": "1.2"
 }

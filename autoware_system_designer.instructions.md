@@ -215,12 +215,19 @@ Top-level entry point defining the complete system.
   - `description`: (Optional) Description of the mode.
   - `default`: (Optional) `true`/`false` to mark as default mode.
 - `parameter_sets`: List of parameter set files. Can be an empty list `[]`.
+- `compute_units`: (Optional) Compute units (ECUs) the system is deployed on. Once declared, every component's `compute_unit` must name one of them, and each unit gets a launcher in every mode even when no component of that mode runs on it.
+  - `name`: Unit identifier referenced by `components[].compute_unit` (e.g., `main_ecu`).
+  - `role`: (Optional) Function of the unit in the system (e.g., `main`, `perception`).
+  - `platform`: (Optional) Hardware/OS platform identifier (e.g., `x86_64`, `jetson_orin`).
+  - `ros_domain_id`: (Optional) ROS domain the unit's nodes run in.
+  - `launch`: (Optional) How the unit's nodes are launched: `native` (designer runtime, default), `xml` (`ros2 launch`) or `container`.
+  - `description`: (Optional) Brief explanation of the unit.
 - `components`: Top-level instances.
   - `name`: Name of the component instance.
   - `entity`: Reference to module/node (e.g., `SensingModule.module`).
   - `description`: (Optional) Brief explanation of the component.
   - `namespace`: ROS namespace prefix.
-  - `compute_unit`: Hardware resource identifier (e.g., `main_ecu`).
+  - `compute_unit`: Compute unit the component runs on (e.g., `main_ecu`); a declared `compute_units` entry when the system declares any.
   - `parameter_set`: (Optional) Parameter set file name(s) to apply. Can be a string or an array of strings.
 - `node_groups`: (Optional) Group nodes into a ROS 2 component container (synthetic container node).
   - `name`: Unique group name. It will be used as the component name for the container.
@@ -231,8 +238,8 @@ Top-level entry point defining the complete system.
 **Mode-Specific Overrides:**
 Each mode can define overrides using the mode name as a key:
 
-- `override`: Dictionary containing mode-specific overrides. All system configuration fields can be overridden (e.g., `variables`, `variable_files`, `modes`, `parameter_sets`, `components`, `connections`). The variant resolver applies the appropriate merge strategy for each field type (key-based replacement for fields with identifiers, append for lists without keys, dictionary merge for dictionaries).
-- `remove`: Dictionary specifying what to remove in this mode. All system configuration fields can be removed (e.g., `modes`, `parameter_sets`, `components`, `variables`, `connections`). The variant resolver applies the appropriate removal strategy (key-based removal for fields with identifiers, full match for lists without keys). When components are removed, connections involving them are automatically filtered out.
+- `override`: Dictionary containing mode-specific overrides. All system configuration fields can be overridden (e.g., `variables`, `variable_files`, `modes`, `parameter_sets`, `compute_units`, `components`, `connections`). The variant resolver applies the appropriate merge strategy for each field type (key-based replacement for fields with identifiers, append for lists without keys, dictionary merge for dictionaries).
+- `remove`: Dictionary specifying what to remove in this mode. All system configuration fields can be removed (e.g., `modes`, `parameter_sets`, `compute_units`, `components`, `variables`, `connections`). The variant resolver applies the appropriate removal strategy (key-based removal for fields with identifiers, full match for lists without keys). When components are removed, connections involving them are automatically filtered out.
 
 ### 4.4. Parameter Set Configuration (`.parameter_set.yaml`)
 
@@ -282,7 +289,7 @@ When not using `base`, you must define all required fields directly as specified
 
 The `override` section merges items into the base configuration. Merge behavior depends on field type:
 
-- **Key-based merging** (lists with identifiable keys like `name`): Items with matching keys replace existing items; new keys are appended. Examples: `variables`, `modes`, `components`, `instances`, `subscribers`, `publishers`, `servers`, `clients`, `param_values`, `processes`.
+- **Key-based merging** (lists with identifiable keys like `name`): Items with matching keys replace existing items; new keys are appended. Examples: `variables`, `modes`, `compute_units`, `components`, `instances`, `subscribers`, `publishers`, `servers`, `clients`, `param_values`, `processes`.
 - **Append-only merging** (lists without keys): All override items are appended. Examples: `connections`, `variable_files`, `parameter_sets`.
 - **Dictionary merging**: Fields are merged recursively (e.g., `launch` configuration in nodes).
 
@@ -375,10 +382,10 @@ connections:
     - publisher.*
 ```
 
-### System Example (0.4.0)
+### System Example (0.5.0)
 
 ```yaml
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.5.0
 name: AutowareSample.system
 variables:
   - name: config_path
@@ -395,6 +402,10 @@ modes:
   - name: LoggingSimulation
     description: Logged data replay simulation mode
 parameter_sets: []
+compute_units:
+  - name: main_ecu
+    role: main
+    platform: x86_64
 components:
   - name: sensing
     entity: SampleSensorKit.module

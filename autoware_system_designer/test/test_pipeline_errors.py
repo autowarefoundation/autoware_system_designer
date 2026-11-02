@@ -70,6 +70,27 @@ def test_unknown_queue_fails(tmp_path):
     assert "Corrector.node.yaml" in message
 
 
+def test_undeclared_compute_unit_fails(tmp_path):
+    """A component bound to a unit outside the declaration is rejected with both names."""
+    workspace = stage_case("errors_unknown_compute_unit", tmp_path)
+    with pytest.raises(SystemDesignerError) as excinfo:
+        run_pipeline(workspace, "unit_pkg/Unknown.system.yaml", tmp_path)
+    message = str(excinfo.value)
+    assert "ghost_ecu" in message
+    assert "main_ecu" in message
+    assert "Unknown.system.yaml" in message
+
+
+def test_variant_component_on_undeclared_compute_unit_fails(tmp_path):
+    """The binding rule applies to the resolved system, so a variant override cannot bypass it."""
+    workspace = stage_case("errors_variant_compute_unit", tmp_path)
+    with pytest.raises(SystemDesignerError) as excinfo:
+        run_pipeline(workspace, "variant_pkg/Variant.system.yaml", tmp_path)
+    message = str(excinfo.value)
+    assert "listener" in message
+    assert "ghost_ecu" in message
+
+
 def test_bad_major_version_fails(tmp_path):
     workspace = stage_case("errors_bad_major", tmp_path)
     with pytest.raises(SystemDesignerError) as excinfo:

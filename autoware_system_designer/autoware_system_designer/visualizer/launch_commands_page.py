@@ -64,6 +64,19 @@ def _discover_compute_units_in_dir(mode_dir: Path) -> list[str]:
     ]
 
 
+def _compute_units_in_dir(mode_dir: Path, declared: list[str] | None) -> list[str]:
+    """Units listed for one mode directory: the declared ones that have a launcher, else the discovered ones."""
+    if declared is None:
+        return _discover_compute_units_in_dir(mode_dir)
+    units = []
+    for compute_unit in declared:
+        if (mode_dir / compute_unit / f"{compute_unit.lower()}{LAUNCH_FILE_SUFFIX}").is_file():
+            units.append(compute_unit)
+        else:
+            logger.warning("No launcher for declared compute unit '%s' under %s; row omitted", compute_unit, mode_dir)
+    return units
+
+
 def _build_export_path_arg(
     package_name: str | None,
     system_name: str,
@@ -93,12 +106,15 @@ def _build_commands(
     mode_keys: list[str],
     deploy_variants: list[dict[str, Any]],
     web_dir: str,
+    compute_units_by_mode: dict[str, list[str]] | None = None,
 ) -> list[Command]:
     """Launch commands ordered by mode > ECU > deploy.
 
     Without deploy variants the launchers sit directly under launcher/<mode>/<ecu>/; with them
     each variant has its own tree under launcher/deployments/<deploy>/<mode>/<ecu>/. The runtime
     method reads system_structure/<mode>.json and binds the variant's arguments via --deploy.
+    ECUs come from the mode's declared compute units when it declares any, otherwise from the
+    launcher directories present.
     """
     launcher_root = Path(launcher_dir).resolve()
     structure_root = Path(system_structure_dir).resolve() if system_structure_dir else None
@@ -112,10 +128,11 @@ def _build_commands(
         mode_entries: list[Command] = []
         structure_file = f"{mode_key}{STRUCTURE_FILE_SUFFIX}"
         has_structure = structure_root is not None and (structure_root / structure_file).is_file()
+        declared = (compute_units_by_mode or {}).get(mode_key) or None
         for deploy_name in deploy_names:
             prefix = f"{DEPLOYMENTS_SUBDIR}/{deploy_name}/" if deploy_name else ""
             mode_dir = launcher_root / f"{prefix}{mode_key}"
-            for compute_unit in _discover_compute_units_in_dir(mode_dir):
+            for compute_unit in _compute_units_in_dir(mode_dir, declared):
                 launch_filename = f"{compute_unit.lower()}{LAUNCH_FILE_SUFFIX}"
                 xml_path = _build_export_path_arg(
                     package_name,
@@ -181,6 +198,7 @@ def generate_launch_commands_page(
     web_dir: str,
     deploy_variants: list[dict[str, Any]] | None = None,
     system_structure_dir: str | None = None,
+    compute_units_by_mode: dict[str, list[str]] | None = None,
 ) -> None:
     """Generate the launch commands HTML page for a deployment.
 
@@ -200,6 +218,8 @@ def generate_launch_commands_page(
         web_dir: Directory to write the HTML file (e.g. visualization/web).
         deploy_variants: Optional list of deploy items (name, arguments); when set, uses launcher/deployments/.
         system_structure_dir: Path to exports/<name>/system_structure/; omitting it drops the runtime method.
+        compute_units_by_mode: Declared compute unit names per mode; modes absent or empty fall back
+            to the launcher directories present.
     """
     deploy_variants = deploy_variants or []
     commands = _build_commands(
@@ -210,6 +230,7 @@ def generate_launch_commands_page(
         mode_keys,
         deploy_variants,
         web_dir,
+        compute_units_by_mode,
     )
 
     deploy_names, rows_by_deploy = _rows_by_deploy(commands)

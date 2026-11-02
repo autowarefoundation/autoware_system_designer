@@ -170,6 +170,63 @@ def _format_version_semantics(config: Dict[str, Any]) -> Iterable[SchemaIssue]:
     # warning is handled at the config_registry and linter layers.
 
 
+def _component_compute_unit_issue(component: Any, declared: List[str], yaml_path: str) -> Optional[SchemaIssue]:
+    """Issue for a component whose compute_unit is not one of *declared*; None when it is."""
+    if not isinstance(component, dict):
+        return None
+    unit = component.get("compute_unit")
+    if unit in declared:
+        return None
+    component_name = component.get("name")
+    if unit is None:
+        message = f"Component '{component_name}' has no compute_unit; declared compute units: {declared}"
+    else:
+        message = f"Component '{component_name}' references undeclared compute unit '{unit}'; declared: {declared}"
+    return SchemaIssue(message=message, yaml_path=yaml_path)
+
+
+def _system_compute_unit_semantics(config: Dict[str, Any]) -> Iterable[SchemaIssue]:
+    """Declared compute units are unique and every component, in every mode section, binds to one.
+
+    A variant file inherits the declaration from its base, so its components are
+    checked against the resolved system at build time instead.
+    """
+    if "base" in config:
+        return []
+    declared = config.get("compute_units")
+    if not isinstance(declared, list):
+        return []
+
+    issues: List[SchemaIssue] = []
+    names: List[str] = []
+    for idx, unit in enumerate(declared):
+        if not isinstance(unit, dict):
+            continue
+        name = unit.get("name")
+        if name in names:
+            issues.append(
+                SchemaIssue(message=f"Duplicate compute unit '{name}'", yaml_path=f"/compute_units/{idx}/name")
+            )
+        names.append(name)
+
+    sections = [("/components", config.get("components"))]
+    for mode in config.get("modes") or []:
+        mode_name = mode.get("name") if isinstance(mode, dict) else None
+        section = config.get(mode_name) if isinstance(mode_name, str) else None
+        override = section.get("override") if isinstance(section, dict) else None
+        if isinstance(override, dict):
+            sections.append((f"/{_jp_escape(mode_name)}/override/components", override.get("components")))
+
+    for base_path, components in sections:
+        if not isinstance(components, list):
+            continue
+        for idx, component in enumerate(components):
+            issue = _component_compute_unit_issue(component, names, f"{base_path}/{idx}/compute_unit")
+            if issue is not None:
+                issues.append(issue)
+    return issues
+
+
 def _variant_forbidden_root_fields_semantics(
     *,
     forbidden_fields: Sequence[str],
@@ -245,10 +302,12 @@ def get_semantic_checks(
     elif entity_type == "system":
         return (
             _format_version_semantics,
+            _system_compute_unit_semantics,
             _variant_forbidden_root_fields_semantics(
                 forbidden_fields=(
                     "modes",
                     "parameter_sets",
+                    "compute_units",
                     "components",
                     "connections",
                     "node_groups",

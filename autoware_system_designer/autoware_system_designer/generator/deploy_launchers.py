@@ -18,7 +18,11 @@ import logging
 import os
 from typing import Any, Dict, List
 
-from autoware_system_designer.builder.export.json_io import extract_system_structure_data, load_system_structure
+from autoware_system_designer.builder.export.json_io import (
+    declared_compute_units,
+    extract_system_structure_data,
+    load_system_structure,
+)
 from autoware_system_designer.common.path_utils import export_path
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 
@@ -42,9 +46,9 @@ def generate_deploy_launchers(
     for mode_key in mode_keys:
         structure_path = export_path(system_structure_dir, f"{mode_key}.json")
         payload = load_system_structure(structure_path, workspace_root=workspace_root)
-        data, _ = extract_system_structure_data(payload)
+        data, metadata = extract_system_structure_data(payload)
 
-        compute_units = sorted(
+        compute_units = declared_compute_units(metadata) or sorted(
             {child.get("compute_unit") for child in data.get("children", []) if child.get("compute_unit")}
         )
 

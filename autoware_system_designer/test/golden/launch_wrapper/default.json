@@ -305,8 +305,9 @@
     "unique_id": "id_1c1750855cfe35b7"
   },
   "metadata": {
+    "compute_units": [],
     "mode": "default",
     "system_name": "Wrapped"
   },
-  "schema_version": "1.1"
+  "schema_version": "1.2"
 }

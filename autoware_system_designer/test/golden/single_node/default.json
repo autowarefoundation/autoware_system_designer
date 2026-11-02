@@ -174,8 +174,9 @@
     "unique_id": "id_f1cc35cb62494031"
   },
   "metadata": {
+    "compute_units": [],
     "mode": "default",
     "system_name": "Solo"
   },
-  "schema_version": "1.1"
+  "schema_version": "1.2"
 }

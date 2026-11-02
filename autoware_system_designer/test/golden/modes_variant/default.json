@@ -319,8 +319,9 @@
     "unique_id": "id_61ddb1b51e78f2f7"
   },
   "metadata": {
+    "compute_units": [],
     "mode": "default",
     "system_name": "VehicleY"
   },
-  "schema_version": "1.1"
+  "schema_version": "1.2"
 }

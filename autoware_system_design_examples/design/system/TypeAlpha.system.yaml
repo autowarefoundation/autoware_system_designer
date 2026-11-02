@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.5.0
 
 name: TypeAlpha.system
 
@@ -23,6 +23,17 @@ modes:
     default: true
   - name: simulation
     description: Simulation mode
+
+compute_units:
+  - name: main_ecu
+    role: main
+    description: Sensing, perception and vehicle interface.
+  - name: dummy_ecu_1
+    role: localization
+    description: Map and localization dummies.
+  - name: dummy_ecu_2
+    role: planning
+    description: Planning and control dummies.
 
 components:
   - name: sensing

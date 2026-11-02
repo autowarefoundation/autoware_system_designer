@@ -1,0 +1,148 @@
+{
+  "data": {
+    "children": [
+      {
+        "children": [],
+        "compute_unit": "main_ecu",
+        "entity_type": "node",
+        "events": [
+          {
+            "action_ids": [
+              "id_4f980bd05c17c117"
+            ],
+            "error_rate": null,
+            "expected_latency_ms": null,
+            "frequency": 10.0,
+            "latch_ids": [],
+            "name": "publish",
+            "process_event": true,
+            "read_ids": [],
+            "timeout": null,
+            "trigger_ids": [],
+            "type": "periodic",
+            "unique_id": "id_608583f5023b734e",
+            "warn_rate": null
+          }
+        ],
+        "in_ports": [],
+        "launcher": {
+          "args": "",
+          "executable": "talker_node",
+          "launch_state": "single_node",
+          "node_output": "screen",
+          "package": "units_pkg",
+          "param_files": [],
+          "param_values": [
+            {
+              "name": "rate_hz",
+              "parameter_type": "DEFAULT",
+              "type": "double",
+              "value": "10.0"
+            }
+          ],
+          "ports": [
+            {
+              "name": "chatter",
+              "remap_target": "~/output/chatter",
+              "topic": "/talker/chatter"
+            }
+          ]
+        },
+        "links": [],
+        "name": "talker",
+        "namespace": "/",
+        "out_ports": [
+          {
+            "connected_ids": [],
+            "event": {
+              "action_ids": [],
+              "error_rate": null,
+              "expected_latency_ms": null,
+              "frequency": 10.0,
+              "latch_ids": [],
+              "name": "output_chatter",
+              "process_event": false,
+              "read_ids": [],
+              "timeout": null,
+              "trigger_ids": [
+                "id_608583f5023b734e"
+              ],
+              "type": "to_output",
+              "unique_id": "id_4f980bd05c17c117",
+              "warn_rate": null
+            },
+            "is_global": false,
+            "is_outward": true,
+            "is_remapped": false,
+            "msg_type": "std_msgs/msg/String",
+            "name": "chatter",
+            "namespace": [
+              "talker"
+            ],
+            "port_path": "/talker/output/chatter",
+            "remap_target": "~/output/chatter",
+            "topic": [
+              "talker",
+              "chatter"
+            ],
+            "unique_id": "id_4f980bd05c17c117"
+          }
+        ],
+        "package": "units_pkg",
+        "parameter_files_all": [],
+        "parameters": [
+          {
+            "name": "rate_hz",
+            "parameter_type": "DEFAULT",
+            "source": {
+              "column": 5,
+              "file_path": "${workspace_root}/ws/units_pkg/Talker.node.yaml",
+              "line": 25,
+              "yaml_path": "/param_values/0"
+            },
+            "type": "double",
+            "value": "10.0"
+          }
+        ],
+        "path": "/talker",
+        "source_file": "${workspace_root}/ws/units_pkg/Talker.node.yaml",
+        "unique_id": "id_cfc72b8f1438a23a"
+      }
+    ],
+    "compute_unit": "",
+    "entity_type": "system",
+    "events": [],
+    "in_ports": [],
+    "links": [],
+    "name": "Multi_solo",
+    "namespace": "/",
+    "out_ports": [],
+    "parameters": [],
+    "path": "/",
+    "source_file": "${workspace_root}/ws/units_pkg/Multi.system.yaml",
+    "unique_id": "id_262896b46afb5aad"
+  },
+  "metadata": {
+    "compute_units": [
+      {
+        "description": "Primary unit hosting the talker.",
+        "launch": "native",
+        "name": "main_ecu",
+        "platform": "x86_64",
+        "role": "main",
+        "ros_domain_id": 1
+      },
+      {
+        "description": "",
+        "launch": "xml",
+        "name": "sub_ecu",
+        "platform": "jetson_orin",
+        "role": "listener",
+        "ros_domain_id": null
+      }
+    ],
+    "mode": "solo",
+    "system_name": "Multi"
+  },
+  "schema_version": "1.2"
+}

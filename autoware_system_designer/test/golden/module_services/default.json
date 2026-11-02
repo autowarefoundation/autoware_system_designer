@@ -1417,8 +1417,9 @@
     "unique_id": "id_2e29b14427c6c9a5"
   },
   "metadata": {
+    "compute_units": [],
     "mode": "default",
     "system_name": "Hub"
   },
-  "schema_version": "1.1"
+  "schema_version": "1.2"
 }

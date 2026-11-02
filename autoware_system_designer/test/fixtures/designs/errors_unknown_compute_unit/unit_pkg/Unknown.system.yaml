@@ -1,0 +1,15 @@
+autoware_system_design_format: 0.5.0
+
+name: Unknown.system
+
+description: Component bound to a compute unit the system never declares.
+
+compute_units:
+  - name: main_ecu
+
+components:
+  - name: talker
+    entity: Talker.node
+    compute_unit: ghost_ecu
+
+connections: []
