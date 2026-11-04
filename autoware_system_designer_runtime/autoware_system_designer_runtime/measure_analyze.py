@@ -57,7 +57,7 @@ def main() -> None:
         help="Output latency file: the bundle's script under .js, bare JSON under any other suffix "
         "(default: <Mode>_latency.js in the export's visualization/web/data/, else <trace_dir>/../latency/)",
     )
-    parser.add_argument("--ecu", default=None, help="Restrict the design to nodes of this compute unit")
+    parser.add_argument("--compute-unit", default=None, help="Restrict the design to nodes of this compute unit")
     parser.add_argument("--window-start", default=None, help="Epoch seconds or ISO time; default: first record")
     parser.add_argument("--window-end", default=None, help="Epoch seconds or ISO time; default: last record")
     parser.add_argument("--settle", type=float, default=0.0, help="Seconds skipped after the window start")
@@ -81,7 +81,7 @@ def main() -> None:
         data = _resolve_structure_paths(data, str(args.json_file))
     except RuntimeError as exc:
         logger.warning("%s", exc)
-    graph = NodeGraph.from_system_structure(data, ecu=args.ecu)
+    graph = NodeGraph.from_system_structure(data, ecu=args.compute_unit)
     mode = graph.mode or args.json_file.stem
 
     latency_out = args.latency_out or default_latency_out(mode, args.json_file, args.trace_dir.resolve().parent)

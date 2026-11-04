@@ -155,7 +155,7 @@ def _build_commands(
                     deploy_arg = f" --deploy {deploy_name}" if deploy_name else ""
                     native_cmd = (
                         f"ros2 run {RUNTIME_PACKAGE} {RUNTIME_EXECUTABLE} {structure_path}"
-                        f" --ecu {compute_unit}{deploy_arg}"
+                        f" --compute-unit {compute_unit}{deploy_arg}"
                     )
                 mode_entries.append(Command(mode_key, compute_unit, deploy_name, f"ros2 launch {xml_path}", native_cmd))
         mode_entries.sort(key=lambda entry: (entry.ecu, entry.deploy))

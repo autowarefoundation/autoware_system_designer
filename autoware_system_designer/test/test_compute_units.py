@@ -260,6 +260,6 @@ def test_export_carries_declaration_and_launches_every_declared_unit(tmp_path):
     assert "<include" not in solo_sub
 
     page = (run.exports_dir / "visualization" / "web" / f"{run.system_name}_launch_commands.html").read_text()
-    assert "--ecu sub_ecu" in page
+    assert "--compute-unit sub_ecu" in page
     assert page.count("solo/sub_ecu/sub_ecu.launch.xml") >= 1
     assert "remote_ecu" not in page
