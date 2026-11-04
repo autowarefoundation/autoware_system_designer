@@ -46,6 +46,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _SYSTEM_ARG_PATTERN = re.compile(r"\$\(var\s+([^)]+)\)")
+_FIND_PKG_SHARE_PATTERN = re.compile(r"\$\(find-pkg-share\s+[^)]+\)")
+
+
+def _has_substitution(path: Optional[str]) -> bool:
+    """Whether a resolved path still carries a substitution."""
+    return bool(path) and "$(" in path
+
+
+def _has_launch_time_substitution(path: Optional[str]) -> bool:
+    """Whether a resolved path carries a substitution the build cannot expand (find-pkg-share is expandable)."""
+    return _has_substitution(_FIND_PKG_SHARE_PATTERN.sub("", path or ""))
 
 
 class ParameterManager:
@@ -219,13 +230,36 @@ class ParameterManager:
         """
         result: List[LauncherParamFileData] = []
         for param_file in self.parameter_files.list:
-            # Skip DEFAULT_FILE parameter files as their parameters are expanded individually
-            if param_file.parameter_type == ParameterType.DEFAULT_FILE:
-                continue
-
             resolved_path = self._resolve_parameter_file_path(
                 param_file.path, self._get_package_name(), param_file.is_override
             )
+            # Default files are expanded into individual values, except those only resolvable at launch time.
+            if param_file.parameter_type == ParameterType.DEFAULT_FILE and not _has_launch_time_substitution(
+                resolved_path
+            ):
+                continue
+            result.append(
+                {
+                    "name": param_file.name,
+                    "path": resolved_path,
+                    "allow_substs": param_file.allow_substs,
+                    "parameter_type": parameter_type_to_str(param_file.parameter_type),
+                }
+            )
+        return result
+
+    def get_launch_time_parameter_files(self) -> List[LauncherParamFileData]:
+        """Get parameter files whose path keeps launch-time substitutions, in priority order.
+
+        Such files cannot be expanded at build time, so the launcher loads them as files.
+        """
+        result: List[LauncherParamFileData] = []
+        for param_file in sorted(self.parameter_files.list, key=lambda x: x.parameter_type.value):
+            resolved_path = self._resolve_parameter_file_path(
+                param_file.path, self._get_package_name(), param_file.is_override
+            )
+            if not _has_launch_time_substitution(resolved_path):
+                continue
             result.append(
                 {
                     "name": param_file.name,
@@ -377,8 +411,9 @@ class ParameterManager:
         if path.startswith("/"):
             return path
 
-        # if path starts with $(find-pkg-share, it's not resolved package path, so return it as is
-        if path.startswith("$(find-pkg-share"):
+        # A leading substitution left unresolved ($(find-pkg-share ...), a launch-time $(var ...))
+        # roots the path itself, so it is not relative to the node package.
+        if path.startswith("$("):
             return path
 
         # Check if this is a default parameter file (not override)
@@ -855,7 +890,7 @@ class ParameterManager:
         )
 
         # Only load when resolved to an absolute filesystem path with no remaining substitutions.
-        if not resolved_path or resolved_path.startswith("$") or not os.path.isabs(resolved_path):
+        if not resolved_path or _has_substitution(resolved_path) or not os.path.isabs(resolved_path):
             logger.debug(
                 f"Skipping parameter file load for {file_path}: Could not resolve to absolute path ({resolved_path})"
             )

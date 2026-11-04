@@ -8,6 +8,18 @@
 {% for arg_name in forward_args %}
   <arg name="{{ arg_name }}"/>
 {% endfor %}
+{# One priority tier: values expanded from files, files loaded at launch time, then direct values. #}
+{% macro param_tier(node, file_value_types, file_type, value_types) %}
+{% for param in node.param_values if param.parameter_type in file_value_types %}
+<param name="{{ param.name }}" value="{{ param.value | launch_param_attr }}"/>
+{% endfor %}
+{% for param_file in node.launch_time_param_files|default([]) if param_file.parameter_type == file_type %}
+<param from="{{ param_file.path }}" allow_substs="{{ param_file.allow_substs | lower }}"/>
+{% endfor %}
+{% for param in node.param_values if param.parameter_type in value_types %}
+<param name="{{ param.name }}" value="{{ param.value | launch_param_attr }}"/>
+{% endfor %}
+{% endmacro %}
 {% macro node_configuration(node) %}
 <!-- Remap input and output topics -->
 {% for port in node.ports %}
@@ -15,25 +27,11 @@
 {% endfor %}
 
 <!-- Parameters - Non-Override Parameters -->
-{% for param in node.param_values %}
-{% if param.parameter_type != 'OVERRIDE' and param.parameter_type != 'OVERRIDE_FILE' and param.parameter_type != 'MODE' and param.parameter_type != 'MODE_FILE' %}
-<param name="{{ param.name }}" value="{{ param.value | launch_param_attr }}"/>
-{% endif %}
-{% endfor %}
-
+{{ param_tier(node, ['GLOBAL', 'DEFAULT_FILE'], 'DEFAULT_FILE', ['DEFAULT']) }}
 <!-- Parameters - Overrides -->
-{% for param in node.param_values %}
-{% if param.parameter_type == 'OVERRIDE' or param.parameter_type == 'OVERRIDE_FILE' %}
-<param name="{{ param.name }}" value="{{ param.value | launch_param_attr }}"/>
-{% endif %}
-{% endfor %}
-
+{{ param_tier(node, ['OVERRIDE_FILE'], 'OVERRIDE_FILE', ['OVERRIDE']) }}
 <!-- Parameters - Mode Overrides (highest priority) -->
-{% for param in node.param_values %}
-{% if param.parameter_type == 'MODE' or param.parameter_type == 'MODE_FILE' %}
-<param name="{{ param.name }}" value="{{ param.value | launch_param_attr }}"/>
-{% endif %}
-{% endfor %}
+{{ param_tier(node, ['MODE_FILE'], 'MODE_FILE', ['MODE']) -}}
 {% endmacro %}
 
 {% for node in nodes %}

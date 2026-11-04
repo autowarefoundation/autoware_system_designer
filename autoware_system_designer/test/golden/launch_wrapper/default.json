@@ -28,6 +28,7 @@
         "launcher": {
           "args": "",
           "launch_state": "ros2_launch_file",
+          "launch_time_param_files": [],
           "node_output": "screen",
           "package": "wrapper_pkg",
           "param_files": [],
@@ -180,6 +181,7 @@
           "args": "",
           "executable": "map_user_node",
           "launch_state": "single_node",
+          "launch_time_param_files": [],
           "node_output": "screen",
           "package": "wrapper_pkg",
           "param_files": [],

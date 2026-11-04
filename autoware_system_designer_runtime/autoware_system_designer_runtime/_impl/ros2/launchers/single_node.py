@@ -18,12 +18,11 @@ from __future__ import annotations
 
 from typing import Mapping, Optional
 
-from ..common.params import _ros_args, build_cmd, parameter_files, params_dict, remap_pairs
+from ..common.params import _ros_args, build_cmd, parameter_layers, remap_pairs
 
 
 def node_cmdline(spec: Mapping, extra_param_files: Optional[list[str]] = None) -> list[str]:
     launcher = spec["launcher"]
-    inline = params_dict(spec.get("parameters", []))
     extra_args = launcher.get("args", "")
     cmd = build_cmd(launcher)
     if extra_args:
@@ -31,8 +30,7 @@ def node_cmdline(spec: Mapping, extra_param_files: Optional[list[str]] = None) -
     cmd += _ros_args(
         name=spec["name"],
         namespace=spec["namespace"],
-        inline_params=inline,
-        param_files=parameter_files(spec) + (extra_param_files or []),
+        parameters=parameter_layers(spec, extra_param_files or []),
         remaps=remap_pairs(launcher.get("ports", [])),
     )
     return cmd

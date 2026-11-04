@@ -41,7 +41,7 @@ from ...core.state import (
     ComposableUnloaded,
 )
 from ..common.namespace import join_fqn, parent_namespace, unique_node_name
-from ..common.params import parameter_files, params_dict, remap_pairs
+from ..common.params import ParameterLayer, parameter_layers, remap_pairs
 
 logger = logging.getLogger(__name__)
 
@@ -191,15 +191,13 @@ class ComposableSpec:
     namespace: str
     target_container_fqn: str
     remap_rules: Sequence[tuple[str, str]] = field(default_factory=list)
-    parameter_files: Sequence[str] = field(default_factory=list)
-    inline_parameters: Mapping[str, Any] = field(default_factory=dict)
+    parameters: Sequence[ParameterLayer] = field(default_factory=list)  # lowest priority first
     extra_arguments: Mapping[str, Any] = field(default_factory=dict)
     log_level: Optional[int] = None
 
 
 def composable_spec(spec: Mapping, extra_param_files: Optional[list[str]] = None) -> ComposableSpec:
     launcher = spec["launcher"]
-    inline = params_dict(spec.get("parameters", []))
     extra = {"use_intra_process_comms": True} if launcher.get("use_intra_process_comms") else {}
     ns = parent_namespace(spec.get("namespace"), spec.get("name"))
     return ComposableSpec(
@@ -210,8 +208,7 @@ def composable_spec(spec: Mapping, extra_param_files: Optional[list[str]] = None
         namespace=ns,
         target_container_fqn=launcher.get("container_target", ""),
         remap_rules=remap_pairs(launcher.get("ports", [])),
-        parameter_files=parameter_files(spec) + (extra_param_files or []),
-        inline_parameters=inline,
+        parameters=parameter_layers(spec, extra_param_files or []),
         extra_arguments=extra,
     )
 
@@ -327,12 +324,10 @@ class ComposableNodeActor:
                 shutdown_task.cancel()
 
     async def _load(self) -> int:
-        if self._spec.parameter_files:
-            target_fqn = join_fqn(self._spec.namespace, self._spec.node_name)
-            flat = flatten_for_fqn(self._spec.parameter_files, target_fqn)
-        else:
-            flat = {}
-        flat.update(self._spec.inline_parameters)
+        target_fqn = join_fqn(self._spec.namespace, self._spec.node_name)
+        flat: "dict[str, Any]" = {}
+        for layer in self._spec.parameters:
+            flat.update(flatten_for_fqn([layer], target_fqn) if isinstance(layer, str) else layer)
 
         param_msgs = to_parameter_msgs(flat) if flat else []
         extra_msgs = to_parameter_msgs(self._spec.extra_arguments) if self._spec.extra_arguments else []

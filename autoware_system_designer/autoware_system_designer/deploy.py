@@ -24,6 +24,7 @@ finished export self-describing, so artifacts can be reloaded without a build.
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -145,13 +146,17 @@ class DeploymentBuilder:
         self.config_registry: Optional[ConfigRegistry] = None
         self._package_paths: Dict[str, str] = {}
         self._workspace_root: Optional[str] = None
+        # Undefined $(var ...) references per mode: name -> source locations.
+        self._undefined_variables: Dict[str, Dict[str, List[str]]] = {}
 
     def build(self) -> BuildArtifacts:
         try:
             system_config, deploy_variants, _table_path = self._resolve_target(self.deploy_config)
             artifacts = self._init_artifacts(system_config, deploy_variants)
+            self._check_deploy_arguments(artifacts)
             self._build_modes(system_config, artifacts)
             self._check_used_duplicates()
+            self._check_undefined_variables(artifacts)
             self._collect_package_resolution(artifacts)
             save_artifacts_manifest(artifacts)
             return artifacts
@@ -398,11 +403,14 @@ class DeploymentBuilder:
 
         return mode_key, deploy_instance, snapshot_store
 
-    def _export_mode_structure(self, mode_key: str, deploy_instance: DeploymentInstance, artifacts: BuildArtifacts):
+    def _export_mode_structure(
+        self, mode_key: str, deploy_instance: DeploymentInstance, artifacts: BuildArtifacts
+    ) -> Dict[str, Any]:
         """Serialize one mode's DeploymentInstance to the system-structure JSON."""
         structure_payload = collect_system_structure(deploy_instance, artifacts.name, mode_key)
         structure_path = export_path(artifacts.layout.system_structure_dir, f"{mode_key}.json")
         save_system_structure(structure_path, structure_payload, workspace_root=artifacts.workspace_root)
+        return structure_payload
 
     def _build_modes(self, system_config: SystemConfig, artifacts: BuildArtifacts) -> None:
         mode_names, default_mode = select_modes(system_config)
@@ -420,7 +428,15 @@ class DeploymentBuilder:
                 mode_key, deploy_instance, snapshot_store = self._build_mode_instance(
                     mode_name, mode_system_config, artifacts
                 )
-                self._export_mode_structure(mode_key, deploy_instance, artifacts)
+                structure_payload = self._export_mode_structure(mode_key, deploy_instance, artifacts)
+                resolver = deploy_instance.parameter_resolver
+                undefined = resolver.undefined_variables if resolver else {}
+                if undefined:
+                    # A reference overridden before it reaches a launcher binds nothing at launch time.
+                    launched = _launcher_var_names(structure_payload)
+                    reached = {name: locations for name, locations in undefined.items() if name in launched}
+                    if reached:
+                        self._undefined_variables[mode_key] = reached
 
                 artifacts.mode_keys.append(mode_key)
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
@@ -449,6 +465,38 @@ class DeploymentBuilder:
             f"{len(duplicates)} duplicated entity name(s) are used by this deployment; "
             f"'->' marks the definition in use:\n" + format_duplicate_report(duplicates)
         )
+
+    def _check_undefined_variables(self, artifacts: BuildArtifacts) -> None:
+        """Strict gate on $(var ...) references that name no variable, system argument or deployment argument."""
+        if not self._undefined_variables or not self.config_registry.strict:
+            return
+        # Deployment arguments reach the launchers as launch arguments, as system arguments do.
+        launch_arguments = set(_collect_deploy_variable_names(artifacts))
+        lines = []
+        for mode_key, undefined in self._undefined_variables.items():
+            for name, locations in undefined.items():
+                if name in launch_arguments:
+                    continue
+                lines.append(f"  [{mode_key}] $(var {name})")
+                lines.extend(f"      {location.strip()}" for location in locations if location.strip())
+        if not lines:
+            return
+        raise ValidationError(
+            "Undefined $(var ...) references; declare each name as a system variable or argument:\n" + "\n".join(lines)
+        )
+
+    @staticmethod
+    def _check_deploy_arguments(artifacts: BuildArtifacts) -> None:
+        """Warn on deployment arguments the system does not declare."""
+        declared = set(artifacts.argument_names)
+        for deploy_item in artifacts.deploy_variants:
+            for argument in deploy_item.get("arguments", deploy_item.get("variables", [])):
+                name = argument.get("name") if isinstance(argument, dict) else None
+                if name and name not in declared:
+                    logger.warning(
+                        f"Deployment '{deploy_item.get('name')}' sets argument '{name}', "
+                        f"which system {artifacts.name} does not declare"
+                    )
 
     def _collect_package_resolution(self, artifacts: BuildArtifacts) -> None:
         """Record per-package build resolution for the build-script generator."""
@@ -488,6 +536,23 @@ def _iter_mode_data(artifacts: BuildArtifacts):
     return iter_mode_data(
         artifacts.mode_keys, artifacts.layout.system_structure_dir, workspace_root=artifacts.workspace_root
     )
+
+
+_VAR_REFERENCE = re.compile(r"\$\(var\s+([^()\s]+)\s*\)")
+
+
+def _launcher_var_names(value: Any, in_launcher: bool = False) -> set:
+    """Names of the $(var ...) references left in the launcher data of a system structure."""
+    names: set = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            names |= _launcher_var_names(item, in_launcher or key == "launcher")
+    elif isinstance(value, list):
+        for item in value:
+            names |= _launcher_var_names(item, in_launcher)
+    elif in_launcher and isinstance(value, str):
+        names.update(_VAR_REFERENCE.findall(value))
+    return names
 
 
 def _collect_deploy_variable_names(artifacts: BuildArtifacts) -> List[str]:

@@ -82,5 +82,6 @@ class LaunchManager:
         # param_values and param_files from instance (template-ready: parameter_type as string)
         launcher_data["param_values"] = list(instance.parameter_manager.get_parameters_for_launch())
         launcher_data["param_files"] = list(instance.parameter_manager.get_parameter_files_for_launch())
+        launcher_data["launch_time_param_files"] = list(instance.parameter_manager.get_launch_time_parameter_files())
 
         return launcher_data

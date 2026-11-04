@@ -20,7 +20,7 @@ import logging
 import re
 import shlex
 import subprocess
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import Any, Iterable, Mapping, Optional, Sequence, Union
 
 from .namespace import parent_namespace
 
@@ -97,8 +97,45 @@ def params_dict(params: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     return {p["name"]: resolve_value(p["value"], p.get("type")) for p in params}
 
 
-def parameter_files(node_spec: Mapping[str, Any]) -> list[str]:
-    return [f["path"] for f in node_spec.get("parameter_files_all", []) if f.get("parameter_type") != "DEFAULT_FILE"]
+# A parameter file path, or inline values.
+ParameterLayer = Union[str, dict[str, Any]]
+
+# Priority tiers of the exported XML launchers: (value types expanded from files, file type, direct value types).
+_PARAMETER_TIERS = (
+    (("GLOBAL", "DEFAULT_FILE"), "DEFAULT_FILE", ("DEFAULT",)),
+    (("OVERRIDE_FILE",), "OVERRIDE_FILE", ("OVERRIDE",)),
+    (("MODE_FILE",), "MODE_FILE", ("MODE",)),
+)
+
+
+def parameter_layers(node_spec: Mapping[str, Any], base_files: Sequence[str] = ()) -> list[ParameterLayer]:
+    """Parameter sources of a node, lowest priority first; a later layer wins.
+
+    Base files precede every tier. Each tier lists the values expanded from its files, its
+    files, then its direct values. Default files are expanded at build time, except those whose
+    path keeps a launch-time substitution, which the launcher lists to load as files.
+    """
+    params = node_spec.get("parameters", [])
+    launch_time_defaults = [
+        f["path"]
+        for f in node_spec.get("launcher", {}).get("launch_time_param_files", [])
+        if f.get("parameter_type") == "DEFAULT_FILE"
+    ]
+
+    def values(types: Sequence[str]) -> dict[str, Any]:
+        return params_dict(p for p in params if p.get("parameter_type", "DEFAULT") in types)
+
+    layers: list[ParameterLayer] = list(base_files)
+    for file_value_types, file_type, value_types in _PARAMETER_TIERS:
+        layers.append(values(file_value_types))
+        if file_type == "DEFAULT_FILE":
+            layers.extend(launch_time_defaults)
+        else:
+            layers.extend(
+                f["path"] for f in node_spec.get("parameter_files_all", []) if f.get("parameter_type") == file_type
+            )
+        layers.append(values(value_types))
+    return [layer for layer in layers if layer]
 
 
 def remap_pairs(ports: Iterable[Mapping[str, Any]]) -> list[tuple[str, str]]:
@@ -125,8 +162,7 @@ def _ros_args(
     *,
     name: str,
     namespace: Any,
-    inline_params: Mapping[str, Any],
-    param_files: Sequence[str],
+    parameters: Sequence[ParameterLayer],
     remaps: Sequence[tuple[str, str]],
 ) -> list[str]:
     args: list[str] = ["--ros-args"]
@@ -135,12 +171,13 @@ def _ros_args(
         args += ["-r", f"__ns:={ns}"]
     if name:
         args += ["-r", f"__node:={name}"]
-    # Param files precede inline params; rcl is last-wins, so explicit values
-    # override file contents, matching the exported XML launchers.
-    for f in param_files:
-        args += ["--params-file", f]
-    for k, v in inline_params.items():
-        args += _ros_arg_for_param(k, v)
+    # rcl applies --params-file and -p in command-line order, last wins.
+    for layer in parameters:
+        if isinstance(layer, str):
+            args += ["--params-file", layer]
+        else:
+            for k, v in layer.items():
+                args += _ros_arg_for_param(k, v)
     for src, dst in remaps:
         args += ["-r", f"{src}:={dst}"]
     return args
