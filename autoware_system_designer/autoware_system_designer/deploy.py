@@ -145,13 +145,17 @@ class DeploymentBuilder:
         self.config_registry: Optional[ConfigRegistry] = None
         self._package_paths: Dict[str, str] = {}
         self._workspace_root: Optional[str] = None
+        # Undefined $(var ...) references per mode: name -> source locations.
+        self._undefined_variables: Dict[str, Dict[str, List[str]]] = {}
 
     def build(self) -> BuildArtifacts:
         try:
             system_config, deploy_variants, _table_path = self._resolve_target(self.deploy_config)
             artifacts = self._init_artifacts(system_config, deploy_variants)
+            self._check_deploy_arguments(artifacts)
             self._build_modes(system_config, artifacts)
             self._check_used_duplicates()
+            self._check_undefined_variables(artifacts)
             self._collect_package_resolution(artifacts)
             save_artifacts_manifest(artifacts)
             return artifacts
@@ -421,6 +425,8 @@ class DeploymentBuilder:
                     mode_name, mode_system_config, artifacts
                 )
                 self._export_mode_structure(mode_key, deploy_instance, artifacts)
+                if deploy_instance.parameter_resolver and deploy_instance.parameter_resolver.undefined_variables:
+                    self._undefined_variables[mode_key] = deploy_instance.parameter_resolver.undefined_variables
 
                 artifacts.mode_keys.append(mode_key)
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
@@ -449,6 +455,38 @@ class DeploymentBuilder:
             f"{len(duplicates)} duplicated entity name(s) are used by this deployment; "
             f"'->' marks the definition in use:\n" + format_duplicate_report(duplicates)
         )
+
+    def _check_undefined_variables(self, artifacts: BuildArtifacts) -> None:
+        """Strict gate on $(var ...) references that name no variable, system argument or deployment argument."""
+        if not self._undefined_variables or not self.config_registry.strict:
+            return
+        # Deployment arguments reach the launchers as launch arguments, as system arguments do.
+        launch_arguments = set(_collect_deploy_variable_names(artifacts))
+        lines = []
+        for mode_key, undefined in self._undefined_variables.items():
+            for name, locations in undefined.items():
+                if name in launch_arguments:
+                    continue
+                lines.append(f"  [{mode_key}] $(var {name})")
+                lines.extend(f"      {location.strip()}" for location in locations if location.strip())
+        if not lines:
+            return
+        raise ValidationError(
+            "Undefined $(var ...) references; declare each name as a system variable or argument:\n" + "\n".join(lines)
+        )
+
+    @staticmethod
+    def _check_deploy_arguments(artifacts: BuildArtifacts) -> None:
+        """Warn on deployment arguments the system does not declare."""
+        declared = set(artifacts.argument_names)
+        for deploy_item in artifacts.deploy_variants:
+            for argument in deploy_item.get("arguments", deploy_item.get("variables", [])):
+                name = argument.get("name") if isinstance(argument, dict) else None
+                if name and name not in declared:
+                    logger.warning(
+                        f"Deployment '{deploy_item.get('name')}' sets argument '{name}', "
+                        f"which system {artifacts.name} does not declare"
+                    )
 
     def _collect_package_resolution(self, artifacts: BuildArtifacts) -> None:
         """Record per-package build resolution for the build-script generator."""

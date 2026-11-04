@@ -18,7 +18,7 @@ import math
 import operator
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.parser.yaml_parser import yaml_parser
@@ -188,7 +188,8 @@ class ParameterResolver:
 
     Handles:
     1. $(env ENV_VAR) -> environment variable value
-    2. $(var variable_name) -> resolved variable value
+    2. $(var variable_name) -> resolved variable value; a declared system argument stays as a
+       launch-time $(var ...) reference
     3. $(find-pkg-share package_name) -> absolute package path
     4. $(eval expression) -> evaluated python expression (e.g., $(eval 1 + 2))
     5. Nested substitutions: $(find-pkg-share $(var vehicle_model)_description)
@@ -205,6 +206,11 @@ class ParameterResolver:
         """
         self.variable_map = self._build_variable_map(variables)
         self.package_paths = package_paths.copy()
+
+        # System arguments resolved by ros2 launch; shared by copies along with the record of
+        # undefined references, which the deployment build reports once per system mode.
+        self.argument_names: Set[str] = set()
+        self.undefined_variables: Dict[str, List[str]] = {}
 
         # Optional location context for improved warning messages
         self._source_context: Optional[SourceLocation] = None
@@ -226,7 +232,13 @@ class ParameterResolver:
         # We rely on manual population of variable_map and package_paths
         new_resolver = ParameterResolver([], self.package_paths)
         new_resolver.variable_map = self.variable_map.copy()
+        new_resolver.argument_names = self.argument_names
+        new_resolver.undefined_variables = self.undefined_variables
         return new_resolver
+
+    def declare_arguments(self, names: List[str]):
+        """Declare system argument names, left for ros2 launch to resolve."""
+        self.argument_names.update(name for name in names if name)
 
     def update_variables(self, new_variables: Dict[str, str]):
         """Update the variable map with new variables.
@@ -319,9 +331,17 @@ class ParameterResolver:
         var_name = match.group(1)
         if var_name in self.variable_map:
             return self.variable_map[var_name]
-        else:
-            logger.warning(f"Undefined variable: $(var {var_name}){format_source(self._source_context)}")
-            return match.group(0)  # Return original if not found
+        if var_name in self.argument_names:
+            return match.group(0)
+
+        location = format_source(self._source_context)
+        locations = self.undefined_variables.setdefault(var_name, [])
+        if location not in locations:
+            locations.append(location)
+            logger.warning(
+                f"Undefined variable: $(var {var_name}) is neither a system variable nor a system argument{location}"
+            )
+        return match.group(0)
 
     def _resolve_pkgshare_match(self, match) -> str:
         """Resolve a single $(find-pkg-share package_name) match."""

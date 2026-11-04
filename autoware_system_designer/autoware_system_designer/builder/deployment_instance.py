@@ -19,6 +19,7 @@ from autoware_system_designer.builder.instances.instance_tree import set_instanc
 from autoware_system_designer.builder.instances.instances import Instance
 from autoware_system_designer.builder.parameters.parameter_resolver import ParameterResolver
 from autoware_system_designer.common.exceptions import ValidationError
+from autoware_system_designer.common.source_location import SourceLocation
 from autoware_system_designer.model.config import SystemConfig
 from autoware_system_designer.model.namespace import Namespace
 
@@ -64,6 +65,22 @@ class DeploymentInstance(Instance):
 
                 if hasattr(system_config, "variable_files") and system_config.variable_files:
                     self.parameter_resolver.load_system_variable_files(system_config.variable_files)
+
+                argument_names = [
+                    argument.get("name")
+                    for argument in system_config.arguments or []
+                    if isinstance(argument, dict) and argument.get("name")
+                ]
+                # One $(var name) cannot be both build-time and launch-time.
+                conflicts = sorted(set(argument_names) & set(self.parameter_resolver.variable_map))
+                if conflicts:
+                    raise ValidationError(
+                        f"System {system_config.full_name} declares {', '.join(conflicts)} as both an argument "
+                        "and a variable; $(var ...) resolves a variable at build time and an argument at "
+                        "launch time, so each name is one or the other",
+                        source=SourceLocation(file_path=system_config.file_path),
+                    )
+                self.parameter_resolver.declare_arguments(argument_names)
 
             # 1. set component instances
             logger.info(f"Instance '{self.name}': setting component instances")

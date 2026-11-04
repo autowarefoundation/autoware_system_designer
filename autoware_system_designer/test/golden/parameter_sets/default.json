@@ -29,6 +29,7 @@
           "args": "",
           "executable": "feeder_node",
           "launch_state": "single_node",
+          "launch_time_param_files": [],
           "node_output": "screen",
           "package": "tuned_pkg",
           "param_files": [],
@@ -187,6 +188,7 @@
               "args": "",
               "executable": "worker_node",
               "launch_state": "single_node",
+              "launch_time_param_files": [],
               "node_output": "screen",
               "package": "tuned_pkg",
               "param_files": [
@@ -334,6 +336,7 @@
               "args": "",
               "executable": "worker_node",
               "launch_state": "single_node",
+              "launch_time_param_files": [],
               "node_output": "screen",
               "package": "tuned_pkg",
               "param_files": [
