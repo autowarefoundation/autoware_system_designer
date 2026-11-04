@@ -43,6 +43,8 @@ class DeploymentConfig:
     # Directory duplicated entity candidates are ranked by proximity to; None for
     # bare-entity-name targets.
     anchor_dir: Optional[str] = None
+    # Package that owns the deployment; its entities rank first among duplicated names.
+    deployment_package_name: Optional[str] = None
 
     @classmethod
     def from_env(cls) -> "DeploymentConfig":

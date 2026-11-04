@@ -14,7 +14,10 @@
 
 from pathlib import Path
 
+from conftest import write_system
+
 from autoware_system_designer.builder.config.config_registry import ConfigRegistry, _package_distance
+from autoware_system_designer.common.path_utils import canonical_path
 from autoware_system_designer.deploy import DeploymentBuilder
 
 
@@ -113,3 +116,16 @@ def test_finalize_selection_policy_leaves_unknown_targets_untouched(duplicate_wo
     DeploymentBuilder._finalize_selection_policy("Missing.system", registry, duplicate_workspace["file_package_map"])
     assert registry.anchor_dir is None
     assert registry.deployment_package_name is None
+
+
+def test_finalize_selection_policy_prefers_the_deployment_package_system(duplicate_workspace):
+    system_b = write_system(duplicate_workspace["pkg_b"], "Tiny", "Demo")
+    file_package_map = {**duplicate_workspace["file_package_map"], str(system_b): "pkg_b"}
+    registry = ConfigRegistry(
+        duplicate_workspace["file_paths"] + [str(system_b)],
+        file_package_map=file_package_map,
+    )
+    registry.deployment_package_name = "pkg_b"
+    DeploymentBuilder._finalize_selection_policy("Tiny.system", registry, file_package_map)
+    assert registry.anchor_dir == str(Path(canonical_path(str(system_b))).parent)
+    assert str(registry.get_system("Tiny").file_path) == str(system_b)

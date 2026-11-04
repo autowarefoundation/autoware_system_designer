@@ -73,6 +73,11 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
         default="auto",
         help="Failure policy (default: auto -> AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT)",
     )
+    deploy_parser.add_argument(
+        "--package",
+        default=None,
+        help="Package that owns the deployment; forwarded to deployment_process.py",
+    )
     deploy_parser.add_argument("deployment_process_script", help="Path to deployment_process.py")
     deploy_parser.add_argument("deployment_file", help="Input deployment/design/system target")
     deploy_parser.add_argument("resource_dir", help="System designer resource directory")
@@ -228,6 +233,8 @@ def main(argv: List[str]) -> int:
     ]
     if args.workspace_yaml:
         command.append(args.workspace_yaml)
+    if args.package:
+        command.extend(["--package", args.package])
 
     return_code = _run_with_tee(
         command,

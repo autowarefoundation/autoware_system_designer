@@ -158,6 +158,7 @@ macro(autoware_system_designer_build_deploy project_name)
         --log-file ${LOG_FILE}
         --print-level ${_PRINT_LEVEL}
         --strict ${_STRICT_MODE_CLI}
+        --package ${CMAKE_PROJECT_NAME}
         ${BUILD_PY_SCRIPT}
         ${_DEPLOYMENT_FILE}
         ${SYSTEM_DESIGNER_RESOURCE_DIR}

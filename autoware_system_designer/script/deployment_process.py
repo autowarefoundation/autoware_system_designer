@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import logging
-import sys
 from pathlib import Path
 
 import yaml
@@ -53,11 +53,18 @@ def _load_workspace_config(workspace_yaml: str | None):
     return workspace_list
 
 
-def build(deployment_file: str, manifest_dir: str, output_root_dir: str, workspace_yaml: str | None = None):
+def build(
+    deployment_file: str,
+    manifest_dir: str,
+    output_root_dir: str,
+    workspace_yaml: str | None = None,
+    package_name: str | None = None,
+):
     # Inputs:
     #   deployment_file: YAML deployment configuration
     #   manifest_dir: directory containing per-package manifest YAML files (each lists deploy_config_files)
     #   output_root_dir: root directory for generated exports
+    #   package_name: package that owns the deployment; its entities are searched first
 
     # configure the autoware system design format files
     # Start from env defaults so callers (e.g. CMake) can control terminal verbosity.
@@ -67,6 +74,7 @@ def build(deployment_file: str, manifest_dir: str, output_root_dir: str, workspa
     deploy_config.manifest_dir = manifest_dir
     deploy_config.output_root_dir = output_root_dir
     deploy_config.workspace_config = _load_workspace_config(workspace_yaml)
+    deploy_config.deployment_package_name = package_name or None
 
     logger = deploy_config.set_logging()
 
@@ -143,19 +151,20 @@ def _registry_hints(artifacts, exc) -> list:
     return hints
 
 
-if __name__ == "__main__":
-    # Usage: deployment_process.py <deployment_file> <manifest_dir> <output_root_dir> [workspace_yaml]
-    if len(sys.argv) < 4:
-        raise SystemExit(
-            "Usage: deployment_process.py <deployment_file> <manifest_dir> <output_root_dir> [workspace_yaml]"
-        )
-    deployment_file = sys.argv[1]
-    manifest_dir = sys.argv[2]
-    output_root_dir = sys.argv[3]
-    workspace_yaml = sys.argv[4] if len(sys.argv) > 4 else None
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build an autoware system designer deployment.")
+    parser.add_argument("deployment_file", help="Deployment table, system file, or bare system name")
+    parser.add_argument("manifest_dir", help="Directory of per-package design manifests")
+    parser.add_argument("output_root_dir", help="Root directory for generated exports")
+    parser.add_argument("workspace_yaml", nargs="?", default=None, help="Optional workspace.yaml path")
+    parser.add_argument("--package", default=None, help="Package that owns the deployment")
+    return parser.parse_args()
 
+
+if __name__ == "__main__":
+    args = _parse_args()
     try:
-        build(deployment_file, manifest_dir, output_root_dir, workspace_yaml)
+        build(args.deployment_file, args.manifest_dir, args.output_root_dir, args.workspace_yaml, args.package)
     except SystemDesignerError:
         # Already rendered by the boundary handler; a traceback would repeat it.
         raise SystemExit(1)
