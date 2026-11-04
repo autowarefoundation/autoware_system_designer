@@ -133,6 +133,29 @@ def find_source_root(start_path):
     return str(path)
 
 
+def scan_roots(start_path, workspace_root):
+    """Directories to scan, the deploying package first; a root nested in an earlier one is dropped."""
+    roots = []
+    for root in (start_path, workspace_root):
+        root = os.path.realpath(root)
+        if any(root == prev or root.startswith(prev + os.sep) for prev in roots):
+            continue
+        roots.append(root)
+    return roots
+
+
+def owning_package(path, scan_root, pkg_paths):
+    """Name of the innermost package containing path, searched no higher than scan_root."""
+    curr = os.path.dirname(path)
+    while curr == scan_root or curr.startswith(scan_root + os.sep):
+        if curr in pkg_paths:
+            return pkg_paths[curr]
+        if curr == scan_root:
+            break
+        curr = os.path.dirname(curr)
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -163,12 +186,17 @@ def main():
 
     anchor = os.path.realpath(args.anchor) if args.anchor else None
 
-    # Find workspace root
+    # The deploying package is scanned first so its designs are collected even when it
+    # lies outside the workspace source root.
     workspace_root = find_source_root(args.start_path)
+    roots = scan_roots(args.start_path, workspace_root)
     output_dir = os.path.abspath(args.output_dir)
 
-    print(f"Scanning workspace: {workspace_root}")
-    pkg_paths = find_packages(workspace_root)
+    pkg_paths = {}
+    for root in roots:
+        print(f"Scanning: {root}")
+        for pkg_dir, pkg_name in find_packages(root).items():
+            pkg_paths.setdefault(pkg_dir, pkg_name)
     print(f"Found {len(pkg_paths)} packages")
 
     # Identify the current package name to detect install layout (isolated vs merged)
@@ -190,57 +218,41 @@ def main():
 
     pkg_files = {}
 
-    # Glob all yaml files
-    # Using recursive glob
-    yaml_files = glob.glob(os.path.join(workspace_root, "**", "*.yaml"), recursive=True)
-
     yaml_parse_errors = []
+    seen_files = set()
 
-    for yaml_file in yaml_files:
-        yaml_file_abs = os.path.realpath(yaml_file)
+    for root in roots:
+        for yaml_file in sorted(glob.glob(os.path.join(root, "**", "*.yaml"), recursive=True)):
+            yaml_file_abs = os.path.realpath(yaml_file)
+            if yaml_file_abs in seen_files:
+                continue
+            seen_files.add(yaml_file_abs)
 
-        if not is_target_design_file(os.path.basename(yaml_file_abs)):
-            continue
+            if not is_target_design_file(os.path.basename(yaml_file_abs)):
+                continue
 
-        if is_ignored_path(yaml_file_abs, workspace_root):
-            continue
+            if is_ignored_path(yaml_file_abs, root):
+                continue
 
-        # Check content first (it's a hard requirement)
-        try:
-            content = parse_design_file(yaml_file_abs)
-        except ValueError:
-            yaml_parse_errors.append(yaml_file_abs)
-            continue
-        if not content:
-            continue
+            # Check content first (it's a hard requirement)
+            try:
+                content = parse_design_file(yaml_file_abs)
+            except ValueError:
+                yaml_parse_errors.append(yaml_file_abs)
+                continue
+            if not content:
+                continue
 
-        # Find which package it belongs to
-        parent = os.path.dirname(yaml_file_abs)
-        found_pkg = None
+            target_pkg = owning_package(yaml_file_abs, root, pkg_paths)
 
-        # Traverse up
-        curr = parent
-        while curr.startswith(workspace_root):
-            if curr in pkg_paths:
-                found_pkg = pkg_paths[curr]
-                break
-            if curr == workspace_root:
-                break
-            curr = os.path.dirname(curr)
+            # If it's a node design file, check if it specifies a package
+            if "launch" in content and "package" in content["launch"]:
+                target_pkg = content["launch"]["package"]
 
-        # Determine target package
-        target_pkg = found_pkg
+            if not target_pkg:
+                continue
 
-        # If it's a node design file, check if it specifies a package
-        if "launch" in content and "package" in content["launch"]:
-            target_pkg = content["launch"]["package"]
-
-        if not target_pkg:
-            continue
-
-        if target_pkg not in pkg_files:
-            pkg_files[target_pkg] = []
-        pkg_files[target_pkg].append(yaml_file_abs)
+            pkg_files.setdefault(target_pkg, []).append(yaml_file_abs)
 
     if yaml_parse_errors:
         unique_files = sorted(set(yaml_parse_errors))

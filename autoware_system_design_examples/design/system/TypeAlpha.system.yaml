@@ -4,12 +4,16 @@ name: TypeAlpha.system
 
 description: Demo system Type Alpha - dummy sensing, map, localization, perception, planning, control and vehicle components spread over main_ecu and dummy ECUs, with a simulation mode that swaps the perception module.
 
-variables:
+arguments:
   - name: vehicle_id
     description: Identifier of the target vehicle, set by the deployment.
+  - name: individual_params_path
+    description: Directory of the vehicle's individual parameters, set by the deployment.
   - name: data_path
   - name: lanelet2_map_file
   - name: pointcloud_map_file
+
+variables: []
 
 variable_files: []
 
@@ -25,6 +29,7 @@ components:
     entity: SensingDummy.module
     path: /sensing
     compute_unit: main_ecu
+    parameter_set: [SensingDummy.parameter_set]
   - name: map
     entity: MapDummy.node
     compute_unit: dummy_ecu_1
@@ -49,6 +54,9 @@ components:
     compute_unit: dummy_ecu_2
   - name: vehicle
     entity: VehicleDummy.node
+    compute_unit: main_ecu
+  - name: robot_state_publisher
+    entity: RobotStatePublisherDummy.node
     compute_unit: main_ecu
 
 node_groups:

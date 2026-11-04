@@ -13,6 +13,8 @@
 
   <depend>autoware_system_designer</depend>
 
+  <build_depend>xacro</build_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

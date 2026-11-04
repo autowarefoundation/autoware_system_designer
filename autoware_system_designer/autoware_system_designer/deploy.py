@@ -178,7 +178,9 @@ class DeploymentBuilder:
             anchor_dir=deploy_config.anchor_dir or self._anchor_from_input(deploy_config.deployment_file),
         )
         self.config_registry = config_registry
-        config_registry.deployment_package_name = file_package_map.get(canonical_path(deploy_config.deployment_file))
+        config_registry.deployment_package_name = deploy_config.deployment_package_name or file_package_map.get(
+            canonical_path(deploy_config.deployment_file)
+        )
 
         logger.info("deployment init Deployment file: %s", deploy_config.deployment_file)
 

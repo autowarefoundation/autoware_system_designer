@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 
 import yaml
+from conftest import write_node, write_system
 
 from autoware_system_designer.common import path_utils
 from autoware_system_designer.common.path_utils import canonical_path, resolve_manifest_path
@@ -137,3 +138,31 @@ def test_derive_workspace_root_none_on_mismatch_or_absolute(tmp_path):
 def test_derive_workspace_root_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv(path_utils.WORKSPACE_ROOT_ENV, str(tmp_path))
     assert path_utils.derive_workspace_root("/anywhere", "/absolute") == canonical_path(str(tmp_path))
+
+
+def _write_package(pkg_dir: Path, name: str) -> None:
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+    (pkg_dir / "package.xml").write_text(f"<package><name>{name}</name></package>")
+
+
+def test_collector_scans_the_deploying_package_outside_the_source_root(tmp_path, monkeypatch):
+    ws = tmp_path / "ws"
+    for marker in ("build", "install"):
+        (ws / marker).mkdir(parents=True)
+    _write_package(ws / "src" / "pkg_src", "pkg_src")
+    write_node(ws / "src" / "pkg_src", "Demo", "pkg_src")
+    deploying = ws / "launcher" / "pkg_launcher"
+    _write_package(deploying, "pkg_launcher")
+    system = write_system(deploying / "design", "Tiny", "Demo")
+
+    out = tmp_path / "manifests"
+    monkeypatch.setattr(
+        "sys.argv", ["collector", str(deploying), str(out), str(ws / "install"), "--package-map-mode", "source"]
+    )
+    collector.main()
+
+    manifest = yaml.safe_load((out / "pkg_launcher.yaml").read_text())
+    assert [entry["path"] for entry in manifest["deploy_config_files"]] == [os.path.realpath(system)]
+    package_map = yaml.safe_load((out / "_package_map.yaml").read_text())["package_map"]
+    assert set(package_map) == {"pkg_src", "pkg_launcher"}
+    assert (out / "pkg_src.yaml").is_file()

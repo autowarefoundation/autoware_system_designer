@@ -1,0 +1,8 @@
+# Mounting pose of the top LiDAR on base_link of vehicle_x.
+lidar_top:
+  x: 1.2
+  y: 0.0
+  z: 2.1
+  roll: 0.0
+  pitch: 0.0
+  yaw: 0.0
