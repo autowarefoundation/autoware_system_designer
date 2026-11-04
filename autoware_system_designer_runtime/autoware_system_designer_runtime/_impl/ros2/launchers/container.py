@@ -38,8 +38,7 @@ def container_cmdline(spec: Mapping) -> list[str]:
     cmd += _ros_args(
         name=spec["name"],
         namespace=spec["namespace"],
-        inline_params={},
-        param_files=[],
+        parameters=[],
         remaps=[],
     )
     return cmd
