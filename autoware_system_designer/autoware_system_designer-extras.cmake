@@ -18,4 +18,5 @@ find_package(ament_cmake QUIET REQUIRED)
 
 include("${autoware_system_designer_DIR}/autoware_system_designer_build_deploy.cmake")
 include("${autoware_system_designer_DIR}/autoware_system_designer_generate_launcher.cmake")
+include("${autoware_system_designer_DIR}/autoware_system_designer_generate_param_files.cmake")
 include("${autoware_system_designer_DIR}/autoware_system_designer_parameter.cmake")

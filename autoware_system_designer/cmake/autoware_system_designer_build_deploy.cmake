@@ -167,5 +167,7 @@ macro(autoware_system_designer_build_deploy project_name)
     COMMENT "Running build.py script ${_LOG_DESC}. PRINT_LEVEL=${_PRINT_LEVEL}, STRICT=${_STRICT_MODE} (env default=${AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT}); full log: ${LOG_FILE}"
   )
   add_dependencies(run_build_py_${_INPUT_NAME} ${_COLLECT_TARGET})
+  autoware_system_designer_generated_param_files_target(_GENERATED_PARAM_FILES_TARGET)
+  add_dependencies(run_build_py_${_INPUT_NAME} ${_GENERATED_PARAM_FILES_TARGET})
   add_dependencies(${project_name} run_build_py_${_INPUT_NAME})
 endmacro()
