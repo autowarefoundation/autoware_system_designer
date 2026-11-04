@@ -594,7 +594,11 @@ def _collect_deploy_variable_names(artifacts: BuildArtifacts) -> List[str]:
 
 def generate_visualization(artifacts: BuildArtifacts) -> None:
     """Generate the visualization pages from the exported JSON."""
-    deploy_data = {mode_key: data for mode_key, data in _iter_mode_data(artifacts)}
+    # Declared compute units travel with each mode's tree; the node diagram groups components by them.
+    deploy_data = {
+        mode_key: {**data, "compute_units": (metadata or {}).get("compute_units") or []}
+        for mode_key, data, metadata in _iter_mode_payloads(artifacts)
+    }
     visualize_deployment(deploy_data, artifacts.name, artifacts.layout.visualization_dir, artifacts.system_file)
 
 

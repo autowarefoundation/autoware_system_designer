@@ -64,7 +64,7 @@ components:
     compute_unit: dummy_ecu_2
   - name: vehicle
     entity: VehicleDummy.node
-    compute_unit: main_ecu
+    compute_unit: dummy_ecu_1
   - name: robot_state_publisher
     entity: RobotStatePublisherDummy.node
     compute_unit: main_ecu

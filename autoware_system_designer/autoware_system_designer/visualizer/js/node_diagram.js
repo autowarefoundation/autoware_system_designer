@@ -180,6 +180,7 @@
         if (!rootNode.id) rootNode.id = "root";
       }
       this._injectRemapHub(rootNode);
+      this._groupByComputeUnit(rootNode, root);
       this._buildGlobalTopicIndex();
       return rootNode;
     }
@@ -360,6 +361,109 @@
       });
     }
 
+    // Top-level components are wrapped in one dashed cluster per compute unit,
+    // declared units first in declaration order. A cluster carries no ports:
+    // links inside one unit belong to its cluster, links across units stay at
+    // the root and are routed across the cluster boundary.
+    _groupByComputeUnit(rootNode, root) {
+      if (!rootNode?.children?.length) return;
+
+      const declared = new Map(
+        (root.compute_units || [])
+          .filter((unit) => unit?.name)
+          .map((unit) => [unit.name, unit]),
+      );
+      const unitOf = (nodeId) =>
+        this.elementData.get(nodeId)?.compute_unit || "";
+
+      const membersByUnit = new Map();
+      for (const name of declared.keys()) membersByUnit.set(name, []);
+      const ungrouped = [];
+      rootNode.children.forEach((child) => {
+        const unit = unitOf(child.id);
+        if (!unit) {
+          ungrouped.push(child);
+          return;
+        }
+        if (!membersByUnit.has(unit)) membersByUnit.set(unit, []);
+        membersByUnit.get(unit).push(child);
+      });
+      if ([...membersByUnit.values()].every((m) => m.length === 0)) return;
+
+      const style = this.getLayerStyle(0);
+      const clusterByUnit = new Map();
+      const clusters = [];
+      for (const [name, members] of membersByUnit) {
+        if (members.length === 0) continue;
+        const unit = declared.get(name) || { name };
+        const clusterId = `__compute_unit__${name}`;
+        const kind = unit.kind || (declared.has(name) ? "onboard" : "undeclared");
+        this.elementData.set(clusterId, {
+          unique_id: clusterId,
+          name,
+          namespace: kind,
+          entity_type: "compute_unit",
+          kind,
+          description: unit.description || "",
+          members: members.map((m) => this.elementData.get(m.id)?.name || m.id),
+        });
+        const cluster = {
+          id: clusterId,
+          labels: [{ text: kind }, { text: name }],
+          namespace: kind,
+          children: members,
+          edges: [],
+          ports: [],
+          properties: {
+            "org.eclipse.elk.nodeLabels.placement": "H_CENTER V_TOP",
+            "org.eclipse.elk.spacing.nodeNode": String(style.nodeSpacing),
+            "org.eclipse.elk.padding": `[top=${style.elkPadding * 2},left=${style.elkPadding},bottom=${style.elkPadding},right=${style.elkPadding}]`,
+          },
+        };
+        clusterByUnit.set(name, cluster);
+        clusters.push(cluster);
+      }
+
+      // Unit of the top-level component that owns a port, through the hub ports
+      // and module boundary ports alike.
+      const topLevelIds = new Set(rootNode.children.map((c) => c.id));
+      const unitOfPort = (portId) => {
+        const owner = this.portToNode.get(String(portId));
+        return owner && topLevelIds.has(owner) ? unitOf(owner) : "";
+      };
+      const rootEdges = [];
+      (rootNode.edges || []).forEach((edge) => {
+        const fromUnit = unitOfPort(edge.sources[0]);
+        const toUnit = unitOfPort(edge.targets[0]);
+        const cluster = fromUnit === toUnit ? clusterByUnit.get(fromUnit) : null;
+        if (cluster) cluster.edges.push(edge);
+        else rootEdges.push(edge);
+      });
+
+      rootNode.children = [...clusters, ...ungrouped];
+      rootNode.edges = rootEdges;
+      // Root-level links reach into the clusters, so the root and the clusters
+      // are laid out as one graph; each component keeps its own inner layout.
+      rootNode.properties = {
+        ...(rootNode.properties || {}),
+        "org.eclipse.elk.hierarchyHandling": "INCLUDE_CHILDREN",
+      };
+      clusters.forEach((cluster) =>
+        cluster.children.forEach((member) => {
+          member.properties = {
+            ...(member.properties || {}),
+            "org.eclipse.elk.hierarchyHandling": "SEPARATE_CHILDREN",
+          };
+        }),
+      );
+      ungrouped.forEach((member) => {
+        member.properties = {
+          ...(member.properties || {}),
+          "org.eclipse.elk.hierarchyHandling": "SEPARATE_CHILDREN",
+        };
+      });
+    }
+
     // ── Styling / metrics ────────────────────────────────────────────────────────
 
     calculateNodeWidth(instance, style) {
@@ -474,10 +578,14 @@
         });
       }
 
+      // A compute unit cluster is not a design level; its members keep the
+      // style of the level the cluster sits in.
       if (node.children) {
-        node.children.forEach((child) =>
-          this.renderNode(child, g, depth + 1, absX, absY),
-        );
+        node.children.forEach((child) => {
+          const isCluster =
+            this.elementData.get(child.id)?.entity_type === "compute_unit";
+          this.renderNode(child, g, isCluster ? depth : depth + 1, absX, absY);
+        });
       }
 
       if (node.edges) {
@@ -525,6 +633,14 @@
           : defaults.light.stroke;
       }
 
+      const isComputeUnit = userData.entity_type === "compute_unit";
+      if (isComputeUnit) {
+        fillColor = "none";
+        strokeColor = this.isDarkMode()
+          ? defaults.dark.stroke
+          : defaults.light.stroke;
+      }
+
       const rect = document.createElementNS(SVG_NS, "rect");
       rect.setAttribute("width", node.width);
       rect.setAttribute("height", node.height);
@@ -532,7 +648,12 @@
       rect.setAttribute("fill", fillColor);
       rect.setAttribute("stroke", strokeColor);
       rect.setAttribute("stroke-width", style.borderW);
-      if (userData.entity_type === "remap_hub") {
+      if (isComputeUnit) {
+        const dw = parseFloat(style.borderW);
+        rect.setAttribute("stroke-dasharray", `${dw * 6} ${dw * 4}`);
+        // Only the outline is clickable, so members inside stay selectable.
+        rect.setAttribute("pointer-events", "stroke");
+      } else if (userData.entity_type === "remap_hub") {
         const dw = parseFloat(style.borderW);
         rect.setAttribute("stroke-dasharray", `${dw * 5} ${dw * 2.5}`);
         rect.setAttribute("stroke-linecap", "round");
@@ -542,11 +663,14 @@
       rect.onclick = (e) => {
         if (this.hasDragged) return;
         e.stopPropagation();
-        this.updateInfoPanel(userData, "Node");
+        this.updateInfoPanel(userData, isComputeUnit ? "Compute unit" : "Node");
         this.clearHighlights();
-        if (depth === 0) return;
-
         const nodeGroup = this.elementById(node.id);
+        if (isComputeUnit) {
+          if (nodeGroup) this.highlightModule(node, nodeGroup);
+          return;
+        }
+        if (depth === 0) return;
 
         if (userData.entity_type === "remap_hub") {
           nodeGroup?.classList.add("highlighted");
