@@ -115,22 +115,8 @@
           },
           "kind": {
             "type": "string",
-            "enum": ["physical", "virtual"],
-            "description": "physical: a deploy target of its own; virtual: placeholder for simulation stand-ins or components outside the design scope"
-          },
-          "platform": {
-            "type": "string",
-            "description": "Hardware/OS platform identifier (e.g. x86_64, jetson_orin)"
-          },
-          "ros_domain_id": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 232
-          },
-          "launch": {
-            "type": "string",
-            "enum": ["native", "xml", "container"],
-            "description": "How the unit's nodes are launched: designer runtime (native), ros2 launch (xml), or a container image"
+            "enum": ["onboard", "offboard"],
+            "description": "onboard: runs on the deployed vehicle and gets a launcher; offboard: participant outside the vehicle (infrastructure, cloud, remote operation), declared for wiring only"
           },
           "description": {
             "type": "string"

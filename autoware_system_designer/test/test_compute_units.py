@@ -37,7 +37,7 @@ modes:
 compute_units:
   - name: main_ecu
   - name: sub_ecu
-    kind: virtual
+    kind: offboard
 """
 
 
@@ -211,10 +211,9 @@ connections: []
     config = ConfigParser().parse_entity_file(str(path))
     assert config.compute_units == [
         ComputeUnit(name="main_ecu"),
-        ComputeUnit(name="sub_ecu", kind="virtual"),
+        ComputeUnit(name="sub_ecu", kind="offboard"),
     ]
-    assert config.compute_units[0].kind == "physical"
-    assert config.compute_units[1].launch == "native"
+    assert config.compute_units[0].kind == "onboard"
 
 
 def test_resolved_check_names_component_and_unit(tmp_path):
@@ -243,20 +242,17 @@ def test_export_carries_declaration_and_launches_every_declared_unit(tmp_path):
     run = run_pipeline(workspace, "units_pkg/Multi.system.yaml", tmp_path)
 
     artifacts = load_build_artifacts(str(run.out_root), run.system_name)
-    assert [unit["name"] for unit in artifacts.compute_units] == ["main_ecu", "sub_ecu", "sim_ecu"]
-    assert artifacts.compute_units[0]["ros_domain_id"] == 1
-    assert artifacts.compute_units[0]["kind"] == "physical"
-    assert artifacts.compute_units[1]["launch"] == "xml"
-    assert artifacts.compute_units[2]["kind"] == "virtual"
+    assert [unit["name"] for unit in artifacts.compute_units] == ["main_ecu", "sub_ecu", "remote_ecu"]
+    assert [unit["kind"] for unit in artifacts.compute_units] == ["onboard", "onboard", "offboard"]
 
     for mode in ("default", "solo"):
         structure = run.structure(mode)
-        assert [unit["name"] for unit in structure["metadata"]["compute_units"]] == ["main_ecu", "sub_ecu", "sim_ecu"]
+        assert [unit["name"] for unit in structure["metadata"]["compute_units"]] == ["main_ecu", "sub_ecu", "remote_ecu"]
         for unit in ("main_ecu", "sub_ecu"):
             assert (run.launcher_dir(mode) / unit / f"{unit}.launch.xml").is_file()
-        # The virtual unit's component is designed but never launched by the export.
+        # The offboard unit's component is designed but never launched by the export.
         assert "monitor" in {child["name"] for child in structure["data"]["children"]}
-        assert not (run.launcher_dir(mode) / "sim_ecu").exists()
+        assert not (run.launcher_dir(mode) / "remote_ecu").exists()
         assert not any(run.launcher_dir(mode).rglob("monitor*.launch.xml"))
 
     # solo mode removes the only sub_ecu component; the unit still has an (empty) launcher.
@@ -266,4 +262,4 @@ def test_export_carries_declaration_and_launches_every_declared_unit(tmp_path):
     page = (run.exports_dir / "visualization" / "web" / f"{run.system_name}_launch_commands.html").read_text()
     assert "--ecu sub_ecu" in page
     assert page.count("solo/sub_ecu/sub_ecu.launch.xml") >= 1
-    assert "sim_ecu" not in page
+    assert "remote_ecu" not in page

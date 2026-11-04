@@ -630,7 +630,7 @@ def generate_launchers(artifacts: BuildArtifacts) -> None:
     """Generate ROS 2 launch files from the exported JSON."""
     deploy_variable_names = _collect_deploy_variable_names(artifacts)
     # Launchable units per mode (None: undeclared, derived from the components); a mode
-    # may declare units no component of it uses, and virtual units get no launcher.
+    # may declare units no component of it uses, and offboard units get no launcher.
     compute_units_by_mode: Dict[str, List[str] | None] = {}
     for mode_key, data, metadata in _iter_mode_payloads(artifacts):
         mode_launcher_dir = export_path(artifacts.layout.launcher_dir, mode_key)

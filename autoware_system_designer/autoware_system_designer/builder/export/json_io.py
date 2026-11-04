@@ -132,7 +132,7 @@ def iter_mode_data(
 
 
 def launch_target_compute_units(metadata: SystemStructureMetadata) -> List[str] | None:
-    """Names of the declared units that get launchers (every kind but ``virtual``).
+    """Names of the declared ``onboard`` units, the ones that get launchers.
 
     None when the export declares no units, so callers fall back to the units
     the components reference.
@@ -144,5 +144,5 @@ def launch_target_compute_units(metadata: SystemStructureMetadata) -> List[str] 
     return [
         unit["name"]
         for unit in units
-        if isinstance(unit, dict) and unit.get("name") and unit.get("kind", "physical") != "virtual"
+        if isinstance(unit, dict) and unit.get("name") and unit.get("kind", "onboard") == "onboard"
     ]

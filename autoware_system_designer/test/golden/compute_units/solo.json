@@ -115,7 +115,7 @@
       },
       {
         "children": [],
-        "compute_unit": "sim_ecu",
+        "compute_unit": "remote_ecu",
         "entity_type": "node",
         "events": [
           {
@@ -204,7 +204,7 @@
         "parameters": [],
         "path": "/sim/monitor",
         "source_file": "${workspace_root}/ws/units_pkg/Listener.node.yaml",
-        "unique_id": "id_a22054e53793ff59"
+        "unique_id": "id_a86e7e445679d07c"
       }
     ],
     "compute_unit": "",
@@ -310,27 +310,18 @@
     "compute_units": [
       {
         "description": "Primary unit hosting the talker.",
-        "kind": "physical",
-        "launch": "native",
-        "name": "main_ecu",
-        "platform": "x86_64",
-        "ros_domain_id": 1
+        "kind": "onboard",
+        "name": "main_ecu"
       },
       {
         "description": "",
-        "kind": "physical",
-        "launch": "xml",
-        "name": "sub_ecu",
-        "platform": "jetson_orin",
-        "ros_domain_id": null
+        "kind": "onboard",
+        "name": "sub_ecu"
       },
       {
-        "description": "Simulation stand-ins; no launcher of its own.",
-        "kind": "virtual",
-        "launch": "native",
-        "name": "sim_ecu",
-        "platform": "",
-        "ros_domain_id": null
+        "description": "Remote operation station; no launcher of its own.",
+        "kind": "offboard",
+        "name": "remote_ecu"
       }
     ],
     "mode": "solo",

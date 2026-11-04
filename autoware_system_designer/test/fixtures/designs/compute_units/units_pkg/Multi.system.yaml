@@ -2,7 +2,7 @@ autoware_system_design_format: 0.5.0
 
 name: Multi.system
 
-description: Physical main_ecu and sub_ecu plus a virtual sim_ecu; the solo mode leaves sub_ecu without components.
+description: Onboard main_ecu and sub_ecu plus an offboard remote_ecu; the solo mode leaves sub_ecu without components.
 
 modes:
   - name: default
@@ -13,16 +13,12 @@ modes:
 
 compute_units:
   - name: main_ecu
-    platform: x86_64
-    ros_domain_id: 1
-    launch: native
+    kind: onboard
     description: Primary unit hosting the talker.
   - name: sub_ecu
-    platform: jetson_orin
-    launch: xml
-  - name: sim_ecu
-    kind: virtual
-    description: Simulation stand-ins; no launcher of its own.
+  - name: remote_ecu
+    kind: offboard
+    description: Remote operation station; no launcher of its own.
 
 components:
   - name: talker
@@ -34,7 +30,7 @@ components:
   - name: monitor
     entity: Listener.node
     path: /sim/monitor
-    compute_unit: sim_ecu
+    compute_unit: remote_ecu
 
 connections:
   - - talker.publisher.chatter

@@ -31,33 +31,27 @@ class RemapEntry:
         return cls(source=d["source"], topic=d["topic"])
 
 
-COMPUTE_UNIT_KINDS = ("physical", "virtual")
-COMPUTE_UNIT_LAUNCH_KINDS = ("native", "xml", "container")
+COMPUTE_UNIT_KINDS = ("onboard", "offboard")
 
 
 @dataclass
 class ComputeUnit:
     """A compute unit declared by the system; components bind to one by name.
 
-    A ``virtual`` unit is a placeholder for simulation stand-ins or components
-    outside the design scope; it is not a deploy target of its own.
+    An ``onboard`` unit runs on the deployed vehicle and gets a launcher. An
+    ``offboard`` unit is a participant outside the vehicle (infrastructure,
+    cloud, remote operation); its components are declared for wiring only.
     """
 
     name: str
-    kind: str = "physical"  # one of COMPUTE_UNIT_KINDS
-    platform: str = ""
-    ros_domain_id: Optional[int] = None
-    launch: str = "native"  # one of COMPUTE_UNIT_LAUNCH_KINDS
+    kind: str = "onboard"  # one of COMPUTE_UNIT_KINDS
     description: str = ""
 
     @classmethod
     def from_dict(cls, d: dict) -> "ComputeUnit":
         return cls(
             name=d["name"],
-            kind=d.get("kind", "physical"),
-            platform=d.get("platform", ""),
-            ros_domain_id=d.get("ros_domain_id"),
-            launch=d.get("launch", "native"),
+            kind=d.get("kind", "onboard"),
             description=d.get("description", ""),
         )
 
