@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<robot name="vehicle" xmlns:xacro="http://ros.org/wiki/xacro">
+  <!-- Directory of the vehicle's individual parameters. -->
+  <xacro:arg name="config_dir" default=""/>
+  <xacro:property name="calibration" value="${xacro.load_yaml('$(arg config_dir)/sensor_calibration.yaml')}"/>
+
+  <link name="base_link"/>
+  <link name="lidar_top"/>
+  <joint name="lidar_top_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_top"/>
+    <origin
+      xyz="${calibration['lidar_top']['x']} ${calibration['lidar_top']['y']} ${calibration['lidar_top']['z']}"
+      rpy="${calibration['lidar_top']['roll']} ${calibration['lidar_top']['pitch']} ${calibration['lidar_top']['yaw']}"/>
+  </joint>
+</robot>

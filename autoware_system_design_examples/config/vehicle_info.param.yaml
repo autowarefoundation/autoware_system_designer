@@ -1,0 +1,9 @@
+/**:
+  ros__parameters:
+    wheel_base: 2.79 # [m]
+    wheel_tread: 1.64 # [m]
+    front_overhang: 1.0 # [m]
+    rear_overhang: 1.1 # [m]
+    left_overhang: 0.128 # [m]
+    right_overhang: 0.128 # [m]
+    vehicle_height: 2.5 # [m]

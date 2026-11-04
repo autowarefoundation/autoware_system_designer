@@ -1,0 +1,17 @@
+autoware_system_design_format: 0.4.0
+
+base: TypeAlpha.system
+
+deploy_list:
+  - name: vehicle_x
+    arguments:
+      - name: vehicle_id
+        value: vehicle_x
+      - name: individual_params_path
+        value: $(find-pkg-share autoware_system_design_examples)/config/individual_params/vehicle_x
+      - name: data_path
+        value: $(env HOME)/autoware_data/ml_models
+      - name: lanelet2_map_file
+        value: lanelet2_map.osm
+      - name: pointcloud_map_file
+        value: pointcloud_map.pcd

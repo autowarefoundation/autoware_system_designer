@@ -1,0 +1,33 @@
+autoware_system_design_format: 0.4.0
+
+name: RobotStatePublisherDummy.node
+
+description: Robot state publisher broadcasting the static transforms of the vehicle's robot description.
+
+package:
+  name: robot_state_publisher
+  provider: ros
+
+launch:
+  executable: robot_state_publisher
+
+# interfaces
+subscribers: []
+
+publishers:
+  - name: tf_static
+    message_type: tf2_msgs/msg/TFMessage
+    global: /tf_static
+
+# robot description generated per vehicle from urdf/vehicle.xacro
+param_files:
+  - name: robot_description_param_file
+    default: $(var individual_params_path)/robot_description.param.yaml
+
+param_values: []
+
+# processes
+processes:
+  - name: run
+    trigger_conditions: []
+    outcomes: []

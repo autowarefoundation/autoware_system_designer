@@ -1,0 +1,11 @@
+autoware_system_design_format: 0.4.0
+
+name: SensingDummy.parameter_set
+
+description: Parameter set of the sensing module - binds the crop box generated from the vehicle info to the point cloud concatenation node.
+
+parameters:
+  - node: /sensing/lidar/lidar_concatenate
+    param_files:
+      - crop_box_param_file: $(find-pkg-share autoware_system_design_examples)/config/crop_box.param.yaml
+    param_values: []
