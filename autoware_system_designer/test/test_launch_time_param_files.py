@@ -162,3 +162,32 @@ def test_included_launch_file_receives_only_launch_time_default_files(tmp_path):
     args = {arg.get("name"): arg.get("value") for arg in root.find("include").findall("arg")}
     assert args["vehicle_param_path"] == "$(var params_dir)/vehicle.param.yaml"
     assert "defaults_param_path" not in args
+
+
+def test_strict_build_accepts_a_reference_overridden_before_the_launcher(tmp_path):
+    workspace = _stage(tmp_path, parameter_set=False)
+    pkg = workspace / "lt_pkg"
+    (pkg / "config" / "defaults.param.yaml").write_text(_DEFAULTS + "    model: $(var model_path)/model.onnx\n")
+    (pkg / "Model.parameter_set.yaml").write_text(
+        "autoware_system_design_format: 0.4.0\n"
+        "name: Model.parameter_set\n"
+        "description: Overrides the model path of the default file.\n"
+        "parameters:\n"
+        "  - node: /probe\n"
+        "    param_files: []\n"
+        "    param_values:\n"
+        "      - name: model\n"
+        "        type: string\n"
+        "        value: /models/model.onnx\n"
+    )
+    system = pkg / "Probed.system.yaml"
+    system.write_text(system.read_text().replace("parameter_set: []", "parameter_set: [Model.parameter_set]"))
+    run_pipeline(workspace, "lt_pkg/Probed.system.yaml", tmp_path, strict=True)
+
+
+def test_strict_build_rejects_a_reference_reaching_the_launcher(tmp_path):
+    workspace = _stage(tmp_path, parameter_set=False)
+    pkg = workspace / "lt_pkg"
+    (pkg / "config" / "defaults.param.yaml").write_text(_DEFAULTS + "    model: $(var model_path)/model.onnx\n")
+    with pytest.raises(ValidationError, match=r"\$\(var model_path\)"):
+        run_pipeline(workspace, "lt_pkg/Probed.system.yaml", tmp_path, strict=True)

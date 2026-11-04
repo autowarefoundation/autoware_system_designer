@@ -201,7 +201,7 @@ Top-level entry point defining the complete system.
 - `arguments`: (Optional) List of system arguments.
   - `name`: Argument name.
   - `description`: (Optional) Brief explanation of the argument.
-  - Arguments and variables share the `$(var name)` syntax. A variable resolves at build time; an argument stays in the launchers as a launch argument, which deployments fill. A name may not be both. A `$(var name)` naming neither warns; unless a deployment sets it as an argument, it also fails a strict build.
+  - Arguments and variables share the `$(var name)` syntax. A variable resolves at build time; an argument stays in the launchers as a launch argument, which deployments fill. A name may not be both. A `$(var name)` naming neither warns; when it reaches a launcher and no deployment sets it as an argument, it also fails a strict build.
 - `variables`: List of system variables.
   - `name`: Variable name.
   - `value`: Variable value (supports `$(find-pkg-share pkg)`, `$(env VAR)` and `$(eval expr)` substitutions). An `$(eval)` expression is arithmetic over literals, a fixed set of `math` functions and constants, `abs`, `min`, `max`, `pow`, `round`, `int`, `float`, `str`, `pi`, `sin`, `cos`, `tan`, `sqrt`, `atan2`, operators, comparisons and `a if c else b`; other Python constructs, and results beyond 4096 bits or 4096 elements, are left unresolved.
