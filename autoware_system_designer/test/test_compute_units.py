@@ -52,9 +52,7 @@ def _system_issues(text: str):
 
 
 def test_declaration_accepts_bound_components():
-    text = (
-        SYSTEM_HEAD
-        + """
+    text = SYSTEM_HEAD + """
 components:
   - name: a
     entity: A.node
@@ -72,14 +70,11 @@ sim:
         entity: BSim.node
         compute_unit: sub_ecu
 """
-    )
     assert _system_issues(text) == []
 
 
 def test_declaration_rejects_undeclared_unit_in_mode_override():
-    text = (
-        SYSTEM_HEAD
-        + """
+    text = SYSTEM_HEAD + """
 components:
   - name: a
     entity: A.node
@@ -94,7 +89,6 @@ sim:
         entity: ASim.node
         compute_unit: ghost_ecu
 """
-    )
     issues = _system_issues(text)
     assert len(issues) == 1
     assert issues[0].yaml_path == "/sim/override/components/0/compute_unit"
@@ -102,16 +96,13 @@ sim:
 
 
 def test_declaration_rejects_component_without_unit():
-    text = (
-        SYSTEM_HEAD
-        + """
+    text = SYSTEM_HEAD + """
 components:
   - name: a
     entity: A.node
 
 connections: []
 """
-    )
     issues = _system_issues(text)
     assert [issue.yaml_path for issue in issues] == ["/components/0/compute_unit"]
     assert "has no compute_unit" in issues[0].message
@@ -172,8 +163,7 @@ compute_units:
 
 def test_unknown_kind_is_rejected_by_schema(tmp_path):
     path = tmp_path / "Probe.system.yaml"
-    path.write_text(
-        """\
+    path.write_text("""\
 autoware_system_design_format: 0.5.0
 
 name: Probe.system
@@ -188,8 +178,7 @@ components:
     compute_unit: main_ecu
 
 connections: []
-"""
-    )
+""")
     with pytest.raises(ValidationError) as excinfo:
         ConfigParser().parse_entity_file(str(path))
     assert "/compute_units/0/kind" in str(excinfo.value)
@@ -197,17 +186,14 @@ connections: []
 
 def test_parser_builds_typed_compute_units(tmp_path):
     path = tmp_path / "Probe.system.yaml"
-    path.write_text(
-        SYSTEM_HEAD
-        + """
+    path.write_text(SYSTEM_HEAD + """
 components:
   - name: a
     entity: A.node
     compute_unit: main_ecu
 
 connections: []
-"""
-    )
+""")
     config = ConfigParser().parse_entity_file(str(path))
     assert config.compute_units == [
         ComputeUnit(name="main_ecu"),
@@ -218,17 +204,14 @@ connections: []
 
 def test_resolved_check_names_component_and_unit(tmp_path):
     path = tmp_path / "Probe.system.yaml"
-    path.write_text(
-        SYSTEM_HEAD
-        + """
+    path.write_text(SYSTEM_HEAD + """
 components:
   - name: a
     entity: A.node
     compute_unit: main_ecu
 
 connections: []
-"""
-    )
+""")
     config = ConfigParser().parse_entity_file(str(path))
     config.components.append({"name": "late", "entity": "L.node", "compute_unit": "ghost_ecu"})
     with pytest.raises(ValidationError) as excinfo:
@@ -247,7 +230,11 @@ def test_export_carries_declaration_and_launches_every_declared_unit(tmp_path):
 
     for mode in ("default", "solo"):
         structure = run.structure(mode)
-        assert [unit["name"] for unit in structure["metadata"]["compute_units"]] == ["main_ecu", "sub_ecu", "remote_ecu"]
+        assert [unit["name"] for unit in structure["metadata"]["compute_units"]] == [
+            "main_ecu",
+            "sub_ecu",
+            "remote_ecu",
+        ]
         for unit in ("main_ecu", "sub_ecu"):
             assert (run.launcher_dir(mode) / unit / f"{unit}.launch.xml").is_file()
         # The offboard unit's component is designed but never launched by the export.

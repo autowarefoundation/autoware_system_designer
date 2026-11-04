@@ -28,8 +28,7 @@ import sys
 from pathlib import Path
 
 import xacro
-from generate_param_files import describe_source
-from generate_param_files import write_param_file
+from generate_param_files import describe_source, write_param_file
 
 
 def expand_urdf(xacro_file: Path, mappings: dict) -> str:

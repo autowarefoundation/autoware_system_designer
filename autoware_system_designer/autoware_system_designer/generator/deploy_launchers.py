@@ -19,8 +19,8 @@ import os
 from typing import Any, Dict, List
 
 from autoware_system_designer.builder.export.json_io import (
-    launch_target_compute_units,
     extract_system_structure_data,
+    launch_target_compute_units,
     load_system_structure,
 )
 from autoware_system_designer.common.path_utils import export_path

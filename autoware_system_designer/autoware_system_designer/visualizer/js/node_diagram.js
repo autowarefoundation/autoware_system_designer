@@ -397,7 +397,8 @@
         if (members.length === 0) continue;
         const unit = declared.get(name) || { name };
         const clusterId = `__compute_unit__${name}`;
-        const kind = unit.kind || (declared.has(name) ? "onboard" : "undeclared");
+        const kind =
+          unit.kind || (declared.has(name) ? "onboard" : "undeclared");
         this.elementData.set(clusterId, {
           unique_id: clusterId,
           name,
@@ -435,7 +436,8 @@
       (rootNode.edges || []).forEach((edge) => {
         const fromUnit = unitOfPort(edge.sources[0]);
         const toUnit = unitOfPort(edge.targets[0]);
-        const cluster = fromUnit === toUnit ? clusterByUnit.get(fromUnit) : null;
+        const cluster =
+          fromUnit === toUnit ? clusterByUnit.get(fromUnit) : null;
         if (cluster) cluster.edges.push(edge);
         else rootEdges.push(edge);
       });
