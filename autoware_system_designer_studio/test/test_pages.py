@@ -81,6 +81,7 @@ def test_latency_prefers_the_newest_record_over_the_exported_reference(tmp_path)
     (system.export_dir / "latency" / "Runtime_latency.json").write_text(json.dumps(LATENCY))
     site = Site([system], record_root=tmp_path / "records")
     assert '"window_s": 1.0' in site.render(f"{SITE}/data/Runtime_latency.js")
+    assert 'latencyModes: ["Runtime"]' in site.render(f"{SITE}/config.js")
 
     record_dir = tmp_path / "records" / PKG / SYSTEM / "latency" / "Runtime"
     record_dir.mkdir(parents=True)
@@ -102,6 +103,7 @@ def test_config_quotes_strings_as_json(tmp_path):
     text = Site([system]).render(f"{SITE}/config.js")
     assert f"systemDefinitionFile: {json.dumps(hostile)}" in text
     assert "dataBase: \"data/\"" in text
+    assert "latencyModes: []" in text
     assert '"node_diagram": "../../../assets/js/diagrams/node_diagram.js"' in text
 
 

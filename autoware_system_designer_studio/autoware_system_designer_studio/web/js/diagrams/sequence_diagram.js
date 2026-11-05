@@ -160,7 +160,12 @@
     async loadAndRender() {
       const data = await this.loadModeData(this.options.mode);
       this.designGraph.build(data);
-      if (window.LatencySource) {
+      // Modes the page config lists as carrying latency; without a list, every mode is asked.
+      const latencyModes = this.options.latencyModes;
+      if (
+        window.LatencySource &&
+        (!latencyModes || latencyModes.includes(this.options.mode))
+      ) {
         const measured = await window.LatencySource.loadBundled(
           this.options.mode,
           this.options.dataBase,

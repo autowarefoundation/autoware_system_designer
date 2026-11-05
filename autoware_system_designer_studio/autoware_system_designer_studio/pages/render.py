@@ -177,6 +177,7 @@ class Site:
             deployment_name=export.name,
             package_name=export.package,
             systems_index_path=f"{SYSTEM_PAGE_ROOT}{INDEX_PAGE}",
+            launch_commands_path=LAUNCH_PAGE,
             available_modes=modes,
             default_mode=default_mode,
             available_diagram_types=list(assets.DIAGRAM_SCRIPTS),
@@ -184,6 +185,7 @@ class Site:
                 name: f"{SYSTEM_PAGE_ROOT}{assets.BUNDLE_DIR}/{script}" for name, script in assets.DIAGRAM_SCRIPTS.items()
             },
             data_base=f"{DATA_DIR}/",
+            latency_modes=[m for m in modes if export.latency_file(m, self.record_root) is not None],
             default_diagram_type=assets.DEFAULT_DIAGRAM_TYPE,
             editor_scheme=EDITOR_SCHEME,
             system_definition_file=export.system_file,

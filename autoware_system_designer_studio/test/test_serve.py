@@ -18,11 +18,13 @@ import asyncio
 import http.client
 import json
 import socket
+import sys
 import threading
 
 import pytest
 
 from autoware_system_designer_studio import exports
+from autoware_system_designer_studio.serve import build, jobs
 from autoware_system_designer_studio.serve.server import CLIENT_HEADER, ServeDaemon
 
 PKG = "demo_deployment"
@@ -136,20 +138,15 @@ def test_site_and_bundle_are_served(served, path, content_type):
     "path",
     [
         "/setup.bash",
-        "/systems.html",
         f"/{PKG}/share/{PKG}/exports/{SYSTEM}/deployment.json",
         f"/{PKG}/share/{PKG}/exports/{SYSTEM}/system_structure/Runtime.json",
         f"{SITE}/../../deployment.json",
         f"{SITE}/%2e%2e/%2e%2e/deployment.json",
         "/../outside.txt",
-        f"/systems/other/{SYSTEM}/index.html",
-        f"{SITE}/",
         f"{SITE}/data/Simulation.js",
         f"{SITE}/data/Runtime_latency.js",
         f"{SITE}/data/Unknown.js",
-        "/assets",
         "/assets/",
-        "/assets/js",
         "/assets/daemon/build.html",
         "/assets/../setup.bash",
         "/assets/js/../../pages/render.py",
@@ -160,6 +157,47 @@ def test_paths_outside_the_site_are_not_found(served, path):
     status, body = served.json("GET", path)
     assert status == 404
     assert body["ok"] is False and body["error"]["code"] == "not_found"
+
+
+def test_directory_addresses_serve_their_index(served):
+    response, payload = served.request("GET", f"{SITE}/")
+    assert response.status == 200 and b"overview_page.js" in payload
+    response, _ = served.request("GET", SITE)
+    assert response.status == 302 and response.getheader("Location") == f"{SITE}/"
+
+
+def test_workbench_links_the_launch_page_the_site_serves(served):
+    _, config = served.request("GET", f"{SITE}/config.js")
+    assert b'launchCommandsPath: "launch.html"' in config
+    assert served.request("GET", f"{SITE}/launch.html")[0].status == 200
+
+
+def test_missing_page_answers_with_an_html_page(served):
+    response, payload = served.request("GET", f"/systems/other/{SYSTEM}/index.html")
+    assert response.status == 404
+    assert response.getheader("Content-Type") == "text/html; charset=utf-8"
+    assert b"Page not found" in payload and b'href="/"' in payload
+    assert b"refresh" not in payload
+    assert served.request("GET", "/systems.html")[0].status == 404
+
+
+def test_page_of_an_export_mid_rewrite_reloads_until_readable(served):
+    structure = served.daemon.install_root / PKG / "share" / PKG / "exports" / SYSTEM / "system_structure" / "Runtime.json"
+    complete = structure.read_text()
+    structure.write_text(complete[: len(complete) // 2])
+
+    status, body = served.json("GET", f"{SITE}/data/Runtime.js")
+    assert status == 503 and body["error"]["code"] == "unavailable"
+
+    manifest = structure.parent.parent / "deployment.json"
+    saved = manifest.read_text()
+    manifest.write_text("{")
+    response, payload = served.request("GET", f"{SITE}/index.html")
+    assert response.status == 404 and b"Page not found" in payload
+
+    manifest.write_text(saved)
+    structure.write_text(complete)
+    assert served.request("GET", f"{SITE}/data/Runtime.js")[0].status == 200
 
 
 def test_latency_script_serves_the_newest_record(served, tmp_path):
@@ -316,3 +354,18 @@ def test_closed_event_stream_is_unsubscribed(served):
             break
         threading.Event().wait(0.02)
     assert served.daemon.hub.subscriber_count == 0
+
+
+def test_missing_page_reloads_while_a_build_runs(served):
+    spec = jobs.JobSpec(
+        key=build.BUILD_JOB_KIND,
+        kind=build.BUILD_JOB_KIND,
+        title="build",
+        argv=[sys.executable, "-c", "import time; time.sleep(30)"],
+        cwd=served.daemon.install_root,
+    )
+    # The fixture's daemon shutdown ends the job.
+    asyncio.run_coroutine_threadsafe(served.daemon.jobs.start(spec), served.loop).result(5)
+    response, payload = served.request("GET", f"/systems/other/{SYSTEM}/index.html")
+    assert response.status == 404
+    assert b'http-equiv="refresh"' in payload and b"A build is running" in payload
