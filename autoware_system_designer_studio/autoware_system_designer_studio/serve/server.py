@@ -18,7 +18,6 @@ Routes:
   GET  /                 -> systems index
   GET  /<site path>      -> page or data script rendered from the exports (see pages.render)
   GET  /assets/<file>    -> web bundle shipped with this package
-  GET  /daemon/<file>    -> daemon page shipped with this package (build and job control)
   GET  /api/<alias>      -> registered method with empty params (health, systems, jobs)
   GET  /api/events       -> Server-Sent Events stream
   POST /api/rpc          -> request envelope (see api)
@@ -57,7 +56,6 @@ RPC_PATH = "/api/rpc"
 EVENTS_PATH = "/api/events"
 API_PREFIX = "/api/"
 BUNDLE_PREFIX = f"/{assets.BUNDLE_DIR}/"
-DAEMON_PAGE_PREFIX = f"/{assets.DAEMON_DIR}/"
 # Packages whose code this daemon runs; rebuilding one inside the served install needs a restart.
 OWN_PACKAGES = ("autoware_system_designer_studio", "autoware_system_designer_runtime")
 
@@ -381,8 +379,6 @@ class ServeDaemon:
             relative = request.path[len(BUNDLE_PREFIX) :]
             path = assets.web_file(relative) if relative.split("/")[0] in assets.BUNDLE_SUBDIRS else None
             return await self._file_response(request, path)
-        if request.path.startswith(DAEMON_PAGE_PREFIX):
-            return await self._file_response(request, assets.web_file(request.path[1:]))
         site_path = request.path[1:]
         if site_path == "" or site_path.endswith("/"):
             site_path += INDEX_PAGE

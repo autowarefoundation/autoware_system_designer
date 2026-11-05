@@ -48,7 +48,6 @@ def test_site_lists_pages_and_the_data_of_modes_with_a_structure(tmp_path):
     assert paths == [
         "index.html",
         f"{SITE}/index.html",
-        f"{SITE}/launch.html",
         f"{SITE}/config.js",
         f"{SITE}/data/Runtime.js",
     ]
@@ -104,7 +103,14 @@ def test_config_quotes_strings_as_json(tmp_path):
     assert f"systemDefinitionFile: {json.dumps(hostile)}" in text
     assert "dataBase: \"data/\"" in text
     assert "latencyModes: []" in text
-    assert '"node_diagram": "../../../assets/js/diagrams/node_diagram.js"' in text
+    diagrams = json.loads(text.partition("diagrams: ")[2].partition(",\n")[0])
+    assert diagrams[0] == {
+        "type": "node_diagram",
+        "label": "Node Diagram",
+        "script": "../../../assets/js/diagrams/node_diagram.js",
+        "searchable": True,
+    }
+    assert [d["type"] for d in diagrams] == list(assets.DIAGRAMS)
 
 
 def test_config_carries_the_selection_scope_and_launch_commands(tmp_path):
@@ -123,14 +129,16 @@ def test_config_carries_the_selection_scope_and_launch_commands(tmp_path):
     assert "--compute-unit main_ecu" in main["native"]
 
 
-def test_workbench_loads_the_shell_before_its_panels(tmp_path):
+def test_workbench_loads_the_shell_before_its_activities(tmp_path):
     _, system = _system(tmp_path)
     workbench = Site([system]).render(f"{SITE}/index.html")
-    for element_id in ("topbar", "rail", "side-panel", "canvas-container", "inspector", "statusbar"):
+    for element_id in ("topbar", "rail", "side-panel", "main-area", "inspector", "statusbar"):
         assert f'id="{element_id}"' in workbench
     shell = workbench.index("js/workbench/shell.js")
-    assert shell < workbench.index("js/workbench/panels/explore.js")
-    assert shell < workbench.index("js/workbench/panels/build.js")
+    widgets = workbench.index("js/workbench/widgets.js")
+    assert shell < widgets
+    for activity in ("explore", "launch", "build"):
+        assert widgets < workbench.index(f"js/workbench/activities/{activity}.js")
     assert workbench.index("js/core/store.js") < shell
 
 
@@ -138,13 +146,20 @@ def test_pages_link_the_bundle_relative_to_the_site_root(tmp_path):
     _, system = _system(tmp_path)
     site = Site([system])
     assert 'href="assets/css/tokens.css"' in site.render("index.html")
-    assert f'href="{SITE}/index.html"' in site.render("index.html")
+    index = site.render("index.html")
+    assert f'href="{SITE}/index.html?activity=explore"' in index
+    assert f'href="{SITE}/index.html?activity=launch"' in index
     workbench = site.render(f"{SITE}/index.html")
     assert 'src="../../../assets/js/core/sd.js"' in workbench
-    assert 'src="../../../assets/js/pages/overview_page.js"' in workbench
+    assert 'src="../../../assets/js/pages/workbench_page.js"' in workbench
 
 
-def test_launch_page_lists_declared_onboard_units_and_escapes_names(tmp_path):
+def _launch_commands(site):
+    text = site.render(f"{SITE}/config.js")
+    return json.loads(text.partition("launchCommands: ")[2].rpartition("\n};")[0])
+
+
+def test_launch_commands_list_declared_onboard_units_per_deploy(tmp_path):
     _, system = _system(tmp_path)
     system.manifest["deploy_variants"] = []
     launch = system.export_dir / "launcher" / "Runtime"
@@ -152,22 +167,24 @@ def test_launch_page_lists_declared_onboard_units_and_escapes_names(tmp_path):
     (launch / "sub_ecu" / "sub_ecu.launch.xml").write_text("<launch/>")
     (launch / "infra").mkdir()
     (launch / "infra" / "infra.launch.xml").write_text("<launch/>")
-    page = Site([system]).render(f"{SITE}/launch.html")
-    assert f"ros2 launch install/{PKG}/share/{PKG}/exports/{SYSTEM}/launcher/Runtime/main_ecu/main_ecu.launch.xml" in page
-    assert "--compute-unit sub_ecu" in page
-    assert "infra.launch.xml" not in page
+    commands = _launch_commands(Site([system]))
+    assert [c["unit"] for c in commands] == ["main_ecu", "sub_ecu"]
+    assert commands[0]["xml"] == (
+        f"ros2 launch install/{PKG}/share/{PKG}/exports/{SYSTEM}/launcher/Runtime/main_ecu/main_ecu.launch.xml"
+    )
 
-    hostile = "<script>alert(1)</script>"
+    hostile = "<script>alert(1)"
     system.manifest["deploy_variants"] = [{"name": hostile, "arguments": []}]
     (system.export_dir / "launcher" / "deployments" / hostile / "Runtime" / "main_ecu").mkdir(parents=True)
     (system.export_dir / "launcher" / "deployments" / hostile / "Runtime" / "main_ecu" / "main_ecu.launch.xml").write_text("")
-    page = Site([system]).render(f"{SITE}/launch.html")
-    assert "--deploy" in page
-    assert hostile not in page
-    assert "&lt;script&gt;" in page
+    site = Site([system])
+    assert "<script>" not in site.render(f"{SITE}/config.js")
+    (command,) = _launch_commands(site)
+    assert command["deploy"] == hostile
+    assert command["native"].endswith(f"--deploy {hostile}")
 
 
-@pytest.mark.parametrize("path", ["systems", f"{SITE}", f"{SITE}/other.html", f"{SITE}/data/x/y.js", "systems/a/b/c.html"])
+@pytest.mark.parametrize("path", ["systems", f"{SITE}", f"{SITE}/other.html", f"{SITE}/launch.html", f"{SITE}/data/x/y.js", "systems/a/b/c.html"])
 def test_unknown_site_paths_render_nothing(tmp_path, path):
     _, system = _system(tmp_path)
     assert Site([system]).render(path) is None
@@ -183,7 +200,6 @@ def test_pack_writes_the_site_and_the_bundle(tmp_path):
     assert (out / SITE / "config.js").is_file()
     for relative in assets.bundle_files():
         assert (out / assets.BUNDLE_DIR / relative).is_file()
-    assert not (out / assets.BUNDLE_DIR / "daemon").exists()
     assert (out / MARKER).is_file()
 
 

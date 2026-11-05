@@ -305,6 +305,18 @@ body.side-panel-collapsed #side-panel-resizer {
   color: white;
 }
 
+/* Hidden parts of activity views, whatever display their class sets */
+#side-panel [hidden],
+#main-area [hidden] {
+  display: none;
+}
+
+.panel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .panel-field {
   display: flex;
   flex-direction: column;
@@ -325,6 +337,13 @@ body.side-panel-collapsed #side-panel-resizer {
 .panel-hint.blocked {
   font-family: inherit;
   color: var(--state-warning);
+}
+
+.panel-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
 }
 
 .panel-empty {
@@ -562,32 +581,6 @@ body.side-panel-collapsed #side-panel-resizer {
   font-weight: 600;
 }
 
-.launch-command {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.launch-command code {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  direction: rtl;
-  text-align: left;
-  font-family: var(--mono-font);
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.launch-command code.command-missing {
-  direction: ltr;
-  font-family: inherit;
-  color: var(--text-muted);
-}
-
 .copy-btn {
   padding: 2px 8px;
   font-size: 11px;
@@ -603,7 +596,7 @@ body.side-panel-collapsed #side-panel-resizer {
   border-color: var(--state-ok);
 }
 
-/* Build panel jobs; state colours match the terminals page */
+/* Build jobs; the selected one shows its log in the main area */
 .job-list {
   display: flex;
   flex-direction: column;
@@ -611,9 +604,32 @@ body.side-panel-collapsed #side-panel-resizer {
 }
 
 .job-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   padding: 8px 10px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.job-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.job-item.selected {
+  border-color: var(--border-active);
+  box-shadow: inset 3px 0 0 var(--border-active);
+}
+
+.job-item-head {
+  align-self: stretch;
+}
+
+.job-item .panel-button {
+  padding: 2px 8px;
   font-size: 12px;
 }
 
@@ -628,25 +644,9 @@ body.side-panel-collapsed #side-panel-resizer {
 }
 
 .job-title {
-  margin: 4px 0 6px;
+  margin: 0;
   color: var(--text-secondary);
   word-break: break-all;
-}
-
-.job-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.job-actions a {
-  color: var(--link-color);
-  text-decoration: none;
-}
-
-.job-actions .panel-button {
-  padding: 2px 8px;
-  font-size: 12px;
 }
 
 .job-state {
@@ -693,99 +693,104 @@ body.side-panel-collapsed #side-panel-resizer {
   opacity: 0.5;
 }
 
-/* Main area: tab strip over the diagram canvas and the views panels open */
+/* Main area: the main view of the shown activity */
 #main-area {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
-}
-
-#main-tabs {
-  display: flex;
-  flex-shrink: 0;
-  overflow-x: auto;
-  background: var(--bg-sidebar-header);
-  border-bottom: 1px solid var(--border-color);
-}
-
-#main-tabs[hidden] {
-  display: none;
-}
-
-.main-tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 280px;
-  padding: 6px 10px;
-  font-size: 12px;
-  color: var(--text-muted);
-  border-right: 1px solid var(--border-color);
-  border-top: 2px solid transparent;
-  cursor: pointer;
-}
-
-.main-tab.active {
-  color: var(--text-primary);
   background: var(--bg-secondary);
-  border-top-color: var(--highlight);
 }
 
-.main-tab-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  direction: rtl;
-  text-align: left;
-}
-
-.main-tab-close {
-  padding: 0 2px;
-  font-size: 11px;
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-}
-
-#main-views {
-  display: contents;
-}
-
-.main-view[hidden],
-#canvas-container[hidden] {
-  display: none;
-}
-
-/* Canvas */
-#canvas-container {
-  flex: 1;
-  min-height: 0;
-  background: var(--bg-secondary);
-  position: relative;
-  overflow: hidden;
-}
-
-/* Member log view */
-.member-log {
+.main-view {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  background: var(--bg-secondary);
 }
 
-.member-log-head {
+.main-view[hidden] {
+  display: none;
+}
+
+.main-view-head {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 8px 14px;
+  gap: 12px;
+  min-height: 36px;
+  padding: 4px 14px;
   font-size: 13px;
+  background: var(--bg-sidebar-header);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.main-view-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.main-empty {
+  margin: 0;
+  padding: 24px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Explore: diagram canvas */
+.main-view.canvas-view {
+  position: relative;
+  overflow: hidden;
+}
+
+.diagram-container {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* The canvas one diagram module owns, replaced whenever the diagram changes. */
+.diagram-canvas {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* Logs: build job and launched member */
+.log-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.job-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
   border-bottom: 1px solid var(--border-color);
 }
 
-.member-log-path {
+.job-argv {
   font-family: var(--mono-font);
+  word-break: break-all;
+}
+
+.job-packages:empty {
+  display: none;
+}
+
+.member-path {
+  font-family: var(--mono-font);
+  font-weight: 500;
 }
 
 .member-state {
@@ -827,17 +832,89 @@ body.side-panel-collapsed #side-panel-resizer {
   color: var(--text-muted);
 }
 
-#diagram-container {
-  width: 100%;
-  height: 100%;
-  position: relative;
+/* Launch: commands table and state monitor */
+.launch-commands-view,
+.launch-monitor-view {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
-/* The canvas one diagram module owns, replaced whenever the diagram changes. */
-.diagram-canvas {
+.launch-commands-view {
+  flex-direction: column;
+  overflow: auto;
+}
+
+.launch-table {
   width: 100%;
-  height: 100%;
-  position: relative;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.launch-table th {
+  position: sticky;
+  top: 0;
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.launch-table td {
+  padding: 8px 14px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.launch-table.no-status th:nth-child(2),
+.launch-table.no-status td:nth-child(2) {
+  display: none;
+}
+
+.launch-table td.launch-unit {
+  white-space: nowrap;
+}
+
+.launch-table .command-cell {
+  width: 100%;
+}
+
+.launch-table .command-cell code {
+  font-family: var(--mono-font);
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--text-primary);
+}
+
+.launch-table .command-missing {
+  color: var(--text-muted);
+}
+
+.monitor-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 300px;
+  flex-shrink: 0;
+  padding: 10px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-sidebar);
+}
+
+/* Inspector shown only beside activities that select diagram elements */
+body.no-inspector #inspector,
+body.no-inspector #inspector-resizer {
+  display: none;
+}
+
+#inspector-toggle[hidden] {
+  display: none;
 }
 
 /* Inspector */

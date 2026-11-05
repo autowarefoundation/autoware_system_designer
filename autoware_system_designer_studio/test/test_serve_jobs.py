@@ -410,22 +410,6 @@ def test_jobs_cancel_and_get_of_unknown_job(building):
     assert status == 400
 
 
-@pytest.mark.parametrize(
-    "name, content_type", [("build.html", "text/html"), ("build.js", "text/javascript"), ("daemon.css", "text/css")]
-)
-def test_daemon_pages_are_served(building, name, content_type):
-    response, payload = building.request("GET", f"/daemon/{name}", headers={"Host": f"127.0.0.1:{building.port}"})
-    assert response.status == 200
-    assert response.getheader("Content-Type").startswith(content_type)
-    assert payload
-
-
-@pytest.mark.parametrize("path", ["/daemon/", "/daemon/__init__.py", "/daemon/../jobs.py", "/daemon/web/build.html"])
-def test_other_daemon_paths_are_not_served(building, path):
-    response, _ = building.request("GET", path, headers={"Host": f"127.0.0.1:{building.port}"})
-    assert response.status == 404
-
-
 def test_systems_list_reports_units_with_build_scripts(building):
     _, body = building.json("GET", "/api/systems")
     assert body["result"]["systems"][0]["build_scripts"] == {"Runtime": ["main_ecu", "sub_ecu"], "Simulation": []}

@@ -31,8 +31,7 @@ directory it wrote itself (marked by `.autoware_system_designer_studio`) or an e
 ```
 index.html                                         systems index
 assets/{css,js}/...                                web bundle
-systems/<package>/<system>/index.html              workbench: diagrams and launch commands; build, launch and monitor panels under the daemon
-systems/<package>/<system>/launch.html             launch commands per mode × compute unit [× deploy]
+systems/<package>/<system>/index.html              workbench; ?activity=explore|launch|build opens that activity
 systems/<package>/<system>/config.js               workbench config
 systems/<package>/<system>/data/<mode>.js          system_structure/<mode>.json with vis guides attached
 systems/<package>/<system>/data/<mode>_latency.js  newest latency record of the mode, else the exported reference
@@ -50,9 +49,20 @@ stylesheet per area; `pages/assets.py` declares the load order of each page.
 | `js/core/`         | `SD` namespace, page events, theme, editor links                        |
 | `js/diagrams/`     | `DiagramBase`, the three diagram modules (registered on `SD.diagrams`)  |
 | `js/inspector/`    | info panel of the selected element                                      |
+| `js/workbench/`    | shell, shared widgets, namespace tree                                   |
+| `js/workbench/activities/` | one script per rail activity (see below)                        |
 | `js/pages/`        | page drivers                                                            |
 | `css/tokens.css`   | colours (light/dark) and run-state tokens; every other stylesheet reads them |
-| `daemon/`          | pages served by the daemon only                                         |
+
+Each rail item of the workbench is an activity owning two views shown together: its options in the
+side panel and its content in the main area. The top bar holds the system and the mode, which every
+activity reads; other selections live in the activity that uses them.
+
+| Activity  | Side panel                                       | Main area                                                   |
+| --------- | ------------------------------------------------ | ----------------------------------------------------------- |
+| Explore   | diagram list; entity search on searchable diagrams | diagram canvas, with the inspector                        |
+| Launch    | deploy, command method; unit launch (daemon)     | launch commands of the mode; state monitor (daemon `launch.status`) |
+| Build     | target, compute unit, start; job list (daemon)   | log of the selected job                                     |
 
 ## Serve
 
@@ -70,15 +80,14 @@ autoware-system-designer-studio serve \
 ```
 
 Open `http://127.0.0.1:8780/`. Pages follow the [site layout](#site-layout) and reflect the exports
-as they are at each request, so a finished build shows on reload. `/daemon/build.html` starts,
-follows and cancels builds. Nothing else of the install tree is served.
+as they are at each request, so a finished build shows on reload. The workbench Build activity
+starts, follows and cancels builds. Nothing else of the install tree is served.
 
 | Route              | Content                                                                                                      |
 | ------------------ | ------------------------------------------------------------------------------------------------------------ |
 | `GET /`            | Systems index                                                                                                |
 | `GET /<site path>` | Page or data script of the [site layout](#site-layout)                                                       |
 | `GET /assets/<f>`  | Web bundle shipped with this package (`css/`, `js/`)                                                         |
-| `GET /daemon/<f>`  | Daemon pages shipped with this package (`build.html`)                                                        |
 | `GET /api/health`  | Daemon status, including `workspace` and `restart_required`                                                  |
 | `GET /api/systems` | Exported systems: modes, compute units with their status, build scripts per mode, deploy variants, page URLs |
 | `GET /api/jobs`    | Jobs, newest first                                                                                           |
