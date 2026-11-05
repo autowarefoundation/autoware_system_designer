@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>Autoware System Designer - {{ deployment_name }}</title>
+    <title>{{ deployment_name }} - Autoware System Designer Studio</title>
     {% for href in stylesheets %}
     <link rel="stylesheet" href="{{ href }}" />
     {% endfor %}
@@ -21,21 +21,47 @@
       crossorigin="anonymous"
     ></script>
   </head>
-  <body>
-    <div id="loading">
-      <div class="spinner"></div>
-      <div id="loading-text">Loading...</div>
-    </div>
-
-    <!-- Sidebar -->
-    <div id="sidebar">
-      <div id="sidebar-header">
-        <a href="#" class="home-link">&larr; Back to Systems</a>
-        <span class="header-link-sep">|</span>
-        <a href="#" class="launcher-link" id="launcher-link">Launch commands</a>
-        <h1></h1>
-        <div class="package-info"></div>
-        <button id="settings-btn" title="Settings" aria-label="Open settings">
+  <body class="workbench">
+    <header id="topbar">
+      <div id="system-identity">
+        <a id="home-link" class="topbar-home" href="#">Systems</a>
+        <span class="topbar-sep">/</span>
+        <span id="system-name" class="topbar-system"></span>
+        <span id="system-package" class="topbar-package"></span>
+      </div>
+      <div class="topbar-selectors">
+        <label class="topbar-field"
+          >Mode
+          <select id="mode-selector"></select>
+        </label>
+        <label class="topbar-field" id="unit-field"
+          >Unit
+          <select id="unit-selector"></select>
+        </label>
+        <label class="topbar-field" id="deploy-field" hidden
+          >Deploy
+          <select id="deploy-selector"></select>
+        </label>
+      </div>
+      <div class="topbar-actions">
+        <span id="connection-status" class="connection-status" hidden></span>
+        <button
+          id="inspector-toggle"
+          class="topbar-icon-btn"
+          title="Inspector"
+          aria-label="Toggle inspector"
+          aria-pressed="true"
+        >
+          <svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M3 4h14v12H3zM12 4v12" />
+          </svg>
+        </button>
+        <button
+          id="settings-btn"
+          class="topbar-icon-btn"
+          title="Settings"
+          aria-label="Open settings"
+        >
           <svg
             width="15"
             height="15"
@@ -51,23 +77,51 @@
           </svg>
         </button>
       </div>
+    </header>
 
-      <div id="mode-selector-section">
-        <label for="mode-selector">System Mode:</label>
-        <select id="mode-selector">
-          <!-- Populated by JS -->
-        </select>
-      </div>
+    <div id="workbench-body">
+      <nav id="rail" aria-label="Workbench panels">
+        <div class="rail-group rail-static-group"></div>
+      </nav>
 
-      <div id="diagram-list">
-        <div class="section-title">Diagram Types</div>
-        <!-- Populated by JS -->
-      </div>
+      <aside id="side-panel">
+        <div id="side-panel-header">
+          <span id="side-panel-title"></span>
+        </div>
+        <div id="side-panel-body"></div>
+      </aside>
+      <div id="side-panel-resizer" class="panel-resizer"></div>
 
-      <div id="info-panel">
-        <!-- Node details will be populated here -->
-      </div>
+      <main id="main-area">
+        <div id="main-tabs" role="tablist" hidden></div>
+        <div id="canvas-container">
+          <div id="diagram-container"></div>
+          <div id="loading">
+            <div class="spinner"></div>
+            <div id="loading-text">Loading...</div>
+          </div>
+        </div>
+        <div id="main-views"></div>
+      </main>
+
+      <div id="inspector-resizer" class="panel-resizer"></div>
+      <aside id="inspector">
+        <div id="inspector-header">Inspector</div>
+        <p id="inspector-empty" class="panel-empty">
+          Select an element on the diagram.
+        </p>
+        <div id="info-panel"></div>
+      </aside>
     </div>
+
+    <footer id="statusbar">
+      <span id="status-source" class="status-item"></span>
+      <span id="status-selection" class="status-item"></span>
+      <span class="status-spacer"></span>
+      <span id="status-jobs" class="status-item" hidden></span>
+      <span id="status-restart" class="status-item" hidden></span>
+      <span id="status-workspace" class="status-item" hidden></span>
+    </footer>
 
     <!-- Settings Popup -->
     <div id="settings-overlay"></div>
@@ -101,16 +155,6 @@
           <option value="subl">Sublime Text</option>
         </select>
       </div>
-    </div>
-
-    <div id="sidebar-resizer"></div>
-
-    <!-- Canvas Container -->
-    <div id="canvas-container">
-      <div
-        id="diagram-container"
-        style="width: 100%; height: 100%; position: relative"
-      ></div>
     </div>
 
     <script src="{{ entry_script }}"></script>

@@ -7,6 +7,10 @@
   const STAR_HUB_RADIUS = 7;
   const STAR_FONT_SIZE = 11;
 
+  // A focused entity fills at most this fraction of the viewport, zoomed in no further than the cap.
+  const FOCUS_VIEW_FRACTION = 0.25;
+  const MAX_FOCUS_ZOOM = 5;
+
   class NodeDiagramModule extends ElkCanvas {
     // ── Initialization ──────────────────────────────────────────────────────────
 
@@ -23,7 +27,8 @@
       this.globalOverlay = null;
       this.activeGlobalTopic = null;
 
-      this.init();
+      // Settles once the first layout is drawn.
+      this.ready = this.init();
     }
 
     async init() {
@@ -933,6 +938,31 @@
     }
 
     // ── Viewport / navigation ─────────────────────────────────────────────────────
+
+    // Selects the entity drawn with `id` as a click would and centres it in the
+    // viewport; false when this diagram does not draw it.
+    focusEntity(id) {
+      const group = this.elementById(id);
+      const rect = group?.querySelector(":scope > .node-rect");
+      if (!rect || !this.zoomLayer) return false;
+      this.hasDragged = false;
+      rect.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+      const toLayer = this.zoomLayer.getCTM().inverse().multiply(group.getCTM());
+      const width = parseFloat(rect.getAttribute("width")) || 0;
+      const height = parseFloat(rect.getAttribute("height")) || 0;
+      const view = this.container.getBoundingClientRect();
+      const fit = Math.min(
+        (view.width * FOCUS_VIEW_FRACTION) / width,
+        (view.height * FOCUS_VIEW_FRACTION) / height,
+      );
+      const k = Math.min(Math.max(fit, this.getMinZoom()), MAX_FOCUS_ZOOM);
+      this.transform.k = k;
+      this.transform.x = view.width / 2 - (toLayer.e + width / 2) * k;
+      this.transform.y = view.height / 2 - (toLayer.f + height / 2) * k;
+      this.updateTransform();
+      return true;
+    }
 
     onTransform() {
       if (this.activeGlobalTopic) {

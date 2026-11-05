@@ -154,28 +154,40 @@ def _rows_by_deploy(commands: list[Command]) -> tuple[list[str], dict[str, list[
     return deploy_names, {name: _to_rows([cmd for cmd in commands if cmd.deploy == name]) for name in deploy_names}
 
 
-def launch_commands_view(export: SystemExport) -> dict[str, Any]:
-    """Template values of the commands page: rows per deploy variant and the method offered first.
-
-    Both launch methods are listed: the exported XML launcher run by ``ros2 launch`` and the
-    system_structure JSON run by the designer runtime, which is offered first whenever present.
-    """
+def _export_commands(export: SystemExport) -> list[Command]:
     declared = export.manifest.get("compute_units")
     declared_units = (
         [u["name"] for u in export.compute_units() if u["kind"] == KIND_ONBOARD]
         if isinstance(declared, list) and declared
         else None
     )
-    deploy_variants = export.deploy_variants()
-    commands = _build_commands(
+    return _build_commands(
         export.name,
         export.package,
         export.export_dir / LAUNCHER_SUBDIR,
         export.export_dir / STRUCTURE_SUBDIR,
         export.mode_keys(),
-        deploy_variants,
+        export.deploy_variants(),
         declared_units,
     )
+
+
+def launch_command_records(export: SystemExport) -> list[dict[str, str]]:
+    """Launch commands as flat records (mode, unit, deploy, xml, native) for the workbench Commands panel."""
+    return [
+        {"mode": cmd.mode, "unit": cmd.ecu, "deploy": cmd.deploy, "xml": cmd.xml, "native": cmd.native}
+        for cmd in _export_commands(export)
+    ]
+
+
+def launch_commands_view(export: SystemExport) -> dict[str, Any]:
+    """Template values of the commands page: rows per deploy variant and the method offered first.
+
+    Both launch methods are listed: the exported XML launcher run by ``ros2 launch`` and the
+    system_structure JSON run by the designer runtime, which is offered first whenever present.
+    """
+    deploy_variants = export.deploy_variants()
+    commands = _export_commands(export)
     deploy_names, rows_by_deploy = _rows_by_deploy(commands)
     has_native = any(cmd.native for cmd in commands)
     return {

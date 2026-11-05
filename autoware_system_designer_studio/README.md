@@ -31,7 +31,7 @@ directory it wrote itself (marked by `.autoware_system_designer_studio`) or an e
 ```
 index.html                                         systems index
 assets/{css,js}/...                                web bundle
-systems/<package>/<system>/index.html              workbench: node, sequence and logic diagrams
+systems/<package>/<system>/index.html              workbench: diagrams and launch commands; build, launch and monitor panels under the daemon
 systems/<package>/<system>/launch.html             launch commands per mode × compute unit [× deploy]
 systems/<package>/<system>/config.js               workbench config
 systems/<package>/<system>/data/<mode>.js          system_structure/<mode>.json with vis guides attached

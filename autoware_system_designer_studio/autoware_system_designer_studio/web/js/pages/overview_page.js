@@ -1,6 +1,5 @@
-// Overview Page Module
-// Drives the deployment overview shell: sidebar, mode/diagram selection, and
-// the lifecycle of the diagram module currently on the canvas.
+// Workbench page entry: starts the shell and keeps the canvas showing the
+// diagram module of the selected diagram type and mode.
 
 (function () {
   if (typeof deploymentConfig === "undefined") {
@@ -10,53 +9,30 @@
     return;
   }
 
+  const config = deploymentConfig;
   const {
     deploymentName,
-    availableDiagramTypes,
     diagramScripts,
     dataBase,
     latencyModes,
-    availableModes,
-    defaultDiagramType,
-    defaultMode,
-    packageName,
-    systemsIndexPath,
-    launchCommandsPath,
     editorScheme = "vscode",
-    systemDefinitionFile = "",
-  } = deploymentConfig;
+  } = config;
 
   // Highlight state a module may leave on nodes outside its own container.
   const HIGHLIGHT_CLASSES = ["highlighted", "port-highlighted"];
 
-  const SIDEBAR_MIN_WIDTH = 150;
-  const SIDEBAR_MAX_WIDTH = 700;
-
   SD.editor.setDefaultScheme(editorScheme);
 
-  let currentDiagramType = urlParameter("diagram") || defaultDiagramType;
-  let currentMode = urlParameter("mode") || defaultMode;
-  let currentDiagramModule = null;
+  // Diagram that draws every entity; a focus request the current diagram cannot serve opens it.
+  const FOCUS_DIAGRAM = "node_diagram";
 
-  const modeSelect = document.getElementById("mode-selector");
+  let currentDiagramModule = null;
+  let pendingFocusId = null;
+
   const diagramContainer = document.getElementById("diagram-container");
   const loading = document.getElementById("loading");
   const infoPanel = document.getElementById("info-panel");
-
-  // ── URL state ───────────────────────────────────────────────────────────────
-
-  function urlParameter(name) {
-    return new URLSearchParams(window.location.search).get(name);
-  }
-
-  function updateUrlParams() {
-    const url = new URL(window.location.href);
-    url.searchParams.set("diagram", currentDiagramType);
-    url.searchParams.set("mode", currentMode);
-    history.replaceState(null, "", url.toString());
-  }
-
-  // ── Diagram lifecycle ───────────────────────────────────────────────────────
+  const inspectorEmpty = document.getElementById("inspector-empty");
 
   function showLoading(show, text = "Loading...") {
     loading.style.display = show ? "flex" : "none";
@@ -100,16 +76,25 @@
       deployment: deploymentName,
       dataBase,
       latencyModes,
-      onInfoUpdate: (data, type) => SD.InfoPanel.render(infoPanel, data, type),
+      onInfoUpdate: (data, type) => {
+        infoPanel.style.display = "block";
+        inspectorEmpty.hidden = true;
+        SD.InfoPanel.render(infoPanel, data, type);
+      },
     });
-
-    infoPanel.style.display = "block";
   }
 
-  async function loadDiagram(diagramType, mode) {
+  async function loadDiagram() {
+    const diagramType = SD.store.get("diagram");
+    const mode = SD.store.get("mode");
     showLoading(true, `Loading ${diagramType.replace("_", " ")}...`);
     try {
       await loadDiagramModule(diagramType, mode);
+      if (pendingFocusId) {
+        const id = pendingFocusId;
+        pendingFocusId = null;
+        focusEntity(id);
+      }
     } catch (error) {
       console.error("Error loading diagram:", error);
       diagramContainer.innerHTML = "";
@@ -122,137 +107,20 @@
     }
   }
 
-  function selectDiagramType(diagramType) {
-    currentDiagramType = diagramType;
-    updateUrlParams();
-    updateDiagramTypeSelection();
-    loadDiagram(currentDiagramType, currentMode);
-  }
-
-  function updateDiagramTypeSelection() {
-    document.querySelectorAll(".diagram-type-item").forEach((item) => {
-      item.classList.toggle(
-        "active",
-        item.getAttribute("data-type") === currentDiagramType,
-      );
-    });
-  }
-
-  // ── Sidebar ─────────────────────────────────────────────────────────────────
-
-  function initializeHeader() {
-    document.title = `Autoware System Designer - ${deploymentName}`;
-
-    const backLink = document.querySelector(".home-link");
-    if (backLink) backLink.href = systemsIndexPath;
-
-    const launcherLink = document.getElementById("launcher-link");
-    if (launcherLink)
-      launcherLink.href = launchCommandsPath;
-
-    const headerTitle = document.querySelector("#sidebar-header h1");
-    if (headerTitle) headerTitle.textContent = deploymentName;
-
-    const packageInfo = document.querySelector(".package-info");
-    if (!packageInfo) return;
-    packageInfo.textContent = `Package: ${packageName}`;
-    if (systemDefinitionFile) {
-      const link = SD.editor.sourceLink(systemDefinitionFile, 1);
-      link.classList.add("package-source-link");
-      packageInfo.appendChild(link);
+  async function focusEntity(id) {
+    SD.workbench.showMainTab("diagram");
+    const module = currentDiagramModule;
+    if (typeof module?.focusEntity === "function") {
+      await module.ready;
+      if (module === currentDiagramModule && module.focusEntity(id)) return;
+    }
+    if (SD.store.get("diagram") !== FOCUS_DIAGRAM) {
+      pendingFocusId = id;
+      SD.store.set("diagram", FOCUS_DIAGRAM);
     }
   }
 
-  function initializeSelectors() {
-    modeSelect.innerHTML = "";
-    availableModes.forEach((mode) => {
-      const option = document.createElement("option");
-      option.value = mode;
-      option.textContent = mode;
-      modeSelect.appendChild(option);
-    });
-    modeSelect.value = currentMode;
-    modeSelect.addEventListener("change", (e) => {
-      currentMode = e.target.value;
-      updateUrlParams();
-      loadDiagram(currentDiagramType, currentMode);
-    });
-
-    const diagramList = document.getElementById("diagram-list");
-    diagramList.innerHTML = '<div class="section-title">Diagram Types</div>';
-    availableDiagramTypes.forEach((type) => {
-      const item = document.createElement("a");
-      item.className = "diagram-type-item";
-      item.href = "#";
-      item.dataset.type = type;
-      item.textContent = type
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, (letter) => letter.toUpperCase());
-      item.addEventListener("click", (e) => {
-        e.preventDefault();
-        selectDiagramType(type);
-      });
-      diagramList.appendChild(item);
-    });
-  }
-
-  function initializeSettings() {
-    const overlay = document.getElementById("settings-overlay");
-    const popup = document.getElementById("settings-popup");
-    const setOpen = (open) => {
-      popup.classList.toggle("open", open);
-      overlay.classList.toggle("open", open);
-    };
-
-    document
-      .getElementById("settings-btn")
-      .addEventListener("click", () => setOpen(true));
-    document
-      .getElementById("settings-close")
-      .addEventListener("click", () => setOpen(false));
-    overlay.addEventListener("click", () => setOpen(false));
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") setOpen(false);
-    });
-
-    const editorSelect = document.getElementById("editor-selector");
-    editorSelect.value = SD.editor.currentScheme();
-    editorSelect.addEventListener("change", (e) => {
-      SD.editor.setScheme(e.target.value);
-    });
-  }
-
-  // Drag the divider to resize the sidebar; the diagram re-fits on release.
-  function initializeResizer() {
-    const sidebar = document.getElementById("sidebar");
-    const resizer = document.getElementById("sidebar-resizer");
-    let isResizing = false;
-
-    resizer.addEventListener("mousedown", () => {
-      isResizing = true;
-      resizer.classList.add("resizing");
-      document.body.classList.add("resizing-sidebar");
-    });
-
-    document.addEventListener("mousemove", (e) => {
-      if (!isResizing) return;
-      const width = Math.min(
-        Math.max(e.clientX, SIDEBAR_MIN_WIDTH),
-        SIDEBAR_MAX_WIDTH,
-      );
-      sidebar.style.width = `${width}px`;
-    });
-
-    document.addEventListener("mouseup", () => {
-      if (!isResizing) return;
-      isResizing = false;
-      resizer.classList.remove("resizing");
-      document.body.classList.remove("resizing-sidebar");
-      window.dispatchEvent(new Event("resize"));
-    });
-  }
-
-  // ── Startup ─────────────────────────────────────────────────────────────────
+  SD.on("focusentity", ({ id }) => focusEntity(id));
 
   SD.on("themechange", () => {
     if (typeof currentDiagramModule?.updateTheme === "function") {
@@ -261,14 +129,10 @@
   });
 
   window.addEventListener("load", () => {
-    initializeHeader();
-    initializeSelectors();
-    initializeSettings();
-    initializeResizer();
-    updateUrlParams();
     SD.theme.init();
-
-    updateDiagramTypeSelection();
-    loadDiagram(currentDiagramType, currentMode);
+    SD.workbench.init(config);
+    SD.store.onChange("diagram", loadDiagram);
+    SD.store.onChange("mode", loadDiagram);
+    loadDiagram();
   });
 })();

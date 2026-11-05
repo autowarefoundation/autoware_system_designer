@@ -107,6 +107,33 @@ def test_config_quotes_strings_as_json(tmp_path):
     assert '"node_diagram": "../../../assets/js/diagrams/node_diagram.js"' in text
 
 
+def test_config_carries_the_selection_scope_and_launch_commands(tmp_path):
+    _, system = _system(tmp_path)
+    system.manifest["deploy_variants"] = []
+    text = Site([system]).render(f"{SITE}/config.js")
+    assert f"systemId: {json.dumps(system.id)}" in text
+    assert 'siteRoot: "../../../"' in text
+    assert "deployNames: []" in text
+    units = json.loads(text.partition("computeUnits: ")[2].partition(",\n")[0])
+    assert [u["name"] for u in units] == [u["name"] for u in system.compute_units()]
+    commands = json.loads(text.partition("launchCommands: ")[2].rpartition("\n};")[0])
+    main = next(c for c in commands if c["unit"] == "main_ecu")
+    assert main["mode"] == "Runtime" and main["deploy"] == ""
+    assert main["xml"].endswith("launcher/Runtime/main_ecu/main_ecu.launch.xml")
+    assert "--compute-unit main_ecu" in main["native"]
+
+
+def test_workbench_loads_the_shell_before_its_panels(tmp_path):
+    _, system = _system(tmp_path)
+    workbench = Site([system]).render(f"{SITE}/index.html")
+    for element_id in ("topbar", "rail", "side-panel", "canvas-container", "inspector", "statusbar"):
+        assert f'id="{element_id}"' in workbench
+    shell = workbench.index("js/workbench/shell.js")
+    assert shell < workbench.index("js/workbench/panels/explore.js")
+    assert shell < workbench.index("js/workbench/panels/build.js")
+    assert workbench.index("js/core/store.js") < shell
+
+
 def test_pages_link_the_bundle_relative_to_the_site_root(tmp_path):
     _, system = _system(tmp_path)
     site = Site([system])

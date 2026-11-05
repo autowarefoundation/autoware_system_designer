@@ -46,13 +46,22 @@ CORE_SCRIPTS = (
 )
 
 # Scripts the workbench loads in its head, in load order; diagram modules load on demand.
+# Panel scripts register themselves with the shell, which mounts them in rail order.
 OVERVIEW_SCRIPTS = CORE_SCRIPTS + (
+    "js/core/store.js",
+    "js/core/daemon.js",
     "js/diagrams/diagram_base.js",
     "js/diagrams/elk_canvas.js",
     "js/diagrams/event_graph.js",
     "js/diagrams/timing_model.js",
     "js/diagrams/latency_source.js",
     "js/inspector/info_panel.js",
+    "js/workbench/shell.js",
+    "js/workbench/namespace_tree.js",
+    "js/workbench/panels/explore.js",
+    "js/workbench/panels/build.js",
+    "js/workbench/panels/launch.js",
+    "js/workbench/panels/monitor.js",
 )
 
 # Script that drives the workbench once its body is parsed.
