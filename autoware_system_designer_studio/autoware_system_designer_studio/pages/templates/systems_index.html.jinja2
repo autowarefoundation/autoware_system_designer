@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Autoware System Designer Studio</title>
+    {% for href in stylesheets %}
+    <link rel="stylesheet" href="{{ href }}">
+    {% endfor %}
+    {% for src in scripts %}
+    <script src="{{ src }}"></script>
+    {% endfor %}
+</head>
+<body class="simple-page">
+    <div class="page-container">
+        <div class="page-header">
+            <h1>Autoware Systems and their Deployments</h1>
+            <div class="dark-mode-toggle">
+                <label for="dark-mode-switch">Dark Mode</label>
+                <div class="toggle-switch" id="dark-mode-switch"></div>
+            </div>
+        </div>
+        <div class="nav-links" id="daemon-links" hidden><a href="daemon/build.html">Build</a></div>
+        <p class="description">Systems exported to the install tree.</p>
+        {% if systems %}
+        <ul class="deployment-list">
+            {% for system in systems %}
+            <li class="deployment-item">
+                <div class="deployment-header">
+                    <a href="{{ system.overview }}" class="deployment-name">{{ system.name }}</a>
+                    <div class="deployment-meta">Package: <span class="deployment-package">{{ system.package }}</span></div>
+                </div>
+                <div class="item-links">
+                    <a class="item-link" href="{{ system.overview }}">Diagram</a>
+                    <a class="item-link" href="{{ system.launch_commands }}">Launch</a>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="empty-state">No exported systems found.</p>
+        {% endif %}
+    </div>
+    <script>
+        SD.theme.init();
+        // Daemon pages are linked only when a serve daemon answers for this page.
+        if (location.protocol.startsWith('http')) {
+            fetch('api/health').then(function(response) {
+                if (response.ok) document.getElementById('daemon-links').hidden = false;
+            }).catch(function() {});
+        }
+    </script>
+</body>
+</html>

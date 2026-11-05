@@ -19,7 +19,7 @@ import json
 import pytest
 
 from autoware_system_designer_runtime._impl.ros2.common.params import resolve_value
-from autoware_system_designer_runtime.system_runner import _resolve_structure_paths
+from autoware_system_designer_runtime.export_tree import resolve_structure_paths
 
 TOKEN = "${workspace_root}"
 
@@ -40,7 +40,7 @@ def test_workspace_token_resolves_against_the_manifest(tmp_path):
     structure_path = _export_tree(tmp_path, TOKEN + "/ws/out")
     data = json.loads(structure_path.read_text())
 
-    resolved = _resolve_structure_paths(data, str(structure_path))
+    resolved = resolve_structure_paths(data, str(structure_path))
 
     assert resolved["system_file"] == f"{tmp_path.resolve()}/ws/Solo.system.yaml"
 
@@ -48,7 +48,7 @@ def test_workspace_token_resolves_against_the_manifest(tmp_path):
 def test_untokenized_export_needs_no_manifest(tmp_path):
     """An export written outside the workspace carries absolute paths and loads as-is."""
     absolute = {"system_file": f"{tmp_path}/ws/Solo.system.yaml"}
-    assert _resolve_structure_paths(absolute, str(tmp_path / "default.json")) == absolute
+    assert resolve_structure_paths(absolute, str(tmp_path / "default.json")) == absolute
 
 
 def test_unresolvable_token_is_reported(tmp_path):
@@ -57,7 +57,7 @@ def test_unresolvable_token_is_reported(tmp_path):
     data = json.loads(structure_path.read_text())
 
     with pytest.raises(RuntimeError, match="workspace root"):
-        _resolve_structure_paths(data, str(structure_path))
+        resolve_structure_paths(data, str(structure_path))
 
 
 @pytest.mark.parametrize(

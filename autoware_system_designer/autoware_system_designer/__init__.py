@@ -28,7 +28,6 @@ __all__ = [
     "parser",
     "builder",
     "generator",
-    "visualizer",
     "linter",
     "DESIGN_FORMAT_VERSION",
 ]

@@ -28,7 +28,7 @@ from ._impl.measure.clock import CLOCK_AUTO, CLOCK_CHOICES
 from ._impl.measure.node_graph import NodeGraph
 from ._impl.measure.node_stats import NS_PER_S
 from ._impl.measure.session import analyze_traces, default_latency_out
-from .system_runner import _resolve_structure_paths
+from .export_tree import resolve_structure_paths
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -54,8 +54,8 @@ def main() -> None:
         "--latency-out",
         type=Path,
         default=None,
-        help="Output latency file: the bundle's script under .js, bare JSON under any other suffix "
-        "(default: <Mode>_latency.js in the export's visualization/web/data/, else <trace_dir>/../latency/)",
+        help="Output latency file, JSON (default: a new record latency/<Mode>/<stamp>.json of the export "
+        "under the record root, else <trace_dir>/../latency/<Mode>_latency.json)",
     )
     parser.add_argument("--compute-unit", default=None, help="Restrict the design to nodes of this compute unit")
     parser.add_argument("--window-start", default=None, help="Epoch seconds or ISO time; default: first record")
@@ -78,7 +78,7 @@ def main() -> None:
     with open(args.json_file) as handle:
         data = json.load(handle)
     try:
-        data = _resolve_structure_paths(data, str(args.json_file))
+        data = resolve_structure_paths(data, str(args.json_file))
     except RuntimeError as exc:
         logger.warning("%s", exc)
     graph = NodeGraph.from_system_structure(data, ecu=args.compute_unit)
