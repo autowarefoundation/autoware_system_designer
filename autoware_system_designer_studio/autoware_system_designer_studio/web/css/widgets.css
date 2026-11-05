@@ -1,0 +1,371 @@
+/* Widgets the activities share: layout panes, side-panel controls, the main view frame,
+   the namespace tree and the terminal log. */
+
+/* Layout panes: a pane fills its parent as a column; a horizontal split lays panes side by side. */
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.split-h {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.pane-side {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-sidebar);
+}
+
+/* Side-panel controls */
+.topbar-field select,
+.side-panel-section select {
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 13px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  max-width: 220px;
+}
+
+.panel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.panel-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+.panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.panel-list-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 13px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.panel-list-item:hover {
+  border-color: var(--border-hover);
+}
+
+.panel-list-item.active {
+  background: var(--border-active);
+  border-color: var(--border-active);
+  color: white;
+}
+
+.panel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-row-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.panel-hint {
+  margin: 0;
+  font-size: 12px;
+  font-family: var(--mono-font);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.panel-hint.blocked {
+  font-family: inherit;
+  color: var(--state-warning);
+}
+
+.panel-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.panel-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.panel-banner {
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+}
+
+.panel-banner-warning {
+  color: var(--state-warning);
+}
+
+.panel-banner-error {
+  color: var(--state-failed);
+}
+
+.panel-button {
+  padding: 5px 12px;
+  font-size: 13px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.panel-button.primary {
+  background: var(--border-active);
+  border-color: var(--border-active);
+  color: white;
+}
+
+.panel-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.panel-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.panel-search:focus {
+  outline: none;
+  border-color: var(--border-active);
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.segmented button {
+  padding: 3px 10px;
+  font-size: 12px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--border-color);
+}
+
+.segmented button.active {
+  background: var(--border-active);
+  color: white;
+}
+
+.copy-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.copy-btn.copied {
+  color: var(--state-ok);
+  border-color: var(--state-ok);
+}
+
+/* A compute unit's reach on the daemon */
+.unit-status {
+  font-size: 11px;
+  color: var(--state-idle);
+}
+
+.unit-status.available {
+  color: var(--state-ok);
+}
+
+/* Main view frame: head with title and trailing controls, body or empty message */
+.main-view-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 4px 14px;
+  font-size: 13px;
+  background: var(--bg-sidebar-header);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.main-view-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.main-view-trailing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.main-empty {
+  margin: 0;
+  padding: 24px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Namespace tree */
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ns-tree {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.ns-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ns-row:hover {
+  background: var(--bg-tertiary);
+}
+
+.ns-row.selected {
+  background: var(--highlight-bg);
+}
+
+.ns-twisty {
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.ns-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+
+.ns-label.ns-namespace {
+  color: var(--text-muted);
+}
+
+.ns-label.ns-node {
+  color: var(--text-primary);
+  font-family: var(--mono-font);
+  font-size: 12px;
+}
+
+.ns-label.ns-module {
+  font-weight: 600;
+}
+
+.ns-label.match {
+  color: var(--highlight);
+}
+
+.state-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--state-idle);
+}
+
+.state-dot.running {
+  background: var(--state-running);
+}
+
+.state-dot.ok {
+  background: var(--state-ok);
+}
+
+.state-dot.warning {
+  background: var(--state-warning);
+}
+
+.state-dot.failed {
+  background: var(--state-failed);
+}
+
+/* Terminal log */
+.terminal-log {
+  flex: 1;
+  margin: 0;
+  padding: 10px 14px;
+  overflow: auto;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.terminal-placeholder {
+  color: var(--text-muted);
+}

@@ -46,23 +46,35 @@ stylesheet per area; `pages/assets.py` declares the load order of each page.
 
 | Path               | Role                                                                    |
 | ------------------ | ----------------------------------------------------------------------- |
-| `js/core/`         | `SD` namespace, page events, theme, editor links                        |
+| `js/core/`         | `SD` namespace, page events, theme, editor links, selection store, daemon client |
 | `js/diagrams/`     | `DiagramBase`, the three diagram modules (registered on `SD.diagrams`)  |
 | `js/inspector/`    | info panel of the selected element                                      |
-| `js/workbench/`    | shell, shared widgets, namespace tree                                   |
-| `js/workbench/activities/` | one script per rail activity (see below)                        |
+| `js/shell/`        | workbench frame: activity registry and rail, panel layout, status bar   |
+| `js/widgets/`      | building blocks activities share: controls, main view frame, terminal, namespace tree |
+| `js/activities/<id>/` | one directory per rail activity: its parts, then `index.js` registering it |
 | `js/pages/`        | page drivers                                                            |
 | `css/tokens.css`   | colours (light/dark) and run-state tokens; every other stylesheet reads them |
+| `css/shell.css`, `css/widgets.css` | the frame and the shared widgets                        |
+| `css/activities/<id>.css` | the activity's own styles                                        |
 
-Each rail item of the workbench is an activity owning two views shown together: its options in the
-side panel and its content in the main area. The top bar holds the system and the mode, which every
-activity reads; other selections live in the activity that uses them.
+Each rail item of the workbench is an activity owning one view per slot, shown and hidden together:
+its options in the side panel, its content in the main area and, when it selects elements, the
+inspector. The top bar holds the system and the mode, which every activity reads; other selections
+live in the activity that uses them, as store keys mirrored in the URL.
 
 | Activity  | Side panel                                       | Main area                                                   |
 | --------- | ------------------------------------------------ | ----------------------------------------------------------- |
-| Explore   | diagram list; entity search on searchable diagrams | diagram canvas, with the inspector                        |
-| Launch    | deploy, command method; unit launch (daemon)     | launch commands of the mode; state monitor (daemon `launch.status`) |
-| Build     | target, compute unit, start; job list (daemon)   | log of the selected job                                     |
+| Explore   | diagram list; entity search on searchable diagrams | diagram canvas; inspector shows the selected element      |
+| Launch    | deploy, command method; unit launch (daemon)     | launch commands of the mode, or the state monitor (daemon `launch.status`; `?view=`) |
+| Build     | target, compute unit, start; job list (daemon)   | log of the selected job (`?job=`)                           |
+
+An activity is one `SD.workbench.registerActivity(def)` call from its `index.js`, with its parts
+attached to `SD.activities.<id>` by the scripts before it. `def` names the activity (`id`, `title`,
+`icon`, `order`), its daemon needs (`daemon`, `requires`), whether it owns an inspector view
+(`inspector`), what it adds to the status bar (`status(store)`), and `mount(slots, ctx)`, called on
+first show with `{ side, main, inspector? }` and `{ config, store, daemon }`. `mount` may return
+`{ show(), hide() }`: `show` runs on every later show, `hide` when another activity takes over. Adding
+an activity is that directory, its stylesheet and one entry in `pages/assets.py` `ACTIVITIES`.
 
 ## Serve
 

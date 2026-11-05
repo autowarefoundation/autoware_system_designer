@@ -1,17 +1,20 @@
-// Workbench shell: top bar, rail, side panel, main area, inspector and status
-// bar. Each rail item is an activity owning a pair of views: its options in the
-// side panel and its content in the main area, shown and hidden together.
-// Daemon activities appear only on a page a daemon served, and stay disabled
-// until it offers their methods.
+// Workbench shell: the top bar, the rail and the activity registry. Each rail
+// item is an activity owning one view per slot: its options in the side panel,
+// its content in the main area and, when it selects elements, the inspector.
+// An activity's slots show and hide together. Daemon activities appear only on
+// a page a daemon served, and stay disabled until it offers their methods.
 (function () {
   const SD = window.SD;
 
-  const SIDE_PANEL_WIDTH = { key: "workbench.sidePanelWidth", min: 180, max: 640 };
-  const INSPECTOR_WIDTH = { key: "workbench.inspectorWidth", min: 220, max: 720 };
-  const INSPECTOR_HIDDEN_KEY = "workbench.inspectorHidden";
   const DEFAULT_ACTIVITY = "explore";
+  const SLOT_HOSTS = { side: "side-panel-body", main: "main-area", inspector: "inspector-body" };
+  const SLOT_CLASSES = {
+    side: "side-panel-section",
+    main: "main-view",
+    inspector: "inspector-section",
+  };
 
-  // id -> { def, button, side, main, handle }
+  // id -> { def, button, slots: { side, main, inspector? }, handle }
   const activities = new Map();
   let config = null;
   let daemonHealth = null;
@@ -20,17 +23,22 @@
 
   const el = (id) => document.getElementById(id);
 
+  // Parts an activity's scripts share before its entry registers it, keyed by activity id.
+  SD.activities = {};
+
   /**
    * Activity definition:
    *   id, title, icon (SVG path data), order
-   *   daemon     needs a daemon; `requires` lists the daemon methods it calls
-   *   inspector  shows the inspector beside its main view
-   *   scope      selection keys besides the mode it reads, shown in the status bar
-   *   mount({ side, main }, ctx) -> optional { show() }, called on first show;
-   *     `show` runs on every later show, after the views are visible.
+   *   daemon        needs a daemon; `requires` lists the daemon methods it calls
+   *   inspector     owns an inspector view beside its main view
+   *   status(store) strings shown after the mode in the status bar
+   *   mount(slots, ctx) -> optional { show(), hide() }, called on first show.
+   *     slots: { side, main, inspector? }; ctx: { config, store, daemon }.
+   *     `show` runs on every later show, after the slots are visible; `hide`
+   *     runs when another activity takes over.
    */
   function registerActivity(def) {
-    activities.set(def.id, { def, button: null, side: null, main: null, handle: null });
+    activities.set(def.id, { def, button: null, slots: null, handle: null });
   }
 
   function svgIcon(pathData) {
@@ -46,7 +54,7 @@
     return svg;
   }
 
-  // -- rail and activity views --------------------------------------------
+  // -- rail and activity slots ------------------------------------------
 
   function orderedActivities() {
     return Array.from(activities.values()).sort((a, b) => a.def.order - b.def.order);
@@ -68,6 +76,14 @@
     };
   }
 
+  function slotElement(name) {
+    const slot = document.createElement("section");
+    slot.className = SLOT_CLASSES[name];
+    slot.hidden = true;
+    el(SLOT_HOSTS[name]).appendChild(slot);
+    return slot;
+  }
+
   function buildRail() {
     const rail = el("rail");
     orderedActivities().forEach((activity) => {
@@ -86,15 +102,8 @@
       rail.querySelector(`.${groupClass}`).appendChild(button);
       activity.button = button;
 
-      activity.side = document.createElement("section");
-      activity.side.className = "side-panel-section";
-      activity.side.hidden = true;
-      el("side-panel-body").appendChild(activity.side);
-
-      activity.main = document.createElement("div");
-      activity.main.className = "main-view";
-      activity.main.hidden = true;
-      el("main-area").appendChild(activity.main);
+      activity.slots = { side: slotElement("side"), main: slotElement("main") };
+      if (def.inspector) activity.slots.inspector = slotElement("inspector");
     });
   }
 
@@ -118,50 +127,40 @@
   }
 
   function onRailClick(id) {
-    const collapsed = document.body.classList.contains("side-panel-collapsed");
-    if (SD.store.get("activity") === id && !collapsed) {
-      setSidePanelCollapsed(true);
+    if (SD.store.get("activity") === id && !SD.layout.isSidePanelCollapsed()) {
+      SD.layout.setSidePanelCollapsed(true);
       return;
     }
-    setSidePanelCollapsed(false);
+    SD.layout.setSidePanelCollapsed(false);
     SD.store.set("activity", id);
   }
 
   function showActivity(id) {
     const activity = activities.get(id);
     if (!activity || !availability(activity.def).enabled || shownId === id) return;
+    const previous = activities.get(shownId);
     shownId = id;
     activities.forEach((other) => {
       const active = other === activity;
-      other.side.hidden = !active;
-      other.main.hidden = !active;
+      Object.values(other.slots).forEach((slot) => {
+        slot.hidden = !active;
+      });
       other.button.classList.toggle("active", active);
       other.button.setAttribute("aria-pressed", String(active));
     });
     el("side-panel-title").textContent = activity.def.title;
-    document.body.classList.toggle("no-inspector", !activity.def.inspector);
-    el("inspector-toggle").hidden = !activity.def.inspector;
+    SD.layout.setInspectorAvailable(!!activity.def.inspector);
     renderSelectionStatus();
+    previous?.handle?.hide?.();
     if (!activity.handle) {
-      activity.handle = activity.def.mount({ side: activity.side, main: activity.main }, context()) || {};
+      activity.handle = activity.def.mount(activity.slots, context()) || {};
     } else {
       activity.handle.show?.();
     }
-    refitCanvas();
   }
 
   function context() {
     return { config, store: SD.store, daemon: SD.daemon };
-  }
-
-  function setSidePanelCollapsed(collapsed) {
-    document.body.classList.toggle("side-panel-collapsed", collapsed);
-    refitCanvas();
-  }
-
-  // Diagram modules re-fit on window resize.
-  function refitCanvas() {
-    window.dispatchEvent(new Event("resize"));
   }
 
   // -- top bar ----------------------------------------------------------
@@ -184,17 +183,6 @@
     );
     modeSelect.id = "mode-selector";
     el("mode-field").appendChild(modeSelect);
-
-    el("inspector-toggle").addEventListener("click", () => {
-      setInspectorHidden(!document.body.classList.contains("inspector-hidden"));
-    });
-  }
-
-  function setInspectorHidden(hidden) {
-    document.body.classList.toggle("inspector-hidden", hidden);
-    el("inspector-toggle").setAttribute("aria-pressed", String(!hidden));
-    SD.storage.set(INSPECTOR_HIDDEN_KEY, hidden ? "1" : "");
-    refitCanvas();
   }
 
   function initSettings() {
@@ -216,88 +204,17 @@
     editorSelect.addEventListener("change", (e) => SD.editor.setScheme(e.target.value));
   }
 
-  // -- resizers ---------------------------------------------------------
-
-  function clampWidth(spec, value) {
-    return Math.min(Math.max(value, spec.min), spec.max);
-  }
-
-  // Dragging a divider sets the width of `target`; `fromRight` measures it from the window's right edge.
-  function initResizer(resizer, target, spec, fromRight) {
-    const stored = parseInt(SD.storage.get(spec.key), 10);
-    if (stored) target.style.width = `${clampWidth(spec, stored)}px`;
-    let start = null;
-
-    resizer.addEventListener("mousedown", (e) => {
-      start = { x: e.clientX, width: target.getBoundingClientRect().width };
-      resizer.classList.add("resizing");
-      document.body.classList.add("resizing-panel");
-      e.preventDefault();
-    });
-    document.addEventListener("mousemove", (e) => {
-      if (!start) return;
-      const delta = fromRight ? start.x - e.clientX : e.clientX - start.x;
-      target.style.width = `${clampWidth(spec, start.width + delta)}px`;
-    });
-    document.addEventListener("mouseup", () => {
-      if (!start) return;
-      start = null;
-      resizer.classList.remove("resizing");
-      document.body.classList.remove("resizing-panel");
-      SD.storage.set(spec.key, String(parseInt(target.style.width, 10)));
-      refitCanvas();
-    });
-  }
-
-  // -- status bar -------------------------------------------------------
-
-  function statusItem(id, text, className = "") {
-    const item = el(id);
-    item.textContent = text;
-    item.className = `status-item ${className}`.trim();
-    item.hidden = !text;
-  }
-
-  // The mode, then the selection keys the shown activity reads.
-  function renderSelectionStatus() {
-    const scope = activities.get(shownId)?.def.scope || [];
-    const parts = [SD.store.get("mode")];
-    if (scope.includes("unit")) parts.push(SD.store.get("unit") || "no unit");
-    if (scope.includes("deploy") && SD.store.get("deploy")) parts.push(SD.store.get("deploy"));
-    statusItem("status-selection", parts.join(" · "));
-  }
-
-  function renderSourceStatus() {
-    if (!daemonHealth) {
-      statusItem("status-source", probeDone ? "Static export" : "Checking for daemon…");
-      statusItem("status-workspace", "");
-      statusItem("status-restart", "");
-      return;
-    }
-    const version = daemonHealth.version ? ` ${daemonHealth.version}` : "";
-    statusItem("status-source", `Daemon${version} · pid ${daemonHealth.pid}`);
-    statusItem("status-workspace", daemonHealth.workspace ? `Workspace ${daemonHealth.workspace}` : "No build workspace");
-    statusItem(
-      "status-restart",
-      daemonHealth.restart_required ? "Restart required: the daemon's package was rebuilt" : "",
-      "status-warning",
-    );
-  }
-
-  function renderJobsStatus(jobs) {
-    const running = jobs.filter((job) => job.state === "running");
-    statusItem(
-      "status-jobs",
-      running.length ? `${running.length} job${running.length > 1 ? "s" : ""} running` : "",
-      "status-running",
-    );
-  }
-
   function renderConnection(connected) {
     const chip = el("connection-status");
     chip.hidden = !daemonHealth;
     chip.textContent = connected ? "Connected" : "Disconnected, retrying";
     chip.className = `connection-status ${connected ? "connected" : "disconnected"}`;
+  }
+
+  // The mode, then what the shown activity reports.
+  function renderSelectionStatus() {
+    const status = activities.get(shownId)?.def.status;
+    SD.statusbar.selection([SD.store.get("mode"), ...(status ? status(SD.store) : [])]);
   }
 
   // -- startup ----------------------------------------------------------
@@ -315,30 +232,28 @@
     document.title = `${config.deploymentName} - Autoware System Designer Studio`;
     initTopBar();
     initSettings();
-    initResizer(el("side-panel-resizer"), el("side-panel"), SIDE_PANEL_WIDTH, false);
-    initResizer(el("inspector-resizer"), el("inspector"), INSPECTOR_WIDTH, true);
-    if (SD.storage.get(INSPECTOR_HIDDEN_KEY)) setInspectorHidden(true);
+    SD.layout.init();
 
     SD.store.onChange("activity", showActivity);
     ["mode", "unit", "deploy"].forEach((key) => SD.store.onChange(key, renderSelectionStatus));
     SD.on("daemon.health", (health) => {
       daemonHealth = health;
       refreshRail();
-      renderSourceStatus();
+      SD.statusbar.source(daemonHealth, probeDone);
     });
     SD.on("daemon.connection", ({ connected }) => renderConnection(connected));
-    SD.on("daemon.jobs", renderJobsStatus);
+    SD.on("daemon.jobs", SD.statusbar.jobs);
 
     buildRail();
     refreshRail();
-    renderSourceStatus();
+    SD.statusbar.source(daemonHealth, probeDone);
 
     daemonHealth = await SD.daemon.probe(config.siteRoot);
     probeDone = true;
     refreshRail();
-    renderSourceStatus();
+    SD.statusbar.source(daemonHealth, probeDone);
     if (daemonHealth) renderConnection(SD.daemon.connected);
   }
 
-  SD.workbench = { registerActivity, init, svgIcon, refitCanvas };
+  SD.workbench = { registerActivity, init, svgIcon };
 })();

@@ -1,5 +1,5 @@
-// Building blocks the activities share: elements, controls bound to the
-// workbench selection, and the terminal view of a log.
+// Building blocks the activities share: elements, side-panel sections and
+// lists, and controls bound to the workbench selection.
 (function () {
   const SD = window.SD;
 
@@ -8,6 +8,34 @@
     if (className) node.className = className;
     if (text !== undefined) node.textContent = text;
     return node;
+  }
+
+  // Side-panel group under a title.
+  function section(title, ...children) {
+    const group = element("div", "panel-group");
+    group.appendChild(element("div", "panel-section-title", title));
+    group.append(...children);
+    return group;
+  }
+
+  // Single-choice list of [value, label] pairs; `onSelect(value)` runs on a click, `mark` shows the choice.
+  function list(items, onSelect) {
+    const group = element("div", "panel-list");
+    items.forEach(([value, label]) => {
+      const item = element("button", "panel-list-item", label);
+      item.type = "button";
+      item.dataset.value = value;
+      item.addEventListener("click", () => onSelect(value));
+      group.appendChild(item);
+    });
+    return {
+      element: group,
+      mark(value) {
+        group.querySelectorAll(".panel-list-item").forEach((item) => {
+          item.classList.toggle("active", item.dataset.value === value);
+        });
+      },
+    };
   }
 
   // Select mirroring the store key `key`; options are [value, label] pairs.
@@ -76,32 +104,5 @@
     return button;
   }
 
-  // Log view keeping the last `maxLines` lines; it follows new output while scrolled to the end.
-  function terminal(placeholder, maxLines = 5000) {
-    const log = element("pre", "terminal-log");
-    let lineCount = 0;
-
-    function clear(text = placeholder) {
-      log.replaceChildren(element("span", "terminal-placeholder", text));
-      lineCount = 0;
-    }
-
-    function append(lines) {
-      if (!lines.length) return;
-      log.querySelector(".terminal-placeholder")?.remove();
-      const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
-      lines.forEach((line) => log.appendChild(document.createTextNode(`${line}\n`)));
-      lineCount += lines.length;
-      while (lineCount > maxLines) {
-        log.firstChild.remove();
-        lineCount -= 1;
-      }
-      if (atBottom) log.scrollTop = log.scrollHeight;
-    }
-
-    clear();
-    return { element: log, append, clear };
-  }
-
-  SD.widgets = { element, boundSelect, setOptions, field, segmented, copyButton, terminal };
+  SD.widgets = { element, section, list, boundSelect, setOptions, field, segmented, copyButton };
 })();
