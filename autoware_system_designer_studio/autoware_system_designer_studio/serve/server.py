@@ -32,6 +32,7 @@ page cannot send without a preflight this daemon never grants.
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import mimetypes
@@ -62,6 +63,9 @@ OWN_PACKAGES = ("autoware_system_designer_studio", "autoware_system_designer_run
 
 TOPIC_DAEMON = "daemon"
 TOPIC_SYSTEMS_CHANGED = "systems.changed"
+
+# Seconds a status page waits before reloading while an export may be mid-rewrite.
+RETRY_RELOAD_S = 2
 
 MAX_CONNECTIONS = 64
 MAX_EVENT_SUBSCRIBERS = 16
@@ -106,6 +110,27 @@ def _int_param(params: dict[str, Any], name: str, default: int, low: int, high: 
     if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
         raise api.ApiError(api.INVALID_PARAMS, f"{name} must be an integer within {low}..{high}")
     return value
+
+
+def _status_page(status: HTTPStatus, title: str, message: str, *, reload_s: Optional[int] = None) -> Response:
+    """HTML answer to a page navigation that has no page; it reloads itself when the cause is transient."""
+    refresh = f'<meta http-equiv="refresh" content="{reload_s}">' if reload_s else ""
+    links = "".join(f'<link rel="stylesheet" href="/{assets.BUNDLE_DIR}/{css}">' for css in assets.PAGE_STYLESHEETS)
+    body = (
+        "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">"
+        f"<title>{html.escape(title)}</title>{refresh}{links}"
+        f'<script src="/{assets.BUNDLE_DIR}/{assets.PAGE_SCRIPTS[0]}"></script></head>'
+        '<body class="simple-page"><div class="page-container">'
+        f"<h1>{html.escape(title)}</h1><p class=\"description\">{html.escape(message)}</p>"
+        '<div class="nav-links"><a href="/">Systems</a></div>'
+        "</div><script>SD.theme.init();</script></body></html>"
+    )
+    headers = [("Content-Type", "text/html; charset=utf-8"), ("Cache-Control", "no-store")]
+    return Response(status, headers, body.encode())
+
+
+def _is_page(site_path: str) -> bool:
+    return site_path.endswith(".html")
 
 
 def _error_response(error: api.ApiError, request_id: Any = None, *, with_id: bool = False) -> Response:
@@ -358,12 +383,48 @@ class ServeDaemon:
             return await self._file_response(request, path)
         if request.path.startswith(DAEMON_PAGE_PREFIX):
             return await self._file_response(request, assets.web_file(request.path[1:]))
-        site_path = INDEX_PAGE if request.path == "/" else request.path[1:]
-        text = await asyncio.to_thread(self._render, site_path)
+        site_path = request.path[1:]
+        if site_path == "" or site_path.endswith("/"):
+            site_path += INDEX_PAGE
+        elif "." not in site_path.rsplit("/", 1)[-1]:
+            # A directory named without its slash; its pages link relative to the directory.
+            return Response(HTTPStatus.FOUND, [("Location", f"{request.path}/")])
+        try:
+            text = await asyncio.to_thread(self._render, site_path)
+        except (OSError, ValueError) as exc:
+            # An export read while a build rewrites it; the next read sees the finished files.
+            logger.info("export unreadable for %s: %s", request.path, exc)
+            if _is_page(site_path):
+                return _status_page(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "Export is being rewritten",
+                    "The system's exported files could not be read, as happens while a build rewrites them. "
+                    "This page reloads until they are complete.",
+                    reload_s=RETRY_RELOAD_S,
+                )
+            raise api.ApiError(api.UNAVAILABLE, f"export unreadable at {request.path}; retry") from exc
         if text is None:
+            logger.info("nothing served at %s", request.path)
+            if _is_page(site_path):
+                building = self._build_running()
+                message = (
+                    "A build is running; the system may be absent until its export is written again. "
+                    "This page reloads until it is."
+                    if building
+                    else "No exported system or page matches this address."
+                )
+                return _status_page(
+                    HTTPStatus.NOT_FOUND,
+                    "Page not found",
+                    message,
+                    reload_s=RETRY_RELOAD_S if building else None,
+                )
             raise api.ApiError(api.NOT_FOUND, f"nothing served at {request.path}")
         content_type = _content_type(Path(site_path))
         return Response(HTTPStatus.OK, [("Content-Type", content_type), ("Cache-Control", "no-cache")], text.encode())
+
+    def _build_running(self) -> bool:
+        return any(job.spec.kind == build.BUILD_JOB_KIND and job.active for job in self.jobs.list())
 
     def _render(self, site_path: str) -> Optional[str]:
         """A site page drawn from the exports as they are now; each request sees the latest build."""

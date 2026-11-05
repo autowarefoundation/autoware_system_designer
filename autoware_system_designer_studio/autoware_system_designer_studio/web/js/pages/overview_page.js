@@ -15,11 +15,13 @@
     availableDiagramTypes,
     diagramScripts,
     dataBase,
+    latencyModes,
     availableModes,
     defaultDiagramType,
     defaultMode,
     packageName,
     systemsIndexPath,
+    launchCommandsPath,
     editorScheme = "vscode",
     systemDefinitionFile = "",
   } = deploymentConfig;
@@ -97,6 +99,7 @@
       mode,
       deployment: deploymentName,
       dataBase,
+      latencyModes,
       onInfoUpdate: (data, type) => SD.InfoPanel.render(infoPanel, data, type),
     });
 
@@ -145,7 +148,7 @@
 
     const launcherLink = document.getElementById("launcher-link");
     if (launcherLink)
-      launcherLink.href = `${deploymentName}_launch_commands.html`;
+      launcherLink.href = launchCommandsPath;
 
     const headerTitle = document.querySelector("#sidebar-header h1");
     if (headerTitle) headerTitle.textContent = deploymentName;
