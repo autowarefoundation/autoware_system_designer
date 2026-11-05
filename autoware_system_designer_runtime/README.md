@@ -32,7 +32,7 @@ source install/setup.bash
 ### 2. Launch a system_structure JSON
 
 ```bash
-ros2 run autoware_system_designer_runtime autoware-system-designer-launch \
+autoware-system-designer-launch \
     /path/to/system_structure/MySystem.json --deploy my_vehicle
 ```
 
@@ -41,8 +41,11 @@ deploy variant named by `--deploy`, read from the `deployment.json` beside
 `system_structure/`; `--arg NAME=VALUE` binds or overrides one argument directly.
 A system that declares no arguments needs neither.
 
-The console script installs under `lib/<package>/`, so `ros2 run` is the way to reach it;
-`install/setup.bash` does not put it on `PATH`.
+Each command of this package is installed twice: as a console script under
+`lib/<package>/`, reached with `ros2 run autoware_system_designer_runtime <command>`, and under
+`install/autoware_system_designer_runtime/bin/`, which `install/setup.bash` puts on `PATH`. The
+`bin/` copy locates its own Python package, so it also runs by absolute path from a shell that has
+not sourced the workspace (the launcher still needs ROS 2 sourced for `rclpy`).
 
 `Ctrl+C` triggers graceful shutdown: the coordinator broadcasts `Stop` to every
 member, each actor `SIGTERM`s its process group, waits 5s, then `SIGKILL`s.
@@ -50,7 +53,7 @@ member, each actor `SIGTERM`s its process group, waits 5s, then `SIGKILL`s.
 ### 3. Useful flags
 
 ```bash
-ros2 run autoware_system_designer_runtime autoware-system-designer-launch SYSTEM.json \
+autoware-system-designer-launch SYSTEM.json \
     --compute-unit main_ecu \           # only launch nodes with compute_unit=main_ecu
     --deploy my_vehicle \               # deploy variant whose arguments bind $(var ...)
     --arg map_path=/data/map \          # bind/override one system argument (repeatable)
@@ -107,9 +110,7 @@ subdirectory is created per run unless `--log-dir` overrides it.
 
 `autoware-system-designer-serve` serves the exported visualization of an install tree over HTTP,
 together with a request API and an event stream that build, launch and live monitoring extend.
-It imports no ROS module. Besides the `ros2 run` console script, it is installed under
-`install/autoware_system_designer_runtime/bin/`, which the sourced workspace puts on `PATH`; that
-copy locates its own Python package, so it also runs by absolute path from an unsourced shell.
+It imports no ROS module, so its `bin/` copy runs without any setup script sourced.
 
 ```bash
 autoware-system-designer-serve \
@@ -279,7 +280,7 @@ The two systems share the design pattern but not code. When play_launch's parser
 `--measure` preloads a small C recorder (`autoware_system_designer_tracer`, an `LD_PRELOAD` interposer over the `rcl` C API) into every spawned process and analyzes the recording per node: process time, topic communication time and event-chain end-to-end time, measured separately and never derived from one another. No CARET, no rclcpp fork, no rebuild of Autoware.
 
 ```bash
-ros2 run autoware_system_designer_runtime autoware-system-designer-launch SYSTEM.json \
+autoware-system-designer-launch SYSTEM.json \
     --measure --measure-duration 60      # settle 5 s, record 60 s, shut down, analyze
     [--measure-settle S]                 # seconds after launch_ready left out of the window (default 5)
     [--measure-keep-running]             # analyze with the system still up and keep it running
@@ -293,7 +294,7 @@ The session logs every step under the `measure:` prefix: the window opening (wit
 Without `--measure-duration` the window opens at `launch_ready` and closes at shutdown or on the console verb `measure stop` (`--interactive`: `measure start | stop | status`; `status` prints the heartbeat line on demand). Trace files stay under `<log-dir>/trace/` and can be re-analyzed offline:
 
 ```bash
-ros2 run autoware_system_designer_runtime autoware-system-designer-measure-analyze <log-dir>/trace SYSTEM.json -o FILE
+autoware-system-designer-measure-analyze <log-dir>/trace SYSTEM.json -o FILE
 ```
 
 ### What is measured
