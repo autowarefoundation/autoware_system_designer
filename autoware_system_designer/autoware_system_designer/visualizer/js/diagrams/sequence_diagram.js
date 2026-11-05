@@ -171,6 +171,7 @@
       if (window.LatencySource) {
         const measured = await window.LatencySource.loadBundled(
           this.options.mode,
+          this.options.dataBase,
         );
         if (measured) this.attachMeasurement(measured);
       }
@@ -2716,5 +2717,5 @@
     return nice * power;
   }
 
-  window.SequenceDiagramModule = SequenceDiagramModule;
+  SD.diagrams.register("sequence_diagram", SequenceDiagramModule);
 })();

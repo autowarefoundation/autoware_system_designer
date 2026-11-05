@@ -79,6 +79,8 @@ def test_config_js_quotes_strings_as_json():
         available_modes=["default"],
         default_mode="default",
         available_diagram_types=["overview"],
+        diagram_scripts={"overview": "assets/js/diagrams/overview.js"},
+        data_base="data/",
         default_diagram_type="overview",
         editor_scheme="vscode",
         system_definition_file="/tmp/x.yaml",

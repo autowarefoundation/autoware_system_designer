@@ -30,7 +30,7 @@
     "measurement",
   ]);
 
-  // Parameter source -> badge label; the matching colors live in css/styles.css.
+  // Parameter source -> badge label; the matching colors live in css/inspector.css.
   const PARAM_TYPE_LABELS = {
     DEFAULT: "default",
     DEFAULT_FILE: "def-file",
@@ -464,7 +464,7 @@
       "—";
 
     if (source && source.file_path) {
-      const badge = window.createSourceLink(source.file_path, source.line || 1);
+      const badge = SD.editor.sourceLink(source.file_path, source.line || 1);
       badge.className = "param-badge";
       badge.textContent = label;
       badge.dataset.type = parameterType || "";
@@ -515,7 +515,7 @@
 
   function sourceCard(filePath) {
     const row = element("div", "info-row");
-    row.appendChild(window.createSourceLink(filePath, 1));
+    row.appendChild(SD.editor.sourceLink(filePath, 1));
     return card("Source", row);
   }
 
@@ -552,5 +552,5 @@
     cards.forEach((entry) => panel.appendChild(entry));
   }
 
-  window.InfoPanel = { render };
+  SD.InfoPanel = { render };
 })();

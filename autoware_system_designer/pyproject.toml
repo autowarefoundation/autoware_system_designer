@@ -53,7 +53,6 @@ autoware_system_designer = [
     "generator/templates/**/*",
     "generator/ros2_launcher/templates/**/*",
     "visualizer/templates/**/*",
-    "visualizer/*.html",
-    "visualizer/js/*.js",
+    "visualizer/js/**/*.js",
     "visualizer/css/*.css",
 ]

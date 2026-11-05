@@ -5,12 +5,21 @@
   // Editors reachable with the vscode-style scheme; everything else needs its own shape.
   const JETBRAINS_SCHEMES = ["idea", "clion", "pycharm", "webstorm"];
 
+  const SCHEME_KEY = "editorScheme";
+
+  // Scheme the page config names; the viewer's stored choice overrides it.
+  let defaultScheme = "vscode";
+
   function currentScheme() {
-    return (
-      localStorage.getItem("editorScheme") ||
-      window.defaultEditorScheme ||
-      "vscode"
-    );
+    return SD.storage.get(SCHEME_KEY) || defaultScheme;
+  }
+
+  function setDefaultScheme(scheme) {
+    defaultScheme = scheme || "vscode";
+  }
+
+  function setScheme(scheme) {
+    SD.storage.set(SCHEME_KEY, scheme);
   }
 
   function getEditorUrl(filePath, line = 1) {
@@ -36,6 +45,11 @@
     return link;
   }
 
-  window.getEditorUrl = getEditorUrl;
-  window.createSourceLink = createSourceLink;
+  SD.editor = {
+    currentScheme,
+    setDefaultScheme,
+    setScheme,
+    url: getEditorUrl,
+    sourceLink: createSourceLink,
+  };
 })();

@@ -52,7 +52,8 @@ def _install_tree(root, *, compute_units):
     }
     (export / "deployment.json").write_text(json.dumps(manifest))
     (install / "systems.html").write_text("<html>index</html>")
-    (install / "theme.js").write_text("// theme")
+    (install / "assets" / "js" / "core").mkdir(parents=True)
+    (install / "assets" / "js" / "core" / "sd.js").write_text("// core")
     (install / "setup.bash").write_text("secret")
     (root / "outside.txt").write_text("outside")
     return install
@@ -118,7 +119,7 @@ def test_root_redirects_to_the_systems_index(served):
     "path, content_type",
     [
         ("/systems.html", "text/html; charset=utf-8"),
-        ("/theme.js", "text/javascript; charset=utf-8"),
+        ("/assets/js/core/sd.js", "text/javascript; charset=utf-8"),
         (f"{WEB}/{SYSTEM}_overview.html", "text/html; charset=utf-8"),
         (f"{WEB}/data/Runtime_node_diagram.js", "text/javascript; charset=utf-8"),
     ],
@@ -144,6 +145,10 @@ def test_index_and_visualization_files_are_served(served, path, content_type):
         f"/other/share/{PKG}/exports/{SYSTEM}/visualization/web/config.js",
         f"{WEB}/",
         f"{WEB}/.hidden",
+        "/assets",
+        "/assets/",
+        "/assets/js",
+        "/assets/../setup.bash",
     ],
 )
 def test_paths_outside_the_servable_subset_are_not_found(served, path):

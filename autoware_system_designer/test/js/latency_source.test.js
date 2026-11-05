@@ -11,6 +11,7 @@ const JS_DIR = path.join(
   "autoware_system_designer",
   "visualizer",
   "js",
+  "diagrams",
 );
 
 // The browser modules attach to window; under node they export, except the

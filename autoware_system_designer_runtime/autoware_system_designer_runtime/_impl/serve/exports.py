@@ -16,7 +16,7 @@
 
 Layout written by the designer (isolated colcon install; merged installs drop the leading package):
 ``<install>/<pkg>/share/<pkg>/exports/<system>/{deployment.json, system_structure/, launcher/, visualization/web/}``
-plus ``systems.html`` with its stylesheet and theme script at the install root.
+plus ``systems.html`` and the visualizer bundle it links under ``assets/`` at the install root.
 """
 
 from __future__ import annotations
@@ -40,8 +40,8 @@ WEB_SUBPATH = ("visualization", "web")
 LAUNCH_FILE_SUFFIX = ".launch.xml"
 
 SYSTEMS_INDEX_PATH = "systems.html"
-# The systems index and the assets it links, relative to the install root.
-INDEX_FILES = frozenset({SYSTEMS_INDEX_PATH, "theme.js", "css/styles.css"})
+# Install-root directory holding the visualizer bundle the systems index and daemon pages link.
+BUNDLE_DIR = "assets"
 
 KIND_ONBOARD = "onboard"
 KIND_OFFBOARD = "offboard"
@@ -224,14 +224,17 @@ def discover_systems(install_root: Path) -> tuple[list[SystemExport], list[Disco
 def static_file(install_root: Path, url_path: str) -> Optional[Path]:
     """File behind a request path when it lies in the servable subset of the install tree, else None.
 
-    Servable: the systems index files at the root, and anything under an export's visualization/web.
+    Servable: the systems index and the bundle under assets/ at the root, and anything under an
+    export's visualization/web.
     Dot segments, hidden names and symlinks leaving the permitted directory are refused.
     """
     parts = (url_path[1:] if url_path.startswith("/") else url_path).split("/")
     if any(p in ("", ".", "..") or p.startswith(".") or "\\" in p or "\0" in p for p in parts):
         return None
-    if "/".join(parts) in INDEX_FILES:
+    if parts == [SYSTEMS_INDEX_PATH]:
         base = install_root
+    elif parts[0] == BUNDLE_DIR and len(parts) > 1:
+        base = install_root / BUNDLE_DIR
     else:
         base_len = _web_dir_prefix_len(parts)
         if base_len is None or len(parts) <= base_len:

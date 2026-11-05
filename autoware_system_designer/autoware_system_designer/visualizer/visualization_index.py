@@ -135,9 +135,8 @@ def _to_view(deployment: _Deployment, install_root: Path) -> dict:
 
 
 def _copy_index_assets(install_root: Path) -> None:
-    """Place the stylesheet and theme script systems.html links, beside it."""
-    for source, destination in assets.INDEX_ASSETS.items():
-        assets.copy_asset(source, str(install_root / destination))
+    """Place the bundle files systems.html links, beside it."""
+    assets.copy_bundle(assets.INDEX_BUNDLE, str(install_root))
 
 
 def _generate_index_file(install_root: Path, output_file: Path) -> None:
@@ -146,6 +145,12 @@ def _generate_index_file(install_root: Path, output_file: Path) -> None:
 
     try:
         renderer = TemplateRenderer()
-        renderer.render_template_to_file("systems_index.html.jinja2", str(output_file), deployments=deployments)
+        renderer.render_template_to_file(
+            "systems_index.html.jinja2",
+            str(output_file),
+            deployments=deployments,
+            stylesheets=[assets.bundle_path(path) for path in assets.PAGE_STYLESHEETS],
+            scripts=[assets.bundle_path(path) for path in assets.PAGE_SCRIPTS],
+        )
     except Exception as e:
         logger.error(f"Failed to render visualization index template: {e}")

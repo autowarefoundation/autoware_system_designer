@@ -36,20 +36,18 @@ EDITOR_SCHEME = "vscode"
 
 def _generate_js_data(renderer: TemplateRenderer, mode_key: str, data: Dict, web_data_dir: str) -> None:
     """Write one data file per diagram type; each assigns the mode's tree to its window variable."""
-    for diagram_type, window_variable in assets.DIAGRAM_TYPES.items():
+    for diagram_type, diagram in assets.DIAGRAM_TYPES.items():
         output_path = export_path(web_data_dir, f"{mode_key}_{diagram_type}.js")
         renderer.render_template_to_file(
             "data/common_design_data.js.jinja2",
             output_path,
-            **{**data, "mode": mode_key, "window_variable": window_variable},
+            **{**data, "mode": mode_key, "window_variable": diagram.data_global},
         )
 
 
 def _copy_web_assets(web_dir: str) -> None:
-    """Place the scripts and stylesheet the overview page loads beside it."""
-    for script in assets.OVERVIEW_SCRIPTS:
-        assets.copy_into(script, web_dir)
-    assets.copy_into(assets.STYLESHEET, os.path.join(web_dir, "css"))
+    """Place the bundle the export's pages load beside them."""
+    assets.copy_bundle(assets.EXPORT_BUNDLE, web_dir)
 
 
 def _generate_config(
@@ -67,6 +65,8 @@ def _generate_config(
         package_name=name,
         available_modes=modes,
         available_diagram_types=list(assets.DIAGRAM_TYPES),
+        diagram_scripts={name: assets.bundle_path(d.script) for name, d in assets.DIAGRAM_TYPES.items()},
+        data_base="data/",
         default_mode="default" if "default" in modes else modes[0],
         default_diagram_type=assets.DEFAULT_DIAGRAM_TYPE,
         systems_index_path=systems_index_link(web_dir),
@@ -108,5 +108,12 @@ def visualize_deployment(
     _generate_config(renderer, web_dir, name, list(deploy_data), system_definition_file or "")
 
     overview_path = export_path(web_dir, f"{name}_overview.html")
-    if assets.copy_asset(assets.OVERVIEW_PAGE, overview_path):
-        logger.info(f"Generated deployment overview: {os.path.basename(overview_path)}")
+    renderer.render_template_to_file(
+        assets.OVERVIEW_TEMPLATE,
+        overview_path,
+        deployment_name=name,
+        stylesheets=[assets.bundle_path(path) for path in assets.OVERVIEW_STYLESHEETS],
+        scripts=[assets.bundle_path(path) for path in assets.OVERVIEW_SCRIPTS],
+        entry_script=assets.bundle_path(assets.OVERVIEW_ENTRY),
+    )
+    logger.info(f"Generated deployment overview: {os.path.basename(overview_path)}")
