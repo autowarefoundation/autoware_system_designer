@@ -103,6 +103,48 @@ subdirectory is created per run unless `--log-dir` overrides it.
 
 ---
 
+## Serve daemon
+
+`autoware-system-designer-serve` serves the exported visualization of an install tree over HTTP,
+together with a request API and an event stream that build, launch and live monitoring extend.
+It imports no ROS module. Besides the `ros2 run` console script, it is installed under
+`install/autoware_system_designer_runtime/bin/`, which the sourced workspace puts on `PATH`; that
+copy locates its own Python package, so it also runs by absolute path from an unsourced shell.
+
+```bash
+autoware-system-designer-serve \
+    --install-root install \       # default: first COLCON_PREFIX_PATH entry
+    --port 8780 \                  # 0 picks a free port
+    --compute-unit main_ecu        # units local to this daemon (repeatable; default: every onboard unit)
+```
+
+Open `http://127.0.0.1:8780/`. The pages are the generated ones under
+`exports/<system>/visualization/web`, served unchanged.
+
+| Route              | Content                                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
+| `GET /`            | Redirect to `/systems.html`                                                                          |
+| `GET /<path>`      | `systems.html` with its assets, and files under any `<pkg>/share/<pkg>/exports/*/visualization/web/` |
+| `GET /api/health`  | Daemon status                                                                                        |
+| `GET /api/systems` | Exported systems: modes, compute units with their status, deploy variants, page URLs                 |
+| `GET /api/events`  | Server-Sent Events: `hello`, then `heartbeat`, with daemon-wide sequence numbers as event ids        |
+| `POST /api/rpc`    | Request envelope `{"id", "method", "params"}` for any method (`health`, `systems.list`)              |
+
+Responses use one envelope: `{"ok": true, "result": ...}` or
+`{"ok": false, "error": {"code", "message"}}`, with `id` echoed on `/api/rpc`. Error codes are
+stable strings (`bad_request`, `forbidden`, `not_found`, `method_not_allowed`,
+`unsupported_media_type`, `payload_too_large`, `unknown_method`, `invalid_params`, `unavailable`,
+`internal`), each mapped to one HTTP status. Compute unit `status` is open-ended; current values are
+`available`, `remote_unsupported` (an onboard unit served by another daemon), `offboard` and
+`unsupported`.
+
+Access rules: the listener binds `127.0.0.1` only; the `Host` header must name it (`127.0.0.1:<port>`
+or `localhost:<port>`); API requests the browser marks cross-site are refused; `POST /api/rpc` needs
+`Content-Type: application/json` and an `X-System-Designer-Client` header, and a present `Origin`
+must be the daemon's own. Request heads are capped at 16 KiB and bodies at 64 KiB.
+
+---
+
 ## Architecture
 
 ```text

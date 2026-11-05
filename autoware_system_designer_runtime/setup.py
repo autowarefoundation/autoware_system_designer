@@ -24,6 +24,8 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
+        # PATH entry point beside the ros2 run console scripts under lib/<package>.
+        ("bin", ["scripts/autoware-system-designer-serve"]),
     ],
     install_requires=["setuptools"],
     tests_require=["pytest"],
@@ -36,6 +38,7 @@ setup(
         "console_scripts": [
             "autoware-system-designer-launch = autoware_system_designer_runtime.system_runner:main",
             "autoware-system-designer-measure-analyze = autoware_system_designer_runtime.measure_analyze:main",
+            "autoware-system-designer-serve = autoware_system_designer_runtime.serve:main",
         ],
     },
 )
