@@ -1,6 +1,6 @@
 /* Inspector: the info panel cards for the selected element. */
 
-/* Info panel in sidebar */
+/* Info panel in the inspector */
 #info-panel {
   padding: 15px 20px;
   border-bottom: 1px solid var(--border-color);

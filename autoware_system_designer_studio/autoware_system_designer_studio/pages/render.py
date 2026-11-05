@@ -41,7 +41,7 @@ from .. import latency
 from ..exports import SystemExport
 from ..vis_guide import inject_vis_guides
 from . import assets
-from .launch_commands import launch_commands_view
+from .launch_commands import launch_command_records, launch_commands_view
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +176,8 @@ class Site:
         return self._env.get_template("data/deployment_config.js.jinja2").render(
             deployment_name=export.name,
             package_name=export.package,
+            system_id=export.id,
+            site_root=SYSTEM_PAGE_ROOT,
             systems_index_path=f"{SYSTEM_PAGE_ROOT}{INDEX_PAGE}",
             launch_commands_path=LAUNCH_PAGE,
             available_modes=modes,
@@ -189,6 +191,9 @@ class Site:
             default_diagram_type=assets.DEFAULT_DIAGRAM_TYPE,
             editor_scheme=EDITOR_SCHEME,
             system_definition_file=export.system_file,
+            compute_units=export.compute_units(),
+            deploy_names=[v["name"] for v in export.deploy_variants()],
+            launch_commands=launch_command_records(export),
         )
 
     def _data(self, export: SystemExport, filename: str) -> Optional[str]:

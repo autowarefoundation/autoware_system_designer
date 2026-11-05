@@ -315,6 +315,8 @@
       Promise.all([loadHealth(), loadSystems(), loadJobs()])
         .then(function () {
           showError("");
+          var requested = new URLSearchParams(window.location.search).get("job");
+          if (!selected && requested && jobs.has(requested)) selectJob(requested);
         })
         .catch(function (err) {
           showError(err.message);
