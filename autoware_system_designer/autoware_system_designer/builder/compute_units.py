@@ -16,11 +16,12 @@
 
 from __future__ import annotations
 
+import re
 from typing import List
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.source_location import format_source, source_from_config
-from autoware_system_designer.model.config import SystemConfig
+from autoware_system_designer.model.config import COMPUTE_UNIT_NAME_PATTERN, SystemConfig
 
 
 def compute_unit_names(system_config: SystemConfig) -> List[str]:
@@ -29,7 +30,7 @@ def compute_unit_names(system_config: SystemConfig) -> List[str]:
 
 
 def check_component_compute_units(system_config: SystemConfig) -> None:
-    """Once a system declares compute units, every component binds to exactly one of them.
+    """Once a system declares compute units, their names are valid and unique and each component binds to one.
 
     Runs on the resolved config (base, variant and mode merged), so a variant or
     mode override cannot introduce a component on an undeclared unit.
@@ -37,6 +38,13 @@ def check_component_compute_units(system_config: SystemConfig) -> None:
     declared = compute_unit_names(system_config)
     if not declared:
         return
+
+    for idx, name in enumerate(declared):
+        if not re.match(COMPUTE_UNIT_NAME_PATTERN, name):
+            src = source_from_config(system_config, f"/compute_units/{idx}/name")
+            raise ValidationError(
+                f"Invalid compute unit name '{name}'; expected {COMPUTE_UNIT_NAME_PATTERN}{format_source(src)}"
+            )
 
     duplicates = sorted({name for name in declared if declared.count(name) > 1})
     if duplicates:

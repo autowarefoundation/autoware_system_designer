@@ -215,8 +215,8 @@ Top-level entry point defining the complete system.
   - `description`: (Optional) Description of the mode.
   - `default`: (Optional) `true`/`false` to mark as default mode.
 - `parameter_sets`: List of parameter set files. Can be an empty list `[]`.
-- `compute_units`: (Optional) Compute units the system is deployed on: logical hosts of components, bound to hardware outside the system design. Once declared, every component's `compute_unit` must name one of them, and each onboard unit gets a launcher in every mode even when no component of that mode runs on it.
-  - `name`: Unit identifier referenced by `components[].compute_unit` (e.g., `main_ecu`).
+- `compute_units`: (Optional) Compute units the system is deployed on. A unit is one independently launched environment (an ECU, a container or a partition) with no copy-free IPC to other units; the hardware or execution environment hosting it is outside the system design. Components on different units communicate over the network only, so a node group cannot span units. Once declared, every component's `compute_unit` must name one of them, and each onboard unit gets a launcher in every mode even when no component of that mode runs on it.
+  - `name`: Unit identifier referenced by `components[].compute_unit` (e.g., `main_ecu`). Lowercase letters, digits and underscores, starting with a letter (`^[a-z][a-z0-9_]*$`); the name is used as the launcher directory and file name and as the runtime `--compute-unit` value.
   - `kind`: (Optional) Where the unit exists relative to the deployed vehicle. `onboard` (default) runs on the vehicle and gets a launcher; `offboard` is a participant outside the vehicle (infrastructure, cloud, remote operation) whose components are declared for wiring only. Offboard units get no launcher and no launch-command entry; their components remain in the structure export.
   - `description`: (Optional) Brief explanation of the unit.
 - `components`: Top-level instances.

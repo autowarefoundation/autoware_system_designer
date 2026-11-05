@@ -33,10 +33,17 @@ class RemapEntry:
 
 COMPUTE_UNIT_KINDS = ("onboard", "offboard")
 
+# Unit names become launcher directory and file names and runtime selectors.
+COMPUTE_UNIT_NAME_PATTERN = r"^[a-z][a-z0-9_]*$"
+
 
 @dataclass
 class ComputeUnit:
     """A compute unit declared by the system; components bind to one by name.
+
+    A unit is one independently launched environment (an ECU, a container or a
+    partition) with no copy-free IPC to other units. The hardware or execution
+    environment hosting it is outside the system design.
 
     An ``onboard`` unit runs on the deployed vehicle and gets a launcher. An
     ``offboard`` unit is a participant outside the vehicle (infrastructure,

@@ -184,6 +184,47 @@ connections: []
     assert "/compute_units/0/kind" in str(excinfo.value)
 
 
+@pytest.mark.parametrize("name", ["Main_ECU", "1st_ecu", "main-ecu", "main/ecu", ""])
+def test_invalid_unit_name_is_rejected_by_schema(tmp_path, name):
+    path = tmp_path / "Probe.system.yaml"
+    path.write_text(f"""\
+autoware_system_design_format: 0.5.0
+
+name: Probe.system
+
+compute_units:
+  - name: "{name}"
+
+components:
+  - name: a
+    entity: A.node
+    compute_unit: "{name}"
+
+connections: []
+""")
+    with pytest.raises(ValidationError) as excinfo:
+        ConfigParser().parse_entity_file(str(path))
+    assert "/compute_units/0/name" in str(excinfo.value)
+
+
+def test_resolved_check_rejects_invalid_unit_name(tmp_path):
+    """Mode overrides are not covered by the schema, so the resolved config checks names too."""
+    path = tmp_path / "Probe.system.yaml"
+    path.write_text(SYSTEM_HEAD + """
+components:
+  - name: a
+    entity: A.node
+    compute_unit: main_ecu
+
+connections: []
+""")
+    config = ConfigParser().parse_entity_file(str(path))
+    config.compute_units.append(ComputeUnit(name="Sim-ECU"))
+    with pytest.raises(ValidationError) as excinfo:
+        check_component_compute_units(config)
+    assert "Sim-ECU" in str(excinfo.value)
+
+
 def test_parser_builds_typed_compute_units(tmp_path):
     path = tmp_path / "Probe.system.yaml"
     path.write_text(SYSTEM_HEAD + """

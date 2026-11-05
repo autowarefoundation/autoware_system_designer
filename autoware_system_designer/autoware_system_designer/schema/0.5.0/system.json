@@ -111,7 +111,9 @@
         "required": ["name"],
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Lowercase letters, digits and underscores, starting with a letter; used as launcher directory and file name and as runtime selector"
           },
           "kind": {
             "type": "string",
