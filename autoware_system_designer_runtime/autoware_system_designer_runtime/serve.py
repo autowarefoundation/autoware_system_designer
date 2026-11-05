@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
+from ._impl.serve.build import resolve_workspace
 from ._impl.serve.exports import resolve_install_root
 from ._impl.serve.server import BIND_HOST, HEARTBEAT_INTERVAL_S, ServeDaemon
 
@@ -48,6 +49,11 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     parser.add_argument(
         "--install-root",
         help="install tree to serve (default: first COLCON_PREFIX_PATH entry, else the tree holding this package)",
+    )
+    parser.add_argument(
+        "--workspace",
+        help="colcon workspace builds run in (default: parent of the install tree when it holds src/; "
+        "without one, builds are unavailable)",
     )
     parser.add_argument(
         "--port", type=int, default=DEFAULT_PORT, help=f"TCP port, 0 picks a free one (default {DEFAULT_PORT})"
@@ -97,6 +103,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         install_root,
         port=args.port,
         served_units=args.compute_units,
+        workspace=resolve_workspace(install_root, args.workspace),
         heartbeat_s=args.heartbeat_interval,
     )
     try:

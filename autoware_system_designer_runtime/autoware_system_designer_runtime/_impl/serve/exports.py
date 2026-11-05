@@ -34,6 +34,7 @@ INSTALL_DIR_NAME = "install"
 MANIFEST_FILENAME = "deployment.json"
 STRUCTURE_SUBDIR = "system_structure"
 LAUNCHER_SUBDIR = "launcher"
+BUILD_SCRIPTS_SUBDIR = "build_scripts"
 DEPLOYMENTS_SUBDIR = "deployments"
 WEB_SUBPATH = ("visualization", "web")
 LAUNCH_FILE_SUFFIX = ".launch.xml"
@@ -59,6 +60,11 @@ def resolve_install_root(explicit: Optional[str]) -> Optional[Path]:
     for entry in os.environ.get("COLCON_PREFIX_PATH", "").split(os.pathsep):
         if entry and Path(entry).is_dir():
             return Path(entry).resolve()
+    return module_install_root()
+
+
+def module_install_root() -> Optional[Path]:
+    """Install tree holding this package, None when it runs from a source checkout."""
     # The unresolved module path keeps a symlink install inside its install tree.
     parts = Path(os.path.abspath(__file__)).parts
     if INSTALL_DIR_NAME in parts:
@@ -118,6 +124,13 @@ class SystemExport:
         }
         return sorted(found)
 
+    def build_script_units(self, mode: str) -> list[str]:
+        """Compute units with a generated build script in ``mode``; a unit without packages has none."""
+        scripts_dir = self.export_dir / BUILD_SCRIPTS_SUBDIR / mode
+        if not scripts_dir.is_dir():
+            return []
+        return sorted(p.name[len("build_") : -len(".sh")] for p in scripts_dir.glob("build_*.sh") if p.is_file())
+
     def deploy_variants(self) -> list[dict[str, Any]]:
         variants = self.manifest.get("deploy_variants")
         if not isinstance(variants, list):
@@ -150,6 +163,7 @@ class SystemExport:
                 {"name": mode, "has_structure": (structure_dir / f"{mode}.json").is_file()} for mode in self.mode_keys()
             ],
             "compute_units": units,
+            "build_scripts": {mode: self.build_script_units(mode) for mode in self.mode_keys()},
             "deploy_variants": self.deploy_variants(),
             "pages": {
                 "overview": self._page_url(install_root, f"{self.name}_overview.html"),

@@ -17,7 +17,8 @@
 Routes:
   GET  /                 -> redirect to the systems index
   GET  /<servable path>  -> install-tree file (see exports.static_file)
-  GET  /api/<alias>      -> registered method with empty params (health, systems)
+  GET  /daemon/<file>    -> daemon page shipped with this package (build and job control)
+  GET  /api/<alias>      -> registered method with empty params (health, systems, jobs)
   GET  /api/events       -> Server-Sent Events stream
   POST /api/rpc          -> request envelope (see api)
 
@@ -39,7 +40,7 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from . import api, events, exports
+from . import api, build, events, exports, jobs
 from .http import MAX_HEADER_BYTES, HttpError, Request, Response, read_request, response_head, write_response
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,13 @@ CLIENT_HEADER = "X-System-Designer-Client"
 RPC_PATH = "/api/rpc"
 EVENTS_PATH = "/api/events"
 API_PREFIX = "/api/"
+DAEMON_PAGE_PREFIX = "/daemon/"
+DAEMON_PAGE_DIR = Path(__file__).resolve().parent / "web"
+DAEMON_PAGE_FILES = frozenset({"build.html", "build.js", "daemon.css"})
+OWN_PACKAGE = "autoware_system_designer_runtime"
+
+TOPIC_DAEMON = "daemon"
+TOPIC_SYSTEMS_CHANGED = "systems.changed"
 
 MAX_CONNECTIONS = 64
 MAX_EVENT_SUBSCRIBERS = 16
@@ -78,6 +86,24 @@ def _package_version() -> Optional[str]:
         return None
 
 
+def _str_param(params: dict[str, Any], name: str, *, required: bool = False) -> Optional[str]:
+    value = params.get(name)
+    if value is None or value == "":
+        if required:
+            raise api.ApiError(api.INVALID_PARAMS, f"{name} is required")
+        return None
+    if not isinstance(value, str):
+        raise api.ApiError(api.INVALID_PARAMS, f"{name} must be a string")
+    return value
+
+
+def _int_param(params: dict[str, Any], name: str, default: int, low: int, high: int) -> int:
+    value = params.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise api.ApiError(api.INVALID_PARAMS, f"{name} must be an integer within {low}..{high}")
+    return value
+
+
 def _error_response(error: api.ApiError, request_id: Any = None, *, with_id: bool = False) -> Response:
     body = api.error_body(error, request_id) if with_id else api.error_body(error)
     headers = [("Allow", "GET, HEAD, POST")] if error.code == api.METHOD_NOT_ALLOWED else []
@@ -85,7 +111,12 @@ def _error_response(error: api.ApiError, request_id: Any = None, *, with_id: boo
 
 
 class ServeDaemon:
-    """One daemon instance; ``served_units`` None means every onboard unit is local to it."""
+    """One daemon instance; ``served_units`` None means every onboard unit is local to it.
+
+    ``workspace`` is the colcon workspace builds run in, None when this daemon does not build.
+    ``restart_required`` turns true once a build rebuilt this package inside the served install tree:
+    the running daemon keeps the code it started with.
+    """
 
     def __init__(
         self,
@@ -93,18 +124,27 @@ class ServeDaemon:
         *,
         port: int,
         served_units: Optional[Iterable[str]] = None,
+        workspace: Optional[Path] = None,
         heartbeat_s: float = HEARTBEAT_INTERVAL_S,
         max_connections: int = MAX_CONNECTIONS,
         max_event_subscribers: int = MAX_EVENT_SUBSCRIBERS,
     ) -> None:
         self.install_root = install_root
         self.served_units = None if served_units is None else sorted(set(served_units))
+        self.workspace = workspace
+        self.restart_required = False
+        self.serves_own_install = exports.module_install_root() == install_root
         self._requested_port = port
         self._max_connections = max_connections
         self.hub = events.EventHub(max_event_subscribers, heartbeat_s)
         self.methods = api.MethodRegistry()
         self.methods.register("health", self._health, get_path="health")
         self.methods.register("systems.list", self._systems_list, get_path="systems")
+        self.methods.register("jobs.list", self._jobs_list, get_path="jobs")
+        self.methods.register("jobs.get", self._jobs_get)
+        self.methods.register("jobs.cancel", self._jobs_cancel)
+        self.methods.register("build.start", self._build_start)
+        self.jobs = jobs.JobRunner(self.hub)
         self._server: Optional[asyncio.AbstractServer] = None
         self._heartbeat: Optional[asyncio.Task] = None
         self._connections: set[asyncio.Task] = set()
@@ -129,6 +169,7 @@ class ServeDaemon:
             await self._server.wait_closed()
         if self._heartbeat is not None:
             self._heartbeat.cancel()
+        await self.jobs.shutdown()
         self.hub.close()
         if self._connections:
             _, pending = await asyncio.wait(set(self._connections), timeout=SHUTDOWN_GRACE_S)
@@ -149,6 +190,8 @@ class ServeDaemon:
             "started_at": self._started_at,
             "install_root": str(self.install_root),
             "served_units": self.served_units,
+            "workspace": None if self.workspace is None else str(self.workspace),
+            "restart_required": self.restart_required,
             "event_subscribers": self.hub.subscriber_count,
             "methods": self.methods.names(),
         }
@@ -163,6 +206,72 @@ class ServeDaemon:
             "systems": views,
             "errors": [{"path": e.path, "message": e.message} for e in errors],
         }
+
+    async def _find_system(self, system_id: str) -> exports.SystemExport:
+        systems, _ = await asyncio.to_thread(exports.discover_systems, self.install_root)
+        for system in systems:
+            if system.id == system_id:
+                return system
+        raise api.ApiError(api.NOT_FOUND, f"no exported system {system_id!r}")
+
+    async def _jobs_list(self, params: dict[str, Any]) -> dict[str, Any]:
+        return {"jobs": [job.to_view() for job in self.jobs.list()]}
+
+    async def _jobs_get(self, params: dict[str, Any]) -> dict[str, Any]:
+        since = _int_param(params, "since", 0, 0, 2**53)
+        limit = _int_param(params, "limit", jobs.LOG_RING_LINES, 1, jobs.LOG_RING_LINES)
+        job = self.jobs.get(_str_param(params, "job", required=True))
+        first_seq, lines = job.log.since(since, limit)
+        return {"job": job.to_view(), "log": {"first_seq": first_seq, "lines": lines}}
+
+    async def _jobs_cancel(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self.jobs.cancel(_str_param(params, "job", required=True)).to_view()
+
+    async def _build_start(self, params: dict[str, Any]) -> dict[str, Any]:
+        if self.workspace is None:
+            raise api.ApiError(api.UNAVAILABLE, "this daemon has no workspace to build in (see --workspace)")
+        system = await self._find_system(_str_param(params, "system", required=True))
+        target = _str_param(params, "target", required=True)
+        compute_unit = _str_param(params, "compute_unit")
+        if compute_unit is not None:
+            view = system.to_view(self.install_root, self.served_units)
+            status = next((u["status"] for u in view["compute_units"] if u["name"] == compute_unit), None)
+            if status not in (None, exports.UNIT_AVAILABLE):
+                raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is {status} on this daemon")
+        plan = await asyncio.to_thread(
+            build.plan_build,
+            system,
+            self.install_root,
+            target,
+            mode=_str_param(params, "mode"),
+            compute_unit=compute_unit,
+        )
+
+        def on_line(job: jobs.Job, line: str) -> None:
+            package = build.started_package(line)
+            if package is not None:
+                job.detail["built_packages"].append(package)
+
+        def on_exit(job: jobs.Job) -> None:
+            built = job.detail["built_packages"]
+            if self.serves_own_install and OWN_PACKAGE in built and not self.restart_required:
+                self.restart_required = True
+                self.hub.publish(TOPIC_DAEMON, {"restart_required": True})
+            if system.package in built:
+                self.hub.publish(TOPIC_SYSTEMS_CHANGED, {"job": job.id, "package": system.package})
+
+        spec = jobs.JobSpec(
+            key=build.BUILD_JOB_KIND,
+            kind=build.BUILD_JOB_KIND,
+            title=plan.title,
+            argv=list(plan.argv),
+            cwd=self.workspace,
+            params=plan.params,
+            detail={"packages": list(plan.packages), "built_packages": []},
+            on_line=on_line,
+            on_exit=on_exit,
+        )
+        return (await self.jobs.start(spec)).to_view()
 
     # -- connection handling -----------------------------------------------
 
@@ -234,7 +343,11 @@ class ServeDaemon:
             raise api.ApiError(api.METHOD_NOT_ALLOWED, "static files accept GET")
         if request.path == "/":
             return Response(HTTPStatus.FOUND, [("Location", "/" + exports.SYSTEMS_INDEX_PATH)])
-        path = exports.static_file(self.install_root, request.path)
+        if request.path.startswith(DAEMON_PAGE_PREFIX):
+            name = request.path[len(DAEMON_PAGE_PREFIX) :]
+            path = DAEMON_PAGE_DIR / name if name in DAEMON_PAGE_FILES and (DAEMON_PAGE_DIR / name).is_file() else None
+        else:
+            path = exports.static_file(self.install_root, request.path)
         if path is None:
             raise api.ApiError(api.NOT_FOUND, f"nothing served at {request.path}")
         body = await asyncio.to_thread(path.read_bytes)

@@ -116,26 +116,48 @@ It imports no ROS module, so its `bin/` copy runs without any setup script sourc
 autoware-system-designer-serve \
     --install-root install \       # default: first COLCON_PREFIX_PATH entry
     --port 8780 \                  # 0 picks a free port
+    --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
     --compute-unit main_ecu        # units local to this daemon (repeatable; default: every onboard unit)
 ```
 
 Open `http://127.0.0.1:8780/`. The pages are the generated ones under
-`exports/<system>/visualization/web`, served unchanged.
+`exports/<system>/visualization/web`, served unchanged. `/daemon/build.html` starts, follows and
+cancels builds.
 
-| Route              | Content                                                                                              |
-| ------------------ | ---------------------------------------------------------------------------------------------------- |
-| `GET /`            | Redirect to `/systems.html`                                                                          |
-| `GET /<path>`      | `systems.html` with its assets, and files under any `<pkg>/share/<pkg>/exports/*/visualization/web/` |
-| `GET /api/health`  | Daemon status                                                                                        |
-| `GET /api/systems` | Exported systems: modes, compute units with their status, deploy variants, page URLs                 |
-| `GET /api/events`  | Server-Sent Events: `hello`, then `heartbeat`, with daemon-wide sequence numbers as event ids        |
-| `POST /api/rpc`    | Request envelope `{"id", "method", "params"}` for any method (`health`, `systems.list`)              |
+| Route              | Content                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `GET /`            | Redirect to `/systems.html`                                                                                  |
+| `GET /<path>`      | `systems.html` with its assets, and files under any `<pkg>/share/<pkg>/exports/*/visualization/web/`         |
+| `GET /daemon/<f>`  | Daemon pages shipped with this package (`build.html`)                                                        |
+| `GET /api/health`  | Daemon status, including `workspace` and `restart_required`                                                  |
+| `GET /api/systems` | Exported systems: modes, compute units with their status, build scripts per mode, deploy variants, page URLs |
+| `GET /api/jobs`    | Jobs, newest first                                                                                           |
+| `GET /api/events`  | Server-Sent Events with daemon-wide sequence numbers as event ids (topics below)                             |
+| `POST /api/rpc`    | Request envelope `{"id", "method", "params"}` for any method below                                           |
+
+| Method         | Params                                                      | Result                                   |
+| -------------- | ----------------------------------------------------------- | ---------------------------------------- |
+| `health`       | -                                                           | Daemon status                            |
+| `systems.list` | -                                                           | Exported systems                         |
+| `jobs.list`    | -                                                           | `{"jobs": [job]}`                        |
+| `jobs.get`     | `job`, `since` (log seq, default 0), `limit`                | `{"job", "log": {"first_seq", "lines"}}` |
+| `jobs.cancel`  | `job`                                                       | job                                      |
+| `build.start`  | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit` | job                                      |
+
+| Event topic       | Data                                                                      |
+| ----------------- | ------------------------------------------------------------------------- |
+| `hello`           | Sent first on each stream; no replay, so clients resynchronise by request |
+| `heartbeat`       | `{"time"}`                                                                |
+| `job`             | Job record on every state change                                          |
+| `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                     |
+| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                 |
+| `daemon`          | `{"restart_required": true}`                                              |
 
 Responses use one envelope: `{"ok": true, "result": ...}` or
 `{"ok": false, "error": {"code", "message"}}`, with `id` echoed on `/api/rpc`. Error codes are
 stable strings (`bad_request`, `forbidden`, `not_found`, `method_not_allowed`,
-`unsupported_media_type`, `payload_too_large`, `unknown_method`, `invalid_params`, `unavailable`,
-`internal`), each mapped to one HTTP status. Compute unit `status` is open-ended; current values are
+`unsupported_media_type`, `payload_too_large`, `unknown_method`, `invalid_params`, `conflict`,
+`unavailable`, `internal`), each mapped to one HTTP status. Compute unit `status` is open-ended; current values are
 `available`, `remote_unsupported` (an onboard unit served by another daemon), `offboard` and
 `unsupported`.
 
@@ -143,6 +165,29 @@ Access rules: the listener binds `127.0.0.1` only; the `Host` header must name i
 or `localhost:<port>`); API requests the browser marks cross-site are refused; `POST /api/rpc` needs
 `Content-Type: application/json` and an `X-System-Designer-Client` header, and a present `Origin`
 must be the daemon's own. Request heads are capped at 16 KiB and bodies at 64 KiB.
+
+### Jobs and builds
+
+A job is one supervised child process in its own process group, stdout and stderr merged into a
+ring of the last 5000 numbered lines. One job per key runs at a time (`conflict` otherwise); the
+last 20 finished jobs stay listed. Cancel sends SIGINT to the group, SIGTERM after 10 s and SIGKILL
+5 s later; daemon shutdown cancels every job. Job `state` is `running`, `succeeded`, `failed` or
+`cancelled`.
+
+`build.start` runs `colcon build` in the workspace against the served install tree
+(`--install-base`, `--merge-install` for a merged tree). All builds share one key, since colcon builds
+of one workspace cannot overlap.
+
+| `target`     | Packages                                                                                                       |
+| ------------ | -------------------------------------------------------------------------------------------------------------- |
+| `deployment` | `--packages-select <pkg>` of the export package (regenerates launchers and visualization)                      |
+| `workspace`  | `--packages-up-to` the packages of `build_scripts/<mode>/build_<compute_unit>.sh` (default mode: the system's) |
+
+The generated script is parsed, not executed; package names are checked. `compute_unit` must be
+available on this daemon. Job `detail` holds `packages` (selection) and `built_packages` (from
+colcon's `Starting >>>` lines). When a build rebuilds `autoware_system_designer_runtime` inside the
+install tree this daemon runs from, the daemon keeps running its loaded code and reports
+`restart_required`.
 
 ---
 
