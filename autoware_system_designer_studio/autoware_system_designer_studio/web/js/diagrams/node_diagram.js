@@ -410,6 +410,8 @@
           ports: [],
           properties: {
             "org.eclipse.elk.nodeLabels.placement": "H_CENTER V_TOP",
+            // Members take their port spacing from this cluster, their parent graph.
+            "org.eclipse.elk.spacing.portPort": String(style.portSpacing),
             "org.eclipse.elk.spacing.nodeNode": String(style.nodeSpacing),
             "org.eclipse.elk.padding": `[top=${style.elkPadding * 2},left=${style.elkPadding},bottom=${style.elkPadding},right=${style.elkPadding}]`,
           },
