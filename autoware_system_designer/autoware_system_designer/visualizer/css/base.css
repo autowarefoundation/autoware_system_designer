@@ -1,0 +1,105 @@
+/* Page base: body, loading overlay, source links, toggle switch. */
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+  display: flex;
+  color: var(--text-primary);
+}
+
+/* Loading overlay */
+#loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-loading);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  font-size: 18px;
+  color: var(--text-secondary);
+  z-index: 100;
+  display: none;
+}
+
+.spinner {
+  border: 4px solid var(--spinner-border);
+  border-top: 4px solid var(--spinner-active);
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 15px;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Jump-to-editor links on source locations */
+.source-link {
+  color: var(--link-color);
+  text-decoration: none;
+  word-break: break-all;
+  font-size: 13px;
+  font-family: var(--mono-font);
+}
+
+.package-source-link {
+  display: block;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.diagram-error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  color: var(--error-color);
+}
+
+
+.toggle-switch {
+  position: relative;
+  width: 50px;
+  height: 24px;
+  background: var(--border-color);
+  border-radius: 24px;
+  cursor: pointer;
+}
+
+.toggle-switch.active {
+  background: var(--highlight);
+}
+
+.toggle-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch.active::after {
+  transform: translateX(26px);
+}
+

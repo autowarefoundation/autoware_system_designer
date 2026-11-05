@@ -13,6 +13,8 @@
   const {
     deploymentName,
     availableDiagramTypes,
+    diagramScripts,
+    dataBase,
     availableModes,
     defaultDiagramType,
     defaultMode,
@@ -22,21 +24,13 @@
     systemDefinitionFile = "",
   } = deploymentConfig;
 
-  // Diagram type -> the global the module script exports.
-  const DIAGRAM_MODULES = {
-    node_diagram: "NodeDiagramModule",
-    sequence_diagram: "SequenceDiagramModule",
-    logic_diagram: "LogicDiagramModule",
-  };
-
   // Highlight state a module may leave on nodes outside its own container.
   const HIGHLIGHT_CLASSES = ["highlighted", "port-highlighted"];
 
   const SIDEBAR_MIN_WIDTH = 150;
   const SIDEBAR_MAX_WIDTH = 700;
 
-  // Read by editor_link.js when the viewer has no stored preference.
-  window.defaultEditorScheme = editorScheme;
+  SD.editor.setDefaultScheme(editorScheme);
 
   let currentDiagramType = urlParameter("diagram") || defaultDiagramType;
   let currentMode = urlParameter("mode") || defaultMode;
@@ -89,10 +83,10 @@
     diagramContainer.appendChild(canvas);
     clearStaleHighlights();
 
-    const moduleUrl = `${diagramType}.js`;
+    const moduleUrl = diagramScripts[diagramType];
     await DiagramBase.loadScript(moduleUrl);
 
-    const ModuleClass = window[DIAGRAM_MODULES[diagramType]];
+    const ModuleClass = SD.diagrams.get(diagramType);
     if (!ModuleClass) {
       throw new Error(
         `Module class not found for diagram type: ${diagramType}. Make sure ${moduleUrl} is properly generated.`,
@@ -102,8 +96,8 @@
     currentDiagramModule = new ModuleClass(canvas, {
       mode,
       deployment: deploymentName,
-      onInfoUpdate: (data, type) =>
-        window.InfoPanel.render(infoPanel, data, type),
+      dataBase,
+      onInfoUpdate: (data, type) => SD.InfoPanel.render(infoPanel, data, type),
     });
 
     infoPanel.style.display = "block";
@@ -160,7 +154,7 @@
     if (!packageInfo) return;
     packageInfo.textContent = `Package: ${packageName}`;
     if (systemDefinitionFile) {
-      const link = window.createSourceLink(systemDefinitionFile, 1);
+      const link = SD.editor.sourceLink(systemDefinitionFile, 1);
       link.classList.add("package-source-link");
       packageInfo.appendChild(link);
     }
@@ -218,14 +212,10 @@
       if (e.key === "Escape") setOpen(false);
     });
 
-    document
-      .getElementById("dark-mode-switch")
-      .addEventListener("click", () => window.toggleDarkMode());
-
     const editorSelect = document.getElementById("editor-selector");
-    editorSelect.value = localStorage.getItem("editorScheme") || editorScheme;
+    editorSelect.value = SD.editor.currentScheme();
     editorSelect.addEventListener("change", (e) => {
-      localStorage.setItem("editorScheme", e.target.value);
+      SD.editor.setScheme(e.target.value);
     });
   }
 
@@ -261,12 +251,11 @@
 
   // ── Startup ─────────────────────────────────────────────────────────────────
 
-  // theme.js calls this after the viewer flips the theme.
-  window.__onThemeChange = function () {
+  SD.on("themechange", () => {
     if (typeof currentDiagramModule?.updateTheme === "function") {
       currentDiagramModule.updateTheme();
     }
-  };
+  });
 
   window.addEventListener("load", () => {
     initializeHeader();
@@ -274,7 +263,7 @@
     initializeSettings();
     initializeResizer();
     updateUrlParams();
-    window.initializeTheme();
+    SD.theme.init();
 
     updateDiagramTypeSelection();
     loadDiagram(currentDiagramType, currentMode);

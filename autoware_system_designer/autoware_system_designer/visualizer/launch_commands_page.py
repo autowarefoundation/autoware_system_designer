@@ -24,6 +24,7 @@ from typing import Any, NamedTuple
 
 from autoware_system_designer.common.path_utils import export_path
 from autoware_system_designer.common.template_renderer import TemplateRenderer
+from autoware_system_designer.visualizer import assets
 from autoware_system_designer.visualizer.paths import get_install_root, systems_index_link
 
 logger = logging.getLogger(__name__)
@@ -253,5 +254,7 @@ def generate_launch_commands_page(
         has_deploy_variants=bool(deploy_variants),
         systems_index_path=systems_index_link(web_dir, SYSTEMS_INDEX_FALLBACK),
         overview_path=f"{system_name}_overview.html",
+        stylesheets=[assets.bundle_path(path) for path in assets.PAGE_STYLESHEETS],
+        scripts=[assets.bundle_path(path) for path in assets.PAGE_SCRIPTS],
     )
     logger.info("Generated launch commands page: %s", output_path)

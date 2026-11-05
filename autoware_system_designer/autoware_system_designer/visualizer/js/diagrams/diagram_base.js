@@ -73,6 +73,7 @@
         mode: options.mode || "default",
         deployment: options.deployment || "",
         ...options,
+        dataBase: DiagramBase.withSlash(options.dataBase || "data/"),
       };
       this.panZoomInstance = null;
     }
@@ -85,8 +86,14 @@
       return DiagramBase.loadScript(src);
     }
 
+    // Data files live under the export's data directory, wherever the page that
+    // hosts the diagram is served from.
     loadDataScript(mode, type) {
-      return DiagramBase.loadScript(`data/${mode}_${type}.js`);
+      return DiagramBase.loadScript(`${this.options.dataBase}${mode}_${type}.js`);
+    }
+
+    static withSlash(base) {
+      return base.endsWith("/") ? base : `${base}/`;
     }
 
     showError(message) {
@@ -173,6 +180,16 @@
     }
   }
 
-  // Export for use in the overview page and other modules
   window.DiagramBase = DiagramBase;
+
+  // Diagram type -> module class; each diagram script registers itself on load.
+  const registry = new Map();
+  SD.diagrams = {
+    register(type, ModuleClass) {
+      registry.set(type, ModuleClass);
+    },
+    get(type) {
+      return registry.get(type) || null;
+    },
+  };
 })();

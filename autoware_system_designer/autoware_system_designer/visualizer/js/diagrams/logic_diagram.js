@@ -1929,5 +1929,5 @@
     }
   }
 
-  window.LogicDiagramModule = LogicDiagramModule;
+  SD.diagrams.register("logic_diagram", LogicDiagramModule);
 })();

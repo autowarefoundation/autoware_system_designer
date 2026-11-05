@@ -12,6 +12,7 @@ const JS_DIR = path.join(
   "autoware_system_designer",
   "visualizer",
   "js",
+  "diagrams",
 );
 const { EventGraph } = require(path.join(JS_DIR, "event_graph.js"));
 const T = require(path.join(JS_DIR, "timing_model.js"));

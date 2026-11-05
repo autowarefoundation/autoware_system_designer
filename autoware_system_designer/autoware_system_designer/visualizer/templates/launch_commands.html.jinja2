@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <title>Launch — {{ system_name }}</title>
-    <link rel="stylesheet" href="css/styles.css">
+    {% for href in stylesheets %}
+    <link rel="stylesheet" href="{{ href }}">
+    {% endfor %}
+    {% for src in scripts %}
+    <script src="{{ src }}"></script>
+    {% endfor %}
 </head>
 <body class="simple-page">
     <div class="page-container">
@@ -78,12 +83,8 @@
         <p class="empty-state">No launch commands found for this deployment.</p>
         {% endif %}
     </div>
-    <script src="theme.js"></script>
     <script>
-        window.initializeTheme();
-        document.getElementById('dark-mode-switch').addEventListener('click', function() {
-            window.toggleDarkMode();
-        });
+        SD.theme.init();
         function bindCopyButtons(container) {
             if (!container) return;
             container.querySelectorAll('.copy-btn').forEach(function(btn) {

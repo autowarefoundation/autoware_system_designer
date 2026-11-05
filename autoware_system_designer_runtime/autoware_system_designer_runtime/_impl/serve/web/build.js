@@ -337,12 +337,7 @@
     });
   }
 
-  if (window.initializeTheme) {
-    window.initializeTheme();
-    el("dark-mode-switch").addEventListener("click", function () {
-      window.toggleDarkMode();
-    });
-  }
+  if (window.SD) window.SD.theme.init();
   el("system").addEventListener("change", fillSystemFields);
   el("target").addEventListener("change", fillSystemFields);
   el("mode").addEventListener("change", fillUnits);

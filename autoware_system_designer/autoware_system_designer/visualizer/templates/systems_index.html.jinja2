@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <title>Autoware System Designer Deployments</title>
-    <link rel="stylesheet" href="css/styles.css">
+    {% for href in stylesheets %}
+    <link rel="stylesheet" href="{{ href }}">
+    {% endfor %}
+    {% for src in scripts %}
+    <script src="{{ src }}"></script>
+    {% endfor %}
 </head>
 <body class="simple-page">
     <div class="page-container">
@@ -33,12 +38,8 @@
             {% endfor %}
         </ul>
     </div>
-    <script src="theme.js"></script>
     <script>
-        window.initializeTheme();
-        document.getElementById('dark-mode-switch').addEventListener('click', function() {
-            window.toggleDarkMode();
-        });
+        SD.theme.init();
         // Daemon pages are linked only when a serve daemon answers for this page.
         if (location.protocol.startsWith('http')) {
             fetch('api/health').then(function(response) {

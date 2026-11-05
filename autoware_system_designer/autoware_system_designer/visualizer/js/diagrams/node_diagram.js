@@ -1397,5 +1397,5 @@
     }
   }
 
-  window.NodeDiagramModule = NodeDiagramModule;
+  SD.diagrams.register("node_diagram", NodeDiagramModule);
 })();
