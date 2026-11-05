@@ -117,8 +117,10 @@ colcon build
 # open the studio (use your web browser)
 source install/setup.bash
 autoware-system-designer-studio serve          # then open http://127.0.0.1:8780/
-# or write a static copy that opens from file://
-autoware-system-designer-studio pack -o /tmp/studio && xdg-open /tmp/studio/index.html
+# or write a static copy that opens from file://: pack creates the -o directory
+# (any path) and its index.html is the entry page
+autoware-system-designer-studio pack -o ~/studio_view
+xdg-open ~/studio_view/index.html
 ```
 
 ## Glossary
