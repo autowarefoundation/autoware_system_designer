@@ -446,9 +446,18 @@
       rootNode.edges = rootEdges;
       // Root-level links reach into the clusters, so the root and the clusters
       // are laid out as one graph; each component keeps its own inner layout.
+      // Clusters sit apart by a wide gap that carries the cross-unit links.
+      const unitGap = String(style.elkPadding);
+      const unitEdgeGap = String(style.elkPadding * 0.2);
       rootNode.properties = {
         ...(rootNode.properties || {}),
         "org.eclipse.elk.hierarchyHandling": "INCLUDE_CHILDREN",
+        "org.eclipse.elk.spacing.nodeNode": unitGap,
+        "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": unitGap,
+        "org.eclipse.elk.spacing.edgeNode": unitEdgeGap,
+        "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": unitEdgeGap,
+        "org.eclipse.elk.spacing.edgeEdge": unitEdgeGap,
+        "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": unitEdgeGap,
       };
       clusters.forEach((cluster) =>
         cluster.children.forEach((member) => {
