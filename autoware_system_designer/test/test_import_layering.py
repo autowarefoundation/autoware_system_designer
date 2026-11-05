@@ -32,7 +32,6 @@ ALLOWED_IMPORTS = {
     "parser": {"common", "schema", "model"},
     "builder": {"common", "schema", "model", "parser"},
     "generator": {"common", "schema", "model", "parser", "builder"},
-    "visualizer": {"common", "schema", "model", "parser", "builder"},
     "linter": {"common", "schema", "model", "parser"},
     "runtime": set(),
 }

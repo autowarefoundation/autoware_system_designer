@@ -27,7 +27,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import re
 import sys
 from pathlib import Path
@@ -41,83 +40,12 @@ from ._impl.measure.node_graph import NodeGraph
 from ._impl.measure.session import MeasureOptions, MeasureSession, default_latency_out
 from ._impl.ros2.builder import populate_builder
 from ._impl.ros2.common.substitutions import bind_variables, resolve_argument_values, unresolved_var_names
+from .export_tree import manifest_path, read_manifest, resolve_structure_paths
 
 logger = logging.getLogger("autoware_system_designer")
 
 
 _NODE_PREFIX = re.compile(r"^\[([^\]]+)\] (.*)", re.DOTALL)
-
-# Workspace-path token written by the exporter; kept in sync with
-# autoware_system_designer.common.path_utils (the runtime stays stdlib-only).
-_WORKSPACE_ROOT_TOKEN = "${workspace_root}"
-_WORKSPACE_ROOT_ENV = "AUTOWARE_SYSTEM_DESIGNER_WORKSPACE_ROOT"
-_ARTIFACTS_FILENAME = "deployment.json"
-
-
-def _manifest_path(json_path: Path) -> Path:
-    """The export manifest sits at <output_root>/exports/<system>/deployment.json, beside system_structure."""
-    return json_path.parent.parent / _ARTIFACTS_FILENAME
-
-
-def _read_manifest(json_path: Path) -> Optional[dict[str, Any]]:
-    """Manifest payload, or None when there is no readable manifest beside the export."""
-    try:
-        payload = json.loads(_manifest_path(json_path).read_text())
-    except (OSError, ValueError):
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
-def _derive_workspace_root(json_path: Path) -> Optional[str]:
-    """Workspace root implied by where the export tree actually resides."""
-    env_root = os.environ.get(_WORKSPACE_ROOT_ENV)
-    if env_root:
-        return os.path.realpath(env_root)
-    tokenized = (_read_manifest(json_path) or {}).get("deployment_package_path", "")
-    if not isinstance(tokenized, str):
-        return None
-    if not tokenized.startswith(_WORKSPACE_ROOT_TOKEN):
-        return None
-    tail = [p for p in tokenized[len(_WORKSPACE_ROOT_TOKEN) :].split(os.sep) if p]
-    # system_structure dir sits at <output_root>/exports/<system>/system_structure.
-    try:
-        output_root = json_path.resolve().parents[3]
-    except IndexError:
-        return None
-    actual = str(output_root).rstrip(os.sep).split(os.sep)
-    if tail and actual[-len(tail) :] != tail:
-        return None
-    return os.sep.join(actual[: -len(tail)] if tail else actual) or os.sep
-
-
-def _expand_workspace_paths(value: Any, workspace_root: str) -> Any:
-    root = workspace_root.rstrip(os.sep)
-    if isinstance(value, str):
-        value = value.replace(_WORKSPACE_ROOT_TOKEN + os.sep, root + os.sep)
-        return root if value == _WORKSPACE_ROOT_TOKEN else value
-    if isinstance(value, dict):
-        return {
-            _expand_workspace_paths(k, workspace_root): _expand_workspace_paths(v, workspace_root)
-            for k, v in value.items()
-        }
-    if isinstance(value, list):
-        return [_expand_workspace_paths(item, workspace_root) for item in value]
-    return value
-
-
-def _resolve_structure_paths(data: Any, json_path: str) -> Any:
-    """Expand tokenized workspace paths in a loaded system_structure payload."""
-    text_has_token = _WORKSPACE_ROOT_TOKEN in json.dumps(data)
-    if not text_has_token:
-        return data
-    root = _derive_workspace_root(Path(json_path))
-    if root is None:
-        raise RuntimeError(
-            f"Cannot locate the workspace root for tokenized paths in {json_path}; "
-            f"set {_WORKSPACE_ROOT_ENV} to the workspace root directory."
-        )
-    return _expand_workspace_paths(data, root)
-
 
 def _deploy_arguments(
     manifest: Mapping[str, Any],
@@ -147,10 +75,10 @@ def _bind_deploy_arguments(
     overrides: Mapping[str, str],
 ) -> Any:
     """Resolve the system arguments a structure leaves as ``$(var ...)``; every one must be bound."""
-    manifest = _read_manifest(Path(json_path))
+    manifest = read_manifest(Path(json_path))
     if deploy is not None and manifest is None:
         raise RuntimeError(
-            f"--deploy {deploy!r} needs the export manifest {_manifest_path(Path(json_path))}, not found"
+            f"--deploy {deploy!r} needs the export manifest {manifest_path(Path(json_path))}, not found"
         )
     arguments = _deploy_arguments(manifest or {}, deploy, overrides)
     if arguments:
@@ -205,7 +133,7 @@ def launch_from_json(
 ) -> int:
     with open(json_path) as f:
         data = json.load(f)
-    data = _resolve_structure_paths(data, json_path)
+    data = resolve_structure_paths(data, json_path)
     data = _bind_deploy_arguments(data, json_path, deploy=deploy, overrides=arguments or {})
 
     out_dir = output_dir or ensure_output_dir()
@@ -376,9 +304,9 @@ def main() -> None:
         type=Path,
         default=None,
         metavar="FILE",
-        help="Latency file to write: the bundle's script under .js, bare JSON under any other suffix. "
-        "Default: <Mode>_latency.js in the export's visualization/web/data/ (where the diagram reads it), "
-        "else <log-dir>/latency/.",
+        help="Latency file to write, JSON. Default: a new record latency/<Mode>/<stamp>.json of the export "
+        "under the record root ($AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR, else $ROS_HOME/autoware_system_designer/records), "
+        "else <log-dir>/latency/<Mode>_latency.json.",
     )
     args = parser.parse_args()
 

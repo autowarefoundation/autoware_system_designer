@@ -67,8 +67,6 @@ from autoware_system_designer.model.config import NodeConfig, SystemConfig
 from autoware_system_designer.model.export_schema import SCHEMA_VERSION
 from autoware_system_designer.parser.deployment_parser import peek_target_system_name, resolve_input_target
 from autoware_system_designer.parser.yaml_parser import yaml_parser
-from autoware_system_designer.visualizer.launch_commands_page import generate_launch_commands_page
-from autoware_system_designer.visualizer.visualize_deployment import visualize_deployment
 
 logger = logging.getLogger(__name__)
 
@@ -452,8 +450,6 @@ class DeploymentBuilder:
 
             except Exception as e:
                 artifacts.system_structure_snapshots[mode_key] = snapshot_store
-                # try to visualize the system to show error status
-                generate_visualization(artifacts)
                 default_note = " (default)" if mode_key == default_mode else ""
                 system_path = getattr(system_config, "file_path", None)
                 source = SourceLocation(file_path=Path(system_path)) if system_path else None
@@ -546,6 +542,10 @@ def _iter_mode_data(artifacts: BuildArtifacts):
     )
 
 
+# Reference measurements kept beside the system file, and the shapes accepted there.
+REFERENCE_LATENCY_DIR = "latency"
+REFERENCE_LATENCY_SUFFIXES = (".json", ".js")
+
 _VAR_REFERENCE = re.compile(r"\$\(var\s+([^()\s]+)\s*\)")
 
 
@@ -592,14 +592,29 @@ def _collect_deploy_variable_names(artifacts: BuildArtifacts) -> List[str]:
     return variable_names
 
 
-def generate_visualization(artifacts: BuildArtifacts) -> None:
-    """Generate the visualization pages from the exported JSON."""
-    # Declared compute units travel with each mode's tree; the node diagram groups components by them.
-    deploy_data = {
-        mode_key: {**data, "compute_units": (metadata or {}).get("compute_units") or []}
-        for mode_key, data, metadata in _iter_mode_payloads(artifacts)
-    }
-    visualize_deployment(deploy_data, artifacts.name, artifacts.layout.visualization_dir, artifacts.system_file)
+def export_reference_latency(artifacts: BuildArtifacts) -> List[str]:
+    """Copy the reference latency files kept beside the system file into the export; returns the modes copied.
+
+    ``latency/<mode>_latency.json`` (or the ``.js`` script shape) beside the system file is a
+    checked-in measurement the design is compared against; it travels with the export unchanged.
+    """
+    if not artifacts.system_file:
+        return []
+    source_dir = Path(artifacts.system_file).parent / REFERENCE_LATENCY_DIR
+    if not source_dir.is_dir():
+        return []
+    copied: List[str] = []
+    for mode_key in artifacts.mode_keys:
+        for suffix in REFERENCE_LATENCY_SUFFIXES:
+            source = source_dir / f"{mode_key}_latency{suffix}"
+            if source.is_file():
+                target = Path(export_path(artifacts.layout.latency_dir, source.name))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.read_bytes())
+                copied.append(mode_key)
+                logger.info(f"Exported reference latency: {source.name}")
+                break
+    return copied
 
 
 def generate_system_monitor_config(artifacts: BuildArtifacts) -> None:
@@ -633,13 +648,11 @@ def generate_build_scripts(artifacts: BuildArtifacts) -> None:
 def generate_launchers(artifacts: BuildArtifacts) -> None:
     """Generate ROS 2 launch files from the exported JSON."""
     deploy_variable_names = _collect_deploy_variable_names(artifacts)
-    # Launchable units per mode (None: undeclared, derived from the components); a mode
-    # may declare units no component of it uses, and offboard units get no launcher.
-    compute_units_by_mode: Dict[str, List[str] | None] = {}
     for mode_key, data, metadata in _iter_mode_payloads(artifacts):
         mode_launcher_dir = export_path(artifacts.layout.launcher_dir, mode_key)
+        # Launchable units (None: undeclared, derived from the components); a mode may
+        # declare units no component of it uses, and offboard units get no launcher.
         compute_units = launch_target_compute_units(metadata)
-        compute_units_by_mode[mode_key] = compute_units
 
         generate_module_launch_file(
             data,
@@ -661,18 +674,6 @@ def generate_launchers(artifacts: BuildArtifacts) -> None:
             workspace_root=artifacts.workspace_root,
         )
 
-    web_dir = os.path.join(artifacts.layout.visualization_dir, "web")
-    if os.path.isdir(web_dir):
-        generate_launch_commands_page(
-            system_name=artifacts.name,
-            package_name=artifacts.deployment_package_name,
-            launcher_dir=artifacts.layout.launcher_dir,
-            mode_keys=artifacts.mode_keys,
-            web_dir=web_dir,
-            deploy_variants=artifacts.deploy_variants,
-            system_structure_dir=artifacts.layout.system_structure_dir,
-            compute_units_by_mode=compute_units_by_mode,
-        )
 
 
 def export_parameter_set_templates(artifacts: BuildArtifacts) -> Dict[str, List[str]]:

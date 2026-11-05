@@ -34,6 +34,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from ... import records
 from ..core import events as ev
 from ..core.coordinator import Coordinator, CoordinatorBuilder
 from .chains import trace_chains
@@ -52,8 +53,6 @@ TRACE_DIR_ENV = "ASD_TRACE_DIR"
 TRACE_CAPACITY_ENV = "ASD_TRACE_CAPACITY"
 TRACE_SUBDIR = "trace"
 LATENCY_DIR_NAME = "latency"
-SYSTEM_STRUCTURE_DIR = "system_structure"
-VISUALIZATION_DIR = "visualization"
 DEFAULT_HEARTBEAT_S = 10.0
 
 
@@ -105,27 +104,13 @@ def tracer_env(tracer: Path, trace_dir: Path, base: Optional[dict[str, str]] = N
     return env
 
 
-def export_bundle_data_dir(json_path: Path) -> Optional[Path]:
-    """The visualization bundle's data directory of the export a system_structure JSON belongs to.
-
-    An export lays out ``<export>/system_structure/<Mode>.json`` beside
-    ``<export>/visualization/web/data/``; the diagram renderer loads
-    ``data/<Mode>_latency.js`` from there.
-    """
-    json_path = Path(json_path).resolve()
-    if json_path.parent.name != SYSTEM_STRUCTURE_DIR:
-        return None
-    web_dir = json_path.parent.parent / VISUALIZATION_DIR / "web"
-    if not web_dir.is_dir():
-        return None
-    return web_dir / "data"
-
-
-def default_latency_out(mode: str, json_path: Path, log_dir: Path) -> Path:
-    """``<Mode>_latency.js`` in the export's visualization bundle, else under the log dir."""
-    data_dir = export_bundle_data_dir(json_path)
-    base = data_dir if data_dir is not None else log_dir / LATENCY_DIR_NAME
-    return base / f"{mode}_latency.js"
+def default_latency_out(mode: str, json_path: Path, log_dir: Path, stamp: Optional[str] = None) -> Path:
+    """A new latency record of the export, else ``<Mode>_latency.json`` under the log dir."""
+    identity = records.export_identity(json_path)
+    if identity is None:
+        return log_dir / LATENCY_DIR_NAME / f"{mode}_latency.json"
+    package, system = identity
+    return records.latency_record_dir(package, system, mode) / records.new_record_name(stamp)
 
 
 def analyze_traces(

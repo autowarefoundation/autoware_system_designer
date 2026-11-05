@@ -46,8 +46,9 @@ class ExportLayout:
         return os.path.join(self.exports_dir, "system_monitor/")
 
     @property
-    def visualization_dir(self) -> str:
-        return os.path.join(self.exports_dir, "visualization/")
+    def latency_dir(self) -> str:
+        """Reference latency measurements the design is compared against."""
+        return os.path.join(self.exports_dir, "latency/")
 
     @property
     def parameter_set_dir(self) -> str:

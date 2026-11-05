@@ -129,7 +129,7 @@ def run_pipeline(
     workspace_yaml: Optional[str] = None,
     out_root: Optional[Path] = None,
 ) -> PipelineRun:
-    """Run the full pipeline (build, export, generate, visualize) in-process.
+    """Run the full pipeline (build, export, generate) in-process.
 
     *target* is a path relative to *workspace* (deployment/system/deployments file)
     or an absolute path / bare entity name passed through unchanged. *out_root*

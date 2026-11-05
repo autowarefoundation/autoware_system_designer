@@ -20,16 +20,12 @@ def _get_template_directories() -> list[str]:
 
     # Templates bundled in-package
     core_template_dir = os.path.abspath(os.path.join(base_dir, "../generator/templates"))
-    visualization_template_dir = os.path.abspath(os.path.join(base_dir, "../visualizer/templates"))
     ros2_launcher_template_dir = os.path.abspath(os.path.join(base_dir, "../generator/ros2_launcher/templates"))
 
     template_dirs: list[str] = []
 
     if os.path.exists(core_template_dir):
         template_dirs.append(core_template_dir)
-
-    if os.path.exists(visualization_template_dir):
-        template_dirs.append(visualization_template_dir)
 
     if os.path.exists(ros2_launcher_template_dir):
         template_dirs.append(ros2_launcher_template_dir)
@@ -43,14 +39,10 @@ def _get_template_directories() -> list[str]:
 
         share_dir = get_package_share_directory("autoware_system_designer")
         share_template_dir = os.path.join(share_dir, "generator", "templates")
-        share_visualization_template_dir = os.path.join(share_dir, "visualizer", "templates")
         share_ros2_launcher_template_dir = os.path.join(share_dir, "generator", "ros2_launcher", "templates")
 
         if os.path.exists(share_template_dir):
             template_dirs.append(share_template_dir)
-
-        if os.path.exists(share_visualization_template_dir):
-            template_dirs.append(share_visualization_template_dir)
 
         if os.path.exists(share_ros2_launcher_template_dir):
             template_dirs.append(share_ros2_launcher_template_dir)
@@ -81,7 +73,7 @@ class TemplateRenderer:
             # Markup templates escape every interpolated value; JS templates quote via tojson.
             autoescape=select_autoescape(enabled_extensions=("html.jinja2", "xml.jinja2"), default=False),
         )
-        # tojson keeps declaration key order; the visualizer renders some objects in that order.
+        # tojson keeps declaration key order.
         self.env.policies["json.dumps_kwargs"] = {}
         self.env.filters["launch_param_attr"] = to_launch_param_attr
 

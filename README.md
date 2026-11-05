@@ -1,6 +1,6 @@
 # Autoware System Designer
 
-**Autoware System Designer** is a comprehensive toolset designed to define, build, and deploy Autoware systems in a modular and structured way. It allows developers to describe the software architecture using configuration files (YAML) and automatically generates system artifacts such as ROS 2 launch files, visualization diagrams, and parameter templates.
+**Autoware System Designer** is a comprehensive toolset designed to define, build, and deploy Autoware systems in a modular and structured way. It allows developers to describe the software architecture using configuration files (YAML) and automatically generates system artifacts such as ROS 2 launch files and parameter templates, which the studio visualizes.
 
 ## Overview
 
@@ -12,7 +12,7 @@ Traditional ROS 2 launch files can become complex and hard to manage as a system
 
 - **Modular Architecture**: Define systems using reusable **Nodes** and **Modules**.
 - **Automatic Launch Generation**: Generate correct-by-construction ROS 2 XML launch files.
-- **System Visualization**: Automatically generate diagrams to visualize the system: the node graph, the logic diagram of trigger chains, and the sequence diagram, an event-chain latency view that reports the minimum, mean and maximum chain from the design's rates and a measurement file (see [doc/latency_view.md](autoware_system_designer/doc/latency_view.md)).
+- **System Visualization**: The studio (`autoware_system_designer_studio`) draws diagrams from the exported artifacts, served live or packed for `file://`: the node graph, the logic diagram of trigger chains, and the sequence diagram, an event-chain latency view that reports the minimum, mean and maximum chain from the design's rates and a measurement file (see [doc/latency_view.md](autoware_system_designer/doc/latency_view.md)).
 - **Parameter Management**: Manage parameters efficiently using **Parameter Sets** and schema validation.
 - **Deployment Configuration**: Easily switch between different hardware configurations or simulation modes using **Deployments**.
 
@@ -114,9 +114,11 @@ rosdep install -y --from-paths src --ignore-src --rosdistro $ROS_DISTRO
 # build
 colcon build
 
-# open visualization page (use your web browser)
-firefox install/systems.html
-google-chrome install/systems.html
+# open the studio (use your web browser)
+source install/setup.bash
+autoware-system-designer-studio serve          # then open http://127.0.0.1:8780/
+# or write a static copy that opens from file://
+autoware-system-designer-studio pack -o /tmp/studio && xdg-open /tmp/studio/index.html
 ```
 
 ## Glossary

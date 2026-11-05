@@ -287,7 +287,17 @@ def test_export_carries_declaration_and_launches_every_declared_unit(tmp_path):
     solo_sub = (run.launcher_dir("solo") / "sub_ecu" / "sub_ecu.launch.xml").read_text()
     assert "<include" not in solo_sub
 
-    page = (run.exports_dir / "visualization" / "web" / f"{run.system_name}_launch_commands.html").read_text()
-    assert "--compute-unit sub_ecu" in page
-    assert page.count("solo/sub_ecu/sub_ecu.launch.xml") >= 1
-    assert "remote_ecu" not in page
+
+
+def test_export_carries_the_reference_latency_and_no_visualization(tmp_path):
+    workspace = stage_case("compute_units", tmp_path)
+    latency_dir = workspace / "units_pkg" / "latency"
+    latency_dir.mkdir()
+    (latency_dir / "default_latency.json").write_text('{"schema": "autoware_system_designer/latency/2"}')
+    (latency_dir / "unknown_latency.json").write_text("{}")
+    run = run_pipeline(workspace, "units_pkg/Multi.system.yaml", tmp_path)
+
+    exported = run.exports_dir / "latency"
+    assert sorted(p.name for p in exported.iterdir()) == ["default_latency.json"]
+    assert (exported / "default_latency.json").read_text() == (latency_dir / "default_latency.json").read_text()
+    assert not (run.exports_dir / "visualization").exists()
