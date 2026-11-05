@@ -30,18 +30,7 @@
         <span id="system-package" class="topbar-package"></span>
       </div>
       <div class="topbar-selectors">
-        <label class="topbar-field"
-          >Mode
-          <select id="mode-selector"></select>
-        </label>
-        <label class="topbar-field" id="unit-field"
-          >Unit
-          <select id="unit-selector"></select>
-        </label>
-        <label class="topbar-field" id="deploy-field" hidden
-          >Deploy
-          <select id="deploy-selector"></select>
-        </label>
+        <label class="topbar-field" id="mode-field">Mode</label>
       </div>
       <div class="topbar-actions">
         <span id="connection-status" class="connection-status" hidden></span>
@@ -80,8 +69,9 @@
     </header>
 
     <div id="workbench-body">
-      <nav id="rail" aria-label="Workbench panels">
+      <nav id="rail" aria-label="Workbench activities">
         <div class="rail-group rail-static-group"></div>
+        <div class="rail-group rail-daemon-group" hidden></div>
       </nav>
 
       <aside id="side-panel">
@@ -92,17 +82,7 @@
       </aside>
       <div id="side-panel-resizer" class="panel-resizer"></div>
 
-      <main id="main-area">
-        <div id="main-tabs" role="tablist" hidden></div>
-        <div id="canvas-container">
-          <div id="diagram-container"></div>
-          <div id="loading">
-            <div class="spinner"></div>
-            <div id="loading-text">Loading...</div>
-          </div>
-        </div>
-        <div id="main-views"></div>
-      </main>
+      <main id="main-area"></main>
 
       <div id="inspector-resizer" class="panel-resizer"></div>
       <aside id="inspector">

@@ -60,6 +60,20 @@
     emitJobs();
   }
 
+  // This daemon's view of each exported system (systems.list), fetched once per change.
+  let systemsRequest = null;
+
+  async function system(id) {
+    if (!systemsRequest) {
+      systemsRequest = rpc("systems.list").catch((error) => {
+        systemsRequest = null;
+        throw error;
+      });
+    }
+    const result = await systemsRequest;
+    return result.systems.find((entry) => entry.id === id) || null;
+  }
+
   function setConnected(value) {
     if (connected === value) return;
     connected = value;
@@ -71,6 +85,7 @@
     // The browser reconnects on its own; each hello resynchronises through the request API.
     source.addEventListener("error", () => setConnected(false));
     source.addEventListener("hello", () => {
+      systemsRequest = null;
       setConnected(true);
       refreshHealth().catch((error) => console.warn("daemon health:", error));
       refreshJobs().catch((error) => console.warn("daemon jobs:", error));
@@ -79,6 +94,7 @@
       source.addEventListener(topic, (event) => {
         const data = JSON.parse(event.data);
         if (topic === "job") upsertJob(data);
+        if (topic === "systems.changed") systemsRequest = null;
         if (topic === "daemon") refreshHealth().catch(() => {});
         SD.emit(`daemon.${topic}`, data);
       });
@@ -111,11 +127,10 @@
     rpc,
     refreshHealth,
     offers,
+    system,
     apiUrl,
     upsertJob,
     jobs: jobList,
-    // Address of a daemon-only page, e.g. "daemon/build.html".
-    pageUrl: (path) => `${root}${path}`,
     get health() {
       return health;
     },

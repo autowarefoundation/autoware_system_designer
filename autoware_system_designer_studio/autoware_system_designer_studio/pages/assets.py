@@ -23,18 +23,18 @@ WEB_ROOT = Path(__file__).resolve().parent.parent / "web"
 
 # Directory of a site that holds the bundle, keeping the web/ layout below it.
 BUNDLE_DIR = "assets"
-# Bundle subdirectories a site carries; the daemon pages are served by the daemon only.
+# Bundle subdirectories a site carries.
 BUNDLE_SUBDIRS = ("css", "js")
-DAEMON_DIR = "daemon"
 
 # Window variable a mode's data script fills: the exported system structure, keyed by mode.
 DATA_GLOBAL = "systemStructureData"
 
-# Diagram type -> the module script the workbench loads when the diagram is first shown.
-DIAGRAM_SCRIPTS = {
-    "node_diagram": "js/diagrams/node_diagram.js",
-    "sequence_diagram": "js/diagrams/sequence_diagram.js",
-    "logic_diagram": "js/diagrams/logic_diagram.js",
+# Diagrams of the Explore activity, in menu order: the module script loaded when the diagram is
+# first shown, and whether the module locates entities (``focusEntity``), which Explore search needs.
+DIAGRAMS = {
+    "node_diagram": {"label": "Node Diagram", "script": "js/diagrams/node_diagram.js", "searchable": True},
+    "sequence_diagram": {"label": "Sequence Diagram", "script": "js/diagrams/sequence_diagram.js", "searchable": False},
+    "logic_diagram": {"label": "Logic Diagram", "script": "js/diagrams/logic_diagram.js", "searchable": False},
 }
 
 DEFAULT_DIAGRAM_TYPE = "node_diagram"
@@ -46,8 +46,8 @@ CORE_SCRIPTS = (
 )
 
 # Scripts the workbench loads in its head, in load order; diagram modules load on demand.
-# Panel scripts register themselves with the shell, which mounts them in rail order.
-OVERVIEW_SCRIPTS = CORE_SCRIPTS + (
+# Activity scripts register themselves with the shell, which mounts them in rail order.
+WORKBENCH_SCRIPTS = CORE_SCRIPTS + (
     "js/core/store.js",
     "js/core/daemon.js",
     "js/diagrams/diagram_base.js",
@@ -57,18 +57,18 @@ OVERVIEW_SCRIPTS = CORE_SCRIPTS + (
     "js/diagrams/latency_source.js",
     "js/inspector/info_panel.js",
     "js/workbench/shell.js",
+    "js/workbench/widgets.js",
     "js/workbench/namespace_tree.js",
-    "js/workbench/panels/explore.js",
-    "js/workbench/panels/build.js",
-    "js/workbench/panels/launch.js",
-    "js/workbench/panels/monitor.js",
+    "js/workbench/activities/explore.js",
+    "js/workbench/activities/build.js",
+    "js/workbench/activities/launch.js",
 )
 
 # Script that drives the workbench once its body is parsed.
-OVERVIEW_ENTRY = "js/pages/overview_page.js"
+WORKBENCH_ENTRY = "js/pages/workbench_page.js"
 
 # Stylesheets in cascade order: tokens first, then the areas reading them.
-OVERVIEW_STYLESHEETS = (
+WORKBENCH_STYLESHEETS = (
     "css/tokens.css",
     "css/base.css",
     "css/workbench.css",
@@ -78,7 +78,7 @@ OVERVIEW_STYLESHEETS = (
     "css/sequence_diagram.css",
 )
 
-# Content pages (systems index, launch commands, daemon pages).
+# Content pages (systems index, status pages).
 PAGE_STYLESHEETS = (
     "css/tokens.css",
     "css/base.css",

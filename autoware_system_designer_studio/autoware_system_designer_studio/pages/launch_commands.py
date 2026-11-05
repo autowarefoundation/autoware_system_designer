@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-"""Launch commands of an exported system per mode × compute unit [× deploy variant], for the commands page."""
+"""Launch commands of an exported system per mode × compute unit [× deploy variant], for the Launch activity."""
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def _build_commands(
     structure_root = system_structure_dir.resolve()
     deploy_names = [item["name"] for item in deploy_variants if item.get("name")] if deploy_variants else [""]
     if deploy_variants and not (launcher_root / DEPLOYMENTS_SUBDIR).is_dir():
-        logger.warning("No deployment launchers under %s; launch commands page left empty", launcher_root)
+        logger.warning("No deployment launchers under %s; no launch commands listed", launcher_root)
         return []
 
     commands: list[Command] = []
@@ -127,33 +127,6 @@ def _build_commands(
     return commands
 
 
-def _add_row_span_metadata(rows: list[dict[str, Any]]) -> None:
-    """Add show_mode_cell, show_ecu_cell, mode_rowspan, ecu_rowspan to each row (in-place)."""
-    for idx, row in enumerate(rows):
-        row["show_mode_cell"] = idx == 0 or rows[idx - 1]["mode"] != row["mode"]
-        row["show_ecu_cell"] = idx == 0 or rows[idx - 1]["mode"] != row["mode"] or rows[idx - 1]["ecu"] != row["ecu"]
-    for idx, row in enumerate(rows):
-        row["mode_rowspan"] = sum(1 for r in rows[idx:] if r["mode"] == row["mode"]) if row["show_mode_cell"] else 0
-        row["ecu_rowspan"] = (
-            sum(1 for r in rows[idx:] if r["mode"] == row["mode"] and r["ecu"] == row["ecu"])
-            if row["show_ecu_cell"]
-            else 0
-        )
-
-
-def _to_rows(commands: list[Command]) -> list[dict[str, Any]]:
-    """Table rows for one deploy's commands, carrying the cell-merging metadata."""
-    rows = [{"mode": cmd.mode, "ecu": cmd.ecu, "xml": cmd.xml, "native": cmd.native} for cmd in commands]
-    _add_row_span_metadata(rows)
-    return rows
-
-
-def _rows_by_deploy(commands: list[Command]) -> tuple[list[str], dict[str, list[dict[str, Any]]]]:
-    """Sorted deploy names and each one's table rows; the page switches between them client-side."""
-    deploy_names = sorted({cmd.deploy for cmd in commands})
-    return deploy_names, {name: _to_rows([cmd for cmd in commands if cmd.deploy == name]) for name in deploy_names}
-
-
 def _export_commands(export: SystemExport) -> list[Command]:
     declared = export.manifest.get("compute_units")
     declared_units = (
@@ -173,28 +146,12 @@ def _export_commands(export: SystemExport) -> list[Command]:
 
 
 def launch_command_records(export: SystemExport) -> list[dict[str, str]]:
-    """Launch commands as flat records (mode, unit, deploy, xml, native) for the workbench Commands panel."""
+    """Launch commands as flat records (mode, unit, deploy, xml, native) for the workbench Launch activity.
+
+    Both launch methods are listed: the exported XML launcher run by ``ros2 launch`` and the
+    system_structure JSON run by the designer runtime (``native``, empty without a structure).
+    """
     return [
         {"mode": cmd.mode, "unit": cmd.ecu, "deploy": cmd.deploy, "xml": cmd.xml, "native": cmd.native}
         for cmd in _export_commands(export)
     ]
-
-
-def launch_commands_view(export: SystemExport) -> dict[str, Any]:
-    """Template values of the commands page: rows per deploy variant and the method offered first.
-
-    Both launch methods are listed: the exported XML launcher run by ``ros2 launch`` and the
-    system_structure JSON run by the designer runtime, which is offered first whenever present.
-    """
-    deploy_variants = export.deploy_variants()
-    commands = _export_commands(export)
-    deploy_names, rows_by_deploy = _rows_by_deploy(commands)
-    has_native = any(cmd.native for cmd in commands)
-    return {
-        "command_rows": rows_by_deploy[deploy_names[0]] if deploy_names else [],
-        "deploy_names": deploy_names if deploy_variants else [],
-        "rows_by_deploy": rows_by_deploy,
-        "has_native": has_native,
-        "default_method": "native" if has_native else "xml",
-        "has_deploy_variants": bool(deploy_variants),
-    }

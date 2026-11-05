@@ -18,8 +18,7 @@ One URL layout serves both the daemon (rendered per request) and ``pack`` (writt
 
     index.html                                  systems index
     assets/{css,js}/...                         the web bundle
-    systems/<package>/<system>/index.html       workbench (diagrams)
-    systems/<package>/<system>/launch.html      launch commands
+    systems/<package>/<system>/index.html       workbench (explore, launch, build)
     systems/<package>/<system>/config.js        workbench config
     systems/<package>/<system>/data/<mode>.js   the mode's system structure, vis guides attached
     systems/<package>/<system>/data/<mode>_latency.js   the mode's latency, when there is any
@@ -41,7 +40,7 @@ from .. import latency
 from ..exports import SystemExport
 from ..vis_guide import inject_vis_guides
 from . import assets
-from .launch_commands import launch_command_records, launch_commands_view
+from .launch_commands import launch_command_records
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +49,6 @@ TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 INDEX_PAGE = "index.html"
 SYSTEMS_DIR = "systems"
 WORKBENCH_PAGE = "index.html"
-LAUNCH_PAGE = "launch.html"
 CONFIG_SCRIPT = "config.js"
 DATA_DIR = "data"
 LATENCY_SCRIPT_SUFFIX = "_latency.js"
@@ -64,10 +62,14 @@ def system_dir(export: SystemExport) -> str:
     return f"{SYSTEMS_DIR}/{export.package}/{export.name}"
 
 
+# Workbench activities a link may open; the page falls back to Explore for one it does not offer.
+LINKED_ACTIVITIES = ("explore", "launch", "build")
+
+
 def system_pages(export: SystemExport) -> dict[str, str]:
-    """Site-relative paths of a system's pages."""
-    base = system_dir(export)
-    return {"overview": f"{base}/{WORKBENCH_PAGE}", "launch_commands": f"{base}/{LAUNCH_PAGE}"}
+    """Site-relative paths of a system's workbench, per activity it opens on."""
+    page = f"{system_dir(export)}/{WORKBENCH_PAGE}"
+    return {"workbench": page, **{activity: f"{page}?activity={activity}" for activity in LINKED_ACTIVITIES}}
 
 
 def _environment() -> Environment:
@@ -109,7 +111,7 @@ class Site:
         yield INDEX_PAGE
         for export in self.systems.values():
             base = system_dir(export)
-            yield from (f"{base}/{WORKBENCH_PAGE}", f"{base}/{LAUNCH_PAGE}", f"{base}/{CONFIG_SCRIPT}")
+            yield from (f"{base}/{WORKBENCH_PAGE}", f"{base}/{CONFIG_SCRIPT}")
             for mode in export.mode_keys():
                 if export.structure_path(mode).is_file():
                     yield f"{base}/{DATA_DIR}/{mode}.js"
@@ -128,8 +130,6 @@ class Site:
         rest = parts[3:]
         if rest == [WORKBENCH_PAGE]:
             return self._workbench(export)
-        if rest == [LAUNCH_PAGE]:
-            return self._launch_commands(export)
         if rest == [CONFIG_SCRIPT]:
             return self._config(export)
         if len(rest) == 2 and rest[0] == DATA_DIR:
@@ -139,33 +139,21 @@ class Site:
     # -- pages -------------------------------------------------------------
 
     def _index(self) -> str:
-        systems = [
-            {"name": e.name, "package": e.package, **system_pages(e)}
-            for e in sorted(self.systems.values(), key=lambda e: (e.package, e.name))
-        ]
+        packages: dict[str, list[dict[str, str]]] = {}
+        for e in sorted(self.systems.values(), key=lambda e: (e.package, e.name)):
+            packages.setdefault(e.package, []).append({"name": e.name, **system_pages(e)})
         return self._env.get_template("systems_index.html.jinja2").render(
-            systems=systems,
+            packages=[{"name": name, "systems": systems} for name, systems in packages.items()],
             stylesheets=_bundle_links("", assets.PAGE_STYLESHEETS),
             scripts=_bundle_links("", assets.PAGE_SCRIPTS),
         )
 
     def _workbench(self, export: SystemExport) -> str:
-        return self._env.get_template("overview.html.jinja2").render(
+        return self._env.get_template("workbench.html.jinja2").render(
             deployment_name=export.name,
-            stylesheets=_bundle_links(SYSTEM_PAGE_ROOT, assets.OVERVIEW_STYLESHEETS),
-            scripts=_bundle_links(SYSTEM_PAGE_ROOT, assets.OVERVIEW_SCRIPTS),
-            entry_script=f"{SYSTEM_PAGE_ROOT}{assets.BUNDLE_DIR}/{assets.OVERVIEW_ENTRY}",
-        )
-
-    def _launch_commands(self, export: SystemExport) -> str:
-        return self._env.get_template("launch_commands.html.jinja2").render(
-            system_name=export.name,
-            package_name=export.package,
-            systems_index_path=f"{SYSTEM_PAGE_ROOT}{INDEX_PAGE}",
-            overview_path=WORKBENCH_PAGE,
-            stylesheets=_bundle_links(SYSTEM_PAGE_ROOT, assets.PAGE_STYLESHEETS),
-            scripts=_bundle_links(SYSTEM_PAGE_ROOT, assets.PAGE_SCRIPTS),
-            **launch_commands_view(export),
+            stylesheets=_bundle_links(SYSTEM_PAGE_ROOT, assets.WORKBENCH_STYLESHEETS),
+            scripts=_bundle_links(SYSTEM_PAGE_ROOT, assets.WORKBENCH_SCRIPTS),
+            entry_script=f"{SYSTEM_PAGE_ROOT}{assets.BUNDLE_DIR}/{assets.WORKBENCH_ENTRY}",
         )
 
     def _config(self, export: SystemExport) -> str:
@@ -179,16 +167,20 @@ class Site:
             system_id=export.id,
             site_root=SYSTEM_PAGE_ROOT,
             systems_index_path=f"{SYSTEM_PAGE_ROOT}{INDEX_PAGE}",
-            launch_commands_path=LAUNCH_PAGE,
             available_modes=modes,
             default_mode=default_mode,
-            available_diagram_types=list(assets.DIAGRAM_SCRIPTS),
-            diagram_scripts={
-                name: f"{SYSTEM_PAGE_ROOT}{assets.BUNDLE_DIR}/{script}" for name, script in assets.DIAGRAM_SCRIPTS.items()
-            },
+            diagrams=[
+                {
+                    "type": name,
+                    "label": diagram["label"],
+                    "script": f"{SYSTEM_PAGE_ROOT}{assets.BUNDLE_DIR}/{diagram['script']}",
+                    "searchable": diagram["searchable"],
+                }
+                for name, diagram in assets.DIAGRAMS.items()
+            ],
             data_base=f"{DATA_DIR}/",
             latency_modes=[m for m in modes if export.latency_file(m, self.record_root) is not None],
-            default_diagram_type=assets.DEFAULT_DIAGRAM_TYPE,
+            default_diagram=assets.DEFAULT_DIAGRAM_TYPE,
             editor_scheme=EDITOR_SCHEME,
             system_definition_file=export.system_file,
             compute_units=export.compute_units(),

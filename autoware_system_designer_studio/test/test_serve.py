@@ -121,7 +121,6 @@ def test_root_is_the_systems_index(served):
         ("/assets/js/core/sd.js", "text/javascript; charset=utf-8"),
         ("/assets/css/tokens.css", "text/css; charset=utf-8"),
         (f"{SITE}/index.html", "text/html; charset=utf-8"),
-        (f"{SITE}/launch.html", "text/html; charset=utf-8"),
         (f"{SITE}/config.js", "text/javascript; charset=utf-8"),
         (f"{SITE}/data/Runtime.js", "text/javascript; charset=utf-8"),
     ],
@@ -161,15 +160,9 @@ def test_paths_outside_the_site_are_not_found(served, path):
 
 def test_directory_addresses_serve_their_index(served):
     response, payload = served.request("GET", f"{SITE}/")
-    assert response.status == 200 and b"overview_page.js" in payload
+    assert response.status == 200 and b"workbench_page.js" in payload
     response, _ = served.request("GET", SITE)
     assert response.status == 302 and response.getheader("Location") == f"{SITE}/"
-
-
-def test_workbench_links_the_launch_page_the_site_serves(served):
-    _, config = served.request("GET", f"{SITE}/config.js")
-    assert b'launchCommandsPath: "launch.html"' in config
-    assert served.request("GET", f"{SITE}/launch.html")[0].status == 200
 
 
 def test_missing_page_answers_with_an_html_page(served):
@@ -248,8 +241,8 @@ def test_systems_lists_modes_units_and_deploy_variants(served):
     ]
     assert set(system["compute_units"][0]) == {"name", "kind", "description", "status"}
     assert system["deploy_variants"] == [{"name": "car_a", "arguments": {"vehicle_id": "a"}}]
-    assert system["pages"]["launch_commands"] == f"{SITE}/launch.html"
-    assert served.request("GET", system["pages"]["overview"])[0].status == 200
+    assert system["pages"]["launch"] == f"{SITE}/index.html?activity=launch"
+    assert served.request("GET", system["pages"]["workbench"])[0].status == 200
 
 
 def test_undeclared_units_fall_back_to_launcher_directories(tmp_path):
