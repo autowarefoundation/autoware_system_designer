@@ -1,0 +1,16 @@
+autoware_system_design_format: 0.5.0
+
+name: Variant.system
+
+description: Variant adding a component on a compute unit the base never declares.
+
+base: Base.system
+
+override:
+  components:
+    - name: listener
+      entity: Listener.node
+      compute_unit: ghost_ecu
+  connections:
+    - - talker.publisher.chatter
+      - listener.subscriber.chatter

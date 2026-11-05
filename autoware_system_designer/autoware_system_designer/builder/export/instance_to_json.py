@@ -136,6 +136,12 @@ def _collect_parameter_files(instance: "Instance") -> list[ParameterFileData]:
     return [dump(pf) for pf in instance.parameter_manager.get_all_parameter_files()]
 
 
+def _collect_compute_units(instance: "Instance") -> list[Dict[str, Any]]:
+    """Compute units declared by the system config in effect for this mode."""
+    configuration = getattr(instance, "configuration", None)
+    return dump(getattr(configuration, "compute_units", None) or [])
+
+
 def collect_system_structure(instance: "Instance", system_name: str, mode: str) -> SystemStructurePayload:
     """Collect instance data with schema/version metadata for JSON handover."""
     return {
@@ -144,6 +150,7 @@ def collect_system_structure(instance: "Instance", system_name: str, mode: str) 
             "system_name": system_name,
             "mode": mode,
             "generated_at": datetime.now(timezone.utc).isoformat(),
+            "compute_units": _collect_compute_units(instance),
         },
         "data": collect_instance_data(instance),
     }

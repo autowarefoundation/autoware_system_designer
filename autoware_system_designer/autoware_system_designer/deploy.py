@@ -34,6 +34,8 @@ from autoware_system_designer.builder.deployment_instance import DeploymentInsta
 from autoware_system_designer.builder.export.instance_to_json import collect_system_structure
 from autoware_system_designer.builder.export.json_io import (
     iter_mode_data,
+    iter_mode_payloads,
+    launch_target_compute_units,
     save_system_structure,
     save_system_structure_snapshot,
 )
@@ -83,6 +85,8 @@ class BuildArtifacts:
     deploy_variants: List[Dict[str, Any]]
     default_mode: str = "default"
     mode_keys: List[str] = field(default_factory=list)
+    # Compute units declared by the system; empty for designs that only tag components.
+    compute_units: List[Dict[str, Any]] = field(default_factory=list)
     file_package_map: Dict[str, str] = field(default_factory=dict)
     package_resolution_by_name: Dict[str, Optional[str]] = field(default_factory=dict)
     packages_without_provider: List[str] = field(default_factory=list)
@@ -132,6 +136,7 @@ def load_build_artifacts(output_root_dir: str, system_name: str) -> BuildArtifac
         deploy_variants=payload.get("deploy_variants", []),
         default_mode=payload.get("default_mode", "default"),
         mode_keys=payload.get("mode_keys", []),
+        compute_units=payload.get("compute_units", []),
         file_package_map=payload.get("file_package_map", {}),
         package_resolution_by_name=payload.get("package_resolution_by_name", {}),
         packages_without_provider=payload.get("packages_without_provider", []),
@@ -237,6 +242,7 @@ class DeploymentBuilder:
             deployment_package_name=getattr(self.config_registry, "deployment_package_name", None),
             argument_names=self._collect_system_argument_names(system_config),
             deploy_variants=deploy_variants,
+            compute_units=serde.dump(system_config.compute_units or []),
             file_package_map=self.config_registry.file_package_map,
             config_registry=self.config_registry,
         )
@@ -557,6 +563,12 @@ def _launcher_var_names(value: Any, in_launcher: bool = False) -> set:
     return names
 
 
+def _iter_mode_payloads(artifacts: BuildArtifacts):
+    return iter_mode_payloads(
+        artifacts.mode_keys, artifacts.layout.system_structure_dir, workspace_root=artifacts.workspace_root
+    )
+
+
 def _collect_deploy_variable_names(artifacts: BuildArtifacts) -> List[str]:
     variable_names: List[str] = []
     seen = set()
@@ -582,7 +594,11 @@ def _collect_deploy_variable_names(artifacts: BuildArtifacts) -> List[str]:
 
 def generate_visualization(artifacts: BuildArtifacts) -> None:
     """Generate the visualization pages from the exported JSON."""
-    deploy_data = {mode_key: data for mode_key, data in _iter_mode_data(artifacts)}
+    # Declared compute units travel with each mode's tree; the node diagram groups components by them.
+    deploy_data = {
+        mode_key: {**data, "compute_units": (metadata or {}).get("compute_units") or []}
+        for mode_key, data, metadata in _iter_mode_payloads(artifacts)
+    }
     visualize_deployment(deploy_data, artifacts.name, artifacts.layout.visualization_dir, artifacts.system_file)
 
 
@@ -617,13 +633,19 @@ def generate_build_scripts(artifacts: BuildArtifacts) -> None:
 def generate_launchers(artifacts: BuildArtifacts) -> None:
     """Generate ROS 2 launch files from the exported JSON."""
     deploy_variable_names = _collect_deploy_variable_names(artifacts)
-    for mode_key, data in _iter_mode_data(artifacts):
+    # Launchable units per mode (None: undeclared, derived from the components); a mode
+    # may declare units no component of it uses, and offboard units get no launcher.
+    compute_units_by_mode: Dict[str, List[str] | None] = {}
+    for mode_key, data, metadata in _iter_mode_payloads(artifacts):
         mode_launcher_dir = export_path(artifacts.layout.launcher_dir, mode_key)
+        compute_units = launch_target_compute_units(metadata)
+        compute_units_by_mode[mode_key] = compute_units
 
         generate_module_launch_file(
             data,
             mode_launcher_dir,
             forward_args=deploy_variable_names,
+            compute_units=compute_units,
         )
 
         logger.info(f"Generated launcher for mode: {mode_key}")
@@ -649,6 +671,7 @@ def generate_launchers(artifacts: BuildArtifacts) -> None:
             web_dir=web_dir,
             deploy_variants=artifacts.deploy_variants,
             system_structure_dir=artifacts.layout.system_structure_dir,
+            compute_units_by_mode=compute_units_by_mode,
         )
 
 

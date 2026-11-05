@@ -20,6 +20,7 @@ from autoware_system_designer.common.exceptions import ValidationError, error_co
 from autoware_system_designer.common.parameter_types import coerce_numeric_value, normalize_type_name
 from autoware_system_designer.common.source_location import SourceLocation, format_source, lookup_source
 from autoware_system_designer.model.config import (
+    ComputeUnit,
     Config,
     ConfigSubType,
     ConfigType,
@@ -316,6 +317,7 @@ class ConfigParser:
                         logger.debug(f"Found mode-specific configuration for mode '{mode_name}'")
 
             raw_remaps = config.get("remaps") or []
+            raw_compute_units = config.get("compute_units")
             return SystemConfig(
                 **base_data,
                 base=base_name,
@@ -324,6 +326,9 @@ class ConfigParser:
                 modes=config.get("modes"),
                 mode_configs=mode_configs if mode_configs else None,
                 parameter_sets=config.get("parameter_sets"),
+                compute_units=(
+                    [ComputeUnit.from_dict(u) for u in raw_compute_units] if raw_compute_units is not None else None
+                ),
                 components=config.get("components"),
                 connections=config.get("connections"),
                 variables=config.get("variables"),

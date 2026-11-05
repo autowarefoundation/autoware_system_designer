@@ -1,0 +1,30 @@
+autoware_system_design_format: 0.4.0
+
+name: Listener.node
+
+description: Dummy listener node consuming the chatter topic.
+
+package:
+  name: units_pkg
+  provider: dummy
+
+launch:
+  plugin: units::Listener
+  executable: listener_node
+  node_output: screen
+
+subscribers:
+  - name: chatter
+    message_type: std_msgs/msg/String
+
+publishers: []
+
+param_files: []
+
+param_values: []
+
+processes:
+  - name: consume
+    trigger_conditions:
+      - on_input: chatter
+    outcomes: []

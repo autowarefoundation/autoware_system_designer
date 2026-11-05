@@ -15,6 +15,7 @@
 import logging
 from typing import Callable, Dict
 
+from autoware_system_designer.builder.compute_units import check_component_compute_units
 from autoware_system_designer.builder.instances.instance_tree import set_instances
 from autoware_system_designer.builder.instances.instances import Instance
 from autoware_system_designer.builder.parameters.parameter_resolver import ParameterResolver
@@ -83,6 +84,7 @@ class DeploymentInstance(Instance):
                 self.parameter_resolver.declare_arguments(argument_names)
 
             # 1. set component instances
+            check_component_compute_units(system_config)
             logger.info(f"Instance '{self.name}': setting component instances")
             set_instances(self, system_config.full_name, config_registry)
             _snapshot("1_parse")

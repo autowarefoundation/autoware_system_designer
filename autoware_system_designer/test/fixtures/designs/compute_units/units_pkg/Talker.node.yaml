@@ -1,0 +1,34 @@
+autoware_system_design_format: 0.4.0
+
+name: Talker.node
+
+description: Dummy talker node publishing a chatter topic.
+
+package:
+  name: units_pkg
+  provider: dummy
+
+launch:
+  plugin: units::Talker
+  executable: talker_node
+  node_output: screen
+
+subscribers: []
+
+publishers:
+  - name: chatter
+    message_type: std_msgs/msg/String
+
+param_files: []
+
+param_values:
+  - name: rate_hz
+    type: double
+    default: 10.0
+
+processes:
+  - name: publish
+    trigger_conditions:
+      - periodic: ${parameter rate_hz}
+    outcomes:
+      - to_output: chatter

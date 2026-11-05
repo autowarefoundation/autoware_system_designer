@@ -31,6 +31,38 @@ class RemapEntry:
         return cls(source=d["source"], topic=d["topic"])
 
 
+COMPUTE_UNIT_KINDS = ("onboard", "offboard")
+
+# Unit names become launcher directory and file names and runtime selectors.
+COMPUTE_UNIT_NAME_PATTERN = r"^[a-z][a-z0-9_]*$"
+
+
+@dataclass
+class ComputeUnit:
+    """A compute unit declared by the system; components bind to one by name.
+
+    A unit is one independently launched environment (an ECU, a container or a
+    partition) with no copy-free IPC to other units. The hardware or execution
+    environment hosting it is outside the system design.
+
+    An ``onboard`` unit runs on the deployed vehicle and gets a launcher. An
+    ``offboard`` unit is a participant outside the vehicle (infrastructure,
+    cloud, remote operation); its components are declared for wiring only.
+    """
+
+    name: str
+    kind: str = "onboard"  # one of COMPUTE_UNIT_KINDS
+    description: str = ""
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ComputeUnit":
+        return cls(
+            name=d["name"],
+            kind=d.get("kind", "onboard"),
+            description=d.get("description", ""),
+        )
+
+
 class LaunchConfigDict(TypedDict, total=False):
     plugin: str
     executable: str
@@ -183,6 +215,7 @@ class SystemConfig(Config):
     modes: Optional[List[ModeDict]] = None
     mode_configs: Optional[Dict[str, Dict[str, Any]]] = None  # Mode-specific overrides/removals
     parameter_sets: Optional[List[str]] = None  # System-level parameter sets
+    compute_units: Optional[List[ComputeUnit]] = None  # Declared units; None when the system declares none
     components: Optional[List[ComponentDict]] = None
     connections: Optional[List[Any]] = None
     variables: Optional[List[VariableDict]] = None

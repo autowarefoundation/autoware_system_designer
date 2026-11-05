@@ -106,15 +106,43 @@ def extract_system_structure_data(
     return payload, {}
 
 
-def iter_mode_data(
+def iter_mode_payloads(
     mode_keys: List[str],
     system_structure_dir: str,
     workspace_root: str | None = None,
-) -> Iterator[Tuple[str, Dict[str, Any], Dict[str, Any]]]:
-    """Yield (mode_key, extracted_data) for each mode."""
+) -> Iterator[Tuple[str, InstanceData, SystemStructureMetadata]]:
+    """Yield (mode_key, data, metadata) for each mode."""
 
     for mode_key in mode_keys:
         structure_path = export_path(system_structure_dir, f"{mode_key}.json")
         payload = load_system_structure(structure_path, workspace_root=workspace_root)
-        data, _ = extract_system_structure_data(payload)
+        data, metadata = extract_system_structure_data(payload)
+        yield mode_key, data, metadata
+
+
+def iter_mode_data(
+    mode_keys: List[str],
+    system_structure_dir: str,
+    workspace_root: str | None = None,
+) -> Iterator[Tuple[str, InstanceData]]:
+    """Yield (mode_key, extracted_data) for each mode."""
+
+    for mode_key, data, _ in iter_mode_payloads(mode_keys, system_structure_dir, workspace_root=workspace_root):
         yield mode_key, data
+
+
+def launch_target_compute_units(metadata: SystemStructureMetadata) -> List[str] | None:
+    """Names of the declared ``onboard`` units, the ones that get launchers.
+
+    None when the export declares no units, so callers fall back to the units
+    the components reference.
+    """
+
+    units = metadata.get("compute_units") if isinstance(metadata, dict) else None
+    if not isinstance(units, list) or not units:
+        return None
+    return [
+        unit["name"]
+        for unit in units
+        if isinstance(unit, dict) and unit.get("name") and unit.get("kind", "onboard") == "onboard"
+    ]

@@ -51,7 +51,7 @@ member, each actor `SIGTERM`s its process group, waits 5s, then `SIGKILL`s.
 
 ```bash
 ros2 run autoware_system_designer_runtime autoware-system-designer-launch SYSTEM.json \
-    --ecu main_ecu \                    # only launch nodes with compute_unit=main_ecu
+    --compute-unit main_ecu \           # only launch nodes with compute_unit=main_ecu
     --deploy my_vehicle \               # deploy variant whose arguments bind $(var ...)
     --arg map_path=/data/map \          # bind/override one system argument (repeatable)
     --log-dir /tmp/run1 \               # per-node logs land in /tmp/run1/<member>/

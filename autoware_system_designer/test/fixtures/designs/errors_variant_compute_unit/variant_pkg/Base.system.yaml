@@ -1,0 +1,15 @@
+autoware_system_design_format: 0.5.0
+
+name: Base.system
+
+description: Base system declaring a single compute unit.
+
+compute_units:
+  - name: main_ecu
+
+components:
+  - name: talker
+    entity: Talker.node
+    compute_unit: main_ecu
+
+connections: []

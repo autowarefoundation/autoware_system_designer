@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.5.0
 
 name: TypeAlpha.system
 
@@ -23,6 +23,16 @@ modes:
     default: true
   - name: simulation
     description: Simulation mode
+
+compute_units:
+  - name: main_ecu
+    description: Sensing, perception and vehicle interface.
+  - name: dummy_ecu_1
+    kind: offboard
+    description: Map and localization dummies.
+  - name: dummy_ecu_2
+    kind: offboard
+    description: Planning and control dummies.
 
 components:
   - name: sensing
@@ -54,7 +64,7 @@ components:
     compute_unit: dummy_ecu_2
   - name: vehicle
     entity: VehicleDummy.node
-    compute_unit: main_ecu
+    compute_unit: dummy_ecu_1
   - name: robot_state_publisher
     entity: RobotStatePublisherDummy.node
     compute_unit: main_ecu

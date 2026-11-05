@@ -1,0 +1,44 @@
+autoware_system_design_format: 0.5.0
+
+name: Multi.system
+
+description: Onboard main_ecu and sub_ecu plus an offboard remote_ecu; the solo mode leaves sub_ecu without components.
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+  - name: solo
+    description: Talker only
+
+compute_units:
+  - name: main_ecu
+    kind: onboard
+    description: Primary unit hosting the talker.
+  - name: sub_ecu
+  - name: remote_ecu
+    kind: offboard
+    description: Remote operation station; no launcher of its own.
+
+components:
+  - name: talker
+    entity: Talker.node
+    compute_unit: main_ecu
+  - name: listener
+    entity: Listener.node
+    compute_unit: sub_ecu
+  - name: monitor
+    entity: Listener.node
+    path: /sim/monitor
+    compute_unit: remote_ecu
+
+connections:
+  - - talker.publisher.chatter
+    - listener.subscriber.chatter
+  - - talker.publisher.chatter
+    - monitor.subscriber.chatter
+
+solo:
+  remove:
+    components:
+      - name: listener

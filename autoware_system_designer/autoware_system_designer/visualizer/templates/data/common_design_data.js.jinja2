@@ -10,6 +10,7 @@
     "namespace": {{ namespace | tojson }},
     "path": {{ path | tojson }},
     "compute_unit": {{ compute_unit | tojson }},
+    "compute_units": {{ compute_units | default([]) | tojson }},
     "vis_guide": {{ vis_guide | tojson }},
     "in_ports": {{ in_ports | tojson }},
     "out_ports": {{ out_ports | tojson }},

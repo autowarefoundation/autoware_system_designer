@@ -271,7 +271,7 @@ def main() -> None:
         help="Path to system_structure JSON " "(e.g. .../system_structure/LoggingSimulation.json)",
     )
     parser.add_argument(
-        "--ecu",
+        "--compute-unit",
         default=None,
         help="Only launch nodes whose compute_unit matches this value "
         "(e.g. main_ecu, dummy_ecu). When omitted, all nodes are launched.",
@@ -403,7 +403,7 @@ def main() -> None:
     sys.exit(
         launch_from_json(
             args.json_file,
-            ecu=args.ecu,
+            ecu=args.compute_unit,
             deploy=args.deploy,
             arguments=_parse_arg_overrides(args.arg),
             output_dir=args.log_dir,

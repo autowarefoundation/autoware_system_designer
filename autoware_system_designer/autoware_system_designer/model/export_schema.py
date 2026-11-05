@@ -25,7 +25,8 @@ from typing import Any, Dict
 
 # Version for the on-disk system structure JSON payload.
 # 1.1: parameter types are canonical ROS 2 names; presentation data (vis_guide) is not exported.
-SCHEMA_VERSION = "1.1"
+# 1.2: metadata carries the declared compute units of the mode.
+SCHEMA_VERSION = "1.2"
 
 # Serialized record shapes (JSON objects), keyed as written by model.serde.
 EventData = Dict[str, Any]
