@@ -45,23 +45,65 @@ CORE_SCRIPTS = (
     "js/core/editor_link.js",
 )
 
+# Workbench shell and the widgets its activities build on, in load order.
+SHELL_SCRIPTS = (
+    "js/shell/layout.js",
+    "js/shell/statusbar.js",
+    "js/shell/shell.js",
+    "js/widgets/controls.js",
+    "js/widgets/terminal.js",
+    "js/widgets/main_view.js",
+    "js/widgets/namespace_tree.js",
+)
+
+# Rail activities: each one's scripts (its parts, then the entry that registers it) and stylesheet.
+# The shell orders the rail by each activity's declared order.
+ACTIVITIES = {
+    "explore": {
+        "scripts": (
+            "js/activities/explore/diagram_host.js",
+            "js/activities/explore/entity_search.js",
+            "js/activities/explore/index.js",
+        ),
+        "styles": ("css/activities/explore.css",),
+    },
+    "launch": {
+        "scripts": (
+            "js/activities/launch/commands_table.js",
+            "js/activities/launch/state_monitor.js",
+            "js/activities/launch/index.js",
+        ),
+        "styles": ("css/activities/launch.css",),
+    },
+    "build": {
+        "scripts": (
+            "js/activities/build/job_log.js",
+            "js/activities/build/index.js",
+        ),
+        "styles": ("css/activities/build.css",),
+    },
+}
+
+
+def _activity_files(kind: str) -> tuple[str, ...]:
+    return tuple(path for activity in ACTIVITIES.values() for path in activity[kind])
+
+
 # Scripts the workbench loads in its head, in load order; diagram modules load on demand.
-# Activity scripts register themselves with the shell, which mounts them in rail order.
-WORKBENCH_SCRIPTS = CORE_SCRIPTS + (
-    "js/core/store.js",
-    "js/core/daemon.js",
-    "js/diagrams/diagram_base.js",
-    "js/diagrams/elk_canvas.js",
-    "js/diagrams/event_graph.js",
-    "js/diagrams/timing_model.js",
-    "js/diagrams/latency_source.js",
-    "js/inspector/info_panel.js",
-    "js/workbench/shell.js",
-    "js/workbench/widgets.js",
-    "js/workbench/namespace_tree.js",
-    "js/workbench/activities/explore.js",
-    "js/workbench/activities/build.js",
-    "js/workbench/activities/launch.js",
+WORKBENCH_SCRIPTS = (
+    CORE_SCRIPTS
+    + (
+        "js/core/store.js",
+        "js/core/daemon.js",
+        "js/diagrams/diagram_base.js",
+        "js/diagrams/elk_canvas.js",
+        "js/diagrams/event_graph.js",
+        "js/diagrams/timing_model.js",
+        "js/diagrams/latency_source.js",
+        "js/inspector/info_panel.js",
+    )
+    + SHELL_SCRIPTS
+    + _activity_files("scripts")
 )
 
 # Script that drives the workbench once its body is parsed.
@@ -71,12 +113,13 @@ WORKBENCH_ENTRY = "js/pages/workbench_page.js"
 WORKBENCH_STYLESHEETS = (
     "css/tokens.css",
     "css/base.css",
-    "css/workbench.css",
+    "css/shell.css",
+    "css/widgets.css",
     "css/inspector.css",
     "css/node_diagram.css",
     "css/logic_diagram.css",
     "css/sequence_diagram.css",
-)
+) + _activity_files("styles")
 
 # Content pages (systems index, status pages).
 PAGE_STYLESHEETS = (

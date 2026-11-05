@@ -1,0 +1,117 @@
+/* Launch activity: the launchpad cards, the commands table and the state monitor. */
+
+.launch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.launch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.launch-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.launch-unit {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Commands table */
+.launch-commands {
+  overflow: auto;
+}
+
+.launch-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.launch-table th {
+  position: sticky;
+  top: 0;
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.launch-table td {
+  padding: 8px 14px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.launch-table.no-status th:nth-child(2),
+.launch-table.no-status td:nth-child(2) {
+  display: none;
+}
+
+.launch-table td.launch-unit {
+  white-space: nowrap;
+}
+
+.launch-table .command-cell {
+  width: 100%;
+}
+
+.launch-table .command-cell code {
+  font-family: var(--mono-font);
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--text-primary);
+}
+
+.launch-table .command-missing {
+  color: var(--text-muted);
+}
+
+/* State monitor: member tree beside the selected member's log */
+.monitor-tree {
+  gap: 8px;
+  width: 300px;
+  padding: 10px;
+}
+
+.member-head .main-view-title {
+  font-family: var(--mono-font);
+  font-weight: 500;
+}
+
+.member-state {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--state-idle);
+}
+
+.member-state.running {
+  color: var(--state-running);
+}
+
+.member-state.ok {
+  color: var(--state-ok);
+}
+
+.member-state.warning {
+  color: var(--state-warning);
+}
+
+.member-state.failed {
+  color: var(--state-failed);
+}

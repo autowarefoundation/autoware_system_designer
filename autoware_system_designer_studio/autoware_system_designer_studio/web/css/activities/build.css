@@ -1,0 +1,87 @@
+/* Build activity: the job list and the selected job's header. */
+
+.job-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.job-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.job-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.job-item.selected {
+  border-color: var(--border-active);
+  box-shadow: inset 3px 0 0 var(--border-active);
+}
+
+.job-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-self: stretch;
+}
+
+.job-item .panel-button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.job-id {
+  color: var(--text-muted);
+  font-family: var(--mono-font);
+}
+
+.job-title {
+  margin: 0;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.job-state {
+  font-weight: 600;
+}
+
+.job-state.running {
+  color: var(--state-running);
+}
+
+.job-state.succeeded {
+  color: var(--state-ok);
+}
+
+.job-state.failed,
+.job-state.cancelled {
+  color: var(--state-failed);
+}
+
+/* Selected job's command line and package progress, above its log */
+.job-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.job-argv {
+  font-family: var(--mono-font);
+  word-break: break-all;
+}
+
+.job-packages:empty {
+  display: none;
+}

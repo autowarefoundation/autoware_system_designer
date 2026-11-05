@@ -1,0 +1,19 @@
+/* Explore activity: the diagram canvas. */
+
+.main-view.canvas-view {
+  position: relative;
+  overflow: hidden;
+}
+
+.diagram-container {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* The canvas one diagram module owns, replaced whenever the diagram changes. */
+.diagram-canvas {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
