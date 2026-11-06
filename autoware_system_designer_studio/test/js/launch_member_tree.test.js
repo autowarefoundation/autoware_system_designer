@@ -5,20 +5,18 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-const PART = path.join(
+const JS_DIR = path.join(
   __dirname,
   "..",
   "..",
   "autoware_system_designer_studio",
   "web",
   "js",
-  "activities",
-  "launch",
-  "member_tree.js",
 );
 
 global.window = { SD: { activities: {} } };
-require(PART);
+require(path.join(JS_DIR, "widgets", "namespace_tree.js"));
+require(path.join(JS_DIR, "activities", "launch", "member_tree.js"));
 const launch = global.window.SD.activities.launch;
 
 function node(name, namespace, launchState, extra = {}) {
@@ -115,7 +113,11 @@ test("a container named by ROS name resolves when it differs from the path", () 
 });
 
 test("a node at a module's own path gets a leaf of its own under it", () => {
-  const module = { entity_type: "module", name: "detection", path: "/detection" };
+  const module = {
+    entity_type: "module",
+    name: "detection",
+    path: "/detection",
+  };
   const replay = node("detection_replay", "/", "single_node");
   replay.path = "/detection";
   const container = node("container", "/", "node_container");
@@ -131,4 +133,18 @@ test("a node at a module's own path gets a leaf of its own under it", () => {
   assert.equal(by.container.path, "/detection/container");
   assert.equal(by.a.path, "/detection/container/a");
   assert.equal(by.a.container_path, "/detection");
+});
+
+test("every entity carries its selection key; a composable keeps its own", () => {
+  const module = { entity_type: "module", name: "sensing", path: "/sensing" };
+  const container = node("pointcloud_container", "/sensing", "node_container");
+  const member = node("lidar", "/sensing", "composable_node", {
+    container_target: "/sensing/pointcloud_container",
+  });
+  const nested = launch.nestComposables([module, container, member]);
+  const by = Object.fromEntries(nested.map((e) => [e.name, e]));
+  assert.equal(by.sensing.key, "/sensing");
+  assert.equal(by.pointcloud_container.key, "/sensing/pointcloud_container");
+  assert.equal(by.lidar.key, "/sensing/lidar");
+  assert.equal(by.lidar.path, "/sensing/pointcloud_container/lidar");
 });

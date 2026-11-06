@@ -25,6 +25,14 @@
     return list;
   }
 
+  // Key naming an entity across activities: its path, with a node's name
+  // appended when the path ends elsewhere (a node placed at a module's own path).
+  function entityKey(entity) {
+    if (entity.entity_type !== "node") return entity.path;
+    const last = entity.path.split("/").filter(Boolean).pop();
+    return last === entity.name ? entity.path : `${entity.path}/${entity.name}`;
+  }
+
   // { segment, path, entities[], children: Map } rooted at "/".
   function build(entityList) {
     const root = { segment: "/", path: "/", entities: [], children: new Map() };
@@ -144,5 +152,5 @@
     return matchCount;
   }
 
-  SD.NamespaceTree = { loadStructure, entities, build, render };
+  SD.NamespaceTree = { loadStructure, entities, entityKey, build, render };
 })();

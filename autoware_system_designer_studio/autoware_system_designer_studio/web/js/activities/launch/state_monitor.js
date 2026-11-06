@@ -1,7 +1,9 @@
 // Launch: launched members as a namespace tree with run states beside the
 // selected member's log, or the launcher's own output. Member state and log
 // lines arrive on the daemon's event stream, keyed by member path; a
-// composable node reads its container's log.
+// composable node reads its container's log. The selected node or module is
+// the store's `entity`, shared with Explore; a selected module shows the
+// severest state among its members.
 (function () {
   const SD = window.SD;
   const { element, terminal, mainView } = SD.widgets;
@@ -59,7 +61,8 @@
     });
     treePane.append(filter, launcherList, tree, legend);
 
-    const view = mainView({ empty: "Select a node to follow its log." });
+    const EMPTY_LOG = "Select a node to follow its log.";
+    const view = mainView({ empty: EMPTY_LOG });
     view.head.classList.add("member-head");
     const badge = element("span", "member-state idle");
     const badgeMark = stateMark("idle");
@@ -82,7 +85,9 @@
     const launcherLogs = new Map(); // job id -> { log, lastSeq }
     const expanded = new Set();
     let root = null;
-    // The selected member entity (member_path, container_path) or null.
+    // Entity key -> { entity, node }: the tree entry of every node and module.
+    let byKey = new Map();
+    // The selected entity, a node (member_path, container_path) or a module, or null.
     let selected = null;
     let selectedJob = "";
     // The tree renders only while shown; a change made while hidden renders on the next show.
@@ -93,6 +98,10 @@
 
     function memberOf(node) {
       return node.entities.find((e) => e.entity_type === "node");
+    }
+
+    function moduleOf(node) {
+      return node.entities.find((e) => e.entity_type === "module");
     }
 
     function recordOf(entity) {
@@ -150,11 +159,13 @@
         expanded,
         selectedPath: selected?.path,
         decorate,
-        selectable: (node) => !!memberOf(node),
+        selectable: (node) => !!(memberOf(node) || moduleOf(node)),
         onToggle: renderTree,
         onSelect(node) {
           const own = memberOf(node);
+          const module = moduleOf(node);
           if (own) showLog(own);
+          else if (module) showModule(module);
           renderTree();
         },
       });
@@ -192,6 +203,32 @@
       );
       showState();
       renderLaunchers();
+      store.set("entity", entity.key);
+    }
+
+    function showModule(entity) {
+      selected = entity;
+      selectedJob = "";
+      view.body.replaceChildren();
+      view.setEmpty(EMPTY_LOG);
+      view.setTitle(entity.path);
+      showState();
+      renderLaunchers();
+      store.set("entity", entity.key);
+    }
+
+    // Selects the entry keyed `key` and unfolds the tree down to it; an unknown
+    // key leaves the selection as it is.
+    function selectKey(key) {
+      const entry = byKey.get(key);
+      if (!entry) return;
+      const segments = entry.node.path.split("/").filter(Boolean);
+      segments.forEach((_segment, index) => {
+        expanded.add(`/${segments.slice(0, index + 1).join("/")}`);
+      });
+      if (entry.entity.entity_type === "node") showLog(entry.entity);
+      else showModule(entry.entity);
+      renderTree();
     }
 
     function launcherLog(jobId) {
@@ -233,13 +270,22 @@
       renderLaunchers();
     }
 
+    // State of the selection: a member's own, or the severest among a module's members.
+    function selectedState() {
+      if (!selected) return { token: "idle", label: "" };
+      if (selected.entity_type === "node") return memberState(selected);
+      const tokens = tokensWithin(byKey.get(selected.key).node);
+      return {
+        token: worstToken(tokens),
+        label: tokenSummary(tokens) || "idle",
+      };
+    }
+
     // Actions address a process: a composable node is acted on through its container.
     function showState() {
-      const member = selected && members.get(selected.member_path);
+      const member = selected?.member_path && members.get(selected.member_path);
       const session = member && sessions.get(member.unit);
-      const { token, label } = selected
-        ? memberState(selected)
-        : { token: "idle", label: "" };
+      const { token, label } = selectedState();
       badgeText.textContent = label;
       badge.className = `member-state ${token}`;
       badgeMark.className = `state-dot ${token}`;
@@ -256,7 +302,7 @@
     }
 
     function act(action) {
-      const member = selected && members.get(selected.member_path);
+      const member = selected?.member_path && members.get(selected.member_path);
       if (!member) return;
       note.textContent = "";
       daemon
@@ -277,6 +323,14 @@
       root = SD.NamespaceTree.build(
         nestComposables(SD.NamespaceTree.entities(data)),
       );
+      byKey = new Map();
+      const index = (node) => {
+        node.entities.forEach((entity) => {
+          if (entity.key) byKey.set(entity.key, { entity, node });
+        });
+        node.children.forEach(index);
+      };
+      index(root);
       // Top-level entries start folded; everything beneath them starts expanded.
       expanded.clear();
       const expand = (node) =>
@@ -286,19 +340,16 @@
         });
       root.children.forEach((child) => expand(child));
       renderTree();
+      selectKey(store.get("entity"));
     }
 
-    SD.on("launch.member", ({ path }) => {
-      if (
-        selected &&
-        (path === selected.member_path || path === selected.container_path)
-      )
-        showState();
+    SD.on("launch.member", () => {
       renderTree();
+      showState();
     });
     SD.on("launch.sessions", () => {
-      showState();
       renderTree();
+      showState();
       renderLaunchers();
     });
     SD.on("daemon.member.log", ({ path, lines }) => logOf(path).append(lines));
@@ -312,6 +363,9 @@
     const reload = () =>
       loadMode().catch((error) => console.warn("launch monitor:", error));
     store.onChange("mode", reload);
+    store.onChange("entity", (key) => {
+      if (key !== selected?.key) selectKey(key);
+    });
     reload();
     showState();
     renderLaunchers();
@@ -322,6 +376,7 @@
         if (!stale) return;
         stale = false;
         renderTree();
+        showState();
       },
       hide() {
         hidden = true;

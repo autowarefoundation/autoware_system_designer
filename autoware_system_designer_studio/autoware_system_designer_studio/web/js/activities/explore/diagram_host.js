@@ -1,6 +1,8 @@
 // Explore: canvas hosting one diagram module at a time for the selected
 // diagram and mode. The module reports the selected element through
-// `inspector.show`, and a reload clears it through `inspector.reset`.
+// `inspector.show`, and a reload clears it through `inspector.reset`. A
+// selected node or module is also recorded in the store under `entity`, and
+// `focusKey` locates the store's entity on the diagram.
 (function () {
   const SD = window.SD;
   const { element } = SD.widgets;
@@ -15,6 +17,14 @@
         .querySelectorAll(`.${className}`)
         .forEach((node) => node.classList.remove(className));
     });
+  }
+
+  // Nodes and modules are the elements shared with the other activities.
+  function isEntity(data) {
+    return (
+      (data?.entity_type === "node" || data?.entity_type === "module") &&
+      typeof data.path === "string"
+    );
   }
 
   function diagramHost(main, inspector, config, store) {
@@ -59,7 +69,11 @@
           deployment: config.deploymentName,
           dataBase: config.dataBase,
           latencyModes: config.latencyModes,
-          onInfoUpdate: inspector.show,
+          onInfoUpdate(data, type) {
+            inspector.show(data, type);
+            if (isEntity(data))
+              store.set("entity", SD.NamespaceTree.entityKey(data));
+          },
         });
       } catch (error) {
         console.error("Error loading diagram:", error);
@@ -82,11 +96,25 @@
       if (current === module) current.focusEntity(id);
     }
 
+    // Locates the entity with `key` in the mode's structure; false when it has none.
+    async function focusKey(key) {
+      const data = await SD.NamespaceTree.loadStructure(
+        config.dataBase,
+        store.get("mode"),
+      );
+      const entity = SD.NamespaceTree.entities(data).find(
+        (e) => SD.NamespaceTree.entityKey(e) === key,
+      );
+      if (!entity) return false;
+      await focus(String(entity.unique_id));
+      return true;
+    }
+
     function updateTheme() {
       if (typeof module?.updateTheme === "function") module.updateTheme();
     }
 
-    return { load, focus, updateTheme };
+    return { load, focus, focusKey, updateTheme };
   }
 
   explore.diagramHost = diagramHost;

@@ -76,3 +76,16 @@ test("build makes one entry per path segment and attaches entities at their path
   assert.deepEqual(planning.entities, []);
   assert.equal(planning.children.get("planner").entities[0].unique_id, 4);
 });
+
+test("entityKey is the path, plus a node's name when the path ends elsewhere", () => {
+  const module = {
+    entity_type: "module",
+    name: "detection",
+    path: "/detection",
+  };
+  const own = { entity_type: "node", name: "lidar", path: "/sensing/lidar" };
+  const placed = { entity_type: "node", name: "replay", path: "/detection" };
+  assert.equal(NamespaceTree.entityKey(module), "/detection");
+  assert.equal(NamespaceTree.entityKey(own), "/sensing/lidar");
+  assert.equal(NamespaceTree.entityKey(placed), "/detection/replay");
+});
