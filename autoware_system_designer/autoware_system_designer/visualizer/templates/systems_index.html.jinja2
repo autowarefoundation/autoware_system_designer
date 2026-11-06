@@ -14,6 +14,7 @@
                 <div class="toggle-switch" id="dark-mode-switch"></div>
             </div>
         </div>
+        <div class="nav-links" id="daemon-links" hidden><a href="daemon/build.html">Build</a></div>
         <p class="description">Index of available systems and their deployments found in the <code>install/</code> directory.</p>
         <ul class="deployment-list">
             {% for dep in deployments %}
@@ -38,6 +39,12 @@
         document.getElementById('dark-mode-switch').addEventListener('click', function() {
             window.toggleDarkMode();
         });
+        // Daemon pages are linked only when a serve daemon answers for this page.
+        if (location.protocol.startsWith('http')) {
+            fetch('api/health').then(function(response) {
+                if (response.ok) document.getElementById('daemon-links').hidden = false;
+            }).catch(function() {});
+        }
     </script>
 </body>
 </html>

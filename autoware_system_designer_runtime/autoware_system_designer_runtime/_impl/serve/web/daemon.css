@@ -1,0 +1,118 @@
+/* Daemon pages; colours come from the install-root stylesheet, with fallbacks when it is absent. */
+body.simple-page h2 {
+  color: var(--text-primary, #212529);
+  font-size: 1.15em;
+  margin-top: 28px;
+}
+
+.connection-status {
+  font-weight: 500;
+  color: var(--text-muted, #6c757d);
+}
+
+.connection-status.connected {
+  color: var(--seq-queue, #1f8a70);
+}
+
+.connection-status.disconnected {
+  color: var(--error-color, #dc3545);
+}
+
+.daemon-banner {
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--error-color, #dc3545);
+  color: var(--error-color, #dc3545);
+}
+
+.build-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+
+.build-form label[hidden] {
+  display: none;
+}
+
+.build-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-secondary, #495057);
+  font-weight: 500;
+}
+
+.build-form select,
+.build-form button,
+.job-table button {
+  padding: 6px 10px;
+  font-size: 1em;
+  background: var(--bg-secondary, #fff);
+  color: var(--text-primary, #212529);
+  border: 1px solid var(--border-color, #e9ecef);
+  border-radius: 4px;
+  min-width: 120px;
+}
+
+.build-form button,
+.job-table button {
+  cursor: pointer;
+}
+
+.build-form button:disabled,
+.job-table button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.job-table tr.selected td {
+  background: var(--highlight-bg, #cfe2ff);
+}
+
+.job-table tbody tr {
+  cursor: pointer;
+}
+
+.job-table .empty {
+  color: var(--text-muted, #6c757d);
+}
+
+.job-state {
+  font-weight: 600;
+}
+
+.job-state.running {
+  color: var(--highlight, #0d6efd);
+}
+
+.job-state.succeeded {
+  color: var(--seq-queue, #1f8a70);
+}
+
+.job-state.failed,
+.job-state.cancelled {
+  color: var(--error-color, #dc3545);
+}
+
+.job-meta {
+  color: var(--text-secondary, #495057);
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.job-log {
+  background: var(--bg-tertiary, #f8f9fa);
+  color: var(--text-primary, #212529);
+  border: 1px solid var(--border-color, #e9ecef);
+  border-radius: 4px;
+  padding: 10px;
+  max-height: 60vh;
+  overflow: auto;
+  font-family: var(--mono-font, monospace);
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

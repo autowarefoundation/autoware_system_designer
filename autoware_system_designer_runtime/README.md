@@ -32,7 +32,7 @@ source install/setup.bash
 ### 2. Launch a system_structure JSON
 
 ```bash
-ros2 run autoware_system_designer_runtime autoware-system-designer-launch \
+autoware-system-designer-launch \
     /path/to/system_structure/MySystem.json --deploy my_vehicle
 ```
 
@@ -41,8 +41,11 @@ deploy variant named by `--deploy`, read from the `deployment.json` beside
 `system_structure/`; `--arg NAME=VALUE` binds or overrides one argument directly.
 A system that declares no arguments needs neither.
 
-The console script installs under `lib/<package>/`, so `ros2 run` is the way to reach it;
-`install/setup.bash` does not put it on `PATH`.
+Each command of this package is installed twice: as a console script under
+`lib/<package>/`, reached with `ros2 run autoware_system_designer_runtime <command>`, and under
+`install/autoware_system_designer_runtime/bin/`, which `install/setup.bash` puts on `PATH`. The
+`bin/` copy locates its own Python package, so it also runs by absolute path from a shell that has
+not sourced the workspace (the launcher still needs ROS 2 sourced for `rclpy`).
 
 `Ctrl+C` triggers graceful shutdown: the coordinator broadcasts `Stop` to every
 member, each actor `SIGTERM`s its process group, waits 5s, then `SIGKILL`s.
@@ -50,7 +53,7 @@ member, each actor `SIGTERM`s its process group, waits 5s, then `SIGKILL`s.
 ### 3. Useful flags
 
 ```bash
-ros2 run autoware_system_designer_runtime autoware-system-designer-launch SYSTEM.json \
+autoware-system-designer-launch SYSTEM.json \
     --compute-unit main_ecu \           # only launch nodes with compute_unit=main_ecu
     --deploy my_vehicle \               # deploy variant whose arguments bind $(var ...)
     --arg map_path=/data/map \          # bind/override one system argument (repeatable)
@@ -100,6 +103,91 @@ Each member gets its own directory under `--log-dir`:
 
 The default base path is `/tmp/autoware_system_designer_logs/`; a timestamped
 subdirectory is created per run unless `--log-dir` overrides it.
+
+---
+
+## Serve daemon
+
+`autoware-system-designer-serve` serves the exported visualization of an install tree over HTTP,
+together with a request API and an event stream that build, launch and live monitoring extend.
+It imports no ROS module, so its `bin/` copy runs without any setup script sourced.
+
+```bash
+autoware-system-designer-serve \
+    --install-root install \       # default: first COLCON_PREFIX_PATH entry
+    --port 8780 \                  # 0 picks a free port
+    --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
+    --compute-unit main_ecu        # units local to this daemon (repeatable; default: every onboard unit)
+```
+
+Open `http://127.0.0.1:8780/`. The pages are the generated ones under
+`exports/<system>/visualization/web`, served unchanged. `/daemon/build.html` starts, follows and
+cancels builds.
+
+| Route              | Content                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `GET /`            | Redirect to `/systems.html`                                                                                  |
+| `GET /<path>`      | `systems.html` with its assets, and files under any `<pkg>/share/<pkg>/exports/*/visualization/web/`         |
+| `GET /daemon/<f>`  | Daemon pages shipped with this package (`build.html`)                                                        |
+| `GET /api/health`  | Daemon status, including `workspace` and `restart_required`                                                  |
+| `GET /api/systems` | Exported systems: modes, compute units with their status, build scripts per mode, deploy variants, page URLs |
+| `GET /api/jobs`    | Jobs, newest first                                                                                           |
+| `GET /api/events`  | Server-Sent Events with daemon-wide sequence numbers as event ids (topics below)                             |
+| `POST /api/rpc`    | Request envelope `{"id", "method", "params"}` for any method below                                           |
+
+| Method         | Params                                                      | Result                                   |
+| -------------- | ----------------------------------------------------------- | ---------------------------------------- |
+| `health`       | -                                                           | Daemon status                            |
+| `systems.list` | -                                                           | Exported systems                         |
+| `jobs.list`    | -                                                           | `{"jobs": [job]}`                        |
+| `jobs.get`     | `job`, `since` (log seq, default 0), `limit`                | `{"job", "log": {"first_seq", "lines"}}` |
+| `jobs.cancel`  | `job`                                                       | job                                      |
+| `build.start`  | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit` | job                                      |
+
+| Event topic       | Data                                                                      |
+| ----------------- | ------------------------------------------------------------------------- |
+| `hello`           | Sent first on each stream; no replay, so clients resynchronise by request |
+| `heartbeat`       | `{"time"}`                                                                |
+| `job`             | Job record on every state change                                          |
+| `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                     |
+| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                 |
+| `daemon`          | `{"restart_required": true}`                                              |
+
+Responses use one envelope: `{"ok": true, "result": ...}` or
+`{"ok": false, "error": {"code", "message"}}`, with `id` echoed on `/api/rpc`. Error codes are
+stable strings (`bad_request`, `forbidden`, `not_found`, `method_not_allowed`,
+`unsupported_media_type`, `payload_too_large`, `unknown_method`, `invalid_params`, `conflict`,
+`unavailable`, `internal`), each mapped to one HTTP status. Compute unit `status` is open-ended; current values are
+`available`, `remote_unsupported` (an onboard unit served by another daemon), `offboard` and
+`unsupported`.
+
+Access rules: the listener binds `127.0.0.1` only; the `Host` header must name it (`127.0.0.1:<port>`
+or `localhost:<port>`); API requests the browser marks cross-site are refused; `POST /api/rpc` needs
+`Content-Type: application/json` and an `X-System-Designer-Client` header, and a present `Origin`
+must be the daemon's own. Request heads are capped at 16 KiB and bodies at 64 KiB.
+
+### Jobs and builds
+
+A job is one supervised child process in its own process group, stdout and stderr merged into a
+ring of the last 5000 numbered lines. One job per key runs at a time (`conflict` otherwise); the
+last 20 finished jobs stay listed. Cancel sends SIGINT to the group, SIGTERM after 10 s and SIGKILL
+5 s later; daemon shutdown cancels every job. Job `state` is `running`, `succeeded`, `failed` or
+`cancelled`.
+
+`build.start` runs `colcon build` in the workspace against the served install tree
+(`--install-base`, `--merge-install` for a merged tree). All builds share one key, since colcon builds
+of one workspace cannot overlap.
+
+| `target`     | Packages                                                                                                       |
+| ------------ | -------------------------------------------------------------------------------------------------------------- |
+| `deployment` | `--packages-select <pkg>` of the export package (regenerates launchers and visualization)                      |
+| `workspace`  | `--packages-up-to` the packages of `build_scripts/<mode>/build_<compute_unit>.sh` (default mode: the system's) |
+
+The generated script is parsed, not executed; package names are checked. `compute_unit` must be
+available on this daemon. Job `detail` holds `packages` (selection) and `built_packages` (from
+colcon's `Starting >>>` lines). When a build rebuilds `autoware_system_designer_runtime` inside the
+install tree this daemon runs from, the daemon keeps running its loaded code and reports
+`restart_required`.
 
 ---
 
@@ -237,7 +325,7 @@ The two systems share the design pattern but not code. When play_launch's parser
 `--measure` preloads a small C recorder (`autoware_system_designer_tracer`, an `LD_PRELOAD` interposer over the `rcl` C API) into every spawned process and analyzes the recording per node: process time, topic communication time and event-chain end-to-end time, measured separately and never derived from one another. No CARET, no rclcpp fork, no rebuild of Autoware.
 
 ```bash
-ros2 run autoware_system_designer_runtime autoware-system-designer-launch SYSTEM.json \
+autoware-system-designer-launch SYSTEM.json \
     --measure --measure-duration 60      # settle 5 s, record 60 s, shut down, analyze
     [--measure-settle S]                 # seconds after launch_ready left out of the window (default 5)
     [--measure-keep-running]             # analyze with the system still up and keep it running
@@ -251,7 +339,7 @@ The session logs every step under the `measure:` prefix: the window opening (wit
 Without `--measure-duration` the window opens at `launch_ready` and closes at shutdown or on the console verb `measure stop` (`--interactive`: `measure start | stop | status`; `status` prints the heartbeat line on demand). Trace files stay under `<log-dir>/trace/` and can be re-analyzed offline:
 
 ```bash
-ros2 run autoware_system_designer_runtime autoware-system-designer-measure-analyze <log-dir>/trace SYSTEM.json -o FILE
+autoware-system-designer-measure-analyze <log-dir>/trace SYSTEM.json -o FILE
 ```
 
 ### What is measured
