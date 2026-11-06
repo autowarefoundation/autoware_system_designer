@@ -105,6 +105,22 @@ def _fake_launcher(root):
     return bin_dir
 
 
+FAKE_RVIZ = """#!/usr/bin/env python3
+import signal, sys, time
+print("argv: " + " ".join(sys.argv[1:]), flush=True)
+signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
+while True:
+    time.sleep(0.1)
+"""
+
+
+def _fake_rviz(bin_dir):
+    script = bin_dir / launch.RVIZ
+    script.write_text(FAKE_RVIZ)
+    script.chmod(0o755)
+    return script
+
+
 def _launch_env(bin_dir, **extra):
     return {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "ROS_DISTRO": "test", **extra}
 
@@ -204,6 +220,17 @@ def test_find_launcher_prefers_the_path_then_the_install_tree(tmp_path):
     assert launch.find_launcher(install, {"PATH": str(tmp_path / "nowhere")}) == isolated
     bin_dir = _fake_launcher(tmp_path)
     assert launch.find_launcher(install, {"PATH": str(bin_dir)}) == bin_dir / launch.LAUNCHER
+
+
+def test_find_rviz_config_walks_the_ament_prefixes(tmp_path):
+    first, second = tmp_path / "first", tmp_path / "second"
+    config = second / launch.RVIZ_CONFIG_SHARE
+    config.parent.mkdir(parents=True)
+    config.write_text("")
+    env = {"AMENT_PREFIX_PATH": os.pathsep.join([str(first), str(second)])}
+    assert launch.find_rviz_config(env) == config
+    assert launch.find_rviz_config({"AMENT_PREFIX_PATH": str(first)}) is None
+    assert launch.find_rviz_config({}) is None
 
 
 @pytest.mark.parametrize(
@@ -364,6 +391,51 @@ def test_launch_is_unavailable_without_a_ros_environment_or_launcher(tmp_path):
         assert health["result"]["launch"]["launcher"] is None
         status, body = _start(running)
         assert status == 503 and launch.LAUNCHER in body["error"]["message"]
+    finally:
+        running.close()
+
+
+def test_rviz_start_runs_rviz_once_on_the_configuration(tmp_path, run_dir):
+    install = _install_tree(tmp_path, compute_units=UNITS)
+    bin_dir = _fake_launcher(tmp_path)
+    rviz = _fake_rviz(bin_dir)
+    config = tmp_path / "custom.rviz"
+    config.write_text("")
+    running = _Running(install, launch_env=_launch_env(bin_dir, PATH=str(bin_dir)), rviz_config=config, heartbeat_s=60)
+    try:
+        _, health = running.json("GET", "/api/health")
+        assert health["result"]["launch"]["rviz"] == str(rviz)
+        assert health["result"]["launch"]["rviz_config"] == str(config)
+        status, body = running.rpc({"id": 1, "method": "rviz.start", "params": {}})
+        assert status == 200, body
+        job = body["result"]
+        assert job["kind"] == launch.RVIZ_JOB_KIND and job["argv"] == [str(rviz), "-d", str(config)]
+        status, body = running.rpc({"id": 2, "method": "rviz.start", "params": {}})
+        assert status == 409 and body["error"]["code"] == api.CONFLICT
+        running.rpc({"method": "jobs.cancel", "params": {"job": job["id"]}})
+        assert _wait_job(running, job["id"])["job"]["state"] == jobs.STATE_CANCELLED
+        status, body = running.rpc({"id": 3, "method": "rviz.start", "params": {}})
+        assert status == 200, body
+    finally:
+        running.close()
+
+
+def test_rviz_start_without_a_configuration_or_rviz(tmp_path, run_dir):
+    install = _install_tree(tmp_path, compute_units=UNITS)
+    bin_dir = _fake_launcher(tmp_path)
+    running = _Running(
+        install, launch_env=_launch_env(bin_dir, PATH=str(bin_dir), AMENT_PREFIX_PATH=""), heartbeat_s=60
+    )
+    try:
+        _, health = running.json("GET", "/api/health")
+        assert health["result"]["launch"]["rviz"] is None
+        assert health["result"]["launch"]["rviz_config"] is None
+        status, body = running.rpc({"id": 1, "method": "rviz.start", "params": {}})
+        assert status == 503 and launch.RVIZ in body["error"]["message"]
+        rviz = _fake_rviz(bin_dir)
+        status, body = running.rpc({"id": 2, "method": "rviz.start", "params": {}})
+        assert status == 200, body
+        assert body["result"]["argv"] == [str(rviz)]
     finally:
         running.close()
 

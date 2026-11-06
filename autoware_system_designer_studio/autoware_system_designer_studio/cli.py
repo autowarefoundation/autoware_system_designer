@@ -87,6 +87,12 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         "(default: this process's environment; start serve from a sourced shell)",
     )
     serve.add_argument(
+        "--rviz-config",
+        type=Path,
+        help="RViz configuration opened by rviz.start (default: autoware_launch's autoware.rviz "
+        "under the launch environment's ament prefixes, else none)",
+    )
+    serve.add_argument(
         "--heartbeat-interval",
         type=float,
         default=HEARTBEAT_INTERVAL_S,
@@ -107,6 +113,8 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     if args.command == "serve":
         if not 0 <= args.port <= 65535:
             serve.error("--port must be within 0..65535")
+        if args.rviz_config is not None and not args.rviz_config.is_file():
+            serve.error(f"--rviz-config {args.rviz_config} is not a file")
         if args.heartbeat_interval <= 0:
             serve.error("--heartbeat-interval must be positive")
     return args
@@ -146,6 +154,7 @@ def _run_serve(args: argparse.Namespace) -> None:
         record_root=args.record_dir,
         launch_env=launch_env,
         env_script=args.env_script,
+        rviz_config=args.rviz_config,
         heartbeat_s=args.heartbeat_interval,
     )
     try:

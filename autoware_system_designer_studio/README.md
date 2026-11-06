@@ -89,7 +89,8 @@ autoware-system-designer-studio serve \
     --port 8780 \                  # 0 picks a free port
     --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
     --compute-unit main_ecu \      # units local to this daemon (repeatable; default: every onboard unit)
-    --env-script install/setup.bash  # sourced once into the environment launch jobs run in
+    --env-script install/setup.bash \  # sourced once into the environment launch jobs run in
+    --rviz-config autoware.rviz    # opened by rviz.start (default: autoware_launch's autoware.rviz)
 ```
 
 Open `http://127.0.0.1:8780/`. Pages follow the [site layout](#site-layout) and reflect the exports
@@ -121,6 +122,7 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`                                                          | `{"members": [path]}` acted on              |
 | `launch.shutdown`                                 | `compute_unit`                                                                     | `{"shutting_down": true}`                   |
 | `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                     | `{"state", "message"}` of the window        |
+| `rviz.start`                                      | -                                                                                  | job                                         |
 
 | Event topic       | Data                                                                          |
 | ----------------- | ----------------------------------------------------------------------------- |
@@ -193,6 +195,12 @@ The workbench's state monitor lists composable nodes under their container, whos
 their output and whose exit they follow; a module or container shows the severest state among its
 members. The legend at the foot of the tree gives each mark's shape and colour.
 
+`rviz.start` runs `rviz2` from the launch environment as a job of its own, one per daemon
+(`conflict` while it runs), on the `--rviz-config` file, else on `autoware_launch`'s `autoware.rviz`
+under the environment's ament prefixes, else on no configuration. The workbench offers it as
+"Launch RViz" under the Launch activity's commands.
+
 Launch jobs need the ROS environment the daemon itself does without: start `serve` from a sourced
 shell, or pass `--env-script` with a setup script, sourced once at start into the job environment.
-Without `ROS_DISTRO` in that environment `launch.start` answers `unavailable`.
+Without `ROS_DISTRO` in that environment `launch.start` and `rviz.start` answer `unavailable`. RViz
+also needs the display of that environment (`DISPLAY` or `WAYLAND_DISPLAY`).

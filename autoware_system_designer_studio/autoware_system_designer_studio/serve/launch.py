@@ -22,6 +22,8 @@ compute unit. The daemon connects to the socket once the runtime serves it, keep
 member records, forwards its ``member`` and ``member.log`` events to the event stream and relays the
 ``launch.*`` and ``measure.*`` methods as requests over the socket. A ``launch`` event carries the
 session view (without members) whenever its job, connection or runtime state changes.
+
+RViz is a job of its own (``rviz2``, one per daemon) in the same launch environment.
 """
 
 from __future__ import annotations
@@ -52,6 +54,10 @@ TOPIC_LAUNCH = "launch"
 LAUNCH_JOB_KIND = "launch"
 LAUNCHER = "autoware-system-designer-launch"
 RUNTIME_PACKAGE = "autoware_system_designer_runtime"
+RVIZ_JOB_KIND = "rviz"
+RVIZ = "rviz2"
+# Default RViz configuration, looked up under the launch environment's ament prefixes.
+RVIZ_CONFIG_SHARE = Path("share/autoware_launch/rviz/autoware.rviz")
 POLICIES = ("guard", "open")
 MEMBER_ACTIONS = ("stop", "restart", "kill")
 MEASURE_VERBS = ("start", "stop", "status")
@@ -99,6 +105,15 @@ def find_launcher(install_root: Path, env: Mapping[str, str]) -> Optional[Path]:
         return Path(found)
     for candidate in (install_root / RUNTIME_PACKAGE / "bin" / LAUNCHER, install_root / "bin" / LAUNCHER):
         if os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def find_rviz_config(env: Mapping[str, str]) -> Optional[Path]:
+    """The Autoware RViz configuration of the first ament prefix that ships one."""
+    for prefix in filter(None, env.get("AMENT_PREFIX_PATH", "").split(os.pathsep)):
+        candidate = Path(prefix) / RVIZ_CONFIG_SHARE
+        if candidate.is_file():
             return candidate
     return None
 
@@ -252,6 +267,7 @@ class LaunchManager:
         env: Optional[Mapping[str, str]] = None,
         env_script: Optional[Path] = None,
         launcher: Optional[Path] = None,
+        rviz_config: Optional[Path] = None,
     ) -> None:
         self._hub = hub
         self._jobs = runner
@@ -259,14 +275,18 @@ class LaunchManager:
         self.env = dict(os.environ if env is None else env)
         self.env_script = env_script
         self.launcher = launcher or find_launcher(install_root, self.env)
+        self.rviz_config = rviz_config or find_rviz_config(self.env)
         self.sessions: dict[str, LaunchSession] = {}
         self._tasks: set[asyncio.Task] = set()
 
     def info(self) -> dict[str, Any]:
+        rviz = shutil.which(RVIZ, path=self.env.get("PATH"))
         return {
             "launcher": None if self.launcher is None else str(self.launcher),
             "env_script": None if self.env_script is None else str(self.env_script),
             "ros_distro": self.env.get("ROS_DISTRO"),
+            "rviz": rviz,
+            "rviz_config": None if self.rviz_config is None else str(self.rviz_config),
         }
 
     def running_units(self, system_id: str) -> set[str]:
@@ -302,12 +322,7 @@ class LaunchManager:
     ) -> LaunchSession:
         if self.launcher is None:
             raise api.ApiError(api.UNAVAILABLE, f"{LAUNCHER} not found on the launch PATH or under the install tree")
-        if not self.env.get("ROS_DISTRO"):
-            raise api.ApiError(
-                api.UNAVAILABLE,
-                "the launch environment has no ROS setup sourced (start serve from a sourced shell "
-                "or pass --env-script)",
-            )
+        self._require_ros()
         running = self.sessions.get(compute_unit)
         if running is not None and running.active:
             raise api.ApiError(
@@ -362,6 +377,26 @@ class LaunchManager:
         task.add_done_callback(self._tasks.discard)
         return session
 
+    async def start_rviz(self) -> jobs.Job:
+        """RViz on the daemon's configuration as a job; one RViz per daemon (``conflict`` while it runs)."""
+        self._require_ros()
+        rviz = shutil.which(RVIZ, path=self.env.get("PATH"))
+        if rviz is None:
+            raise api.ApiError(api.UNAVAILABLE, f"{RVIZ} not found on the launch PATH")
+        argv = [rviz]
+        if self.rviz_config is not None:
+            argv += ["-d", str(self.rviz_config)]
+        spec = jobs.JobSpec(
+            key=RVIZ_JOB_KIND,
+            kind=RVIZ_JOB_KIND,
+            title="rviz",
+            argv=argv,
+            cwd=self._cwd,
+            env=self.env,
+            params={"config": None if self.rviz_config is None else str(self.rviz_config)},
+        )
+        return await self._jobs.start(spec)
+
     async def call(self, compute_unit: str, method: str, params: dict[str, Any]) -> Any:
         session = self.active_session(compute_unit)
         if session.client is None:
@@ -390,6 +425,14 @@ class LaunchManager:
             await asyncio.wait(set(self._tasks), timeout=1.0)
 
     # -- internals ---------------------------------------------------------
+
+    def _require_ros(self) -> None:
+        if not self.env.get("ROS_DISTRO"):
+            raise api.ApiError(
+                api.UNAVAILABLE,
+                "the launch environment has no ROS setup sourced (start serve from a sourced shell "
+                "or pass --env-script)",
+            )
 
     async def _attach(self, session: LaunchSession) -> None:
         """Connects once the runtime serves its socket; a connection lost while the job lives is remade."""

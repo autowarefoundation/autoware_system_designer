@@ -165,6 +165,7 @@ class ServeDaemon:
         record_root: Optional[Path] = None,
         launch_env: Optional[Mapping[str, str]] = None,
         env_script: Optional[Path] = None,
+        rviz_config: Optional[Path] = None,
         heartbeat_s: float = HEARTBEAT_INTERVAL_S,
         max_connections: int = MAX_CONNECTIONS,
         max_event_subscribers: int = MAX_EVENT_SUBSCRIBERS,
@@ -192,6 +193,7 @@ class ServeDaemon:
         self.methods.register("launch.shutdown", self._launch_shutdown)
         for verb in launch.MEASURE_VERBS:
             self.methods.register(f"measure.{verb}", self._measure(verb))
+        self.methods.register("rviz.start", self._rviz_start)
         self.jobs = jobs.JobRunner(self.hub)
         self.launch = launch.LaunchManager(
             self.hub,
@@ -200,6 +202,7 @@ class ServeDaemon:
             cwd=workspace or install_root.parent,
             env=launch_env,
             env_script=env_script,
+            rviz_config=rviz_config,
         )
         self._server: Optional[asyncio.AbstractServer] = None
         self._heartbeat: Optional[asyncio.Task] = None
@@ -396,6 +399,9 @@ class ServeDaemon:
             return await self.launch.call(compute_unit, f"measure.{verb}", {})
 
         return handler
+
+    async def _rviz_start(self, params: dict[str, Any]) -> dict[str, Any]:
+        return (await self.launch.start_rviz()).to_view()
 
     # -- connection handling -----------------------------------------------
 

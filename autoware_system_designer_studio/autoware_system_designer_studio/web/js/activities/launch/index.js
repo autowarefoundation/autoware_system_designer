@@ -1,6 +1,6 @@
 // Launch activity: launch options and per-unit launch controls beside the
 // state monitor of the mode; the launch commands of the mode and deploy open
-// in a popup from the side panel.
+// in a popup from the side panel, which also starts RViz on the daemon.
 (function () {
   const SD = window.SD;
   const { element, field, section, boundSelect, segmented, mainView, popup } =
@@ -21,6 +21,9 @@
   };
   const COMMANDS_ICON =
     "M2 4a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4zm2 1v10h12V5H4zm2.3 2.3L9 10l-2.7 2.7-1-1L7 10 5.3 8.3l1-1zM10 12h4v1.5h-4V12z";
+  const RVIZ_ICON =
+    "M10 4C5.5 4 2 10 2 10s3.5 6 8 6 8-6 8-6-3.5-6-8-6zm0 9.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zM10 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4z";
+  const RVIZ_KIND = "rviz";
   // Measurement window states in which the next verb is stop.
   const MEASURE_OPEN = ["running"];
 
@@ -124,7 +127,26 @@
         () => commands.open(),
       );
       commandsButton.prepend(SD.workbench.svgIcon(COMMANDS_ICON));
-      side.append(options, units, section("Commands", commandsButton));
+      const rvizButton = button("Launch RViz", "panel-icon-button", () => {
+        rvizError.hidden = true;
+        rvizButton.disabled = true;
+        daemon
+          .rpc("rviz.start")
+          .then((job) => daemon.upsertJob(job))
+          .catch((error) => {
+            rvizError.textContent = error.message;
+            rvizError.hidden = false;
+          })
+          .then(renderRviz);
+      });
+      rvizButton.prepend(SD.workbench.svgIcon(RVIZ_ICON));
+      const rvizError = element("div", "launch-error");
+      rvizError.hidden = true;
+      side.append(
+        options,
+        units,
+        section("Commands", commandsButton, rvizButton, rvizError),
+      );
 
       // -- main: the state monitor
       const view = mainView({ title: "State monitor" });
@@ -236,6 +258,26 @@
         });
       }
 
+      // RViz is one job per daemon; the button waits while it runs.
+      function renderRviz() {
+        const offered = daemon.offers("rviz.start");
+        rvizButton.hidden = !offered;
+        if (!offered) {
+          rvizError.hidden = true;
+          return;
+        }
+        const running = daemon
+          .jobs()
+          .some((job) => job.kind === RVIZ_KIND && job.state === "running");
+        rvizButton.disabled = running;
+        const rvizConfig = daemon.health?.launch?.rviz_config;
+        rvizButton.title = running
+          ? "RViz is running"
+          : rvizConfig
+            ? `rviz2 -d ${rvizConfig}`
+            : "rviz2";
+      }
+
       function render() {
         const rows = launchRows(config, store);
         const mode = store.get("mode");
@@ -251,6 +293,7 @@
           );
         table.render(rows, method, unitStatus);
         commandsButton.title = `Launch commands · ${mode}${deploy ? ` · ${deploy}` : ""}`;
+        renderRviz();
       }
 
       async function loadUnitStatus() {
@@ -286,6 +329,7 @@
       SD.on("daemon.health", loadUnitStatus);
       SD.on("daemon.systems.changed", loadUnitStatus);
       SD.on("launch.sessions", onSessions);
+      SD.on("daemon.jobs", renderRviz);
       if (daemon.health) loadUnitStatus();
       render();
       return {
