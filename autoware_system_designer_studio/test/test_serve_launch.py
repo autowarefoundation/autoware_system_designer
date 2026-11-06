@@ -16,6 +16,7 @@
 
 import os
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -29,7 +30,10 @@ from .test_serve_jobs import _wait_job
 
 # A runtime stand-in: serves the control protocol on the --control socket. Behaviour switches come
 # in as system arguments (``--arg behaviour=...``): ``nosocket`` never serves the socket.
-FAKE_RUNTIME = """#!/usr/bin/env python3
+# Fake tools run on this interpreter: the launch PATH under test holds only the fake bin.
+SHEBANG = f"#!{sys.executable}\n"
+
+FAKE_RUNTIME = """\
 import asyncio, json, os, signal, sys
 
 args = sys.argv[1:]
@@ -100,12 +104,12 @@ def _fake_launcher(root):
     bin_dir = root / "bin"
     bin_dir.mkdir(exist_ok=True)
     script = bin_dir / launch.LAUNCHER
-    script.write_text(FAKE_RUNTIME)
+    script.write_text(SHEBANG + FAKE_RUNTIME)
     script.chmod(0o755)
     return bin_dir
 
 
-FAKE_RVIZ = """#!/usr/bin/env python3
+FAKE_RVIZ = """\
 import signal, sys, time
 print("argv: " + " ".join(sys.argv[1:]), flush=True)
 signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
@@ -116,7 +120,7 @@ while True:
 
 def _fake_rviz(bin_dir):
     script = bin_dir / launch.RVIZ
-    script.write_text(FAKE_RVIZ)
+    script.write_text(SHEBANG + FAKE_RVIZ)
     script.chmod(0o755)
     return script
 

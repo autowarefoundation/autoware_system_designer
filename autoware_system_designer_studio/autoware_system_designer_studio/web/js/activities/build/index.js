@@ -57,14 +57,20 @@
       // Units of the selected mode this daemon can build: local and with a build script.
       function buildableUnits() {
         if (!systemView) return [];
-        const scripted = (systemView.build_scripts || {})[store.get("mode")] || [];
+        const scripted =
+          (systemView.build_scripts || {})[store.get("mode")] || [];
         return systemView.compute_units
-          .filter((unit) => unit.status === "available" && scripted.includes(unit.name))
+          .filter(
+            (unit) =>
+              unit.status === "available" && scripted.includes(unit.name),
+          )
           .map((unit) => unit.name);
       }
 
       function buildRunning() {
-        return daemon.jobs().some((job) => job.kind === BUILD_KIND && job.state === "running");
+        return daemon
+          .jobs()
+          .some((job) => job.kind === BUILD_KIND && job.state === "running");
       }
 
       function refreshForm() {
@@ -72,17 +78,23 @@
         const unit = store.get("unit");
         unitField.hidden = !workspaceTarget;
         let blocker = "";
-        if (systemView === undefined) blocker = "Loading the daemon's view of this system…";
-        else if (!systemView) blocker = "This system is not in the daemon's install tree.";
+        if (systemView === undefined)
+          blocker = "Loading the daemon's view of this system…";
+        else if (!systemView)
+          blocker = "This system is not in the daemon's install tree.";
         else if (!daemon.health?.workspace)
-          blocker = "The daemon has no build workspace (start it with --workspace).";
+          blocker =
+            "The daemon has no build workspace (start it with --workspace).";
         else if (workspaceTarget && !unit) blocker = "Select a compute unit.";
         else if (workspaceTarget && !buildableUnits().includes(unit))
           blocker = `No build script for ${unit} in mode ${store.get("mode")} on this daemon.`;
-        else if (buildRunning()) blocker = "A build is running; one runs at a time.";
+        else if (buildRunning())
+          blocker = "A build is running; one runs at a time.";
         hint.textContent =
           blocker ||
-          (workspaceTarget ? `colcon build up to ${unit}` : `colcon build ${config.packageName}`);
+          (workspaceTarget
+            ? `colcon build up to ${unit}`
+            : `colcon build ${config.packageName}`);
         hint.classList.toggle("blocked", !!blocker);
         start.disabled = !!blocker || !daemon.connected;
         banner.textContent = daemon.health?.restart_required
