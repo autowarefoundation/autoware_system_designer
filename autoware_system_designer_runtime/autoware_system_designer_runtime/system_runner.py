@@ -32,7 +32,9 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from ._impl.core.commands import MemberStates, RuntimeCommands
 from ._impl.core.config import ActorConfig
+from ._impl.core.control_channel import ControlChannel
 from ._impl.core.coordinator import ensure_output_dir
 from ._impl.core.stdin_console import run_console
 from ._impl.measure.clock import CLOCK_AUTO, CLOCK_CHOICES
@@ -40,6 +42,7 @@ from ._impl.measure.node_graph import NodeGraph
 from ._impl.measure.session import MeasureOptions, MeasureSession, default_latency_out
 from ._impl.ros2.builder import populate_builder
 from ._impl.ros2.common.substitutions import bind_variables, resolve_argument_values, unresolved_var_names
+from ._impl.ros2.operation_mode import POLICIES, OperationModeGuard
 from .export_tree import manifest_path, read_manifest, resolve_structure_paths
 
 logger = logging.getLogger("autoware_system_designer")
@@ -129,6 +132,8 @@ def launch_from_json(
     graceful_shutdown_timeout: float = 5.0,
     interactive: bool = False,
     measure: Optional[MeasureOptions] = None,
+    control: Optional[Path] = None,
+    control_policy: str = "guard",
 ) -> int:
     with open(json_path) as f:
         data = json.load(f)
@@ -166,12 +171,23 @@ def launch_from_json(
                 mode=graph.mode or Path(json_path).stem,
             )
             session.install(builder)
+        states = MemberStates()
+        states.install(builder)
         coord = builder.build()
         console_task = None
+        channel: Optional[ControlChannel] = None
         try:
             await worker.start()
+            guard = None
+            if (interactive or control is not None) and control_policy == "guard":
+                guard = OperationModeGuard(worker)
+                await guard.install()
+            commands = RuntimeCommands(coord, states, measure=session, guard=guard)
+            if control is not None:
+                channel = ControlChannel(commands, states, socket_path=control, log_dir=out_dir, policy=control_policy)
+                await channel.start()
             if interactive:
-                console_task = asyncio.ensure_future(run_console(coord, measure=session))
+                console_task = asyncio.ensure_future(run_console(commands))
             return await coord.run()
         finally:
             if console_task is not None and not console_task.done():
@@ -180,6 +196,8 @@ def launch_from_json(
                     await asyncio.wait_for(console_task, timeout=0.5)
                 except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
                     pass
+            if channel is not None:
+                await channel.close()
             await worker.stop()
 
     try:
@@ -250,6 +268,21 @@ def main() -> None:
         "--interactive",
         action="store_true",
         help="Read commands from stdin while running: status, stop <name>, " "restart <name>, kill <name>, quit.",
+    )
+    parser.add_argument(
+        "--control",
+        type=Path,
+        default=None,
+        metavar="SOCKET",
+        help="Serve the control channel on this Unix socket: member states and logs out, "
+        "the console command set in, as JSON lines.",
+    )
+    parser.add_argument(
+        "--control-policy",
+        default="guard",
+        choices=POLICIES,
+        help="guard refuses stop, restart, kill and shutdown while the operation mode is autonomous "
+        "(default); open does not interlock.",
     )
     parser.add_argument(
         "--log-level",
@@ -340,5 +373,7 @@ def main() -> None:
             graceful_shutdown_timeout=args.graceful_shutdown_timeout,
             interactive=args.interactive,
             measure=measure,
+            control=args.control,
+            control_policy=args.control_policy,
         )
     )

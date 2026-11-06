@@ -42,12 +42,10 @@ import shlex
 import signal
 import sys
 import threading
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
+from .commands import CommandError, RuntimeCommands
 from .coordinator import Coordinator
-
-if TYPE_CHECKING:
-    from ..measure.session import MeasureSession
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +71,9 @@ class _StickyHandler(logging.Handler):
             self.handleError(record)
 
 
-async def run_console(coord: Coordinator, measure: "Optional[MeasureSession]" = None) -> None:
+async def run_console(commands: RuntimeCommands) -> None:
     """Loop reading commands from stdin until shutdown or ``quit``."""
+    coord = commands.coord
     if not sys.stdin.isatty():
         logger.warning("--interactive: stdin is not a TTY — interactive console disabled")
         return
@@ -115,7 +114,7 @@ async def run_console(coord: Coordinator, measure: "Optional[MeasureSession]" = 
                 return
             if line is None:  # shutdown fired while waiting for input
                 return
-            await _dispatch(coord, line.strip(), measure)
+            await _dispatch(commands, line.strip())
     finally:
         logging.root.removeHandler(sticky)
         for h in replaced:
@@ -175,7 +174,7 @@ def _fut_resolve(
         fut.set_result(result)
 
 
-async def _dispatch(coord: Coordinator, line: str, measure: "Optional[MeasureSession]" = None) -> None:
+async def _dispatch(commands: RuntimeCommands, line: str) -> None:
     try:
         parts = shlex.split(line)
     except ValueError as e:
@@ -200,53 +199,21 @@ async def _dispatch(coord: Coordinator, line: str, measure: "Optional[MeasureSes
         )
         return
 
-    if op == "status":
-        for name in coord.names():
-            print(f"  {name}")
-        return
-
-    if op == "quit":
-        coord.request_shutdown()
-        return
-
-    if op == "measure":
-        if measure is None:
-            print("[console] measurement is not armed; launch with --measure")
-            return
-        verb = (arg or "status").lower()
-        if verb == "start":
-            print(f"[console] {await measure.start()}")
-        elif verb == "stop":
-            print(f"[console] {await measure.close('console stop')}")
-            if measure.state == "closed":
-                print(f"[console] {await measure.analyze()}")
-        elif verb == "status":
-            print(f"[console] {measure.status()}")
+    try:
+        if op == "status":
+            for member in commands.status()["members"]:
+                print(f"  {member['path']}  {member['state']}")
+        elif op == "quit":
+            commands.shutdown()
+        elif op == "measure":
+            print(f"[console] {(await commands.measure((arg or 'status').lower()))['message']}")
+        elif op in ("stop", "restart", "kill"):
+            if not arg:
+                print(f"[console] {op} needs a name or prefix")
+                return
+            for name in await commands.member_action(op, arg):
+                print(f"[console] {op} -> {name}")
         else:
-            print(f"[console] measure needs start, stop or status, not {verb!r}")
-        return
-
-    if op in ("stop", "restart", "kill"):
-        if not arg:
-            print(f"[console] {op} needs a name or prefix")
-            return
-        targets = _match(coord.names(), arg)
-        if not targets:
-            print(f"[console] no member matches {arg!r}")
-            return
-        for name in targets:
-            handle = coord.handle(name)
-            if op == "stop":
-                await handle.stop()
-            elif op == "restart":
-                await handle.restart()
-            else:
-                await handle.kill(signal.SIGKILL)
-            print(f"[console] {op} -> {name}")
-        return
-
-    print(f"[console] unknown command {op!r}")
-
-
-def _match(names: list[str], pattern: str) -> list[str]:
-    return [n for n in names if pattern in n]
+            print(f"[console] unknown command {op!r}")
+    except CommandError as e:
+        print(f"[console] {e.message}")

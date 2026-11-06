@@ -63,6 +63,8 @@ autoware-system-designer-launch SYSTEM.json \
     --max-respawn-attempts 5 \
     --graceful-shutdown-timeout 10 \    # seconds SIGTERM→SIGKILL grace
     --interactive \                     # enable stdin REPL (see below)
+    --control /run/user/1000/asd.sock \ # control channel on a Unix socket (see below)
+    --control-policy guard \            # guard (default) | open: interlock on the operation mode
     --log-level DEBUG
 ```
 
@@ -85,6 +87,44 @@ autoware runtime [? for help] > quit
 Commands: `status`, `stop <name>`, `restart <name>`, `kill <name>`, `quit`, `help` / `?`.
 
 `<name>` matches as a **substring of the member name** so namespace prefixes are natural targets (`stop /perception` stops everything under that subtree).
+
+### 5. Control channel (`--control SOCKET`)
+
+`--control` serves the same command set on a Unix socket (mode `0600`, removed on exit), as JSON
+lines, for a supervising process such as the studio daemon. The runtime sends events; a client sends
+requests and gets one response each:
+
+```text
+→ {"event":"hello","pid":4242,"methods":[...],"policy":"guard","measure_armed":false,
+   "members":[{"path":"/sensing/lidar/driver","state":"pending","detail":{},"time":0}],
+   "launch_ready":false,"shutting_down":false}
+→ {"event":"member","path":"/sensing/lidar/driver","state":"running","detail":{"pid":4310},"time":1793930000.1}
+→ {"event":"member.log","path":"/sensing/lidar/driver","stream":"out","lines":["[INFO] ready"]}
+← {"id":1,"method":"stop","params":{"pattern":"/perception"}}
+→ {"id":1,"ok":true,"result":{"members":["/perception/detector"]}}
+← {"id":2,"method":"shutdown"}
+→ {"id":2,"ok":false,"error":{"code":"refused","message":"shutdown refused: operation mode is autonomous"}}
+```
+
+| Method                                            | Params    | Result                                                   |
+| ------------------------------------------------- | --------- | -------------------------------------------------------- |
+| `status`                                          | -         | `{"members": [record], "launch_ready", "shutting_down"}` |
+| `stop`, `restart`, `kill`                         | `pattern` | `{"members": [matched names]}`                           |
+| `measure.start`, `measure.stop`, `measure.status` | -         | `{"state", "message"}` (needs `--measure`)               |
+| `shutdown`                                        | -         | `{"shutting_down": true}`                                |
+
+A member record is `{"path", "state", "detail", "time"}`; `path` is the member name (the node's
+structural path), `state` one of `pending`, `running`, `stopped`, `respawning`, `failed`, `done`,
+`loading`, `loaded`, and `detail` carries the state's data (`pid`, `exit_code`, `attempt`, `error`,
+`unique_id`). Lines of a member's `out` and `err` files are forwarded while a client is connected.
+Error codes are stable strings: `bad_request`, `invalid_params`, `unknown_method`, `not_found`,
+`unavailable`, `refused`, `payload_too_large`, `internal`.
+
+**Safe-state interlock.** With `--control-policy guard` (the default, also for `--interactive`), the
+runtime subscribes to `/api/operation_mode/state` and refuses `stop`, `restart`, `kill` and
+`shutdown` while the operation mode is autonomous or in transition. A system that never reports an
+operation mode is not interlocked, and neither is a signal sent to the runtime process itself.
+`--control-policy open` disables the interlock.
 
 ---
 
@@ -144,6 +184,9 @@ subdirectory is created per run unless `--log-dir` overrides it.
 | `_impl/core/regular_actor.py`         | One asyncio task per regular node / container / launch-file include                                                                   |
 | `_impl/core/coordinator.py`           | `CoordinatorBuilder`, `Coordinator`, `MemberHandle`                                                                                   |
 | `_impl/core/stdin_console.py`         | Optional stdin REPL                                                                                                                   |
+| `_impl/core/commands.py`              | Command surface shared by the REPL and the control channel; member run states from the state hook                                     |
+| `_impl/core/control_channel.py`       | Unix socket serving member states, logs and the command set as JSON lines                                                             |
+| `_impl/ros2/operation_mode.py`        | Interlock on the ADAPI operation mode                                                                                                 |
 | `_impl/ros2/builder.py`               | system_structure JSON → populated `CoordinatorBuilder` (ROS 2)                                                                        |
 | `_impl/ros2/launchers/single_node.py` | Cmdline builder for `single_node` launch type (`node_cmdline`)                                                                        |
 | `_impl/ros2/launchers/container.py`   | Cmdline builder for `node_container` (`container_cmdline`) + `RosWorker`                                                              |
