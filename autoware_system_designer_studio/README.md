@@ -120,6 +120,8 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn` | session                                     |
 | `launch.status`                                   | `compute_unit` (optional)                                                          | `{"sessions": [session]}`, members included |
 | `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`                                                          | `{"members": [path]}` acted on              |
+| `launch.follow`                                   | `compute_unit`, `path`                                                             | `{"path", "out": [lines], "err": [lines]}`  |
+| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow)                                    | `{"released": [path]}`                      |
 | `launch.shutdown`                                 | `compute_unit`                                                                     | `{"shutting_down": true}`                   |
 | `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                     | `{"state", "message"}` of the window        |
 | `rviz.start`                                      | -                                                                                  | job                                         |
@@ -134,7 +136,7 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `daemon`          | `{"restart_required": true}`                                                  |
 | `launch`          | Session view (without members) on every change of a launch                    |
 | `member`          | `{"compute_unit", "system", "path", "state", "detail", "time"}` of one member |
-| `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new stdout/stderr lines        |
+| `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new lines of a followed member |
 
 Responses use one envelope: `{"ok": true, "result": ...}` or
 `{"ok": false, "error": {"code", "message"}}`, with `id` echoed on `/api/rpc`. Error codes are
@@ -182,6 +184,13 @@ under `$XDG_RUNTIME_DIR`. The daemon connects to the socket once the runtime ser
 runtime's `member` and `member.log` events and relays `launch.stop|restart|kill` (a member `pattern`:
 the exact path, else every path containing it), `launch.shutdown` and `measure.*` as requests. A
 shutdown asked before the channel is up cancels the job. The runtime's own output is the job's log.
+
+Member output is tailed on demand: `launch.follow` asks the runtime to tail one member's `out` and
+`err` files and answers with their current tails, after which the member's new lines arrive as
+`member.log` events until `launch.unfollow`. The daemon is one runtime client, so follows are shared
+by every event stream; they are released once the last stream closes, and a runtime's follows end
+with its channel. The Launch monitor follows the selected node (a composable node through its
+container) while it is shown.
 
 A session is `starting` until the channel connects, then `running`, `stopping` once the runtime
 closed the channel for a requested shutdown, and `exited`; its view carries

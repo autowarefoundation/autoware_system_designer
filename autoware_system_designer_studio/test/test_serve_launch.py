@@ -62,7 +62,7 @@ async def main():
               "measure_armed": "--measure" in args, "members": members, "launch_ready": True,
               "shutting_down": False})
         send({"event": "member", "path": "/demo/talker", "state": "running", "detail": {"pid": 1}, "time": 1.0})
-        send({"event": "member.log", "path": "/demo/talker", "stream": "out", "lines": ["hello 1"]})
+        follows = set()
         while True:
             line = await reader.readline()
             if not line:
@@ -79,6 +79,17 @@ async def main():
                     continue
                 send({"event": "member", "path": pattern, "state": "stopped", "detail": {"exit_code": 0}, "time": 2.0})
                 result = {"members": [pattern]}
+            elif method == "log.follow":
+                if params.get("path") not in [m["path"] for m in members]:
+                    send({"id": req["id"], "ok": False, "error": {"code": "not_found", "message": "no member"}})
+                    continue
+                follows.add(params["path"])
+                result = {"path": params["path"], "out": ["hello 1"], "err": []}
+                send({"event": "member.log", "path": params["path"], "stream": "out", "lines": ["hello 2"]})
+            elif method == "log.unfollow":
+                released = sorted(follows) if "path" not in params else [params["path"]]
+                follows.difference_update(released)
+                result = {"released": released}
             elif method == "measure.status":
                 result = {"state": "idle", "message": "measure idle"}
             elif method == "shutdown":
@@ -294,7 +305,7 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     assert job["result"]["job"]["params"]["measure"] is True
 
     deadline = time.time() + 5
-    while time.time() < deadline and not launching.events.of(launch.TOPIC_MEMBER_LOG):
+    while time.time() < deadline and not launching.events.of(launch.TOPIC_MEMBER):
         time.sleep(0.02)
     member_events = launching.events.of(launch.TOPIC_MEMBER)
     assert {
@@ -305,9 +316,32 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
         "detail": {"pid": 1},
         "time": 1.0,
     } in member_events
+    # Member output flows only once followed; the follow answers with the tail.
+    assert launching.events.of(launch.TOPIC_MEMBER_LOG) == []
+    status, body = launching.rpc(
+        {"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/demo/talker"}}
+    )
+    assert status == 200 and body["result"] == {"path": "/demo/talker", "out": ["hello 1"], "err": []}
+    deadline = time.time() + 5
+    while time.time() < deadline and not launching.events.of(launch.TOPIC_MEMBER_LOG):
+        time.sleep(0.02)
     assert launching.events.of(launch.TOPIC_MEMBER_LOG) == [
-        {"compute_unit": "main_ecu", "path": "/demo/talker", "stream": "out", "lines": ["hello 1"]}
+        {"compute_unit": "main_ecu", "path": "/demo/talker", "stream": "out", "lines": ["hello 2"]}
     ]
+    assert launching.daemon.launch.sessions["main_ecu"].follows == {"/demo/talker"}
+    status, body = launching.rpc({"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/nope"}})
+    assert status == 404 and body["error"]["code"] == api.NOT_FOUND
+    status, body = launching.rpc({"method": "launch.unfollow", "params": {"compute_unit": "main_ecu"}})
+    assert status == 200 and body["result"] == {"released": ["/demo/talker"]}
+    assert launching.daemon.launch.sessions["main_ecu"].follows == set()
+    # Follows end with the last event stream.
+    launching.rpc({"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/demo/talker"}})
+    assert launching.daemon.launch.sessions["main_ecu"].follows == {"/demo/talker"}
+    launching.loop.call_soon_threadsafe(launching.daemon.launch.release_follows)
+    deadline = time.time() + 5
+    while time.time() < deadline and launching.daemon.launch.sessions["main_ecu"].follows:
+        time.sleep(0.02)
+    assert launching.daemon.launch.sessions["main_ecu"].follows == set()
     launches = launching.events.of(launch.TOPIC_LAUNCH)
     assert [e["state"] for e in launches][:2] == [launch.SESSION_STARTING, launch.SESSION_RUNNING]
     assert "members" not in launches[0]

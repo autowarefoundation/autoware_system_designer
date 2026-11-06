@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from autoware_system_designer_runtime._impl.core import control_channel as cc
 from autoware_system_designer_runtime._impl.core import events as ev
 from autoware_system_designer_runtime._impl.core.commands import CommandError, MemberStates, RuntimeCommands
 from autoware_system_designer_runtime._impl.core.control_channel import METHODS, ControlChannel
@@ -364,29 +365,109 @@ def test_channel_answers_errors_in_the_envelope(tmp_path):
     _run(scenario())
 
 
-def test_channel_tails_member_output_files(tmp_path):
+def test_channel_tails_the_output_files_of_followed_members_only(tmp_path):
     async def scenario():
-        coord, commands = _commands(["/sensing/lidar/driver"])
+        coord, commands = _commands(["/sensing/lidar/driver", "/perception/detector"])
         node_dir = tmp_path / _slug("/sensing/lidar/driver")
         node_dir.mkdir()
         out = node_dir / "out"
         out.write_bytes(b"first line\nsecond line\npartial")
+        other = tmp_path / _slug("/perception/detector")
+        other.mkdir()
         async with _Channel(commands, commands._states, tmp_path) as c:
             await c.event()
+            # Nothing is tailed before a follow: the status reply is the next line.
+            (other / "out").write_bytes(b"unfollowed\n")
+            await asyncio.sleep(cc.LOG_POLL_S * 2)
+            assert (await c.call("status"))["ok"]
+            assert c.channel._offsets == {}
+
+            reply = await c.call("log.follow", {"path": "/sensing/lidar/driver"})
+            assert reply["result"] == {"path": "/sensing/lidar/driver", "out": ["first line", "second line"], "err": []}
+            with open(out, "ab") as f:
+                f.write(b" end\nthird\n")
             event = await c.event()
             assert event == {
                 "event": "member.log",
                 "path": "/sensing/lidar/driver",
                 "stream": "out",
-                "lines": ["first line", "second line"],
+                "lines": ["partial end", "third"],
             }
-            with open(out, "ab") as f:
-                f.write(b" end\nthird\n")
-            event = await c.event()
-            assert event["lines"] == ["partial end", "third"]
             (node_dir / "err").write_bytes(b"warn \xff\n")
             event = await c.event()
             assert event["stream"] == "err" and event["lines"] == ["warn �"]
+            with open(other / "out", "ab") as f:
+                f.write(b"still unfollowed\n")
+
+            reply = await c.call("log.unfollow", {"path": "/sensing/lidar/driver"})
+            assert reply["result"] == {"released": ["/sensing/lidar/driver"]}
+            assert c.channel._offsets == {}
+            with open(out, "ab") as f:
+                f.write(b"after release\n")
+            await asyncio.sleep(cc.LOG_POLL_S * 2)
+            assert (await c.call("status"))["ok"]
+
+            assert (await c.call("log.follow", {"path": "/planning"}))["error"]["code"] == "not_found"
+            assert (await c.call("log.unfollow", {"path": 3}))["error"]["code"] == "invalid_params"
+            await c.call("log.follow", {"path": "/sensing/lidar/driver"})
+            assert (await c.call("log.unfollow"))["result"] == {"released": ["/sensing/lidar/driver"]}
+
+    _run(scenario())
+
+
+def test_follow_reports_the_tail_of_a_long_file_and_a_second_follower_joins_mid_stream(tmp_path):
+    async def scenario():
+        coord, commands = _commands(["/n"])
+        node_dir = tmp_path / _slug("/n")
+        node_dir.mkdir()
+        out = node_dir / "out"
+        out.write_bytes(b"".join(b"line %05d\n" % i for i in range(20000)))
+        async with _Channel(commands, commands._states, tmp_path) as c:
+            await c.event()
+            tail = (await c.call("log.follow", {"path": "/n"}))["result"]["out"]
+            assert len(tail) == cc.BACKFILL_LINES and tail[-1] == "line 19999" and tail[0] == "line 19800"
+            with open(out, "ab") as f:
+                f.write(b"more\n")
+            assert (await c.event())["lines"] == ["more"]
+
+            reader, writer = await asyncio.open_unix_connection(str(c.channel.path))
+            try:
+                await reader.readline()
+                with open(out, "ab") as f:
+                    f.write(b"pending\n")
+                writer.write(json.dumps({"id": 1, "method": "log.follow", "params": {"path": "/n"}}).encode() + b"\n")
+                await writer.drain()
+                # The pending line reaches the first follower, then the second gets it inside its tail.
+                assert (await c.event())["lines"] == ["pending"]
+                second = json.loads(await asyncio.wait_for(reader.readline(), timeout=5))
+                assert second["result"]["out"][-2:] == ["more", "pending"]
+                with open(out, "ab") as f:
+                    f.write(b"both\n")
+                assert (await c.event())["lines"] == ["both"]
+                assert json.loads(await asyncio.wait_for(reader.readline(), timeout=5))["lines"] == ["both"]
+            finally:
+                writer.close()
+            # The first client's follow outlives the second client.
+            await asyncio.sleep(cc.LOG_POLL_S)
+            with open(out, "ab") as f:
+                f.write(b"alone\n")
+            assert (await c.event())["lines"] == ["alone"]
+
+    _run(scenario())
+
+
+def test_a_client_stalled_past_the_byte_limit_is_dropped(tmp_path, monkeypatch):
+    monkeypatch.setattr(cc, "QUEUE_BYTES", 1024)
+
+    async def scenario():
+        coord, commands = _commands(["/n"])
+        states = commands._states
+        async with _Channel(commands, states, tmp_path) as c:
+            await c.event()
+            for pid in range(50):  # never read by the client; the queue fills past the limit
+                states.on_event(ev.Started(name="/n", pid=pid))
+            await asyncio.sleep(0.1)
+            assert c.channel._clients == set()
 
     _run(scenario())
 

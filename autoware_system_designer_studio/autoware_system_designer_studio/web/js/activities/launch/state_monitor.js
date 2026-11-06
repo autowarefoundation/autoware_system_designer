@@ -1,9 +1,11 @@
 // Launch: launched members as a namespace tree with run states beside the
-// selected member's log, or the launcher's own output. Member state and log
-// lines arrive on the daemon's event stream, keyed by member path; a
-// composable node reads its container's log. The selected node or module is
-// the store's `entity`, shared with Explore; a selected module shows the
-// severest state among its members.
+// selected member's log, or the launcher's own output. Member states arrive on
+// the daemon's event stream, keyed by member path. One member's log is
+// followed at a time: `launch.follow` brings its current tail, `member.log`
+// events the lines after, and the follow is released when the selection
+// leaves it or the monitor hides; a composable node follows its container's
+// log. The selected node or module is the store's `entity`, shared with
+// Explore; a selected module shows the severest state among its members.
 (function () {
   const SD = window.SD;
   const { element, terminal, mainView } = SD.widgets;
@@ -80,9 +82,12 @@
     view.trailing.append(note, badge, actions);
     container.append(treePane, view.element);
 
-    // Log path -> its terminal, kept while the page lives; job id -> the launcher's terminal.
-    const logs = new Map();
+    // The followed member's terminal, refilled per follow; job id -> the launcher's terminal.
+    const memberLog = terminal("No output yet.");
     const launcherLogs = new Map(); // job id -> { log, lastSeq }
+    // The followed log: { path, unit, job } while a runtime serves it, else { path } only.
+    let followed = null;
+    let followSeq = 0;
     const expanded = new Set();
     let root = null;
     // Entity key -> { entity, node }: the tree entry of every node and module.
@@ -142,9 +147,64 @@
       if (own?.container_path) row.classList.add("ns-composable");
     }
 
-    function logOf(path) {
-      if (!logs.has(path)) logs.set(path, terminal("No output yet."));
-      return logs.get(path);
+    // The session serving a log path, while its runtime is connected.
+    function servingSession(path) {
+      const unit = members.get(path)?.unit;
+      const session = unit && sessions.get(unit);
+      return session && session.connected && session.state !== "exited"
+        ? session
+        : null;
+    }
+
+    // Follows `path` on its runtime; the previous follow is released first.
+    function follow(path) {
+      const session = servingSession(path);
+      const previous = followed;
+      if (
+        previous?.path === path &&
+        (previous.job || null) === (session?.job || null)
+      )
+        return;
+      const seq = ++followSeq;
+      followed = session
+        ? { path, unit: session.compute_unit, job: session.job }
+        : { path };
+      release(previous);
+      if (!session) {
+        memberLog.clear("Not launched.");
+        return;
+      }
+      memberLog.clear("Loading…");
+      daemon
+        .rpc("launch.follow", { compute_unit: session.compute_unit, path })
+        .then((result) => {
+          if (seq !== followSeq) return;
+          memberLog.clear("No output yet.");
+          memberLog.append([...(result.out || []), ...(result.err || [])]);
+        })
+        .catch((error) => {
+          if (seq === followSeq) memberLog.clear(error.message);
+        });
+    }
+
+    function release(entry) {
+      if (!entry?.unit) return;
+      daemon
+        .rpc("launch.unfollow", { compute_unit: entry.unit, path: entry.path })
+        .catch(() => {});
+    }
+
+    function unfollow() {
+      followSeq += 1;
+      release(followed);
+      followed = null;
+    }
+
+    // Re-follows after the serving runtime changed: connected, reconnected, or gone.
+    function refollow() {
+      if (!followed || hidden) return;
+      const session = servingSession(followed.path);
+      if ((session?.job || null) !== (followed.job || null)) follow(followed.path);
     }
 
     function renderTree() {
@@ -192,9 +252,8 @@
     function showLog(entity) {
       selected = entity;
       selectedJob = "";
-      view.body.replaceChildren(
-        logOf(entity.container_path || entity.member_path).element,
-      );
+      view.body.replaceChildren(memberLog.element);
+      follow(entity.container_path || entity.member_path);
       view.setEmpty("");
       view.setTitle(
         entity.container_path
@@ -209,6 +268,7 @@
     function showModule(entity) {
       selected = entity;
       selectedJob = "";
+      unfollow();
       view.body.replaceChildren();
       view.setEmpty(EMPTY_LOG);
       view.setTitle(entity.path);
@@ -261,6 +321,7 @@
     function showLauncher(session) {
       selected = null;
       selectedJob = session.job;
+      unfollow();
       view.body.replaceChildren(launcherLog(session.job).log.element);
       view.setEmpty("");
       view.setTitle(`launcher · ${session.compute_unit} · ${session.job}`);
@@ -351,8 +412,12 @@
       renderTree();
       showState();
       renderLaunchers();
+      refollow();
     });
-    SD.on("daemon.member.log", ({ path, lines }) => logOf(path).append(lines));
+    SD.on("daemon.member.log", ({ compute_unit: unit, path, lines }) => {
+      if (followed?.unit === unit && followed.path === path)
+        memberLog.append(lines);
+    });
     SD.on("daemon.job.log", (batch) => {
       if (!launcherLogs.has(batch.job)) return;
       if (batch.first_seq > launcherLog(batch.job).lastSeq + 1)
@@ -373,6 +438,8 @@
     return {
       show() {
         hidden = false;
+        if (selected?.entity_type === "node")
+          follow(selected.container_path || selected.member_path);
         if (!stale) return;
         stale = false;
         renderTree();
@@ -380,6 +447,7 @@
       },
       hide() {
         hidden = true;
+        unfollow();
       },
     };
   }

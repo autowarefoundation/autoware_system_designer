@@ -15,8 +15,11 @@
 """Control channel of a running system: a Unix socket speaking JSON lines.
 
 One object per line. The runtime sends events ``{"event": ...}``: ``hello`` on connect, ``member``
-on every state change, ``member.log`` for new stdout/stderr lines of a member. A client sends
-requests ``{"id", "method", "params"}`` and receives ``{"id", "ok", "result" | "error"}``.
+on every state change, ``member.log`` for new stdout/stderr lines of a member the client follows.
+A client sends requests ``{"id", "method", "params"}`` and receives ``{"id", "ok", "result" | "error"}``.
+
+Member output stays in the per-member ``out``/``err`` files the actors write; the channel tails a
+file only while some client follows that member, so an idle channel costs nothing per member.
 """
 
 from __future__ import annotations
@@ -33,43 +36,69 @@ from .regular_actor import _slug
 
 logger = logging.getLogger(__name__)
 
-METHODS = ("status", "stop", "restart", "kill", "measure.start", "measure.stop", "measure.status", "shutdown")
+METHODS = (
+    "status",
+    "stop",
+    "restart",
+    "kill",
+    "log.follow",
+    "log.unfollow",
+    "measure.start",
+    "measure.stop",
+    "measure.status",
+    "shutdown",
+)
 STREAMS = ("out", "err")
 MAX_LINE = 64 * 1024
 LOG_POLL_S = 0.2
 LOG_READ_MAX = 1 << 20
-QUEUE_LIMIT = 10000
+# Tail of a file reported by ``log.follow``: at most this many lines from the last bytes of it.
+BACKFILL_LINES = 200
+BACKFILL_BYTES = 64 * 1024
+# Outgoing bytes a client may have queued before it counts as stalled.
+QUEUE_BYTES = 8 << 20
 
 
 def _error(request_id: Any, code: str, message: str) -> dict[str, Any]:
     return {"id": request_id, "ok": False, "error": {"code": code, "message": message}}
 
 
+def _encode(obj: dict[str, Any]) -> bytes:
+    return json.dumps(obj, separators=(",", ":")).encode() + b"\n"
+
+
 class _Client:
-    """One connection; outgoing objects queue up and leave in order, a stalled client is dropped."""
+    """One connection; encoded objects queue up and leave in order, a client stalled past the byte limit is dropped."""
 
     def __init__(self, writer: asyncio.StreamWriter) -> None:
         self._writer = writer
-        self._queue: "asyncio.Queue[Optional[dict[str, Any]]]" = asyncio.Queue(QUEUE_LIMIT)
+        self._queue: "asyncio.Queue[Optional[bytes]]" = asyncio.Queue()
+        self._queued = 0
         self.dropped = False
+        self.follows: set[str] = set()
 
     def send(self, obj: dict[str, Any]) -> None:
+        self.send_bytes(_encode(obj))
+
+    def send_bytes(self, data: bytes) -> None:
         if self.dropped:
             return
-        try:
-            self._queue.put_nowait(obj)
-        except asyncio.QueueFull:
+        if self._queued + len(data) > QUEUE_BYTES:
             self.dropped = True
-            logger.warning("control client stalled, disconnecting")
+            logger.warning("control client stalled with %d bytes queued, disconnecting", self._queued)
             self._writer.close()
+            return
+        self._queued += len(data)
+        self._queue.put_nowait(data)
 
     async def run(self) -> None:
         try:
             while True:
-                obj = await self._queue.get()
-                if obj is None:
+                data = await self._queue.get()
+                if data is None:
                     break
-                self._writer.write(json.dumps(obj, separators=(",", ":")).encode() + b"\n")
+                self._queued -= len(data)
+                self._writer.write(data)
                 await self._writer.drain()
         except (ConnectionError, asyncio.CancelledError):
             pass
@@ -78,14 +107,11 @@ class _Client:
 
     def close(self) -> None:
         self.dropped = True
-        try:
-            self._queue.put_nowait(None)
-        except asyncio.QueueFull:
-            self._writer.close()
+        self._queue.put_nowait(None)
 
 
 class ControlChannel:
-    """Serves the control socket; forwards member states and logs, answers commands."""
+    """Serves the control socket; forwards member states and followed logs, answers commands."""
 
     def __init__(
         self,
@@ -106,8 +132,10 @@ class ControlChannel:
         self._tasks: set[asyncio.Task] = set()
         self._tail_task: Optional[asyncio.Task] = None
         self._unsubscribe = None
+        # Read position and the unterminated tail per followed (member, stream).
         self._offsets: dict[tuple[str, str], int] = {}
         self._partial: dict[tuple[str, str], bytes] = {}
+        self._paths: dict[tuple[str, str], Path] = {}
 
     @property
     def path(self) -> Path:
@@ -172,13 +200,14 @@ class ControlChannel:
                     break
                 if not line.strip():
                     continue
-                client.send(await self._handle(line))
+                client.send(await self._handle(client, line))
         except (ConnectionError, asyncio.CancelledError):
             pass
         finally:
             self._clients.discard(client)
             client.close()
             self._tasks.discard(sender)
+            self._prune_follows()
 
     def _hello(self) -> dict[str, Any]:
         status = self._commands.status()
@@ -192,15 +221,16 @@ class ControlChannel:
         }
 
     def _broadcast(self, obj: dict[str, Any]) -> None:
+        data = _encode(obj)
         for client in list(self._clients):
-            client.send(obj)
+            client.send_bytes(data)
 
     def _on_state(self, record: MemberRecord) -> None:
         self._broadcast({"event": "member", **record.as_dict()})
 
     # ---- requests ----------------------------------------------------------
 
-    async def _handle(self, line: bytes) -> dict[str, Any]:
+    async def _handle(self, client: _Client, line: bytes) -> dict[str, Any]:
         try:
             request = json.loads(line)
         except ValueError:
@@ -217,7 +247,7 @@ class ControlChannel:
         if not isinstance(params, dict):
             return _error(request_id, "invalid_params", "params must be an object")
         try:
-            result = await self._dispatch(method, params)
+            result = await self._dispatch(client, method, params)
         except CommandError as exc:
             return _error(request_id, exc.code, exc.message)
         except Exception as exc:  # noqa: BLE001
@@ -225,11 +255,15 @@ class ControlChannel:
             return _error(request_id, "internal", str(exc))
         return {"id": request_id, "ok": True, "result": result}
 
-    async def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
+    async def _dispatch(self, client: _Client, method: str, params: dict[str, Any]) -> Any:
         if method == "status":
             return self._commands.status()
         if method in ("stop", "restart", "kill"):
             return {"members": await self._commands.member_action(method, params.get("pattern"))}
+        if method == "log.follow":
+            return self._follow(client, params.get("path"))
+        if method == "log.unfollow":
+            return self._unfollow(client, params.get("path"))
         if method.startswith("measure."):
             return await self._commands.measure(method[len("measure.") :])
         if method == "shutdown":
@@ -239,23 +273,76 @@ class ControlChannel:
 
     # ---- member logs -------------------------------------------------------
 
-    async def _tail_logs(self) -> None:
-        """Forwards new lines of every member's out/err file; nothing is read while no client listens."""
-        while True:
-            if self._clients:
-                for name in self._commands.coord.names():
-                    for stream in STREAMS:
-                        self._tail_file(name, stream)
-            await asyncio.sleep(LOG_POLL_S)
+    def _follow(self, client: _Client, path: object) -> dict[str, Any]:
+        """Starts forwarding a member's new lines to *client*; the result carries the files' current tails."""
+        if not isinstance(path, str) or path not in self._commands.coord.names():
+            raise CommandError("not_found", f"no member named {path!r}")
+        result: dict[str, Any] = {"path": path}
+        for stream in STREAMS:
+            key = (path, stream)
+            file = self._log_path(key)
+            if key in self._offsets:
+                self._tail_file(key)  # pending lines reach the current followers before the tail is cut
+                result[stream], _ = _tail_lines(file, self._offsets[key])
+            else:
+                try:
+                    self._offsets[key] = file.stat().st_size
+                except OSError:
+                    self._offsets[key] = 0
+                result[stream], rest = _tail_lines(file, self._offsets[key])
+                if rest:
+                    self._partial[key] = rest
+        client.follows.add(path)
+        return result
 
-    def _tail_file(self, name: str, stream: str) -> None:
-        key = (name, stream)
-        path = self._log_dir / _slug(name) / stream
+    def _unfollow(self, client: _Client, path: object) -> dict[str, Any]:
+        """Stops forwarding one member's lines, or every member's when no path is given."""
+        if path is None:
+            released = sorted(client.follows)
+            client.follows.clear()
+        elif isinstance(path, str):
+            released = [path] if path in client.follows else []
+            client.follows.discard(path)
+        else:
+            raise CommandError("invalid_params", "path must be a member name")
+        self._prune_follows()
+        return {"released": released}
+
+    def _followed(self) -> set[str]:
+        followed: set[str] = set()
+        for client in self._clients:
+            followed |= client.follows
+        return followed
+
+    def _prune_follows(self) -> None:
+        followed = self._followed()
+        for key in [key for key in self._offsets if key[0] not in followed]:
+            self._offsets.pop(key, None)
+            self._partial.pop(key, None)
+
+    def _log_path(self, key: tuple[str, str]) -> Path:
+        path = self._paths.get(key)
+        if path is None:
+            path = self._paths[key] = self._log_dir / _slug(key[0]) / key[1]
+        return path
+
+    async def _tail_logs(self) -> None:
+        """Forwards new lines of every followed member's out/err file to the clients following it."""
+        while True:
+            await asyncio.sleep(LOG_POLL_S)
+            for key in list(self._offsets):
+                try:
+                    self._tail_file(key)
+                except Exception:  # noqa: BLE001
+                    logger.exception("tailing %s/%s failed", *key)
+
+    def _tail_file(self, key: tuple[str, str]) -> None:
+        path = self._log_path(key)
         try:
             size = path.stat().st_size
         except OSError:
             return
-        offset = self._offsets.get(key, 0)
+        offset = self._offsets[key]
         if size < offset:
             offset = 0
             self._partial.pop(key, None)
@@ -272,6 +359,30 @@ class ControlChannel:
         rest = chunks.pop()
         if rest:
             self._partial[key] = rest
-        if chunks:
-            lines = [chunk.decode("utf-8", "replace") for chunk in chunks]
-            self._broadcast({"event": "member.log", "path": name, "stream": stream, "lines": lines})
+        if not chunks:
+            return
+        name, stream = key
+        lines = [chunk.decode("utf-8", "replace") for chunk in chunks]
+        data = _encode({"event": "member.log", "path": name, "stream": stream, "lines": lines})
+        for client in list(self._clients):
+            if name in client.follows:
+                client.send_bytes(data)
+
+
+def _tail_lines(path: Path, size: int) -> tuple[list[str], bytes]:
+    """The last complete lines of a file's first ``size`` bytes, from at most its final
+    ``BACKFILL_BYTES``, and the unterminated bytes after them."""
+    if size == 0:
+        return [], b""
+    start = max(0, size - BACKFILL_BYTES)
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(start)
+            data = handle.read(size - start)
+    except OSError:
+        return [], b""
+    chunks = data.split(b"\n")
+    rest = chunks.pop()
+    if start > 0 and chunks:
+        chunks.pop(0)  # a line cut by the window start
+    return [chunk.decode("utf-8", "replace") for chunk in chunks[-BACKFILL_LINES:]], rest
