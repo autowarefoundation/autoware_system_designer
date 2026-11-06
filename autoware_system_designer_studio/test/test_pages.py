@@ -149,6 +149,11 @@ def test_workbench_loads_the_shell_before_its_activities(tmp_path):
             assert style in workbench
 
 
+def test_every_workbench_asset_is_in_the_bundle():
+    for relative in assets.WORKBENCH_SCRIPTS + assets.WORKBENCH_STYLESHEETS + (assets.WORKBENCH_ENTRY,):
+        assert assets.web_file(relative) is not None, relative
+
+
 def test_pages_link_the_bundle_relative_to_the_site_root(tmp_path):
     _, system = _system(tmp_path)
     site = Site([system])
