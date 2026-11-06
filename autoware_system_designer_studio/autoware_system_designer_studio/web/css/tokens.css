@@ -1,20 +1,20 @@
 /* Design tokens: colours and fonts for the light theme and their dark overrides. Every other stylesheet reads these. */
 
 :root {
-  /* Light theme colors */
+  /* Light theme colors: content white, side panels a step of grey darker, chrome darkest */
   --bg-primary: #f8f9fa;
   --bg-secondary: #ffffff;
-  --bg-tertiary: #f8f9fa;
-  --bg-sidebar: #ffffff;
-  --bg-sidebar-header: #f8f9fa;
-  --bg-info-card: #f8f9fa;
+  --bg-tertiary: #dde1e5;
+  --bg-sidebar: #eceff2;
+  --bg-sidebar-header: #dfe3e7;
+  --bg-info-card: #dde1e5;
   --bg-loading: rgba(255, 255, 255, 0.9);
   --text-primary: #212529;
   --text-secondary: #495057;
   --text-muted: #6c757d;
   --seq-loop: #8e5ea2;
   --seq-queue: #1f8a70;
-  --border-color: #e9ecef;
+  --border-color: #cfd4d9;
   --border-hover: #adb5bd;
   --border-active: #007bff;
   --shadow: rgba(0, 0, 0, 0.05);
@@ -37,17 +37,17 @@
   /* Dark theme colors: content darkest, side panels a step lighter, chrome lightest */
   --bg-primary: #1a1a1a;
   --bg-secondary: #1e1e1e;
-  --bg-tertiary: #383838;
-  --bg-sidebar: #262626;
-  --bg-sidebar-header: #333333;
-  --bg-info-card: #383838;
+  --bg-tertiary: #424242;
+  --bg-sidebar: #2b2b2b;
+  --bg-sidebar-header: #383838;
+  --bg-info-card: #424242;
   --bg-loading: rgba(30, 30, 30, 0.9);
   --text-primary: #e9ecef;
   --text-secondary: #adb5bd;
   --text-muted: #6c757d;
   --seq-loop: #b48ccf;
   --seq-queue: #5cc8a8;
-  --border-color: #495057;
+  --border-color: #4d5257;
   --border-hover: #6c757d;
   --border-active: #0d6efd;
   --shadow: rgba(0, 0, 0, 0.3);
