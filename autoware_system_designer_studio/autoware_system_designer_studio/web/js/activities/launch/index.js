@@ -5,9 +5,11 @@
   const SD = window.SD;
   const { element, field, section, boundSelect, segmented, mainView } =
     SD.widgets;
-  const { commandsTable, stateMonitor } = SD.activities.launch;
+  const { commandsTable, stateMonitor, sessionLabel } = SD.activities.launch;
 
   const METHOD_KEY = "workbench.launchMethod";
+  const MEASURE_KEY = "workbench.launchMeasure";
+  const RESPAWN_KEY = "workbench.launchRespawn";
   const METHODS = [
     ["native", "Runtime"],
     ["xml", "XML"],
@@ -18,6 +20,8 @@
     xml: "Runs the exported XML launcher through ros2 launch.",
   };
   const VIEWS = ["commands", "monitor"];
+  // Measurement window states in which the next verb is stop.
+  const MEASURE_OPEN = ["running"];
 
   function launchRows(config, store) {
     const mode = store.get("mode");
@@ -25,6 +29,25 @@
     return config.launchCommands.filter(
       (r) => r.mode === mode && r.deploy === deploy,
     );
+  }
+
+  function checkbox(label, key, fallback) {
+    const wrapper = element("label", "panel-check");
+    const input = element("input");
+    input.type = "checkbox";
+    input.checked = (SD.storage.get(key) ?? String(fallback)) === "true";
+    input.addEventListener("change", () =>
+      SD.storage.set(key, String(input.checked)),
+    );
+    wrapper.append(input, element("span", "", label));
+    return { element: wrapper, input };
+  }
+
+  function button(label, className, onClick) {
+    const node = element("button", `panel-button ${className}`.trim(), label);
+    node.type = "button";
+    node.addEventListener("click", onClick);
+    return node;
   }
 
   SD.workbench.registerActivity({
@@ -44,6 +67,10 @@
       if (method !== "xml" && !(method === "native" && hasNative))
         method = hasNative ? "native" : "xml";
       let unitStatus = new Map();
+      const { sessions } = SD.activities.launch;
+      // Per unit: the last error of a control, and the last measurement result.
+      const errors = new Map();
+      const measures = new Map();
 
       // -- side: options and launch controls
       if (config.deployNames.length) {
@@ -73,9 +100,24 @@
       const methodNote = element("p", "panel-note");
       side.append(methodRow, methodNote);
 
+      const measureOption = checkbox(
+        "Arm latency measurement",
+        MEASURE_KEY,
+        false,
+      );
+      const respawnOption = checkbox(
+        "Respawn exited processes",
+        RESPAWN_KEY,
+        false,
+      );
+      const options = section(
+        "Launch options",
+        measureOption.element,
+        respawnOption.element,
+      );
       const unitList = element("div", "launch-list");
       const units = section("Compute units", unitList);
-      side.appendChild(units);
+      side.append(options, units);
 
       // -- main: commands table or state monitor
       const view = mainView();
@@ -103,45 +145,109 @@
         return store.get("view") || "monitor";
       }
 
+      function control(unit, method, params, then) {
+        errors.delete(unit);
+        return daemon
+          .rpc(method, { compute_unit: unit, ...params })
+          .then((result) => {
+            then?.(result);
+            render();
+          })
+          .catch((error) => {
+            errors.set(unit, error.message);
+            render();
+          });
+      }
+
+      function launchCard(row, status, session) {
+        const card = element("div", "launch-card");
+        const head = element("div", "launch-card-head");
+        head.appendChild(element("span", "launch-unit", row.unit));
+        if (status)
+          head.appendChild(
+            element("span", `unit-status ${status}`, status.replace(/_/g, " ")),
+          );
+        card.appendChild(head);
+        if (session)
+          card.appendChild(
+            element(
+              "div",
+              `launch-session ${session.state}`,
+              sessionLabel(session),
+            ),
+          );
+        const actions = element("div", "launch-actions");
+        const active = session && session.state !== "exited";
+        if (status === "available") {
+          actions.appendChild(
+            button("Launch", "primary", () => {
+              const params = {
+                system: config.systemId,
+                mode: row.mode,
+                compute_unit: row.unit,
+                measure: measureOption.input.checked,
+                respawn: respawnOption.input.checked,
+              };
+              if (row.deploy) params.deploy = row.deploy;
+              errors.delete(row.unit);
+              daemon
+                .rpc("launch.start", params)
+                .then(() => store.set("view", "monitor"))
+                .catch((error) => errors.set(row.unit, error.message))
+                .then(render);
+            }),
+          );
+        }
+        if (active) {
+          const shutdown = button("Shutdown", "", () =>
+            control(row.unit, "launch.shutdown", {}),
+          );
+          shutdown.disabled = !!session.shutting_down;
+          actions.appendChild(shutdown);
+        }
+        if (active && session.connected && session.control.measure_armed) {
+          const measure = measures.get(row.unit);
+          const open = measure && MEASURE_OPEN.includes(measure.state);
+          actions.appendChild(
+            button(open ? "Stop measure" : "Start measure", "", () =>
+              control(
+                row.unit,
+                open ? "measure.stop" : "measure.start",
+                {},
+                (result) => measures.set(row.unit, result),
+              ),
+            ),
+          );
+          if (measure)
+            card.appendChild(
+              element("div", "launch-measure", `measure: ${measure.message}`),
+            );
+        }
+        if (actions.childElementCount) card.appendChild(actions);
+        const error = errors.get(row.unit);
+        if (error) card.appendChild(element("div", "launch-error", error));
+        return card;
+      }
+
       function renderUnits(rows) {
         const canLaunch = daemon.offers("launch.start");
         units.hidden = !canLaunch;
+        options.hidden = !canLaunch;
         unitList.replaceChildren();
         if (!canLaunch) return;
         rows.forEach((row) => {
-          const card = element("div", "launch-card");
-          const status = unitStatus.get(row.unit);
-          const head = element("div", "launch-card-head");
-          head.appendChild(element("span", "launch-unit", row.unit));
-          if (status)
-            head.appendChild(
-              element(
-                "span",
-                `unit-status ${status}`,
-                status.replace(/_/g, " "),
-              ),
-            );
-          const button = element("button", "panel-button primary", "Launch");
-          button.type = "button";
-          button.disabled = status !== "available";
-          button.addEventListener("click", () => {
-            const params = {
-              system: config.systemId,
-              mode: row.mode,
-              compute_unit: row.unit,
-            };
-            if (row.deploy) params.deploy = row.deploy;
-            button.disabled = true;
-            daemon
-              .rpc("launch.start", params)
-              .then(() => store.set("view", "monitor"))
-              .catch((error) => {
-                button.disabled = false;
-                button.title = error.message;
-              });
-          });
-          card.append(head, button);
-          unitList.appendChild(card);
+          const session = sessions.get(row.unit);
+          const forThisSystem =
+            session &&
+            session.system === config.systemId &&
+            session.mode === row.mode;
+          unitList.appendChild(
+            launchCard(
+              row,
+              unitStatus.get(row.unit),
+              forThisSystem ? session : null,
+            ),
+          );
         });
       }
 
@@ -183,9 +289,27 @@
         render();
       }
 
+      function onSessions() {
+        sessions.forEach((session, unit) => {
+          if (session.state === "exited") measures.delete(unit);
+          else if (
+            session.connected &&
+            session.control.measure_armed &&
+            !measures.has(unit)
+          ) {
+            measures.set(unit, { state: "armed", message: "armed" });
+            control(unit, "measure.status", {}, (result) =>
+              measures.set(unit, result),
+            );
+          }
+        });
+        loadUnitStatus();
+      }
+
       ["mode", "deploy", "view"].forEach((key) => store.onChange(key, render));
       SD.on("daemon.health", loadUnitStatus);
       SD.on("daemon.systems.changed", loadUnitStatus);
+      SD.on("launch.sessions", onSessions);
       if (daemon.health) loadUnitStatus();
       render();
       return {

@@ -86,7 +86,7 @@ autoware runtime [? for help] > quit
 
 Commands: `status`, `stop <name>`, `restart <name>`, `kill <name>`, `quit`, `help` / `?`.
 
-`<name>` matches as a **substring of the member name** so namespace prefixes are natural targets (`stop /perception` stops everything under that subtree).
+`<name>` matches the member named exactly so, else as a **substring of the member name**, so namespace prefixes are natural targets (`stop /perception` stops everything under that subtree).
 
 ### 5. Control channel (`--control SOCKET`)
 

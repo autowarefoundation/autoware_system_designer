@@ -101,6 +101,15 @@
   color: var(--text-secondary);
 }
 
+.panel-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
 .panel-hint {
   margin: 0;
   font-size: 12px;

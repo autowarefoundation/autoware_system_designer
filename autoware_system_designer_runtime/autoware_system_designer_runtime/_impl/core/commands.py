@@ -153,10 +153,12 @@ class RuntimeCommands:
         }
 
     def match(self, pattern: object) -> list[str]:
-        """Members whose name contains *pattern*."""
+        """The member named *pattern*, else every member whose name contains it."""
         if not isinstance(pattern, str) or not pattern:
             raise CommandError("invalid_params", "a member name or substring is required")
         names = [name for name in self._coord.names() if pattern in name]
+        if pattern in names:
+            names = [pattern]
         if not names:
             raise CommandError("not_found", f"no member matches {pattern!r}")
         return names
