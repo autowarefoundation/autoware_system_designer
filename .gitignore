@@ -7,9 +7,9 @@
 *.code-workspace
 
 # colcon
-build/
-install/
-log/
+/build/
+/install/
+/log/
 /src/
 
 # Python

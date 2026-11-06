@@ -38,6 +38,8 @@ PAYLOAD_TOO_LARGE = "payload_too_large"
 UNKNOWN_METHOD = "unknown_method"
 INVALID_PARAMS = "invalid_params"
 CONFLICT = "conflict"
+# A runtime action refused by its safe-state interlock.
+REFUSED = "refused"
 UNAVAILABLE = "unavailable"
 INTERNAL = "internal"
 
@@ -51,6 +53,7 @@ ERROR_STATUS = {
     UNKNOWN_METHOD: HTTPStatus.NOT_FOUND,
     INVALID_PARAMS: HTTPStatus.BAD_REQUEST,
     CONFLICT: HTTPStatus.CONFLICT,
+    REFUSED: HTTPStatus.CONFLICT,
     UNAVAILABLE: HTTPStatus.SERVICE_UNAVAILABLE,
     INTERNAL: HTTPStatus.INTERNAL_SERVER_ERROR,
 }

@@ -28,6 +28,7 @@ from typing import Optional, Sequence
 from .exports import resolve_install_root
 from .pack import PackError, pack
 from .serve.build import resolve_workspace
+from .serve.launch import LaunchEnvError, capture_env
 from .serve.server import BIND_HOST, HEARTBEAT_INTERVAL_S, ServeDaemon
 
 logger = logging.getLogger("autoware_system_designer.studio")
@@ -80,6 +81,18 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         help="compute unit local to this daemon (repeatable; default: every onboard unit)",
     )
     serve.add_argument(
+        "--env-script",
+        type=Path,
+        help="setup script sourced once into the environment launch jobs run in "
+        "(default: this process's environment; start serve from a sourced shell)",
+    )
+    serve.add_argument(
+        "--rviz-config",
+        type=Path,
+        help="RViz configuration opened by rviz.start (default: autoware_launch's autoware.rviz "
+        "under the launch environment's ament prefixes, else none)",
+    )
+    serve.add_argument(
         "--heartbeat-interval",
         type=float,
         default=HEARTBEAT_INTERVAL_S,
@@ -100,6 +113,8 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     if args.command == "serve":
         if not 0 <= args.port <= 65535:
             serve.error("--port must be within 0..65535")
+        if args.rviz_config is not None and not args.rviz_config.is_file():
+            serve.error(f"--rviz-config {args.rviz_config} is not a file")
         if args.heartbeat_interval <= 0:
             serve.error("--heartbeat-interval must be positive")
     return args
@@ -127,12 +142,19 @@ def _install_root(args: argparse.Namespace) -> Path:
 
 def _run_serve(args: argparse.Namespace) -> None:
     install_root = _install_root(args)
+    try:
+        launch_env = capture_env(args.env_script)
+    except LaunchEnvError as exc:
+        sys.exit(str(exc))
     daemon = ServeDaemon(
         install_root,
         port=args.port,
         served_units=args.compute_units,
         workspace=resolve_workspace(install_root, args.workspace),
         record_root=args.record_dir,
+        launch_env=launch_env,
+        env_script=args.env_script,
+        rviz_config=args.rviz_config,
         heartbeat_s=args.heartbeat_interval,
     )
     try:

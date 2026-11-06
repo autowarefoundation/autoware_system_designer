@@ -120,6 +120,8 @@ def test_root_is_the_systems_index(served):
         ("/index.html", "text/html; charset=utf-8"),
         ("/assets/js/core/sd.js", "text/javascript; charset=utf-8"),
         ("/assets/css/tokens.css", "text/css; charset=utf-8"),
+        ("/assets/img/favicon.svg", "image/svg+xml"),
+        ("/favicon.ico", "image/svg+xml"),
         (f"{SITE}/index.html", "text/html; charset=utf-8"),
         (f"{SITE}/config.js", "text/javascript; charset=utf-8"),
         (f"{SITE}/data/Runtime.js", "text/javascript; charset=utf-8"),

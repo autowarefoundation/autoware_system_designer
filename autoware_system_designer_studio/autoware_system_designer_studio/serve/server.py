@@ -18,7 +18,7 @@ Routes:
   GET  /                 -> systems index
   GET  /<site path>      -> page or data script rendered from the exports (see pages.render)
   GET  /assets/<file>    -> web bundle shipped with this package
-  GET  /api/<alias>      -> registered method with empty params (health, systems, jobs)
+  GET  /api/<alias>      -> registered method with empty params (health, systems, jobs, launch)
   GET  /api/events       -> Server-Sent Events stream
   POST /api/rpc          -> request envelope (see api)
 
@@ -39,12 +39,12 @@ import os
 import time
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 from .. import exports
 from ..pages import assets
 from ..pages.render import INDEX_PAGE, Site, system_pages
-from . import api, build, events, jobs
+from . import api, build, events, jobs, launch
 from .http import MAX_HEADER_BYTES, HttpError, Request, Response, read_request, response_head, write_response
 
 logger = logging.getLogger(__name__)
@@ -103,6 +103,13 @@ def _str_param(params: dict[str, Any], name: str, *, required: bool = False) -> 
     return value
 
 
+def _bool_param(params: dict[str, Any], name: str, default: bool = False) -> bool:
+    value = params.get(name, default)
+    if not isinstance(value, bool):
+        raise api.ApiError(api.INVALID_PARAMS, f"{name} must be a boolean")
+    return value
+
+
 def _int_param(params: dict[str, Any], name: str, default: int, low: int, high: int) -> int:
     value = params.get(name, default)
     if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
@@ -113,7 +120,9 @@ def _int_param(params: dict[str, Any], name: str, default: int, low: int, high: 
 def _status_page(status: HTTPStatus, title: str, message: str, *, reload_s: Optional[int] = None) -> Response:
     """HTML answer to a page navigation that has no page; it reloads itself when the cause is transient."""
     refresh = f'<meta http-equiv="refresh" content="{reload_s}">' if reload_s else ""
-    links = "".join(f'<link rel="stylesheet" href="/{assets.BUNDLE_DIR}/{css}">' for css in assets.PAGE_STYLESHEETS)
+    links = f'<link rel="icon" type="image/svg+xml" href="/{assets.BUNDLE_DIR}/{assets.FAVICON}">' + "".join(
+        f'<link rel="stylesheet" href="/{assets.BUNDLE_DIR}/{css}">' for css in assets.PAGE_STYLESHEETS
+    )
     body = (
         '<!DOCTYPE html><html><head><meta charset="UTF-8">'
         f"<title>{html.escape(title)}</title>{refresh}{links}"
@@ -141,6 +150,7 @@ class ServeDaemon:
     """One daemon instance; ``served_units`` None means every onboard unit is local to it.
 
     ``workspace`` is the colcon workspace builds run in, None when this daemon does not build.
+    ``launch_env`` is the environment launch jobs run in (this process's when None; see launch.capture_env).
     ``restart_required`` turns true once a build rebuilt this package inside the served install tree:
     the running daemon keeps the code it started with.
     """
@@ -153,6 +163,9 @@ class ServeDaemon:
         served_units: Optional[Iterable[str]] = None,
         workspace: Optional[Path] = None,
         record_root: Optional[Path] = None,
+        launch_env: Optional[Mapping[str, str]] = None,
+        env_script: Optional[Path] = None,
+        rviz_config: Optional[Path] = None,
         heartbeat_s: float = HEARTBEAT_INTERVAL_S,
         max_connections: int = MAX_CONNECTIONS,
         max_event_subscribers: int = MAX_EVENT_SUBSCRIBERS,
@@ -173,7 +186,24 @@ class ServeDaemon:
         self.methods.register("jobs.get", self._jobs_get)
         self.methods.register("jobs.cancel", self._jobs_cancel)
         self.methods.register("build.start", self._build_start)
+        self.methods.register("launch.start", self._launch_start)
+        self.methods.register("launch.status", self._launch_status, get_path="launch")
+        for action in launch.MEMBER_ACTIONS:
+            self.methods.register(f"launch.{action}", self._member_action(action))
+        self.methods.register("launch.shutdown", self._launch_shutdown)
+        for verb in launch.MEASURE_VERBS:
+            self.methods.register(f"measure.{verb}", self._measure(verb))
+        self.methods.register("rviz.start", self._rviz_start)
         self.jobs = jobs.JobRunner(self.hub)
+        self.launch = launch.LaunchManager(
+            self.hub,
+            self.jobs,
+            install_root=install_root,
+            cwd=workspace or install_root.parent,
+            env=launch_env,
+            env_script=env_script,
+            rviz_config=rviz_config,
+        )
         self._server: Optional[asyncio.AbstractServer] = None
         self._heartbeat: Optional[asyncio.Task] = None
         self._connections: set[asyncio.Task] = set()
@@ -199,6 +229,7 @@ class ServeDaemon:
         if self._heartbeat is not None:
             self._heartbeat.cancel()
         await self.jobs.shutdown()
+        await self.launch.close()
         self.hub.close()
         if self._connections:
             _, pending = await asyncio.wait(set(self._connections), timeout=SHUTDOWN_GRACE_S)
@@ -221,6 +252,7 @@ class ServeDaemon:
             "served_units": self.served_units,
             "workspace": None if self.workspace is None else str(self.workspace),
             "restart_required": self.restart_required,
+            "launch": self.launch.info(),
             "event_subscribers": self.hub.subscriber_count,
             "methods": self.methods.names(),
         }
@@ -230,6 +262,11 @@ class ServeDaemon:
         views = await asyncio.to_thread(
             lambda: [system.to_view(self.served_units, self._page_urls(system)) for system in systems]
         )
+        for view in views:
+            running = self.launch.running_units(view["id"])
+            for unit in view["compute_units"]:
+                if unit["name"] in running:
+                    unit["status"] = exports.UNIT_RUNNING
         return {
             "install_root": str(self.install_root),
             "systems": views,
@@ -307,6 +344,65 @@ class ServeDaemon:
         )
         return (await self.jobs.start(spec)).to_view()
 
+    def _unit_status(self, system: exports.SystemExport, compute_unit: str) -> Optional[str]:
+        view = system.to_view(self.served_units, {})
+        return next((u["status"] for u in view["compute_units"] if u["name"] == compute_unit), None)
+
+    async def _launch_start(self, params: dict[str, Any]) -> dict[str, Any]:
+        system = await self._find_system(_str_param(params, "system", required=True))
+        compute_unit = _str_param(params, "compute_unit", required=True)
+        status = self._unit_status(system, compute_unit)
+        if status is None:
+            raise api.ApiError(api.INVALID_PARAMS, f"unknown compute unit {compute_unit!r} of {system.id}")
+        if status != exports.UNIT_AVAILABLE:
+            raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is {status} on this daemon")
+        mode = _str_param(params, "mode") or system.manifest.get("default_mode")
+        if not isinstance(mode, str) or mode not in system.mode_keys():
+            raise api.ApiError(api.INVALID_PARAMS, f"unknown mode {mode!r} of {system.id}")
+        if not system.structure_path(mode).is_file():
+            raise api.ApiError(api.INVALID_PARAMS, f"mode {mode!r} of {system.id} has no system structure")
+        deploy = _str_param(params, "deploy")
+        if deploy is not None and deploy not in {v["name"] for v in system.deploy_variants()}:
+            raise api.ApiError(api.INVALID_PARAMS, f"unknown deploy variant {deploy!r} of {system.id}")
+        policy = _str_param(params, "policy") or launch.POLICIES[0]
+        if policy not in launch.POLICIES:
+            raise api.ApiError(api.INVALID_PARAMS, f"policy must be one of {', '.join(launch.POLICIES)}")
+        session = await self.launch.start(
+            system,
+            compute_unit=compute_unit,
+            mode=mode,
+            deploy=deploy,
+            args=launch.parse_args_param(params.get("args")),
+            policy=policy,
+            measure=_bool_param(params, "measure"),
+            respawn=_bool_param(params, "respawn"),
+        )
+        return session.to_view()
+
+    async def _launch_status(self, params: dict[str, Any]) -> dict[str, Any]:
+        return {"sessions": self.launch.views(_str_param(params, "compute_unit"))}
+
+    def _member_action(self, action: str) -> api.Handler:
+        async def handler(params: dict[str, Any]) -> Any:
+            compute_unit = _str_param(params, "compute_unit", required=True)
+            pattern = _str_param(params, "pattern", required=True)
+            return await self.launch.call(compute_unit, action, {"pattern": pattern})
+
+        return handler
+
+    async def _launch_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
+        return await self.launch.shutdown(_str_param(params, "compute_unit", required=True))
+
+    def _measure(self, verb: str) -> api.Handler:
+        async def handler(params: dict[str, Any]) -> Any:
+            compute_unit = _str_param(params, "compute_unit", required=True)
+            return await self.launch.call(compute_unit, f"measure.{verb}", {})
+
+        return handler
+
+    async def _rviz_start(self, params: dict[str, Any]) -> dict[str, Any]:
+        return (await self.launch.start_rviz()).to_view()
+
     # -- connection handling -----------------------------------------------
 
     async def _on_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -375,6 +471,9 @@ class ServeDaemon:
 
         if request.method not in ("GET", "HEAD"):
             raise api.ApiError(api.METHOD_NOT_ALLOWED, "static files accept GET")
+        if request.path == "/favicon.ico":
+            # Browsers ask here when a page names no icon; every page does, but not every client reads it.
+            return await self._file_response(request, assets.web_file(assets.FAVICON))
         if request.path.startswith(BUNDLE_PREFIX):
             relative = request.path[len(BUNDLE_PREFIX) :]
             path = assets.web_file(relative) if relative.split("/")[0] in assets.BUNDLE_SUBDIRS else None

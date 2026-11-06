@@ -4,7 +4,7 @@
 //
 // Page events: "daemon.connection" {connected}, "daemon.health" (health result),
 // "daemon.jobs" (job list), and "daemon.<topic>" for every event-stream topic
-// (job, job.log, systems.changed, daemon, member, member.log).
+// (job, job.log, systems.changed, daemon, launch, member, member.log).
 (function () {
   const SD = window.SD;
   const CLIENT_HEADER = "X-System-Designer-Client";
@@ -13,6 +13,7 @@
     "job.log",
     "systems.changed",
     "daemon",
+    "launch",
     "member",
     "member.log",
   ];
@@ -106,7 +107,9 @@
       source.addEventListener(topic, (event) => {
         const data = JSON.parse(event.data);
         if (topic === "job") upsertJob(data);
-        if (topic === "systems.changed") systemsRequest = null;
+        // A launch changes the unit status of its system.
+        if (topic === "systems.changed" || topic === "launch")
+          systemsRequest = null;
         if (topic === "daemon") refreshHealth().catch(() => {});
         SD.emit(`daemon.${topic}`, data);
       });

@@ -64,6 +64,11 @@ class RosWorker:
         self._jobs: "queue.Queue[tuple[Callable[[], object], asyncio.Future]]" = queue.Queue()
         self._probes: list = []
 
+    @property
+    def node(self):
+        """The rclpy node; entities on it are created on the ros thread."""
+        return self._node
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------

@@ -144,6 +144,7 @@ class Site:
             packages.setdefault(e.package, []).append({"name": e.name, **system_pages(e)})
         return self._env.get_template("systems_index.html.jinja2").render(
             packages=[{"name": name, "systems": systems} for name, systems in packages.items()],
+            icon=_bundle_links("", (assets.FAVICON,))[0],
             stylesheets=_bundle_links("", assets.PAGE_STYLESHEETS),
             scripts=_bundle_links("", assets.PAGE_SCRIPTS),
         )
@@ -151,6 +152,7 @@ class Site:
     def _workbench(self, export: SystemExport) -> str:
         return self._env.get_template("workbench.html.jinja2").render(
             deployment_name=export.name,
+            icon=_bundle_links(SYSTEM_PAGE_ROOT, (assets.FAVICON,))[0],
             stylesheets=_bundle_links(SYSTEM_PAGE_ROOT, assets.WORKBENCH_STYLESHEETS),
             scripts=_bundle_links(SYSTEM_PAGE_ROOT, assets.WORKBENCH_SCRIPTS),
             entry_script=f"{SYSTEM_PAGE_ROOT}{assets.BUNDLE_DIR}/{assets.WORKBENCH_ENTRY}",

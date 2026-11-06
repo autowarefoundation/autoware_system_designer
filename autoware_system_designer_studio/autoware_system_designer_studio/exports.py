@@ -57,6 +57,8 @@ UNIT_AVAILABLE = "available"
 UNIT_REMOTE_UNSUPPORTED = "remote_unsupported"
 UNIT_OFFBOARD = "offboard"
 UNIT_UNSUPPORTED = "unsupported"
+# An available unit with a launch of it active on this daemon.
+UNIT_RUNNING = "running"
 
 
 def resolve_install_root(explicit: Optional[str]) -> Optional[Path]:

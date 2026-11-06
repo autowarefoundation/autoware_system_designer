@@ -32,6 +32,7 @@
       const count = SD.NamespaceTree.render(tree, root, {
         query,
         selectedPath,
+        onToggle: render,
         onSelect(node) {
           selectedPath = node.path;
           render();

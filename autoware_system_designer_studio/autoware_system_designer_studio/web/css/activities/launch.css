@@ -1,4 +1,4 @@
-/* Launch activity: the launchpad cards, the commands table and the state monitor. */
+/* Launch activity: the launchpad cards, the commands popup and the state monitor. */
 
 .launch-list {
   display: flex;
@@ -25,6 +25,32 @@
 .launch-unit {
   font-size: 13px;
   font-weight: 600;
+}
+
+.launch-session,
+.launch-measure {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.launch-session.running {
+  color: var(--state-running);
+}
+
+.launch-session.starting {
+  color: var(--state-warning);
+}
+
+.launch-error {
+  font-size: 12px;
+  color: var(--state-failed);
+  word-break: break-word;
+}
+
+.launch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 /* Commands table */
@@ -94,7 +120,85 @@
   font-weight: 500;
 }
 
+/* Composable nodes listed under their container */
+.ns-row.ns-composable .ns-label {
+  font-style: italic;
+}
+
+/* Meaning of the run-state marks, at the foot of the tree */
+.monitor-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.monitor-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Launcher processes listed above the member tree */
+.monitor-launchers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.monitor-launcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: left;
+  background: none;
+  color: var(--text-primary);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.monitor-launcher:hover {
+  background: var(--bg-tertiary);
+}
+
+.monitor-launcher.selected {
+  border-color: var(--border-active);
+}
+
+.monitor-launcher-unit {
+  font-weight: 600;
+}
+
+.monitor-launcher-state {
+  color: var(--text-muted);
+}
+
+.member-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.member-actions .panel-button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.member-note {
+  font-size: 12px;
+  color: var(--state-failed);
+}
+
 .member-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
   font-weight: 600;
   color: var(--state-idle);

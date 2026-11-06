@@ -62,11 +62,11 @@ its options in the side panel, its content in the main area and, when it selects
 inspector. The top bar holds the system and the mode, which every activity reads; other selections
 live in the activity that uses them, as store keys mirrored in the URL.
 
-| Activity | Side panel                                         | Main area                                                                            |
-| -------- | -------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Explore  | diagram list; entity search on searchable diagrams | diagram canvas; inspector shows the selected element                                 |
-| Launch   | deploy, command method; unit launch (daemon)       | launch commands of the mode, or the state monitor (daemon `launch.status`; `?view=`) |
-| Build    | target, compute unit, start; job list (daemon)     | log of the selected job (`?job=`)                                                    |
+| Activity | Side panel                                                          | Main area                                            |
+| -------- | ------------------------------------------------------------------- | ---------------------------------------------------- |
+| Explore  | diagram list; entity search on searchable diagrams                  | diagram canvas; inspector shows the selected element |
+| Launch   | deploy, launch options, unit launch (daemon), launch commands popup | state monitor of the mode (daemon `launch.status`)   |
+| Build    | target, compute unit, start; job list (daemon)                      | log of the selected job (`?job=`)                    |
 
 An activity is one `SD.workbench.registerActivity(def)` call from its `index.js`, with its parts
 attached to `SD.activities.<id>` by the scripts before it. `def` names the activity (`id`, `title`,
@@ -88,7 +88,9 @@ autoware-system-designer-studio serve \
     --record-dir ~/.ros/autoware_system_designer/records \  # measurement records (default shown)
     --port 8780 \                  # 0 picks a free port
     --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
-    --compute-unit main_ecu        # units local to this daemon (repeatable; default: every onboard unit)
+    --compute-unit main_ecu \      # units local to this daemon (repeatable; default: every onboard unit)
+    --env-script install/setup.bash \  # sourced once into the environment launch jobs run in
+    --rviz-config autoware.rviz    # opened by rviz.start (default: autoware_launch's autoware.rviz)
 ```
 
 Open `http://127.0.0.1:8780/`. Pages follow the [site layout](#site-layout) and reflect the exports
@@ -103,34 +105,44 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `GET /api/health`  | Daemon status, including `workspace` and `restart_required`                                                  |
 | `GET /api/systems` | Exported systems: modes, compute units with their status, build scripts per mode, deploy variants, page URLs |
 | `GET /api/jobs`    | Jobs, newest first                                                                                           |
+| `GET /api/launch`  | Launch sessions with their members                                                                           |
 | `GET /api/events`  | Server-Sent Events with daemon-wide sequence numbers as event ids (topics below)                             |
 | `POST /api/rpc`    | Request envelope `{"id", "method", "params"}` for any method below                                           |
 
-| Method         | Params                                                      | Result                                   |
-| -------------- | ----------------------------------------------------------- | ---------------------------------------- |
-| `health`       | -                                                           | Daemon status                            |
-| `systems.list` | -                                                           | Exported systems                         |
-| `jobs.list`    | -                                                           | `{"jobs": [job]}`                        |
-| `jobs.get`     | `job`, `since` (log seq, default 0), `limit`                | `{"job", "log": {"first_seq", "lines"}}` |
-| `jobs.cancel`  | `job`                                                       | job                                      |
-| `build.start`  | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit` | job                                      |
+| Method                                            | Params                                                                             | Result                                      |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------- |
+| `health`                                          | -                                                                                  | Daemon status                               |
+| `systems.list`                                    | -                                                                                  | Exported systems                            |
+| `jobs.list`                                       | -                                                                                  | `{"jobs": [job]}`                           |
+| `jobs.get`                                        | `job`, `since` (log seq, default 0), `limit`                                       | `{"job", "log": {"first_seq", "lines"}}`    |
+| `jobs.cancel`                                     | `job`                                                                              | job                                         |
+| `build.start`                                     | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit`                        | job                                         |
+| `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn` | session                                     |
+| `launch.status`                                   | `compute_unit` (optional)                                                          | `{"sessions": [session]}`, members included |
+| `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`                                                          | `{"members": [path]}` acted on              |
+| `launch.shutdown`                                 | `compute_unit`                                                                     | `{"shutting_down": true}`                   |
+| `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                     | `{"state", "message"}` of the window        |
+| `rviz.start`                                      | -                                                                                  | job                                         |
 
-| Event topic       | Data                                                                      |
-| ----------------- | ------------------------------------------------------------------------- |
-| `hello`           | Sent first on each stream; no replay, so clients resynchronise by request |
-| `heartbeat`       | `{"time"}`                                                                |
-| `job`             | Job record on every state change                                          |
-| `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                     |
-| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                 |
-| `daemon`          | `{"restart_required": true}`                                              |
+| Event topic       | Data                                                                          |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `hello`           | Sent first on each stream; no replay, so clients resynchronise by request     |
+| `heartbeat`       | `{"time"}`                                                                    |
+| `job`             | Job record on every state change                                              |
+| `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                         |
+| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                     |
+| `daemon`          | `{"restart_required": true}`                                                  |
+| `launch`          | Session view (without members) on every change of a launch                    |
+| `member`          | `{"compute_unit", "system", "path", "state", "detail", "time"}` of one member |
+| `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new stdout/stderr lines        |
 
 Responses use one envelope: `{"ok": true, "result": ...}` or
 `{"ok": false, "error": {"code", "message"}}`, with `id` echoed on `/api/rpc`. Error codes are
 stable strings (`bad_request`, `forbidden`, `not_found`, `method_not_allowed`,
 `unsupported_media_type`, `payload_too_large`, `unknown_method`, `invalid_params`, `conflict`,
-`unavailable`, `internal`), each mapped to one HTTP status. Compute unit `status` is open-ended; current values are
-`available`, `remote_unsupported` (an onboard unit served by another daemon), `offboard` and
-`unsupported`.
+`refused`, `unavailable`, `internal`), each mapped to one HTTP status. Compute unit `status` is
+open-ended; current values are `available`, `running` (an available unit launched by this daemon),
+`remote_unsupported` (an onboard unit served by another daemon), `offboard` and `unsupported`.
 
 Access rules: the listener binds `127.0.0.1` only; the `Host` header must name it (`127.0.0.1:<port>`
 or `localhost:<port>`); API requests the browser marks cross-site are refused; `POST /api/rpc` needs
@@ -159,3 +171,36 @@ available on this daemon. Job `detail` holds `packages` (selection) and `built_p
 colcon's `Starting >>>` lines). When a build rebuilds `autoware_system_designer_studio` or
 `autoware_system_designer_runtime` inside the install tree this daemon runs from, the daemon keeps
 running its loaded code and reports `restart_required`.
+
+### Launch
+
+`launch.start` runs the designer runtime launcher (`autoware-system-designer-launch`, found on the
+launch environment's PATH or under the install tree's `bin/`) on the mode's system structure as a
+job, one job key per compute unit, with `--compute-unit`, `--deploy`, one `--arg NAME=VALUE` per
+`args` entry, `--measure` and `--respawn` as requested, and `--control <socket>` on a private socket
+under `$XDG_RUNTIME_DIR`. The daemon connects to the socket once the runtime serves it, forwards the
+runtime's `member` and `member.log` events and relays `launch.stop|restart|kill` (a member `pattern`:
+the exact path, else every path containing it), `launch.shutdown` and `measure.*` as requests. A
+shutdown asked before the channel is up cancels the job. The runtime's own output is the job's log.
+
+A session is `starting` until the channel connects, then `running`, `stopping` once the runtime
+closed the channel for a requested shutdown, and `exited`; its view carries
+the job, `connected`, the runtime's `control` facts (pid, `policy`, `measure_armed`), `launch_ready`
+and `shutting_down`. Member records are the runtime's: `state` one of `pending`, `running`,
+`stopped`, `respawning`, `failed`, `done`, `loading`, `loaded`, with a `detail` such as `pid` or
+`exit_code`. `policy` is `guard` (default: stop, restart, kill and shutdown are refused with
+`refused` while the operation mode is autonomous or in transition) or `open`.
+
+The workbench's state monitor lists composable nodes under their container, whose process holds
+their output and whose exit they follow; a module or container shows the severest state among its
+members. The legend at the foot of the tree gives each mark's shape and colour.
+
+`rviz.start` runs `rviz2` from the launch environment as a job of its own, one per daemon
+(`conflict` while it runs), on the `--rviz-config` file, else on `autoware_launch`'s `autoware.rviz`
+under the environment's ament prefixes, else on no configuration. The workbench offers it as
+"Launch RViz" under the Launch activity's commands.
+
+Launch jobs need the ROS environment the daemon itself does without: start `serve` from a sourced
+shell, or pass `--env-script` with a setup script, sourced once at start into the job environment.
+Without `ROS_DISTRO` in that environment `launch.start` and `rviz.start` answer `unavailable`. RViz
+also needs the display of that environment (`DISPLAY` or `WAYLAND_DISPLAY`).

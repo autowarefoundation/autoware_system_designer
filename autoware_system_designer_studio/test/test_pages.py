@@ -149,6 +149,11 @@ def test_workbench_loads_the_shell_before_its_activities(tmp_path):
             assert style in workbench
 
 
+def test_every_workbench_asset_is_in_the_bundle():
+    for relative in assets.WORKBENCH_SCRIPTS + assets.WORKBENCH_STYLESHEETS + (assets.WORKBENCH_ENTRY,):
+        assert assets.web_file(relative) is not None, relative
+
+
 def test_pages_link_the_bundle_relative_to_the_site_root(tmp_path):
     _, system = _system(tmp_path)
     site = Site([system])
@@ -156,7 +161,9 @@ def test_pages_link_the_bundle_relative_to_the_site_root(tmp_path):
     index = site.render("index.html")
     assert f'href="{SITE}/index.html?activity=explore"' in index
     assert f'href="{SITE}/index.html?activity=launch"' in index
+    assert '<link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">' in index
     workbench = site.render(f"{SITE}/index.html")
+    assert '<link rel="icon" type="image/svg+xml" href="../../../assets/img/favicon.svg" />' in workbench
     assert 'src="../../../assets/js/core/sd.js"' in workbench
     assert 'src="../../../assets/js/pages/workbench_page.js"' in workbench
 

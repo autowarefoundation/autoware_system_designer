@@ -56,26 +56,44 @@
           ?.searchable;
       }
 
+      // The diagram locates the store's entity when it loads and on show; a
+      // change while shown comes from this canvas and is already in place.
+      let shownKey = "";
+      function followEntity() {
+        const key = store.get("entity");
+        if (!key || key === shownKey) return;
+        shownKey = key;
+        host.focusKey(key).catch((error) => console.warn("explore:", error));
+      }
+      function load() {
+        shownKey = "";
+        host.load().then(followEntity);
+      }
+
       // The canvas lays out only while visible; a change made while hidden reloads on the next show.
       let stale = false;
       const reload = () => {
         if (main.hidden) stale = true;
-        else host.load();
+        else load();
       };
       store.onChange("diagram", () => {
         showDiagramOptions();
         reload();
       });
       store.onChange("mode", reload);
+      store.onChange("entity", (key) => {
+        if (!main.hidden) shownKey = key;
+      });
       SD.on("themechange", host.updateTheme);
 
       showDiagramOptions();
-      host.load();
+      load();
       return {
         show() {
-          if (!stale) return;
-          stale = false;
-          host.load();
+          if (stale) {
+            stale = false;
+            load();
+          } else followEntity();
         },
       };
     },

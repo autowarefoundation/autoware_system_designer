@@ -674,7 +674,11 @@
       rect.onclick = (e) => {
         if (this.hasDragged) return;
         e.stopPropagation();
-        this.updateInfoPanel(userData, isComputeUnit ? "Compute unit" : "Node");
+        this.updateInfoPanel(
+          userData,
+          isComputeUnit ? "Compute unit" : "Node",
+          userData,
+        );
         this.clearHighlights();
         const nodeGroup = this.elementById(node.id);
         if (isComputeUnit) {

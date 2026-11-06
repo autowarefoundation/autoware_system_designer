@@ -243,6 +243,8 @@
     SD.store.define("deploy", config.deployNames[0] || "", (v) =>
       config.deployNames.includes(v),
     );
+    // Selected node or module, by entity key, shared by the activities.
+    SD.store.define("entity", "");
     SD.store.syncUrl();
 
     document.title = `${config.deploymentName} - Autoware System Designer Studio`;

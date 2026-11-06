@@ -24,7 +24,10 @@ WEB_ROOT = Path(__file__).resolve().parent.parent / "web"
 # Directory of a site that holds the bundle, keeping the web/ layout below it.
 BUNDLE_DIR = "assets"
 # Bundle subdirectories a site carries.
-BUNDLE_SUBDIRS = ("css", "js")
+BUNDLE_SUBDIRS = ("css", "js", "img")
+
+# Tab icon of every page.
+FAVICON = "img/favicon.svg"
 
 # Window variable a mode's data script fills: the exported system structure, keyed by mode.
 DATA_GLOBAL = "systemStructureData"
@@ -33,8 +36,8 @@ DATA_GLOBAL = "systemStructureData"
 # first shown, and whether the module locates entities (``focusEntity``), which Explore search needs.
 DIAGRAMS = {
     "node_diagram": {"label": "Node Diagram", "script": "js/diagrams/node_diagram.js", "searchable": True},
+    "logic_diagram": {"label": "Logic Diagram", "script": "js/diagrams/logic_diagram.js", "searchable": True},
     "sequence_diagram": {"label": "Sequence Diagram", "script": "js/diagrams/sequence_diagram.js", "searchable": False},
-    "logic_diagram": {"label": "Logic Diagram", "script": "js/diagrams/logic_diagram.js", "searchable": False},
 }
 
 DEFAULT_DIAGRAM_TYPE = "node_diagram"
@@ -53,6 +56,7 @@ SHELL_SCRIPTS = (
     "js/widgets/controls.js",
     "js/widgets/terminal.js",
     "js/widgets/main_view.js",
+    "js/widgets/popup.js",
     "js/widgets/namespace_tree.js",
 )
 
@@ -69,6 +73,8 @@ ACTIVITIES = {
     },
     "launch": {
         "scripts": (
+            "js/activities/launch/sessions.js",
+            "js/activities/launch/member_tree.js",
             "js/activities/launch/commands_table.js",
             "js/activities/launch/state_monitor.js",
             "js/activities/launch/index.js",

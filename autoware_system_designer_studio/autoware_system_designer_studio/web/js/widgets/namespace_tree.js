@@ -25,6 +25,14 @@
     return list;
   }
 
+  // Key naming an entity across activities: its path, with a node's name
+  // appended when the path ends elsewhere (a node placed at a module's own path).
+  function entityKey(entity) {
+    if (entity.entity_type !== "node") return entity.path;
+    const last = entity.path.split("/").filter(Boolean).pop();
+    return last === entity.name ? entity.path : `${entity.path}/${entity.name}`;
+  }
+
   // { segment, path, entities[], children: Map } rooted at "/".
   function build(entityList) {
     const root = { segment: "/", path: "/", entities: [], children: new Map() };
@@ -70,13 +78,17 @@
 
   /**
    * Renders the tree into `container`.
-   * options: query, expanded (Set of open paths), selectedPath, onSelect(node), decorate(node, rowElement)
+   * options: query, expanded (Set of open paths), selectedPath, onSelect(node),
+   * onToggle(node) after a fold or unfold, selectable(node) whether a click on
+   * the row selects it (default: it carries an entity), decorate(node, rowElement)
    * Returns the number of rendered entries that match the query.
    */
   function render(container, root, options = {}) {
     const query = (options.query || "").trim().toLowerCase();
     const visible = visiblePaths(root, query);
     const expanded = options.expanded || new Set();
+    const selectable =
+      options.selectable || ((node) => node.entities.length > 0);
     let matchCount = 0;
     container.replaceChildren();
 
@@ -99,9 +111,22 @@
           row.classList.toggle("has-entity", node.entities.length > 0);
           row.title = node.path;
 
+          // The twisty folds; the rest of the row selects. A row that is not
+          // selectable folds from anywhere.
+          const toggle = () => {
+            if (expanded.has(node.path)) expanded.delete(node.path);
+            else expanded.add(node.path);
+          };
           const twisty = document.createElement("span");
           twisty.className = "ns-twisty";
           twisty.textContent = hasChildren ? (open ? "▾" : "▸") : "";
+          if (hasChildren) {
+            twisty.addEventListener("click", (event) => {
+              event.stopPropagation();
+              toggle();
+              options.onToggle?.(node);
+            });
+          }
           row.appendChild(twisty);
 
           const kind = node.entities[0]?.entity_type || "namespace";
@@ -113,12 +138,9 @@
           options.decorate?.(node, row);
 
           row.addEventListener("click", () => {
-            if (
-              hasChildren &&
-              (!node.entities.length || node.path === options.selectedPath)
-            ) {
-              if (expanded.has(node.path)) expanded.delete(node.path);
-              else expanded.add(node.path);
+            if (hasChildren && !selectable(node)) {
+              toggle();
+              options.onToggle?.(node);
             }
             options.onSelect?.(node);
           });
@@ -130,5 +152,5 @@
     return matchCount;
   }
 
-  SD.NamespaceTree = { loadStructure, entities, build, render };
+  SD.NamespaceTree = { loadStructure, entities, entityKey, build, render };
 })();
