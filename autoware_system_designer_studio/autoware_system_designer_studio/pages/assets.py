@@ -24,7 +24,10 @@ WEB_ROOT = Path(__file__).resolve().parent.parent / "web"
 # Directory of a site that holds the bundle, keeping the web/ layout below it.
 BUNDLE_DIR = "assets"
 # Bundle subdirectories a site carries.
-BUNDLE_SUBDIRS = ("css", "js")
+BUNDLE_SUBDIRS = ("css", "js", "img")
+
+# Tab icon of every page.
+FAVICON = "img/favicon.svg"
 
 # Window variable a mode's data script fills: the exported system structure, keyed by mode.
 DATA_GLOBAL = "systemStructureData"
