@@ -53,6 +53,7 @@ SHELL_SCRIPTS = (
     "js/widgets/controls.js",
     "js/widgets/terminal.js",
     "js/widgets/main_view.js",
+    "js/widgets/popup.js",
     "js/widgets/namespace_tree.js",
 )
 

@@ -5,7 +5,7 @@
   const { element, copyButton } = SD.widgets;
   const launch = (SD.activities.launch ||= {});
 
-  function commandsTable(container) {
+  function commandsTable() {
     const table = element("table", "launch-table");
     const head = element("thead");
     const headRow = element("tr");
@@ -15,7 +15,6 @@
     head.appendChild(headRow);
     const body = element("tbody");
     table.append(head, body);
-    container.appendChild(table);
 
     // `method` names the command column of each row; `unitStatus` maps unit -> reach.
     function render(rows, method, unitStatus) {
@@ -58,7 +57,7 @@
         }),
       );
     }
-    return { render };
+    return { element: table, render };
   }
 
   launch.commandsTable = commandsTable;

@@ -62,11 +62,11 @@ its options in the side panel, its content in the main area and, when it selects
 inspector. The top bar holds the system and the mode, which every activity reads; other selections
 live in the activity that uses them, as store keys mirrored in the URL.
 
-| Activity | Side panel                                         | Main area                                                                            |
-| -------- | -------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Explore  | diagram list; entity search on searchable diagrams | diagram canvas; inspector shows the selected element                                 |
-| Launch   | deploy, command method; unit launch (daemon)       | launch commands of the mode, or the state monitor (daemon `launch.status`; `?view=`) |
-| Build    | target, compute unit, start; job list (daemon)     | log of the selected job (`?job=`)                                                    |
+| Activity | Side panel                                                          | Main area                                            |
+| -------- | ------------------------------------------------------------------- | ---------------------------------------------------- |
+| Explore  | diagram list; entity search on searchable diagrams                  | diagram canvas; inspector shows the selected element |
+| Launch   | deploy, launch options, unit launch (daemon), launch commands popup | state monitor of the mode (daemon `launch.status`)   |
+| Build    | target, compute unit, start; job list (daemon)                      | log of the selected job (`?job=`)                    |
 
 An activity is one `SD.workbench.registerActivity(def)` call from its `index.js`, with its parts
 attached to `SD.activities.<id>` by the scripts before it. `def` names the activity (`id`, `title`,
