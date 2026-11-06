@@ -190,6 +190,8 @@ class ServeDaemon:
         self.methods.register("launch.status", self._launch_status, get_path="launch")
         for action in launch.MEMBER_ACTIONS:
             self.methods.register(f"launch.{action}", self._member_action(action))
+        self.methods.register("launch.follow", self._launch_follow)
+        self.methods.register("launch.unfollow", self._launch_unfollow)
         self.methods.register("launch.shutdown", self._launch_shutdown)
         for verb in launch.MEASURE_VERBS:
             self.methods.register(f"measure.{verb}", self._measure(verb))
@@ -390,6 +392,14 @@ class ServeDaemon:
 
         return handler
 
+    async def _launch_follow(self, params: dict[str, Any]) -> dict[str, Any]:
+        compute_unit = _str_param(params, "compute_unit", required=True)
+        return await self.launch.follow(compute_unit, _str_param(params, "path", required=True))
+
+    async def _launch_unfollow(self, params: dict[str, Any]) -> dict[str, Any]:
+        compute_unit = _str_param(params, "compute_unit", required=True)
+        return await self.launch.unfollow(compute_unit, _str_param(params, "path"))
+
     async def _launch_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
         return await self.launch.shutdown(_str_param(params, "compute_unit", required=True))
 
@@ -586,3 +596,5 @@ class ServeDaemon:
         finally:
             eof.cancel()
             self.hub.unsubscribe(subscriber)
+            if self.hub.subscriber_count == 0:
+                self.launch.release_follows()

@@ -23,6 +23,11 @@ member records, forwards its ``member`` and ``member.log`` events to the event s
 ``launch.*`` and ``measure.*`` methods as requests over the socket. A ``launch`` event carries the
 session view (without members) whenever its job, connection or runtime state changes.
 
+Member output flows only for followed members: ``launch.follow`` asks the runtime to tail one
+member and answers with the current tail of its files, ``launch.unfollow`` releases it. The daemon
+is one runtime client, so follows are shared by every event stream and released together once the
+last stream closes.
+
 RViz is a job of its own (``rviz2``, one per daemon) in the same launch environment.
 """
 
@@ -214,6 +219,7 @@ class LaunchSession:
         self.job: Optional[jobs.Job] = None
         self.client: Optional[ControlClient] = None
         self.members: dict[str, dict[str, Any]] = {}
+        self.follows: set[str] = set()
         self.control: dict[str, Any] = {"pid": None, "policy": None, "methods": [], "measure_armed": False}
         self.launch_ready = False
         self.shutting_down = False
@@ -403,6 +409,33 @@ class LaunchManager:
             raise api.ApiError(api.UNAVAILABLE, f"the control channel of {compute_unit!r} is not connected yet")
         return await session.client.call(method, params)
 
+    async def follow(self, compute_unit: str, path: str) -> dict[str, Any]:
+        """Tails one member on the runtime; the result carries the current ``out`` and ``err`` tails."""
+        session = self.active_session(compute_unit)
+        result = await self.call(compute_unit, "log.follow", {"path": path})
+        session.follows.add(path)
+        return result
+
+    async def unfollow(self, compute_unit: str, path: Optional[str]) -> dict[str, Any]:
+        """Releases one followed member, or every one of the unit when no path is given."""
+        session = self.active_session(compute_unit)
+        result = await self.call(compute_unit, "log.unfollow", {} if path is None else {"path": path})
+        if path is None:
+            session.follows.clear()
+        else:
+            session.follows.discard(path)
+        return result
+
+    def release_follows(self) -> None:
+        """Drops every follow of every connected runtime; called once no event stream is left to read them."""
+        for session in self.sessions.values():
+            if session.follows and session.client is not None:
+                session.follows.clear()
+                task = asyncio.ensure_future(session.client.call("log.unfollow", {}))
+                self._tasks.add(task)
+                task.add_done_callback(self._tasks.discard)
+                task.add_done_callback(_log_failure)
+
     async def shutdown(self, compute_unit: str) -> dict[str, Any]:
         """Shutdown through the runtime; a launch without a channel yet is cancelled as a job."""
         session = self.active_session(compute_unit)
@@ -464,6 +497,7 @@ class LaunchManager:
             session.shutting_down = bool(obj.get("shutting_down"))
             records = obj.get("members") if isinstance(obj.get("members"), list) else []
             session.members = {r["path"]: r for r in records if isinstance(r, dict) and isinstance(r.get("path"), str)}
+            session.follows.clear()
             self._publish(session)
         elif kind == "member" and isinstance(obj.get("path"), str):
             record = {k: v for k, v in obj.items() if k != "event"}
@@ -501,6 +535,14 @@ def _unlink(path: Path) -> None:
         pass
     except OSError as exc:
         logger.warning("cannot remove %s: %s", path, exc)
+
+
+def _log_failure(task: asyncio.Task) -> None:
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.warning("releasing follows failed: %s", exc)
 
 
 def parse_args_param(value: Any) -> dict[str, str]:

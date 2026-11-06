@@ -110,14 +110,18 @@ requests and gets one response each:
 | ------------------------------------------------- | --------- | -------------------------------------------------------- |
 | `status`                                          | -         | `{"members": [record], "launch_ready", "shutting_down"}` |
 | `stop`, `restart`, `kill`                         | `pattern` | `{"members": [matched names]}`                           |
+| `log.follow`                                      | `path`    | `{"path", "out": [lines], "err": [lines]}`, the tails    |
+| `log.unfollow`                                    | `path`?   | `{"released": [paths]}` (every follow without `path`)    |
 | `measure.start`, `measure.stop`, `measure.status` | -         | `{"state", "message"}` (needs `--measure`)               |
 | `shutdown`                                        | -         | `{"shutting_down": true}`                                |
 
 A member record is `{"path", "state", "detail", "time"}`; `path` is the member name (the node's
 structural path), `state` one of `pending`, `running`, `stopped`, `respawning`, `failed`, `done`,
 `loading`, `loaded`, and `detail` carries the state's data (`pid`, `exit_code`, `attempt`, `error`,
-`unique_id`). Lines of a member's `out` and `err` files are forwarded while a client is connected.
-Error codes are stable strings: `bad_request`, `invalid_params`, `unknown_method`, `not_found`,
+`unique_id`). Member output stays in the per-member `out` and `err` files; a client that follows a
+member (`log.follow`) gets the files' current tails in the reply and new lines as `member.log`
+events until it unfollows or disconnects. Unfollowed members cost the channel nothing. Error codes
+are stable strings: `bad_request`, `invalid_params`, `unknown_method`, `not_found`,
 `unavailable`, `refused`, `payload_too_large`, `internal`.
 
 **Safe-state interlock.** With `--control-policy guard` (the default, also for `--interactive`), the
