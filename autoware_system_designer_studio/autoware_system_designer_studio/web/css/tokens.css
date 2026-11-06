@@ -34,14 +34,14 @@
 }
 
 [data-theme="dark"] {
-  /* Dark theme colors */
+  /* Dark theme colors: content darkest, side panels a step lighter, chrome lightest */
   --bg-primary: #1a1a1a;
-  --bg-secondary: #2d2d2d;
-  --bg-tertiary: #3a3a3a;
-  --bg-sidebar: #2d2d2d;
-  --bg-sidebar-header: #3a3a3a;
-  --bg-info-card: #3a3a3a;
-  --bg-loading: rgba(45, 45, 45, 0.9);
+  --bg-secondary: #1e1e1e;
+  --bg-tertiary: #383838;
+  --bg-sidebar: #262626;
+  --bg-sidebar-header: #333333;
+  --bg-info-card: #383838;
+  --bg-loading: rgba(30, 30, 30, 0.9);
   --text-primary: #e9ecef;
   --text-secondary: #adb5bd;
   --text-muted: #6c757d;
