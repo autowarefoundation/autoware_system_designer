@@ -23,12 +23,11 @@ from autoware_system_designer.common.exceptions import SystemDesignerError, rend
 from autoware_system_designer.deploy import (
     build_deployment,
     export_parameter_set_templates,
+    export_reference_latency,
     generate_build_scripts,
     generate_launchers,
     generate_system_monitor_config,
-    generate_visualization,
 )
-from autoware_system_designer.visualizer.visualization_index import update_index
 
 # Stable name whether imported or executed as a script.
 _logger = logging.getLogger("autoware_system_designer.deployment_process")
@@ -88,8 +87,8 @@ def build(
         logger.info("Autoware System Designer: Exporting parameter set template...")
         export_parameter_set_templates(artifacts)
 
-        logger.info("Autoware System Designer: Generating visualization...")
-        generate_visualization(artifacts)
+        logger.info("Autoware System Designer: Exporting reference latency...")
+        export_reference_latency(artifacts)
 
         logger.info("Autoware System Designer: Generating launch files...")
         generate_launchers(artifacts)
@@ -99,10 +98,6 @@ def build(
 
         logger.info("Autoware System Designer: Generating build scripts...")
         generate_build_scripts(artifacts)
-
-        # update the visualization index
-        logger.info("Autoware System Designer: Updating visualization index...")
-        update_index(output_root_dir)
 
         logger.info("Autoware System Designer: Done!")
     except SystemDesignerError as exc:

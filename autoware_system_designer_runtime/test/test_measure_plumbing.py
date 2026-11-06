@@ -20,6 +20,7 @@ import logging
 import time
 from pathlib import Path
 
+from autoware_system_designer_runtime import records
 from autoware_system_designer_runtime._impl.core import events as ev
 from autoware_system_designer_runtime._impl.core import regular_actor
 from autoware_system_designer_runtime._impl.core.config import ActorConfig
@@ -142,24 +143,31 @@ def test_tracer_env_prepends_preload_and_sets_trace_dir():
     assert bare["LD_PRELOAD"] == "/opt/lib/libtracer.so"
 
 
-def test_default_latency_out_targets_the_export_bundle_or_the_log_dir(tmp_path):
-    export = tmp_path / "exports" / "Auto"
+def test_default_latency_out_is_a_new_record_of_the_export_or_under_the_log_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR", str(tmp_path / "records"))
+    export = tmp_path / "install" / "pkg" / "share" / "pkg" / "exports" / "Auto"
     json_path = export / "system_structure" / "Runtime.json"
     json_path.parent.mkdir(parents=True)
     json_path.write_text("{}")
 
-    # No visualization bundle yet: the log directory takes it.
+    # Without a manifest naming the package, the log directory takes it.
     out = default_latency_out("Runtime", json_path, tmp_path / "logs")
-    assert out == tmp_path / "logs" / "latency" / "Runtime_latency.js"
+    assert out == tmp_path / "logs" / "latency" / "Runtime_latency.json"
 
-    (export / "visualization" / "web").mkdir(parents=True)
-    out = default_latency_out("Runtime", json_path, tmp_path / "logs")
-    assert out == export / "visualization" / "web" / "data" / "Runtime_latency.js"
+    (export / "deployment.json").write_text(json.dumps({"deployment_package_name": "pkg"}))
+    out = default_latency_out("Runtime", json_path, tmp_path / "logs", stamp="20261105-120000")
+    assert out == tmp_path / "records" / "pkg" / "Auto" / "latency" / "Runtime" / "20261105-120000.json"
 
     # A JSON outside an export tree falls back as well.
     loose = tmp_path / "Psim.json"
     loose.write_text("{}")
-    assert default_latency_out("Psim", loose, tmp_path / "logs") == tmp_path / "logs" / "latency" / "Psim_latency.js"
+    assert default_latency_out("Psim", loose, tmp_path / "logs") == tmp_path / "logs" / "latency" / "Psim_latency.json"
+
+
+def test_record_root_defaults_under_ros_home(tmp_path, monkeypatch):
+    monkeypatch.delenv("AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR", raising=False)
+    monkeypatch.setenv("ROS_HOME", str(tmp_path / "ros"))
+    assert records.record_root() == tmp_path / "ros" / "autoware_system_designer" / "records"
 
 
 def test_analyze_traces_writes_the_latency_file(tmp_path):
@@ -322,7 +330,7 @@ def _session(tmp_path, monkeypatch, **options):
         worker,
         MeasureOptions(**options),
         log_dir=tmp_path,
-        latency_out=tmp_path / "out" / "Test_latency.js",
+        latency_out=tmp_path / "out" / "Test_latency.json",
         mode="Test",
     )
     return session, worker
@@ -421,25 +429,18 @@ def test_console_close_and_analyze_are_idempotent(tmp_path, monkeypatch):
     asyncio.run(run())
 
 
-def test_latency_file_shape_follows_its_suffix(tmp_path):
+def test_latency_file_is_json(tmp_path):
     traces = tmp_path / "trace"
     start, end = write_chain_traces(traces)
     graph = NodeGraph.from_system_structure(chain_design())
-    script_out = tmp_path / "data" / "Test_latency.js"
-    json_out = tmp_path / "data" / "Test_latency.json"
+    json_out = tmp_path / "data" / "Test" / "20261105-120000.json"
 
     data = analyze_traces(
-        traces, graph, window_start_ns=start, window_end_ns=end, mode="Test", probe=True, latency_out=script_out
-    )
-    analyze_traces(
         traces, graph, window_start_ns=start, window_end_ns=end, mode="Test", probe=True, latency_out=json_out
     )
 
-    head, _, body = script_out.read_text().partition('window.latencyData["Test"] = ')
-    assert head == "window.latencyData = window.latencyData || {};\n"
-    assert json.loads(body.rstrip().rstrip(";")) == data
     assert json.loads(json_out.read_text()) == data
-    assert sorted(script_out.parent.iterdir()) == [script_out, json_out]
+    assert sorted(json_out.parent.iterdir()) == [json_out]
 
 
 def test_analyze_traces_counts_in_ros_time_when_the_run_had_a_clock(tmp_path):
@@ -447,7 +448,7 @@ def test_analyze_traces_counts_in_ros_time_when_the_run_had_a_clock(tmp_path):
     start, end = write_chain_traces(traces)
     write_clock_trace(traces, start, end, rate=0.5)
     graph = NodeGraph.from_system_structure(chain_design())
-    latency_out = tmp_path / "latency" / "Test_latency.js"
+    latency_out = tmp_path / "latency" / "Test_latency.json"
 
     data = analyze_traces(
         traces, graph, window_start_ns=start, window_end_ns=end, mode="Test", probe=True, latency_out=latency_out

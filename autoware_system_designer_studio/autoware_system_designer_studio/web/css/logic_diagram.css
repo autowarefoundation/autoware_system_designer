@@ -1,0 +1,193 @@
+/* Logic diagram. */
+
+/* --- Logic Diagram --- */
+.logic-diagram-container {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Event glyphs: chevrons for the ports, outlines for the gates. Highlight
+   colors are set by JS so they follow the diagram color presets. */
+.logic-event {
+  stroke: var(--text-muted);
+  stroke-width: 0.5px;
+  fill: var(--text-secondary);
+}
+
+.logic-event-output {
+  fill: var(--border-hover);
+}
+
+.logic-process {
+  stroke: var(--text-secondary);
+  stroke-width: 1px;
+  fill: var(--bg-tertiary);
+}
+
+.logic-process-unknown {
+  stroke-dasharray: 3 2;
+}
+
+/* No clock root reaches this event, so nothing paces it. */
+.logic-unclocked {
+  opacity: 0.45;
+}
+
+.logic-vertex-body {
+  transition: stroke 0.1s;
+}
+
+/* The node box the events inside it are declared by. */
+.logic-group-rect {
+  stroke-width: 1px;
+  transition: stroke 0.1s;
+}
+
+.logic-group-label {
+  font-family: "Segoe UI", sans-serif;
+  font-weight: 600;
+  pointer-events: none;
+  display: none;
+}
+
+/* Label detail is switched by the viewport scale: the classes are set on the
+   SVG root, and what is left out is too small to read at that scale. */
+.logic-vertex-label,
+.logic-vertex-sub,
+.logic-edge-label {
+  font-family: "Segoe UI", sans-serif;
+  pointer-events: none;
+  display: none;
+}
+
+.logic-vertex-sub {
+  fill: var(--text-muted);
+}
+
+svg.lod-node .logic-group-label {
+  display: block;
+}
+
+svg.lod-name .logic-vertex-label,
+svg.lod-name .logic-edge-label {
+  display: block;
+}
+
+svg.lod-rate .logic-vertex-sub {
+  display: block;
+}
+
+.logic-rate-mismatch {
+  fill: #dc3545;
+  pointer-events: none;
+}
+
+.logic-edge {
+  fill: none;
+}
+
+.logic-edge-trigger {
+  stroke: var(--text-muted);
+}
+
+/* A queue read: the reader takes what the queue holds on its own trigger, so
+   no chain runs along this edge. */
+.logic-edge-read {
+  stroke: var(--seq-queue, #1f8a70);
+  stroke-dasharray: 1.5 2.5;
+}
+
+/* --- Logic Diagram toolbar --- */
+.logic-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.logic-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.logic-toolbar-label {
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.logic-btn {
+  padding: 2px 7px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.logic-btn:hover {
+  border-color: var(--border-hover);
+}
+
+.logic-btn.active {
+  border-color: var(--highlight);
+  background: var(--highlight-bg);
+}
+
+.logic-select {
+  max-width: 260px;
+  padding: 2px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.logic-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.logic-counters {
+  color: var(--text-muted);
+}
+
+.logic-legend summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.chain-warn {
+  color: var(--error-color);
+}
+
+.logic-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--text-secondary);
+}
+
+.logic-legend-note {
+  margin-top: 4px;
+  color: var(--text-muted);
+}

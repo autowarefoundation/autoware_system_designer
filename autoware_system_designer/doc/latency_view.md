@@ -57,9 +57,9 @@ What the marks in the panel mean:
 
 ## Measurement file
 
-A run is loaded from `data/<mode>_latency.js` in the web bundle when the file exists, or by dropping a file (`.js` or `.json`) on the canvas. The file is one object; in the bundle it is written as the script `window.latencyData["<mode>"] = {...};`, which a page opened from `file://` can load where it cannot fetch JSON. The build copies `latency/<mode>_latency.js` (or `.json`) from the directory beside the system definition file when it exists and validates, and serves it as the script.
+A run is loaded with the page when the mode has one, or by dropping a file (`.js` or `.json`) on the canvas. The studio serves the mode's newest measurement record, else the reference measurement the export carries, as `data/<mode>_latency.js`: the script `window.latencyData["<mode>"] = {...};`, which a page opened from `file://` can load where it cannot fetch JSON. A reference measurement is `latency/<mode>_latency.json` (or `.js`) beside the system definition file; the build copies it into `exports/<system>/latency/` unchanged, and the studio validates it before serving.
 
-The runtime writes the file (schema `autoware_system_designer/latency/2`) from a traced run of the system, by default straight into the export's `visualization/web/data/`; see the [runtime README](../../autoware_system_designer_runtime/README.md#latency-measurement) for the command. It is keyed by node path and topic, never by process name or `unique_id`: ids are name hashes and change whenever the design is edited.
+The runtime writes the file (schema `autoware_system_designer/latency/2`) from a traced run of the system, by default as a new record under the record root (`<package>/<system>/latency/<mode>/<stamp>.json`); see the [runtime README](../../autoware_system_designer_runtime/README.md#latency-measurement) for the command and the record layout. It is keyed by node path and topic, never by process name or `unique_id`: ids are name hashes and change whenever the design is edited.
 
 ```json
 {

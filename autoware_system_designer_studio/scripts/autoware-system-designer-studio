@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+# Copyright 2026 TIER IV, inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""PATH entry point of the studio; runs from <prefix>/bin without a sourced workspace."""
+
+import os
+import sys
+
+# The unresolved script path keeps a symlink install anchored at its install prefix.
+_PREFIX = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_PYVER = f"python{sys.version_info.major}.{sys.version_info.minor}"
+# Packages imported from here; an isolated install keeps each under its own sibling prefix.
+_PACKAGE = "autoware_system_designer_studio"
+_DEPENDS = ("autoware_system_designer_runtime",)
+
+
+def _prefixes():
+    yield _PREFIX
+    if os.path.basename(_PREFIX) == _PACKAGE:
+        for depend in _DEPENDS:
+            yield os.path.join(os.path.dirname(_PREFIX), depend)
+
+
+def _import_paths(prefix):
+    """Site directories of a prefix, and the source trees a symlink install links from them."""
+    for site in (
+        os.path.join(prefix, "lib", _PYVER, "site-packages"),
+        os.path.join(prefix, "local", "lib", _PYVER, "dist-packages"),
+    ):
+        if not os.path.isdir(site):
+            continue
+        yield site
+        for name in sorted(os.listdir(site)):
+            if name.endswith(".egg-link"):
+                with open(os.path.join(site, name), encoding="utf-8") as link:
+                    target = link.readline().strip()
+                if target:
+                    yield target
+
+
+for _prefix in _prefixes():
+    for _path in _import_paths(_prefix):
+        if os.path.isdir(_path) and _path not in sys.path:
+            sys.path.insert(1, _path)
+
+from autoware_system_designer_studio.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    main()

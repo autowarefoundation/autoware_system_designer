@@ -1,0 +1,129 @@
+/* Node diagram. */
+
+/* Node diagram styles */
+.node-diagram-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  cursor: grab;
+}
+
+.node-diagram-container:active {
+  cursor: grabbing;
+}
+
+.node-diagram-container svg {
+  width: 100%;
+  height: 100%;
+}
+
+.node-rect {
+  /* stroke-width set per-depth by JS via SVG attribute (getLayerStyle().borderW) */
+  transition: all 0.2s;
+}
+
+.node-label {
+  font-family: "Segoe UI", sans-serif;
+  font-size: 12px;
+  pointer-events: none;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.port-rect {
+  stroke: var(--text-muted);
+  stroke-width: 1px;
+  fill: var(--bg-tertiary);
+  transition: all 0.1s;
+}
+
+.port-label {
+  font-family: "Segoe UI", sans-serif;
+  font-size: 9px;
+  pointer-events: none;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+/* Port whose topic is fixed by a node-level global key */
+.port-global {
+  stroke: #20c997;
+  fill: rgba(32, 201, 151, 0.3);
+}
+
+/* Global topic star: shown only while one of its ports is selected.
+   Stroke and fill are set by JS so they follow the diagram color presets. */
+.global-topic-line {
+  fill: none;
+}
+
+.global-topic-label {
+  font-family: "Segoe UI", sans-serif;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.edge-path {
+  fill: none;
+  stroke: var(--text-secondary);
+  /* stroke-width set per-depth by JS via SVG attribute (getLayerStyle().edgeW) */
+  transition: all 0.2s;
+}
+
+.edge-arrow {
+  fill: var(--text-secondary);
+}
+
+/* Node group highlighting - similar to module-highlighted */
+.node-group.highlighted {
+  stroke: none !important;
+  stroke-width: 0 !important;
+}
+
+.node-group.highlighted > .node-rect {
+  stroke: var(--highlight) !important;
+  /* stroke-width set by JS inline style (_applyNodeConnectionHighlight / leaf click) */
+}
+
+.node-group.highlighted > .edge-path {
+  /* stroke color and width set by JS inline style (_applyEdgeHighlight) */
+}
+
+.node-group.highlighted > g > .edge-arrow {
+  fill: var(--highlight) !important;
+}
+
+.edge-path.highlighted {
+  /* stroke color and width set by JS inline style (_applyEdgeHighlight / highlightModule) */
+}
+
+.highlighted .edge-arrow {
+  fill: var(--highlight) !important;
+}
+
+/* Module highlighting - only direct children, not descendants */
+.module-highlighted > .node-rect {
+  stroke: var(--highlight) !important;
+  /* stroke-width set by JS inline style via highlightModule() */
+}
+
+.module-highlighted > .edge-path {
+  stroke: var(--highlight) !important;
+  /* stroke-width set by JS inline style via highlightModule() */
+}
+
+.module-highlighted > g > .edge-arrow {
+  fill: var(--highlight) !important;
+}
+
+/* Child highlighting - only the boundary, not edges */
+.child-highlighted {
+  stroke: var(--highlight) !important;
+  /* stroke-width set by JS inline style via highlightModule() */
+}
+
+.port-highlighted {
+  stroke: var(--highlight) !important;
+  stroke-width: 2px;
+  fill: var(--highlight-bg);
+}

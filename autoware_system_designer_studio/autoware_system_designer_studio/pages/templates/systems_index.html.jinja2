@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Autoware System Designer Studio</title>
+    {% for href in stylesheets %}
+    <link rel="stylesheet" href="{{ href }}">
+    {% endfor %}
+    {% for src in scripts %}
+    <script src="{{ src }}"></script>
+    {% endfor %}
+</head>
+<body class="simple-page index-page">
+    <header class="page-topbar">
+        <span class="page-topbar-title">Autoware System Designer Studio</span>
+        <span id="source-status" class="page-topbar-status">Static export</span>
+        <div class="dark-mode-toggle">
+            <label for="dark-mode-switch">Dark Mode</label>
+            <div class="toggle-switch" id="dark-mode-switch"></div>
+        </div>
+    </header>
+    <div class="page-container">
+        <h1>Systems</h1>
+        {% if packages %}
+        {% for package in packages %}
+        <section class="package-group">
+            <h2 class="package-name">{{ package.name }}</h2>
+            <ul class="system-list">
+                {% for system in package.systems %}
+                <li class="system-row">
+                    <a href="{{ system.explore }}" class="system-name">{{ system.name }}</a>
+                    <nav class="system-links" aria-label="{{ system.name }} activities">
+                        <a class="item-link" href="{{ system.explore }}">Explore</a>
+                        <a class="item-link" href="{{ system.launch }}">Launch</a>
+                        <a class="item-link daemon-only" href="{{ system.build }}" hidden>Build</a>
+                    </nav>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endfor %}
+        {% else %}
+        <p class="empty-state">No exported systems found in the install tree.</p>
+        {% endif %}
+    </div>
+    <script>
+        SD.theme.init();
+        // Build links show only when a serve daemon answers for this page.
+        if (location.protocol.startsWith('http')) {
+            fetch('api/health').then(function(response) {
+                return response.ok ? response.json() : null;
+            }).then(function(body) {
+                if (!body || !body.ok) return;
+                document.getElementById('source-status').textContent = 'Daemon · pid ' + body.result.pid;
+                document.querySelectorAll('.daemon-only').forEach(function(link) { link.hidden = false; });
+            }).catch(function() {});
+        }
+    </script>
+</body>
+</html>

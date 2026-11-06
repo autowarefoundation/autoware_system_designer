@@ -1,0 +1,65 @@
+/* Design tokens: colours and fonts for the light theme and their dark overrides. Every other stylesheet reads these. */
+
+:root {
+  /* Light theme colors */
+  --bg-primary: #f8f9fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f8f9fa;
+  --bg-sidebar: #ffffff;
+  --bg-sidebar-header: #f8f9fa;
+  --bg-info-card: #f8f9fa;
+  --bg-loading: rgba(255, 255, 255, 0.9);
+  --text-primary: #212529;
+  --text-secondary: #495057;
+  --text-muted: #6c757d;
+  --seq-loop: #8e5ea2;
+  --seq-queue: #1f8a70;
+  --border-color: #e9ecef;
+  --border-hover: #adb5bd;
+  --border-active: #007bff;
+  --shadow: rgba(0, 0, 0, 0.05);
+  --highlight: #0d6efd;
+  --highlight-bg: #cfe2ff;
+  --spinner-border: #f3f3f3;
+  --spinner-active: #0d6efd;
+  --error-color: #dc3545;
+  --link-color: #1e88e5;
+  --mono-font: "Consolas", monospace;
+  /* Run states shared by jobs, launched members and diagram overlays */
+  --state-running: #0d6efd;
+  --state-ok: #1f8a70;
+  --state-warning: #b7791f;
+  --state-failed: #dc3545;
+  --state-idle: #6c757d;
+}
+
+[data-theme="dark"] {
+  /* Dark theme colors */
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #3a3a3a;
+  --bg-sidebar: #2d2d2d;
+  --bg-sidebar-header: #3a3a3a;
+  --bg-info-card: #3a3a3a;
+  --bg-loading: rgba(45, 45, 45, 0.9);
+  --text-primary: #e9ecef;
+  --text-secondary: #adb5bd;
+  --text-muted: #6c757d;
+  --seq-loop: #b48ccf;
+  --seq-queue: #5cc8a8;
+  --border-color: #495057;
+  --border-hover: #6c757d;
+  --border-active: #0d6efd;
+  --shadow: rgba(0, 0, 0, 0.3);
+  --highlight: #0d6efd;
+  --highlight-bg: #1a3a5c;
+  --spinner-border: #495057;
+  --spinner-active: #0d6efd;
+  --error-color: #dc3545;
+  --link-color: #4da3ff;
+  --state-running: #4da3ff;
+  --state-ok: #5cc8a8;
+  --state-warning: #e0a84f;
+  --state-failed: #f06572;
+  --state-idle: #8d959c;
+}

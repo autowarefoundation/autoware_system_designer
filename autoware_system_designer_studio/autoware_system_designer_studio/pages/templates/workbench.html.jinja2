@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>{{ deployment_name }} - Autoware System Designer Studio</title>
+    {% for href in stylesheets %}
+    <link rel="stylesheet" href="{{ href }}" />
+    {% endfor %}
+    <script src="config.js"></script>
+    {% for src in scripts %}
+    <script src="{{ src }}"></script>
+    {% endfor %}
+    <script
+      src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"
+      integrity="sha384-KO35c6PFq7tFxAEx6FtATwL9vOBOmCzQYr7GM0iTr3oO22s7Jc9OkclOH4AV7jwK"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"
+      integrity="sha384-yc/c2Lk1s2V2ir1rxvjo8YyVD9PlOlYTqpNr3Wm1WIuAA30GlDYNx6U5104OiavY"
+      crossorigin="anonymous"
+    ></script>
+  </head>
+  <body class="workbench">
+    <header id="topbar">
+      <div id="system-identity">
+        <a id="home-link" class="topbar-home" href="#">Systems</a>
+        <span class="topbar-sep">/</span>
+        <span id="system-name" class="topbar-system"></span>
+        <span id="system-package" class="topbar-package"></span>
+      </div>
+      <div class="topbar-selectors">
+        <label class="topbar-field" id="mode-field">Mode</label>
+      </div>
+      <div class="topbar-actions">
+        <span id="connection-status" class="connection-status" hidden></span>
+        <button
+          id="inspector-toggle"
+          class="topbar-icon-btn"
+          title="Inspector"
+          aria-label="Toggle inspector"
+          aria-pressed="true"
+        >
+          <svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M3 4h14v12H3zM12 4v12" />
+          </svg>
+        </button>
+        <button
+          id="settings-btn"
+          class="topbar-icon-btn"
+          title="Settings"
+          aria-label="Open settings"
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div id="workbench-body">
+      <nav id="rail" aria-label="Workbench activities">
+        <div class="rail-group rail-static-group"></div>
+        <div class="rail-group rail-daemon-group" hidden></div>
+      </nav>
+
+      <aside id="side-panel">
+        <div id="side-panel-header">
+          <span id="side-panel-title"></span>
+        </div>
+        <div id="side-panel-body"></div>
+      </aside>
+      <div id="side-panel-resizer" class="panel-resizer"></div>
+
+      <main id="main-area"></main>
+
+      <div id="inspector-resizer" class="panel-resizer"></div>
+      <aside id="inspector">
+        <div id="inspector-header">Inspector</div>
+        <div id="inspector-body"></div>
+      </aside>
+    </div>
+
+    <footer id="statusbar">
+      <span id="status-source" class="status-item"></span>
+      <span id="status-selection" class="status-item"></span>
+      <span class="status-spacer"></span>
+      <span id="status-jobs" class="status-item" hidden></span>
+      <span id="status-restart" class="status-item" hidden></span>
+      <span id="status-workspace" class="status-item" hidden></span>
+    </footer>
+
+    <!-- Settings Popup -->
+    <div id="settings-overlay"></div>
+    <div
+      id="settings-popup"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Settings"
+    >
+      <div id="settings-popup-header">
+        <span>Settings</span>
+        <button id="settings-close" aria-label="Close settings">
+          &#x2715;
+        </button>
+      </div>
+      <div class="settings-row">
+        <label for="dark-mode-switch">Dark Mode</label>
+        <div class="toggle-switch" id="dark-mode-switch"></div>
+      </div>
+      <div class="settings-row">
+        <label for="editor-selector">Editor</label>
+        <select id="editor-selector">
+          <option value="vscode">VS Code</option>
+          <option value="vscode-insiders">VS Code Insiders</option>
+          <option value="cursor">Cursor</option>
+          <option value="windsurf">Windsurf</option>
+          <option value="idea">IntelliJ IDEA</option>
+          <option value="clion">CLion</option>
+          <option value="pycharm">PyCharm</option>
+          <option value="webstorm">WebStorm</option>
+          <option value="subl">Sublime Text</option>
+        </select>
+      </div>
+    </div>
+
+    <script src="{{ entry_script }}"></script>
+  </body>
+</html>

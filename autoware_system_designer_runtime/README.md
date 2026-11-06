@@ -106,91 +106,6 @@ subdirectory is created per run unless `--log-dir` overrides it.
 
 ---
 
-## Serve daemon
-
-`autoware-system-designer-serve` serves the exported visualization of an install tree over HTTP,
-together with a request API and an event stream that build, launch and live monitoring extend.
-It imports no ROS module, so its `bin/` copy runs without any setup script sourced.
-
-```bash
-autoware-system-designer-serve \
-    --install-root install \       # default: first COLCON_PREFIX_PATH entry
-    --port 8780 \                  # 0 picks a free port
-    --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
-    --compute-unit main_ecu        # units local to this daemon (repeatable; default: every onboard unit)
-```
-
-Open `http://127.0.0.1:8780/`. The pages are the generated ones under
-`exports/<system>/visualization/web`, served unchanged. `/daemon/build.html` starts, follows and
-cancels builds.
-
-| Route              | Content                                                                                                      |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `GET /`            | Redirect to `/systems.html`                                                                                  |
-| `GET /<path>`      | `systems.html` with its assets, and files under any `<pkg>/share/<pkg>/exports/*/visualization/web/`         |
-| `GET /daemon/<f>`  | Daemon pages shipped with this package (`build.html`)                                                        |
-| `GET /api/health`  | Daemon status, including `workspace` and `restart_required`                                                  |
-| `GET /api/systems` | Exported systems: modes, compute units with their status, build scripts per mode, deploy variants, page URLs |
-| `GET /api/jobs`    | Jobs, newest first                                                                                           |
-| `GET /api/events`  | Server-Sent Events with daemon-wide sequence numbers as event ids (topics below)                             |
-| `POST /api/rpc`    | Request envelope `{"id", "method", "params"}` for any method below                                           |
-
-| Method         | Params                                                      | Result                                   |
-| -------------- | ----------------------------------------------------------- | ---------------------------------------- |
-| `health`       | -                                                           | Daemon status                            |
-| `systems.list` | -                                                           | Exported systems                         |
-| `jobs.list`    | -                                                           | `{"jobs": [job]}`                        |
-| `jobs.get`     | `job`, `since` (log seq, default 0), `limit`                | `{"job", "log": {"first_seq", "lines"}}` |
-| `jobs.cancel`  | `job`                                                       | job                                      |
-| `build.start`  | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit` | job                                      |
-
-| Event topic       | Data                                                                      |
-| ----------------- | ------------------------------------------------------------------------- |
-| `hello`           | Sent first on each stream; no replay, so clients resynchronise by request |
-| `heartbeat`       | `{"time"}`                                                                |
-| `job`             | Job record on every state change                                          |
-| `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                     |
-| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                 |
-| `daemon`          | `{"restart_required": true}`                                              |
-
-Responses use one envelope: `{"ok": true, "result": ...}` or
-`{"ok": false, "error": {"code", "message"}}`, with `id` echoed on `/api/rpc`. Error codes are
-stable strings (`bad_request`, `forbidden`, `not_found`, `method_not_allowed`,
-`unsupported_media_type`, `payload_too_large`, `unknown_method`, `invalid_params`, `conflict`,
-`unavailable`, `internal`), each mapped to one HTTP status. Compute unit `status` is open-ended; current values are
-`available`, `remote_unsupported` (an onboard unit served by another daemon), `offboard` and
-`unsupported`.
-
-Access rules: the listener binds `127.0.0.1` only; the `Host` header must name it (`127.0.0.1:<port>`
-or `localhost:<port>`); API requests the browser marks cross-site are refused; `POST /api/rpc` needs
-`Content-Type: application/json` and an `X-System-Designer-Client` header, and a present `Origin`
-must be the daemon's own. Request heads are capped at 16 KiB and bodies at 64 KiB.
-
-### Jobs and builds
-
-A job is one supervised child process in its own process group, stdout and stderr merged into a
-ring of the last 5000 numbered lines. One job per key runs at a time (`conflict` otherwise); the
-last 20 finished jobs stay listed. Cancel sends SIGINT to the group, SIGTERM after 10 s and SIGKILL
-5 s later; daemon shutdown cancels every job. Job `state` is `running`, `succeeded`, `failed` or
-`cancelled`.
-
-`build.start` runs `colcon build` in the workspace against the served install tree
-(`--install-base`, `--merge-install` for a merged tree). All builds share one key, since colcon builds
-of one workspace cannot overlap.
-
-| `target`     | Packages                                                                                                       |
-| ------------ | -------------------------------------------------------------------------------------------------------------- |
-| `deployment` | `--packages-select <pkg>` of the export package (regenerates launchers and visualization)                      |
-| `workspace`  | `--packages-up-to` the packages of `build_scripts/<mode>/build_<compute_unit>.sh` (default mode: the system's) |
-
-The generated script is parsed, not executed; package names are checked. `compute_unit` must be
-available on this daemon. Job `detail` holds `packages` (selection) and `built_packages` (from
-colcon's `Starting >>>` lines). When a build rebuilds `autoware_system_designer_runtime` inside the
-install tree this daemon runs from, the daemon keeps running its loaded code and reports
-`restart_required`.
-
----
-
 ## Architecture
 
 ```text
@@ -331,7 +246,7 @@ autoware-system-designer-launch SYSTEM.json \
     [--measure-keep-running]             # analyze with the system still up and keep it running
     [--no-probe]                         # do not add probe subscriptions on intra-process-only topics
     [--measure-clock auto|wall|ros]      # time base of durations and rates (default auto: ros when the system runs on /clock)
-    [--latency-out FILE]                 # default: <export>/visualization/web/data/<Mode>_latency.js, else <log-dir>/latency/; .js = bundle script, other = JSON
+    [--latency-out FILE]                 # JSON; default: a new record of the export (below), else <log-dir>/latency/<Mode>_latency.json
 ```
 
 The session logs every step under the `measure:` prefix: the window opening (with the wall-clock time it closes), a heartbeat every 10 s with the phase (`settling` / `recording x/y s`) and the trace counters, the window closing with its reason, the shutdown it requests, and the analysis start and result. With `--measure-duration` the system is shut down as soon as the window closes; the analysis reads the trace files after the actors have terminated. A shutdown from elsewhere (signal, actor failure) closes the window at that moment and analyzes what was recorded.
@@ -357,6 +272,12 @@ A system on `/clock` (`use_sim_time`, every simulation mode) declares its rates 
 | Communication (`links[]`) | `take − source_timestamp` per topic, publisher node and subscriber node; a take is matched to its publish by topic and a source timestamp inside the publish call                          |
 | Chain (`chains[]`)        | per instance: detected timer fire → same-thread publish → matched takes → the publishes they trigger → … → terminal publish; where a node samples, the chain continues at its next publish |
 
-Intra-process communication stays on. rclcpp skips `rcl_publish` when every matched reader is intra-process, so the runtime's own rclpy node adds one best-effort **probe subscription** to each such topic during the window; the publish is then recorded and the hop is folded into the downstream node's process time (`links[]` marks it `intra_process`, the inter-process duplicate the subscription still receives is dropped from every statistic). Approximations are recorded, not hidden: a publish from a thread that never took or fired has an `unknown` trigger, a node that never publishes has no `exec`, dropped records are counted in `run`, design nodes without records and traced nodes outside the design are listed (`unobserved_nodes`, `unmatched_nodes`), and `summary` holds the run-level counts. Each node record also says what became of its process (`process.state`: `running`, `exited` with the exit the runtime saw inside the window, or `not_initialized` when the process created only the endpoints every node owns), and its notes separate a declared input the node never subscribed to from one it subscribed to and never received. The latency file is the only output; it is meant to be consumed by tooling (the visualizer, diagnostics), not read.
+Intra-process communication stays on. rclcpp skips `rcl_publish` when every matched reader is intra-process, so the runtime's own rclpy node adds one best-effort **probe subscription** to each such topic during the window; the publish is then recorded and the hop is folded into the downstream node's process time (`links[]` marks it `intra_process`, the inter-process duplicate the subscription still receives is dropped from every statistic). Approximations are recorded, not hidden: a publish from a thread that never took or fired has an `unknown` trigger, a node that never publishes has no `exec`, dropped records are counted in `run`, design nodes without records and traced nodes outside the design are listed (`unobserved_nodes`, `unmatched_nodes`), and `summary` holds the run-level counts. Each node record also says what became of its process (`process.state`: `running`, `exited` with the exit the runtime saw inside the window, or `not_initialized` when the process created only the endpoints every node owns), and its notes separate a declared input the node never subscribed to from one it subscribed to and never received. The latency file is the only output; it is meant to be consumed by tooling (the studio, diagnostics), not read.
 
-The latency file (`autoware_system_designer/latency/2`) is documented in [doc/latency_view.md](../autoware_system_designer/doc/latency_view.md#measurement-file). By default it is written into the export's visualization bundle (`<export>/visualization/web/data/`, beside the `system_structure/` directory the JSON came from), which is where the sequence diagram loads `data/<Mode>_latency.js` from. The file is one object: under a `.js` suffix it is the bundle's script (`window.latencyData["<Mode>"] = {...};`, loadable from a page opened with `file://`), under any other suffix bare JSON. The next reload of the deployment overview shows it. A rebuild regenerates the bundle, so keep a copy as `latency/<Mode>_latency.js` beside the system definition file to have the build carry it over.
+The latency file (`autoware_system_designer/latency/2`) is documented in [doc/latency_view.md](../autoware_system_designer/doc/latency_view.md#measurement-file). The file is one JSON object. By default each run adds a **record** of the export the JSON belongs to:
+
+```text
+<record root>/<package>/<system>/latency/<Mode>/<YYYYmmdd-HHMMSS>.json
+```
+
+The record root is `$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR`, else `$ROS_HOME/autoware_system_designer/records` (`~/.ros/...` when `ROS_HOME` is unset): outside the install tree, which every rebuild replaces, and outside the per-run log directories. A JSON outside an export tree writes `<log-dir>/latency/<Mode>_latency.json` instead. The studio shows the newest record of a mode, else the reference measurement the export carries (`latency/<Mode>_latency.json` beside the system definition file, copied into `exports/<system>/latency/` by the build). `autoware_system_designer_runtime.records` holds this layout for other tools.

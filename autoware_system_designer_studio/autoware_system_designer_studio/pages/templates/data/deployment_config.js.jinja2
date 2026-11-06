@@ -1,0 +1,18 @@
+const deploymentConfig = {
+    deploymentName: {{ deployment_name | tojson }},
+    packageName: {{ package_name | tojson }},
+    systemId: {{ system_id | tojson }},
+    siteRoot: {{ site_root | tojson }},
+    systemsIndexPath: {{ systems_index_path | tojson }},
+    availableModes: {{ available_modes | tojson }},
+    defaultMode: {{ default_mode | tojson }},
+    diagrams: {{ diagrams | tojson }},
+    dataBase: {{ data_base | tojson }},
+    latencyModes: {{ latency_modes | tojson }},
+    defaultDiagram: {{ default_diagram | tojson }},
+    editorScheme: {{ editor_scheme | tojson }},
+    systemDefinitionFile: {{ system_definition_file | tojson }},
+    computeUnits: {{ compute_units | tojson }},
+    deployNames: {{ deploy_names | tojson }},
+    launchCommands: {{ launch_commands | tojson }}
+};
