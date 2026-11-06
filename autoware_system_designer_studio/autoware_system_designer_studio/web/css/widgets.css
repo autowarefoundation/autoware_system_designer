@@ -411,6 +411,7 @@
 
 .ns-label.ns-namespace {
   color: var(--text-muted);
+  font-weight: 600;
 }
 
 .ns-label.ns-node {
