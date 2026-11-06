@@ -288,7 +288,6 @@ def test_export_carries_declaration_and_launches_every_declared_unit(tmp_path):
     assert "<include" not in solo_sub
 
 
-
 def test_export_carries_the_reference_latency_and_no_visualization(tmp_path):
     workspace = stage_case("compute_units", tmp_path)
     latency_dir = workspace / "units_pkg" / "latency"

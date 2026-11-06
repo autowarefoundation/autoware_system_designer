@@ -17,7 +17,10 @@
   // `health` is the daemon's health result, null on a static page; `probeDone` once the probe answered.
   function source(health, probeDone) {
     if (!health) {
-      item("status-source", probeDone ? "Static export" : "Checking for daemon…");
+      item(
+        "status-source",
+        probeDone ? "Static export" : "Checking for daemon…",
+      );
       item("status-workspace", "");
       item("status-restart", "");
       return;
@@ -30,7 +33,9 @@
     );
     item(
       "status-restart",
-      health.restart_required ? "Restart required: the daemon's package was rebuilt" : "",
+      health.restart_required
+        ? "Restart required: the daemon's package was rebuilt"
+        : "",
       "status-warning",
     );
   }
@@ -39,7 +44,9 @@
     const running = list.filter((job) => job.state === "running");
     item(
       "status-jobs",
-      running.length ? `${running.length} job${running.length > 1 ? "s" : ""} running` : "",
+      running.length
+        ? `${running.length} job${running.length > 1 ? "s" : ""} running`
+        : "",
       "status-running",
     );
   }

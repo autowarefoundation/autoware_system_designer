@@ -8,7 +8,11 @@
 
   // Inspector view: the selected element's info cards, or a prompt when nothing is selected.
   function inspectorView(slot) {
-    const empty = element("p", "panel-empty", "Select an element on the diagram.");
+    const empty = element(
+      "p",
+      "panel-empty",
+      "Select an element on the diagram.",
+    );
     const infoPanel = element("div", "info-panel");
     infoPanel.hidden = true;
     slot.append(empty, infoPanel);
@@ -48,7 +52,8 @@
       function showDiagramOptions() {
         const current = store.get("diagram");
         diagrams.mark(current);
-        search.hidden = !config.diagrams.find((d) => d.type === current)?.searchable;
+        search.hidden = !config.diagrams.find((d) => d.type === current)
+          ?.searchable;
       }
 
       // The canvas lays out only while visible; a change made while hidden reloads on the next show.

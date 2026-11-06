@@ -76,7 +76,6 @@ body {
   color: var(--error-color);
 }
 
-
 .toggle-switch {
   position: relative;
   width: 50px;
@@ -105,4 +104,3 @@ body {
 .toggle-switch.active::after {
   transform: translateX(26px);
 }
-

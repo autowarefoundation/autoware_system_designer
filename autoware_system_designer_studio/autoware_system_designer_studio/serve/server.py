@@ -115,11 +115,11 @@ def _status_page(status: HTTPStatus, title: str, message: str, *, reload_s: Opti
     refresh = f'<meta http-equiv="refresh" content="{reload_s}">' if reload_s else ""
     links = "".join(f'<link rel="stylesheet" href="/{assets.BUNDLE_DIR}/{css}">' for css in assets.PAGE_STYLESHEETS)
     body = (
-        "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">"
+        '<!DOCTYPE html><html><head><meta charset="UTF-8">'
         f"<title>{html.escape(title)}</title>{refresh}{links}"
         f'<script src="/{assets.BUNDLE_DIR}/{assets.PAGE_SCRIPTS[0]}"></script></head>'
         '<body class="simple-page"><div class="page-container">'
-        f"<h1>{html.escape(title)}</h1><p class=\"description\">{html.escape(message)}</p>"
+        f'<h1>{html.escape(title)}</h1><p class="description">{html.escape(message)}</p>'
         '<div class="nav-links"><a href="/">Systems</a></div>'
         "</div><script>SD.theme.init();</script></body></html>"
     )

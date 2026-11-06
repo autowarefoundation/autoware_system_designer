@@ -39,13 +39,18 @@
           if (entity) onLocate(String(entity.unique_id));
         },
       });
-      summary.textContent = count ? `${count} match${count > 1 ? "es" : ""}` : "No matches";
+      summary.textContent = count
+        ? `${count} match${count > 1 ? "es" : ""}`
+        : "No matches";
     }
 
     async function loadMode() {
       root = null;
       render();
-      const data = await SD.NamespaceTree.loadStructure(config.dataBase, store.get("mode"));
+      const data = await SD.NamespaceTree.loadStructure(
+        config.dataBase,
+        store.get("mode"),
+      );
       root = SD.NamespaceTree.build(SD.NamespaceTree.entities(data));
       render();
     }
@@ -57,7 +62,8 @@
         render();
       }
     });
-    const reload = () => loadMode().catch((error) => console.warn("explore search:", error));
+    const reload = () =>
+      loadMode().catch((error) => console.warn("explore search:", error));
     store.onChange("mode", reload);
     reload();
     return group;

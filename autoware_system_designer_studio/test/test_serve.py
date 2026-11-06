@@ -175,7 +175,9 @@ def test_missing_page_answers_with_an_html_page(served):
 
 
 def test_page_of_an_export_mid_rewrite_reloads_until_readable(served):
-    structure = served.daemon.install_root / PKG / "share" / PKG / "exports" / SYSTEM / "system_structure" / "Runtime.json"
+    structure = (
+        served.daemon.install_root / PKG / "share" / PKG / "exports" / SYSTEM / "system_structure" / "Runtime.json"
+    )
     complete = structure.read_text()
     structure.write_text(complete[: len(complete) // 2])
 

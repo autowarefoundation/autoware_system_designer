@@ -28,7 +28,7 @@ directory it wrote itself (marked by `.autoware_system_designer_studio`) or an e
 
 ## Site layout
 
-```
+```text
 index.html                                         systems index
 assets/{css,js}/...                                web bundle
 systems/<package>/<system>/index.html              workbench; ?activity=explore|launch|build opens that activity
@@ -44,29 +44,29 @@ Links are relative, so `serve` and `pack` produce the same pages.
 `web/` holds plain scripts (no build step, `file://` compatible) under the `SD` namespace and one
 stylesheet per area; `pages/assets.py` declares the load order of each page.
 
-| Path               | Role                                                                    |
-| ------------------ | ----------------------------------------------------------------------- |
-| `js/core/`         | `SD` namespace, page events, theme, editor links, selection store, daemon client |
-| `js/diagrams/`     | `DiagramBase`, the three diagram modules (registered on `SD.diagrams`)  |
-| `js/inspector/`    | info panel of the selected element                                      |
-| `js/shell/`        | workbench frame: activity registry and rail, panel layout, status bar   |
-| `js/widgets/`      | building blocks activities share: controls, main view frame, terminal, namespace tree |
-| `js/activities/<id>/` | one directory per rail activity: its parts, then `index.js` registering it |
-| `js/pages/`        | page drivers                                                            |
-| `css/tokens.css`   | colours (light/dark) and run-state tokens; every other stylesheet reads them |
-| `css/shell.css`, `css/widgets.css` | the frame and the shared widgets                        |
-| `css/activities/<id>.css` | the activity's own styles                                        |
+| Path                               | Role                                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------------------- |
+| `js/core/`                         | `SD` namespace, page events, theme, editor links, selection store, daemon client      |
+| `js/diagrams/`                     | `DiagramBase`, the three diagram modules (registered on `SD.diagrams`)                |
+| `js/inspector/`                    | info panel of the selected element                                                    |
+| `js/shell/`                        | workbench frame: activity registry and rail, panel layout, status bar                 |
+| `js/widgets/`                      | building blocks activities share: controls, main view frame, terminal, namespace tree |
+| `js/activities/<id>/`              | one directory per rail activity: its parts, then `index.js` registering it            |
+| `js/pages/`                        | page drivers                                                                          |
+| `css/tokens.css`                   | colours (light/dark) and run-state tokens; every other stylesheet reads them          |
+| `css/shell.css`, `css/widgets.css` | the frame and the shared widgets                                                      |
+| `css/activities/<id>.css`          | the activity's own styles                                                             |
 
 Each rail item of the workbench is an activity owning one view per slot, shown and hidden together:
 its options in the side panel, its content in the main area and, when it selects elements, the
 inspector. The top bar holds the system and the mode, which every activity reads; other selections
 live in the activity that uses them, as store keys mirrored in the URL.
 
-| Activity  | Side panel                                       | Main area                                                   |
-| --------- | ------------------------------------------------ | ----------------------------------------------------------- |
-| Explore   | diagram list; entity search on searchable diagrams | diagram canvas; inspector shows the selected element      |
-| Launch    | deploy, command method; unit launch (daemon)     | launch commands of the mode, or the state monitor (daemon `launch.status`; `?view=`) |
-| Build     | target, compute unit, start; job list (daemon)   | log of the selected job (`?job=`)                           |
+| Activity | Side panel                                         | Main area                                                                            |
+| -------- | -------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Explore  | diagram list; entity search on searchable diagrams | diagram canvas; inspector shows the selected element                                 |
+| Launch   | deploy, command method; unit launch (daemon)       | launch commands of the mode, or the state monitor (daemon `launch.status`; `?view=`) |
+| Build    | target, compute unit, start; job list (daemon)     | log of the selected job (`?job=`)                                                    |
 
 An activity is one `SD.workbench.registerActivity(def)` call from its `index.js`, with its parts
 attached to `SD.activities.<id>` by the scripts before it. `def` names the activity (`id`, `title`,

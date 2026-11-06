@@ -104,5 +104,14 @@
     return button;
   }
 
-  SD.widgets = { element, section, list, boundSelect, setOptions, field, segmented, copyButton };
+  SD.widgets = {
+    element,
+    section,
+    list,
+    boundSelect,
+    setOptions,
+    field,
+    segmented,
+    copyButton,
+  };
 })();

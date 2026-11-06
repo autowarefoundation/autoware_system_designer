@@ -948,7 +948,10 @@
       this.hasDragged = false;
       rect.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-      const toLayer = this.zoomLayer.getCTM().inverse().multiply(group.getCTM());
+      const toLayer = this.zoomLayer
+        .getCTM()
+        .inverse()
+        .multiply(group.getCTM());
       const width = parseFloat(rect.getAttribute("width")) || 0;
       const height = parseFloat(rect.getAttribute("height")) || 0;
       const view = this.container.getBoundingClientRect();

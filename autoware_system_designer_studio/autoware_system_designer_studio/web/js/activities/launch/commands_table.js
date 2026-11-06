@@ -27,7 +27,11 @@
           const statusCell = element("td", "launch-status-cell");
           if (status)
             statusCell.appendChild(
-              element("span", `unit-status ${status}`, status.replace(/_/g, " ")),
+              element(
+                "span",
+                `unit-status ${status}`,
+                status.replace(/_/g, " "),
+              ),
             );
           const command = row[method];
           const commandCell = element("td", "command-cell");
@@ -37,10 +41,19 @@
             copyCell.appendChild(copyButton(command));
           } else {
             commandCell.appendChild(
-              element("span", "command-missing", "Not available for this method"),
+              element(
+                "span",
+                "command-missing",
+                "Not available for this method",
+              ),
             );
           }
-          tr.append(element("td", "launch-unit", row.unit), statusCell, commandCell, copyCell);
+          tr.append(
+            element("td", "launch-unit", row.unit),
+            statusCell,
+            commandCell,
+            copyCell,
+          );
           return tr;
         }),
       );

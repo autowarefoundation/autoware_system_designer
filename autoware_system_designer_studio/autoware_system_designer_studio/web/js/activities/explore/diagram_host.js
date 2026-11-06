@@ -20,7 +20,10 @@
   function diagramHost(main, inspector, config, store) {
     const container = element("div", "diagram-container");
     const loading = element("div", "diagram-loading");
-    loading.append(element("div", "spinner"), element("div", "diagram-loading-text", "Loading..."));
+    loading.append(
+      element("div", "spinner"),
+      element("div", "diagram-loading-text", "Loading..."),
+    );
     main.classList.add("canvas-view");
     main.append(container, loading);
     let module = null;
@@ -31,7 +34,9 @@
     }
 
     async function load() {
-      const diagram = config.diagrams.find((d) => d.type === store.get("diagram"));
+      const diagram = config.diagrams.find(
+        (d) => d.type === store.get("diagram"),
+      );
       const mode = store.get("mode");
       module?.destroy();
       module = null;
@@ -46,7 +51,9 @@
         await DiagramBase.loadScript(diagram.script);
         const ModuleClass = SD.diagrams.get(diagram.type);
         if (!ModuleClass)
-          throw new Error(`Module class not found for diagram type: ${diagram.type}`);
+          throw new Error(
+            `Module class not found for diagram type: ${diagram.type}`,
+          );
         module = new ModuleClass(canvas, {
           mode,
           deployment: config.deploymentName,

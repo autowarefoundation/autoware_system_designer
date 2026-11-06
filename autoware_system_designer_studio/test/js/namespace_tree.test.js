@@ -45,7 +45,13 @@ const structure = {
         },
       ],
     },
-    { name: "planner", path: "/planning/planner", unique_id: 4, entity_type: "node", children: [] },
+    {
+      name: "planner",
+      path: "/planning/planner",
+      unique_id: 4,
+      entity_type: "node",
+      children: [],
+    },
     { name: "unplaced", children: [] },
   ],
 };

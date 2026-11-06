@@ -7,7 +7,8 @@
     // fallbacks that run when a tag is unavailable request the same builds.
     static CDN = {
       elk: "https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js",
-      svgPanZoom: "https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js",
+      svgPanZoom:
+        "https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js",
     };
 
     // Page global the data scripts fill, keyed by mode; kept in sync with
@@ -129,7 +130,11 @@
     }
 
     getComputedStyleValue(prop, fallback) {
-      return getComputedStyle(document.documentElement).getPropertyValue(prop).trim() || fallback;
+      return (
+        getComputedStyle(document.documentElement)
+          .getPropertyValue(prop)
+          .trim() || fallback
+      );
     }
 
     // ── Pan / zoom (svg-pan-zoom backed modules) ────────────────────────────────
@@ -139,7 +144,9 @@
 
       const rect = svgElement.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) {
-        console.warn("SVG has zero dimensions, skipping pan-zoom initialization");
+        console.warn(
+          "SVG has zero dimensions, skipping pan-zoom initialization",
+        );
         return null;
       }
 
@@ -167,7 +174,9 @@
         this.panZoomInstance.fit();
         this.panZoomInstance.center();
         if (scale !== 1 || maxZoom !== Infinity) {
-          this.panZoomInstance.zoom(Math.min(this.panZoomInstance.getZoom() * scale, maxZoom));
+          this.panZoomInstance.zoom(
+            Math.min(this.panZoomInstance.getZoom() * scale, maxZoom),
+          );
           this.panZoomInstance.center();
         }
         return true;

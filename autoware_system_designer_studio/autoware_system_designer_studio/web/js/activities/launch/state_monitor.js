@@ -35,7 +35,10 @@
     function decorate(node, row) {
       if (!node.entities.some((e) => e.entity_type === "node")) return;
       const state = states.get(node.path) || "idle";
-      const dot = element("span", `state-dot ${STATES.includes(state) ? state : "idle"}`);
+      const dot = element(
+        "span",
+        `state-dot ${STATES.includes(state) ? state : "idle"}`,
+      );
       dot.title = state;
       row.insertBefore(dot, row.querySelector(".ns-label"));
     }
@@ -57,7 +60,8 @@
         selectedPath,
         decorate,
         onSelect(node) {
-          if (node.entities.some((e) => e.entity_type === "node")) showLog(node.path);
+          if (node.entities.some((e) => e.entity_type === "node"))
+            showLog(node.path);
           renderTree();
         },
       });
@@ -78,7 +82,10 @@
     }
 
     async function loadMode() {
-      const data = await SD.NamespaceTree.loadStructure(config.dataBase, store.get("mode"));
+      const data = await SD.NamespaceTree.loadStructure(
+        config.dataBase,
+        store.get("mode"),
+      );
       root = SD.NamespaceTree.build(SD.NamespaceTree.entities(data));
       // Every namespace starts expanded.
       expanded.clear();
@@ -98,7 +105,8 @@
     });
     SD.on("daemon.member.log", ({ path, lines }) => logOf(path).append(lines));
     filter.addEventListener("input", renderTree);
-    const reload = () => loadMode().catch((error) => console.warn("launch monitor:", error));
+    const reload = () =>
+      loadMode().catch((error) => console.warn("launch monitor:", error));
     store.onChange("mode", reload);
     reload();
 

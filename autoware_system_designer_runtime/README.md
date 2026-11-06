@@ -276,7 +276,7 @@ Intra-process communication stays on. rclcpp skips `rcl_publish` when every matc
 
 The latency file (`autoware_system_designer/latency/2`) is documented in [doc/latency_view.md](../autoware_system_designer/doc/latency_view.md#measurement-file). The file is one JSON object. By default each run adds a **record** of the export the JSON belongs to:
 
-```
+```text
 <record root>/<package>/<system>/latency/<Mode>/<YYYYmmdd-HHMMSS>.json
 ```
 

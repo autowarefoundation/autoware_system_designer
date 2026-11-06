@@ -17,7 +17,9 @@
       if (!lines.length) return;
       log.querySelector(".terminal-placeholder")?.remove();
       const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
-      lines.forEach((line) => log.appendChild(document.createTextNode(`${line}\n`)));
+      lines.forEach((line) =>
+        log.appendChild(document.createTextNode(`${line}\n`)),
+      );
       lineCount += lines.length;
       while (lineCount > maxLines) {
         log.firstChild.remove();

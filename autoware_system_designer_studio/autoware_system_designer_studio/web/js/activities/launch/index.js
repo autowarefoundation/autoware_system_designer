@@ -3,7 +3,8 @@
 // launched system when the daemon reports one.
 (function () {
   const SD = window.SD;
-  const { element, field, section, boundSelect, segmented, mainView } = SD.widgets;
+  const { element, field, section, boundSelect, segmented, mainView } =
+    SD.widgets;
   const { commandsTable, stateMonitor } = SD.activities.launch;
 
   const METHOD_KEY = "workbench.launchMethod";
@@ -21,7 +22,9 @@
   function launchRows(config, store) {
     const mode = store.get("mode");
     const deploy = store.get("deploy");
-    return config.launchCommands.filter((r) => r.mode === mode && r.deploy === deploy);
+    return config.launchCommands.filter(
+      (r) => r.mode === mode && r.deploy === deploy,
+    );
   }
 
   SD.workbench.registerActivity({
@@ -63,7 +66,10 @@
         },
       );
       const methodRow = element("div", "panel-row");
-      methodRow.append(element("span", "panel-row-label", "Command"), methodSwitch.element);
+      methodRow.append(
+        element("span", "panel-row-label", "Command"),
+        methodSwitch.element,
+      );
       const methodNote = element("p", "panel-note");
       side.append(methodRow, methodNote);
 
@@ -108,12 +114,22 @@
           const head = element("div", "launch-card-head");
           head.appendChild(element("span", "launch-unit", row.unit));
           if (status)
-            head.appendChild(element("span", `unit-status ${status}`, status.replace(/_/g, " ")));
+            head.appendChild(
+              element(
+                "span",
+                `unit-status ${status}`,
+                status.replace(/_/g, " "),
+              ),
+            );
           const button = element("button", "panel-button primary", "Launch");
           button.type = "button";
           button.disabled = status !== "available";
           button.addEventListener("click", () => {
-            const params = { system: config.systemId, mode: row.mode, compute_unit: row.unit };
+            const params = {
+              system: config.systemId,
+              mode: row.mode,
+              compute_unit: row.unit,
+            };
             if (row.deploy) params.deploy = row.deploy;
             button.disabled = true;
             daemon
@@ -147,7 +163,9 @@
           view.setEmpty("");
           if (!monitor) monitor = stateMonitor(monitorPane, config, store);
         } else {
-          view.setTitle(`Launch commands · ${mode}${deploy ? ` · ${deploy}` : ""}`);
+          view.setTitle(
+            `Launch commands · ${mode}${deploy ? ` · ${deploy}` : ""}`,
+          );
           view.setEmpty(rows.length ? "" : `No launchers for mode ${mode}.`);
           table.render(rows, method, unitStatus);
         }
@@ -156,7 +174,9 @@
       async function loadUnitStatus() {
         try {
           const system = await daemon.system(config.systemId);
-          unitStatus = new Map((system?.compute_units || []).map((u) => [u.name, u.status]));
+          unitStatus = new Map(
+            (system?.compute_units || []).map((u) => [u.name, u.status]),
+          );
         } catch (error) {
           console.warn("launch:", error);
         }

@@ -4,8 +4,16 @@
 (function () {
   const SD = window.SD;
 
-  const SIDE_PANEL_WIDTH = { key: "workbench.sidePanelWidth", min: 180, max: 640 };
-  const INSPECTOR_WIDTH = { key: "workbench.inspectorWidth", min: 220, max: 720 };
+  const SIDE_PANEL_WIDTH = {
+    key: "workbench.sidePanelWidth",
+    min: 180,
+    max: 640,
+  };
+  const INSPECTOR_WIDTH = {
+    key: "workbench.inspectorWidth",
+    min: 220,
+    max: 720,
+  };
   const INSPECTOR_HIDDEN_KEY = "workbench.inspectorHidden";
 
   const el = (id) => document.getElementById(id);
@@ -60,8 +68,18 @@
   }
 
   function init() {
-    initResizer(el("side-panel-resizer"), el("side-panel"), SIDE_PANEL_WIDTH, false);
-    initResizer(el("inspector-resizer"), el("inspector"), INSPECTOR_WIDTH, true);
+    initResizer(
+      el("side-panel-resizer"),
+      el("side-panel"),
+      SIDE_PANEL_WIDTH,
+      false,
+    );
+    initResizer(
+      el("inspector-resizer"),
+      el("inspector"),
+      INSPECTOR_WIDTH,
+      true,
+    );
     el("inspector-toggle").addEventListener("click", () => {
       setInspectorHidden(!document.body.classList.contains("inspector-hidden"));
     });

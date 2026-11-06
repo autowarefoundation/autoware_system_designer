@@ -62,9 +62,7 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog=PROG, description="Autoware System Designer studio.")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    serve = commands.add_parser(
-        "serve", help=f"serve the studio and the control API on http://{BIND_HOST}"
-    )
+    serve = commands.add_parser("serve", help=f"serve the studio and the control API on http://{BIND_HOST}")
     _add_common(serve)
     serve.add_argument(
         "--workspace",

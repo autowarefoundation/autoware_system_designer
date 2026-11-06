@@ -8,7 +8,14 @@
 (function () {
   const SD = window.SD;
   const CLIENT_HEADER = "X-System-Designer-Client";
-  const STREAM_TOPICS = ["job", "job.log", "systems.changed", "daemon", "member", "member.log"];
+  const STREAM_TOPICS = [
+    "job",
+    "job.log",
+    "systems.changed",
+    "daemon",
+    "member",
+    "member.log",
+  ];
 
   let root = "/";
   let health = null;
@@ -23,7 +30,10 @@
     rpcId += 1;
     const response = await fetch(apiUrl("rpc"), {
       method: "POST",
-      headers: { "Content-Type": "application/json", [CLIENT_HEADER]: "workbench" },
+      headers: {
+        "Content-Type": "application/json",
+        [CLIENT_HEADER]: "workbench",
+      },
       body: JSON.stringify({ id: rpcId, method, params }),
     });
     const body = await response.json();
@@ -45,7 +55,9 @@
   }
 
   function jobList() {
-    return Array.from(jobs.values()).sort((a, b) => b.created_at - a.created_at);
+    return Array.from(jobs.values()).sort(
+      (a, b) => b.created_at - a.created_at,
+    );
   }
 
   function upsertJob(job) {

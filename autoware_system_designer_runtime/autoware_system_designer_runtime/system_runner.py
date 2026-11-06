@@ -47,6 +47,7 @@ logger = logging.getLogger("autoware_system_designer")
 
 _NODE_PREFIX = re.compile(r"^\[([^\]]+)\] (.*)", re.DOTALL)
 
+
 def _deploy_arguments(
     manifest: Mapping[str, Any],
     deploy: Optional[str],
@@ -77,9 +78,7 @@ def _bind_deploy_arguments(
     """Resolve the system arguments a structure leaves as ``$(var ...)``; every one must be bound."""
     manifest = read_manifest(Path(json_path))
     if deploy is not None and manifest is None:
-        raise RuntimeError(
-            f"--deploy {deploy!r} needs the export manifest {manifest_path(Path(json_path))}, not found"
-        )
+        raise RuntimeError(f"--deploy {deploy!r} needs the export manifest {manifest_path(Path(json_path))}, not found")
     arguments = _deploy_arguments(manifest or {}, deploy, overrides)
     if arguments:
         logger.info("deploy arguments: %s", ", ".join(f"{k}={v}" for k, v in sorted(arguments.items())))

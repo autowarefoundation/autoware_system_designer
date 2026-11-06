@@ -35,8 +35,14 @@
         .filter(Boolean)
         .forEach((segment) => {
           if (!node.children.has(segment)) {
-            const path = node.path === "/" ? `/${segment}` : `${node.path}/${segment}`;
-            node.children.set(segment, { segment, path, entities: [], children: new Map() });
+            const path =
+              node.path === "/" ? `/${segment}` : `${node.path}/${segment}`;
+            node.children.set(segment, {
+              segment,
+              path,
+              entities: [],
+              children: new Map(),
+            });
           }
           node = node.children.get(segment);
         });
@@ -54,7 +60,8 @@
     const visible = new Set();
     const visit = (node, ancestors) => {
       const chain = [...ancestors, node.path];
-      if (!query || matches(node, query)) chain.forEach((path) => visible.add(path));
+      if (!query || matches(node, query))
+        chain.forEach((path) => visible.add(path));
       node.children.forEach((child) => visit(child, chain));
     };
     root.children.forEach((child) => visit(child, []));
@@ -80,7 +87,9 @@
           if (!visible.has(node.path)) return;
           const hit = !!query && matches(node, query);
           if (hit) matchCount += 1;
-          const hasChildren = Array.from(node.children.values()).some((c) => visible.has(c.path));
+          const hasChildren = Array.from(node.children.values()).some((c) =>
+            visible.has(c.path),
+          );
           const open = !!query || expanded.has(node.path);
 
           const row = document.createElement("div");
@@ -104,7 +113,10 @@
           options.decorate?.(node, row);
 
           row.addEventListener("click", () => {
-            if (hasChildren && (!node.entities.length || node.path === options.selectedPath)) {
+            if (
+              hasChildren &&
+              (!node.entities.length || node.path === options.selectedPath)
+            ) {
               if (expanded.has(node.path)) expanded.delete(node.path);
               else expanded.add(node.path);
             }

@@ -2,7 +2,9 @@
 // system's config.
 (function () {
   if (typeof deploymentConfig === "undefined") {
-    console.error("deploymentConfig is not defined. Make sure config.js is loaded.");
+    console.error(
+      "deploymentConfig is not defined. Make sure config.js is loaded.",
+    );
     return;
   }
   SD.editor.setDefaultScheme(deploymentConfig.editorScheme || "vscode");

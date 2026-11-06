@@ -675,7 +675,6 @@ def generate_launchers(artifacts: BuildArtifacts) -> None:
         )
 
 
-
 def export_parameter_set_templates(artifacts: BuildArtifacts) -> Dict[str, List[str]]:
     """Generate parameter set templates from the exported JSON."""
     if not artifacts.mode_keys:

@@ -7,7 +7,11 @@
   const SD = window.SD;
 
   const DEFAULT_ACTIVITY = "explore";
-  const SLOT_HOSTS = { side: "side-panel-body", main: "main-area", inspector: "inspector-body" };
+  const SLOT_HOSTS = {
+    side: "side-panel-body",
+    main: "main-area",
+    inspector: "inspector-body",
+  };
   const SLOT_CLASSES = {
     side: "side-panel-section",
     main: "main-view",
@@ -57,7 +61,9 @@
   // -- rail and activity slots ------------------------------------------
 
   function orderedActivities() {
-    return Array.from(activities.values()).sort((a, b) => a.def.order - b.def.order);
+    return Array.from(activities.values()).sort(
+      (a, b) => a.def.order - b.def.order,
+    );
   }
 
   function missingMethods(def) {
@@ -72,7 +78,9 @@
     return {
       visible: true,
       enabled: missing.length === 0,
-      reason: missing.length ? `Not offered by this daemon (needs ${missing.join(", ")})` : "",
+      reason: missing.length
+        ? `Not offered by this daemon (needs ${missing.join(", ")})`
+        : "",
     };
   }
 
@@ -137,7 +145,8 @@
 
   function showActivity(id) {
     const activity = activities.get(id);
-    if (!activity || !availability(activity.def).enabled || shownId === id) return;
+    if (!activity || !availability(activity.def).enabled || shownId === id)
+      return;
     const previous = activities.get(shownId);
     shownId = id;
     activities.forEach((other) => {
@@ -201,7 +210,9 @@
 
     const editorSelect = el("editor-selector");
     editorSelect.value = SD.editor.currentScheme();
-    editorSelect.addEventListener("change", (e) => SD.editor.setScheme(e.target.value));
+    editorSelect.addEventListener("change", (e) =>
+      SD.editor.setScheme(e.target.value),
+    );
   }
 
   function renderConnection(connected) {
@@ -214,7 +225,10 @@
   // The mode, then what the shown activity reports.
   function renderSelectionStatus() {
     const status = activities.get(shownId)?.def.status;
-    SD.statusbar.selection([SD.store.get("mode"), ...(status ? status(SD.store) : [])]);
+    SD.statusbar.selection([
+      SD.store.get("mode"),
+      ...(status ? status(SD.store) : []),
+    ]);
   }
 
   // -- startup ----------------------------------------------------------
@@ -226,7 +240,9 @@
     SD.store.define("mode", config.defaultMode, (v) => modes.includes(v));
     SD.store.define("activity", DEFAULT_ACTIVITY, (v) => activities.has(v));
     SD.store.define("unit", "", (v) => unitNames.includes(v));
-    SD.store.define("deploy", config.deployNames[0] || "", (v) => config.deployNames.includes(v));
+    SD.store.define("deploy", config.deployNames[0] || "", (v) =>
+      config.deployNames.includes(v),
+    );
     SD.store.syncUrl();
 
     document.title = `${config.deploymentName} - Autoware System Designer Studio`;
@@ -235,7 +251,9 @@
     SD.layout.init();
 
     SD.store.onChange("activity", showActivity);
-    ["mode", "unit", "deploy"].forEach((key) => SD.store.onChange(key, renderSelectionStatus));
+    ["mode", "unit", "deploy"].forEach((key) =>
+      SD.store.onChange(key, renderSelectionStatus),
+    );
     SD.on("daemon.health", (health) => {
       daemonHealth = health;
       refreshRail();
