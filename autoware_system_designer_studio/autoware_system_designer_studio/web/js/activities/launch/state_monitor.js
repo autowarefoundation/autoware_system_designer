@@ -150,6 +150,8 @@
         expanded,
         selectedPath: selected?.path,
         decorate,
+        selectable: (node) => !!memberOf(node),
+        onToggle: renderTree,
         onSelect(node) {
           const own = memberOf(node);
           if (own) showLog(own);
@@ -275,14 +277,14 @@
       root = SD.NamespaceTree.build(
         nestComposables(SD.NamespaceTree.entities(data)),
       );
-      // Every namespace starts expanded.
+      // Top-level entries start folded; everything beneath them starts expanded.
       expanded.clear();
       const expand = (node) =>
         node.children.forEach((child) => {
           expanded.add(child.path);
           expand(child);
         });
-      expand(root);
+      root.children.forEach((child) => expand(child));
       renderTree();
     }
 

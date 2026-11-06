@@ -113,3 +113,22 @@ test("a container named by ROS name resolves when it differs from the path", () 
   assert.equal(nested.path, "/sensing/pointcloud_container/lidar");
   assert.equal(nested.container_path, "/sensing/pointcloud_container");
 });
+
+test("a node at a module's own path gets a leaf of its own under it", () => {
+  const module = { entity_type: "module", name: "detection", path: "/detection" };
+  const replay = node("detection_replay", "/", "single_node");
+  replay.path = "/detection";
+  const container = node("container", "/", "node_container");
+  container.path = "/detection";
+  const member = node("a", "/detection", "composable_node", {
+    container_target: "/detection",
+  });
+  const nested = launch.nestComposables([module, replay, container, member]);
+  const by = Object.fromEntries(nested.map((e) => [e.name, e]));
+  assert.equal(by.detection.path, "/detection");
+  assert.equal(by.detection_replay.path, "/detection/detection_replay");
+  assert.equal(by.detection_replay.member_path, "/detection");
+  assert.equal(by.container.path, "/detection/container");
+  assert.equal(by.a.path, "/detection/container/a");
+  assert.equal(by.a.container_path, "/detection");
+});

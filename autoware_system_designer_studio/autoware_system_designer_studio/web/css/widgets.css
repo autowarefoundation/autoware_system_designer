@@ -391,8 +391,16 @@
 .ns-twisty {
   width: 12px;
   flex-shrink: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
   font-size: 10px;
+}
+
+.ns-twisty:not(:empty):hover {
+  color: var(--text-primary);
 }
 
 .ns-label {

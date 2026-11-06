@@ -46,6 +46,13 @@
     return `/${[...parts, entity.name].join("/")}`;
   }
 
+  // Tree path of a node: its design path, with the node name appended when the
+  // path ends elsewhere (a node placed at a module's own path gets its own leaf).
+  function nodeTreePath(entity) {
+    const last = entity.path.split("/").filter(Boolean).pop();
+    return last === entity.name ? entity.path : `${entity.path}/${entity.name}`;
+  }
+
   // Tree entities: each carries member_path, its name as a runtime member; a
   // composable node moves under its container (named by path or ROS name in
   // container_target) and keeps the container in container_path.
@@ -57,15 +64,16 @@
       containers.set(nodeFqn(entity), entity);
     });
     return entityList.map((entity) => {
+      if (entity.entity_type !== "node") return entity;
       const launcher = entity.launcher || {};
       const container =
         launcher.launch_state === "composable_node" &&
         containers.get(launcher.container_target);
-      if (!container) return { ...entity, member_path: entity.path };
-      const segment = entity.path.split("/").filter(Boolean).pop();
+      if (!container)
+        return { ...entity, path: nodeTreePath(entity), member_path: entity.path };
       return {
         ...entity,
-        path: `${container.path}/${segment}`,
+        path: `${nodeTreePath(container)}/${entity.name}`,
         member_path: entity.path,
         container_path: container.path,
       };
