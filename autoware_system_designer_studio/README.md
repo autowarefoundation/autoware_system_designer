@@ -189,6 +189,10 @@ and `shutting_down`. Member records are the runtime's: `state` one of `pending`,
 `exit_code`. `policy` is `guard` (default: stop, restart, kill and shutdown are refused with
 `refused` while the operation mode is autonomous or in transition) or `open`.
 
+The workbench's state monitor lists composable nodes under their container, whose process holds
+their output and whose exit they follow; a module or container shows the severest state among its
+members. The legend at the foot of the tree gives each mark's shape and colour.
+
 Launch jobs need the ROS environment the daemon itself does without: start `serve` from a sourced
 shell, or pass `--env-script` with a setup script, sourced once at start into the job environment.
 Without `ROS_DISTRO` in that environment `launch.start` answers `unavailable`.

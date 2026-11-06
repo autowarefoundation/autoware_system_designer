@@ -120,6 +120,29 @@
   font-weight: 500;
 }
 
+/* Composable nodes listed under their container */
+.ns-row.ns-composable .ns-label {
+  font-style: italic;
+}
+
+/* Meaning of the run-state marks, at the foot of the tree */
+.monitor-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.monitor-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* Launcher processes listed above the member tree */
 .monitor-launchers {
   display: flex;
@@ -173,6 +196,9 @@
 }
 
 .member-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
   font-weight: 600;
   color: var(--state-idle);

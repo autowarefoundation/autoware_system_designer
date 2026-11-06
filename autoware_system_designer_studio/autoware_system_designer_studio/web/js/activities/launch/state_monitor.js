@@ -1,6 +1,7 @@
 // Launch: launched members as a namespace tree with run states beside the
 // selected member's log, or the launcher's own output. Member state and log
-// lines arrive on the daemon's event stream, keyed by member path.
+// lines arrive on the daemon's event stream, keyed by member path; a
+// composable node reads its container's log.
 (function () {
   const SD = window.SD;
   const { element, terminal, mainView } = SD.widgets;
@@ -16,10 +17,32 @@
     ["restart", "Restart"],
     ["kill", "Kill"],
   ];
+  // Legend entries: token, label, meaning.
+  const LEGEND = [
+    ["running", "running", "process running or node loaded"],
+    ["ok", "exited", "exited with code 0"],
+    ["warning", "warning", "loading, respawning, or exited with another code"],
+    ["failed", "failed", "failed to start or load"],
+    ["idle", "idle", "pending, done, or not launched"],
+  ];
+
+  function stateMark(token) {
+    return element("span", `state-dot ${token}`);
+  }
 
   function stateMonitor(container, config, store) {
     const daemon = SD.daemon;
-    const { members, sessions, stateToken, stateLabel, sessionLabel } = launch;
+    const {
+      members,
+      sessions,
+      stateToken,
+      stateLabel,
+      sessionLabel,
+      nestComposables,
+      worstToken,
+      tokenSummary,
+      followsContainer,
+    } = launch;
     const treePane = element("div", "pane-side monitor-tree");
     const filter = element("input", "panel-search");
     filter.type = "search";
@@ -27,11 +50,21 @@
     filter.setAttribute("aria-label", "Filter members");
     const launcherList = element("div", "monitor-launchers");
     const tree = element("div", "ns-tree");
-    treePane.append(filter, launcherList, tree);
+    const legend = element("div", "monitor-legend");
+    LEGEND.forEach(([token, label, meaning]) => {
+      const item = element("span", "monitor-legend-item");
+      item.title = meaning;
+      item.append(stateMark(token), element("span", "", label));
+      legend.appendChild(item);
+    });
+    treePane.append(filter, launcherList, tree, legend);
 
     const view = mainView({ empty: "Select a node to follow its log." });
     view.head.classList.add("member-head");
     const badge = element("span", "member-state idle");
+    const badgeMark = stateMark("idle");
+    const badgeText = element("span");
+    badge.append(badgeMark, badgeText);
     const actions = element("span", "member-actions");
     ACTIONS.forEach(([action, label]) => {
       const button = element("button", "panel-button", label);
@@ -44,23 +77,60 @@
     view.trailing.append(note, badge, actions);
     container.append(treePane, view.element);
 
-    // Member path -> its terminal, kept while the page lives; job id -> the launcher's terminal.
+    // Log path -> its terminal, kept while the page lives; job id -> the launcher's terminal.
     const logs = new Map();
     const launcherLogs = new Map(); // job id -> { log, lastSeq }
     const expanded = new Set();
     let root = null;
-    let selectedPath = "";
+    // The selected member entity (member_path, container_path) or null.
+    let selected = null;
     let selectedJob = "";
     // The tree renders only while shown; a change made while hidden renders on the next show.
     let hidden = false;
     let stale = false;
+    // Tree path -> tokens of the members within, itself first; filled per render.
+    let memberTokens = new Map();
+
+    function memberOf(node) {
+      return node.entities.find((e) => e.entity_type === "node");
+    }
+
+    function recordOf(entity) {
+      return members.get(entity.member_path)?.record;
+    }
+
+    // Token and label of one member; a composable follows its container once that stopped.
+    function memberState(entity) {
+      const own = recordOf(entity);
+      const host =
+        entity.container_path && members.get(entity.container_path)?.record;
+      if (!followsContainer(host))
+        return { token: stateToken(own), label: stateLabel(own) };
+      return {
+        token: stateToken(host),
+        label: `${stateLabel(own)} · container ${stateLabel(host)}`,
+      };
+    }
+
+    function tokensWithin(node) {
+      if (memberTokens.has(node.path)) return memberTokens.get(node.path);
+      const own = memberOf(node);
+      const list = own ? [memberState(own).token] : [];
+      node.children.forEach((child) => list.push(...tokensWithin(child)));
+      memberTokens.set(node.path, list);
+      return list;
+    }
 
     function decorate(node, row) {
-      if (!node.entities.some((e) => e.entity_type === "node")) return;
-      const token = stateToken(members.get(node.path)?.record);
-      const dot = element("span", `state-dot ${token}`);
-      dot.title = stateLabel(members.get(node.path)?.record);
-      row.insertBefore(dot, row.querySelector(".ns-label"));
+      const tokens = tokensWithin(node);
+      if (!tokens.length) return;
+      const own = memberOf(node);
+      const mark = stateMark(worstToken(tokens));
+      const summary = tokenSummary(own ? tokens.slice(1) : tokens) || "idle";
+      mark.title = own ? memberState(own).label : summary;
+      if (own && node.children.size) mark.title += ` · members: ${summary}`;
+      row.insertBefore(mark, row.querySelector(".ns-label"));
+      if (own?.container_path) row.classList.add("ns-composable");
     }
 
     function logOf(path) {
@@ -74,14 +144,15 @@
         stale = true;
         return;
       }
+      memberTokens = new Map();
       SD.NamespaceTree.render(tree, root, {
         query: filter.value,
         expanded,
-        selectedPath,
+        selectedPath: selected?.path,
         decorate,
         onSelect(node) {
-          if (node.entities.some((e) => e.entity_type === "node"))
-            showLog(node.path);
+          const own = memberOf(node);
+          if (own) showLog(own);
           renderTree();
         },
       });
@@ -96,10 +167,7 @@
         row.type = "button";
         row.classList.toggle("selected", session.job === selectedJob);
         row.append(
-          element(
-            "span",
-            `state-dot ${LAUNCHER_TOKENS[session.state] || "idle"}`,
-          ),
+          stateMark(LAUNCHER_TOKENS[session.state] || "idle"),
           element("span", "monitor-launcher-unit", session.compute_unit),
           element("span", "monitor-launcher-state", sessionLabel(session)),
         );
@@ -108,12 +176,18 @@
       });
     }
 
-    function showLog(path) {
-      selectedPath = path;
+    function showLog(entity) {
+      selected = entity;
       selectedJob = "";
-      view.body.replaceChildren(logOf(path).element);
+      view.body.replaceChildren(
+        logOf(entity.container_path || entity.member_path).element,
+      );
       view.setEmpty("");
-      view.setTitle(path);
+      view.setTitle(
+        entity.container_path
+          ? `${entity.member_path} · in ${entity.container_path}`
+          : entity.member_path,
+      );
       showState();
       renderLaunchers();
     }
@@ -146,7 +220,7 @@
     }
 
     function showLauncher(session) {
-      selectedPath = "";
+      selected = null;
       selectedJob = session.job;
       view.body.replaceChildren(launcherLog(session.job).log.element);
       view.setEmpty("");
@@ -157,14 +231,19 @@
       renderLaunchers();
     }
 
+    // Actions address a process: a composable node is acted on through its container.
     function showState() {
-      const member = members.get(selectedPath);
+      const member = selected && members.get(selected.member_path);
       const session = member && sessions.get(member.unit);
-      const token = selectedPath ? stateToken(member?.record) : "idle";
-      badge.textContent = selectedPath ? stateLabel(member?.record) : "";
+      const { token, label } = selected
+        ? memberState(selected)
+        : { token: "idle", label: "" };
+      badgeText.textContent = label;
       badge.className = `member-state ${token}`;
+      badgeMark.className = `state-dot ${token}`;
       const canAct =
         !!member &&
+        !selected.container_path &&
         !!session &&
         session.state !== "exited" &&
         session.connected;
@@ -175,13 +254,13 @@
     }
 
     function act(action) {
-      const member = members.get(selectedPath);
+      const member = selected && members.get(selected.member_path);
       if (!member) return;
       note.textContent = "";
       daemon
         .rpc(`launch.${action}`, {
           compute_unit: member.unit,
-          pattern: selectedPath,
+          pattern: selected.member_path,
         })
         .catch((error) => {
           note.textContent = error.message;
@@ -193,7 +272,9 @@
         config.dataBase,
         store.get("mode"),
       );
-      root = SD.NamespaceTree.build(SD.NamespaceTree.entities(data));
+      root = SD.NamespaceTree.build(
+        nestComposables(SD.NamespaceTree.entities(data)),
+      );
       // Every namespace starts expanded.
       expanded.clear();
       const expand = (node) =>
@@ -206,7 +287,11 @@
     }
 
     SD.on("launch.member", ({ path }) => {
-      if (path === selectedPath) showState();
+      if (
+        selected &&
+        (path === selected.member_path || path === selected.container_path)
+      )
+        showState();
       renderTree();
     });
     SD.on("launch.sessions", () => {

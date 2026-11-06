@@ -337,27 +337,38 @@
   color: var(--highlight);
 }
 
+/* Run-state marks: one shape and colour per token; idle is a hollow circle */
 .state-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   flex-shrink: 0;
+  box-sizing: border-box;
+  border: 1.5px solid var(--state-idle);
   border-radius: 50%;
-  background: var(--state-idle);
 }
 
 .state-dot.running {
+  border: 0;
   background: var(--state-running);
 }
 
 .state-dot.ok {
+  border: 0;
+  border-radius: 1px;
   background: var(--state-ok);
 }
 
 .state-dot.warning {
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
   background: var(--state-warning);
 }
 
 .state-dot.failed {
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
   background: var(--state-failed);
 }
 
