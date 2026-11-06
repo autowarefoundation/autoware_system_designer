@@ -145,8 +145,10 @@
       this.selectedId = null;
       this.selectedVertexId = null;
       this.selectedOwnerId = null;
+      this.selectedEntityId = null;
 
-      this.init();
+      // Settles once the first layout is drawn.
+      this.ready = this.init();
     }
 
     async init() {
@@ -1215,7 +1217,8 @@
 
     // Repeats the current selection under a changed trace mode.
     retrace() {
-      if (this.selectedVertexId) this.traceVertex(this.selectedVertexId);
+      if (this.selectedEntityId) this._traceEntity(this.selectedEntityId);
+      else if (this.selectedVertexId) this.traceVertex(this.selectedVertexId);
       else if (this.selectedOwnerId) this.traceGroup(this.selectedOwnerId);
       else if (this.selectedId) this.traceFrom(this.selectedId);
     }
@@ -1230,6 +1233,7 @@
       this.updateInfoPanel(
         this.describeChain(event, upstream, downstream),
         "Event",
+        this.instanceOf(event.ownerId),
       );
     }
 
@@ -1243,32 +1247,48 @@
         return;
       }
 
-      this._traceOwned(vertex.groupKey, vertex.eventIds);
+      this._traceOwned(
+        vertex.groupKey,
+        vertex.eventIds,
+        this.instanceOf(vertex.ownerId),
+      );
       this.selectedVertexId = vertexId;
       this.selectedOwnerId = null;
     }
 
-    // The box traces every chain the events drawn in it take part in.
+    // The box traces every chain the events drawn in it take part in. A box cut
+    // by node or component stands for that instance; a linked box stands for none.
     traceGroup(groupKey) {
       const group = this.groups.get(groupKey);
       if (!group) return;
       const eventIds = group.vertexIds.flatMap(
         (id) => this.vertices.get(id).eventIds,
       );
-      if (eventIds.length) this._traceOwned(groupKey, eventIds);
+      const entity = this.grouping === "linked" ? null : group.instance;
+      if (eventIds.length) this._traceOwned(groupKey, eventIds, entity);
     }
 
-    _traceOwned(groupKey, eventIds) {
+    instanceOf(instanceId) {
+      return this.graph.instances.get(instanceId)?.data || null;
+    }
+
+    // Traces the chains of `eventIds`; the panel describes `entity`, else the
+    // box keyed `groupKey`.
+    _traceOwned(groupKey, eventIds, entity = null) {
       const { upstream, downstream } = this._trace(eventIds);
       this.selectedId = eventIds[0];
       this.selectedVertexId = null;
       this.selectedOwnerId = groupKey;
       const group = this.groups.get(groupKey);
+      const instance = entity || group?.instance || {};
+      const owners = new Set(
+        eventIds.map((id) => this.graph.events.get(id)?.ownerId),
+      );
       this.updateInfoPanel(
         {
-          ...(group?.instance || {}),
-          name: group?.name || groupKey,
-          nodes: group ? group.ownerIds.size : 1,
+          ...instance,
+          name: instance.name || group?.name || groupKey,
+          nodes: owners.size,
           chain: this.chainReport(
             upstream,
             downstream,
@@ -1276,6 +1296,7 @@
           ),
         },
         "Node",
+        entity,
       );
     }
 
@@ -1411,6 +1432,7 @@
       this.selectedId = null;
       this.selectedVertexId = null;
       this.selectedOwnerId = null;
+      this.selectedEntityId = null;
     }
 
     highlightEvent(eventId, preset) {
@@ -1570,6 +1592,42 @@
 
     // Centers one vertex in the viewport at a readable zoom. Screen geometry is
     // read back after the scale change, so the pan is exact.
+    // Traces the events of the instance with `id`, or of every instance under
+    // the module with `id`; the first of their vertices, or null when none is drawn.
+    _traceEntity(id) {
+      const instance = this.instanceOf(String(id));
+      if (!instance) return null;
+      const prefix = `${instance.path}/`;
+      const under = (owner) =>
+        String(owner.unique_id) === String(id) ||
+        (instance.entity_type === "module" &&
+          (owner.path === instance.path || owner.path?.startsWith(prefix)));
+      const vertexIds = [...this.vertices.values()]
+        .filter((vertex) => under(this.instanceOf(vertex.ownerId) || {}))
+        .map((vertex) => vertex.id);
+      if (!vertexIds.length) return null;
+      const eventIds = vertexIds.flatMap(
+        (vertexId) => this.vertices.get(vertexId).eventIds,
+      );
+      this._traceOwned(
+        this.vertices.get(vertexIds[0]).groupKey,
+        eventIds,
+        instance,
+      );
+      this.selectedOwnerId = null;
+      this.selectedEntityId = String(id);
+      return vertexIds[0];
+    }
+
+    // Selects the entity drawn with `id` and centres the first of its rows;
+    // false when none of its events is drawn.
+    focusEntity(id) {
+      const vertexId = this._traceEntity(id);
+      if (!vertexId) return false;
+      this.focusVertex(vertexId);
+      return true;
+    }
+
     focusVertex(vertexId, minScale = 0.8) {
       const element = this.elementById(vertexId);
       if (!element) return;

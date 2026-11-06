@@ -37,7 +37,7 @@ DATA_GLOBAL = "systemStructureData"
 DIAGRAMS = {
     "node_diagram": {"label": "Node Diagram", "script": "js/diagrams/node_diagram.js", "searchable": True},
     "sequence_diagram": {"label": "Sequence Diagram", "script": "js/diagrams/sequence_diagram.js", "searchable": False},
-    "logic_diagram": {"label": "Logic Diagram", "script": "js/diagrams/logic_diagram.js", "searchable": False},
+    "logic_diagram": {"label": "Logic Diagram", "script": "js/diagrams/logic_diagram.js", "searchable": True},
 }
 
 DEFAULT_DIAGRAM_TYPE = "node_diagram"

@@ -69,10 +69,10 @@
           deployment: config.deploymentName,
           dataBase: config.dataBase,
           latencyModes: config.latencyModes,
-          onInfoUpdate(data, type) {
+          onInfoUpdate(data, type, entity) {
             inspector.show(data, type);
-            if (isEntity(data))
-              store.set("entity", SD.NamespaceTree.entityKey(data));
+            if (isEntity(entity))
+              store.set("entity", SD.NamespaceTree.entityKey(entity));
           },
         });
       } catch (error) {

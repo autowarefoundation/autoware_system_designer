@@ -123,9 +123,11 @@
       this.container.appendChild(box);
     }
 
-    updateInfoPanel(data, type) {
+    // Reports the selected element; `entity` is the structure instance (node or
+    // module) the selection belongs to, when it has one.
+    updateInfoPanel(data, type, entity = null) {
       if (this.options.onInfoUpdate) {
-        this.options.onInfoUpdate(data, type);
+        this.options.onInfoUpdate(data, type, entity);
       }
     }
 
