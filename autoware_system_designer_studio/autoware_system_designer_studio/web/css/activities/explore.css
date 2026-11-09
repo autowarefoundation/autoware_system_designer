@@ -48,3 +48,8 @@
   font-size: 11px;
   color: var(--text-muted);
 }
+
+/* Depth switch: one segment per design level, across the side panel */
+.depth-levels .segmented button {
+  flex: 1;
+}

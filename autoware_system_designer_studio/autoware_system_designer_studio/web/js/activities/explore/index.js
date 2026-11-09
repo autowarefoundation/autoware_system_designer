@@ -1,11 +1,13 @@
-// Explore activity: the diagram list and entity search beside the diagram
-// canvas, with the inspector showing the selected element. Search is offered
-// for diagrams that locate entities. With a daemon, the live state of the
+// Explore activity: the diagram list, entity search and depth switch beside
+// the diagram canvas, with the inspector showing the selected element. Search
+// is offered for diagrams that locate entities, the depth switch for diagrams
+// that draw the hierarchy cut at a level. With a daemon, the live state of the
 // launched members overlays the canvas.
 (function () {
   const SD = window.SD;
   const { element, section, list } = SD.widgets;
-  const { diagramHost, entitySearch, liveOverlay } = SD.activities.explore;
+  const { diagramHost, entitySearch, depthSelector, liveOverlay } =
+    SD.activities.explore;
 
   // Inspector view: the selected element's info cards, or a prompt when nothing is selected.
   function inspectorView(slot) {
@@ -40,6 +42,7 @@
     mount({ side, main, inspector }, { config, store }) {
       const types = config.diagrams.map((d) => d.type);
       store.define("diagram", config.defaultDiagram, (v) => types.includes(v));
+      store.define("depth", "", (v) => /^[1-9]\d*$/.test(v));
       store.syncUrl();
 
       const host = diagramHost(main, inspectorView(inspector), config, store);
@@ -48,14 +51,21 @@
         (type) => store.set("diagram", type),
       );
       const search = entitySearch(config, store, (id) => host.focus(id));
+      const depth = depthSelector(config, store);
       const live = liveOverlay(config, store, host);
-      side.append(section("Diagrams", diagrams.element), search, live.element);
+      side.append(
+        section("Diagrams", diagrams.element),
+        depth,
+        search,
+        live.element,
+      );
 
       function showDiagramOptions() {
         const current = store.get("diagram");
+        const diagram = config.diagrams.find((d) => d.type === current);
         diagrams.mark(current);
-        search.hidden = !config.diagrams.find((d) => d.type === current)
-          ?.searchable;
+        search.hidden = !diagram?.searchable;
+        depth.hidden = !diagram?.layered;
       }
 
       // The diagram locates the store's entity when it loads and on show; a
@@ -83,6 +93,10 @@
         reload();
       });
       store.onChange("mode", reload);
+      store.onChange("depth", () => {
+        if (config.diagrams.find((d) => d.type === store.get("diagram"))?.layered)
+          reload();
+      });
       store.onChange("entity", (key) => {
         if (!main.hidden) shownKey = key;
       });

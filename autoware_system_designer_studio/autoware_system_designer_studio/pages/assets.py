@@ -33,11 +33,27 @@ FAVICON = "img/favicon.svg"
 DATA_GLOBAL = "systemStructureData"
 
 # Diagrams of the Explore activity, in menu order: the module script loaded when the diagram is
-# first shown, and whether the module locates entities (``focusEntity``), which Explore search needs.
+# first shown, whether the module locates entities (``focusEntity``), which Explore search needs,
+# and whether it draws the design hierarchy cut at a chosen depth (the ``depth`` option).
 DIAGRAMS = {
-    "node_diagram": {"label": "Node Diagram", "script": "js/diagrams/node_diagram.js", "searchable": True},
-    "logic_diagram": {"label": "Logic Diagram", "script": "js/diagrams/logic_diagram.js", "searchable": True},
-    "sequence_diagram": {"label": "Sequence Diagram", "script": "js/diagrams/sequence_diagram.js", "searchable": False},
+    "node_diagram": {
+        "label": "Node Diagram",
+        "script": "js/diagrams/node_diagram.js",
+        "searchable": True,
+        "layered": True,
+    },
+    "logic_diagram": {
+        "label": "Logic Diagram",
+        "script": "js/diagrams/logic_diagram.js",
+        "searchable": True,
+        "layered": False,
+    },
+    "sequence_diagram": {
+        "label": "Sequence Diagram",
+        "script": "js/diagrams/sequence_diagram.js",
+        "searchable": False,
+        "layered": False,
+    },
 }
 
 DEFAULT_DIAGRAM_TYPE = "node_diagram"
@@ -68,6 +84,7 @@ ACTIVITIES = {
         "scripts": (
             "js/activities/explore/diagram_host.js",
             "js/activities/explore/entity_search.js",
+            "js/activities/explore/depth_selector.js",
             "js/activities/explore/live_overlay.js",
             "js/activities/explore/index.js",
         ),

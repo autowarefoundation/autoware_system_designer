@@ -2,9 +2,10 @@
 // diagram and mode. The module reports the selected element through
 // `inspector.show`, and a reload clears it through `inspector.reset`. A
 // selected node or module is also recorded in the store under `entity`, and
-// `focusKey` locates the store's entity on the diagram. Live member states
-// set on the host reach the module shown, now and after each load, where the
-// module draws them; a measurement reload reaches it the same way.
+// `focusKey` locates the store's entity on the diagram. A module that draws
+// the hierarchy cut at a level is handed the store's `depth`. Live member
+// states set on the host reach the module shown, now and after each load,
+// where the module draws them; a measurement reload reaches it the same way.
 (function () {
   const SD = window.SD;
   const { element } = SD.widgets;
@@ -73,6 +74,7 @@
           deployment: config.deploymentName,
           dataBase: config.dataBase,
           latencyModes: config.latencyModes,
+          depth: parseInt(store.get("depth"), 10) || null,
           onInfoUpdate(data, type, entity) {
             inspector.show(data, type);
             if (isEntity(entity))

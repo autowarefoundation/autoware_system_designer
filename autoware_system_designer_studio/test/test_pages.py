@@ -109,6 +109,7 @@ def test_config_quotes_strings_as_json(tmp_path):
         "label": "Node Diagram",
         "script": "../../../assets/js/diagrams/node_diagram.js",
         "searchable": True,
+        "layered": True,
     }
     assert [d["type"] for d in diagrams] == list(assets.DIAGRAMS)
 

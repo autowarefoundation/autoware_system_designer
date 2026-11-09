@@ -29,6 +29,15 @@
       // The mode's structure, and node path -> live member state drawn over it.
       this.structureRoot = null;
       this.liveStates = null;
+      // Deepest design level drawn: the root is level 0, and an entity at the
+      // limit is drawn as a box with its boundary ports, its inside left out.
+      this.depthLimit = Number.isInteger(options.depth)
+        ? Math.max(1, options.depth)
+        : Infinity;
+      // Entities whose inside the limit leaves out, and parent id of every
+      // entity in the structure, drawn or not.
+      this.collapsedIds = new Set();
+      this.parentOf = new Map();
 
       // Settles once the first layout is drawn.
       this.ready = this.init();
@@ -57,7 +66,10 @@
       this.elementData.clear();
       this.portToEdges.clear();
       this.portToNode.clear();
-      this.maxDepth = this.findMaxDepth(root);
+      this.collapsedIds.clear();
+      this._indexParents(root);
+      // Layer scales count from the deepest level drawn.
+      this.maxDepth = Math.min(this.findMaxDepth(root), this.depthLimit);
 
       const addPorts = (node, ports, side, style) => {
         (ports || []).forEach((port) => {
@@ -136,17 +148,23 @@
         addPorts(node, instance.in_ports, "WEST", style);
         addPorts(node, instance.out_ports, "EAST", style);
 
+        // The inside of an entity at the limit, children and the links joining
+        // their ports, stays out of the graph.
+        const inside = depth < this.depthLimit;
         if (instance.children?.length > 0) {
-          node.children = instance.children
-            .map((child) => convertNode(child, depth + 1))
-            .filter(Boolean);
-          if (node.children.length > 0) {
-            delete node.width;
-            delete node.height;
+          if (!inside) this.collapsedIds.add(nodeId);
+          else {
+            node.children = instance.children
+              .map((child) => convertNode(child, depth + 1))
+              .filter(Boolean);
+            if (node.children.length > 0) {
+              delete node.width;
+              delete node.height;
+            }
           }
         }
 
-        if (instance.links) {
+        if (instance.links && inside) {
           node.edges = instance.links
             .map((link) => {
               if (!link.from_port || !link.to_port) return null;
@@ -187,9 +205,22 @@
       return rootNode;
     }
 
+    _indexParents(root) {
+      this.parentOf.clear();
+      const walk = (instance) => {
+        (instance?.children || []).forEach((child) => {
+          if (child?.unique_id && instance.unique_id)
+            this.parentOf.set(String(child.unique_id), String(instance.unique_id));
+          walk(child);
+        });
+      };
+      walk(root);
+    }
+
     // Global ports carry no link, so the topic name is the only thing that groups
     // them. Ports that inherited is_global through a reference chain are members
-    // of the group, but only node-owned ports are endpoints of the topic star.
+    // of the group, but only the ports of the boxes drawn without an inside, the
+    // nodes and the entities cut at the depth limit, are endpoints of the topic star.
     _buildGlobalTopicIndex() {
       this.globalTopics.clear();
 
@@ -210,8 +241,10 @@
         }
         entry.members.push(id);
 
-        const owner = this.elementData.get(this.portToNode.get(id));
-        if (owner?.entity_type !== "node") continue;
+        const ownerId = this.portToNode.get(id);
+        const owner = this.elementData.get(ownerId);
+        if (owner?.entity_type !== "node" && !this.collapsedIds.has(ownerId))
+          continue;
         const direction = this._getPortDirection(id);
         if (direction === "downstream") entry.publishers.push(id);
         else if (direction === "upstream") entry.subscribers.push(id);
@@ -1051,9 +1084,13 @@
     // ── Viewport / navigation ─────────────────────────────────────────────────────
 
     // Selects the entity drawn with `id` as a click would and centres it in the
-    // viewport; false when this diagram does not draw it.
+    // viewport. An entity inside a box the depth limit closed is stood in for
+    // by that box; false when this diagram draws neither.
     focusEntity(id) {
-      const group = this.elementById(id);
+      let drawnId = String(id);
+      while (drawnId && !this.elementById(drawnId))
+        drawnId = this.parentOf.get(drawnId);
+      const group = this.elementById(drawnId);
       const rect = group?.querySelector(":scope > .node-rect");
       if (!rect || !this.zoomLayer) return false;
       this.hasDragged = false;
