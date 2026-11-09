@@ -154,6 +154,7 @@
       view.body.appendChild(monitorPane);
       main.appendChild(view.element);
       const monitor = stateMonitor(monitorPane, config, store);
+      view.head.insertBefore(monitor.runSelector, view.trailing);
 
       function control(unit, method, params, then) {
         errors.delete(unit);

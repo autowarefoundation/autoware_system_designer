@@ -120,21 +120,27 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn` | session                                     |
 | `launch.status`                                   | `compute_unit` (optional)                                                          | `{"sessions": [session]}`, members included |
 | `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`                                                          | `{"members": [path]}` acted on              |
+| `launch.follow`                                   | `compute_unit`, `path`                                                             | `{"path", "out": [lines], "err": [lines]}`  |
+| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow)                                    | `{"released": [path]}`                      |
+| `launch.runs`                                     | `system` (optional)                                                                | `{"runs": [run]}`, newest first             |
+| `launch.run`                                      | `run`                                                                              | run with `members: [{"path", "slug"}]`      |
+| `launch.run_tail`                                 | `run`, `member` (its directory name)                                               | `{"run", "member", "out", "err"}`           |
 | `launch.shutdown`                                 | `compute_unit`                                                                     | `{"shutting_down": true}`                   |
 | `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                     | `{"state", "message"}` of the window        |
 | `rviz.start`                                      | -                                                                                  | job                                         |
 
-| Event topic       | Data                                                                          |
-| ----------------- | ----------------------------------------------------------------------------- |
-| `hello`           | Sent first on each stream; no replay, so clients resynchronise by request     |
-| `heartbeat`       | `{"time"}`                                                                    |
-| `job`             | Job record on every state change                                              |
-| `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                         |
-| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                     |
-| `daemon`          | `{"restart_required": true}`                                                  |
-| `launch`          | Session view (without members) on every change of a launch                    |
-| `member`          | `{"compute_unit", "system", "path", "state", "detail", "time"}` of one member |
-| `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new stdout/stderr lines        |
+| Event topic       | Data                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `hello`           | Sent first on each stream; no replay, so clients resynchronise by request                  |
+| `heartbeat`       | `{"time"}`                                                                                 |
+| `job`             | Job record on every state change                                                           |
+| `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                                      |
+| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                                  |
+| `daemon`          | `{"restart_required": true}`                                                               |
+| `launch`          | Session view (without members) on every change of a launch                                 |
+| `member`          | `{"compute_unit", "system", "path", "state", "detail", "time"}` of one member              |
+| `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new lines of a followed member              |
+| `member.activity` | `{"compute_unit", "system", "window", "rates": {path: bytes/s}}`, output growth per window |
 
 Responses use one envelope: `{"ok": true, "result": ...}` or
 `{"ok": false, "error": {"code", "message"}}`, with `id` echoed on `/api/rpc`. Error codes are
@@ -179,21 +185,48 @@ launch environment's PATH or under the install tree's `bin/`) on the mode's syst
 job, one job key per compute unit, with `--compute-unit`, `--deploy`, one `--arg NAME=VALUE` per
 `args` entry, `--measure` and `--respawn` as requested, and `--control <socket>` on a private socket
 under `$XDG_RUNTIME_DIR`. The daemon connects to the socket once the runtime serves it, forwards the
-runtime's `member` and `member.log` events and relays `launch.stop|restart|kill` (a member `pattern`:
-the exact path, else every path containing it), `launch.shutdown` and `measure.*` as requests. A
-shutdown asked before the channel is up cancels the job. The runtime's own output is the job's log.
+runtime's `member`, `member.log` and `member.activity` events and relays `launch.stop|restart|kill`
+(a member `pattern`: the exact path, else every path containing it), `launch.shutdown` and
+`measure.*` as requests. A shutdown asked before the channel is up cancels the job. The runtime's own
+output is the job's log.
+
+Member output is tailed on demand: `launch.follow` asks the runtime to tail one member's `out` and
+`err` files and answers with their current tails, after which the member's new lines arrive as
+`member.log` events until `launch.unfollow`. The daemon is one runtime client, so follows are shared
+by every event stream; they are released once the last stream closes, and a runtime's follows end
+with its channel. Once the channel is gone, a follow answers the tails of the member's files in the
+runtime's log directory (`log_dir` of the session view, from the runtime's hello), with no lines to
+come. The Launch monitor follows the selected node (a composable node through its container) while
+it is shown, keeps the followed log once the launcher ended and marks where it ended.
+
+A selector beside the State monitor title shows a past run instead of the live sessions. A run is
+a directory under the runtime's log base (`/tmp/autoware_system_designer_logs`, and the parents of
+the sessions' log directories) holding a `run.json`; a directory without one is not a run. The
+daemon lists the runs of the system that no active session is writing, newest first, labelled by
+start time, mode, deploy variant and compute unit from the manifest. A run is one runtime, so one
+compute unit: members of the other units are dimmed like members without a log. `launch.run` gives
+a run's members, the manifest's member paths that have a directory, each with its directory name;
+`launch.run_tail` the tails of one directory's `out` and `err` files. The tree keeps the mode's
+structure: members the run holds no log for are dimmed, its members outside the mode are listed
+below the tree by path, and a selected member shows its tail. Run states are not recorded, so the
+monitor shows none for a past run.
 
 A session is `starting` until the channel connects, then `running`, `stopping` once the runtime
 closed the channel for a requested shutdown, and `exited`; its view carries
-the job, `connected`, the runtime's `control` facts (pid, `policy`, `measure_armed`), `launch_ready`
-and `shutting_down`. Member records are the runtime's: `state` one of `pending`, `running`,
+the job, `connected`, the runtime's `control` facts (pid, `policy`, `measure_armed`), its `log_dir`,
+`launch_ready` and `shutting_down`. Member records are the runtime's: `state` one of `pending`, `running`,
 `stopped`, `respawning`, `failed`, `done`, `loading`, `loaded`, with a `detail` such as `pid` or
 `exit_code`. `policy` is `guard` (default: stop, restart, kill and shutdown are refused with
 `refused` while the operation mode is autonomous or in transition) or `open`.
 
 The workbench's state monitor lists composable nodes under their container, whose process holds
 their output and whose exit they follow; a module or container shows the severest state among its
-members. The legend at the foot of the tree gives each mark's shape and colour.
+members. Failed members are listed with their error above the tree, in the order they failed, and
+stay listed until the unit is launched again; one node failure shuts the whole runtime down, so
+this list is what explains an exited launcher. A member whose output grows by 4 KB/s or more carries
+a busy-log mark (a container's covers its composable nodes, whose output it holds), a folded entry
+the mark of the busiest member within, and the selected member's head shows its rate. The legend at
+the foot of the tree gives each mark's shape and colour.
 
 `rviz.start` runs `rviz2` from the launch environment as a job of its own, one per daemon
 (`conflict` while it runs), on the `--rviz-config` file, else on `autoware_launch`'s `autoware.rviz`

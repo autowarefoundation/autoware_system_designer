@@ -14,6 +14,7 @@
 
 """Launch sessions of the serve daemon, driven over a fake runtime's control socket."""
 
+import json
 import os
 import shutil
 import sys
@@ -39,6 +40,15 @@ import asyncio, json, os, signal, sys
 args = sys.argv[1:]
 sock = args[args.index("--control") + 1]
 behaviour = next((a.split("=", 1)[1] for a in args if a.startswith("behaviour=")), "")
+log_dir = sock + ".logs"
+os.makedirs(os.path.join(log_dir, "demo_talker"), exist_ok=True)
+with open(os.path.join(log_dir, "run.json"), "w") as f:
+    json.dump({"system_structure": args[0], "mode": "Runtime", "compute_unit": "main_ecu", "deploy": None,
+               "started": 1.5, "members": ["/demo/talker", "/demo/listener"]}, f)
+with open(os.path.join(log_dir, "demo_talker", "out"), "w") as f:
+    f.write("hello 1\\nhello 2\\n")
+with open(os.path.join(log_dir, "demo_talker", "err"), "w") as f:
+    f.write("bye")
 METHODS = ["status", "stop", "restart", "kill", "measure.start", "measure.stop", "measure.status", "shutdown"]
 members = [
     {"path": "/demo/talker", "state": "pending", "detail": {}, "time": 0.0},
@@ -60,9 +70,10 @@ async def main():
 
         send({"event": "hello", "pid": os.getpid(), "methods": METHODS, "policy": "guard",
               "measure_armed": "--measure" in args, "members": members, "launch_ready": True,
-              "shutting_down": False})
+              "shutting_down": False, "log_dir": log_dir})
         send({"event": "member", "path": "/demo/talker", "state": "running", "detail": {"pid": 1}, "time": 1.0})
-        send({"event": "member.log", "path": "/demo/talker", "stream": "out", "lines": ["hello 1"]})
+        send({"event": "member.activity", "window": 2.0, "rates": {"/demo/talker": 5120}})
+        follows = set()
         while True:
             line = await reader.readline()
             if not line:
@@ -79,6 +90,17 @@ async def main():
                     continue
                 send({"event": "member", "path": pattern, "state": "stopped", "detail": {"exit_code": 0}, "time": 2.0})
                 result = {"members": [pattern]}
+            elif method == "log.follow":
+                if params.get("path") not in [m["path"] for m in members]:
+                    send({"id": req["id"], "ok": False, "error": {"code": "not_found", "message": "no member"}})
+                    continue
+                follows.add(params["path"])
+                result = {"path": params["path"], "out": ["hello 1"], "err": []}
+                send({"event": "member.log", "path": params["path"], "stream": "out", "lines": ["hello 2"]})
+            elif method == "log.unfollow":
+                released = sorted(follows) if "path" not in params else [params["path"]]
+                follows.difference_update(released)
+                result = {"released": released}
             elif method == "measure.status":
                 result = {"state": "idle", "message": "measure idle"}
             elif method == "shutdown":
@@ -194,6 +216,22 @@ def _wait_session(running, predicate, what="session"):
 # -- environment and launcher ---------------------------------------------------
 
 
+def test_member_slug_matches_the_runtime_log_layout():
+    assert launch.member_slug("/sensing/lidar/front_upper/lidar") == "sensing_lidar_front_upper_lidar"
+    assert launch.member_slug("/a-b.c_d/e f") == "a-b.c_d_e_f"
+    assert launch.member_slug("//") == "_unnamed_"
+
+
+def test_tail_lines_reads_the_end_of_a_file(tmp_path):
+    missing = tmp_path / "none"
+    assert launch.tail_lines(missing) == []
+    (tmp_path / "out").write_bytes(b"one\ntwo\nthree")
+    assert launch.tail_lines(tmp_path / "out") == ["one", "two", "three"]
+    (tmp_path / "long").write_bytes(b"".join(b"line %06d\n" % i for i in range(10000)))
+    tail = launch.tail_lines(tmp_path / "long")
+    assert len(tail) == launch.TAIL_LINES and tail[-1] == "line 009999"
+
+
 def test_capture_env_sources_the_script_over_this_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("KEEP_ME", "1")
     script = tmp_path / "setup.bash"
@@ -294,7 +332,7 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     assert job["result"]["job"]["params"]["measure"] is True
 
     deadline = time.time() + 5
-    while time.time() < deadline and not launching.events.of(launch.TOPIC_MEMBER_LOG):
+    while time.time() < deadline and not launching.events.of(launch.TOPIC_MEMBER):
         time.sleep(0.02)
     member_events = launching.events.of(launch.TOPIC_MEMBER)
     assert {
@@ -305,9 +343,37 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
         "detail": {"pid": 1},
         "time": 1.0,
     } in member_events
-    assert launching.events.of(launch.TOPIC_MEMBER_LOG) == [
-        {"compute_unit": "main_ecu", "path": "/demo/talker", "stream": "out", "lines": ["hello 1"]}
+    while time.time() < deadline and not launching.events.of(launch.TOPIC_MEMBER_ACTIVITY):
+        time.sleep(0.02)
+    assert launching.events.of(launch.TOPIC_MEMBER_ACTIVITY) == [
+        {"compute_unit": "main_ecu", "system": f"{PKG}:{SYSTEM}", "window": 2.0, "rates": {"/demo/talker": 5120}}
     ]
+    # Member output flows only once followed; the follow answers with the tail.
+    assert launching.events.of(launch.TOPIC_MEMBER_LOG) == []
+    status, body = launching.rpc(
+        {"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/demo/talker"}}
+    )
+    assert status == 200 and body["result"] == {"path": "/demo/talker", "out": ["hello 1"], "err": []}
+    deadline = time.time() + 5
+    while time.time() < deadline and not launching.events.of(launch.TOPIC_MEMBER_LOG):
+        time.sleep(0.02)
+    assert launching.events.of(launch.TOPIC_MEMBER_LOG) == [
+        {"compute_unit": "main_ecu", "path": "/demo/talker", "stream": "out", "lines": ["hello 2"]}
+    ]
+    assert launching.daemon.launch.sessions["main_ecu"].follows == {"/demo/talker"}
+    status, body = launching.rpc({"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/nope"}})
+    assert status == 404 and body["error"]["code"] == api.NOT_FOUND
+    status, body = launching.rpc({"method": "launch.unfollow", "params": {"compute_unit": "main_ecu"}})
+    assert status == 200 and body["result"] == {"released": ["/demo/talker"]}
+    assert launching.daemon.launch.sessions["main_ecu"].follows == set()
+    # Follows end with the last event stream.
+    launching.rpc({"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/demo/talker"}})
+    assert launching.daemon.launch.sessions["main_ecu"].follows == {"/demo/talker"}
+    launching.loop.call_soon_threadsafe(launching.daemon.launch.release_follows)
+    deadline = time.time() + 5
+    while time.time() < deadline and launching.daemon.launch.sessions["main_ecu"].follows:
+        time.sleep(0.02)
+    assert launching.daemon.launch.sessions["main_ecu"].follows == set()
     launches = launching.events.of(launch.TOPIC_LAUNCH)
     assert [e["state"] for e in launches][:2] == [launch.SESSION_STARTING, launch.SESSION_RUNNING]
     assert "members" not in launches[0]
@@ -335,6 +401,20 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     session = _wait_session(launching, lambda s: s["state"] == launch.SESSION_EXITED, "exit")
     assert session["connected"] is False and session["exit_code"] == 0
     assert not Path(job["result"]["job"]["detail"]["socket"]).exists()
+    # Without the channel, a follow reads the member's files from the runtime's log directory.
+    assert session["log_dir"] == job["result"]["job"]["detail"]["socket"] + ".logs"
+    status, body = launching.rpc(
+        {"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/demo/talker"}}
+    )
+    assert status == 200 and body["result"] == {"path": "/demo/talker", "out": ["hello 1", "hello 2"], "err": ["bye"]}
+    status, body = launching.rpc(
+        {"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/demo/listener"}}
+    )
+    assert status == 200 and body["result"] == {"path": "/demo/listener", "out": [], "err": []}
+    status, body = launching.rpc({"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/nope"}})
+    assert status == 404 and body["error"]["code"] == api.NOT_FOUND
+    status, body = launching.rpc({"method": "launch.unfollow", "params": {"compute_unit": "main_ecu"}})
+    assert status == 200 and body["result"] == {"released": []}
     _, listed = launching.json("GET", "/api/systems")
     assert listed["result"]["systems"][0]["compute_units"][0]["status"] == "available"
 
@@ -454,3 +534,104 @@ def test_daemon_stop_ends_a_running_launch(tmp_path, run_dir):
     running.close()
     assert job.state == jobs.STATE_CANCELLED
     assert not list(run_dir.glob("**/*.sock"))
+
+
+# -- past runs -------------------------------------------------------------------
+
+
+def _run_tree(base, name, manifest, members=("demo_talker",)):
+    run = base / name
+    for member in members:
+        (run / member).mkdir(parents=True)
+        (run / member / "out").write_text(f"{member} out\n")
+        (run / member / "err").write_text("")
+    if manifest is not None:
+        (run / launch.RUN_MANIFEST).write_text(json.dumps(manifest))
+    return run
+
+
+@pytest.fixture
+def archived(tmp_path):
+    """A daemon over a log base of three past runs (two of the system: by name, by structure path; one of
+    another system), a directory without a manifest and a stray file."""
+    install = _install_tree(tmp_path, compute_units=UNITS)
+    export = install / PKG / "share" / PKG / "exports" / SYSTEM
+    base = tmp_path / "logs"
+    _run_tree(
+        base,
+        "20260101_000000",
+        {
+            "system": SYSTEM,
+            "mode": "Runtime",
+            "compute_unit": "main_ecu",
+            "deploy": "site_a",
+            "started": 1.0,
+            "members": ["/demo/talker", "/demo/listener"],
+        },
+    )
+    _run_tree(
+        base,
+        "20260102_000000",
+        {
+            "system_structure": str(export / "system_structure" / "Runtime.json"),
+            "started": 2.0,
+            "members": ["/demo/talker"],
+        },
+    )
+    _run_tree(base, "20260103_000000", {"system": "Other", "started": 3.0})
+    _run_tree(base, "20260104_000000", None, members=("demo_talker", "demo_listener"))
+    (base / "stray").write_text("")
+    running = _Running(install, served_units=["main_ecu"], log_base=base, heartbeat_s=60)
+    yield running
+    running.close()
+
+
+def test_past_runs_are_listed_by_system_newest_first(archived):
+    status, body = archived.rpc({"method": "launch.runs", "params": {"system": f"{PKG}:{SYSTEM}"}})
+    assert status == 200
+    runs = body["result"]["runs"]
+    assert [r["run"] for r in runs] == ["20260102_000000", "20260101_000000"]
+    assert runs[1]["mode"] == "Runtime" and runs[1]["compute_unit"] == "main_ecu" and runs[1]["deploy"] == "site_a"
+    assert runs[1]["member_count"] == 2 and runs[1]["started"] == 1.0
+    assert runs[0]["mode"] is None and runs[0]["member_count"] == 1
+    status, body = archived.rpc({"method": "launch.runs"})
+    assert [r["run"] for r in body["result"]["runs"]] == ["20260103_000000", "20260102_000000", "20260101_000000"]
+
+
+def test_a_past_run_lists_its_members_and_tails_them(archived):
+    status, body = archived.rpc({"method": "launch.run", "params": {"run": "20260101_000000"}})
+    assert status == 200
+    assert body["result"]["run"] == "20260101_000000" and body["result"]["mode"] == "Runtime"
+    # A listed member without a directory never spawned and is left out.
+    assert body["result"]["members"] == [{"path": "/demo/talker", "slug": "demo_talker"}]
+    status, body = archived.rpc(
+        {"method": "launch.run_tail", "params": {"run": "20260101_000000", "member": "demo_talker"}}
+    )
+    assert status == 200
+    assert body["result"] == {"run": "20260101_000000", "member": "demo_talker", "out": ["demo_talker out"], "err": []}
+    for params in ({"run": "../logs", "member": "demo_talker"}, {"run": "20260101_000000", "member": "a/b"}):
+        status, body = archived.rpc({"method": "launch.run_tail", "params": params})
+        assert status == 400 and body["error"]["code"] == api.INVALID_PARAMS, params
+    status, body = archived.rpc({"method": "launch.run_tail", "params": {"run": "20260101_000000", "member": "nope"}})
+    assert status == 404 and body["error"]["code"] == api.NOT_FOUND
+    # A directory without a manifest is not a run, nor is a file.
+    for name in ("20260104_000000", "stray"):
+        status, body = archived.rpc({"method": "launch.run", "params": {"run": name}})
+        assert status == 404, name
+
+
+def test_the_run_of_a_session_is_listed_once_the_session_exited(launching):
+    _start(launching)
+    session = _wait_session(launching, lambda s: s["connected"], "connect")
+    run = Path(session["log_dir"]).name
+    _, body = launching.rpc({"method": "launch.runs"})
+    assert run not in [r["run"] for r in body["result"]["runs"]]
+    launching.rpc({"method": "launch.shutdown", "params": {"compute_unit": "main_ecu"}})
+    _wait_session(launching, lambda s: s["state"] == launch.SESSION_EXITED, "exit")
+    _, body = launching.rpc({"method": "launch.runs", "params": {"system": f"{PKG}:{SYSTEM}"}})
+    listed = [r for r in body["result"]["runs"] if r["run"] == run]
+    assert listed and listed[0]["member_count"] == 2 and listed[0]["mode"] == "Runtime"
+    _, body = launching.rpc({"method": "launch.run", "params": {"run": run}})
+    assert body["result"]["members"] == [{"path": "/demo/talker", "slug": "demo_talker"}]
+    status, body = launching.rpc({"method": "launch.run_tail", "params": {"run": run, "member": "demo_talker"}})
+    assert status == 200 and body["result"]["out"] == ["hello 1", "hello 2"] and body["result"]["err"] == ["bye"]

@@ -22,15 +22,17 @@ import os
 import stat
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from autoware_system_designer_runtime._impl.core import control_channel as cc
 from autoware_system_designer_runtime._impl.core import events as ev
 from autoware_system_designer_runtime._impl.core.commands import CommandError, MemberStates, RuntimeCommands
 from autoware_system_designer_runtime._impl.core.control_channel import METHODS, ControlChannel
 from autoware_system_designer_runtime._impl.core.regular_actor import _slug
 from autoware_system_designer_runtime._impl.core.stdin_console import _dispatch
-from autoware_system_designer_runtime._impl.ros2.operation_mode import MODE_AUTONOMOUS, OperationModeGuard
+from autoware_system_designer_runtime._impl.ros2.operation_mode import MODE_AUTONOMOUS, OperationModeGuard, is_replayed
 
 
 class _Handle:
@@ -255,6 +257,31 @@ def test_operation_mode_guard_refuses_autonomous_and_transitions_only():
     assert guard.check("restart") == "restart refused: operation mode is in transition"
 
 
+def _state(mode, stamp_ns, in_transition=False):
+    return SimpleNamespace(
+        mode=mode, is_in_transition=in_transition,
+        stamp=SimpleNamespace(sec=stamp_ns // 10**9, nanosec=stamp_ns % 10**9),
+    )
+
+
+def test_operation_mode_guard_ignores_replayed_reports():
+    now = 1_800_000_000 * 10**9
+    assert is_replayed(now - 3600 * 10**9, now)
+    assert is_replayed(0, now)
+    assert not is_replayed(now - 10**9, now)
+    assert not is_replayed(now - 3600 * 10**9, None)
+    guard = OperationModeGuard(worker=None)
+    guard._on_message(_state(MODE_AUTONOMOUS, now - 3600 * 10**9), {"source_timestamp": now})
+    assert guard.check("shutdown") is None
+    guard._on_message(_state(1, now - 10**9), {"source_timestamp": now})
+    guard._on_message(_state(MODE_AUTONOMOUS, now - 3600 * 10**9), {"source_timestamp": now})
+    assert guard.check("shutdown") is None
+    guard._on_message(_state(MODE_AUTONOMOUS, now), {"source_timestamp": now})
+    assert guard.check("shutdown") == "shutdown refused: operation mode is autonomous"
+    guard._on_message(_state(1, now - 3600 * 10**9), {"source_timestamp": None})
+    assert guard.check("shutdown") is None
+
+
 # ---- control channel -------------------------------------------------------
 
 
@@ -300,6 +327,7 @@ def test_channel_greets_with_members_and_forwards_state_changes(tmp_path):
             assert hello["methods"] == list(METHODS) and hello["policy"] == "guard"
             assert [m["path"] for m in hello["members"]] == MEMBERS
             assert hello["measure_armed"] is False and hello["launch_ready"] is False
+            assert hello["log_dir"] == str(tmp_path)
             assert stat.S_IMODE(os.stat(c.channel.path).st_mode) == 0o600
 
             states.on_event(ev.Started(name="/perception/detector", pid=42))
@@ -364,29 +392,140 @@ def test_channel_answers_errors_in_the_envelope(tmp_path):
     _run(scenario())
 
 
-def test_channel_tails_member_output_files(tmp_path):
+def test_channel_tails_the_output_files_of_followed_members_only(tmp_path):
     async def scenario():
-        coord, commands = _commands(["/sensing/lidar/driver"])
+        coord, commands = _commands(["/sensing/lidar/driver", "/perception/detector"])
         node_dir = tmp_path / _slug("/sensing/lidar/driver")
         node_dir.mkdir()
         out = node_dir / "out"
         out.write_bytes(b"first line\nsecond line\npartial")
+        other = tmp_path / _slug("/perception/detector")
+        other.mkdir()
         async with _Channel(commands, commands._states, tmp_path) as c:
             await c.event()
+            # Nothing is tailed before a follow: the status reply is the next line.
+            (other / "out").write_bytes(b"unfollowed\n")
+            await asyncio.sleep(cc.LOG_POLL_S * 2)
+            assert (await c.call("status"))["ok"]
+            assert c.channel._offsets == {}
+
+            reply = await c.call("log.follow", {"path": "/sensing/lidar/driver"})
+            assert reply["result"] == {"path": "/sensing/lidar/driver", "out": ["first line", "second line"], "err": []}
+            with open(out, "ab") as f:
+                f.write(b" end\nthird\n")
             event = await c.event()
             assert event == {
                 "event": "member.log",
                 "path": "/sensing/lidar/driver",
                 "stream": "out",
-                "lines": ["first line", "second line"],
+                "lines": ["partial end", "third"],
             }
-            with open(out, "ab") as f:
-                f.write(b" end\nthird\n")
-            event = await c.event()
-            assert event["lines"] == ["partial end", "third"]
             (node_dir / "err").write_bytes(b"warn \xff\n")
             event = await c.event()
             assert event["stream"] == "err" and event["lines"] == ["warn �"]
+            with open(other / "out", "ab") as f:
+                f.write(b"still unfollowed\n")
+
+            reply = await c.call("log.unfollow", {"path": "/sensing/lidar/driver"})
+            assert reply["result"] == {"released": ["/sensing/lidar/driver"]}
+            assert c.channel._offsets == {}
+            with open(out, "ab") as f:
+                f.write(b"after release\n")
+            await asyncio.sleep(cc.LOG_POLL_S * 2)
+            assert (await c.call("status"))["ok"]
+
+            assert (await c.call("log.follow", {"path": "/planning"}))["error"]["code"] == "not_found"
+            assert (await c.call("log.unfollow", {"path": 3}))["error"]["code"] == "invalid_params"
+            await c.call("log.follow", {"path": "/sensing/lidar/driver"})
+            assert (await c.call("log.unfollow"))["result"] == {"released": ["/sensing/lidar/driver"]}
+
+    _run(scenario())
+
+
+def test_follow_reports_the_tail_of_a_long_file_and_a_second_follower_joins_mid_stream(tmp_path):
+    async def scenario():
+        coord, commands = _commands(["/n"])
+        node_dir = tmp_path / _slug("/n")
+        node_dir.mkdir()
+        out = node_dir / "out"
+        out.write_bytes(b"".join(b"line %05d\n" % i for i in range(20000)))
+        async with _Channel(commands, commands._states, tmp_path) as c:
+            await c.event()
+            tail = (await c.call("log.follow", {"path": "/n"}))["result"]["out"]
+            assert len(tail) == cc.BACKFILL_LINES and tail[-1] == "line 19999" and tail[0] == "line 19800"
+            with open(out, "ab") as f:
+                f.write(b"more\n")
+            assert (await c.event())["lines"] == ["more"]
+
+            reader, writer = await asyncio.open_unix_connection(str(c.channel.path))
+            try:
+                await reader.readline()
+                with open(out, "ab") as f:
+                    f.write(b"pending\n")
+                writer.write(json.dumps({"id": 1, "method": "log.follow", "params": {"path": "/n"}}).encode() + b"\n")
+                await writer.drain()
+                # The pending line reaches the first follower, then the second gets it inside its tail.
+                assert (await c.event())["lines"] == ["pending"]
+                second = json.loads(await asyncio.wait_for(reader.readline(), timeout=5))
+                assert second["result"]["out"][-2:] == ["more", "pending"]
+                with open(out, "ab") as f:
+                    f.write(b"both\n")
+                assert (await c.event())["lines"] == ["both"]
+                assert json.loads(await asyncio.wait_for(reader.readline(), timeout=5))["lines"] == ["both"]
+            finally:
+                writer.close()
+            # The first client's follow outlives the second client.
+            await asyncio.sleep(cc.LOG_POLL_S)
+            with open(out, "ab") as f:
+                f.write(b"alone\n")
+            assert (await c.event())["lines"] == ["alone"]
+
+    _run(scenario())
+
+
+def test_channel_reports_output_growth_per_window_while_a_client_is_connected(tmp_path, monkeypatch):
+    monkeypatch.setattr(cc, "ACTIVITY_POLL_S", 0.1)
+
+    async def scenario():
+        coord, commands = _commands(["/a", "/b"])
+        for name in ("/a", "/b"):
+            (tmp_path / _slug(name)).mkdir()
+        out = tmp_path / _slug("/a") / "out"
+        async with _Channel(commands, commands._states, tmp_path) as c:
+            await c.event()
+            # The first scan is the baseline; growth after it is reported, members without any are left out.
+            await asyncio.sleep(cc.ACTIVITY_POLL_S * 1.5)
+            out.write_bytes(b"x" * 1000)
+            (tmp_path / _slug("/a") / "err").write_bytes(b"y" * 24)
+            event = await c.event()
+            assert event["event"] == "member.activity"
+            assert list(event["rates"]) == ["/a"] and event["rates"]["/a"] >= 1
+            assert 0 < event["window"] < 1
+            # A quiet window after a busy one is reported once, then nothing until the next growth.
+            event = await c.event()
+            assert event["event"] == "member.activity" and event["rates"] == {}
+            await asyncio.sleep(cc.ACTIVITY_POLL_S * 3)
+            assert (await c.call("status"))["ok"]
+            # A truncated file counts its new size as growth.
+            out.write_bytes(b"z" * 10)
+            event = await c.event()
+            assert event["event"] == "member.activity" and list(event["rates"]) == ["/a"]
+
+    _run(scenario())
+
+
+def test_a_client_stalled_past_the_byte_limit_is_dropped(tmp_path, monkeypatch):
+    monkeypatch.setattr(cc, "QUEUE_BYTES", 1024)
+
+    async def scenario():
+        coord, commands = _commands(["/n"])
+        states = commands._states
+        async with _Channel(commands, states, tmp_path) as c:
+            await c.event()
+            for pid in range(50):  # never read by the client; the queue fills past the limit
+                states.on_event(ev.Started(name="/n", pid=pid))
+            await asyncio.sleep(0.1)
+            assert c.channel._clients == set()
 
     _run(scenario())
 

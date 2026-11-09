@@ -96,10 +96,11 @@ requests and gets one response each:
 
 ```text
 → {"event":"hello","pid":4242,"methods":[...],"policy":"guard","measure_armed":false,
-   "members":[{"path":"/sensing/lidar/driver","state":"pending","detail":{},"time":0}],
+   "log_dir":"/tmp/autoware_system_designer_logs/20260521_153012","members":[{"path":"/sensing/lidar/driver","state":"pending","detail":{},"time":0}],
    "launch_ready":false,"shutting_down":false}
 → {"event":"member","path":"/sensing/lidar/driver","state":"running","detail":{"pid":4310},"time":1793930000.1}
 → {"event":"member.log","path":"/sensing/lidar/driver","stream":"out","lines":["[INFO] ready"]}
+→ {"event":"member.activity","window":2.0,"rates":{"/sensing/lidar/driver":5120}}
 ← {"id":1,"method":"stop","params":{"pattern":"/perception"}}
 → {"id":1,"ok":true,"result":{"members":["/perception/detector"]}}
 ← {"id":2,"method":"shutdown"}
@@ -110,21 +111,30 @@ requests and gets one response each:
 | ------------------------------------------------- | --------- | -------------------------------------------------------- |
 | `status`                                          | -         | `{"members": [record], "launch_ready", "shutting_down"}` |
 | `stop`, `restart`, `kill`                         | `pattern` | `{"members": [matched names]}`                           |
+| `log.follow`                                      | `path`    | `{"path", "out": [lines], "err": [lines]}`, the tails    |
+| `log.unfollow`                                    | `path`?   | `{"released": [paths]}` (every follow without `path`)    |
 | `measure.start`, `measure.stop`, `measure.status` | -         | `{"state", "message"}` (needs `--measure`)               |
 | `shutdown`                                        | -         | `{"shutting_down": true}`                                |
 
 A member record is `{"path", "state", "detail", "time"}`; `path` is the member name (the node's
 structural path), `state` one of `pending`, `running`, `stopped`, `respawning`, `failed`, `done`,
 `loading`, `loaded`, and `detail` carries the state's data (`pid`, `exit_code`, `attempt`, `error`,
-`unique_id`). Lines of a member's `out` and `err` files are forwarded while a client is connected.
-Error codes are stable strings: `bad_request`, `invalid_params`, `unknown_method`, `not_found`,
+`unique_id`). Member output stays in the per-member `out` and `err` files; a client that follows a
+member (`log.follow`) gets the files' current tails in the reply and new lines as `member.log`
+events until it unfollows or disconnects. Unfollowed members cost the channel nothing. While a
+client is connected, `member.activity` reports once per window (2 s) the bytes per second each
+member's files grew by, leaving quiet members out; a window without growth is reported once. The
+hello's `log_dir` names the run's log directory, where the files outlive the runtime. Error codes
+are stable strings: `bad_request`, `invalid_params`, `unknown_method`, `not_found`,
 `unavailable`, `refused`, `payload_too_large`, `internal`.
 
 **Safe-state interlock.** With `--control-policy guard` (the default, also for `--interactive`), the
 runtime subscribes to `/api/operation_mode/state` and refuses `stop`, `restart`, `kill` and
-`shutdown` while the operation mode is autonomous or in transition. A system that never reports an
-operation mode is not interlocked, and neither is a signal sent to the runtime process itself.
-`--control-policy open` disables the interlock.
+`shutdown` while the operation mode is autonomous or in transition. A report stamped more than 10 s
+from its publication time is a replayed recording or comes from a system on simulated time, so it
+is ignored: a logging simulation replaying an autonomous drive is not interlocked. A system that
+never reports a live operation mode is not interlocked, and neither is a signal sent to the runtime
+process itself. `--control-policy open` disables the interlock.
 
 ---
 
@@ -134,6 +144,7 @@ Each member gets its own directory under `--log-dir`:
 
 ```text
 /tmp/autoware_system_designer_logs/20260521_153012/
+├── run.json           the run: system, mode, compute unit, deploy, structure path, start time, member paths
 └── <member-slug>/
     ├── cmdline        full argv used to spawn the process
     ├── pid            the process group leader's PID
@@ -142,7 +153,8 @@ Each member gets its own directory under `--log-dir`:
 ```
 
 The default base path is `/tmp/autoware_system_designer_logs/`; a timestamped
-subdirectory is created per run unless `--log-dir` overrides it.
+subdirectory is created per run unless `--log-dir` overrides it. `run.json` names what the
+directory holds, so a reader can map a member directory back to its member path.
 
 ---
 

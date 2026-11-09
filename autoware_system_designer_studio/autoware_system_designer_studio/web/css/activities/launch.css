@@ -120,9 +120,91 @@
   font-weight: 500;
 }
 
+/* Run selector beside the main view title: the live sessions or a past run */
+.main-view-head .monitor-run-select {
+  margin-right: auto;
+  max-width: 320px;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.monitor-run-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Members the shown run holds no log directory for */
+.ns-row.ns-absent .ns-label {
+  color: var(--text-muted);
+}
+
+/* Member directories of the shown run outside the mode's tree; a row shows its log */
+.monitor-run-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.monitor-run-extras-title {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.monitor-run-extra {
+  padding: 2px 6px;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  text-align: left;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.monitor-run-extra:hover,
+.monitor-run-extra.selected {
+  background: var(--bg-tertiary);
+}
+
+.monitor-run-extra.selected {
+  border-color: var(--border-color);
+}
+
 /* Composable nodes listed under their container */
 .ns-row.ns-composable .ns-label {
   font-style: italic;
+}
+
+/* Busy-log mark: three rising bars beside a member whose output grows fast */
+.log-busy {
+  width: 10px;
+  height: 9px;
+  flex-shrink: 0;
+  background: linear-gradient(
+    to right,
+    var(--state-warning) 0 2px,
+    transparent 2px 4px,
+    var(--state-warning) 4px 6px,
+    transparent 6px 8px,
+    var(--state-warning) 8px 10px
+  );
+  clip-path: polygon(
+    0 55%,
+    4px 55%,
+    4px 25%,
+    8px 25%,
+    8px 0,
+    10px 0,
+    10px 100%,
+    0 100%
+  );
 }
 
 /* Meaning of the run-state marks, at the foot of the tree */
@@ -180,6 +262,49 @@
   color: var(--text-muted);
 }
 
+/* Failed members listed above the tree; a row selects the member */
+.monitor-failures {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.monitor-failure {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 6px;
+  align-items: center;
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: left;
+  background: none;
+  color: var(--text-primary);
+  border: 1px solid var(--state-failed);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.monitor-failure:hover {
+  background: var(--bg-tertiary);
+}
+
+.monitor-failure.selected {
+  background: var(--bg-tertiary);
+  box-shadow: 0 0 0 1px var(--state-failed);
+}
+
+.monitor-failure-path {
+  font-family: var(--mono-font);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.monitor-failure-error {
+  grid-column: 2;
+  color: var(--state-failed);
+  word-break: break-word;
+}
+
 .member-actions {
   display: flex;
   gap: 4px;
@@ -193,6 +318,17 @@
 .member-note {
   font-size: 12px;
   color: var(--state-failed);
+}
+
+/* Output growth of the selected member's log */
+.member-rate {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.member-rate.busy {
+  color: var(--state-warning);
+  font-weight: 600;
 }
 
 .member-state {

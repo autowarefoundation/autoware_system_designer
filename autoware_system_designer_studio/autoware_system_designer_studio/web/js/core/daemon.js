@@ -16,6 +16,7 @@
     "launch",
     "member",
     "member.log",
+    "member.activity",
   ];
 
   let root = "/";

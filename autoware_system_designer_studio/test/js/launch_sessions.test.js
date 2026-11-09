@@ -107,6 +107,49 @@ test("session labels follow the session state", () => {
   );
 });
 
+test("session failures, their count and the session token", () => {
+  const failed = (path, time, error) => ({
+    path,
+    state: "failed",
+    detail: { error },
+    time,
+  });
+  const session = {
+    state: "exited",
+    job_state: "failed",
+    exit_code: 1,
+    members: [
+      { path: "/a", state: "done", detail: {}, time: 3 },
+      failed("/b", 2, "load timed out"),
+      failed("/c", 1, "spawn failed"),
+    ],
+  };
+  assert.deepEqual(
+    launch.sessionFailures(session).map((r) => r.path),
+    ["/c", "/b"],
+  );
+  assert.deepEqual(launch.sessionFailures(null), []);
+  assert.equal(launch.sessionLabel(session), "exited · code 1 · 2 failed");
+  assert.equal(launch.sessionToken(session), "failed");
+  assert.equal(
+    launch.sessionLabel({ ...session, state: "running", member_count: 3 }),
+    "running · 3 members · 2 failed",
+  );
+  assert.equal(launch.sessionToken(null), "idle");
+  assert.equal(launch.sessionToken({ state: "running" }), "running");
+  assert.equal(launch.sessionToken({ state: "starting" }), "warning");
+  assert.equal(launch.sessionToken({ state: "stopping" }), "warning");
+  assert.equal(launch.sessionToken({ state: "exited", exit_code: 0 }), "ok");
+  assert.equal(
+    launch.sessionToken({ state: "exited", exit_code: 1 }),
+    "warning",
+  );
+  assert.equal(
+    launch.sessionToken({ state: "exited", job_state: "cancelled" }),
+    "idle",
+  );
+});
+
 test("sessions resynchronise on hello and follow launch and member events", async () => {
   await handlers["daemon.health"]();
   assert.equal(launch.sessions.get("main_ecu").member_count, 1);
@@ -133,4 +176,76 @@ test("sessions resynchronise on hello and follow launch and member events", asyn
   const session = launch.sessions.get("main_ecu");
   assert.equal(session.state, "exited");
   assert.equal(session.members.length, 2, "members survive a session view");
+});
+
+test("output rates label, mark busy logs and follow activity events", () => {
+  assert.equal(launch.rateLabel(512), "512 B/s");
+  assert.equal(launch.rateLabel(5120), "5.0 KB/s");
+  assert.equal(launch.rateLabel(2 * 1048576), "2.0 MB/s");
+  assert.equal(launch.busyLog(launch.BUSY_LOG_BPS - 1), false);
+  assert.equal(launch.busyLog(launch.BUSY_LOG_BPS), true);
+
+  handlers["daemon.launch"]({
+    compute_unit: "main_ecu",
+    state: "running",
+    connected: true,
+    member_count: 2,
+  });
+  handlers["daemon.member.activity"]({
+    compute_unit: "main_ecu",
+    window: 2,
+    rates: { "/a/x": 8192, "/a/y": 0 },
+  });
+  assert.equal(launch.logRate("/a/x"), 8192);
+  assert.equal(launch.logRate("/a/y"), 0);
+  assert.deepEqual(emitted.at(-1), ["launch.activity", launch.activity]);
+  handlers["daemon.member.activity"]({
+    compute_unit: "sub_ecu",
+    window: 2,
+    rates: { "/b/z": 100 },
+  });
+  assert.equal(launch.logRate("/a/x"), 8192, "other units keep their rates");
+  assert.equal(launch.logRate("/b/z"), 100);
+  handlers["daemon.member.activity"]({
+    compute_unit: "main_ecu",
+    window: 2,
+    rates: { "/a/y": 300 },
+  });
+  assert.equal(launch.logRate("/a/x"), 0, "a window replaces its unit's rates");
+  assert.equal(launch.logRate("/a/y"), 300);
+
+  handlers["daemon.launch"]({
+    compute_unit: "main_ecu",
+    state: "exited",
+    connected: false,
+    member_count: 2,
+  });
+  assert.equal(
+    launch.logRate("/a/y"),
+    0,
+    "a lost channel ends its unit's rates",
+  );
+  assert.equal(launch.logRate("/b/z"), 100);
+  handlers["daemon.member.activity"]({ compute_unit: "sub_ecu", rates: {} });
+  assert.equal(launch.logRate("/b/z"), 0);
+});
+
+test("a run is labelled by its start time and what it ran", () => {
+  const label = launch.runLabel({
+    run: "20261109_124314",
+    started: new Date(2026, 10, 9, 12, 43, 14).getTime() / 1000,
+    system: "AutowareSample",
+    mode: "LoggingSimulation",
+    deploy: "site_a",
+    compute_unit: "main_ecu",
+  });
+  assert.equal(
+    label,
+    "2026-11-09 12:43:14 · LoggingSimulation · site_a · main_ecu",
+  );
+  assert.equal(launch.runLabel({ run: "custom", started: 0 }), "custom");
+  assert.equal(
+    launch.runLabel({ run: "x", started: 0, compute_unit: "sub_ecu" }),
+    "x · sub_ecu",
+  );
 });
