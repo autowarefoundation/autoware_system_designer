@@ -30,12 +30,23 @@ MSG_TYPE = "autoware_adapi_v1_msgs/msg/OperationModeState"
 MODE_AUTONOMOUS = 2
 GUARDED_ACTIONS = ("stop", "restart", "kill", "shutdown")
 POLICIES = ("guard", "open")
+STAMP_TOLERANCE_NS = 10 * 1_000_000_000
+
+
+def is_replayed(stamp_ns: int, published_ns: Optional[int]) -> bool:
+    """A report stamped far from its publication time is a replayed recording or comes from a
+    system on simulated time; either way it does not describe the vehicle. An unknown publication
+    time leaves the report trusted."""
+    if not published_ns:
+        return False
+    return abs(published_ns - stamp_ns) > STAMP_TOLERANCE_NS
 
 
 class OperationModeGuard:
     """Refuses member and system actions while the vehicle is in, or moving through, autonomous mode.
 
-    The latest state of the ADAPI operation mode topic decides; without any report, actions pass.
+    The latest live state of the ADAPI operation mode topic decides; replayed reports are ignored
+    and without any report, actions pass.
     """
 
     def __init__(self, worker: "RosWorker") -> None:
@@ -44,6 +55,7 @@ class OperationModeGuard:
         self._mode: Optional[int] = None
         self._in_transition = False
         self._subscription = None
+        self._replay_logged = False
 
     @property
     def active(self) -> bool:
@@ -68,7 +80,20 @@ class OperationModeGuard:
             return False
         return True
 
-    def _on_message(self, msg) -> None:
+    def _on_message(self, msg, info) -> None:
+        stamp_ns = int(msg.stamp.sec) * 1_000_000_000 + int(msg.stamp.nanosec)
+        published_ns = (
+            info.get("source_timestamp") if isinstance(info, dict) else getattr(info, "source_timestamp", None)
+        )
+        if is_replayed(stamp_ns, published_ns):
+            if not self._replay_logged:
+                self._replay_logged = True
+                logger.info(
+                    "operation mode report stamped %.0f s from its publication ignored "
+                    "(replayed or simulated time)",
+                    (published_ns - stamp_ns) / 1e9,
+                )
+            return
         self.observe(int(msg.mode), bool(msg.is_in_transition))
 
     def observe(self, mode: int, in_transition: bool = False) -> None:

@@ -130,9 +130,11 @@ are stable strings: `bad_request`, `invalid_params`, `unknown_method`, `not_foun
 
 **Safe-state interlock.** With `--control-policy guard` (the default, also for `--interactive`), the
 runtime subscribes to `/api/operation_mode/state` and refuses `stop`, `restart`, `kill` and
-`shutdown` while the operation mode is autonomous or in transition. A system that never reports an
-operation mode is not interlocked, and neither is a signal sent to the runtime process itself.
-`--control-policy open` disables the interlock.
+`shutdown` while the operation mode is autonomous or in transition. A report stamped more than 10 s
+from its publication time is a replayed recording or comes from a system on simulated time, so it
+is ignored: a logging simulation replaying an autonomous drive is not interlocked. A system that
+never reports a live operation mode is not interlocked, and neither is a signal sent to the runtime
+process itself. `--control-policy open` disables the interlock.
 
 ---
 

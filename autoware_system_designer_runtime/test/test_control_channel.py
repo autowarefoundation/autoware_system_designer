@@ -22,6 +22,7 @@ import os
 import stat
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,7 +32,7 @@ from autoware_system_designer_runtime._impl.core.commands import CommandError, M
 from autoware_system_designer_runtime._impl.core.control_channel import METHODS, ControlChannel
 from autoware_system_designer_runtime._impl.core.regular_actor import _slug
 from autoware_system_designer_runtime._impl.core.stdin_console import _dispatch
-from autoware_system_designer_runtime._impl.ros2.operation_mode import MODE_AUTONOMOUS, OperationModeGuard
+from autoware_system_designer_runtime._impl.ros2.operation_mode import MODE_AUTONOMOUS, OperationModeGuard, is_replayed
 
 
 class _Handle:
@@ -254,6 +255,31 @@ def test_operation_mode_guard_refuses_autonomous_and_transitions_only():
     assert guard.check("measure") is None
     guard.observe(1, in_transition=True)
     assert guard.check("restart") == "restart refused: operation mode is in transition"
+
+
+def _state(mode, stamp_ns, in_transition=False):
+    return SimpleNamespace(
+        mode=mode, is_in_transition=in_transition,
+        stamp=SimpleNamespace(sec=stamp_ns // 10**9, nanosec=stamp_ns % 10**9),
+    )
+
+
+def test_operation_mode_guard_ignores_replayed_reports():
+    now = 1_800_000_000 * 10**9
+    assert is_replayed(now - 3600 * 10**9, now)
+    assert is_replayed(0, now)
+    assert not is_replayed(now - 10**9, now)
+    assert not is_replayed(now - 3600 * 10**9, None)
+    guard = OperationModeGuard(worker=None)
+    guard._on_message(_state(MODE_AUTONOMOUS, now - 3600 * 10**9), {"source_timestamp": now})
+    assert guard.check("shutdown") is None
+    guard._on_message(_state(1, now - 10**9), {"source_timestamp": now})
+    guard._on_message(_state(MODE_AUTONOMOUS, now - 3600 * 10**9), {"source_timestamp": now})
+    assert guard.check("shutdown") is None
+    guard._on_message(_state(MODE_AUTONOMOUS, now), {"source_timestamp": now})
+    assert guard.check("shutdown") == "shutdown refused: operation mode is autonomous"
+    guard._on_message(_state(1, now - 3600 * 10**9), {"source_timestamp": None})
+    assert guard.check("shutdown") is None
 
 
 # ---- control channel -------------------------------------------------------
