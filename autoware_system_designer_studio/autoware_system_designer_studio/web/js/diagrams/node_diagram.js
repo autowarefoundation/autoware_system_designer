@@ -26,6 +26,9 @@
       this.portAbsPos = new Map();
       this.globalOverlay = null;
       this.activeGlobalTopic = null;
+      // The mode's structure, and node path -> live member state drawn over it.
+      this.structureRoot = null;
+      this.liveStates = null;
 
       // Settles once the first layout is drawn.
       this.ready = this.init();
@@ -39,6 +42,7 @@
     async loadAndRender() {
       try {
         const data = await this.loadModeData(this.options.mode);
+        this.structureRoot = data;
         const elkGraph = this.transformDataToElk(data);
         await this.layoutAndRenderNodeDiagram(elkGraph);
       } catch (error) {
@@ -550,6 +554,7 @@
       svg.appendChild(this.globalOverlay);
 
       this.currentGraph = graph;
+      this.applyLiveStates();
     }
 
     renderNode(node, parentGroup, depth = 0, originX = 0, originY = 0) {
@@ -563,6 +568,7 @@
       const g = document.createElementNS(SVG_NS, "g");
       g.setAttribute("transform", `translate(${node.x},${node.y})`);
       g.setAttribute("id", node.id);
+      g.setAttribute("data-depth", depth);
       g.classList.add("node-group");
 
       g.appendChild(this._buildNodeRect(node, depth, userData, style));
@@ -939,6 +945,107 @@
       };
 
       return path;
+    }
+
+    // ── Live state ────────────────────────────────────────────────────────────────
+
+    // Node path -> live member state (token, label, dead, restarts); drawn now
+    // and again after every render.
+    setLiveStates(states) {
+      this.liveStates = states;
+      this.applyLiveStates();
+    }
+
+    // Live state per drawn element: a node's own, a module's the severest
+    // among the nodes within, a compute unit's the severest among its members.
+    // An element with no launched member within carries no mark.
+    _liveStateById() {
+      const states = this.liveStates || new Map();
+      const rank = window.SD?.RunState?.RANK || {};
+      const byId = new Map();
+      const summarize = (parts) => {
+        const counts = new Map();
+        parts.forEach((part) =>
+          counts.set(part.token, (counts.get(part.token) || 0) + part.members),
+        );
+        const worst = parts.reduce((a, b) =>
+          (rank[b.token] || 0) > (rank[a.token] || 0) ? b : a,
+        );
+        return {
+          token: worst.token,
+          label: Array.from(counts)
+            .sort((a, b) => (rank[b[0]] || 0) - (rank[a[0]] || 0))
+            .map(([token, count]) => `${count} ${token}`)
+            .join(" · "),
+          dead: parts.every((part) => part.dead) ? "every member down" : null,
+          restarts: null,
+          members: parts.reduce((sum, part) => sum + part.members, 0),
+        };
+      };
+      const visit = (instance) => {
+        if (!instance?.unique_id) return null;
+        let info = null;
+        if (instance.entity_type === "node") {
+          const state = instance.path && states.get(instance.path);
+          if (state) info = { ...state, members: 1 };
+        } else {
+          const parts = (instance.children || []).map(visit).filter(Boolean);
+          if (parts.length) info = summarize(parts);
+        }
+        if (info) byId.set(String(instance.unique_id), info);
+        return info;
+      };
+      if (states.size) visit(this.structureRoot);
+      // Clusters are not design instances; their members are their direct child groups.
+      this.currentSvgRoot?.querySelectorAll("g.node-group").forEach((group) => {
+        if (this.elementData.get(group.id)?.entity_type !== "compute_unit")
+          return;
+        const parts = Array.from(
+          group.querySelectorAll(":scope > g.node-group"),
+          (child) => byId.get(child.id),
+        ).filter(Boolean);
+        if (parts.length) byId.set(group.id, summarize(parts));
+      });
+      return byId;
+    }
+
+    applyLiveStates() {
+      const svg = this.currentSvgRoot;
+      if (!svg || !this.structureRoot) return;
+      const byId = this._liveStateById();
+      svg.querySelectorAll("g.node-group").forEach((group) => {
+        group.querySelector(":scope > .live-mark")?.remove();
+        const info = byId.get(group.id);
+        group.classList.toggle("live-dead", !!info?.dead);
+        if (!info) return;
+        const depth = parseInt(group.getAttribute("data-depth") || "0", 10);
+        const style = this.getLayerStyle(depth);
+        const size = Math.max(4, Math.round(style.fontSize * 0.9));
+        const pad = style.badgePad + size / 2;
+        const mark = document.createElementNS(SVG_NS, "g");
+        mark.classList.add("live-mark");
+        const title = document.createElementNS(SVG_NS, "title");
+        title.textContent = info.dead ? `${info.label} · down` : info.label;
+        mark.appendChild(title);
+        mark.appendChild(
+          window.SD.RunState.svgMark(info.token, pad, pad, size),
+        );
+        const restarts = info.restarts
+          ? info.restarts.restarts + info.restarts.respawns
+          : 0;
+        if (restarts) {
+          const text = document.createElementNS(SVG_NS, "text");
+          text.setAttribute("x", pad + size * 0.8);
+          text.setAttribute("y", pad);
+          text.style.fontSize = `${Math.max(4, Math.round(size * 0.9))}px`;
+          text.textContent = `\u21bb${restarts}`;
+          mark.appendChild(text);
+        }
+        group.insertBefore(
+          mark,
+          group.querySelector(":scope > .node-rect")?.nextSibling || null,
+        );
+      });
     }
 
     // ── Viewport / navigation ─────────────────────────────────────────────────────

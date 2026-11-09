@@ -44,7 +44,7 @@ from typing import Any, Iterable, Mapping, Optional
 from .. import exports
 from ..pages import assets
 from ..pages.render import INDEX_PAGE, Site, system_pages
-from . import api, build, events, jobs, launch
+from . import api, build, events, jobs, launch, record_watch
 from .http import MAX_HEADER_BYTES, HttpError, Request, Response, read_request, response_head, write_response
 
 logger = logging.getLogger(__name__)
@@ -211,8 +211,10 @@ class ServeDaemon:
             rviz_config=rviz_config,
             log_base=log_base,
         )
+        self.records = record_watch.RecordWatcher(self.hub, record_root)
         self._server: Optional[asyncio.AbstractServer] = None
         self._heartbeat: Optional[asyncio.Task] = None
+        self._record_watch: Optional[asyncio.Task] = None
         self._connections: set[asyncio.Task] = set()
         self._started_at = time.time()
         self.port = 0
@@ -226,6 +228,7 @@ class ServeDaemon:
         )
         self.port = self._server.sockets[0].getsockname()[1]
         self._heartbeat = asyncio.ensure_future(self.hub.run_heartbeat())
+        self._record_watch = asyncio.ensure_future(self.records.run())
         self._started_at = time.time()
         return self.port
 
@@ -233,8 +236,9 @@ class ServeDaemon:
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
-        if self._heartbeat is not None:
-            self._heartbeat.cancel()
+        for task in (self._heartbeat, self._record_watch):
+            if task is not None:
+                task.cancel()
         await self.jobs.shutdown()
         await self.launch.close()
         self.hub.close()
@@ -258,6 +262,7 @@ class ServeDaemon:
             "install_root": str(self.install_root),
             "served_units": self.served_units,
             "workspace": None if self.workspace is None else str(self.workspace),
+            "record_root": str(self.records.record_root),
             "restart_required": self.restart_required,
             "launch": self.launch.info(),
             "event_subscribers": self.hub.subscriber_count,

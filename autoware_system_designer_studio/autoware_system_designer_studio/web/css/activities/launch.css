@@ -219,12 +219,6 @@
   color: var(--text-muted);
 }
 
-.monitor-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
 /* Launcher processes listed above the member tree */
 .monitor-launchers {
   display: flex;
@@ -323,6 +317,11 @@
 /* Output growth of the selected member's log */
 .member-rate {
   font-size: 12px;
+  color: var(--text-muted);
+}
+
+.member-restarts {
+  font-size: 11px;
   color: var(--text-muted);
 }
 

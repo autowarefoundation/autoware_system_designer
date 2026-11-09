@@ -1,12 +1,17 @@
 // Launch: the member tree of a mode's structure as the state monitor shows it.
 // Composable nodes sit under their container, the process that holds their
-// output, and a tree entry's run state is the severest among its members.
+// output, and a tree entry's run state is the severest among its members. The
+// same rules give the diagram overlays one live state per node of the mode.
 (function () {
   const SD = window.SD;
   const launch = (SD.activities.launch ||= {});
 
   // Run-state tokens by severity.
   const TOKEN_RANK = { idle: 0, ok: 1, running: 2, warning: 3, failed: 4 };
+
+  // Member states in which the process is not running now, so nothing
+  // downstream of it fires: the member's branch is dead.
+  const DEAD_STATES = new Set(["stopped", "failed", "done", "respawning"]);
 
   function worstToken(tokens) {
     let worst = "idle";
@@ -78,6 +83,52 @@
     });
   }
 
+  // Token and label of one tree entity from the live records: a composable
+  // node follows its container once that stopped, unless it failed itself.
+  function memberState(entity, members) {
+    const own = members.get(entity.member_path)?.record;
+    const host =
+      entity.container_path && members.get(entity.container_path)?.record;
+    if (own?.state === "failed" || !followsContainer(host))
+      return {
+        record: own,
+        token: launch.stateToken(own),
+        label: launch.stateLabel(own),
+      };
+    return {
+      record: host,
+      token: launch.stateToken(host),
+      label: `${launch.stateLabel(own)} · container ${launch.stateLabel(host)}`,
+    };
+  }
+
+  // Live states of a system's launched members, keyed by the node path of the
+  // mode's entities (nestComposables output): token, label, `dead` with the
+  // reason while the process is down, and the restart counts. Members of other
+  // systems' sessions are left out; a node never launched has no entry.
+  function memberStates(entities, systemId) {
+    const { members, sessions, restartsOf } = launch;
+    const states = new Map();
+    entities.forEach((entity) => {
+      if (entity.entity_type !== "node") return;
+      const member = members.get(entity.member_path);
+      if (!member || sessions.get(member.unit)?.system !== systemId) return;
+      const state = memberState(entity, members);
+      const dead = DEAD_STATES.has(state.record?.state) ? state.label : null;
+      states.set(entity.member_path, {
+        unit: member.unit,
+        token: state.token,
+        label: state.label,
+        dead,
+        restarts: restartsOf(entity.member_path),
+      });
+    });
+    return states;
+  }
+
+  launch.DEAD_STATES = DEAD_STATES;
+  launch.memberState = memberState;
+  launch.memberStates = memberStates;
   launch.worstToken = worstToken;
   launch.tokenSummary = tokenSummary;
   launch.followsContainer = followsContainer;

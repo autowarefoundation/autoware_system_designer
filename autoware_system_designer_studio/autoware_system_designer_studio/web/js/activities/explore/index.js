@@ -1,10 +1,11 @@
 // Explore activity: the diagram list and entity search beside the diagram
 // canvas, with the inspector showing the selected element. Search is offered
-// for diagrams that locate entities.
+// for diagrams that locate entities. With a daemon, the live state of the
+// launched members overlays the canvas.
 (function () {
   const SD = window.SD;
   const { element, section, list } = SD.widgets;
-  const { diagramHost, entitySearch } = SD.activities.explore;
+  const { diagramHost, entitySearch, liveOverlay } = SD.activities.explore;
 
   // Inspector view: the selected element's info cards, or a prompt when nothing is selected.
   function inspectorView(slot) {
@@ -47,7 +48,8 @@
         (type) => store.set("diagram", type),
       );
       const search = entitySearch(config, store, (id) => host.focus(id));
-      side.append(section("Diagrams", diagrams.element), search);
+      const live = liveOverlay(config, store, host);
+      side.append(section("Diagrams", diagrams.element), search, live.element);
 
       function showDiagramOptions() {
         const current = store.get("diagram");

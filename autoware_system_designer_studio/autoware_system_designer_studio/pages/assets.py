@@ -58,6 +58,7 @@ SHELL_SCRIPTS = (
     "js/widgets/main_view.js",
     "js/widgets/popup.js",
     "js/widgets/namespace_tree.js",
+    "js/widgets/run_state.js",
 )
 
 # Rail activities: each one's scripts (its parts, then the entry that registers it) and stylesheet.
@@ -67,6 +68,7 @@ ACTIVITIES = {
         "scripts": (
             "js/activities/explore/diagram_host.js",
             "js/activities/explore/entity_search.js",
+            "js/activities/explore/live_overlay.js",
             "js/activities/explore/index.js",
         ),
         "styles": ("css/activities/explore.css",),

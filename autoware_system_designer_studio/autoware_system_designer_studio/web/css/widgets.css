@@ -465,6 +465,40 @@
   background: var(--state-failed);
 }
 
+.state-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The same marks drawn on an SVG canvas */
+.state-glyph {
+  fill: var(--state-idle);
+  stroke: none;
+}
+
+.state-glyph.idle {
+  fill: none;
+  stroke: var(--state-idle);
+  stroke-width: 1.5px;
+}
+
+.state-glyph.running {
+  fill: var(--state-running);
+}
+
+.state-glyph.ok {
+  fill: var(--state-ok);
+}
+
+.state-glyph.warning {
+  fill: var(--state-warning);
+}
+
+.state-glyph.failed {
+  fill: var(--state-failed);
+}
+
 /* Terminal log */
 .terminal-log {
   flex: 1;

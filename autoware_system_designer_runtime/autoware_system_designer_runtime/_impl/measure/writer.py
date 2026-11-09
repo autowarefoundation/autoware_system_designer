@@ -26,6 +26,7 @@ The file is one JSON object.
 from __future__ import annotations
 
 import json
+import os
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -223,8 +224,10 @@ def build_latency_file(
 
 
 def write_latency_file(data: dict[str, Any], path: Union[str, Path]) -> Path:
-    """Write the latency file as JSON."""
+    """Write the latency file as JSON; a reader of the record directory never sees it half written."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    partial = path.with_name(f".{path.name}.part")
+    partial.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    os.replace(partial, path)
     return path

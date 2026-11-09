@@ -17,3 +17,34 @@
   height: 100%;
   position: relative;
 }
+
+/* Live state of the launched members, in the side panel */
+.live-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.live-session {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.live-session-unit {
+  font-weight: 600;
+}
+
+.live-session-state {
+  color: var(--text-secondary);
+}
+
+.live-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}

@@ -539,18 +539,24 @@
   const bundledMisses = new Set();
 
   // The bundle may ship <mode>_latency.js beside the design data under
-  // dataBase; its absence is the normal case.
-  function loadBundled(mode, dataBase = "data/") {
+  // dataBase; its absence is the normal case. `fresh` forgets what the page
+  // holds for the mode and fetches the file past the browser cache, once a
+  // new record exists behind it.
+  function loadBundled(mode, dataBase = "data/", { fresh = false } = {}) {
     const doc = typeof document !== "undefined" ? document : null;
     if (!doc?.head) return Promise.resolve(null);
     const label = `${mode}_latency.js`;
+    const src = `${dataBase}${label}`;
+    if (fresh) {
+      if (window[SCRIPT_GLOBAL]) delete window[SCRIPT_GLOBAL][mode];
+      bundledMisses.delete(src);
+    }
     const known = window[SCRIPT_GLOBAL]?.[mode];
     if (known) return Promise.resolve(fromJson(known, label));
-    const src = `${dataBase}${label}`;
     if (bundledMisses.has(src)) return Promise.resolve(null);
     return new Promise((resolve) => {
       const script = doc.createElement("script");
-      script.src = src;
+      script.src = fresh ? `${src}?t=${Date.now()}` : src;
       script.onload = () => {
         const data = window[SCRIPT_GLOBAL]?.[mode];
         if (!data) bundledMisses.add(src);

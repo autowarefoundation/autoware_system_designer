@@ -2,6 +2,8 @@
 // the event stream and resynchronised through launch.status on every hello.
 // Page events: "launch.sessions" (unit -> session), "launch.member"
 // {path, unit, record} and "launch.activity" after the output rates changed.
+// Restarts are counted per member while the page is open: every re-entry into
+// running or loading, respawns among them; a new launch of the unit resets them.
 (function () {
   const SD = window.SD;
   const launch = (SD.activities.launch ||= {});
@@ -111,6 +113,8 @@
 
   const sessions = new Map(); // compute unit -> session view, members included
   const members = new Map(); // member path -> { unit, record }
+  // Member path -> { unit, restarts, respawns } of the members restarted while this page watched.
+  const counters = new Map();
   // Member path -> { unit, rate }: output growth of the members whose files grew in the last window.
   const activity = new Map();
   let request = null;
@@ -134,7 +138,42 @@
     SD.emit("launch.activity", activity);
   }
 
+  // States a member re-enters when it is started again.
+  const STARTING_STATES = new Set(["running", "loading"]);
+
+  function count(unit, record, previous) {
+    if (!previous || previous.state === record.state) return;
+    const respawn = record.state === "respawning";
+    const restart =
+      STARTING_STATES.has(record.state) && previous.state !== "pending";
+    if (!respawn && !restart) return;
+    const entry = counters.get(record.path) || {
+      unit,
+      restarts: 0,
+      respawns: 0,
+    };
+    if (respawn)
+      entry.respawns = Math.max(
+        entry.respawns,
+        record.detail?.attempt || entry.respawns + 1,
+      );
+    else entry.restarts += 1;
+    counters.set(record.path, entry);
+  }
+
+  // Restart counts of a member, or null when it was never restarted.
+  function restartsOf(path) {
+    return counters.get(path) || null;
+  }
+
+  function resetCounters(unit) {
+    counters.forEach((entry, path) => {
+      if (entry.unit === unit) counters.delete(path);
+    });
+  }
+
   function setMember(unit, record) {
+    count(unit, record, members.get(record.path)?.record);
     members.set(record.path, { unit, record });
     const session = sessions.get(unit);
     if (!session) return;
@@ -170,6 +209,7 @@
   SD.on("daemon.health", resync);
   SD.on("daemon.launch", (view) => {
     const previous = sessions.get(view.compute_unit);
+    if (previous && view.job !== previous.job) resetCounters(view.compute_unit);
     sessions.set(view.compute_unit, {
       ...view,
       members: previous?.members || [],
@@ -191,6 +231,8 @@
 
   launch.sessions = sessions;
   launch.members = members;
+  launch.counters = counters;
+  launch.restartsOf = restartsOf;
   launch.activity = activity;
   launch.logRate = logRate;
   launch.busyLog = busyLog;

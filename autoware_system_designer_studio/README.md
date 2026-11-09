@@ -44,18 +44,18 @@ Links are relative, so `serve` and `pack` produce the same pages.
 `web/` holds plain scripts (no build step, `file://` compatible) under the `SD` namespace and one
 stylesheet per area; `pages/assets.py` declares the load order of each page.
 
-| Path                               | Role                                                                                  |
-| ---------------------------------- | ------------------------------------------------------------------------------------- |
-| `js/core/`                         | `SD` namespace, page events, theme, editor links, selection store, daemon client      |
-| `js/diagrams/`                     | `DiagramBase`, the three diagram modules (registered on `SD.diagrams`)                |
-| `js/inspector/`                    | info panel of the selected element                                                    |
-| `js/shell/`                        | workbench frame: activity registry and rail, panel layout, status bar                 |
-| `js/widgets/`                      | building blocks activities share: controls, main view frame, terminal, namespace tree |
-| `js/activities/<id>/`              | one directory per rail activity: its parts, then `index.js` registering it            |
-| `js/pages/`                        | page drivers                                                                          |
-| `css/tokens.css`                   | colours (light/dark) and run-state tokens; every other stylesheet reads them          |
-| `css/shell.css`, `css/widgets.css` | the frame and the shared widgets                                                      |
-| `css/activities/<id>.css`          | the activity's own styles                                                             |
+| Path                               | Role                                                                                   |
+| ---------------------------------- | -------------------------------------------------------------------------------------- |
+| `js/core/`                         | `SD` namespace, page events, theme, editor links, selection store, daemon client       |
+| `js/diagrams/`                     | `DiagramBase`, the three diagram modules (registered on `SD.diagrams`)                 |
+| `js/inspector/`                    | info panel of the selected element                                                     |
+| `js/shell/`                        | workbench frame: activity registry and rail, panel layout, status bar                  |
+| `js/widgets/`                      | building blocks activities share: controls, main view, terminal, namespace tree, marks |
+| `js/activities/<id>/`              | one directory per rail activity: its parts, then `index.js` registering it             |
+| `js/pages/`                        | page drivers                                                                           |
+| `css/tokens.css`                   | colours (light/dark) and run-state tokens; every other stylesheet reads them           |
+| `css/shell.css`, `css/widgets.css` | the frame and the shared widgets                                                       |
+| `css/activities/<id>.css`          | the activity's own styles                                                              |
 
 Each rail item of the workbench is an activity owning one view per slot, shown and hidden together:
 its options in the side panel, its content in the main area and, when it selects elements, the
@@ -64,7 +64,7 @@ live in the activity that uses them, as store keys mirrored in the URL.
 
 | Activity | Side panel                                                          | Main area                                            |
 | -------- | ------------------------------------------------------------------- | ---------------------------------------------------- |
-| Explore  | diagram list; entity search on searchable diagrams                  | diagram canvas; inspector shows the selected element |
+| Explore  | diagram list; entity search; live state of the launched members     | diagram canvas; inspector shows the selected element |
 | Launch   | deploy, launch options, unit launch (daemon), launch commands popup | state monitor of the mode (daemon `launch.status`)   |
 | Build    | target, compute unit, start; job list (daemon)                      | log of the selected job (`?job=`)                    |
 
@@ -102,7 +102,7 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `GET /`            | Systems index                                                                                                |
 | `GET /<site path>` | Page or data script of the [site layout](#site-layout)                                                       |
 | `GET /assets/<f>`  | Web bundle shipped with this package (`css/`, `js/`)                                                         |
-| `GET /api/health`  | Daemon status, including `workspace` and `restart_required`                                                  |
+| `GET /api/health`  | Daemon status, including `workspace`, `record_root` and `restart_required`                                   |
 | `GET /api/systems` | Exported systems: modes, compute units with their status, build scripts per mode, deploy variants, page URLs |
 | `GET /api/jobs`    | Jobs, newest first                                                                                           |
 | `GET /api/launch`  | Launch sessions with their members                                                                           |
@@ -141,6 +141,7 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `member`          | `{"compute_unit", "system", "path", "state", "detail", "time"}` of one member              |
 | `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new lines of a followed member              |
 | `member.activity` | `{"compute_unit", "system", "window", "rates": {path: bytes/s}}`, output growth per window |
+| `records.changed` | `{"system", "mode", "record"}`: a new latency record of the mode is complete               |
 
 Responses use one envelope: `{"ok": true, "result": ...}` or
 `{"ok": false, "error": {"code", "message"}}`, with `id` echoed on `/api/rpc`. Error codes are
@@ -227,6 +228,24 @@ this list is what explains an exited launcher. A member whose output grows by 4 
 a busy-log mark (a container's covers its composable nodes, whose output it holds), a folded entry
 the mark of the busiest member within, and the selected member's head shows its rate. The legend at
 the foot of the tree gives each mark's shape and colour.
+
+### Live monitoring
+
+The Explore activity overlays the live state of the launched members on its diagrams while a
+daemon serves the page. The node diagram marks each launched node in its corner with the monitor's
+run-state marks, a module or compute unit with the severest state among the nodes within, fades a
+member whose process is down (stopped, failed, done or respawning) and counts its restarts beside
+the mark. The sequence diagram treats the process gates of a member that is down as dead, so the
+fold rules carry the outage along the chains: an or gate keeps to its live branches, an and gate
+waiting on a dead one is dead itself. The side panel sums up the system's sessions, carries the
+legend and switches the overlay off. States come from the same `member` events as the Launch
+monitor, with a composable node following its container; a node never launched carries no mark.
+
+The daemon polls the record root while an event stream is open (one directory listing per
+`<package>/<system>/latency/<mode>`, every 2 s) and publishes `records.changed` once a new record
+has held its size over two polls, whether the measuring runtime was launched by the daemon or from
+a shell. Explore reloads the mode's latency file on that event, so a measure window's result
+reaches the sequence diagram without a page reload; `health` reports the `record_root` watched.
 
 `rviz.start` runs `rviz2` from the launch environment as a job of its own, one per daemon
 (`conflict` while it runs), on the `--rviz-config` file, else on `autoware_launch`'s `autoware.rviz`

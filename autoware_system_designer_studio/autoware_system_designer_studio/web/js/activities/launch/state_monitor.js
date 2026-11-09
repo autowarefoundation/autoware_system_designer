@@ -24,18 +24,7 @@
     ["restart", "Restart"],
     ["kill", "Kill"],
   ];
-  // Legend entries: token, label, meaning.
-  const LEGEND = [
-    ["running", "running", "process running or node loaded"],
-    ["ok", "exited", "exited with code 0"],
-    ["warning", "warning", "loading, respawning, or exited with another code"],
-    ["failed", "failed", "failed to start or load"],
-    ["idle", "idle", "pending, done, or not launched"],
-  ];
-
-  function stateMark(token) {
-    return element("span", `state-dot ${token}`);
-  }
+  const stateMark = (token) => SD.RunState.mark(token);
 
   function busyMark() {
     return element("span", "log-busy");
@@ -46,19 +35,17 @@
     const {
       members,
       sessions,
-      stateToken,
-      stateLabel,
       sessionLabel,
       sessionFailures,
       sessionToken,
       logRate,
       busyLog,
       rateLabel,
+      restartsOf,
       BUSY_LOG_BPS,
       nestComposables,
       worstToken,
       tokenSummary,
-      followsContainer,
       runLabel,
     } = launch;
     const treePane = element("div", "pane-side monitor-tree");
@@ -69,14 +56,8 @@
     const launcherList = element("div", "monitor-launchers");
     const failureList = element("div", "monitor-failures");
     const tree = element("div", "ns-tree");
-    const legend = element("div", "monitor-legend");
-    LEGEND.forEach(([token, label, meaning]) => {
-      const item = element("span", "monitor-legend-item");
-      item.title = meaning;
-      item.append(stateMark(token), element("span", "", label));
-      legend.appendChild(item);
-    });
-    const busyLegend = element("span", "monitor-legend-item");
+    const legend = SD.RunState.legend("monitor-legend");
+    const busyLegend = element("span", "state-legend-item");
     busyLegend.title = `output growing by ${rateLabel(BUSY_LOG_BPS)} or more`;
     busyLegend.append(busyMark(), element("span", "", "busy log"));
     legend.appendChild(busyLegend);
@@ -119,7 +100,8 @@
     });
     const note = element("span", "member-note");
     const rateText = element("span", "member-rate");
-    view.trailing.append(note, rateText, badge, actions);
+    const restartText = element("span", "member-restarts");
+    view.trailing.append(note, rateText, restartText, badge, actions);
     container.append(treePane, view.element);
 
     // The followed member's terminal, refilled per follow; job id -> the launcher's terminal.
@@ -160,22 +142,8 @@
       return node.entities.find((e) => e.entity_type === "module");
     }
 
-    function recordOf(entity) {
-      return members.get(entity.member_path)?.record;
-    }
-
-    // Token and label of one member; a composable follows its container once
-    // that stopped, unless it failed itself.
     function memberState(entity) {
-      const own = recordOf(entity);
-      const host =
-        entity.container_path && members.get(entity.container_path)?.record;
-      if (own?.state === "failed" || !followsContainer(host))
-        return { token: stateToken(own), label: stateLabel(own) };
-      return {
-        token: stateToken(host),
-        label: `${stateLabel(own)} · container ${stateLabel(host)}`,
-      };
+      return launch.memberState(entity, members);
     }
 
     // The member whose files hold `entity`'s output.
@@ -648,8 +616,15 @@
         selected?.entity_type === "node" ? logRate(logHolder(selected)) : 0;
       rateText.textContent = rate > 0 ? `log ${rateLabel(rate)}` : "";
       rateText.classList.toggle("busy", busyLog(rate));
+      const restarts =
+        selected?.entity_type === "node" && restartsOf(selected.member_path);
+      restartText.textContent = restarts
+        ? `restarted ×${restarts.restarts + restarts.respawns}`
+        : "";
+      restartText.title = restarts ? `${restarts.respawns} respawned` : "";
       badge.hidden = !!run;
       rateText.hidden = !!run;
+      restartText.hidden = !!run;
       const canAct =
         !run &&
         !!member &&
