@@ -107,6 +107,49 @@ test("session labels follow the session state", () => {
   );
 });
 
+test("session failures, their count and the session token", () => {
+  const failed = (path, time, error) => ({
+    path,
+    state: "failed",
+    detail: { error },
+    time,
+  });
+  const session = {
+    state: "exited",
+    job_state: "failed",
+    exit_code: 1,
+    members: [
+      { path: "/a", state: "done", detail: {}, time: 3 },
+      failed("/b", 2, "load timed out"),
+      failed("/c", 1, "spawn failed"),
+    ],
+  };
+  assert.deepEqual(
+    launch.sessionFailures(session).map((r) => r.path),
+    ["/c", "/b"],
+  );
+  assert.deepEqual(launch.sessionFailures(null), []);
+  assert.equal(launch.sessionLabel(session), "exited · code 1 · 2 failed");
+  assert.equal(launch.sessionToken(session), "failed");
+  assert.equal(
+    launch.sessionLabel({ ...session, state: "running", member_count: 3 }),
+    "running · 3 members · 2 failed",
+  );
+  assert.equal(launch.sessionToken(null), "idle");
+  assert.equal(launch.sessionToken({ state: "running" }), "running");
+  assert.equal(launch.sessionToken({ state: "starting" }), "warning");
+  assert.equal(launch.sessionToken({ state: "stopping" }), "warning");
+  assert.equal(launch.sessionToken({ state: "exited", exit_code: 0 }), "ok");
+  assert.equal(
+    launch.sessionToken({ state: "exited", exit_code: 1 }),
+    "warning",
+  );
+  assert.equal(
+    launch.sessionToken({ state: "exited", job_state: "cancelled" }),
+    "idle",
+  );
+});
+
 test("sessions resynchronise on hello and follow launch and member events", async () => {
   await handlers["daemon.health"]();
   assert.equal(launch.sessions.get("main_ecu").member_count, 1);

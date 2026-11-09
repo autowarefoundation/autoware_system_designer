@@ -43,18 +43,38 @@
     }
   }
 
+  // Failed members of a session, in the order they failed.
+  function sessionFailures(session) {
+    return (session?.members || [])
+      .filter((record) => record.state === "failed")
+      .sort((a, b) => (a.time || 0) - (b.time || 0));
+  }
+
+  // Run-state token of a session: a member failure outranks the session state.
+  function sessionToken(session) {
+    if (!session) return "idle";
+    if (sessionFailures(session).length) return "failed";
+    if (session.state === "exited") {
+      if (session.job_state === "cancelled") return "idle";
+      return session.exit_code === 0 ? "ok" : "warning";
+    }
+    return session.state === "running" ? "running" : "warning";
+  }
+
   function sessionLabel(session) {
     if (!session) return "";
+    const failed = sessionFailures(session).length;
+    const failures = failed ? ` · ${failed} failed` : "";
     if (session.state === "exited") {
       const code = session.exit_code;
       return session.job_state === "cancelled"
         ? "cancelled"
-        : `exited · code ${code === null ? "?" : code}`;
+        : `exited · code ${code === null ? "?" : code}${failures}`;
     }
     if (session.shutting_down || session.state === "stopping")
-      return "shutting down";
+      return `shutting down${failures}`;
     if (session.state === "starting") return "starting";
-    return `running · ${session.member_count} members`;
+    return `running · ${session.member_count} members${failures}`;
   }
 
   const sessions = new Map(); // compute unit -> session view, members included
@@ -120,4 +140,6 @@
   launch.stateToken = stateToken;
   launch.stateLabel = stateLabel;
   launch.sessionLabel = sessionLabel;
+  launch.sessionFailures = sessionFailures;
+  launch.sessionToken = sessionToken;
 })();

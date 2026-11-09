@@ -96,7 +96,7 @@ requests and gets one response each:
 
 ```text
 → {"event":"hello","pid":4242,"methods":[...],"policy":"guard","measure_armed":false,
-   "members":[{"path":"/sensing/lidar/driver","state":"pending","detail":{},"time":0}],
+   "log_dir":"/tmp/autoware_system_designer_logs/20260521_153012","members":[{"path":"/sensing/lidar/driver","state":"pending","detail":{},"time":0}],
    "launch_ready":false,"shutting_down":false}
 → {"event":"member","path":"/sensing/lidar/driver","state":"running","detail":{"pid":4310},"time":1793930000.1}
 → {"event":"member.log","path":"/sensing/lidar/driver","stream":"out","lines":["[INFO] ready"]}
@@ -120,7 +120,8 @@ structural path), `state` one of `pending`, `running`, `stopped`, `respawning`, 
 `loading`, `loaded`, and `detail` carries the state's data (`pid`, `exit_code`, `attempt`, `error`,
 `unique_id`). Member output stays in the per-member `out` and `err` files; a client that follows a
 member (`log.follow`) gets the files' current tails in the reply and new lines as `member.log`
-events until it unfollows or disconnects. Unfollowed members cost the channel nothing. Error codes
+events until it unfollows or disconnects. Unfollowed members cost the channel nothing. The hello's
+`log_dir` names the run's log directory, where the files outlive the runtime. Error codes
 are stable strings: `bad_request`, `invalid_params`, `unknown_method`, `not_found`,
 `unavailable`, `refused`, `payload_too_large`, `internal`.
 

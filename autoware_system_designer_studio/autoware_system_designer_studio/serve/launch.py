@@ -26,7 +26,8 @@ session view (without members) whenever its job, connection or runtime state cha
 Member output flows only for followed members: ``launch.follow`` asks the runtime to tail one
 member and answers with the current tail of its files, ``launch.unfollow`` releases it. The daemon
 is one runtime client, so follows are shared by every event stream and released together once the
-last stream closes.
+last stream closes. Once the channel is gone, a follow answers the tails read from the runtime's log
+directory, with no lines to come.
 
 RViz is a job of its own (``rviz2``, one per daemon) in the same launch environment.
 """
@@ -75,6 +76,9 @@ SESSION_EXITED = "exited"
 CONNECT_POLL_S = 0.2
 REQUEST_TIMEOUT_S = 30.0
 MAX_LINE = 64 * 1024
+# Tail of a member file read from the log directory: at most this many lines from its last bytes.
+TAIL_LINES = 200
+TAIL_BYTES = 64 * 1024
 SOCKET_DIR = "asd-studio"
 _ARG_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -221,6 +225,7 @@ class LaunchSession:
         self.members: dict[str, dict[str, Any]] = {}
         self.follows: set[str] = set()
         self.control: dict[str, Any] = {"pid": None, "policy": None, "methods": [], "measure_armed": False}
+        self.log_dir: Optional[Path] = None
         self.launch_ready = False
         self.shutting_down = False
         self.updated_at = time.time()
@@ -250,6 +255,7 @@ class LaunchSession:
             "exit_code": None if job is None else job.exit_code,
             "connected": self.client is not None,
             "control": dict(self.control),
+            "log_dir": None if self.log_dir is None else str(self.log_dir),
             "launch_ready": self.launch_ready,
             "shutting_down": self.shutting_down,
             "member_count": len(self.members),
@@ -410,16 +416,30 @@ class LaunchManager:
         return await session.client.call(method, params)
 
     async def follow(self, compute_unit: str, path: str) -> dict[str, Any]:
-        """Tails one member on the runtime; the result carries the current ``out`` and ``err`` tails."""
-        session = self.active_session(compute_unit)
-        result = await self.call(compute_unit, "log.follow", {"path": path})
-        session.follows.add(path)
-        return result
+        """Tails one member on the runtime; the result carries the current ``out`` and ``err`` tails.
+        Without a channel, the tails come from the member's files in the runtime's log directory."""
+        session = self.session(compute_unit)
+        if session.client is not None:
+            result = await session.client.call("log.follow", {"path": path})
+            session.follows.add(path)
+            return result
+        if session.log_dir is None:
+            if not session.active:
+                raise api.ApiError(api.NOT_FOUND, f"the launch of compute unit {compute_unit!r} has exited")
+            raise api.ApiError(api.UNAVAILABLE, f"the control channel of {compute_unit!r} is not connected yet")
+        if path not in session.members:
+            raise api.ApiError(api.NOT_FOUND, f"no member {path!r}")
+        member_dir = session.log_dir / member_slug(path)
+        return {"path": path, "out": tail_lines(member_dir / "out"), "err": tail_lines(member_dir / "err")}
 
     async def unfollow(self, compute_unit: str, path: Optional[str]) -> dict[str, Any]:
-        """Releases one followed member, or every one of the unit when no path is given."""
-        session = self.active_session(compute_unit)
-        result = await self.call(compute_unit, "log.unfollow", {} if path is None else {"path": path})
+        """Releases one followed member, or every one of the unit when no path is given; a session
+        without a channel has nothing to release."""
+        session = self.session(compute_unit)
+        if session.client is None:
+            session.follows.clear()
+            return {"released": []}
+        result = await session.client.call("log.unfollow", {} if path is None else {"path": path})
         if path is None:
             session.follows.clear()
         else:
@@ -493,6 +513,8 @@ class LaunchManager:
                 "methods": obj.get("methods") or [],
                 "measure_armed": bool(obj.get("measure_armed")),
             }
+            log_dir = obj.get("log_dir")
+            session.log_dir = Path(log_dir) if isinstance(log_dir, str) and log_dir else None
             session.launch_ready = bool(obj.get("launch_ready"))
             session.shutting_down = bool(obj.get("shutting_down"))
             records = obj.get("members") if isinstance(obj.get("members"), list) else []
@@ -526,6 +548,31 @@ class LaunchManager:
     def _publish(self, session: LaunchSession) -> None:
         session.updated_at = time.time()
         self._hub.publish(TOPIC_LAUNCH, session.to_view())
+
+
+def member_slug(path: str) -> str:
+    """Name of a member's directory under the runtime's log directory: the member path with every
+    character outside letters, digits, ``_``, ``-`` and ``.`` replaced by ``_``, leading ``_`` dropped."""
+    safe = "".join(ch if ch.isalnum() or ch in "_-." else "_" for ch in path).lstrip("_")
+    return safe or "_unnamed_"
+
+
+def tail_lines(path: Path) -> list[str]:
+    """The last lines of a file, at most ``TAIL_LINES`` from its final ``TAIL_BYTES``."""
+    try:
+        size = path.stat().st_size
+        start = max(0, size - TAIL_BYTES)
+        with open(path, "rb") as handle:
+            handle.seek(start)
+            data = handle.read(size - start)
+    except OSError:
+        return []
+    chunks = data.split(b"\n")
+    if not chunks[-1]:
+        chunks.pop()
+    if start > 0 and chunks:
+        chunks.pop(0)  # a line cut by the window start
+    return [chunk.decode("utf-8", "replace") for chunk in chunks[-TAIL_LINES:]]
 
 
 def _unlink(path: Path) -> None:

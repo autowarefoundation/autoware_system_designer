@@ -217,6 +217,7 @@ class ControlChannel:
             "methods": list(METHODS),
             "policy": self._policy,
             "measure_armed": self._commands.measure_armed,
+            "log_dir": str(self._log_dir),
             **status,
         }
 

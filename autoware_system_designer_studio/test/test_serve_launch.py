@@ -39,6 +39,12 @@ import asyncio, json, os, signal, sys
 args = sys.argv[1:]
 sock = args[args.index("--control") + 1]
 behaviour = next((a.split("=", 1)[1] for a in args if a.startswith("behaviour=")), "")
+log_dir = sock + ".logs"
+os.makedirs(os.path.join(log_dir, "demo_talker"), exist_ok=True)
+with open(os.path.join(log_dir, "demo_talker", "out"), "w") as f:
+    f.write("hello 1\\nhello 2\\n")
+with open(os.path.join(log_dir, "demo_talker", "err"), "w") as f:
+    f.write("bye")
 METHODS = ["status", "stop", "restart", "kill", "measure.start", "measure.stop", "measure.status", "shutdown"]
 members = [
     {"path": "/demo/talker", "state": "pending", "detail": {}, "time": 0.0},
@@ -60,7 +66,7 @@ async def main():
 
         send({"event": "hello", "pid": os.getpid(), "methods": METHODS, "policy": "guard",
               "measure_armed": "--measure" in args, "members": members, "launch_ready": True,
-              "shutting_down": False})
+              "shutting_down": False, "log_dir": log_dir})
         send({"event": "member", "path": "/demo/talker", "state": "running", "detail": {"pid": 1}, "time": 1.0})
         follows = set()
         while True:
@@ -203,6 +209,22 @@ def _wait_session(running, predicate, what="session"):
 
 
 # -- environment and launcher ---------------------------------------------------
+
+
+def test_member_slug_matches_the_runtime_log_layout():
+    assert launch.member_slug("/sensing/lidar/front_upper/lidar") == "sensing_lidar_front_upper_lidar"
+    assert launch.member_slug("/a-b.c_d/e f") == "a-b.c_d_e_f"
+    assert launch.member_slug("//") == "_unnamed_"
+
+
+def test_tail_lines_reads_the_end_of_a_file(tmp_path):
+    missing = tmp_path / "none"
+    assert launch.tail_lines(missing) == []
+    (tmp_path / "out").write_bytes(b"one\ntwo\nthree")
+    assert launch.tail_lines(tmp_path / "out") == ["one", "two", "three"]
+    (tmp_path / "long").write_bytes(b"".join(b"line %06d\n" % i for i in range(10000)))
+    tail = launch.tail_lines(tmp_path / "long")
+    assert len(tail) == launch.TAIL_LINES and tail[-1] == "line 009999"
 
 
 def test_capture_env_sources_the_script_over_this_environment(tmp_path, monkeypatch):
@@ -369,6 +391,20 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     session = _wait_session(launching, lambda s: s["state"] == launch.SESSION_EXITED, "exit")
     assert session["connected"] is False and session["exit_code"] == 0
     assert not Path(job["result"]["job"]["detail"]["socket"]).exists()
+    # Without the channel, a follow reads the member's files from the runtime's log directory.
+    assert session["log_dir"] == job["result"]["job"]["detail"]["socket"] + ".logs"
+    status, body = launching.rpc(
+        {"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/demo/talker"}}
+    )
+    assert status == 200 and body["result"] == {"path": "/demo/talker", "out": ["hello 1", "hello 2"], "err": ["bye"]}
+    status, body = launching.rpc(
+        {"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/demo/listener"}}
+    )
+    assert status == 200 and body["result"] == {"path": "/demo/listener", "out": [], "err": []}
+    status, body = launching.rpc({"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/nope"}})
+    assert status == 404 and body["error"]["code"] == api.NOT_FOUND
+    status, body = launching.rpc({"method": "launch.unfollow", "params": {"compute_unit": "main_ecu"}})
+    assert status == 200 and body["result"] == {"released": []}
     _, listed = launching.json("GET", "/api/systems")
     assert listed["result"]["systems"][0]["compute_units"][0]["status"] == "available"
 

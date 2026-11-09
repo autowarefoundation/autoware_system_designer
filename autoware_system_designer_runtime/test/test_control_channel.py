@@ -301,6 +301,7 @@ def test_channel_greets_with_members_and_forwards_state_changes(tmp_path):
             assert hello["methods"] == list(METHODS) and hello["policy"] == "guard"
             assert [m["path"] for m in hello["members"]] == MEMBERS
             assert hello["measure_armed"] is False and hello["launch_ready"] is False
+            assert hello["log_dir"] == str(tmp_path)
             assert stat.S_IMODE(os.stat(c.channel.path).st_mode) == 0o600
 
             states.on_event(ev.Started(name="/perception/detector", pid=42))

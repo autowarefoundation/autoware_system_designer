@@ -4,18 +4,15 @@
 // followed at a time: `launch.follow` brings its current tail, `member.log`
 // events the lines after, and the follow is released when the selection
 // leaves it or the monitor hides; a composable node follows its container's
-// log. The selected node or module is the store's `entity`, shared with
-// Explore; a selected module shows the severest state among its members.
+// log. Once the launcher ended, the followed log stays with a note where it
+// ended, and a follow brings the tail the daemon reads from the runtime's
+// files. Failed members are listed with their errors above the tree. The
+// selected node or module is the store's `entity`, shared with Explore; a
+// selected module shows the severest state among its members.
 (function () {
   const SD = window.SD;
   const { element, terminal, mainView } = SD.widgets;
   const launch = (SD.activities.launch ||= {});
-  // Session state -> run-state token of its launcher entry.
-  const LAUNCHER_TOKENS = {
-    running: "running",
-    starting: "warning",
-    stopping: "warning",
-  };
   const ACTIONS = [
     ["stop", "Stop"],
     ["restart", "Restart"],
@@ -42,6 +39,8 @@
       stateToken,
       stateLabel,
       sessionLabel,
+      sessionFailures,
+      sessionToken,
       nestComposables,
       worstToken,
       tokenSummary,
@@ -53,6 +52,7 @@
     filter.placeholder = "Filter by namespace or name";
     filter.setAttribute("aria-label", "Filter members");
     const launcherList = element("div", "monitor-launchers");
+    const failureList = element("div", "monitor-failures");
     const tree = element("div", "ns-tree");
     const legend = element("div", "monitor-legend");
     LEGEND.forEach(([token, label, meaning]) => {
@@ -61,7 +61,7 @@
       item.append(stateMark(token), element("span", "", label));
       legend.appendChild(item);
     });
-    treePane.append(filter, launcherList, tree, legend);
+    treePane.append(filter, launcherList, failureList, tree, legend);
 
     const EMPTY_LOG = "Select a node to follow its log.";
     const view = mainView({ empty: EMPTY_LOG });
@@ -85,13 +85,16 @@
     // The followed member's terminal, refilled per follow; job id -> the launcher's terminal.
     const memberLog = terminal("No output yet.");
     const launcherLogs = new Map(); // job id -> { log, lastSeq }
-    // The followed log: { path, unit, job } while a runtime serves it, else { path } only.
+    // The followed log: { path, unit, job, live, ended } while a session serves
+    // it (live: through its channel; ended: the end note is shown), else { path }.
     let followed = null;
     let followSeq = 0;
     const expanded = new Set();
     let root = null;
     // Entity key -> { entity, node }: the tree entry of every node and module.
     let byKey = new Map();
+    // Member path -> the same entry, for the node members of the tree.
+    let byMember = new Map();
     // The selected entity, a node (member_path, container_path) or a module, or null.
     let selected = null;
     let selectedJob = "";
@@ -113,12 +116,13 @@
       return members.get(entity.member_path)?.record;
     }
 
-    // Token and label of one member; a composable follows its container once that stopped.
+    // Token and label of one member; a composable follows its container once
+    // that stopped, unless it failed itself.
     function memberState(entity) {
       const own = recordOf(entity);
       const host =
         entity.container_path && members.get(entity.container_path)?.record;
-      if (!followsContainer(host))
+      if (own?.state === "failed" || !followsContainer(host))
         return { token: stateToken(own), label: stateLabel(own) };
       return {
         token: stateToken(host),
@@ -147,27 +151,40 @@
       if (own?.container_path) row.classList.add("ns-composable");
     }
 
-    // The session serving a log path, while its runtime is connected.
+    // The session serving a log path: through its channel while connected,
+    // else from its runtime's files once it has a log directory.
     function servingSession(path) {
       const unit = members.get(path)?.unit;
       const session = unit && sessions.get(unit);
-      return session && session.connected && session.state !== "exited"
-        ? session
-        : null;
+      return session && (session.connected || session.log_dir) ? session : null;
     }
 
-    // Follows `path` on its runtime; the previous follow is released first.
+    function endNote(session) {
+      return `launcher ${sessionLabel(session)}`;
+    }
+
+    // Follows `path` on its session; the previous follow is released first. The
+    // same path on the same session is left as it is, unless the channel came
+    // back since: a follow outlives the channel but has to be remade on it.
     function follow(path) {
       const session = servingSession(path);
       const previous = followed;
       if (
         previous?.path === path &&
-        (previous.job || null) === (session?.job || null)
+        (previous.job || null) === (session?.job || null) &&
+        (previous.live || !session?.connected)
       )
         return;
       const seq = ++followSeq;
+      const ended = !!session && session.state === "exited";
       followed = session
-        ? { path, unit: session.compute_unit, job: session.job }
+        ? {
+            path,
+            unit: session.compute_unit,
+            job: session.job,
+            live: session.connected,
+            ended,
+          }
         : { path };
       release(previous);
       if (!session) {
@@ -181,6 +198,8 @@
           if (seq !== followSeq) return;
           memberLog.clear("No output yet.");
           memberLog.append([...(result.out || []), ...(result.err || [])]);
+          if (followed.ended)
+            memberLog.note(endNote(sessions.get(followed.unit)));
         })
         .catch((error) => {
           if (seq === followSeq) memberLog.clear(error.message);
@@ -200,12 +219,24 @@
       followed = null;
     }
 
-    // Re-follows after the serving runtime changed: connected, reconnected, or gone.
+    // Re-follows after the serving session changed: launched again, or its
+    // channel came back; a log whose launcher ended keeps its lines and gets
+    // the end note once.
     function refollow() {
       if (!followed || hidden) return;
       const session = servingSession(followed.path);
-      if ((session?.job || null) !== (followed.job || null))
+      if (followed.job && !session?.connected) followed.live = false;
+      if (
+        (session?.job || null) !== (followed.job || null) ||
+        (session?.connected && !followed.live)
+      ) {
         follow(followed.path);
+        return;
+      }
+      if (session?.state === "exited" && followed.job && !followed.ended) {
+        followed.ended = true;
+        memberLog.note(endNote(session));
+      }
     }
 
     function renderTree() {
@@ -241,13 +272,45 @@
         row.type = "button";
         row.classList.toggle("selected", session.job === selectedJob);
         row.append(
-          stateMark(LAUNCHER_TOKENS[session.state] || "idle"),
+          stateMark(sessionToken(session)),
           element("span", "monitor-launcher-unit", session.compute_unit),
           element("span", "monitor-launcher-state", sessionLabel(session)),
         );
         row.addEventListener("click", () => showLauncher(session));
         launcherList.appendChild(row);
       });
+      renderFailures();
+    }
+
+    // Failed members of the system's sessions with their errors, in the order
+    // they failed; a row selects the member.
+    function renderFailures() {
+      failureList.replaceChildren();
+      sessions.forEach((session) => {
+        if (session.system !== config.systemId) return;
+        sessionFailures(session).forEach((record) => {
+          const entry = byMember.get(record.path);
+          const row = element("button", "monitor-failure");
+          row.type = "button";
+          row.disabled = !entry;
+          row.classList.toggle(
+            "selected",
+            selected?.member_path === record.path,
+          );
+          row.append(
+            stateMark("failed"),
+            element("span", "monitor-failure-path", record.path),
+            element(
+              "span",
+              "monitor-failure-error",
+              record.detail?.error || "failed",
+            ),
+          );
+          row.addEventListener("click", () => selectKey(entry.entity.key));
+          failureList.appendChild(row);
+        });
+      });
+      failureList.hidden = !failureList.childElementCount;
     }
 
     function showLog(entity) {
@@ -386,9 +449,12 @@
         nestComposables(SD.NamespaceTree.entities(data)),
       );
       byKey = new Map();
+      byMember = new Map();
       const index = (node) => {
         node.entities.forEach((entity) => {
-          if (entity.key) byKey.set(entity.key, { entity, node });
+          const entry = { entity, node };
+          if (entity.key) byKey.set(entity.key, entry);
+          if (entity.member_path) byMember.set(entity.member_path, entry);
         });
         node.children.forEach(index);
       };
@@ -402,12 +468,14 @@
         });
       root.children.forEach((child) => expand(child));
       renderTree();
+      renderFailures();
       selectKey(store.get("entity"));
     }
 
     SD.on("launch.member", () => {
       renderTree();
       showState();
+      renderFailures();
     });
     SD.on("launch.sessions", () => {
       renderTree();

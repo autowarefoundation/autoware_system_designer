@@ -189,20 +189,25 @@ Member output is tailed on demand: `launch.follow` asks the runtime to tail one 
 `err` files and answers with their current tails, after which the member's new lines arrive as
 `member.log` events until `launch.unfollow`. The daemon is one runtime client, so follows are shared
 by every event stream; they are released once the last stream closes, and a runtime's follows end
-with its channel. The Launch monitor follows the selected node (a composable node through its
-container) while it is shown.
+with its channel. Once the channel is gone, a follow answers the tails of the member's files in the
+runtime's log directory (`log_dir` of the session view, from the runtime's hello), with no lines to
+come. The Launch monitor follows the selected node (a composable node through its container) while
+it is shown, keeps the followed log once the launcher ended and marks where it ended.
 
 A session is `starting` until the channel connects, then `running`, `stopping` once the runtime
 closed the channel for a requested shutdown, and `exited`; its view carries
-the job, `connected`, the runtime's `control` facts (pid, `policy`, `measure_armed`), `launch_ready`
-and `shutting_down`. Member records are the runtime's: `state` one of `pending`, `running`,
+the job, `connected`, the runtime's `control` facts (pid, `policy`, `measure_armed`), its `log_dir`,
+`launch_ready` and `shutting_down`. Member records are the runtime's: `state` one of `pending`, `running`,
 `stopped`, `respawning`, `failed`, `done`, `loading`, `loaded`, with a `detail` such as `pid` or
 `exit_code`. `policy` is `guard` (default: stop, restart, kill and shutdown are refused with
 `refused` while the operation mode is autonomous or in transition) or `open`.
 
 The workbench's state monitor lists composable nodes under their container, whose process holds
 their output and whose exit they follow; a module or container shows the severest state among its
-members. The legend at the foot of the tree gives each mark's shape and colour.
+members. Failed members are listed with their error above the tree, in the order they failed, and
+stay listed until the unit is launched again; one node failure shuts the whole runtime down, so
+this list is what explains an exited launcher. The legend at the foot of the tree gives each mark's
+shape and colour.
 
 `rviz.start` runs `rviz2` from the launch environment as a job of its own, one per daemon
 (`conflict` while it runs), on the `--rviz-config` file, else on `autoware_launch`'s `autoware.rviz`

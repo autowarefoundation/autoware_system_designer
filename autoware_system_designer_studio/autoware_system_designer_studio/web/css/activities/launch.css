@@ -180,6 +180,49 @@
   color: var(--text-muted);
 }
 
+/* Failed members listed above the tree; a row selects the member */
+.monitor-failures {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.monitor-failure {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 6px;
+  align-items: center;
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: left;
+  background: none;
+  color: var(--text-primary);
+  border: 1px solid var(--state-failed);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.monitor-failure:hover {
+  background: var(--bg-tertiary);
+}
+
+.monitor-failure.selected {
+  background: var(--bg-tertiary);
+  box-shadow: 0 0 0 1px var(--state-failed);
+}
+
+.monitor-failure-path {
+  font-family: var(--mono-font);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.monitor-failure-error {
+  grid-column: 2;
+  color: var(--state-failed);
+  word-break: break-word;
+}
+
 .member-actions {
   display: flex;
   gap: 4px;
