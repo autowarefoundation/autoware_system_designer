@@ -14,6 +14,7 @@
 
 """Launch sessions of the serve daemon, driven over a fake runtime's control socket."""
 
+import json
 import os
 import shutil
 import sys
@@ -41,6 +42,9 @@ sock = args[args.index("--control") + 1]
 behaviour = next((a.split("=", 1)[1] for a in args if a.startswith("behaviour=")), "")
 log_dir = sock + ".logs"
 os.makedirs(os.path.join(log_dir, "demo_talker"), exist_ok=True)
+with open(os.path.join(log_dir, "run.json"), "w") as f:
+    json.dump({"system_structure": args[0], "mode": "Runtime", "compute_unit": "main_ecu", "deploy": None,
+               "started": 1.5, "members": ["/demo/talker", "/demo/listener"]}, f)
 with open(os.path.join(log_dir, "demo_talker", "out"), "w") as f:
     f.write("hello 1\\nhello 2\\n")
 with open(os.path.join(log_dir, "demo_talker", "err"), "w") as f:
@@ -530,3 +534,104 @@ def test_daemon_stop_ends_a_running_launch(tmp_path, run_dir):
     running.close()
     assert job.state == jobs.STATE_CANCELLED
     assert not list(run_dir.glob("**/*.sock"))
+
+
+# -- past runs -------------------------------------------------------------------
+
+
+def _run_tree(base, name, manifest, members=("demo_talker",)):
+    run = base / name
+    for member in members:
+        (run / member).mkdir(parents=True)
+        (run / member / "out").write_text(f"{member} out\n")
+        (run / member / "err").write_text("")
+    if manifest is not None:
+        (run / launch.RUN_MANIFEST).write_text(json.dumps(manifest))
+    return run
+
+
+@pytest.fixture
+def archived(tmp_path):
+    """A daemon over a log base of three past runs (two of the system: by name, by structure path; one of
+    another system), a directory without a manifest and a stray file."""
+    install = _install_tree(tmp_path, compute_units=UNITS)
+    export = install / PKG / "share" / PKG / "exports" / SYSTEM
+    base = tmp_path / "logs"
+    _run_tree(
+        base,
+        "20260101_000000",
+        {
+            "system": SYSTEM,
+            "mode": "Runtime",
+            "compute_unit": "main_ecu",
+            "deploy": "site_a",
+            "started": 1.0,
+            "members": ["/demo/talker", "/demo/listener"],
+        },
+    )
+    _run_tree(
+        base,
+        "20260102_000000",
+        {
+            "system_structure": str(export / "system_structure" / "Runtime.json"),
+            "started": 2.0,
+            "members": ["/demo/talker"],
+        },
+    )
+    _run_tree(base, "20260103_000000", {"system": "Other", "started": 3.0})
+    _run_tree(base, "20260104_000000", None, members=("demo_talker", "demo_listener"))
+    (base / "stray").write_text("")
+    running = _Running(install, served_units=["main_ecu"], log_base=base, heartbeat_s=60)
+    yield running
+    running.close()
+
+
+def test_past_runs_are_listed_by_system_newest_first(archived):
+    status, body = archived.rpc({"method": "launch.runs", "params": {"system": f"{PKG}:{SYSTEM}"}})
+    assert status == 200
+    runs = body["result"]["runs"]
+    assert [r["run"] for r in runs] == ["20260102_000000", "20260101_000000"]
+    assert runs[1]["mode"] == "Runtime" and runs[1]["compute_unit"] == "main_ecu" and runs[1]["deploy"] == "site_a"
+    assert runs[1]["member_count"] == 2 and runs[1]["started"] == 1.0
+    assert runs[0]["mode"] is None and runs[0]["member_count"] == 1
+    status, body = archived.rpc({"method": "launch.runs"})
+    assert [r["run"] for r in body["result"]["runs"]] == ["20260103_000000", "20260102_000000", "20260101_000000"]
+
+
+def test_a_past_run_lists_its_members_and_tails_them(archived):
+    status, body = archived.rpc({"method": "launch.run", "params": {"run": "20260101_000000"}})
+    assert status == 200
+    assert body["result"]["run"] == "20260101_000000" and body["result"]["mode"] == "Runtime"
+    # A listed member without a directory never spawned and is left out.
+    assert body["result"]["members"] == [{"path": "/demo/talker", "slug": "demo_talker"}]
+    status, body = archived.rpc(
+        {"method": "launch.run_tail", "params": {"run": "20260101_000000", "member": "demo_talker"}}
+    )
+    assert status == 200
+    assert body["result"] == {"run": "20260101_000000", "member": "demo_talker", "out": ["demo_talker out"], "err": []}
+    for params in ({"run": "../logs", "member": "demo_talker"}, {"run": "20260101_000000", "member": "a/b"}):
+        status, body = archived.rpc({"method": "launch.run_tail", "params": params})
+        assert status == 400 and body["error"]["code"] == api.INVALID_PARAMS, params
+    status, body = archived.rpc({"method": "launch.run_tail", "params": {"run": "20260101_000000", "member": "nope"}})
+    assert status == 404 and body["error"]["code"] == api.NOT_FOUND
+    # A directory without a manifest is not a run, nor is a file.
+    for name in ("20260104_000000", "stray"):
+        status, body = archived.rpc({"method": "launch.run", "params": {"run": name}})
+        assert status == 404, name
+
+
+def test_the_run_of_a_session_is_listed_once_the_session_exited(launching):
+    _start(launching)
+    session = _wait_session(launching, lambda s: s["connected"], "connect")
+    run = Path(session["log_dir"]).name
+    _, body = launching.rpc({"method": "launch.runs"})
+    assert run not in [r["run"] for r in body["result"]["runs"]]
+    launching.rpc({"method": "launch.shutdown", "params": {"compute_unit": "main_ecu"}})
+    _wait_session(launching, lambda s: s["state"] == launch.SESSION_EXITED, "exit")
+    _, body = launching.rpc({"method": "launch.runs", "params": {"system": f"{PKG}:{SYSTEM}"}})
+    listed = [r for r in body["result"]["runs"] if r["run"] == run]
+    assert listed and listed[0]["member_count"] == 2 and listed[0]["mode"] == "Runtime"
+    _, body = launching.rpc({"method": "launch.run", "params": {"run": run}})
+    assert body["result"]["members"] == [{"path": "/demo/talker", "slug": "demo_talker"}]
+    status, body = launching.rpc({"method": "launch.run_tail", "params": {"run": run, "member": "demo_talker"}})
+    assert status == 200 and body["result"]["out"] == ["hello 1", "hello 2"] and body["result"]["err"] == ["bye"]

@@ -229,3 +229,23 @@ test("output rates label, mark busy logs and follow activity events", () => {
   handlers["daemon.member.activity"]({ compute_unit: "sub_ecu", rates: {} });
   assert.equal(launch.logRate("/b/z"), 0);
 });
+
+test("a run is labelled by its start time and what it ran", () => {
+  const label = launch.runLabel({
+    run: "20261109_124314",
+    started: new Date(2026, 10, 9, 12, 43, 14).getTime() / 1000,
+    system: "AutowareSample",
+    mode: "LoggingSimulation",
+    deploy: "site_a",
+    compute_unit: "main_ecu",
+  });
+  assert.equal(
+    label,
+    "2026-11-09 12:43:14 · LoggingSimulation · site_a · main_ecu",
+  );
+  assert.equal(launch.runLabel({ run: "custom", started: 0 }), "custom");
+  assert.equal(
+    launch.runLabel({ run: "x", started: 0, compute_unit: "sub_ecu" }),
+    "x · sub_ecu",
+  );
+});

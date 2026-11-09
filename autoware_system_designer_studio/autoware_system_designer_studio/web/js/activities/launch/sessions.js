@@ -74,6 +74,25 @@
     return `${Math.round(rate)} B/s`;
   }
 
+  // "2026-11-09 12:43:14 · LoggingSimulation · site_a · main_ecu": a run by its
+  // start time, mode, deploy variant and compute unit, as far as its manifest
+  // says; the system is the monitor's.
+  function runLabel(run) {
+    const pad = (n) => String(n).padStart(2, "0");
+    const parts = [];
+    if (run.started) {
+      const d = new Date(run.started * 1000);
+      parts.push(
+        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+          `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`,
+      );
+    } else parts.push(run.run);
+    ["mode", "deploy", "compute_unit"].forEach((key) => {
+      if (run[key]) parts.push(run[key]);
+    });
+    return parts.join(" · ");
+  }
+
   function sessionLabel(session) {
     if (!session) return "";
     const failed = sessionFailures(session).length;
@@ -181,6 +200,7 @@
   launch.stateToken = stateToken;
   launch.stateLabel = stateLabel;
   launch.sessionLabel = sessionLabel;
+  launch.runLabel = runLabel;
   launch.sessionFailures = sessionFailures;
   launch.sessionToken = sessionToken;
 })();

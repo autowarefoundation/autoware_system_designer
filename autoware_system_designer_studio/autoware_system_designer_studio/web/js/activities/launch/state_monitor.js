@@ -10,7 +10,11 @@
 // whose output grows fast carries a busy-log mark, from the daemon's
 // `member.activity` rates; a composable node's output is its container's. The
 // selected node or module is the store's `entity`, shared with Explore; a
-// selected module shows the severest state among its members.
+// selected module shows the severest state among its members. A selector
+// beside the title shows a past run instead: the daemon lists the runtime's
+// log directories and tails their files; the tree keeps the mode's structure,
+// members the run holds no log for are dimmed, its members outside the mode
+// are listed below the tree, and no run state is shown.
 (function () {
   const SD = window.SD;
   const { element, terminal, mainView } = SD.widgets;
@@ -55,6 +59,7 @@
       worstToken,
       tokenSummary,
       followsContainer,
+      runLabel,
     } = launch;
     const treePane = element("div", "pane-side monitor-tree");
     const filter = element("input", "panel-search");
@@ -75,7 +80,27 @@
     busyLegend.title = `output growing by ${rateLabel(BUSY_LOG_BPS)} or more`;
     busyLegend.append(busyMark(), element("span", "", "busy log"));
     legend.appendChild(busyLegend);
-    treePane.append(filter, launcherList, failureList, tree, legend);
+    const runNote = element(
+      "p",
+      "monitor-run-note",
+      "Logs of a past run; run states are not recorded.",
+    );
+    runNote.hidden = true;
+    const extraList = element("div", "monitor-run-extras");
+    extraList.hidden = true;
+    treePane.append(
+      filter,
+      launcherList,
+      failureList,
+      runNote,
+      tree,
+      extraList,
+      legend,
+    );
+    // Live sessions, or a past run whose log directory the daemon reads.
+    const runSelect = element("select", "monitor-run-select");
+    runSelect.setAttribute("aria-label", "Run");
+    runSelect.addEventListener("change", () => setRun(runSelect.value));
 
     const EMPTY_LOG = "Select a node to follow its log.";
     const view = mainView({ empty: EMPTY_LOG });
@@ -120,6 +145,12 @@
     let memberTokens = new Map();
     // Tree path -> the fastest output growth among the members within; filled per render.
     let logRates = new Map();
+    // The past run shown instead of the live sessions, or null: its summary and
+    // members from the daemon, member path -> directory name for the members of
+    // the tree, and {slug, label} of its members outside the tree.
+    let run = null;
+    let runSeq = 0;
+    let selectedExtra = null;
 
     function memberOf(node) {
       return node.entities.find((e) => e.entity_type === "node");
@@ -173,9 +204,15 @@
     }
 
     function decorate(node, row) {
+      const own = memberOf(node);
+      if (run) {
+        if (!own) return;
+        if (own.container_path) row.classList.add("ns-composable");
+        if (!run.slugs.has(logHolder(own))) row.classList.add("ns-absent");
+        return;
+      }
       const tokens = tokensWithin(node);
       if (!tokens.length) return;
-      const own = memberOf(node);
       const mark = stateMark(worstToken(tokens));
       const summary = tokenSummary(own ? tokens.slice(1) : tokens) || "idle";
       mark.title = own ? memberState(own).label : summary;
@@ -264,7 +301,7 @@
     // channel came back; a log whose launcher ended keeps its lines and gets
     // the end note once.
     function refollow() {
-      if (!followed || hidden) return;
+      if (!followed || hidden || run) return;
       const session = servingSession(followed.path);
       if (followed.job && !session?.connected) followed.live = false;
       if (
@@ -308,6 +345,11 @@
     // One entry per session: the launcher process's own output.
     function renderLaunchers() {
       launcherList.replaceChildren();
+      launcherList.hidden = !!run;
+      if (run) {
+        renderFailures();
+        return;
+      }
       sessions.forEach((session) => {
         if (session.system !== config.systemId || !session.job) return;
         const row = element("button", "monitor-launcher");
@@ -328,6 +370,10 @@
     // they failed; a row selects the member.
     function renderFailures() {
       failureList.replaceChildren();
+      if (run) {
+        failureList.hidden = true;
+        return;
+      }
       sessions.forEach((session) => {
         if (session.system !== config.systemId) return;
         sessionFailures(session).forEach((record) => {
@@ -358,29 +404,171 @@
     function showLog(entity) {
       selected = entity;
       selectedJob = "";
+      selectedExtra = null;
       view.body.replaceChildren(memberLog.element);
-      follow(logHolder(entity));
+      if (run) showRunLog(run.slugs.get(logHolder(entity)));
+      else follow(logHolder(entity));
       view.setEmpty("");
-      view.setTitle(
-        entity.container_path
-          ? `${entity.member_path} · in ${entity.container_path}`
-          : entity.member_path,
-      );
+      const title = entity.container_path
+        ? `${entity.member_path} · in ${entity.container_path}`
+        : entity.member_path;
+      view.setTitle(run ? `${title} · ${runLabel(run.summary)}` : title);
       showState();
       renderLaunchers();
+      renderExtras();
       store.set("entity", entity.key);
     }
 
     function showModule(entity) {
       selected = entity;
       selectedJob = "";
+      selectedExtra = null;
       unfollow();
       view.body.replaceChildren();
       view.setEmpty(EMPTY_LOG);
       view.setTitle(entity.path);
       showState();
       renderLaunchers();
+      renderExtras();
       store.set("entity", entity.key);
+    }
+
+    function showNothing() {
+      view.body.replaceChildren();
+      view.setEmpty(EMPTY_LOG);
+      view.setTitle("");
+    }
+
+    // -- past runs
+
+    // Fills the member log from a member directory of the shown run.
+    function showRunLog(slug) {
+      unfollow();
+      const seq = ++runSeq;
+      if (!slug) {
+        memberLog.clear("No log in this run.");
+        return;
+      }
+      memberLog.clear("Loading…");
+      daemon
+        .rpc("launch.run_tail", { run: run.name, member: slug })
+        .then((result) => {
+          if (seq !== runSeq) return;
+          memberLog.clear("No output.");
+          memberLog.append([...(result.out || []), ...(result.err || [])]);
+        })
+        .catch((error) => {
+          if (seq === runSeq) memberLog.clear(error.message);
+        });
+    }
+
+    // Member directories of the shown run outside the tree; a row shows its log.
+    function renderExtras() {
+      extraList.replaceChildren();
+      extraList.hidden = !run || !run.extras.length;
+      if (extraList.hidden) return;
+      extraList.appendChild(
+        element("div", "monitor-run-extras-title", "Members outside this mode"),
+      );
+      run.extras.forEach(({ slug, label }) => {
+        const row = element("button", "monitor-run-extra", label);
+        row.type = "button";
+        row.classList.toggle("selected", slug === selectedExtra);
+        row.addEventListener("click", () => showExtra(slug, label));
+        extraList.appendChild(row);
+      });
+    }
+
+    function showExtra(slug, label) {
+      selected = null;
+      selectedJob = "";
+      selectedExtra = slug;
+      view.body.replaceChildren(memberLog.element);
+      view.setEmpty("");
+      view.setTitle(`${label} · ${runLabel(run.summary)}`);
+      showRunLog(slug);
+      showState();
+      renderTree();
+      renderExtras();
+    }
+
+    // Places the run's members on the tree by path; the rest are listed outside it.
+    function placeRun() {
+      run.slugs = new Map();
+      run.extras = [];
+      run.members.forEach(({ slug, path }) => {
+        if (byMember.has(path)) run.slugs.set(path, slug);
+        else run.extras.push({ slug, label: path });
+      });
+    }
+
+    // Renders the selection against the shown run or the live sessions.
+    function reselect() {
+      runNote.hidden = !run;
+      legend.hidden = !!run;
+      renderTree();
+      renderLaunchers();
+      if (selected?.entity_type === "node") showLog(selected);
+      else if (selected) showModule(selected);
+      else {
+        showNothing();
+        renderExtras();
+      }
+      showState();
+    }
+
+    // Shows the live sessions (an empty name) or a past run.
+    function setRun(name) {
+      runSelect.value = name;
+      if (!name) {
+        run = null;
+        runSeq += 1;
+        selectedExtra = null;
+        reselect();
+        return;
+      }
+      daemon
+        .rpc("launch.run", { run: name })
+        .then((result) => {
+          if (runSelect.value !== name) return;
+          unfollow();
+          run = {
+            name,
+            summary: result,
+            members: result.members || [],
+            slugs: new Map(),
+            extras: [],
+          };
+          placeRun();
+          reselect();
+        })
+        .catch((error) => {
+          console.warn("launch run:", error);
+          setRun("");
+        });
+    }
+
+    // Past runs of the system, newest first; the shown run stays selected while listed.
+    function loadRuns() {
+      runSelect.hidden = !daemon.offers("launch.runs");
+      if (runSelect.hidden) return;
+      daemon
+        .rpc("launch.runs", { system: config.systemId })
+        .then(({ runs }) => {
+          const current = run?.name || "";
+          runSelect.replaceChildren(
+            ...[["", "Live"], ...runs.map((r) => [r.run, runLabel(r)])].map(
+              ([value, label]) => {
+                const option = element("option", "", label);
+                option.value = value;
+                return option;
+              },
+            ),
+          );
+          if (current && !runs.some((r) => r.run === current)) setRun("");
+          else runSelect.value = current;
+        })
+        .catch((error) => console.warn("launch runs:", error));
     }
 
     // Selects the entry keyed `key` and unfolds the tree down to it; an unknown
@@ -460,7 +648,10 @@
         selected?.entity_type === "node" ? logRate(logHolder(selected)) : 0;
       rateText.textContent = rate > 0 ? `log ${rateLabel(rate)}` : "";
       rateText.classList.toggle("busy", busyLog(rate));
+      badge.hidden = !!run;
+      rateText.hidden = !!run;
       const canAct =
+        !run &&
         !!member &&
         !selected.container_path &&
         !!session &&
@@ -513,23 +704,29 @@
           expand(child);
         });
       root.children.forEach((child) => expand(child));
+      if (run) placeRun();
       renderTree();
       renderFailures();
+      renderExtras();
       selectKey(store.get("entity"));
     }
 
     SD.on("launch.member", () => {
+      if (run) return;
       renderTree();
       showState();
       renderFailures();
     });
     SD.on("launch.sessions", () => {
+      loadRuns();
+      if (run) return;
       renderTree();
       showState();
       renderLaunchers();
       refollow();
     });
     SD.on("launch.activity", () => {
+      if (run) return;
       renderTree();
       showState();
     });
@@ -553,11 +750,15 @@
     reload();
     showState();
     renderLaunchers();
+    loadRuns();
 
     return {
+      runSelector: runSelect,
       show() {
         hidden = false;
-        if (selected?.entity_type === "node") follow(logHolder(selected));
+        loadRuns();
+        if (!run && selected?.entity_type === "node")
+          follow(logHolder(selected));
         if (!stale) return;
         stale = false;
         renderTree();

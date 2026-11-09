@@ -29,6 +29,7 @@ import json
 import logging
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
@@ -119,6 +120,37 @@ class _ShortNameFilter(logging.Filter):
         return True
 
 
+RUN_MANIFEST = "run.json"
+
+
+def write_run_manifest(
+    out_dir: Path,
+    *,
+    json_path: str,
+    data: Mapping[str, Any],
+    ecu: Optional[str],
+    deploy: Optional[str],
+    members: Sequence[str],
+) -> Path:
+    """Records what a run's log directory holds: the system structure and unit it ran and the member
+    paths whose directories lie beside it."""
+    metadata = data.get("metadata")
+    if not isinstance(metadata, Mapping):
+        metadata = {}
+    manifest = {
+        "system": metadata.get("system_name"),
+        "mode": metadata.get("mode") or Path(json_path).stem,
+        "compute_unit": ecu,
+        "deploy": deploy,
+        "system_structure": str(Path(json_path).resolve()),
+        "started": time.time(),
+        "members": list(members),
+    }
+    path = out_dir / RUN_MANIFEST
+    path.write_text(json.dumps(manifest, indent=2) + "\n")
+    return path
+
+
 def launch_from_json(
     json_path: str,
     *,
@@ -174,6 +206,10 @@ def launch_from_json(
         states = MemberStates()
         states.install(builder)
         coord = builder.build()
+        try:
+            write_run_manifest(out_dir, json_path=json_path, data=data, ecu=ecu, deploy=deploy, members=coord.names())
+        except OSError as exc:
+            logger.warning("cannot write %s: %s", out_dir / RUN_MANIFEST, exc)
         console_task = None
         channel: Optional[ControlChannel] = None
         try:

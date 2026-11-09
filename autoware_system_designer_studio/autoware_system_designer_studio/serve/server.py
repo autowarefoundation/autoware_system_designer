@@ -166,6 +166,7 @@ class ServeDaemon:
         launch_env: Optional[Mapping[str, str]] = None,
         env_script: Optional[Path] = None,
         rviz_config: Optional[Path] = None,
+        log_base: Optional[Path] = None,
         heartbeat_s: float = HEARTBEAT_INTERVAL_S,
         max_connections: int = MAX_CONNECTIONS,
         max_event_subscribers: int = MAX_EVENT_SUBSCRIBERS,
@@ -192,6 +193,9 @@ class ServeDaemon:
             self.methods.register(f"launch.{action}", self._member_action(action))
         self.methods.register("launch.follow", self._launch_follow)
         self.methods.register("launch.unfollow", self._launch_unfollow)
+        self.methods.register("launch.runs", self._launch_runs)
+        self.methods.register("launch.run", self._launch_run)
+        self.methods.register("launch.run_tail", self._launch_run_tail)
         self.methods.register("launch.shutdown", self._launch_shutdown)
         for verb in launch.MEASURE_VERBS:
             self.methods.register(f"measure.{verb}", self._measure(verb))
@@ -205,6 +209,7 @@ class ServeDaemon:
             env=launch_env,
             env_script=env_script,
             rviz_config=rviz_config,
+            log_base=log_base,
         )
         self._server: Optional[asyncio.AbstractServer] = None
         self._heartbeat: Optional[asyncio.Task] = None
@@ -399,6 +404,18 @@ class ServeDaemon:
     async def _launch_unfollow(self, params: dict[str, Any]) -> dict[str, Any]:
         compute_unit = _str_param(params, "compute_unit", required=True)
         return await self.launch.unfollow(compute_unit, _str_param(params, "path"))
+
+    async def _launch_runs(self, params: dict[str, Any]) -> dict[str, Any]:
+        system_id = _str_param(params, "system")
+        system = None if system_id is None else await self._find_system(system_id)
+        return {"runs": self.launch.runs(system)}
+
+    async def _launch_run(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self.launch.run_members(_str_param(params, "run", required=True))
+
+    async def _launch_run_tail(self, params: dict[str, Any]) -> dict[str, Any]:
+        run = _str_param(params, "run", required=True)
+        return self.launch.run_tail(run, _str_param(params, "member", required=True))
 
     async def _launch_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
         return await self.launch.shutdown(_str_param(params, "compute_unit", required=True))

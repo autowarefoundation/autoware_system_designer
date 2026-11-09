@@ -122,6 +122,9 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`                                                          | `{"members": [path]}` acted on              |
 | `launch.follow`                                   | `compute_unit`, `path`                                                             | `{"path", "out": [lines], "err": [lines]}`  |
 | `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow)                                    | `{"released": [path]}`                      |
+| `launch.runs`                                     | `system` (optional)                                                                | `{"runs": [run]}`, newest first             |
+| `launch.run`                                      | `run`                                                                              | run with `members: [{"path", "slug"}]`      |
+| `launch.run_tail`                                 | `run`, `member` (its directory name)                                               | `{"run", "member", "out", "err"}`           |
 | `launch.shutdown`                                 | `compute_unit`                                                                     | `{"shutting_down": true}`                   |
 | `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                     | `{"state", "message"}` of the window        |
 | `rviz.start`                                      | -                                                                                  | job                                         |
@@ -195,6 +198,18 @@ with its channel. Once the channel is gone, a follow answers the tails of the me
 runtime's log directory (`log_dir` of the session view, from the runtime's hello), with no lines to
 come. The Launch monitor follows the selected node (a composable node through its container) while
 it is shown, keeps the followed log once the launcher ended and marks where it ended.
+
+A selector beside the State monitor title shows a past run instead of the live sessions. A run is
+a directory under the runtime's log base (`/tmp/autoware_system_designer_logs`, and the parents of
+the sessions' log directories) holding a `run.json`; a directory without one is not a run. The
+daemon lists the runs of the system that no active session is writing, newest first, labelled by
+start time, mode, deploy variant and compute unit from the manifest. A run is one runtime, so one
+compute unit: members of the other units are dimmed like members without a log. `launch.run` gives
+a run's members, the manifest's member paths that have a directory, each with its directory name;
+`launch.run_tail` the tails of one directory's `out` and `err` files. The tree keeps the mode's
+structure: members the run holds no log for are dimmed, its members outside the mode are listed
+below the tree by path, and a selected member shows its tail. Run states are not recorded, so the
+monitor shows none for a past run.
 
 A session is `starting` until the channel connects, then `running`, `stopping` once the runtime
 closed the channel for a requested shutdown, and `exited`; its view carries

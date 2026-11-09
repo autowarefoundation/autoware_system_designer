@@ -120,6 +120,63 @@
   font-weight: 500;
 }
 
+/* Run selector beside the main view title: the live sessions or a past run */
+.main-view-head .monitor-run-select {
+  margin-right: auto;
+  max-width: 320px;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.monitor-run-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Members the shown run holds no log directory for */
+.ns-row.ns-absent .ns-label {
+  color: var(--text-muted);
+}
+
+/* Member directories of the shown run outside the mode's tree; a row shows its log */
+.monitor-run-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.monitor-run-extras-title {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.monitor-run-extra {
+  padding: 2px 6px;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  text-align: left;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.monitor-run-extra:hover,
+.monitor-run-extra.selected {
+  background: var(--bg-tertiary);
+}
+
+.monitor-run-extra.selected {
+  border-color: var(--border-color);
+}
+
 /* Composable nodes listed under their container */
 .ns-row.ns-composable .ns-label {
   font-style: italic;
