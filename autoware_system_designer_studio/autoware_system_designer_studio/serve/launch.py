@@ -19,7 +19,8 @@ the runtime closed the channel for a requested shutdown, and ``exited`` when the
 
 A launch is a job running ``autoware-system-designer-launch --control <socket>``, one job key per
 compute unit. The daemon connects to the socket once the runtime serves it, keeps the runtime's
-member records, forwards its ``member`` and ``member.log`` events to the event stream and relays the
+member records, forwards its ``member``, ``member.log`` and ``member.activity`` events to the event
+stream and relays the
 ``launch.*`` and ``measure.*`` methods as requests over the socket. A ``launch`` event carries the
 session view (without members) whenever its job, connection or runtime state changes.
 
@@ -55,6 +56,7 @@ logger = logging.getLogger(__name__)
 
 TOPIC_MEMBER = "member"
 TOPIC_MEMBER_LOG = "member.log"
+TOPIC_MEMBER_ACTIVITY = "member.activity"
 TOPIC_LAUNCH = "launch"
 
 LAUNCH_JOB_KIND = "launch"
@@ -535,6 +537,16 @@ class LaunchManager:
                     "path": obj["path"],
                     "stream": obj.get("stream"),
                     "lines": obj.get("lines") or [],
+                },
+            )
+        elif kind == "member.activity" and isinstance(obj.get("rates"), dict):
+            self._hub.publish(
+                TOPIC_MEMBER_ACTIVITY,
+                {
+                    "compute_unit": session.compute_unit,
+                    "system": session.system.id,
+                    "window": obj.get("window"),
+                    "rates": obj["rates"],
                 },
             )
 

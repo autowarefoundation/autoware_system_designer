@@ -6,7 +6,9 @@
 // leaves it or the monitor hides; a composable node follows its container's
 // log. Once the launcher ended, the followed log stays with a note where it
 // ended, and a follow brings the tail the daemon reads from the runtime's
-// files. Failed members are listed with their errors above the tree. The
+// files. Failed members are listed with their errors above the tree. A member
+// whose output grows fast carries a busy-log mark, from the daemon's
+// `member.activity` rates; a composable node's output is its container's. The
 // selected node or module is the store's `entity`, shared with Explore; a
 // selected module shows the severest state among its members.
 (function () {
@@ -31,6 +33,10 @@
     return element("span", `state-dot ${token}`);
   }
 
+  function busyMark() {
+    return element("span", "log-busy");
+  }
+
   function stateMonitor(container, config, store) {
     const daemon = SD.daemon;
     const {
@@ -41,6 +47,10 @@
       sessionLabel,
       sessionFailures,
       sessionToken,
+      logRate,
+      busyLog,
+      rateLabel,
+      BUSY_LOG_BPS,
       nestComposables,
       worstToken,
       tokenSummary,
@@ -61,6 +71,10 @@
       item.append(stateMark(token), element("span", "", label));
       legend.appendChild(item);
     });
+    const busyLegend = element("span", "monitor-legend-item");
+    busyLegend.title = `output growing by ${rateLabel(BUSY_LOG_BPS)} or more`;
+    busyLegend.append(busyMark(), element("span", "", "busy log"));
+    legend.appendChild(busyLegend);
     treePane.append(filter, launcherList, failureList, tree, legend);
 
     const EMPTY_LOG = "Select a node to follow its log.";
@@ -79,7 +93,8 @@
       actions.appendChild(button);
     });
     const note = element("span", "member-note");
-    view.trailing.append(note, badge, actions);
+    const rateText = element("span", "member-rate");
+    view.trailing.append(note, rateText, badge, actions);
     container.append(treePane, view.element);
 
     // The followed member's terminal, refilled per follow; job id -> the launcher's terminal.
@@ -103,6 +118,8 @@
     let stale = false;
     // Tree path -> tokens of the members within, itself first; filled per render.
     let memberTokens = new Map();
+    // Tree path -> the fastest output growth among the members within; filled per render.
+    let logRates = new Map();
 
     function memberOf(node) {
       return node.entities.find((e) => e.entity_type === "node");
@@ -130,6 +147,22 @@
       };
     }
 
+    // The member whose files hold `entity`'s output.
+    function logHolder(entity) {
+      return entity.container_path || entity.member_path;
+    }
+
+    function rateWithin(node) {
+      if (logRates.has(node.path)) return logRates.get(node.path);
+      const own = memberOf(node);
+      let rate = own && !own.container_path ? logRate(own.member_path) : 0;
+      node.children.forEach((child) => {
+        rate = Math.max(rate, rateWithin(child));
+      });
+      logRates.set(node.path, rate);
+      return rate;
+    }
+
     function tokensWithin(node) {
       if (memberTokens.has(node.path)) return memberTokens.get(node.path);
       const own = memberOf(node);
@@ -149,6 +182,14 @@
       if (own && node.children.size) mark.title += ` · members: ${summary}`;
       row.insertBefore(mark, row.querySelector(".ns-label"));
       if (own?.container_path) row.classList.add("ns-composable");
+      const rate = rateWithin(node);
+      if (!busyLog(rate)) return;
+      const busy = busyMark();
+      busy.title =
+        own && !own.container_path
+          ? `log ${rateLabel(rate)}`
+          : `busiest log within ${rateLabel(rate)}`;
+      row.appendChild(busy);
     }
 
     // The session serving a log path: through its channel while connected,
@@ -246,6 +287,7 @@
         return;
       }
       memberTokens = new Map();
+      logRates = new Map();
       SD.NamespaceTree.render(tree, root, {
         query: filter.value,
         expanded,
@@ -317,7 +359,7 @@
       selected = entity;
       selectedJob = "";
       view.body.replaceChildren(memberLog.element);
-      follow(entity.container_path || entity.member_path);
+      follow(logHolder(entity));
       view.setEmpty("");
       view.setTitle(
         entity.container_path
@@ -414,6 +456,10 @@
       badgeText.textContent = label;
       badge.className = `member-state ${token}`;
       badgeMark.className = `state-dot ${token}`;
+      const rate =
+        selected?.entity_type === "node" ? logRate(logHolder(selected)) : 0;
+      rateText.textContent = rate > 0 ? `log ${rateLabel(rate)}` : "";
+      rateText.classList.toggle("busy", busyLog(rate));
       const canAct =
         !!member &&
         !selected.container_path &&
@@ -483,6 +529,10 @@
       renderLaunchers();
       refollow();
     });
+    SD.on("launch.activity", () => {
+      renderTree();
+      showState();
+    });
     SD.on("daemon.member.log", ({ compute_unit: unit, path, lines }) => {
       if (followed?.unit === unit && followed.path === path)
         memberLog.append(lines);
@@ -507,8 +557,7 @@
     return {
       show() {
         hidden = false;
-        if (selected?.entity_type === "node")
-          follow(selected.container_path || selected.member_path);
+        if (selected?.entity_type === "node") follow(logHolder(selected));
         if (!stale) return;
         stale = false;
         renderTree();

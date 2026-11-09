@@ -15,11 +15,13 @@
 """Control channel of a running system: a Unix socket speaking JSON lines.
 
 One object per line. The runtime sends events ``{"event": ...}``: ``hello`` on connect, ``member``
-on every state change, ``member.log`` for new stdout/stderr lines of a member the client follows.
+on every state change, ``member.log`` for new stdout/stderr lines of a member the client follows,
+``member.activity`` with the output growth rate of every member whose files grew in the last window.
 A client sends requests ``{"id", "method", "params"}`` and receives ``{"id", "ok", "result" | "error"}``.
 
 Member output stays in the per-member ``out``/``err`` files the actors write; the channel tails a
-file only while some client follows that member, so an idle channel costs nothing per member.
+file only while some client follows that member, so an idle channel costs nothing per member. The
+activity scan sizes every member's files once per window while a client is connected.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -52,6 +55,8 @@ STREAMS = ("out", "err")
 MAX_LINE = 64 * 1024
 LOG_POLL_S = 0.2
 LOG_READ_MAX = 1 << 20
+# Window of the output growth scan behind ``member.activity``.
+ACTIVITY_POLL_S = 2.0
 # Tail of a file reported by ``log.follow``: at most this many lines from the last bytes of it.
 BACKFILL_LINES = 200
 BACKFILL_BYTES = 64 * 1024
@@ -131,11 +136,15 @@ class ControlChannel:
         self._clients: set[_Client] = set()
         self._tasks: set[asyncio.Task] = set()
         self._tail_task: Optional[asyncio.Task] = None
+        self._activity_task: Optional[asyncio.Task] = None
         self._unsubscribe = None
         # Read position and the unterminated tail per followed (member, stream).
         self._offsets: dict[tuple[str, str], int] = {}
         self._partial: dict[tuple[str, str], bytes] = {}
         self._paths: dict[tuple[str, str], Path] = {}
+        # Last activity scan: its time and the output size per member; the previous report had rates.
+        self._sizes: Optional[tuple[float, dict[str, int]]] = None
+        self._reported = False
 
     @property
     def path(self) -> Path:
@@ -149,16 +158,19 @@ class ControlChannel:
         os.chmod(self._path, 0o600)
         self._unsubscribe = self._states.subscribe(self._on_state)
         self._tail_task = asyncio.ensure_future(self._tail_logs())
+        self._activity_task = asyncio.ensure_future(self._scan_activity())
         logger.info("control channel: %s", self._path)
 
     async def close(self) -> None:
-        if self._tail_task is not None:
-            self._tail_task.cancel()
+        for task in (self._tail_task, self._activity_task):
+            if task is None:
+                continue
+            task.cancel()
             try:
-                await self._tail_task
+                await task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
-            self._tail_task = None
+        self._tail_task = self._activity_task = None
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
@@ -368,6 +380,52 @@ class ControlChannel:
         for client in list(self._clients):
             if name in client.follows:
                 client.send_bytes(data)
+
+    # ---- member activity ---------------------------------------------------
+
+    async def _scan_activity(self) -> None:
+        """Reports the output growth of the members to the clients, one map of rates per window."""
+        while True:
+            await asyncio.sleep(ACTIVITY_POLL_S)
+            if not self._clients:
+                self._sizes = None
+                self._reported = False
+                continue
+            try:
+                self._report_activity()
+            except Exception:  # noqa: BLE001
+                logger.exception("scanning member output failed")
+
+    def _report_activity(self) -> None:
+        """Broadcasts the bytes per second each member's files grew by since the last scan; members
+        without growth are left out, and a window with none follows a window with some."""
+        now = time.monotonic()
+        sizes = {name: self._output_size(name) for name in self._commands.coord.names()}
+        previous, self._sizes = self._sizes, (now, sizes)
+        if previous is None:
+            return
+        then, before = previous
+        elapsed = max(now - then, 1e-3)
+        rates: dict[str, int] = {}
+        for name, size in sizes.items():
+            grown = size - before.get(name, 0)
+            if grown < 0:  # truncated
+                grown = size
+            if grown > 0:
+                rates[name] = max(1, round(grown / elapsed))
+        if not rates and not self._reported:
+            return
+        self._reported = bool(rates)
+        self._broadcast({"event": "member.activity", "window": round(elapsed, 3), "rates": rates})
+
+    def _output_size(self, name: str) -> int:
+        total = 0
+        for stream in STREAMS:
+            try:
+                total += self._log_path((name, stream)).stat().st_size
+            except OSError:
+                pass
+        return total
 
 
 def _tail_lines(path: Path, size: int) -> tuple[list[str], bytes]:

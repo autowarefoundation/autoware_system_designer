@@ -457,6 +457,37 @@ def test_follow_reports_the_tail_of_a_long_file_and_a_second_follower_joins_mid_
     _run(scenario())
 
 
+def test_channel_reports_output_growth_per_window_while_a_client_is_connected(tmp_path, monkeypatch):
+    monkeypatch.setattr(cc, "ACTIVITY_POLL_S", 0.1)
+
+    async def scenario():
+        coord, commands = _commands(["/a", "/b"])
+        for name in ("/a", "/b"):
+            (tmp_path / _slug(name)).mkdir()
+        out = tmp_path / _slug("/a") / "out"
+        async with _Channel(commands, commands._states, tmp_path) as c:
+            await c.event()
+            # The first scan is the baseline; growth after it is reported, members without any are left out.
+            await asyncio.sleep(cc.ACTIVITY_POLL_S * 1.5)
+            out.write_bytes(b"x" * 1000)
+            (tmp_path / _slug("/a") / "err").write_bytes(b"y" * 24)
+            event = await c.event()
+            assert event["event"] == "member.activity"
+            assert list(event["rates"]) == ["/a"] and event["rates"]["/a"] >= 1
+            assert 0 < event["window"] < 1
+            # A quiet window after a busy one is reported once, then nothing until the next growth.
+            event = await c.event()
+            assert event["event"] == "member.activity" and event["rates"] == {}
+            await asyncio.sleep(cc.ACTIVITY_POLL_S * 3)
+            assert (await c.call("status"))["ok"]
+            # A truncated file counts its new size as growth.
+            out.write_bytes(b"z" * 10)
+            event = await c.event()
+            assert event["event"] == "member.activity" and list(event["rates"]) == ["/a"]
+
+    _run(scenario())
+
+
 def test_a_client_stalled_past_the_byte_limit_is_dropped(tmp_path, monkeypatch):
     monkeypatch.setattr(cc, "QUEUE_BYTES", 1024)
 

@@ -100,6 +100,7 @@ requests and gets one response each:
    "launch_ready":false,"shutting_down":false}
 → {"event":"member","path":"/sensing/lidar/driver","state":"running","detail":{"pid":4310},"time":1793930000.1}
 → {"event":"member.log","path":"/sensing/lidar/driver","stream":"out","lines":["[INFO] ready"]}
+→ {"event":"member.activity","window":2.0,"rates":{"/sensing/lidar/driver":5120}}
 ← {"id":1,"method":"stop","params":{"pattern":"/perception"}}
 → {"id":1,"ok":true,"result":{"members":["/perception/detector"]}}
 ← {"id":2,"method":"shutdown"}
@@ -120,8 +121,10 @@ structural path), `state` one of `pending`, `running`, `stopped`, `respawning`, 
 `loading`, `loaded`, and `detail` carries the state's data (`pid`, `exit_code`, `attempt`, `error`,
 `unique_id`). Member output stays in the per-member `out` and `err` files; a client that follows a
 member (`log.follow`) gets the files' current tails in the reply and new lines as `member.log`
-events until it unfollows or disconnects. Unfollowed members cost the channel nothing. The hello's
-`log_dir` names the run's log directory, where the files outlive the runtime. Error codes
+events until it unfollows or disconnects. Unfollowed members cost the channel nothing. While a
+client is connected, `member.activity` reports once per window (2 s) the bytes per second each
+member's files grew by, leaving quiet members out; a window without growth is reported once. The
+hello's `log_dir` names the run's log directory, where the files outlive the runtime. Error codes
 are stable strings: `bad_request`, `invalid_params`, `unknown_method`, `not_found`,
 `unavailable`, `refused`, `payload_too_large`, `internal`.
 

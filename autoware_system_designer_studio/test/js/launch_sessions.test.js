@@ -177,3 +177,55 @@ test("sessions resynchronise on hello and follow launch and member events", asyn
   assert.equal(session.state, "exited");
   assert.equal(session.members.length, 2, "members survive a session view");
 });
+
+test("output rates label, mark busy logs and follow activity events", () => {
+  assert.equal(launch.rateLabel(512), "512 B/s");
+  assert.equal(launch.rateLabel(5120), "5.0 KB/s");
+  assert.equal(launch.rateLabel(2 * 1048576), "2.0 MB/s");
+  assert.equal(launch.busyLog(launch.BUSY_LOG_BPS - 1), false);
+  assert.equal(launch.busyLog(launch.BUSY_LOG_BPS), true);
+
+  handlers["daemon.launch"]({
+    compute_unit: "main_ecu",
+    state: "running",
+    connected: true,
+    member_count: 2,
+  });
+  handlers["daemon.member.activity"]({
+    compute_unit: "main_ecu",
+    window: 2,
+    rates: { "/a/x": 8192, "/a/y": 0 },
+  });
+  assert.equal(launch.logRate("/a/x"), 8192);
+  assert.equal(launch.logRate("/a/y"), 0);
+  assert.deepEqual(emitted.at(-1), ["launch.activity", launch.activity]);
+  handlers["daemon.member.activity"]({
+    compute_unit: "sub_ecu",
+    window: 2,
+    rates: { "/b/z": 100 },
+  });
+  assert.equal(launch.logRate("/a/x"), 8192, "other units keep their rates");
+  assert.equal(launch.logRate("/b/z"), 100);
+  handlers["daemon.member.activity"]({
+    compute_unit: "main_ecu",
+    window: 2,
+    rates: { "/a/y": 300 },
+  });
+  assert.equal(launch.logRate("/a/x"), 0, "a window replaces its unit's rates");
+  assert.equal(launch.logRate("/a/y"), 300);
+
+  handlers["daemon.launch"]({
+    compute_unit: "main_ecu",
+    state: "exited",
+    connected: false,
+    member_count: 2,
+  });
+  assert.equal(
+    launch.logRate("/a/y"),
+    0,
+    "a lost channel ends its unit's rates",
+  );
+  assert.equal(launch.logRate("/b/z"), 100);
+  handlers["daemon.member.activity"]({ compute_unit: "sub_ecu", rates: {} });
+  assert.equal(launch.logRate("/b/z"), 0);
+});

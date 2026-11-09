@@ -125,6 +125,31 @@
   font-style: italic;
 }
 
+/* Busy-log mark: three rising bars beside a member whose output grows fast */
+.log-busy {
+  width: 10px;
+  height: 9px;
+  flex-shrink: 0;
+  background: linear-gradient(
+    to right,
+    var(--state-warning) 0 2px,
+    transparent 2px 4px,
+    var(--state-warning) 4px 6px,
+    transparent 6px 8px,
+    var(--state-warning) 8px 10px
+  );
+  clip-path: polygon(
+    0 55%,
+    4px 55%,
+    4px 25%,
+    8px 25%,
+    8px 0,
+    10px 0,
+    10px 100%,
+    0 100%
+  );
+}
+
 /* Meaning of the run-state marks, at the foot of the tree */
 .monitor-legend {
   display: flex;
@@ -236,6 +261,17 @@
 .member-note {
   font-size: 12px;
   color: var(--state-failed);
+}
+
+/* Output growth of the selected member's log */
+.member-rate {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.member-rate.busy {
+  color: var(--state-warning);
+  font-weight: 600;
 }
 
 .member-state {

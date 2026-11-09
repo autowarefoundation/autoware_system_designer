@@ -1,7 +1,7 @@
 // Launch: the daemon's launch sessions and their members, kept current from
 // the event stream and resynchronised through launch.status on every hello.
-// Page events: "launch.sessions" (unit -> session) and "launch.member"
-// {path, unit, record}.
+// Page events: "launch.sessions" (unit -> session), "launch.member"
+// {path, unit, record} and "launch.activity" after the output rates changed.
 (function () {
   const SD = window.SD;
   const launch = (SD.activities.launch ||= {});
@@ -61,6 +61,19 @@
     return session.state === "running" ? "running" : "warning";
   }
 
+  // Output growth, in bytes per second, from which a member's log counts as busy.
+  const BUSY_LOG_BPS = 4096;
+
+  function busyLog(rate) {
+    return rate >= BUSY_LOG_BPS;
+  }
+
+  function rateLabel(rate) {
+    if (rate >= 1048576) return `${(rate / 1048576).toFixed(1)} MB/s`;
+    if (rate >= 1024) return `${(rate / 1024).toFixed(1)} KB/s`;
+    return `${Math.round(rate)} B/s`;
+  }
+
   function sessionLabel(session) {
     if (!session) return "";
     const failed = sessionFailures(session).length;
@@ -79,10 +92,27 @@
 
   const sessions = new Map(); // compute unit -> session view, members included
   const members = new Map(); // member path -> { unit, record }
+  // Member path -> { unit, rate }: output growth of the members whose files grew in the last window.
+  const activity = new Map();
   let request = null;
 
   function emit() {
     SD.emit("launch.sessions", sessions);
+  }
+
+  // Bytes per second a member's output grew by in the last window; 0 once quiet.
+  function logRate(path) {
+    return activity.get(path)?.rate || 0;
+  }
+
+  function setActivity(unit, rates) {
+    activity.forEach((entry, path) => {
+      if (entry.unit === unit) activity.delete(path);
+    });
+    Object.entries(rates || {}).forEach(([path, rate]) => {
+      if (rate > 0) activity.set(path, { unit, rate });
+    });
+    SD.emit("launch.activity", activity);
   }
 
   function setMember(unit, record) {
@@ -103,6 +133,7 @@
         if (request !== current) return;
         sessions.clear();
         members.clear();
+        activity.clear();
         result.sessions.forEach((session) => {
           session.members ||= [];
           sessions.set(session.compute_unit, session);
@@ -127,7 +158,12 @@
     emit();
     // The runtime's hello brings the member list; the session view carries only its count.
     if (view.connected && !previous?.connected) resync();
+    if (!view.connected && previous?.connected)
+      setActivity(view.compute_unit, {});
   });
+  SD.on("daemon.member.activity", ({ compute_unit: unit, rates }) =>
+    setActivity(unit, rates),
+  );
   SD.on("daemon.member", (event) => {
     const { compute_unit: unit, ...record } = event;
     setMember(unit, record);
@@ -136,6 +172,11 @@
 
   launch.sessions = sessions;
   launch.members = members;
+  launch.activity = activity;
+  launch.logRate = logRate;
+  launch.busyLog = busyLog;
+  launch.rateLabel = rateLabel;
+  launch.BUSY_LOG_BPS = BUSY_LOG_BPS;
   launch.resync = resync;
   launch.stateToken = stateToken;
   launch.stateLabel = stateLabel;

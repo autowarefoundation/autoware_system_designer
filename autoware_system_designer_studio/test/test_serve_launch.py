@@ -68,6 +68,7 @@ async def main():
               "measure_armed": "--measure" in args, "members": members, "launch_ready": True,
               "shutting_down": False, "log_dir": log_dir})
         send({"event": "member", "path": "/demo/talker", "state": "running", "detail": {"pid": 1}, "time": 1.0})
+        send({"event": "member.activity", "window": 2.0, "rates": {"/demo/talker": 5120}})
         follows = set()
         while True:
             line = await reader.readline()
@@ -338,6 +339,11 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
         "detail": {"pid": 1},
         "time": 1.0,
     } in member_events
+    while time.time() < deadline and not launching.events.of(launch.TOPIC_MEMBER_ACTIVITY):
+        time.sleep(0.02)
+    assert launching.events.of(launch.TOPIC_MEMBER_ACTIVITY) == [
+        {"compute_unit": "main_ecu", "system": f"{PKG}:{SYSTEM}", "window": 2.0, "rates": {"/demo/talker": 5120}}
+    ]
     # Member output flows only once followed; the follow answers with the tail.
     assert launching.events.of(launch.TOPIC_MEMBER_LOG) == []
     status, body = launching.rpc(
