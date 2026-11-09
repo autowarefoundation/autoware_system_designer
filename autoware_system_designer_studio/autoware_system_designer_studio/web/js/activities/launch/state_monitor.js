@@ -204,7 +204,8 @@
     function refollow() {
       if (!followed || hidden) return;
       const session = servingSession(followed.path);
-      if ((session?.job || null) !== (followed.job || null)) follow(followed.path);
+      if ((session?.job || null) !== (followed.job || null))
+        follow(followed.path);
     }
 
     function renderTree() {
