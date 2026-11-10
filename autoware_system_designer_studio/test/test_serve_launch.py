@@ -730,6 +730,37 @@ def test_a_past_run_lists_its_members_and_tails_them(archived):
         assert status == 404, name
 
 
+def test_a_past_run_reads_back_its_topic_rates(archived, tmp_path):
+    from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesWriter, Sample
+
+    run = tmp_path / "logs" / "20260101_000000"
+    writer = RatesWriter(run / RATES_FILE, interval_s=10)
+    key = ("/demo/talker", "out", "/chatter")
+    for second, count in ((0, 0), (10, 10), (20, 50)):
+        writer.write(Sample(second * 1_000_000_000, {key: (count, 0, 0, second)}, processes=1))
+    writer.close()
+
+    status, body = archived.rpc({"method": "launch.runs", "params": {"system": f"{PKG}:{SYSTEM}"}})
+    assert {r["run"]: r["rates"] for r in body["result"]["runs"]} == {
+        "20260102_000000": False,
+        "20260101_000000": True,
+    }
+    status, body = archived.rpc({"method": "launch.run_rates", "params": {"run": "20260101_000000"}})
+    assert status == 200, body
+    result = body["result"]
+    assert result["times"] == [0, 10_000_000_000, 20_000_000_000] and result["interval_s"] == 20.0
+    assert result["mode"] == "Runtime" and result["compute_unit"] == "main_ecu"
+    assert result["nodes"][0]["outputs"] == [{"topic": "/chatter", "hz": 2.5}]
+    status, body = archived.rpc(
+        {"method": "launch.run_rates", "params": {"run": "20260101_000000", "until_ns": 20_000_000_000, "span_s": 10}}
+    )
+    assert body["result"]["nodes"][0]["outputs"] == [{"topic": "/chatter", "hz": 4.0}]
+    status, body = archived.rpc({"method": "launch.run_rates", "params": {"run": "20260102_000000"}})
+    assert status == 404 and body["error"]["code"] == api.NOT_FOUND
+    status, body = archived.rpc({"method": "launch.run_rates", "params": {"run": "20260101_000000", "span_s": 0}})
+    assert status == 400 and body["error"]["code"] == api.INVALID_PARAMS
+
+
 def test_the_run_of_a_session_is_listed_once_the_session_exited(launching):
     _start(launching)
     session = _wait_session(launching, lambda s: s["connected"], "connect")

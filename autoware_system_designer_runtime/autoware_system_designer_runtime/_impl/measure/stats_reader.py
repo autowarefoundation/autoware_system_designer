@@ -140,27 +140,34 @@ def _pid_alive(pid: int) -> bool:
 
 
 class StatsDir:
-    """Every live traced process of a trace directory; a process that ended is dropped."""
+    """Every live traced process of a trace directory. A process that ended is handed once to
+    ``on_end`` for its final counters, then dropped; one that started and ended between two
+    refreshes is handed over too."""
 
     def __init__(self, trace_dir: Union[str, Path], *, alive=_pid_alive) -> None:
         self._dir = Path(trace_dir)
         self._alive = alive
         self._procs: dict[int, ProcessStats] = {}
+        self._ended: set[int] = set()
 
-    def refresh(self) -> dict[int, ProcessStats]:
+    def refresh(self, on_end=None) -> dict[int, ProcessStats]:
         for path in self._dir.glob("*.stats"):
             try:
                 pid = int(path.stem)
             except ValueError:
                 continue
-            if pid in self._procs or not self._alive(pid):
+            if pid in self._procs or pid in self._ended:
                 continue
             try:
                 self._procs[pid] = ProcessStats(path)
             except (OSError, ValueError) as exc:
                 logger.debug("counters of %s not readable yet: %s", path, exc)
         for pid in [pid for pid in self._procs if not self._alive(pid)]:
-            self._procs.pop(pid).close()
+            proc = self._procs.pop(pid)
+            self._ended.add(pid)
+            if on_end is not None:
+                on_end(proc)
+            proc.close()
         return self._procs
 
     def close(self) -> None:

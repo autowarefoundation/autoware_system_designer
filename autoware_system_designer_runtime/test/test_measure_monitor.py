@@ -17,11 +17,12 @@
 import struct
 from pathlib import Path
 
-from autoware_system_designer_runtime._impl.measure.monitor import RateMonitor, format_rates
+from autoware_system_designer_runtime._impl.measure.monitor import RateMonitor, RatesRecorder, format_rates
 from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
 from autoware_system_designer_runtime._impl.measure.stats_reader import SLOT_PUB, SLOT_SUB, SLOT_TIMER
 from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir
 from autoware_system_designer_runtime._impl.measure.tracer import TraceControl
+from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord
 
 from .measure_fixtures import node, out_port, system
 
@@ -113,7 +114,7 @@ def test_rates_and_means_come_from_the_difference_of_two_readings(tmp_path):
     assert lines[1] == "/ns/talker" and "10.00 Hz" in lines[2] and not any("listener" in line for line in lines)
 
 
-def test_new_slots_have_no_rate_and_silent_endpoints_say_since_when(tmp_path):
+def test_new_slots_count_from_zero_and_silent_endpoints_say_since_when(tmp_path):
     proc = _Proc(tmp_path, 100)
     old = proc.endpoint("pub", 0x20, "/a", "/x")
     proc.set(old, count=5, last_ns=7 * S)
@@ -123,38 +124,94 @@ def test_new_slots_have_no_rate_and_silent_endpoints_say_since_when(tmp_path):
     proc.set(fresh, count=3, last_ns=9 * S)
     timer = proc.timer(0x30, 50_000_000)
     after = monitor.read()
-    after.t_ns = 10 * S
+    before.t_ns, after.t_ns = 0, 10 * S
     snapshot = monitor.rates(before, after)
 
     node = _node(snapshot, "/a")
-    assert node["outputs"] == [{"topic": "/x", "hz": 0.0, "silent_s": 3.0}, {"topic": "/y", "hz": None}]
+    assert node["outputs"] == [{"topic": "/x", "hz": 0.0, "silent_s": 3.0}, {"topic": "/y", "hz": 0.3}]
     # A timer that never led to a publish belongs to its process.
-    assert _node(snapshot, "(process 100)")["timers"] == [{"period_ms": 50.0, "hz": None}]
+    assert _node(snapshot, "(process 100)")["timers"] == [{"period_ms": 50.0, "hz": 0.0}]
     assert timer == 2
 
 
-def test_nodes_are_keyed_by_design_path_and_ended_processes_drop_out(tmp_path):
+def test_nodes_are_keyed_by_design_path_and_ended_processes_keep_their_counts(tmp_path):
     graph = NodeGraph.from_system_structure(
         system([node("/sensing/lidar/driver", out_ports=[out_port("points", "/points", "d.out", [])])])
     )
-    alive = {100: True, 200: True}
+    alive = {100: True, 200: True, 300: True}
     first = _Proc(tmp_path, 100)
     pub = first.endpoint("pub", 0x20, "/sensing/lidar/driver", "/points")
     second = _Proc(tmp_path, 200, capacity=1)
-    second.endpoint("pub", 0x20, "/other", "/o")
+    other = second.endpoint("pub", 0x20, "/other", "/o")
     assert second.endpoint("pub", 0x21, "/other", "/p") == -1  # past capacity
-    monitor = _monitor(tmp_path, graph, alive=lambda pid: alive[pid])
+    monitor = _monitor(tmp_path, graph, alive=lambda pid: alive.get(pid, True))
     before = monitor.read()
     first.set(pub, count=4)
+    second.set(other, count=2)
     after = monitor.read()
     after.t_ns = before.t_ns + S
     snapshot = monitor.rates(before, after)
     assert [n["node"] for n in snapshot["nodes"]] == ["/other", "/sensing/lidar/driver"]
     assert snapshot["untracked_endpoints"] == 1
 
+    # The process ends after two more publishes; a respawn of the node continues its totals.
+    second.set(other, count=4)
     alive[200] = False
-    assert [n["node"] for n in monitor.rates(after, monitor.read())["nodes"]] == ["/sensing/lidar/driver"]
+    third = _Proc(tmp_path, 300)
+    respawned = third.endpoint("pub", 0x50, "/other", "/o")
+    third.set(respawned, count=3)
+    later = monitor.read()
+    later.t_ns = after.t_ns + S
+    assert later.totals[("/other", "out", "/o")][0] == 7
+    assert _node(monitor.rates(after, later), "/other")["outputs"] == [{"topic": "/o", "hz": 5.0}]
+    assert later.untracked == 1
     monitor.close()
+
+
+def test_a_process_that_started_and_ended_between_readings_is_counted(tmp_path):
+    monitor = _monitor(tmp_path, alive=lambda pid: pid != 400)
+    before = monitor.read()
+    short = _Proc(tmp_path, 400)
+    short.set(short.endpoint("pub", 0x20, "/once", "/x"), count=6)
+    assert monitor.read().totals[("/once", "out", "/x")][0] == 6
+
+
+def test_the_run_record_holds_changed_counters_and_reads_back_any_span(tmp_path):
+    proc = _Proc(tmp_path / "trace", 100)
+    pub = proc.endpoint("pub", 0x20, "/a", "/x")
+    quiet = proc.endpoint("pub", 0x21, "/a", "/q")
+    proc.set(quiet, count=1, last_ns=1)
+    monitor = _monitor(tmp_path / "trace")
+    recorder = RatesRecorder(monitor, tmp_path / RATES_FILE, interval_s=10)
+    clock = iter(range(0, 100 * S, 10 * S))
+    real_read = monitor.read
+
+    def read():
+        sample = real_read()
+        sample.t_ns = next(clock)
+        return sample
+
+    monitor.read = read
+    for count in (0, 100, 300, 600):  # 10, 20, 30 Hz over the three spans
+        proc.set(pub, count=count, last_ns=count)
+        proc.set(quiet, count=1, last_ns=1)
+        recorder.sample()
+    recorder.close()  # the final sample, nothing moved
+    with open(tmp_path / RATES_FILE, "a") as torn:
+        torn.write('{"t": 99, "c": [[0, ')
+
+    lines = (tmp_path / RATES_FILE).read_text().splitlines()
+    assert '"schema":"autoware_system_designer/rates/1"' in lines[0]
+    assert '"keys"' in lines[1] and '"keys"' not in lines[2]
+    assert '"c":[[0,100,0,0,100]]' in lines[2]  # the quiet key did not change
+
+    record = RatesRecord.load(tmp_path / RATES_FILE)
+    assert record.times == [0, 10 * S, 20 * S, 30 * S, 40 * S]
+    whole = record.rates()
+    assert whole["interval_s"] == 40.0
+    assert _node(whole, "/a")["outputs"] == [{"topic": "/q", "hz": 0.0, "silent_s": 40.0}, {"topic": "/x", "hz": 15.0}]
+    span = record.rates(until_ns=30 * S, span_s=10)
+    assert span["from_ns"] == 20 * S and _node(span, "/a")["outputs"][1] == {"topic": "/x", "hz": 30.0}
 
 
 def test_a_process_without_events_is_still_read_from_its_name_table(tmp_path):

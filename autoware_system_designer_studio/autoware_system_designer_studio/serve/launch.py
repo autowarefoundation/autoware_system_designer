@@ -55,6 +55,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
+from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord
+
 from ..exports import SystemExport
 from . import api, jobs
 from .events import EventHub
@@ -583,6 +585,20 @@ class LaunchManager:
         ]
         return {**_run_summary(run_dir, manifest), "members": members}
 
+    def run_rates(self, name: str, *, until_ns: Optional[int] = None, span_s: Optional[float] = None) -> dict[str, Any]:
+        """Topic rates of a past run from its rates record: over ``span_s`` seconds up to the last sample at
+        or before ``until_ns``, the whole run by default; ``times`` lists the record's samples."""
+        run_dir, manifest = self.run(name)
+        path = run_dir / RATES_FILE
+        if not path.is_file():
+            raise api.ApiError(api.NOT_FOUND, f"run {name!r} recorded no topic rates")
+        try:
+            record = RatesRecord.load(path)
+            rates = record.rates(until_ns=until_ns, span_s=span_s)
+        except (OSError, ValueError) as exc:
+            raise api.ApiError(api.NOT_FOUND, f"rates of run {name!r} are not readable: {exc}") from exc
+        return {**_run_summary(run_dir, manifest), "times": record.times, **rates}
+
     def run_tail(self, name: str, member: str) -> dict[str, Any]:
         """Tails of a member's ``out`` and ``err`` files in a past run; ``member`` is its directory name."""
         if not _plain_name(member):
@@ -795,6 +811,7 @@ def _run_summary(run_dir: Path, manifest: Mapping[str, Any]) -> dict[str, Any]:
         "compute_unit": text("compute_unit"),
         "deploy": text("deploy"),
         "member_count": len(members) if isinstance(members, list) else 0,
+        "rates": (run_dir / RATES_FILE).is_file(),
     }
 
 

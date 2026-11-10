@@ -641,3 +641,34 @@
   font-weight: 400;
   color: var(--text-muted);
 }
+
+.topic-run-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+
+.topic-run-bar[hidden] {
+  display: none;
+}
+
+.topic-run-span {
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.topic-run-slider {
+  flex: 1;
+  min-width: 120px;
+}
+
+.topic-run-time {
+  min-width: 64px;
+  font-family: var(--mono-font);
+  color: var(--text-secondary);
+}

@@ -4,9 +4,12 @@
 // running the mode (publish and take rates, callback and communication times).
 // Rows are grouped by the publishing node's component or namespace, or by the
 // topic's namespace. The rates flow only while the view is shown: it follows
-// the monitor of each connected session and releases it when hidden. A row
-// click selects its publishing node as the store's `entity`; rows touching
-// that node are marked.
+// the monitor of each connected session and releases it when hidden; the last
+// rates of a launch stay shown after it ended, until its unit is launched
+// again. A selector beside the title shows a past run instead, from the rates
+// record the runtime leaves in the run's log directory, over the whole run or
+// a span ending at a chosen sample. A row click selects its publishing node as
+// the store's `entity`; rows touching that node are marked.
 (function () {
   const SD = window.SD;
   const launch = (SD.activities.launch ||= {});
@@ -381,8 +384,12 @@
     let entities = [];
     let design = new Map();
     let entitiesMode = null;
-    // Unit -> latest snapshot of the shown mode.
+    // Unit -> { job, data }: the latest snapshot of the unit's launch of the shown mode.
     const snapshots = new Map();
+    // The past run shown instead of the live sessions, or null:
+    // { name, until, span, result, error }.
+    let run = null;
+    let runSeq = 0;
     // Units whose monitor this view follows.
     const followed = new Set();
     let shown = false;
@@ -437,10 +444,127 @@
         (v) => (undeclared = v),
       ),
     );
+    // -- past runs: the selector beside the title, the span and the end sample
+    const runSelect = element("select", "monitor-run-select");
+    runSelect.title = "Live sessions, or the rates record of a past run";
+    runSelect.addEventListener("change", () => setRun(runSelect.value));
+    const runBar = element("div", "topic-run-bar");
+    const spanSelect = element("select", "topic-run-span");
+    [
+      ["", "Whole run"],
+      ["10", "Last 10 s"],
+      ["60", "Last 1 min"],
+      ["300", "Last 5 min"],
+    ].forEach(([value, label]) => {
+      const option = element("option", "", label);
+      option.value = value;
+      spanSelect.appendChild(option);
+    });
+    const slider = element("input", "topic-run-slider");
+    slider.type = "range";
+    slider.min = "0";
+    slider.step = "1";
+    const runTime = element("span", "topic-run-time");
+    runBar.append(
+      element("span", "topic-toolbar-label", "Span"),
+      spanSelect,
+      element("span", "topic-toolbar-label", "ending at"),
+      slider,
+      runTime,
+    );
+    runBar.hidden = true;
+    let slideTimer = null;
+    spanSelect.addEventListener("change", () => {
+      if (!run) return;
+      run.span = spanSelect.value ? Number(spanSelect.value) : null;
+      loadRun();
+    });
+    slider.addEventListener("input", () => {
+      if (!run?.result) return;
+      runTime.textContent = clock(run.result.times[Number(slider.value)]);
+      clearTimeout(slideTimer);
+      slideTimer = setTimeout(() => {
+        run.until = run.result.times[Number(slider.value)];
+        loadRun();
+      }, 150);
+    });
+
     const summary = element("div", "topic-summary");
     const note = element("p", "main-empty");
     const tableHost = element("div", "topic-table-host");
-    container.append(toolbar, summary, note, tableHost);
+    container.append(toolbar, runBar, summary, note, tableHost);
+
+    function clock(t_ns) {
+      if (!t_ns) return "";
+      const d = new Date(t_ns / 1e6);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+
+    // Shows the live sessions (an empty name) or a past run.
+    function setRun(name) {
+      runSelect.value = name;
+      runSeq += 1;
+      run = name
+        ? { name, until: null, span: null, result: null, error: "" }
+        : null;
+      runBar.hidden = !run;
+      spanSelect.value = "";
+      syncFollows();
+      if (run) loadRun();
+      else render();
+    }
+
+    function loadRun() {
+      const seq = runSeq;
+      const params = { run: run.name };
+      if (run.until !== null) params.until_ns = run.until;
+      if (run.span !== null) params.span_s = run.span;
+      daemon
+        .rpc("launch.run_rates", params)
+        .then((result) => {
+          if (seq !== runSeq) return;
+          run.result = result;
+          run.error = "";
+          slider.max = String(Math.max(result.times.length - 1, 0));
+          slider.value = String(result.times.indexOf(result.time_ns));
+          runTime.textContent = clock(result.time_ns);
+          render();
+        })
+        .catch((error) => {
+          if (seq !== runSeq) return;
+          run.error = error.message;
+          render();
+        });
+    }
+
+    // Past runs of the shown mode with a rates record, newest first; the shown run stays selected while listed.
+    function loadRuns() {
+      runSelect.hidden = !daemon.offers("launch.run_rates");
+      if (runSelect.hidden) return;
+      daemon
+        .rpc("launch.runs", { system: config.systemId })
+        .then(({ runs }) => {
+          const mode = store.get("mode");
+          const listed = runs.filter(
+            (r) => r.rates && (!r.mode || r.mode === mode),
+          );
+          const current = run?.name || "";
+          runSelect.replaceChildren(
+            ...[
+              ["", "Live"],
+              ...listed.map((r) => [r.run, launch.runLabel(r)]),
+            ].map(([value, label]) => {
+              const option = element("option", "", label);
+              option.value = value;
+              return option;
+            }),
+          );
+          if (current && !listed.some((r) => r.run === current)) setRun("");
+          else runSelect.value = current;
+        })
+        .catch((error) => console.warn("topic runs:", error));
+    }
 
     async function loadDesign() {
       const mode = store.get("mode");
@@ -459,10 +583,11 @@
       return entity ? entity.key : "";
     }
 
-    // Follows the monitor of every connected session of the mode that offers one; drops the rest.
+    // Follows the monitor of every connected session of the mode that offers one while the live
+    // sessions are shown; drops the rest.
     function syncFollows() {
       const wanted = new Set();
-      if (shown && daemon.offers("monitor.follow"))
+      if (shown && !run && daemon.offers("monitor.follow"))
         ofMode.sessions.forEach((session, unit) => {
           if (
             session.state !== "exited" &&
@@ -488,7 +613,6 @@
       followed.forEach((unit) => {
         if (wanted.has(unit)) return;
         followed.delete(unit);
-        snapshots.delete(unit);
         daemon.rpc("monitor.unfollow", { compute_unit: unit }).catch(() => {});
       });
       schedule();
@@ -496,8 +620,18 @@
 
     function accept(unit, snapshot) {
       if (!followed.has(unit)) return;
-      snapshots.set(unit, snapshot);
+      snapshots.set(unit, {
+        job: ofMode.sessions.get(unit)?.job,
+        data: snapshot,
+      });
       schedule();
+    }
+
+    // Held snapshots of units relaunched since, or of sessions no longer known, are dropped.
+    function pruneHeld() {
+      snapshots.forEach((held, unit) => {
+        if (ofMode.sessions.get(unit)?.job !== held.job) snapshots.delete(unit);
+      });
     }
 
     function schedule() {
@@ -615,30 +749,66 @@
       return tr;
     }
 
-    function render() {
-      if (!shown) return;
+    // Snapshots, the units they stand for, the summary heading and the note of the shown source.
+    function source() {
+      if (run) {
+        const result = run.result;
+        if (!result)
+          return {
+            shown: new Map(),
+            units: new Set(),
+            heading: "",
+            note: run.error || "Loading the run…",
+          };
+        const unit = result.compute_unit || "run";
+        return {
+          shown: new Map([[unit, result]]),
+          units: new Set([unit]),
+          heading: `${unit} · ${result.interval_s} s from ${clock(result.from_ns)} to ${clock(result.time_ns)}`,
+          note: run.error,
+        };
+      }
+      pruneHeld();
       const connected = [];
       ofMode.sessions.forEach((session, unit) => {
         if (session.state !== "exited" && session.connected)
           connected.push([unit, session]);
       });
-      const monitored = connected.filter(
-        ([, session]) => session.control?.monitor,
+      const monitored = connected
+        .filter(([, session]) => session.control?.monitor)
+        .map(([unit]) => unit);
+      const held = [...snapshots.keys()].filter(
+        (unit) => !connected.some(([live]) => live === unit),
       );
+      let text = "";
       if (!daemon.offers("monitor.follow"))
-        note.textContent = "This daemon serves no topic rates.";
-      else if (!connected.length)
-        note.textContent = `No running launch of ${store.get("mode")}.`;
-      else if (!monitored.length)
-        note.textContent =
+        text = "This daemon serves no topic rates.";
+      else if (!connected.length && !held.length)
+        text = `No running launch of ${store.get("mode")}.`;
+      else if (connected.length && !monitored.length && !held.length)
+        text =
           "The running launches have no tracer: launched with --no-tracer, or it is not installed.";
-      else note.textContent = "";
-      note.hidden = !note.textContent;
+      const parts = [];
+      if (monitored.length) parts.push(monitored.join(", "));
+      if (held.length) parts.push(`${held.join(", ")} ended, last rates held`);
+      return {
+        shown: new Map(
+          [...snapshots].map(([unit, entry]) => [unit, entry.data]),
+        ),
+        units: new Set([...connected.map(([unit]) => unit), ...held]),
+        heading: parts.join(" · "),
+        note: text,
+      };
+    }
 
-      const runningUnits = new Set(connected.map(([unit]) => unit));
-      const rows = topicRows(design, observedTopics(snapshots), {
+    function render() {
+      if (!shown) return;
+      const view = source();
+      note.textContent = view.note;
+      note.hidden = !note.textContent;
+      const rows = topicRows(design, observedTopics(view.shown), {
         undeclared,
-        runningUnits,
+        runningUnits: view.units,
       });
       const counts = new Map();
       rows.forEach((row) =>
@@ -648,8 +818,8 @@
         element(
           "span",
           "topic-summary-units",
-          monitored.length
-            ? `${monitored.map(([unit]) => unit).join(", ")} · ${rows.length} topics`
+          view.heading
+            ? `${view.heading} · ${rows.length} topics`
             : `${rows.length} topics`,
         ),
         ...STATUS_ORDER.filter((status) => counts.get(status)).map((status) => {
@@ -749,11 +919,14 @@
       accept(event.compute_unit, event);
     });
     SD.on("launch.sessions", () => {
-      if (shown) syncFollows();
+      if (!shown) return;
+      syncFollows();
+      loadRuns();
     });
     store.onChange("entity", schedule);
     store.onChange("mode", () => {
       snapshots.clear();
+      if (run) setRun("");
       entitiesMode = null;
       followed.forEach((unit) =>
         daemon.rpc("monitor.unfollow", { compute_unit: unit }).catch(() => {}),
@@ -762,15 +935,18 @@
       if (shown) {
         loadDesign().catch((error) => console.error("topic rates:", error));
         syncFollows();
+        loadRuns();
       }
     });
 
     return {
+      runSelector: runSelect,
       show() {
         if (shown) return;
         shown = true;
         loadDesign().catch((error) => console.error("topic rates:", error));
         syncFollows();
+        loadRuns();
         render();
       },
       hide() {

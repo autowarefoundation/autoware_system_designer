@@ -39,7 +39,7 @@ from ._impl.core.control_channel import ControlChannel
 from ._impl.core.coordinator import ensure_output_dir
 from ._impl.core.stdin_console import run_console
 from ._impl.measure.clock import CLOCK_AUTO, CLOCK_CHOICES
-from ._impl.measure.monitor import RateMonitor
+from ._impl.measure.monitor import RateMonitor, RatesRecorder
 from ._impl.measure.node_graph import NodeGraph
 from ._impl.measure.session import TRACE_SUBDIR, MeasureOptions, MeasureSession, default_latency_out
 from ._impl.measure.tracer import TracerArming, locate_tracer
@@ -47,6 +47,7 @@ from ._impl.ros2.builder import populate_builder
 from ._impl.ros2.common.substitutions import bind_variables, resolve_argument_values, unresolved_var_names
 from ._impl.ros2.operation_mode import POLICIES, OperationModeGuard
 from .export_tree import manifest_path, read_manifest, resolve_structure_paths
+from .rates_record import RATES_FILE
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -228,7 +229,12 @@ def launch_from_json(
             logger.warning("cannot write %s: %s", out_dir / RUN_MANIFEST, exc)
         console_task = None
         channel: Optional[ControlChannel] = None
+        recorder: Optional[RatesRecorder] = None
+        recorder_task = None
         try:
+            if monitor is not None:
+                recorder = RatesRecorder(monitor, out_dir / RATES_FILE)
+                recorder_task = asyncio.ensure_future(recorder.run())
             await worker.start()
             guard = None
             if (interactive or control is not None) and control_policy == "guard":
@@ -250,6 +256,14 @@ def launch_from_json(
                     pass
             if channel is not None:
                 await channel.close()
+            if recorder_task is not None:
+                recorder_task.cancel()
+                try:
+                    await recorder_task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
+            if recorder is not None:
+                recorder.close()
             if monitor is not None:
                 monitor.close()
             await worker.stop()

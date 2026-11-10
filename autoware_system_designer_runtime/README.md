@@ -102,7 +102,7 @@ requests and gets one response each:
 → {"event":"member.log","path":"/sensing/lidar/driver","stream":"out","lines":["[INFO] ready"]}
 → {"event":"member.activity","window":2.0,"rates":{"/sensing/lidar/driver":5120}}
 → {"event":"monitor","time_ns":1793930002000000000,"interval_s":2.0,"processes":12,"untracked_endpoints":0,
-   "nodes":[{"node":"/sensing/lidar/driver","pids":[4310],"inputs":[],
+   "nodes":[{"node":"/sensing/lidar/driver","inputs":[],
              "outputs":[{"topic":"/sensing/lidar/points","hz":10.0,"callback_ms":3.1}],
              "timers":[{"period_ms":100.0,"hz":10.0}]}]}
 ← {"id":1,"method":"stop","params":{"pattern":"/perception"}}
@@ -313,7 +313,9 @@ rates over 1 s, 12 traced processes
   timer 100 ms                                                     10.00 Hz
 ```
 
-Over the control channel: `monitor.sample` once, `monitor.follow` for a `monitor` event every 2 s. A publish whose every matched reader is intra-process does not reach `rcl_publish`, so it is not counted; the measurement window's probe subscriptions cover that case.
+Over the control channel: `monitor.sample` once, `monitor.follow` for a `monitor` event every 2 s.
+
+Every run also keeps its rates: `<log-dir>/rates.jsonl` records the counters per node and topic every 10 s and once more at shutdown, cumulative over the run (a process that ends or respawns keeps its counts), so the rates over any span of a past run are the difference of two samples. A sample line lists only the counters that changed since the previous one. `autoware_system_designer_runtime.rates_record` (no ROS import) reads it back: `RatesRecord.load(path).rates(until_ns=..., span_s=...)`, the whole run by default. A publish whose every matched reader is intra-process does not reach `rcl_publish`, so it is not counted; the measurement window's probe subscriptions cover that case.
 
 ## Latency measurement
 

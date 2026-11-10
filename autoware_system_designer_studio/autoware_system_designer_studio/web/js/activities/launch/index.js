@@ -229,6 +229,7 @@
       main.append(controlView.element, logsView.element, topicsView.element);
       const monitor = stateMonitor(monitorPane, config, store);
       const topics = topicRates(topicsPane, config, store);
+      topicsView.head.insertBefore(topics.runSelector, topicsView.trailing);
       logsView.head.insertBefore(monitor.runSelector, logsView.trailing);
       // The activity's slots are visible from mount until another activity takes over.
       let shown = true;

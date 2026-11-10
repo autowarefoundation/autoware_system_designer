@@ -196,6 +196,7 @@ class ServeDaemon:
         self.methods.register("launch.runs", self._launch_runs)
         self.methods.register("launch.run", self._launch_run)
         self.methods.register("launch.run_tail", self._launch_run_tail)
+        self.methods.register("launch.run_rates", self._launch_run_rates)
         self.methods.register("launch.shutdown", self._launch_shutdown)
         for verb in launch.MEASURE_VERBS:
             self.methods.register(f"measure.{verb}", self._measure(verb))
@@ -435,6 +436,15 @@ class ServeDaemon:
     async def _launch_run_tail(self, params: dict[str, Any]) -> dict[str, Any]:
         run = _str_param(params, "run", required=True)
         return self.launch.run_tail(run, _str_param(params, "member", required=True))
+
+    async def _launch_run_rates(self, params: dict[str, Any]) -> dict[str, Any]:
+        until_ns = params.get("until_ns")
+        span_s = params.get("span_s")
+        if until_ns is not None and (not isinstance(until_ns, int) or isinstance(until_ns, bool)):
+            raise api.ApiError(api.INVALID_PARAMS, "until_ns must be an integer")
+        if span_s is not None and (not isinstance(span_s, (int, float)) or isinstance(span_s, bool) or span_s <= 0):
+            raise api.ApiError(api.INVALID_PARAMS, "span_s must be a positive number of seconds")
+        return self.launch.run_rates(_str_param(params, "run", required=True), until_ns=until_ns, span_s=span_s)
 
     async def _launch_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
         return await self.launch.shutdown(_str_param(params, "compute_unit", required=True))

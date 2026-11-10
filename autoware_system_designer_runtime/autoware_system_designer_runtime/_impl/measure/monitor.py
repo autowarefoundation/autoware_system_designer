@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Live rates of a running system from the tracer's counters.
+"""Live and recorded rates of a running system from the tracer's counters.
 
-A reading copies the counters of every live traced process; rates and mean
-latencies are the difference of two readings over the wall time between them.
+A reading sums the counters of every traced process per key (node, ``in`` /
+``out`` / ``timer``, topic or period), the final counters of processes that
+ended included, so the totals of a key never fall over a run; rates and mean
+latencies are the difference of two readings (``rates_record.rates_between``).
 Nothing subscribes to a topic: publishes and takes are the ones the nodes make
 through rcl, so a publish that reaches intra-process readers only is not seen.
 
@@ -24,61 +26,64 @@ DDS source timestamp), output topics with publish rate and mean callback time
 (publish minus the thread's latest take or timer fire), timers with fire rate.
 rcl timers belong to no node; a timer is listed under the node of the latest
 publish it led to, else under its process.
+
+The recorder appends a reading to the run's ``rates.jsonl`` at a fixed
+interval and once more at shutdown, so a past run's rates can be read back.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ...rates_record import Counters, Key, RatesWriter, Sample, rates_between
 from .node_graph import NodeGraph
-from .node_stats import LIFECYCLE_TOPICS, NS_PER_MS, NS_PER_S
-from .stats_reader import SLOT_PUB, SLOT_SUB, SLOT_TIMER, ProcessCounters, StatsDir
+from .node_stats import LIFECYCLE_TOPICS
+from .stats_reader import SLOT_PUB, SLOT_SUB, SLOT_TIMER, ProcessStats, StatsDir
 from .trace_reader import Endpoint, TimerInfo
 
+logger = logging.getLogger(__name__)
 
-@dataclass
-class Reading:
-    t_ns: int
-    processes: dict[int, ProcessCounters] = field(default_factory=dict)
-    names: dict[int, dict[int, Union[Endpoint, TimerInfo]]] = field(default_factory=dict)
+# Interval of the samples in a run's rates record.
+RECORD_INTERVAL_S = 10.0
 
 
-@dataclass
-class _Row:
-    count: int = 0
-    lat_sum_ns: int = 0
-    lat_count: int = 0
-    last_ns: int = 0
-    known: bool = True  # every slot of the row was in the earlier reading
-
-    def add(self, count: int, lat_sum_ns: int, lat_count: int, last_ns: int, known: bool) -> None:
-        self.count += count
-        self.lat_sum_ns += lat_sum_ns
-        self.lat_count += lat_count
-        self.last_ns = max(self.last_ns, last_ns)
-        self.known = self.known and known
+def _add(totals: dict[Key, Counters], key: Key, count: int, lat_sum: int, lat_count: int, last_ns: int) -> None:
+    held = totals.get(key)
+    if held is None:
+        totals[key] = (count, lat_sum, lat_count, last_ns)
+    else:
+        totals[key] = (held[0] + count, held[1] + lat_sum, held[2] + lat_count, max(held[3], last_ns))
 
 
 class RateMonitor:
-    """Reads the counters of a trace directory and turns two readings into per-node rates."""
+    """Reads the counters of a trace directory into per-key totals over the run."""
 
     def __init__(self, trace_dir: Union[str, Path], graph: Optional[NodeGraph] = None, *, alive=None) -> None:
         self._dir = StatsDir(trace_dir, **({"alive": alive} if alive is not None else {}))
         self._graph = graph
         self._paths: dict[str, str] = {}
+        # Final totals of the processes that ended.
+        self._ended: dict[Key, Counters] = {}
+        self._untracked_ended = 0
 
     def close(self) -> None:
         self._dir.close()
 
-    def read(self) -> Reading:
-        reading = Reading(t_ns=time.time_ns())
-        for pid, proc in self._dir.refresh().items():
-            reading.processes[pid] = proc.read()
-            reading.names[pid] = dict(proc.read_names())
-        return reading
+    def read(self) -> Sample:
+        procs = self._dir.refresh(self._retire)
+        sample = Sample(t_ns=time.time_ns(), totals=dict(self._ended), untracked=self._untracked_ended)
+        for proc in procs.values():
+            sample.untracked += self._accumulate(proc, sample.totals)
+        sample.processes = len(procs)
+        return sample
+
+    def rates(self, before: Sample, after: Sample) -> dict[str, Any]:
+        """Per-node rates over the interval between two readings, ordered by node."""
+        return rates_between(before, after)
 
     def node_key(self, fqn: str) -> str:
         """Design path of a node, its fully qualified name when the design does not know it."""
@@ -88,82 +93,61 @@ class RateMonitor:
             key = self._paths[fqn] = info.path if info is not None else fqn
         return key
 
-    def rates(self, before: Reading, after: Reading) -> dict[str, Any]:
-        """Per-node rates over the interval between two readings, ordered by node."""
-        interval_ns = max(after.t_ns - before.t_ns, 1)
-        rows: dict[tuple[str, str, Any], _Row] = {}
-        pids: dict[str, set[int]] = {}
-        untracked = 0
-        for pid, counters in after.processes.items():
-            untracked += counters.dropped
-            names = after.names.get(pid, {})
-            earlier = before.processes.get(pid)
-            for index, slot in counters.slots.items():
-                entry = names.get(index)
-                if entry is None:
-                    continue
-                previous = earlier.slots.get(index) if earlier is not None else None
-                known = previous is not None and previous.handle == slot.handle and previous.count <= slot.count
-                base = previous if known else None
-                key = self._row_key(pid, slot.kind, entry, slot.next_slot, names)
-                if key is None:
-                    continue
-                pids.setdefault(key[0], set()).add(pid)
-                rows.setdefault(key, _Row()).add(
-                    slot.count - (base.count if base else 0),
-                    slot.lat_sum_ns - (base.lat_sum_ns if base else 0),
-                    slot.lat_count - (base.lat_count if base else 0),
-                    slot.last_ns,
-                    known,
-                )
+    def _retire(self, proc: ProcessStats) -> None:
+        self._untracked_ended += self._accumulate(proc, self._ended)
 
-        nodes: dict[str, dict[str, Any]] = {}
-        for (node, direction, label), row in sorted(rows.items(), key=lambda item: _sort_key(item[0])):
-            record = nodes.setdefault(
-                node, {"node": node, "pids": sorted(pids[node]), "inputs": [], "outputs": [], "timers": []}
-            )
-            record[direction].append(_row_record(direction, label, row, interval_ns, after.t_ns))
-        return {
-            "time_ns": after.t_ns,
-            "interval_s": round(interval_ns / NS_PER_S, 3),
-            "processes": len(after.processes),
-            "untracked_endpoints": untracked,
-            "nodes": list(nodes.values()),
-        }
+    def _accumulate(self, proc: ProcessStats, totals: dict[Key, Counters]) -> int:
+        """Adds one process's slots to ``totals``; returns its endpoints without counters."""
+        counters = proc.read()
+        names = proc.read_names()
+        for index, slot in counters.slots.items():
+            entry = names.get(index)
+            key = self._key(proc.pid, slot.kind, entry, slot.next_slot, names) if entry is not None else None
+            if key is not None:
+                _add(totals, key, slot.count, slot.lat_sum_ns, slot.lat_count, slot.last_ns)
+        return counters.dropped
 
-    def _row_key(self, pid, kind, entry, next_slot, names) -> Optional[tuple[str, str, Any]]:
+    def _key(self, pid, kind, entry, next_slot, names) -> Optional[Key]:
         if kind == SLOT_TIMER and isinstance(entry, TimerInfo):
             output = names.get(next_slot) if next_slot is not None else None
             owner = self.node_key(output.fqn) if isinstance(output, Endpoint) else f"(process {pid})"
-            return owner, "timers", entry.period_ns
+            return owner, "timer", entry.period_ns
         if not isinstance(entry, Endpoint) or entry.topic in LIFECYCLE_TOPICS:
             return None
         if kind == SLOT_SUB:
-            return self.node_key(entry.fqn), "inputs", entry.topic
+            return self.node_key(entry.fqn), "in", entry.topic
         if kind == SLOT_PUB:
-            return self.node_key(entry.fqn), "outputs", entry.topic
+            return self.node_key(entry.fqn), "out", entry.topic
         return None
 
 
-def _sort_key(key: tuple[str, str, Any]) -> tuple:
-    node, direction, label = key
-    return (node, direction, str(label) if not isinstance(label, int) else f"{label:020d}")
+class RatesRecorder:
+    """Appends a reading of the monitor to the run's rates record every interval, and once at close."""
 
+    def __init__(self, monitor: RateMonitor, path: Union[str, Path], *, interval_s: float = RECORD_INTERVAL_S) -> None:
+        self._monitor = monitor
+        self._interval_s = interval_s
+        self._writer = RatesWriter(path, interval_s=interval_s)
 
-def _row_record(direction: str, label: Any, row: _Row, interval_ns: int, now_ns: int) -> dict[str, Any]:
-    if direction == "timers":
-        record: dict[str, Any] = {"period_ms": round(label / NS_PER_MS, 3)}
-    else:
-        record = {"topic": label}
-    # A row with a slot new since the earlier reading has no rate yet.
-    record["hz"] = round(row.count * NS_PER_S / interval_ns, 3) if row.known else None
-    if row.lat_count > 0 and direction != "timers":
-        record["comm_ms" if direction == "inputs" else "callback_ms"] = round(
-            row.lat_sum_ns / row.lat_count / NS_PER_MS, 3
-        )
-    if row.known and row.count == 0 and row.last_ns > 0:
-        record["silent_s"] = round((now_ns - row.last_ns) / NS_PER_S, 1)
-    return record
+    @property
+    def path(self) -> Path:
+        return self._writer.path
+
+    async def run(self) -> None:
+        while True:
+            self.sample()
+            await asyncio.sleep(self._interval_s)
+
+    def sample(self) -> None:
+        try:
+            self._writer.write(self._monitor.read())
+        except Exception:  # noqa: BLE001
+            logger.exception("recording the rates failed")
+
+    def close(self) -> None:
+        """Records the final totals; called once every process has ended."""
+        self.sample()
+        self._writer.close()
 
 
 def format_rates(snapshot: dict[str, Any], pattern: Optional[str] = None) -> list[str]:
@@ -190,5 +174,5 @@ def format_rates(snapshot: dict[str, Any], pattern: Optional[str] = None) -> lis
     return lines
 
 
-def _hz(value: Optional[float]) -> str:
-    return "    new" if value is None else f"{value:8.2f} Hz"
+def _hz(value: float) -> str:
+    return f"{value:8.2f} Hz"
