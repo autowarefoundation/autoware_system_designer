@@ -3,7 +3,7 @@
 // member path: a node outside a container. A composable node links to its
 // container instead, and a module or namespace has none. Each action is offered
 // in the member states it applies to, while the session of the shown mode is
-// connected; Stop and Kill ask for a confirmation in the bar, dropped once the
+// connected; each asks for a confirmation in the bar, dropped once the
 // selection or the session changes, or by `cancel`. The runtime's
 // operation-mode guard decides; a refusal shows in the bar.
 (function () {
@@ -11,11 +11,11 @@
   const { element } = SD.widgets;
   const launch = (SD.activities.launch ||= {});
 
-  // [action, label, member states it applies to, confirmed first].
+  // [action, label, member states it applies to].
   const ACTIONS = [
-    ["stop", "Stop", ["running", "respawning"], true],
-    ["restart", "Restart", ["running", "stopped"], false],
-    ["kill", "Kill", ["running"], true],
+    ["stop", "Stop", ["running", "respawning"]],
+    ["restart", "Restart", ["running", "stopped"]],
+    ["kill", "Kill", ["running"]],
   ];
   const HINT = "Select a node on the map to stop, restart or kill its process.";
 
@@ -129,9 +129,8 @@
       }
       const actions = element("span", "member-bar-actions");
       const busy = pending.has(path);
-      ACTIONS.forEach(([action, actionLabel, states, confirm]) => {
+      ACTIONS.forEach(([action, actionLabel, states]) => {
         const node = button(actionLabel, "", () => {
-          if (!confirm) return act(entity, action);
           confirming = { action, path, job: session.job };
           render();
         });

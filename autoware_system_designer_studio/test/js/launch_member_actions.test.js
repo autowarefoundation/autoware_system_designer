@@ -205,7 +205,7 @@ test("a running node offers its actions by state", () => {
   assert.ok(buttons(bar.element).every((b) => b.disabled));
 });
 
-test("restart is sent at once with the exact member path", async () => {
+test("restart is confirmed, then sent with the exact member path", async () => {
   setLive("running");
   calls.length = 0;
   const bar = memberActions(
@@ -214,6 +214,10 @@ test("restart is sent at once with the exact member path", async () => {
     hooks,
   );
   button(bar.element, "Restart").click();
+  button(bar.element, "Restart").click();
+  assert.equal(calls.length, 0);
+  assert.ok(texts(bar.element).includes("Restart this process?"));
+  button(bar.element, "Confirm restart").click();
   assert.deepEqual(calls, [
     [
       "launch.restart",
@@ -225,7 +229,7 @@ test("restart is sent at once with the exact member path", async () => {
   assert.equal(button(bar.element, "Restart").disabled, false);
 });
 
-test("stop and kill are confirmed first, and a selection change drops the confirmation", () => {
+test("stop and kill are confirmed too, and a selection change drops the confirmation", () => {
   setLive("running");
   calls.length = 0;
   const store = makeStore("n:/a/x");
@@ -266,6 +270,7 @@ test("a refusal shows in the bar", async () => {
     hooks,
   );
   button(bar.element, "Restart").click();
+  button(bar.element, "Confirm restart").click();
   await flush();
   assert.ok(texts(bar.element).includes("restart refused: autonomous"));
   answer = () => Promise.resolve({ members: [] });

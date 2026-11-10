@@ -76,7 +76,7 @@ section, a head alone when the mode places no node on it; a launcher of an undec
 same controls in a row above the map. A bar between the head and the map holds the selected
 entity and the only actions on a launched member: Stop, Restart and Kill of a node outside a
 container, each in the member states it applies to while the session of the mode is connected, sent
-with `exact` so they reach that member alone; Stop and Kill are confirmed in the bar. A composable
+with `exact` so they reach that member alone; each is confirmed in the bar. A composable
 node links to its container there, and a module has no actions. Logs is the member tree beside the
 selected member's log, read only. Both select the store's `entity`, and a double click on a node of
 the map opens it in Logs.
