@@ -1,6 +1,7 @@
 // Launch: launched members as a namespace tree with run states beside the
 // selected member's log, or the launcher's own output. Member states arrive on
-// the daemon's event stream, keyed by member path. One member's log is
+// the daemon's event stream, keyed by member path; the view is read only, the
+// Control view acts on members. One member's log is
 // followed at a time: `launch.follow` brings its current tail, `member.log`
 // events the lines after, and the follow is released when the selection
 // leaves it or the monitor hides, and a selection made while hidden is
@@ -20,11 +21,6 @@
   const SD = window.SD;
   const { element, terminal, mainView } = SD.widgets;
   const launch = (SD.activities.launch ||= {});
-  const ACTIONS = [
-    ["stop", "Stop"],
-    ["restart", "Restart"],
-    ["kill", "Kill"],
-  ];
   const stateMark = (token) => SD.RunState.mark(token);
 
   function busyMark() {
@@ -92,18 +88,9 @@
     const badgeMark = stateMark("idle");
     const badgeText = element("span");
     badge.append(badgeMark, badgeText);
-    const actions = element("span", "member-actions");
-    ACTIONS.forEach(([action, label]) => {
-      const button = element("button", "panel-button", label);
-      button.type = "button";
-      button.dataset.action = action;
-      button.addEventListener("click", () => act(action));
-      actions.appendChild(button);
-    });
-    const note = element("span", "member-note");
     const rateText = element("span", "member-rate");
     const restartText = element("span", "member-restarts");
-    view.trailing.append(note, rateText, restartText, badge, actions);
+    view.trailing.append(rateText, restartText, badge);
     container.append(treePane, view.element);
 
     // The followed member's terminal, refilled per follow; job id -> the launcher's terminal.
@@ -617,10 +604,7 @@
       };
     }
 
-    // Actions address a process: a composable node is acted on through its container.
     function showState() {
-      const member = selected?.member_path && members.get(selected.member_path);
-      const session = member && sessions.get(member.unit);
       const { token, label } = selectedState();
       badgeText.textContent = label;
       badge.className = `member-state ${token}`;
@@ -638,31 +622,6 @@
       badge.hidden = !!run;
       rateText.hidden = !!run;
       restartText.hidden = !!run;
-      const canAct =
-        !run &&
-        !!member &&
-        !selected.container_path &&
-        !!session &&
-        session.state !== "exited" &&
-        session.connected;
-      actions.hidden = !canAct;
-      actions
-        .querySelectorAll("button")
-        .forEach((button) => (button.disabled = !canAct));
-    }
-
-    function act(action) {
-      const member = selected?.member_path && members.get(selected.member_path);
-      if (!member) return;
-      note.textContent = "";
-      daemon
-        .rpc(`launch.${action}`, {
-          compute_unit: member.unit,
-          pattern: selected.member_path,
-        })
-        .catch((error) => {
-          note.textContent = error.message;
-        });
     }
 
     async function loadMode() {

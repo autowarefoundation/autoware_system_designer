@@ -142,6 +142,21 @@
       renderControls() {
         module?.renderUnitControls();
       },
+      // The loaded entity of a selection key, or null.
+      entityOf(key) {
+        return entities.find((e) => e.key === key) || null;
+      },
+      // The container entity of a composable node, or null.
+      containerOf(entity) {
+        return (
+          entities.find(
+            (e) =>
+              e.entity_type === "node" &&
+              !e.container_path &&
+              e.member_path === entity.container_path,
+          ) || null
+        );
+      },
       // Names of the units the map draws a section for; null until a load settled.
       drawnUnits() {
         if (!settled) return null;

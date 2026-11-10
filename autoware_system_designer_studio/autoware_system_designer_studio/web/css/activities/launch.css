@@ -328,17 +328,68 @@
   word-break: break-word;
 }
 
-.member-actions {
+/* Control view: the selected entity and the actions on its process, between the head and the map */
+.member-bar {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  min-width: 0;
+  padding: 4px 14px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.member-actions .panel-button {
+.member-bar[hidden] {
+  display: none;
+}
+
+.member-bar-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono-font);
+  font-size: 12px;
+}
+
+.member-bar-unit,
+.member-bar-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.member-bar-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.member-bar-actions .panel-button {
   padding: 2px 8px;
   font-size: 12px;
 }
 
-.member-note {
+.member-bar-confirm {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--state-warning);
+}
+
+.panel-button.member-bar-link {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 8px;
+  font-family: var(--mono-font);
+  font-size: 12px;
+}
+
+.member-bar-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
   color: var(--state-failed);
 }

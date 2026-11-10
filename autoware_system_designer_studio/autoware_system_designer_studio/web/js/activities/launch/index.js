@@ -1,6 +1,7 @@
 // Launch activity: two views of the mode, chosen in the side panel. Control
 // is the state map, with launch and shutdown of each compute unit in its
-// section head; Logs is the member tree beside the selected member's log.
+// section head and the actions on the selected member above it; Logs is the
+// member tree beside the selected member's log, read only.
 // The side panel also holds the deploy, the launch options, the launch
 // commands of the mode and deploy in a popup, and the RViz start on the daemon.
 (function () {
@@ -15,7 +16,7 @@
     mainView,
     popup,
   } = SD.widgets;
-  const { commandsTable, stateMonitor, stateMap, sessionLabel } =
+  const { commandsTable, stateMonitor, stateMap, memberActions, sessionLabel } =
     SD.activities.launch;
 
   // Main views by the store's `view`.
@@ -200,8 +201,16 @@
       const map = stateMap(controlView.body, config, store, {
         unitControls,
         onOpen: () => store.set("view", "logs"),
-        onLoad: () => render(),
+        onLoad: () => {
+          render();
+          memberBar.render();
+        },
       });
+      const memberBar = memberActions(config, store, {
+        entityOf: (key) => map.entityOf(key),
+        containerOf: (entity) => map.containerOf(entity),
+      });
+      controlView.element.insertBefore(memberBar.element, controlView.body);
       const logsView = mainView({ title: "Logs" });
       const monitorPane = element("div", "split-h");
       logsView.body.appendChild(monitorPane);
@@ -433,6 +442,7 @@
       ["mode", "deploy"].forEach((key) => store.onChange(key, render));
       store.onChange("view", showView);
       SD.on("daemon.health", loadUnitStatus);
+      SD.on("daemon.health", () => memberBar.render());
       SD.on("daemon.systems.changed", loadUnitStatus);
       SD.on("launch.sessions", onSessions);
       SD.on("daemon.jobs", renderRviz);

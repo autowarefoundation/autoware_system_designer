@@ -200,6 +200,15 @@ def test_member_actions_match_substrings_and_reach_the_handles():
     assert coord.calls[-1][2] == 9
 
 
+def test_exact_member_actions_reach_the_named_member_only():
+    coord, commands = _commands()
+    assert _run(commands.member_action("stop", "/perception/detector", exact=True)) == ["/perception/detector"]
+    with pytest.raises(CommandError) as partial:
+        _run(commands.member_action("stop", "/perception", exact=True))
+    assert partial.value.code == "not_found"
+    assert coord.calls == [("stop", "/perception/detector")]
+
+
 def test_member_actions_reject_missing_and_unmatched_patterns():
     coord, commands = _commands()
     with pytest.raises(CommandError) as missing:
@@ -381,6 +390,8 @@ def test_channel_dispatches_member_measure_and_shutdown_methods(tmp_path):
             await c.event()
             assert (await c.call("stop", {"pattern": "/sensing"}))["result"] == {"members": ["/sensing/lidar/driver"]}
             assert (await c.call("kill", {"pattern": "container"}, request_id="k"))["id"] == "k"
+            assert (await c.call("stop", {"pattern": "/sensing", "exact": True}))["error"]["code"] == "not_found"
+            assert (await c.call("stop", {"pattern": "/sensing", "exact": "yes"}))["error"]["code"] == "invalid_params"
             assert coord.calls == [("stop", "/sensing/lidar/driver"), ("kill", "/pointcloud_container", 9)]
             assert (await c.call("measure.start"))["result"]["state"] == "open"
             assert (await c.call("measure.status"))["result"]["message"] == "state=open"

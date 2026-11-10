@@ -398,7 +398,8 @@ class ServeDaemon:
         async def handler(params: dict[str, Any]) -> Any:
             compute_unit = _str_param(params, "compute_unit", required=True)
             pattern = _str_param(params, "pattern", required=True)
-            return await self.launch.call(compute_unit, action, {"pattern": pattern})
+            exact = _bool_param(params, "exact")
+            return await self.launch.call(compute_unit, action, {"pattern": pattern, "exact": exact})
 
         return handler
 

@@ -73,8 +73,13 @@ mode, every block coloured by its live member state and marked, before its name,
 busy log and, on a node, its restart count. Launch and Shutdown of each compute unit (and the
 measurement window of an armed session) are in the unit's head bar. Every declared unit has its own
 section, a head alone when the mode places no node on it; a launcher of an undeclared unit gets the
-same controls in a row above the map. Logs is the member tree beside the selected member's log.
-Both select the store's `entity`, and a double click on a node of the map opens it in Logs.
+same controls in a row above the map. A bar between the head and the map holds the selected
+entity and the only actions on a launched member: Stop, Restart and Kill of a node outside a
+container, each in the member states it applies to while the session of the mode is connected, sent
+with `exact` so they reach that member alone; Stop and Kill are confirmed in the bar. A composable
+node links to its container there, and a module has no actions. Logs is the member tree beside the
+selected member's log, read only. Both select the store's `entity`, and a double click on a node of
+the map opens it in Logs.
 
 An activity is one `SD.workbench.registerActivity(def)` call from its `index.js`, with its parts
 attached to `SD.activities.<id>` by the scripts before it. `def` names the activity (`id`, `title`,
@@ -127,7 +132,7 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `build.start`                                     | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit`                        | job                                         |
 | `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn` | session                                     |
 | `launch.status`                                   | `compute_unit` (optional)                                                          | `{"sessions": [session]}`, members included |
-| `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`                                                          | `{"members": [path]}` acted on              |
+| `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`, `exact` (optional: the member named `pattern` only)     | `{"members": [path]}` acted on              |
 | `launch.follow`                                   | `compute_unit`, `path`, `system` and `mode` (optional: the session of that mode)   | `{"path", "out": [lines], "err": [lines]}`  |
 | `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow), `system` and `mode` (optional)    | `{"released": [path]}`                      |
 | `launch.runs`                                     | `system` (optional)                                                                | `{"runs": [run]}`, newest first             |
@@ -195,7 +200,7 @@ job, one job key per compute unit, with `--compute-unit`, `--deploy`, one `--arg
 `args` entry, `--measure` and `--respawn` as requested, and `--control <socket>` on a private socket
 under `$XDG_RUNTIME_DIR`. The daemon connects to the socket once the runtime serves it, forwards the
 runtime's `member`, `member.log` and `member.activity` events and relays `launch.stop|restart|kill`
-(a member `pattern`: the exact path, else every path containing it), `launch.shutdown` and
+(a member `pattern`: the exact path, else, without `exact`, every path containing it), `launch.shutdown` and
 `measure.*` as requests. A shutdown asked before the channel is up cancels the job. The runtime's own
 output is the job's log.
 

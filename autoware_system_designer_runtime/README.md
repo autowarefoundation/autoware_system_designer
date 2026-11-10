@@ -107,14 +107,14 @@ requests and gets one response each:
 → {"id":2,"ok":false,"error":{"code":"refused","message":"shutdown refused: operation mode is autonomous"}}
 ```
 
-| Method                                            | Params    | Result                                                   |
-| ------------------------------------------------- | --------- | -------------------------------------------------------- |
-| `status`                                          | -         | `{"members": [record], "launch_ready", "shutting_down"}` |
-| `stop`, `restart`, `kill`                         | `pattern` | `{"members": [matched names]}`                           |
-| `log.follow`                                      | `path`    | `{"path", "out": [lines], "err": [lines]}`, the tails    |
-| `log.unfollow`                                    | `path`?   | `{"released": [paths]}` (every follow without `path`)    |
-| `measure.start`, `measure.stop`, `measure.status` | -         | `{"state", "message"}` (needs `--measure`)               |
-| `shutdown`                                        | -         | `{"shutting_down": true}`                                |
+| Method                                            | Params              | Result                                                                       |
+| ------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------- |
+| `status`                                          | -                   | `{"members": [record], "launch_ready", "shutting_down"}`                     |
+| `stop`, `restart`, `kill`                         | `pattern`, `exact`? | `{"members": [matched names]}`; `exact` names one member, no substring match |
+| `log.follow`                                      | `path`              | `{"path", "out": [lines], "err": [lines]}`, the tails                        |
+| `log.unfollow`                                    | `path`?             | `{"released": [paths]}` (every follow without `path`)                        |
+| `measure.start`, `measure.stop`, `measure.status` | -                   | `{"state", "message"}` (needs `--measure`)                                   |
+| `shutdown`                                        | -                   | `{"shutting_down": true}`                                                    |
 
 A member record is `{"path", "state", "detail", "time"}`; `path` is the member name (the node's
 structural path), `state` one of `pending`, `running`, `stopped`, `respawning`, `failed`, `done`,

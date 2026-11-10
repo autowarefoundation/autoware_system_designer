@@ -89,7 +89,7 @@ async def main():
                           "error": {"code": "refused", "message": "stop refused: operation mode is autonomous"}})
                     continue
                 send({"event": "member", "path": pattern, "state": "stopped", "detail": {"exit_code": 0}, "time": 2.0})
-                result = {"members": [pattern]}
+                result = {"members": [pattern], **({"exact": True} if params.get("exact") is True else {})}
             elif method == "log.follow":
                 if params.get("path") not in [m["path"] for m in members]:
                     send({"id": req["id"], "ok": False, "error": {"code": "not_found", "message": "no member"}})
@@ -388,9 +388,9 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     assert "members" not in launches[0]
 
     status, body = launching.rpc(
-        {"method": "launch.stop", "params": {"compute_unit": "main_ecu", "pattern": "/demo/listener"}}
+        {"method": "launch.stop", "params": {"compute_unit": "main_ecu", "pattern": "/demo/listener", "exact": True}}
     )
-    assert status == 200 and body["result"] == {"members": ["/demo/listener"]}
+    assert status == 200 and body["result"] == {"members": ["/demo/listener"], "exact": True}
     session = _wait_session(launching, lambda s: s["members"][1]["state"] == "stopped", "stop")
     assert session["members"][1]["detail"] == {"exit_code": 0}
 
@@ -399,6 +399,11 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     )
     assert status == 409
     assert body["error"] == {"code": api.REFUSED, "message": "stop refused: operation mode is autonomous"}
+
+    status, body = launching.rpc(
+        {"method": "launch.restart", "params": {"compute_unit": "main_ecu", "pattern": "/demo/talker", "exact": "yes"}}
+    )
+    assert status == 400 and body["error"]["code"] == api.INVALID_PARAMS
 
     status, body = launching.rpc({"method": "measure.status", "params": {"compute_unit": "main_ecu"}})
     assert status == 200 and body["result"] == {"state": "idle", "message": "measure idle"}

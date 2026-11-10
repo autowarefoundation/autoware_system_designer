@@ -172,21 +172,23 @@ class RuntimeCommands:
             "shutting_down": self._coord.shutdown_event.is_set(),
         }
 
-    def match(self, pattern: object) -> list[str]:
-        """The member named *pattern*, else every member whose name contains it."""
+    def match(self, pattern: object, *, exact: bool = False) -> list[str]:
+        """The member named *pattern*, else, unless *exact*, every member whose name contains it."""
         if not isinstance(pattern, str) or not pattern:
             raise CommandError("invalid_params", "a member name or substring is required")
         names = [name for name in self._coord.names() if pattern in name]
         if pattern in names:
             names = [pattern]
+        elif exact:
+            names = []
         if not names:
-            raise CommandError("not_found", f"no member matches {pattern!r}")
+            raise CommandError("not_found", f"no member {'named' if exact else 'matches'} {pattern!r}")
         return names
 
-    async def member_action(self, action: str, pattern: object) -> list[str]:
+    async def member_action(self, action: str, pattern: object, *, exact: bool = False) -> list[str]:
         if action not in MEMBER_ACTIONS:
             raise CommandError("invalid_params", f"unknown member action {action!r}")
-        names = self.match(pattern)
+        names = self.match(pattern, exact=exact)
         self._guard_check(action)
         for name in names:
             handle = self._coord.handle(name)
