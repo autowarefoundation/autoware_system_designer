@@ -109,6 +109,13 @@
     return text.startsWith("/") ? text : `/${text}`;
   }
 
+  // Topic of a port, or null for a port connected to no topic.
+  function portTopic(port) {
+    if (port.topic === undefined || port.topic === null) return null;
+    const name = topicName(port.topic);
+    return name === "/" ? null : name;
+  }
+
   function positive(value) {
     return typeof value === "number" && value > 0 ? value : null;
   }
@@ -169,8 +176,9 @@
       const path = entity.member_path || entity.path;
       const intra = !!entity.launcher?.use_intra_process_comms;
       (entity.out_ports || []).forEach((port) => {
-        if (port.topic === undefined || port.topic === null) return;
-        const record = entry(topicName(port.topic), port.msg_type);
+        const name = portTopic(port);
+        if (!name) return;
+        const record = entry(name, port.msg_type);
         if (entity.compute_unit) record.units.add(entity.compute_unit);
         const rates = declaredRates(entity, port);
         record.publishers.push({ path, ...rates, intra });
@@ -186,8 +194,9 @@
         if (rates.once) record.once = true;
       });
       (entity.in_ports || []).forEach((port) => {
-        if (port.topic === undefined || port.topic === null) return;
-        const record = entry(topicName(port.topic), port.msg_type);
+        const name = portTopic(port);
+        if (!name) return;
+        const record = entry(name, port.msg_type);
         if (entity.compute_unit) record.units.add(entity.compute_unit);
         record.subscribers.push(path);
       });

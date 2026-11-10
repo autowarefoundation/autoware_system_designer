@@ -77,7 +77,9 @@ const ENTITIES = [
     events: [{ unique_id: "f.tick", type: "periodic", frequency: 10 }],
     intra: true,
   }),
-  node("/planning/planner", { ins: [port("/perception/objects", "x.in")] }),
+  node("/planning/planner", {
+    ins: [port("/perception/objects", "x.in"), port("", "x.unconnected")],
+  }),
 ];
 
 function snapshot(nodes) {
@@ -104,6 +106,8 @@ test("design topics carry their publishers, subscribers and declared rate", () =
   assert.deepEqual(points.subscribers, ["/perception/detector"]);
   assert.equal(points.declaredHz, 10);
   assert.equal(design.get("/perception/objects").declaredHz, null);
+  // A port connected to no topic is no interface.
+  assert.equal(design.has("/"), false);
 });
 
 test("rows compare the observed rate with the declared one", () => {
