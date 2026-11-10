@@ -172,7 +172,26 @@
 
       // -- main: the state map with the unit controls, and the member logs
       const controlView = mainView({ title: "Control" });
-      controlView.trailing.appendChild(SD.RunState.legend("control-legend"));
+      const legend = SD.RunState.legend("control-legend");
+      const { rateLabel, BUSY_LOG_BPS } = SD.activities.launch;
+      [
+        [
+          element("span", "log-busy"),
+          "busy log",
+          `output growing by ${rateLabel(BUSY_LOG_BPS)} or more`,
+        ],
+        [
+          element("span", "restart-glyph", "\u21bbn"),
+          "restarts",
+          "times the member was restarted or respawned",
+        ],
+      ].forEach(([glyph, label, meaning]) => {
+        const item = element("span", "state-legend-item");
+        item.title = meaning;
+        item.append(glyph, element("span", "", label));
+        legend.appendChild(item);
+      });
+      controlView.trailing.appendChild(legend);
       const undrawnUnits = element("div", "control-undrawn-units");
       controlView.body.appendChild(undrawnUnits);
       const map = stateMap(controlView.body, config, store, {

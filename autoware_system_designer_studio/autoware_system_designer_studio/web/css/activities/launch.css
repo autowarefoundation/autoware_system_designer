@@ -69,7 +69,12 @@
   min-width: 0;
 }
 
-/* Meaning of the run-state marks, in the Control view head */
+.restart-glyph {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Meaning of the marks on the map, in the Control view head */
 .control-legend {
   display: flex;
   gap: 10px;

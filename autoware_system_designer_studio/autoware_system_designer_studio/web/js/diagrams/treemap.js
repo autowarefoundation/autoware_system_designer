@@ -5,8 +5,9 @@
 // control in the middle; node containers and every other segment below. A
 // slot's title strip carries the colour of its component. Blocks nest as the
 // design does, cut at the depth option, every node an equal area. A block's
-// colour and state mark are its live state, a module's the severest within;
-// a block with no launched member within stays neutral and unmarked. A click
+// colour and state mark are its live state, a module's the severest within,
+// followed by a busy-log mark and, on a node, its restart count; a block
+// with no launched member within stays neutral and unmarked. A click
 // selects a block or a unit, and search locates one. The `unitControls`
 // option puts the host's controls of a unit in the section head, after its
 // name.
@@ -39,13 +40,26 @@
     minSlot: 24,
     // Smallest inside still laid out with children.
     minOpen: 10,
-    font: { unit: 15, kind: 12, slot: 11, block: 10 },
+    font: { unit: 15, kind: 12, slot: 11, block: 10, restarts: 9 },
     // State mark of a unit, and of a block.
     mark: 11,
     blockMark: 7,
+    // Busy-log mark: its width and height.
+    busy: 8,
   };
 
   const TOKENS = ["running", "ok", "warning", "failed", "idle"];
+  // Rising bars of the busy-log mark: [x offset, height].
+  const BUSY_BARS = [
+    [0, 3],
+    [3, 5.5],
+    [6, 8],
+  ];
+
+  // Restarts and respawns of a live state, summed.
+  function restartCount(info) {
+    return info.restarts ? info.restarts.restarts + info.restarts.respawns : 0;
+  }
 
   function isNode(instance) {
     return instance.entity_type === "node";
@@ -572,7 +586,6 @@
       g.dataset.kind = box.kind;
       g.dataset.id = box.id;
       g.appendChild(svgElement("title"));
-      this._label(g, box);
       g.addEventListener("click", (event) => {
         event.stopPropagation();
         this.select(box);
@@ -580,61 +593,134 @@
       return g;
     }
 
-    // Block name and the place of its state mark (`box.mark`, null when the
-    // block is too small for one). An open module has the mark then the name
-    // in its label strip. A closed block has the name centred: a tall one
-    // with the mark in its top-left corner, a shorter one with the mark at
-    // its left, the name moved after it when it would not clear the mark,
-    // and no mark where the name fits only alone. A block without a name has
-    // the mark centred.
-    _label(g, box) {
-      const name = box.instance.name || "";
+    // Name and marks of a block for the live state `info` (none when no member
+    // within is launched): the state mark, then the busy-log mark, then a
+    // node's restart count, then the name. An open module has them in its
+    // label strip. A closed block tall enough has the marks along its top
+    // and the name centred; a shorter one has them on one line, the name
+    // centred when it clears the marks and after them otherwise. Marks go
+    // before the name: those that fit are drawn in order, and the name where
+    // room is left. Redrawn only when the marks change.
+    _dress(g, box, info) {
+      const count = info && box.kind === "node" ? restartCount(info) : 0;
+      const busy = !!info?.busy;
+      const key = info ? `${info.token}|${busy}|${count}` : "";
+      if (box.dressKey === key) return;
+      box.dressKey = key;
+      g.querySelector(":scope > .tm-dress")?.remove();
+      const dress = svgElement("g", { class: "tm-dress" });
+      g.appendChild(dress);
+
       const size = G.font.block;
-      const r = G.blockMark / 2;
-      box.mark = null;
-      const addLabel = (text, attributes) => {
+      const name = box.instance.name || "";
+      const addName = (text, attributes) => {
         const label = svgElement("text", attributes);
         label.style.fontSize = `${size}px`;
         label.textContent = text;
-        g.appendChild(label);
+        dress.appendChild(label);
       };
-      if (box.open) {
-        const lead = G.pad + G.blockMark + G.pad;
-        if (box.w >= lead) box.mark = { x: G.pad + r, y: G.moduleHead / 2 };
-        const text = this._fit(name, box.w - lead - G.pad, size);
-        if (text) addLabel(text, { x: lead, y: G.moduleHead / 2 });
-        return;
+      // Marks in order: [width, draw(x, y)] with x the left edge, y the middle.
+      const marks = [];
+      if (info) {
+        marks.push([
+          G.blockMark,
+          (x, y) =>
+            dress.appendChild(
+              SD.RunState.svgMark(
+                info.token,
+                x + G.blockMark / 2,
+                y,
+                G.blockMark,
+              ),
+            ),
+        ]);
+        if (busy)
+          marks.push([
+            G.busy,
+            (x, y) =>
+              BUSY_BARS.forEach(([dx, height]) =>
+                dress.appendChild(
+                  svgElement("rect", {
+                    class: "tm-busy",
+                    x: x + dx,
+                    y: y + G.busy / 2 - height,
+                    width: 2,
+                    height,
+                  }),
+                ),
+              ),
+          ]);
+        if (count) {
+          const text = `\u21bb${count}`;
+          marks.push([
+            this._measure(text, G.font.restarts),
+            (x, y) => {
+              const label = svgElement("text", { class: "tm-restarts", x, y });
+              label.style.fontSize = `${G.font.restarts}px`;
+              label.textContent = text;
+              dress.appendChild(label);
+            },
+          ]);
+        }
       }
-      if (box.h < size + 2) {
-        if (Math.min(box.w, box.h) >= G.blockMark + 2)
-          box.mark = { x: box.w / 2, y: box.h / 2 };
+      const gap = 3;
+      // The leading marks that fit in `room`, and their width.
+      const fitMarks = (room) => {
+        const fit = [];
+        let width = 0;
+        for (const mark of marks) {
+          const next = width + (fit.length ? gap : 0) + mark[0];
+          if (next > room) break;
+          fit.push(mark);
+          width = next;
+        }
+        return { fit, width };
+      };
+      const drawMarks = ({ fit }, x, y) =>
+        fit.forEach(([width, draw]) => {
+          draw(x, y);
+          x += width + gap;
+        });
+
+      if (box.open) {
+        const y = G.moduleHead / 2;
+        const fitted = fitMarks(box.w - 2 * G.pad);
+        drawMarks(fitted, G.pad, y);
+        const lead = G.pad + Math.max(fitted.width, G.blockMark) + G.pad;
+        const text = this._fit(name, box.w - lead - G.pad, size);
+        if (text) addName(text, { x: lead, y });
         return;
       }
       const centre = { x: box.w / 2, y: box.h / 2 };
       const centred = { ...centre, "text-anchor": "middle" };
-      const corner = 2 + G.blockMark + 1;
-      if (box.h >= size + 2 * corner) {
-        const text = this._fit(name, box.w - 2 * G.pad, size);
-        if (text) addLabel(text, centred);
-        if (box.w >= corner + G.pad)
-          box.mark = text ? { x: 2 + r, y: 2 + r } : centre;
+      if (box.h < size + 2) {
+        const fitted = fitMarks(Math.min(box.w, box.h) - 2);
+        drawMarks(fitted, (box.w - fitted.width) / 2, centre.y);
         return;
       }
-      const lead = 3 + G.blockMark + 3;
-      const left = { x: 3 + r, y: box.h / 2 };
-      const beside = this._fit(name, box.w - 2 * lead, size);
-      const after = beside ? "" : this._fit(name, box.w - lead - 3, size);
-      if (beside) {
-        addLabel(beside, centred);
-        box.mark = left;
-      } else if (after) {
-        addLabel(after, { x: lead, y: box.h / 2 });
-        box.mark = left;
-      } else {
+      const row = 2 + G.blockMark + 1;
+      if (box.h >= size + 2 * row) {
         const text = this._fit(name, box.w - 2 * G.pad, size);
-        if (text) addLabel(text, centred);
-        else if (box.w >= G.blockMark + 2) box.mark = centre;
+        if (text) addName(text, centred);
+        drawMarks(fitMarks(box.w - 2 * gap), gap, 2 + G.blockMark / 2);
+        return;
       }
+      const fitted = fitMarks(box.w - 2 * gap);
+      if (!fitted.fit.length) {
+        const text = this._fit(name, box.w - 2 * G.pad, size);
+        if (text) addName(text, centred);
+        return;
+      }
+      const lead = gap + fitted.width + gap;
+      const beside = this._fit(name, box.w - 2 * lead, size);
+      const after = beside ? "" : this._fit(name, box.w - lead - gap, size);
+      if (beside) addName(beside, centred);
+      else if (after) addName(after, { x: lead, y: centre.y });
+      drawMarks(
+        fitted,
+        beside || after ? gap : (box.w - fitted.width) / 2,
+        centre.y,
+      );
     }
 
     // `text` within `maxWidth`, shortened with an ellipsis down to a few
@@ -796,7 +882,6 @@
         const info = bySection[box.section].get(box.id);
         TOKENS.forEach((token) => g.classList.remove(`state-${token}`));
         if (info) g.classList.add(`state-${info.token}`);
-        g.classList.toggle("live-dead", !!info?.dead);
         g.querySelector(":scope > .live-mark")?.remove();
         if (box.kind === "unit") {
           if (info) {
@@ -814,31 +899,19 @@
           return;
         }
         g.querySelector(":scope > title").textContent = this._title(box, info);
-        if (info && box.mark) {
-          const mark = svgElement("g", { class: "live-mark" });
-          mark.appendChild(
-            SD.RunState.svgMark(
-              info.token,
-              box.mark.x,
-              box.mark.y,
-              G.blockMark,
-            ),
-          );
-          g.appendChild(mark);
-        }
+        this._dress(g, box, info);
       });
     }
 
     _title(box, info) {
       const path = box.instance.path || box.instance.name || "";
       if (!info) return path;
-      const restarts = info.restarts
-        ? info.restarts.restarts + info.restarts.respawns
-        : 0;
+      const restarts = box.kind === "node" ? restartCount(info) : 0;
       return [
         path,
         info.dead ? `${info.label} · down` : info.label,
-        restarts ? `↻${restarts}` : "",
+        info.busy,
+        restarts ? `restarted ×${restarts}` : "",
       ]
         .filter(Boolean)
         .join(" · ");

@@ -210,7 +210,10 @@
       const walk = (instance) => {
         (instance?.children || []).forEach((child) => {
           if (child?.unique_id && instance.unique_id)
-            this.parentOf.set(String(child.unique_id), String(instance.unique_id));
+            this.parentOf.set(
+              String(child.unique_id),
+              String(instance.unique_id),
+            );
           walk(child);
         });
       };
@@ -1049,7 +1052,6 @@
       svg.querySelectorAll("g.node-group").forEach((group) => {
         group.querySelector(":scope > .live-mark")?.remove();
         const info = byId.get(group.id);
-        group.classList.toggle("live-dead", !!info?.dead);
         if (!info) return;
         const depth = parseInt(group.getAttribute("data-depth") || "0", 10);
         const style = this.getLayerStyle(depth);
@@ -1057,23 +1059,20 @@
         const pad = style.badgePad + size / 2;
         const mark = document.createElementNS(SVG_NS, "g");
         mark.classList.add("live-mark");
+        const restarts = info.restarts
+          ? info.restarts.restarts + info.restarts.respawns
+          : 0;
         const title = document.createElementNS(SVG_NS, "title");
-        title.textContent = info.dead ? `${info.label} · down` : info.label;
+        title.textContent = [
+          info.dead ? `${info.label} · down` : info.label,
+          restarts ? `restarted ×${restarts}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
         mark.appendChild(title);
         mark.appendChild(
           window.SD.RunState.svgMark(info.token, pad, pad, size),
         );
-        const restarts = info.restarts
-          ? info.restarts.restarts + info.restarts.respawns
-          : 0;
-        if (restarts) {
-          const text = document.createElementNS(SVG_NS, "text");
-          text.setAttribute("x", pad + size * 0.8);
-          text.setAttribute("y", pad);
-          text.style.fontSize = `${Math.max(4, Math.round(size * 0.9))}px`;
-          text.textContent = `\u21bb${restarts}`;
-          mark.appendChild(text);
-        }
         group.insertBefore(
           mark,
           group.querySelector(":scope > .node-rect")?.nextSibling || null,

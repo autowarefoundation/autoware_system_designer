@@ -1,9 +1,10 @@
-// Launch: the treemap of the mode, coloured by the live states of the system's
-// launched members, with the caller's controls of each compute unit in its
-// section head. A click on a block selects its node or module as the store's
-// `entity`, shared with the log view and Explore; a double click on a node
-// opens it there through `onOpen`. The map lays out only while shown: a mode
-// change made while hidden loads on the next show.
+// Launch: the treemap of the mode, coloured and marked by the live states of
+// the system's launched members, their busy logs and restart counts, with
+// the caller's controls of each compute unit in its section head. A click on
+// a block selects its node or module as the store's `entity`, shared with
+// the log view and Explore; a double click on a node opens it there through
+// `onOpen`. The map lays out only while shown: a mode change made while
+// hidden loads on the next show.
 (function () {
   const SD = window.SD;
   const { element } = SD.widgets;
@@ -25,9 +26,26 @@
     let settled = false;
     let timer = null;
 
+    // Live states of the mode's nodes, each with the growth of its own output
+    // (`rate`) and, from the busy threshold up, a note of it (`busy`); a
+    // composable node's output is its container's.
+    function liveStates() {
+      const states = launch.memberStates(entities, config.systemId);
+      entities.forEach((entity) => {
+        const state = states.get(entity.member_path);
+        if (!state || entity.container_path) return;
+        const rate = launch.logRate(entity.member_path);
+        state.rate = rate;
+        state.busy = launch.busyLog(rate)
+          ? `log ${launch.rateLabel(rate)}`
+          : "";
+      });
+      return states;
+    }
+
     function applyStates() {
       timer = null;
-      module?.setLiveStates(launch.memberStates(entities, config.systemId));
+      module?.setLiveStates(liveStates());
     }
 
     function schedule() {
@@ -95,6 +113,7 @@
     });
     SD.on("launch.member", schedule);
     SD.on("launch.sessions", schedule);
+    SD.on("launch.activity", schedule);
     store.onChange("mode", () => {
       if (hidden) stale = true;
       else load();

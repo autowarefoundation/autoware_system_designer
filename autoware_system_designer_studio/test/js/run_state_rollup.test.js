@@ -83,3 +83,17 @@ test("a group is dead when every part is down", () => {
   assert.equal(rollup(ROOT, new Map()).size, 0);
   assert.equal(summarize([{ token: "idle", members: 1 }]).label, "1 idle");
 });
+
+test("a group carries the busiest log within and no restart count", () => {
+  const states = new Map([
+    ["/s/l/a", { ...state("running"), restarts: { restarts: 2, respawns: 1 }, rate: 100, busy: "" }],
+    ["/s/l/b", { ...state("running"), rate: 9000, busy: "log 8.8 KB/s" }],
+    ["/s/cam", { ...state("running"), restarts: { restarts: 0, respawns: 4 }, rate: 5000, busy: "log 4.9 KB/s" }],
+  ]);
+  const byId = rollup(ROOT, states);
+  assert.equal(byId.get("lidar").restarts, null);
+  assert.equal(byId.get("lidar").busy, "log 8.8 KB/s");
+  assert.equal(byId.get("sensing").restarts, null);
+  assert.equal(byId.get("sensing").rate, 9000);
+  assert.equal(byId.get("cam").restarts.respawns, 4);
+});

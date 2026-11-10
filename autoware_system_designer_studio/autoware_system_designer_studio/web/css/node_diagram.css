@@ -128,19 +128,7 @@
   fill: var(--highlight-bg);
 }
 
-/* Live state of a launched member: a mark in the box's corner; a member that
-   is down fades, its restart count beside the mark */
+/* Live state of a launched member: a mark in the box's corner */
 .live-mark {
   pointer-events: none;
-}
-
-.live-mark text {
-  font-family: "Segoe UI", sans-serif;
-  fill: var(--text-secondary);
-  dominant-baseline: middle;
-}
-
-.node-group.live-dead > .node-rect {
-  fill-opacity: 0.35;
-  stroke-dasharray: 4 3;
 }

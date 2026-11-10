@@ -156,17 +156,6 @@
   fill-opacity: 0.18;
 }
 
-/* A member that is down keeps its colour faded, its frame broken */
-.tm-block[data-kind="node"].live-dead > .tm-rect {
-  fill-opacity: 0.3;
-  stroke-dasharray: 4 3;
-}
-
-.tm-block[data-kind="module"].live-dead > .tm-rect {
-  fill-opacity: 0.08;
-  stroke-dasharray: 4 3;
-}
-
 .tm-block:hover > .tm-rect {
   stroke: var(--border-hover);
 }
@@ -177,13 +166,23 @@
 }
 
 .tm-unit > .live-mark,
-.tm-block > .live-mark {
+.tm-block > .tm-dress {
   pointer-events: none;
 }
 
 /* A block's mark sits on its own state colour: an outline keeps the shape apart */
-.tm-block > .live-mark .state-glyph:not(.idle) {
+.tm-block > .tm-dress .state-glyph:not(.idle) {
   stroke: var(--bg-primary);
   stroke-width: 1.5px;
   paint-order: stroke;
+}
+
+/* Busy-log mark and restart count after a block's state mark */
+.tm-busy {
+  fill: var(--state-warning);
+}
+
+.treemap .tm-restarts {
+  fill: var(--text-primary);
+  font-weight: 600;
 }

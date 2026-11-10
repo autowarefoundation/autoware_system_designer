@@ -69,12 +69,12 @@ live in the activity that uses them, as store keys mirrored in the URL.
 | Build    | target, compute unit, start; job list (daemon)                      | log of the selected job (`?job=`)                    |
 
 Launch has two main views, chosen from the list in its side panel. Control is the treemap of the
-mode, every block coloured and marked by its live member state, with Launch and Shutdown of each
-compute unit (and the measurement window of an armed session) in the unit's head bar. Every declared
-unit has its own section, a head alone when the mode places no node on it; a launcher of an
-undeclared unit gets the same controls in a row above the map. Logs is the member tree beside the selected
-member's log. Both select the store's `entity`, and a double click on a node of the map opens it in
-Logs.
+mode, every block coloured by its live member state and marked, before its name, with the state, a
+busy log and, on a node, its restart count. Launch and Shutdown of each compute unit (and the
+measurement window of an armed session) are in the unit's head bar. Every declared unit has its own
+section, a head alone when the mode places no node on it; a launcher of an undeclared unit gets the
+same controls in a row above the map. Logs is the member tree beside the selected member's log.
+Both select the store's `entity`, and a double click on a node of the map opens it in Logs.
 
 An activity is one `SD.workbench.registerActivity(def)` call from its `index.js`, with its parts
 attached to `SD.activities.<id>` by the scripts before it. `def` names the activity (`id`, `title`,
@@ -241,9 +241,9 @@ the foot of the tree gives each mark's shape and colour.
 
 The Explore activity overlays the live state of the launched members on its diagrams while a
 daemon serves the page. The node diagram marks each launched node in its corner with the monitor's
-run-state marks, a module or compute unit with the severest state among the nodes within, fades a
-member whose process is down (stopped, failed, done or respawning) and counts its restarts beside
-the mark. The sequence diagram treats the process gates of a member that is down as dead, so the
+run-state marks, a module or compute unit with the severest state among the nodes within; the mark
+is the only change to the drawing, and its tooltip names the state and the restarts. The sequence
+diagram treats the process gates of a member that is down as dead, so the
 fold rules carry the outage along the chains: an or gate keeps to its live branches, an and gate
 waiting on a dead one is dead itself. The side panel sums up the system's sessions, carries the
 legend and switches the overlay off. States come from the same `member` events as the Launch

@@ -80,7 +80,8 @@
 
   // Live state of a group from its parts' states: the severest token, the
   // members per token (`counts`, summed through nested groups) as the label,
-  // dead when every part is down.
+  // dead when every part is down, and the busy-log note of the part whose
+  // output grows fastest. Restarts belong to members; a group has none.
   function summarize(parts) {
     const counts = new Map();
     parts.forEach((part) => {
@@ -92,6 +93,9 @@
     const worst = parts.reduce((a, b) =>
       (RANK[b.token] || 0) > (RANK[a.token] || 0) ? b : a,
     );
+    const busiest = parts.reduce((a, b) =>
+      (b.rate || 0) > (a.rate || 0) ? b : a,
+    );
     return {
       token: worst.token,
       label: Array.from(counts)
@@ -100,6 +104,8 @@
         .join(" \u00b7 "),
       dead: parts.every((part) => part.dead) ? "every member down" : null,
       restarts: null,
+      rate: busiest.rate || 0,
+      busy: busiest.busy || "",
       members: parts.reduce((sum, part) => sum + part.members, 0),
       counts,
     };
