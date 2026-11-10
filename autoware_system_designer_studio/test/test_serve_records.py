@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The record watcher reports a new latency record of a system and mode once it is complete."""
+"""The record watcher reports a new latency record of a system and mode once, on the poll that finds it."""
 
 import asyncio
 
@@ -38,14 +38,11 @@ def test_first_scan_seeds_without_events(tmp_path):
     assert watcher.scan() == []
 
 
-def test_new_record_is_reported_once_its_size_holds(tmp_path):
+def test_new_record_is_reported_once(tmp_path):
     hub = _hub()
     watcher = record_watch.RecordWatcher(hub, tmp_path)
     watcher.scan()
-    path = _record(tmp_path, "pkg", "Sys", "Runtime", "20260101-000100", "{")
-    assert watcher.scan() == []  # first sight
-    path.write_text('{"schema": "x"}')
-    assert watcher.scan() == []  # still growing
+    path = _record(tmp_path, "pkg", "Sys", "Runtime", "20260101-000100")
     published = watcher.scan()
     assert published == [{"system": "pkg:Sys", "mode": "Runtime", "record": str(path)}]
     assert watcher.scan() == []
@@ -58,7 +55,6 @@ def test_events_reach_subscribers_with_the_topic(tmp_path):
         watcher = record_watch.RecordWatcher(hub, tmp_path)
         watcher.scan()
         _record(tmp_path, "pkg", "Sys", "Sim", "20260101-000200")
-        watcher.scan()
         watcher.scan()
         event = subscriber.queue.get_nowait()
         assert event.topic == record_watch.TOPIC_RECORDS_CHANGED
@@ -85,9 +81,23 @@ def test_newest_record_by_name_wins(tmp_path):
     older = _record(tmp_path, "pkg", "Sys", "Runtime", "20260101-000400")
     assert watcher.scan() == [] and watcher.scan() == []
     newer = _record(tmp_path, "pkg", "Sys", "Runtime", "20260101-000600")
-    watcher.scan()
     assert [e["record"] for e in watcher.scan()] == [str(newer)]
     assert older.exists()
+
+
+def test_run_publishes_on_the_event_loop(tmp_path):
+    async def run():
+        hub = _hub()
+        subscriber = hub.subscribe()
+        watcher = record_watch.RecordWatcher(hub, tmp_path, poll_s=0.01)
+        task = asyncio.create_task(watcher.run())
+        await asyncio.sleep(0.05)
+        _record(tmp_path, "pkg", "Sys", "Runtime", "20260101-000800")
+        event = await asyncio.wait_for(subscriber.queue.get(), timeout=2.0)
+        task.cancel()
+        assert event.topic == record_watch.TOPIC_RECORDS_CHANGED
+
+    asyncio.run(run())
 
 
 def test_removed_directories_are_forgotten(tmp_path):

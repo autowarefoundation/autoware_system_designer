@@ -17,12 +17,6 @@
     );
   }
 
-  // Level the store's `value` names in a structure `levels` deep.
-  function effectiveDepth(value, levels) {
-    const chosen = parseInt(value, 10);
-    return chosen > 0 ? Math.min(chosen, levels) : levels;
-  }
-
   const ALL = "";
   const MAX_OPTIONS = 5;
 
@@ -82,7 +76,6 @@
   }
 
   depthSelector.structureDepth = structureDepth;
-  depthSelector.effectiveDepth = effectiveDepth;
   depthSelector.switchValue = switchValue;
   depthSelector.switchOptions = switchOptions;
   explore.depthSelector = depthSelector;

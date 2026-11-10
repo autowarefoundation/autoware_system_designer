@@ -541,7 +541,8 @@
   // The bundle may ship <mode>_latency.js beside the design data under
   // dataBase; its absence is the normal case. `fresh` forgets what the page
   // holds for the mode and fetches the file past the browser cache, once a
-  // new record exists behind it.
+  // new record exists behind it. The script tag leaves the page once run; its
+  // data stays on the global.
   function loadBundled(mode, dataBase = "data/", { fresh = false } = {}) {
     const doc = typeof document !== "undefined" ? document : null;
     if (!doc?.head) return Promise.resolve(null);
@@ -558,6 +559,7 @@
       const script = doc.createElement("script");
       script.src = fresh ? `${src}?t=${Date.now()}` : src;
       script.onload = () => {
+        script.remove?.();
         const data = window[SCRIPT_GLOBAL]?.[mode];
         if (!data) bundledMisses.add(src);
         resolve(data ? fromJson(data, label) : null);

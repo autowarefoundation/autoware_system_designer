@@ -992,46 +992,12 @@
       this.applyLiveStates();
     }
 
-    // Live state per drawn element: a node's own, a module's the severest
-    // among the nodes within, a compute unit's the severest among its members.
-    // An element with no launched member within carries no mark.
+    // Live state per drawn element: a node's own, a module's the roll-up of
+    // the nodes within, a compute unit's the roll-up of its members. An
+    // element with no launched member within carries no mark.
     _liveStateById() {
-      const states = this.liveStates || new Map();
-      const rank = window.SD?.RunState?.RANK || {};
-      const byId = new Map();
-      const summarize = (parts) => {
-        const counts = new Map();
-        parts.forEach((part) =>
-          counts.set(part.token, (counts.get(part.token) || 0) + part.members),
-        );
-        const worst = parts.reduce((a, b) =>
-          (rank[b.token] || 0) > (rank[a.token] || 0) ? b : a,
-        );
-        return {
-          token: worst.token,
-          label: Array.from(counts)
-            .sort((a, b) => (rank[b[0]] || 0) - (rank[a[0]] || 0))
-            .map(([token, count]) => `${count} ${token}`)
-            .join(" · "),
-          dead: parts.every((part) => part.dead) ? "every member down" : null,
-          restarts: null,
-          members: parts.reduce((sum, part) => sum + part.members, 0),
-        };
-      };
-      const visit = (instance) => {
-        if (!instance?.unique_id) return null;
-        let info = null;
-        if (instance.entity_type === "node") {
-          const state = instance.path && states.get(instance.path);
-          if (state) info = { ...state, members: 1 };
-        } else {
-          const parts = (instance.children || []).map(visit).filter(Boolean);
-          if (parts.length) info = summarize(parts);
-        }
-        if (info) byId.set(String(instance.unique_id), info);
-        return info;
-      };
-      if (states.size) visit(this.structureRoot);
+      const { rollup, summarize } = window.SD.RunState;
+      const byId = rollup(this.structureRoot, this.liveStates || new Map());
       // Clusters are not design instances; their members are their direct child groups.
       this.currentSvgRoot?.querySelectorAll("g.node-group").forEach((group) => {
         if (this.elementData.get(group.id)?.entity_type !== "compute_unit")

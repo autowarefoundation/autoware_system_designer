@@ -16,8 +16,8 @@
 
 The runtime writes a record at the end of each measure window, whether launched by this daemon or
 from a shell; the record root is polled for it. Polling runs only while an event stream is open and
-reads one directory per ``<package>/<system>/latency/<mode>``. A record counts once its size has
-held still over two polls; the first poll seeds silently.
+reads one directory per ``<package>/<system>/latency/<mode>``. Records land by atomic rename, so a
+new newest name is a complete record; the first poll seeds silently.
 """
 
 from __future__ import annotations
@@ -45,10 +45,8 @@ class RecordWatcher:
         self._hub = hub
         self.record_root = record_root or records.record_root()
         self._poll_s = poll_s
-        # (package, system, mode) -> (name, size) of the record last reported or seeded.
-        self._known: dict[tuple[str, str, str], tuple[str, int]] = {}
-        # Same key -> (name, size) seen on the previous poll, not yet settled.
-        self._pending: dict[tuple[str, str, str], tuple[str, int]] = {}
+        # (package, system, mode) -> name of the record last reported or seeded.
+        self._known: dict[tuple[str, str, str], str] = {}
         self._seeded = False
 
     async def run(self) -> None:
@@ -57,13 +55,16 @@ class RecordWatcher:
             if self._hub.subscriber_count == 0:
                 continue
             try:
-                await asyncio.to_thread(self.scan)
+                # Only the directory walk leaves the loop; the hub is published to from the loop.
+                newest = await asyncio.to_thread(_newest_records, self.record_root)
+                self.scan(newest)
             except Exception:  # noqa: BLE001 - a poll must not end the watch
                 logger.exception("record watch failed")
 
-    def scan(self) -> list[dict[str, Any]]:
-        """One poll; returns the events it published."""
-        newest = _newest_records(self.record_root)
+    def scan(self, newest: Optional[dict[tuple[str, str, str], str]] = None) -> list[dict[str, Any]]:
+        """One poll over ``newest`` (walked now when omitted); returns the events it published."""
+        if newest is None:
+            newest = _newest_records(self.record_root)
         published: list[dict[str, Any]] = []
         if not self._seeded:
             self._known = dict(newest)
@@ -71,42 +72,36 @@ class RecordWatcher:
             return published
         for key, current in newest.items():
             if self._known.get(key) == current:
-                self._pending.pop(key, None)
                 continue
-            if self._pending.get(key) != current:
-                self._pending[key] = current
-                continue
-            self._pending.pop(key, None)
             self._known[key] = current
             package, system, mode = key
             data = {
                 "system": f"{package}:{system}",
                 "mode": mode,
-                "record": str(records.latency_record_dir(package, system, mode, self.record_root) / current[0]),
+                "record": str(records.latency_record_dir(package, system, mode, self.record_root) / current),
             }
             self._hub.publish(TOPIC_RECORDS_CHANGED, data)
             published.append(data)
         for key in list(self._known):
             if key not in newest:
                 del self._known[key]
-                self._pending.pop(key, None)
         return published
 
 
-def _newest_records(root: Path) -> dict[tuple[str, str, str], tuple[str, int]]:
-    """(name, size) of the newest record of every ``<package>/<system>/latency/<mode>`` directory."""
-    found: dict[tuple[str, str, str], tuple[str, int]] = {}
+def _newest_records(root: Path) -> dict[tuple[str, str, str], str]:
+    """Name of the newest record of every ``<package>/<system>/latency/<mode>`` directory."""
+    found: dict[tuple[str, str, str], str] = {}
     for package in _subdirs(root):
         for system in _subdirs(package):
             for mode in _subdirs(system / records.LATENCY_KIND):
-                newest: Optional[tuple[str, int]] = None
+                newest: Optional[str] = None
                 try:
                     with os.scandir(mode) as entries:
                         for entry in entries:
                             if not entry.name.endswith(records.RECORD_SUFFIX) or not entry.is_file():
                                 continue
-                            if newest is None or entry.name > newest[0]:
-                                newest = (entry.name, entry.stat().st_size)
+                            if newest is None or entry.name > newest:
+                                newest = entry.name
                 except OSError:
                     continue
                 if newest is not None:

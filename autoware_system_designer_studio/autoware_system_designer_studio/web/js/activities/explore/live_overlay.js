@@ -20,7 +20,9 @@
     return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
-  function liveOverlay(config, store, host) {
+  // `isHidden` tells whether Explore is out of view; a change while hidden
+  // applies on the next `show`.
+  function liveOverlay(config, store, host, isHidden = () => false) {
     const launch = SD.activities.launch;
     const toggleRow = element("label", "panel-check");
     const toggle = element("input");
@@ -48,6 +50,7 @@
     let entities = null;
     let entitiesMode = "";
     let timer = null;
+    let stale = false;
 
     async function loadEntities() {
       const mode = store.get("mode");
@@ -102,6 +105,10 @@
     }
 
     function schedule() {
+      if (isHidden()) {
+        stale = true;
+        return;
+      }
       if (timer) return;
       timer = setTimeout(() => {
         apply().catch((error) => console.warn("live overlay:", error));
@@ -131,7 +138,13 @@
       schedule();
     });
     schedule();
-    return { element: panel, refresh: schedule };
+    function show() {
+      if (!stale) return;
+      stale = false;
+      schedule();
+    }
+
+    return { element: panel, refresh: schedule, show };
   }
 
   explore.liveOverlay = liveOverlay;

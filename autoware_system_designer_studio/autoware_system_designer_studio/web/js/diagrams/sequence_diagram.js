@@ -139,6 +139,7 @@
       this.state = "logical";
       this.driver = "mean";
       this.measured = null; // loaded measurement, see latency_source.js
+      this.measuredFromFile = false; // the measurement was dropped in, not the mode's record
       this.liveStates = null; // node path -> live member state, see explore/live_overlay.js
       this.liveDeadKey = "";
       this.pxPerMs = null;
@@ -177,18 +178,23 @@
       this.solveAndRender();
     }
 
-    // The mode's latency file again, after a new record was written behind it.
+    // The mode's latency file again, after a new record was written behind
+    // it. The shown state, group and selection stay; a dropped-in
+    // measurement stays in place of the record.
     async reloadMeasurement() {
-      if (!window.LatencySource) return;
+      if (!window.LatencySource || this.measuredFromFile) return;
       const measured = await window.LatencySource.loadBundled(
         this.options.mode,
         this.options.dataBase,
         { fresh: true },
       );
-      if (!measured) return;
-      this.attachMeasurement(measured);
-      this.pxPerMs = null;
-      this.solveAndRender();
+      if (!measured || this.measuredFromFile) return;
+      this.measured = measured;
+      if (!this.groups.length) return;
+      if (this.state === "measured") {
+        this.pxPerMs = null;
+        this.solveAndRender();
+      } else this.render();
     }
 
     // Live member states of the nodes; a change in which members are down re-solves the chains.
@@ -212,8 +218,9 @@
     }
 
     // A loaded measurement opens the measured state.
-    attachMeasurement(measured) {
+    attachMeasurement(measured, { fromFile = false } = {}) {
       this.measured = measured;
+      this.measuredFromFile = fromFile;
       this.state = "measured";
       this.activeGroup = null;
       this.selectedId = null;
@@ -2369,7 +2376,9 @@
     async loadMeasurement(file) {
       if (!window.LatencySource) return;
       try {
-        this.attachMeasurement(await window.LatencySource.fromFile(file));
+        this.attachMeasurement(await window.LatencySource.fromFile(file), {
+          fromFile: true,
+        });
         this.pxPerMs = null;
         this.solveAndRender();
       } catch (error) {

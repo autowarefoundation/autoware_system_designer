@@ -25,7 +25,7 @@ global.window = {
   },
 };
 require(path.join(JS_DIR, "activities", "explore", "depth_selector.js"));
-const { structureDepth, effectiveDepth, switchValue, switchOptions } =
+const { structureDepth, switchValue, switchOptions } =
   global.window.SD.activities.explore.depthSelector;
 
 test("structure depth counts the levels below the root", () => {
@@ -36,14 +36,6 @@ test("structure depth counts the levels below the root", () => {
   assert.equal(structureDepth({ children: [{}] }), 1);
   assert.equal(structureDepth({}), 0);
   assert.equal(structureDepth(null), 0);
-});
-
-test("an empty or deeper choice names the deepest level", () => {
-  assert.equal(effectiveDepth("", 3), 3);
-  assert.equal(effectiveDepth(undefined, 3), 3);
-  assert.equal(effectiveDepth("5", 3), 3);
-  assert.equal(effectiveDepth("2", 3), 2);
-  assert.equal(effectiveDepth("0", 3), 3);
 });
 
 test("the switch marks a level above the deepest, otherwise N", () => {

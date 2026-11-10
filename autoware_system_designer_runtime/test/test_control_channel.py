@@ -138,6 +138,28 @@ def test_member_states_follow_actor_events():
     assert states.get("/n").state == "done" and states.get("/n").time > 0
 
 
+def test_member_records_count_restarts_and_respawns_over_the_run():
+    states = MemberStates()
+
+    def counts(event):
+        states.on_event(event)
+        record = states.get(event.name)
+        return record.restarts, record.respawns
+
+    # The first start is no restart; every later start counts, respawned or not.
+    assert counts(ev.Started(name="/n", pid=1)) == (0, 0)
+    assert counts(ev.Exited(name="/n", exit_code=0)) == (0, 0)
+    assert counts(ev.Started(name="/n", pid=2)) == (1, 0)
+    assert counts(ev.Respawning(name="/n", attempt=0, delay=1.0)) == (1, 1)
+    assert counts(ev.Started(name="/n", pid=3)) == (2, 1)
+    assert counts(ev.Terminated(name="/n")) == (2, 1)
+    # A composable node counts its loads.
+    assert counts(ev.LoadStarted(name="/c")) == (0, 0)
+    assert counts(ev.LoadSucceeded(name="/c", full_node_name="/c", unique_id=1)) == (0, 0)
+    assert counts(ev.LoadStarted(name="/c")) == (1, 0)
+    assert states.get("/n").as_dict()["restarts"] == 2
+
+
 def test_a_loaded_composable_keeps_its_state_when_its_task_ends():
     states = MemberStates()
     states.on_event(ev.LoadStarted(name="/c/filter"))
@@ -339,6 +361,8 @@ def test_channel_greets_with_members_and_forwards_state_changes(tmp_path):
                 "state": "running",
                 "detail": {"pid": 42},
                 "time": member["time"],
+                "restarts": 0,
+                "respawns": 0,
             }
 
             reply = await c.call("status")

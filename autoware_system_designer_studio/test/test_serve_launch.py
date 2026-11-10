@@ -480,6 +480,10 @@ def test_a_system_runs_one_mode_at_a_time_and_keeps_the_last_session_of_each(tmp
         manager = running.daemon.launch
         assert manager.session("main_ecu").mode == "Simulation"
         assert manager.session("main_ecu", system_id=f"{PKG}:{SYSTEM}", mode="Runtime").mode == "Runtime"
+        for scope in ({"system_id": f"{PKG}:{SYSTEM}"}, {"mode": "Runtime"}):
+            with pytest.raises(api.ApiError) as info:
+                manager.session("main_ecu", **scope)
+            assert info.value.code == api.INVALID_PARAMS
         _shutdown(running, "main_ecu", "Simulation")
     finally:
         running.close()
@@ -697,31 +701,14 @@ def test_the_run_of_a_session_is_listed_once_the_session_exited(launching):
     assert status == 200 and body["result"]["out"] == ["hello 1", "hello 2"] and body["result"]["err"] == ["bye"]
 
 
-def test_a_session_counts_the_restarts_and_respawns_of_its_members(tmp_path):
-    session = launch.LaunchSession(None, "main_ecu", "Runtime", None, tmp_path / "control.sock")
-
-    def member(path, state, *, listed=False):
-        record = session.count({"path": path, "state": state}, listed=listed)
-        session.members[path] = record
-        return record["restarts"], record["respawns"]
-
-    # The first start of a member is no restart.
-    assert member("/a", "pending", listed=True) == (0, 0)
-    assert member("/a", "running") == (0, 0)
-    assert member("/a", "running") == (0, 0)
-    # Stopped and started again, then respawned twice: every start counts once.
-    assert member("/a", "stopped") == (0, 0)
-    assert member("/a", "running") == (1, 0)
-    assert member("/a", "respawning") == (1, 1)
-    assert member("/a", "running") == (2, 1)
-    assert member("/a", "respawning") == (2, 2)
-    assert member("/a", "running") == (3, 2)
-    # A composable node counts its loads.
-    assert member("/c", "loading") == (0, 0)
-    assert member("/c", "loaded") == (0, 0)
-    assert member("/c", "loading") == (1, 0)
-    # A member the runtime lists as already started has started once; a later listing changes nothing.
-    assert member("/b", "running", listed=True) == (0, 0)
-    assert member("/b", "stopped") == (0, 0)
-    assert member("/b", "running") == (1, 0)
-    assert member("/a", "running", listed=True) == (3, 2)
+def test_a_session_keeps_the_runtime_counts_of_its_members():
+    count = launch.LaunchSession.count
+    assert count({"path": "/a", "state": "running", "restarts": 3, "respawns": 2}) == {
+        "path": "/a",
+        "state": "running",
+        "restarts": 3,
+        "respawns": 2,
+    }
+    # A runtime without counts, or a malformed one, reads as no restarts.
+    assert count({"path": "/a", "state": "running"})["restarts"] == 0
+    assert count({"path": "/a", "restarts": "3", "respawns": -1}) == {"path": "/a", "restarts": 0, "respawns": 0}

@@ -529,9 +529,10 @@
       walk(root, null);
     }
 
-    // The layout follows the canvas size; one relayout per frame.
+    // The layout follows the canvas size once the structure is loaded, the
+    // first one included when the canvas had no size; one relayout per frame.
     onContainerResize() {
-      if (this.frame || !this.svg) return;
+      if (this.frame || !this.structureRoot) return;
       this.frame = requestAnimationFrame(() => {
         this.frame = null;
         this.render();

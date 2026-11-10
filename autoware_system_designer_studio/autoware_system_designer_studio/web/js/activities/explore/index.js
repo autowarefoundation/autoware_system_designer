@@ -52,7 +52,7 @@
       );
       const search = entitySearch(config, store, (id) => host.focus(id));
       const depth = depthSelector(config, store);
-      const live = liveOverlay(config, store, host);
+      const live = liveOverlay(config, store, host, () => main.hidden);
       side.append(
         section("Diagrams", diagrams.element),
         depth,
@@ -108,6 +108,7 @@
       load();
       return {
         show() {
+          live.show();
           if (stale) {
             stale = false;
             load();
