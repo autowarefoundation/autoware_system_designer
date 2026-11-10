@@ -69,9 +69,10 @@ live in the activity that uses them, as store keys mirrored in the URL.
 | Build    | target, compute unit, start; job list (daemon)                      | log of the selected job (`?job=`)                    |
 
 Launch has two main views, chosen from the list in its side panel. Control is the treemap of the
-mode coloured by the live member states, with Launch and Shutdown of each compute unit (and the
-measurement window of an armed session) in the unit's section head; a unit with a launcher and no
-section on the map gets the same controls above it. Logs is the member tree beside the selected
+mode, every block coloured and marked by its live member state, with Launch and Shutdown of each
+compute unit (and the measurement window of an armed session) in the unit's head bar. Every declared
+unit has its own section, a head alone when the mode places no node on it; a launcher of an
+undeclared unit gets the same controls in a row above the map. Logs is the member tree beside the selected
 member's log. Both select the store's `entity`, and a double click on a node of the map opens it in
 Logs.
 

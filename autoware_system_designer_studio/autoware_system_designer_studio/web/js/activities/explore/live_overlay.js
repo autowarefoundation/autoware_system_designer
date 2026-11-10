@@ -4,8 +4,7 @@
 // through the host, which hands them to the diagram module shown. The side
 // panel sums up the system's sessions, carries the mark legend and a switch
 // for the overlay, and notes when the mode's latency record was reloaded
-// after the daemon reported a new one. A diagram drawn from the live states
-// at all times gets them whatever the switch says, which is then put away.
+// after the daemon reported a new one.
 (function () {
   const SD = window.SD;
   const { element, section } = SD.widgets;
@@ -44,14 +43,6 @@
       latencyNote,
     );
     panel.hidden = !SD.daemon.health;
-
-    function alwaysLive() {
-      return !!config.diagrams.find((d) => d.type === store.get("diagram"))
-        ?.always_live;
-    }
-    function showToggle() {
-      toggleRow.hidden = alwaysLive();
-    }
 
     // Entities of the shown mode, composables nested under their container.
     let entities = null;
@@ -95,10 +86,9 @@
     async function apply() {
       timer = null;
       if (!entities || entitiesMode !== store.get("mode")) await loadEntities();
-      const states =
-        toggle.checked || alwaysLive()
-          ? launch.memberStates(entities, config.systemId)
-          : new Map();
+      const states = toggle.checked
+        ? launch.memberStates(entities, config.systemId)
+        : new Map();
       host.setLiveStates(states);
       renderSummary();
     }
@@ -132,11 +122,6 @@
       latencyNote.hidden = true;
       schedule();
     });
-    store.onChange("diagram", () => {
-      showToggle();
-      schedule();
-    });
-    showToggle();
     schedule();
     return { element: panel, refresh: schedule };
   }

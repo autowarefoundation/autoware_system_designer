@@ -99,13 +99,14 @@ test("slot of a component is its first path segment, containers aside", () => {
   assert.equal(slotOf({ entity_type: "module", name: "bare", path: "" }), "bare");
 });
 
-test("sections follow declaration order, name undeclared units, leave empty ones out", () => {
+test("sections follow declaration order, name undeclared units, keep declared empty ones", () => {
   const sections = unitSections(structure());
   assert.deepEqual(
     sections.map((s) => [s.name, s.kind, s.nodes]),
     [
       ["main_ecu", "onboard", 5],
       ["perception_ecu", "onboard", 3],
+      ["idle_ecu", "onboard", 0],
       ["extra_ecu", "undeclared", 1],
       ["", "", 1],
     ],
@@ -184,9 +185,13 @@ test("layout stacks the unit sections and nests every block in its slot", () => 
   const sections = unitSections(structure());
   const { height, boxes } = layout(sections, 800, 2000);
   const units = boxes.filter((b) => b.kind === "unit");
-  assert.equal(units.length, 4);
+  assert.equal(units.length, 5);
   assert.equal(height, 2000);
-  units.forEach((unit) => assert.ok(unit.h >= GEOMETRY.minUnit));
+  // An empty section is its head alone.
+  const empty = units.filter((unit) => !sections[unit.section].children.length);
+  assert.deepEqual(empty.map((unit) => unit.h), [GEOMETRY.unitHead]);
+  const filled = units.filter((unit) => !empty.includes(unit));
+  filled.forEach((unit) => assert.ok(unit.h >= GEOMETRY.minUnit));
   assert.equal(units.reduce((sum, u) => sum + u.h, 0), height);
   let y = 0;
   units.forEach((unit) => {
@@ -215,7 +220,7 @@ test("a short canvas keeps every section at its minimum height and closes small 
   const sections = unitSections(structure());
   const { height, boxes } = layout(sections, 800, 300);
   const units = boxes.filter((b) => b.kind === "unit");
-  assert.equal(height, units.length * GEOMETRY.minUnit);
+  assert.equal(height, (units.length - 1) * GEOMETRY.minUnit + GEOMETRY.unitHead);
   const blocks = boxes.filter((b) => b.kind === "module" || b.kind === "node");
   const sensing = blocks.find((b) => b.instance.name === "sensing" && b.section === 0);
   assert.ok(sensing && !sensing.open);
@@ -238,13 +243,20 @@ test("a taller unit head lowers the slots of every section by the difference", (
   const head = GEOMETRY.unitHead + 10;
   const slotTops = (boxes) => {
     const units = boxes.filter((b) => b.kind === "unit");
-    return units.map((unit, index) =>
-      Math.min(...boxes.filter((b) => b.kind === "slot" && b.section === index).map((b) => b.y - unit.y)),
-    );
+    return units
+      .filter((unit) => sections[unit.section].children.length)
+      .map((unit) =>
+        Math.min(...boxes.filter((b) => b.kind === "slot" && b.section === unit.section).map((b) => b.y - unit.y)),
+      );
   };
   const base = layout(sections, 800, 2000);
   const tall = layout(sections, 800, 2000, Infinity, head);
   assert.equal(tall.height, base.height);
   slotTops(base.boxes).forEach((top) => assert.equal(top, GEOMETRY.unitHead));
   slotTops(tall.boxes).forEach((top) => assert.equal(top, head));
+});
+
+test("adapi sits between api and system in the middle row", () => {
+  const rows = slotRows(["control", "system", "adapi", "api"].map((name) => node(name, "", "u")).map((n) => ({ ...n, path: `/${n.name}` })));
+  assert.deepEqual(rows.map((row) => row.map((slot) => slot.slot)), [["api", "adapi", "system", "control"]]);
 });

@@ -34,36 +34,25 @@ DATA_GLOBAL = "systemStructureData"
 
 # Diagrams of the Explore activity, in menu order: the module script loaded when the diagram is
 # first shown, whether the module locates entities (``focusEntity``), which Explore search needs,
-# whether it draws the design hierarchy cut at a chosen depth (the ``depth`` option), and whether
-# it is drawn from the live member states at all times, outside the overlay switch.
+# and whether it draws the design hierarchy cut at a chosen depth (the ``depth`` option).
 DIAGRAMS = {
     "node_diagram": {
         "label": "Node Diagram",
         "script": "js/diagrams/node_diagram.js",
         "searchable": True,
         "layered": True,
-        "always_live": False,
     },
     "logic_diagram": {
         "label": "Logic Diagram",
         "script": "js/diagrams/logic_diagram.js",
         "searchable": True,
         "layered": False,
-        "always_live": False,
     },
     "sequence_diagram": {
         "label": "Sequence Diagram",
         "script": "js/diagrams/sequence_diagram.js",
         "searchable": False,
         "layered": False,
-        "always_live": False,
-    },
-    "treemap": {
-        "label": "Treemap",
-        "script": "js/diagrams/treemap.js",
-        "searchable": True,
-        "layered": True,
-        "always_live": True,
     },
 }
 
@@ -107,6 +96,7 @@ ACTIVITIES = {
             "js/activities/launch/member_tree.js",
             "js/activities/launch/commands_table.js",
             "js/activities/launch/state_monitor.js",
+            "js/diagrams/treemap.js",
             "js/activities/launch/state_map.js",
             "js/activities/launch/index.js",
         ),

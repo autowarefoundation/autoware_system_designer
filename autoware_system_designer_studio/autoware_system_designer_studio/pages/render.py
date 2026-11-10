@@ -178,7 +178,6 @@ class Site:
                     "script": f"{SYSTEM_PAGE_ROOT}{assets.BUNDLE_DIR}/{diagram['script']}",
                     "searchable": diagram["searchable"],
                     "layered": diagram["layered"],
-                    "always_live": diagram["always_live"],
                 }
                 for name, diagram in assets.DIAGRAMS.items()
             ],

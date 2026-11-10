@@ -29,15 +29,20 @@
 .unit-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   white-space: nowrap;
 }
 
 .unit-controls .panel-button {
   flex-shrink: 0;
-  padding: 1px 8px;
-  font-size: 11px;
+  padding: 3px 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.unit-controls .unit-status {
+  font-size: 12px;
 }
 
 .unit-controls .launch-session,
@@ -45,14 +50,14 @@
 .unit-controls .launch-error {
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: 12px;
 }
 
-/* Units with a launcher and no section on the map, above it */
+/* Units with a launcher and no section on the map, above it, one row each */
 .control-undrawn-units {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
+  flex-direction: column;
+  gap: 6px;
   padding: 6px 14px;
   border-bottom: 1px solid var(--border-color);
 }

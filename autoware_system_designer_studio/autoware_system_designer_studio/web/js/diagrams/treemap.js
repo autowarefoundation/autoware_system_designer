@@ -1,11 +1,11 @@
 // Treemap: the run state of every node of the mode at a glance, one section
 // per compute unit. A section holds rows of slots named by the first path
 // segment of the top-level components, in fixed places: sensing,
-// localization, perception and planning on top; api, system and control in
+// localization, perception and planning on top; api, adapi, system and control in
 // the middle; node containers and every other segment below. Blocks nest as
 // the design does, cut at the depth option, every node an equal area. A
-// block's colour is its live state, a module's the severest within; a block
-// with no launched member within stays neutral. A click selects a block or a
+// block's colour and state mark are its live state, a module's the severest
+// within; a block with no launched member within stays neutral and unmarked. A click selects a block or a
 // unit, and search locates one. The `unitControls` option puts the host's
 // controls of a unit in the section head, after its name.
 (function () {
@@ -18,7 +18,7 @@
   // every other segment in design order.
   const ROWS = [
     ["sensing", "localization", "perception", "planning"],
-    ["api", "system", "control"],
+    ["api", "adapi", "system", "control"],
     [CONTAINERS],
   ];
   // Section of the nodes declared on no compute unit.
@@ -29,7 +29,7 @@
   const G = {
     pad: 4,
     gap: 3,
-    unitHead: 22,
+    unitHead: 34,
     slotHead: 16,
     moduleHead: 14,
     minUnit: 140,
@@ -37,8 +37,10 @@
     minSlot: 24,
     // Smallest inside still laid out with children.
     minOpen: 10,
-    font: { unit: 13, slot: 11, block: 10 },
-    mark: 9,
+    font: { unit: 15, kind: 12, slot: 11, block: 10 },
+    // State mark of a unit, and of a block.
+    mark: 11,
+    blockMark: 7,
   };
 
   const TOKENS = ["running", "ok", "warning", "failed", "idle"];
@@ -94,7 +96,8 @@
 
   // Sections in order: the declared units in declaration order, then the
   // units only the design names, the unassigned nodes last. Each carries the
-  // top-level components pruned to its nodes; a unit without one is left out.
+  // top-level components pruned to its nodes; a declared unit without one
+  // stays as an empty section, any other is left out.
   function unitSections(root) {
     const declared = (root.compute_units || []).filter((unit) => unit?.name);
     const names = declared.map((unit) => unit.name);
@@ -122,6 +125,7 @@
           .filter(Boolean);
         return {
           name,
+          declared: !!unit,
           kind: unit
             ? unit.kind || "onboard"
             : name === UNASSIGNED
@@ -132,7 +136,7 @@
           nodes: children.reduce((sum, child) => sum + nodeCount(child), 0),
         };
       })
-      .filter((section) => section.children.length);
+      .filter((section) => section.children.length || section.declared);
   }
 
   // Rows of slots of a section's components: each row's slots in their fixed
@@ -243,8 +247,9 @@
     };
   }
 
-  // Boxes of the sections laid over `width` x `height`: sections take the
-  // height in proportion to their nodes, each at least minUnit tall, so the
+  // Boxes of the sections laid over `width` x `height`: an empty section is
+  // its head alone, the others take the rest of the height in proportion to
+  // their nodes, each at least minUnit tall, so the
   // layout may run past `height`; `unitHead` is the height of a section's
   // head. A box carries its kind (unit, slot, module
   // or node), rect, and the section or instance it draws; a module box is
@@ -257,15 +262,18 @@
     unitHead = G.unitHead,
   ) {
     const boxes = [];
-    const heights = proportional(
-      sections.map((section) => section.nodes),
-      height,
+    const filled = sections.filter((section) => section.children.length);
+    const shares = proportional(
+      filled.map((section) => section.nodes),
+      height - (sections.length - filled.length) * unitHead,
       G.minUnit,
       true,
     );
     let y = 0;
     sections.forEach((section, index) => {
-      const h = heights[index];
+      const h = section.children.length
+        ? shares[filled.indexOf(section)]
+        : unitHead;
       boxes.push({
         kind: "unit",
         id: `${UNIT_ID_PREFIX}${section.name}`,
@@ -497,6 +505,13 @@
         g.classList.add("tm-unit");
         g.dataset.id = box.id;
         rect.setAttribute("pointer-events", "stroke");
+        const bar = svgElement("rect", {
+          class: "tm-head",
+          width: box.w,
+          height: this.unitHead,
+          rx: 3,
+        });
+        g.appendChild(bar);
         const title = svgElement("text", {
           class: "tm-title",
           x: G.pad + G.mark + G.pad,
@@ -511,7 +526,7 @@
           y: this.unitHead / 2,
           "text-anchor": "end",
         });
-        kind.style.fontSize = `${G.font.slot}px`;
+        kind.style.fontSize = `${G.font.kind}px`;
         kind.textContent = section.kind
           ? `${section.kind} · ${section.nodes} nodes`
           : `${section.nodes} nodes`;
@@ -522,8 +537,9 @@
           event.stopPropagation();
           this.select(box);
         };
-        rect.addEventListener("click", select);
-        title.addEventListener("click", select);
+        [rect, bar, title].forEach((part) =>
+          part.addEventListener("click", select),
+        );
         return g;
       }
       if (box.kind === "slot") {
@@ -546,31 +562,47 @@
       return g;
     }
 
-    // Block name in the label strip of an open module, centred in a closed
-    // block when it fits.
+    // Block name and the place of its state mark (`box.mark`, null when the
+    // block is too small for one). An open module has the mark then the name
+    // in its label strip. A closed block has the name centred when it fits,
+    // the mark in its top-left corner, and the mark alone centred otherwise.
     _label(g, box) {
       const name = box.instance.name || "";
       const size = G.font.block;
-      if (box.open) {
-        const text = this._fit(name, box.w - 2 * G.pad, size);
-        if (!text) return;
-        const label = svgElement("text", { x: G.pad, y: G.moduleHead / 2 });
+      const r = G.blockMark / 2;
+      box.mark = null;
+      const addLabel = (text, attributes) => {
+        const label = svgElement("text", attributes);
         label.style.fontSize = `${size}px`;
         label.textContent = text;
         g.appendChild(label);
+      };
+      if (box.open) {
+        const lead = G.pad + G.blockMark + G.pad;
+        if (box.w >= lead) box.mark = { x: G.pad + r, y: G.moduleHead / 2 };
+        const text = this._fit(name, box.w - lead - G.pad, size);
+        if (text) addLabel(text, { x: lead, y: G.moduleHead / 2 });
         return;
       }
-      if (box.h < size + 2) return;
-      const text = this._fit(name, box.w - 2 * G.pad, size);
-      if (!text) return;
-      const label = svgElement("text", {
-        x: box.w / 2,
-        y: box.h / 2,
-        "text-anchor": "middle",
-      });
-      label.style.fontSize = `${size}px`;
-      label.textContent = text;
-      g.appendChild(label);
+      const corner = G.blockMark + G.pad;
+      // A short block keeps the name clear of the corner on both sides.
+      const clear = box.h >= size + 2 * (corner + 1) ? G.pad : corner + G.pad;
+      const text =
+        box.h < size + 2
+          ? ""
+          : this._fit(name, box.w - 2 * clear, size) ||
+            this._fit(name, box.w - 2 * G.pad, size);
+      if (text) {
+        addLabel(text, {
+          x: box.w / 2,
+          y: box.h / 2,
+          "text-anchor": "middle",
+        });
+        if (box.w >= corner + G.pad && box.h >= corner)
+          box.mark = { x: 2 + r, y: 2 + r };
+      } else if (Math.min(box.w, box.h) >= G.blockMark + 2) {
+        box.mark = { x: box.w / 2, y: box.h / 2 };
+      }
     }
 
     // `text` within `maxWidth`, shortened with an ellipsis down to a few
@@ -612,7 +644,7 @@
           g.querySelector(selector)?.getComputedTextLength?.() || 0;
         const slot = document.createElement("div");
         slot.className = "tm-unit-controls";
-        slot.style.left = `${3 * G.pad + G.mark + width(".tm-title")}px`;
+        slot.style.left = `${4 * G.pad + G.mark + width(".tm-title")}px`;
         slot.style.right = `${2 * G.pad + width(".tm-kind")}px`;
         slot.style.top = `${box.y}px`;
         slot.style.height = `${this.unitHead}px`;
@@ -750,6 +782,18 @@
           return;
         }
         g.querySelector(":scope > title").textContent = this._title(box, info);
+        if (info && box.mark) {
+          const mark = svgElement("g", { class: "live-mark" });
+          mark.appendChild(
+            SD.RunState.svgMark(
+              info.token,
+              box.mark.x,
+              box.mark.y,
+              G.blockMark,
+            ),
+          );
+          g.appendChild(mark);
+        }
       });
     }
 

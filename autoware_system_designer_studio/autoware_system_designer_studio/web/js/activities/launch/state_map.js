@@ -9,15 +9,11 @@
   const { element } = SD.widgets;
   const launch = (SD.activities.launch ||= {});
 
-  const DIAGRAM = "treemap";
-  // Height of a section head holding the unit controls, in canvas pixels.
-  const UNIT_HEAD = 28;
   // Member events arrive in bursts at launch; one apply per burst.
   const APPLY_DELAY_MS = 80;
 
   function stateMap(container, config, store, hooks = {}) {
     const { unitControls, onOpen, onLoad } = hooks;
-    const diagram = config.diagrams.find((d) => d.type === DIAGRAM);
     const host = element("div", "diagram-container");
     container.appendChild(host);
     let module = null;
@@ -55,19 +51,16 @@
       const canvas = element("div", "diagram-canvas");
       host.replaceChildren(canvas);
       try {
-        if (!diagram) throw new Error("this site has no treemap");
         const mode = store.get("mode");
-        await DiagramBase.loadScript(diagram.script);
         const data = await SD.NamespaceTree.loadStructure(
           config.dataBase,
           mode,
         );
         if (seq !== loadSeq) return;
         entities = launch.nestComposables(SD.NamespaceTree.entities(data));
-        const created = new (SD.diagrams.get(DIAGRAM))(canvas, {
+        const created = new (SD.diagrams.get("treemap"))(canvas, {
           mode,
           dataBase: config.dataBase,
-          unitHead: UNIT_HEAD,
           unitControls,
           onInfoUpdate(_data, _type, entity) {
             if (entity?.path)
