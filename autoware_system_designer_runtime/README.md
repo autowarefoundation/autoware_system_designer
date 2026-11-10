@@ -280,7 +280,7 @@ The two systems share the design pattern but not code. When play_launch's parser
 
 ## Caveats
 
-- **Composable params** are flattened from YAML in the actor; rclpy is on a worker thread and the LoadNode service has a 30 s default timeout per call.
+- **Composable params** are flattened from YAML in the actor; rclpy is on a worker thread and the LoadNode service wait and call are unbounded as in launch_ros, with a warning past 30 s each.
   Slow containers will need a higher timeout (configurable in `ComposableNodeActor.__init__`).
 - **`ros2_launch_file` entities** are wrapped as a single Python subprocess that runs `LaunchService` directly (not the `ros2 launch` CLI). Global parameters (`vehicle_info.param.yaml`) are injected as `SetParameter` actions before the include so all nodes in the subtree receive them — even though each wrapper runs in a separate process from the `global_parameter_loader`. You lose per-leaf-node visibility _inside_ the include — by design.
 - **Empty / placeholder nodes** (single_node entries whose `executable` is empty) are silently skipped during build; check the log at startup.

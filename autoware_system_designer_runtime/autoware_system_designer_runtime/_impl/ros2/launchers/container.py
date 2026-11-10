@@ -31,6 +31,9 @@ from ..common.params import _ros_args, build_cmd
 
 logger = logging.getLogger(__name__)
 
+# Poll period of the LoadNode service and response waits; bounds how late a shutdown is noticed.
+WAIT_POLL_S = 1.0
+
 
 def container_cmdline(spec: Mapping) -> list[str]:
     launcher = spec["launcher"]
@@ -218,8 +221,8 @@ class RosWorker:
         parameters: list,
         extra_arguments: list,
         log_level: int = 0,
-        service_wait_timeout: float = 30.0,
-        load_call_timeout: float = 30.0,
+        service_wait_warn_s: float = 30.0,
+        load_call_warn_s: float = 30.0,
     ) -> int:
         if self._crashed.is_set():
             raise RuntimeError("ros worker has crashed")
@@ -236,15 +239,24 @@ class RosWorker:
         req.extra_arguments = extra_arguments
 
         client = self._client_for(container_fqn)
+        target = f"{node_namespace.rstrip('/')}/{node_name}"
 
+        # Both waits are unbounded, as in launch_ros: past the warn threshold they log once and keep
+        # waiting; only shutdown (task cancellation) or a crashed ros worker ends them.
         loop = asyncio.get_running_loop()
-        ok = await loop.run_in_executor(None, client.wait_for_service, service_wait_timeout)
-        if self._crashed.is_set():
-            raise RuntimeError("ros worker crashed while waiting for service")
-        if not ok:
-            raise TimeoutError(
-                f"service {container_fqn}/_container/load_node " f"not available within {service_wait_timeout}s"
-            )
+        started = loop.time()
+        warned = False
+        while not await loop.run_in_executor(None, client.wait_for_service, WAIT_POLL_S):
+            if self._crashed.is_set():
+                raise RuntimeError("ros worker crashed while waiting for service")
+            if not warned and loop.time() - started >= service_wait_warn_s:
+                warned = True
+                logger.warning(
+                    "service %s/_container/load_node not available after %gs for %s; still waiting",
+                    container_fqn,
+                    service_wait_warn_s,
+                    target,
+                )
 
         rcl_future = client.call_async(req)
         aio_future: "asyncio.Future" = loop.create_future()
@@ -253,18 +265,33 @@ class RosWorker:
             try:
                 result = f.result()
             except Exception as e:  # noqa: BLE001
-                loop.call_soon_threadsafe(aio_future.set_exception, e)
+                loop.call_soon_threadsafe(_resolve, aio_future, None, e)
                 return
-            loop.call_soon_threadsafe(aio_future.set_result, result)
+            loop.call_soon_threadsafe(_resolve, aio_future, result, None)
 
         rcl_future.add_done_callback(_on_done)
 
+        started = loop.time()
+        warned = False
         try:
-            response = await asyncio.wait_for(aio_future, timeout=load_call_timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError(
-                f"LoadNode call for {node_namespace}/{node_name} " f"timed out after {load_call_timeout}s"
-            )
+            while True:
+                done, _ = await asyncio.wait({aio_future}, timeout=WAIT_POLL_S)
+                if done:
+                    break
+                if self._crashed.is_set():
+                    raise RuntimeError("ros worker crashed while waiting for LoadNode response")
+                if not warned and loop.time() - started >= load_call_warn_s:
+                    warned = True
+                    logger.warning(
+                        "LoadNode call for %s into %s not answered after %gs; still waiting",
+                        target,
+                        container_fqn,
+                        load_call_warn_s,
+                    )
+        except BaseException:
+            rcl_future.cancel()
+            raise
+        response = aio_future.result()
 
         if not response.success:
             raise RuntimeError(f"LoadNode rejected: {response.error_message or '(no error message)'}")
