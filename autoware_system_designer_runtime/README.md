@@ -58,7 +58,7 @@ autoware-system-designer-launch SYSTEM.json \
     --deploy my_vehicle \               # deploy variant whose arguments bind $(var ...)
     --arg map_path=/data/map \          # bind/override one system argument (repeatable)
     --log-dir /tmp/run1 \               # per-node logs land in /tmp/run1/<member>/
-    --respawn \                         # restart any node that exits for any reason
+    --respawn \                         # restart any node that exits abnormally (non-zero)
     --respawn-delay 1.0 \
     --max-respawn-attempts 5 \
     --graceful-shutdown-timeout 10 \    # seconds SIGTERM→SIGKILL grace

@@ -190,7 +190,8 @@ class RegularNodeActor:
                 except Exception:  # noqa: BLE001
                     pass
             await self._emit(ev.Exited(name=self.name, exit_code=exit_code))
-            if self._respawn_enabled and not self._shutdown.is_set():
+            # Respawn covers abnormal exits only; a clean exit (code 0) stays stopped.
+            if self._respawn_enabled and exit_code != 0 and not self._shutdown.is_set():
                 await self._transition_respawning(exit_code)
             else:
                 self._transition_stopped(exit_code)
