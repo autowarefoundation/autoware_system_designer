@@ -1,9 +1,11 @@
 // Launch: launched members as a namespace tree with run states beside the
 // selected member's log, or the launcher's own output. Member states arrive on
-// the daemon's event stream, keyed by member path. One member's log is
+// the daemon's event stream, keyed by member path; the view is read only, the
+// Control view acts on members. One member's log is
 // followed at a time: `launch.follow` brings its current tail, `member.log`
 // events the lines after, and the follow is released when the selection
-// leaves it or the monitor hides; a composable node follows its container's
+// leaves it or the monitor hides, and a selection made while hidden is
+// followed on the next show; a composable node follows its container's
 // log. Once the launcher ended, the followed log stays with a note where it
 // ended, and a follow brings the tail the daemon reads from the runtime's
 // files. Failed members are listed with their errors above the tree. A member
@@ -19,23 +21,7 @@
   const SD = window.SD;
   const { element, terminal, mainView } = SD.widgets;
   const launch = (SD.activities.launch ||= {});
-  const ACTIONS = [
-    ["stop", "Stop"],
-    ["restart", "Restart"],
-    ["kill", "Kill"],
-  ];
-  // Legend entries: token, label, meaning.
-  const LEGEND = [
-    ["running", "running", "process running or node loaded"],
-    ["ok", "exited", "exited with code 0"],
-    ["warning", "warning", "loading, respawning, or exited with another code"],
-    ["failed", "failed", "failed to start or load"],
-    ["idle", "idle", "pending, done, or not launched"],
-  ];
-
-  function stateMark(token) {
-    return element("span", `state-dot ${token}`);
-  }
+  const stateMark = (token) => SD.RunState.mark(token);
 
   function busyMark() {
     return element("span", "log-busy");
@@ -43,22 +29,21 @@
 
   function stateMonitor(container, config, store) {
     const daemon = SD.daemon;
+    // Live records of the shown mode; a session of another mode or system is not launched here.
+    const { members, sessions, logRate, restartsOf } = launch.scope(
+      config.systemId,
+      () => store.get("mode"),
+    );
     const {
-      members,
-      sessions,
-      stateToken,
-      stateLabel,
       sessionLabel,
       sessionFailures,
       sessionToken,
-      logRate,
       busyLog,
       rateLabel,
       BUSY_LOG_BPS,
       nestComposables,
       worstToken,
       tokenSummary,
-      followsContainer,
       runLabel,
     } = launch;
     const treePane = element("div", "pane-side monitor-tree");
@@ -69,14 +54,8 @@
     const launcherList = element("div", "monitor-launchers");
     const failureList = element("div", "monitor-failures");
     const tree = element("div", "ns-tree");
-    const legend = element("div", "monitor-legend");
-    LEGEND.forEach(([token, label, meaning]) => {
-      const item = element("span", "monitor-legend-item");
-      item.title = meaning;
-      item.append(stateMark(token), element("span", "", label));
-      legend.appendChild(item);
-    });
-    const busyLegend = element("span", "monitor-legend-item");
+    const legend = SD.RunState.legend("monitor-legend");
+    const busyLegend = element("span", "state-legend-item");
     busyLegend.title = `output growing by ${rateLabel(BUSY_LOG_BPS)} or more`;
     busyLegend.append(busyMark(), element("span", "", "busy log"));
     legend.appendChild(busyLegend);
@@ -109,17 +88,9 @@
     const badgeMark = stateMark("idle");
     const badgeText = element("span");
     badge.append(badgeMark, badgeText);
-    const actions = element("span", "member-actions");
-    ACTIONS.forEach(([action, label]) => {
-      const button = element("button", "panel-button", label);
-      button.type = "button";
-      button.dataset.action = action;
-      button.addEventListener("click", () => act(action));
-      actions.appendChild(button);
-    });
-    const note = element("span", "member-note");
     const rateText = element("span", "member-rate");
-    view.trailing.append(note, rateText, badge, actions);
+    const restartText = element("span", "member-restarts");
+    view.trailing.append(rateText, restartText, badge);
     container.append(treePane, view.element);
 
     // The followed member's terminal, refilled per follow; job id -> the launcher's terminal.
@@ -160,22 +131,8 @@
       return node.entities.find((e) => e.entity_type === "module");
     }
 
-    function recordOf(entity) {
-      return members.get(entity.member_path)?.record;
-    }
-
-    // Token and label of one member; a composable follows its container once
-    // that stopped, unless it failed itself.
     function memberState(entity) {
-      const own = recordOf(entity);
-      const host =
-        entity.container_path && members.get(entity.container_path)?.record;
-      if (own?.state === "failed" || !followsContainer(host))
-        return { token: stateToken(own), label: stateLabel(own) };
-      return {
-        token: stateToken(host),
-        label: `${stateLabel(own)} · container ${stateLabel(host)}`,
-      };
+      return launch.memberState(entity, members);
     }
 
     // The member whose files hold `entity`'s output.
@@ -259,6 +216,8 @@
         ? {
             path,
             unit: session.compute_unit,
+            system: session.system,
+            mode: session.mode,
             job: session.job,
             live: session.connected,
             ended,
@@ -271,7 +230,12 @@
       }
       memberLog.clear("Loading…");
       daemon
-        .rpc("launch.follow", { compute_unit: session.compute_unit, path })
+        .rpc("launch.follow", {
+          compute_unit: session.compute_unit,
+          path,
+          system: session.system,
+          mode: session.mode,
+        })
         .then((result) => {
           if (seq !== followSeq) return;
           memberLog.clear("No output yet.");
@@ -287,7 +251,12 @@
     function release(entry) {
       if (!entry?.unit) return;
       daemon
-        .rpc("launch.unfollow", { compute_unit: entry.unit, path: entry.path })
+        .rpc("launch.unfollow", {
+          compute_unit: entry.unit,
+          path: entry.path,
+          system: entry.system,
+          mode: entry.mode,
+        })
         .catch(() => {});
     }
 
@@ -351,7 +320,7 @@
         return;
       }
       sessions.forEach((session) => {
-        if (session.system !== config.systemId || !session.job) return;
+        if (!session.job) return;
         const row = element("button", "monitor-launcher");
         row.type = "button";
         row.classList.toggle("selected", session.job === selectedJob);
@@ -375,7 +344,6 @@
         return;
       }
       sessions.forEach((session) => {
-        if (session.system !== config.systemId) return;
         sessionFailures(session).forEach((record) => {
           const entry = byMember.get(record.path);
           const row = element("button", "monitor-failure");
@@ -407,7 +375,7 @@
       selectedExtra = null;
       view.body.replaceChildren(memberLog.element);
       if (run) showRunLog(run.slugs.get(logHolder(entity)));
-      else follow(logHolder(entity));
+      else if (!hidden) follow(logHolder(entity));
       view.setEmpty("");
       const title = entity.container_path
         ? `${entity.member_path} · in ${entity.container_path}`
@@ -431,6 +399,16 @@
       renderLaunchers();
       renderExtras();
       store.set("entity", entity.key);
+    }
+
+    // Drops the selected entity and its follow; a shown launcher log stays.
+    function clearSelection() {
+      selected = null;
+      unfollow();
+      showNothing();
+      showState();
+      renderTree();
+      renderLaunchers();
     }
 
     function showNothing() {
@@ -636,10 +614,7 @@
       };
     }
 
-    // Actions address a process: a composable node is acted on through its container.
     function showState() {
-      const member = selected?.member_path && members.get(selected.member_path);
-      const session = member && sessions.get(member.unit);
       const { token, label } = selectedState();
       badgeText.textContent = label;
       badge.className = `member-state ${token}`;
@@ -648,33 +623,15 @@
         selected?.entity_type === "node" ? logRate(logHolder(selected)) : 0;
       rateText.textContent = rate > 0 ? `log ${rateLabel(rate)}` : "";
       rateText.classList.toggle("busy", busyLog(rate));
+      const restarts =
+        selected?.entity_type === "node" && restartsOf(selected.member_path);
+      restartText.textContent = restarts?.restarts
+        ? `restarted ×${restarts.restarts}`
+        : "";
+      restartText.title = restarts ? `${restarts.respawns} respawned` : "";
       badge.hidden = !!run;
       rateText.hidden = !!run;
-      const canAct =
-        !run &&
-        !!member &&
-        !selected.container_path &&
-        !!session &&
-        session.state !== "exited" &&
-        session.connected;
-      actions.hidden = !canAct;
-      actions
-        .querySelectorAll("button")
-        .forEach((button) => (button.disabled = !canAct));
-    }
-
-    function act(action) {
-      const member = selected?.member_path && members.get(selected.member_path);
-      if (!member) return;
-      note.textContent = "";
-      daemon
-        .rpc(`launch.${action}`, {
-          compute_unit: member.unit,
-          pattern: selected.member_path,
-        })
-        .catch((error) => {
-          note.textContent = error.message;
-        });
+      restartText.hidden = !!run;
     }
 
     async function loadMode() {
@@ -706,7 +663,7 @@
       root.children.forEach((child) => expand(child));
       if (run) placeRun();
       renderTree();
-      renderFailures();
+      renderLaunchers();
       renderExtras();
       selectKey(store.get("entity"));
     }
@@ -745,7 +702,8 @@
       loadMode().catch((error) => console.warn("launch monitor:", error));
     store.onChange("mode", reload);
     store.onChange("entity", (key) => {
-      if (key !== selected?.key) selectKey(key);
+      if (!key && selected) clearSelection();
+      else if (key !== selected?.key) selectKey(key);
     });
     reload();
     showState();

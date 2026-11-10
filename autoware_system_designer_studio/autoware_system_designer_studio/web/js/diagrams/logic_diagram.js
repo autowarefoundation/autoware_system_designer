@@ -1415,6 +1415,11 @@
 
     // ── Highlighting ────────────────────────────────────────────────────────────
 
+    // The selection is its highlights.
+    clearSelection() {
+      this.clearHighlights();
+    }
+
     clearHighlights() {
       const scope = this.currentSvgRoot || this.container;
       if (!scope) return;

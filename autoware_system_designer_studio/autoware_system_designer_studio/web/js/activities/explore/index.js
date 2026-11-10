@@ -1,10 +1,13 @@
-// Explore activity: the diagram list and entity search beside the diagram
-// canvas, with the inspector showing the selected element. Search is offered
-// for diagrams that locate entities.
+// Explore activity: the diagram list, entity search and depth switch beside
+// the diagram canvas, with the inspector showing the selected element. Search
+// is offered for diagrams that locate entities, the depth switch for diagrams
+// that draw the hierarchy cut at a level. With a daemon, the live state of the
+// launched members overlays the canvas.
 (function () {
   const SD = window.SD;
   const { element, section, list } = SD.widgets;
-  const { diagramHost, entitySearch } = SD.activities.explore;
+  const { diagramHost, entitySearch, depthSelector, liveOverlay } =
+    SD.activities.explore;
 
   // Inspector view: the selected element's info cards, or a prompt when nothing is selected.
   function inspectorView(slot) {
@@ -39,6 +42,7 @@
     mount({ side, main, inspector }, { config, store }) {
       const types = config.diagrams.map((d) => d.type);
       store.define("diagram", config.defaultDiagram, (v) => types.includes(v));
+      store.define("depth", "", (v) => /^[1-9]\d*$/.test(v));
       store.syncUrl();
 
       const host = diagramHost(main, inspectorView(inspector), config, store);
@@ -47,22 +51,35 @@
         (type) => store.set("diagram", type),
       );
       const search = entitySearch(config, store, (id) => host.focus(id));
-      side.append(section("Diagrams", diagrams.element), search);
+      const depth = depthSelector(config, store);
+      const live = liveOverlay(config, store, host, () => main.hidden);
+      side.append(
+        section("Diagrams", diagrams.element),
+        depth,
+        search,
+        live.element,
+      );
 
       function showDiagramOptions() {
         const current = store.get("diagram");
+        const diagram = config.diagrams.find((d) => d.type === current);
         diagrams.mark(current);
-        search.hidden = !config.diagrams.find((d) => d.type === current)
-          ?.searchable;
+        search.hidden = !diagram?.searchable;
+        depth.hidden = !diagram?.layered;
       }
 
-      // The diagram locates the store's entity when it loads and on show; a
-      // change while shown comes from this canvas and is already in place.
+      // The diagram locates the store's entity when it loads and on show, and
+      // drops its selection once the entity is cleared; a change while shown
+      // comes from this canvas and is already in place.
       let shownKey = "";
       function followEntity() {
         const key = store.get("entity");
-        if (!key || key === shownKey) return;
+        if (key === shownKey) return;
         shownKey = key;
+        if (!key) {
+          host.clearSelection();
+          return;
+        }
         host.focusKey(key).catch((error) => console.warn("explore:", error));
       }
       function load() {
@@ -81,15 +98,45 @@
         reload();
       });
       store.onChange("mode", reload);
-      store.onChange("entity", (key) => {
-        if (!main.hidden) shownKey = key;
+      store.onChange("depth", () => {
+        if (
+          config.diagrams.find((d) => d.type === store.get("diagram"))?.layered
+        )
+          reload();
       });
+      store.onChange("entity", (key) => {
+        if (main.hidden) return;
+        shownKey = key;
+        if (!key) host.clearSelection();
+      });
+      // A selection dropped on another activity, an element that is no entity included.
+      SD.on("selection.clear", () => host.clearSelection());
+      // Escape drops the selection; captured ahead of the popups' own Escape,
+      // so one that closes a popup does nothing here.
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key !== "Escape" || main.hidden || event.defaultPrevented)
+            return;
+          if (
+            document.querySelector(
+              ".popup-overlay.open, #settings-overlay.open",
+            )
+          )
+            return;
+          if (event.target.closest?.("input, textarea, select")) return;
+          host.clearSelection();
+          store.set("entity", "");
+        },
+        true,
+      );
       SD.on("themechange", host.updateTheme);
 
       showDiagramOptions();
       load();
       return {
         show() {
+          live.show();
           if (stale) {
             stale = false;
             load();

@@ -33,11 +33,27 @@ FAVICON = "img/favicon.svg"
 DATA_GLOBAL = "systemStructureData"
 
 # Diagrams of the Explore activity, in menu order: the module script loaded when the diagram is
-# first shown, and whether the module locates entities (``focusEntity``), which Explore search needs.
+# first shown, whether the module locates entities (``focusEntity``), which Explore search needs,
+# and whether it draws the design hierarchy cut at a chosen depth (the ``depth`` option).
 DIAGRAMS = {
-    "node_diagram": {"label": "Node Diagram", "script": "js/diagrams/node_diagram.js", "searchable": True},
-    "logic_diagram": {"label": "Logic Diagram", "script": "js/diagrams/logic_diagram.js", "searchable": True},
-    "sequence_diagram": {"label": "Sequence Diagram", "script": "js/diagrams/sequence_diagram.js", "searchable": False},
+    "node_diagram": {
+        "label": "Node Diagram",
+        "script": "js/diagrams/node_diagram.js",
+        "searchable": True,
+        "layered": True,
+    },
+    "logic_diagram": {
+        "label": "Logic Diagram",
+        "script": "js/diagrams/logic_diagram.js",
+        "searchable": True,
+        "layered": False,
+    },
+    "sequence_diagram": {
+        "label": "Sequence Diagram",
+        "script": "js/diagrams/sequence_diagram.js",
+        "searchable": False,
+        "layered": False,
+    },
 }
 
 DEFAULT_DIAGRAM_TYPE = "node_diagram"
@@ -58,6 +74,7 @@ SHELL_SCRIPTS = (
     "js/widgets/main_view.js",
     "js/widgets/popup.js",
     "js/widgets/namespace_tree.js",
+    "js/widgets/run_state.js",
 )
 
 # Rail activities: each one's scripts (its parts, then the entry that registers it) and stylesheet.
@@ -67,6 +84,8 @@ ACTIVITIES = {
         "scripts": (
             "js/activities/explore/diagram_host.js",
             "js/activities/explore/entity_search.js",
+            "js/activities/explore/depth_selector.js",
+            "js/activities/explore/live_overlay.js",
             "js/activities/explore/index.js",
         ),
         "styles": ("css/activities/explore.css",),
@@ -77,6 +96,9 @@ ACTIVITIES = {
             "js/activities/launch/member_tree.js",
             "js/activities/launch/commands_table.js",
             "js/activities/launch/state_monitor.js",
+            "js/diagrams/treemap.js",
+            "js/activities/launch/state_map.js",
+            "js/activities/launch/member_actions.js",
             "js/activities/launch/index.js",
         ),
         "styles": ("css/activities/launch.css",),
@@ -125,6 +147,7 @@ WORKBENCH_STYLESHEETS = (
     "css/node_diagram.css",
     "css/logic_diagram.css",
     "css/sequence_diagram.css",
+    "css/treemap.css",
 ) + _activity_files("styles")
 
 # Content pages (systems index, status pages).

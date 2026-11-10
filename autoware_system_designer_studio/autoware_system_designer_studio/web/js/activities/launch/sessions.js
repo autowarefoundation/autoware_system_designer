@@ -1,7 +1,12 @@
 // Launch: the daemon's launch sessions and their members, kept current from
 // the event stream and resynchronised through launch.status on every hello.
-// Page events: "launch.sessions" (unit -> session), "launch.member"
+// The daemon holds the last session of each mode of a system on a compute
+// unit; `scope` gives the records of one mode.
+// Page events: "launch.sessions" (session key -> session), "launch.member"
 // {path, unit, record} and "launch.activity" after the output rates changed.
+// A member's restart counts are the daemon's, on its record. A status answer
+// may be older than the member events already received, so the newer record
+// of a member is kept.
 (function () {
   const SD = window.SD;
   const launch = (SD.activities.launch ||= {});
@@ -109,34 +114,88 @@
     return `running · ${session.member_count} members${failures}`;
   }
 
-  const sessions = new Map(); // compute unit -> session view, members included
-  const members = new Map(); // member path -> { unit, record }
-  // Member path -> { unit, rate }: output growth of the members whose files grew in the last window.
+  // Session key -> session view, members included: the last session of each
+  // mode of a system on a compute unit.
+  const sessions = new Map();
+  // Session key -> member path -> { unit, job, record }.
+  const members = new Map();
+  // Session key -> member path -> output growth of the members whose files grew in the last window.
   const activity = new Map();
   let request = null;
+
+  function sessionKey(system, mode, unit) {
+    return [system, mode, unit].join("\n");
+  }
+
+  function keyOf(session) {
+    return sessionKey(session.system, session.mode, session.compute_unit);
+  }
 
   function emit() {
     SD.emit("launch.sessions", sessions);
   }
 
-  // Bytes per second a member's output grew by in the last window; 0 once quiet.
-  function logRate(path) {
-    return activity.get(path)?.rate || 0;
-  }
-
-  function setActivity(unit, rates) {
-    activity.forEach((entry, path) => {
-      if (entry.unit === unit) activity.delete(path);
-    });
-    Object.entries(rates || {}).forEach(([path, rate]) => {
-      if (rate > 0) activity.set(path, { unit, rate });
-    });
+  function setActivity(key, rates) {
+    const grown = new Map(
+      Object.entries(rates || {}).filter(([, rate]) => rate > 0),
+    );
+    if (grown.size) activity.set(key, grown);
+    else activity.delete(key);
     SD.emit("launch.activity", activity);
   }
 
-  function setMember(unit, record) {
-    members.set(record.path, { unit, record });
-    const session = sessions.get(unit);
+  // The live records of one mode of a system, over the sessions that launched
+  // `mode()` of `systemId`: sessions by compute unit, members by path with
+  // { unit, job, record }, a member's output growth in bytes per second over
+  // the last window (0 once quiet), and { unit, restarts, respawns } of a
+  // member started again within its launch (`restarts`, the `respawns` among
+  // them; null when it never was).
+  function scope(systemId, mode) {
+    const within = (session) =>
+      session.system === systemId && session.mode === mode();
+    // [session key, entry] of the member at `path` in the mode's sessions.
+    const find = (path) => {
+      for (const [key, session] of sessions) {
+        const member = within(session) && members.get(key)?.get(path);
+        if (member) return [key, member];
+      }
+      return null;
+    };
+    return {
+      sessions: {
+        get: (unit) => sessions.get(sessionKey(systemId, mode(), unit)),
+        forEach(visit) {
+          sessions.forEach((session) => {
+            if (within(session)) visit(session, session.compute_unit);
+          });
+        },
+      },
+      members: { get: (path) => find(path)?.[1] },
+      logRate(path) {
+        for (const [key, session] of sessions) {
+          const rate = within(session) && activity.get(key)?.get(path);
+          if (rate) return rate;
+        }
+        return 0;
+      },
+      restartsOf(path) {
+        const member = find(path)?.[1];
+        const { restarts = 0, respawns = 0 } = member?.record || {};
+        return restarts || respawns
+          ? { unit: member.unit, restarts, respawns }
+          : null;
+      },
+    };
+  }
+
+  function setMember(key, unit, record) {
+    const session = sessions.get(key);
+    if (!members.has(key)) members.set(key, new Map());
+    members.get(key).set(record.path, {
+      unit,
+      job: session?.job || "",
+      record,
+    });
     if (!session) return;
     const index = session.members.findIndex((m) => m.path === record.path);
     if (index >= 0) session.members[index] = record;
@@ -150,14 +209,32 @@
       .rpc("launch.status")
       .then((result) => {
         if (request !== current) return;
+        const known = new Map(members);
         sessions.clear();
         members.clear();
         activity.clear();
         result.sessions.forEach((session) => {
-          session.members ||= [];
-          sessions.set(session.compute_unit, session);
-          session.members.forEach((record) =>
-            setMember(session.compute_unit, record),
+          const key = keyOf(session);
+          const unit = session.compute_unit;
+          const job = session.job || "";
+          // A record received since the daemon answered outdates the answer's.
+          session.members = (session.members || []).map((record) => {
+            const seen = known.get(key)?.get(record.path);
+            const newer =
+              seen &&
+              seen.job === job &&
+              (seen.record.time || 0) > (record.time || 0);
+            return newer ? seen.record : record;
+          });
+          sessions.set(key, session);
+          members.set(
+            key,
+            new Map(
+              session.members.map((record) => [
+                record.path,
+                { unit, job, record },
+              ]),
+            ),
           );
         });
         emit();
@@ -169,30 +246,34 @@
 
   SD.on("daemon.health", resync);
   SD.on("daemon.launch", (view) => {
-    const previous = sessions.get(view.compute_unit);
-    sessions.set(view.compute_unit, {
+    const key = keyOf(view);
+    const previous = sessions.get(key);
+    // A new launch of the mode starts without the members of its last.
+    const relaunched = !!previous && previous.job !== view.job;
+    if (relaunched) members.delete(key);
+    sessions.set(key, {
       ...view,
-      members: previous?.members || [],
+      members: (!relaunched && previous?.members) || [],
     });
     emit();
     // The runtime's hello brings the member list; the session view carries only its count.
     if (view.connected && !previous?.connected) resync();
-    if (!view.connected && previous?.connected)
-      setActivity(view.compute_unit, {});
+    if (!view.connected && previous?.connected) setActivity(key, {});
   });
-  SD.on("daemon.member.activity", ({ compute_unit: unit, rates }) =>
-    setActivity(unit, rates),
+  SD.on("daemon.member.activity", (event) =>
+    setActivity(
+      sessionKey(event.system, event.mode, event.compute_unit),
+      event.rates,
+    ),
   );
   SD.on("daemon.member", (event) => {
-    const { compute_unit: unit, ...record } = event;
-    setMember(unit, record);
+    const { compute_unit: unit, system, mode, ...record } = event;
+    setMember(sessionKey(system, mode, unit), unit, record);
     SD.emit("launch.member", { path: record.path, unit, record });
   });
 
   launch.sessions = sessions;
-  launch.members = members;
-  launch.activity = activity;
-  launch.logRate = logRate;
+  launch.scope = scope;
   launch.busyLog = busyLog;
   launch.rateLabel = rateLabel;
   launch.BUSY_LOG_BPS = BUSY_LOG_BPS;

@@ -178,3 +178,40 @@ def test_a_node_on_sim_time_records_the_clock_overrides(tmp_path):
     assert held[0].t - first > 1_000_000_000
     assert clock.elapsed(first + 100_000_000, held[0].t - 100_000_000) == 0
     assert abs(clock.elapsed(held[0].t + 200_000_000, held[0].t + 800_000_000) - 300_000_000) < 60_000_000
+
+
+# One rclpy timer at 10 Hz; on Jazzy rclpy fires it through rcl_timer_call, which reaches
+# rcl_timer_call_with_info inside rcl.
+RCLPY_TIMER = """
+import rclpy
+rclpy.init()
+node = rclpy.create_node("asd_rclpy_timer")
+node.create_timer(0.1, lambda: None)
+rclpy.spin(node)
+"""
+
+
+def test_an_rclpy_timer_is_recorded_once_per_fire(tmp_path):
+    trace_dir = tmp_path / "trace"
+    trace_dir.mkdir()
+    env = tracer_env(_tracer(), trace_dir)
+    env["ROS_DOMAIN_ID"] = str(random.randint(150, 230))
+    proc = subprocess.Popen(
+        [sys.executable, "-c", RCLPY_TIMER],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    try:
+        time.sleep(3.0)
+    finally:
+        _terminate([proc])
+
+    trace_set = read_trace_dir(trace_dir)
+    assert len(trace_set.processes) == 1
+    (proc_trace,) = trace_set.processes.values()
+    fires = proc_trace.timers
+    assert len(fires) >= 10
+    gaps = [b.t - a.t for a, b in zip(fires, fires[1:]) if a.handle == b.handle]
+    assert min(gaps) > 50_000_000

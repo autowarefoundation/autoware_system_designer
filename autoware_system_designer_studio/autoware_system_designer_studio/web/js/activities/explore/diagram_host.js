@@ -2,7 +2,11 @@
 // diagram and mode. The module reports the selected element through
 // `inspector.show`, and a reload clears it through `inspector.reset`. A
 // selected node or module is also recorded in the store under `entity`, and
-// `focusKey` locates the store's entity on the diagram.
+// `focusKey` locates the store's entity on the diagram; `clearSelection`
+// drops the module's selection and empties the inspector. A module that draws
+// the hierarchy cut at a level is handed the store's `depth`. Live member
+// states set on the host reach the module shown, now and after each load,
+// where the module draws them; a measurement reload reaches it the same way.
 (function () {
   const SD = window.SD;
   const { element } = SD.widgets;
@@ -37,6 +41,8 @@
     main.classList.add("canvas-view");
     main.append(container, loading);
     let module = null;
+    // Member path -> live state, as last set; applied to every module loaded.
+    let liveStates = null;
 
     function showLoading(text) {
       loading.hidden = !text;
@@ -69,12 +75,14 @@
           deployment: config.deploymentName,
           dataBase: config.dataBase,
           latencyModes: config.latencyModes,
+          depth: parseInt(store.get("depth"), 10) || null,
           onInfoUpdate(data, type, entity) {
             inspector.show(data, type);
             if (isEntity(entity))
               store.set("entity", SD.NamespaceTree.entityKey(entity));
           },
         });
+        applyLiveStates(module);
       } catch (error) {
         console.error("Error loading diagram:", error);
         container.replaceChildren(
@@ -110,11 +118,46 @@
       return true;
     }
 
+    function clearSelection() {
+      if (typeof module?.clearSelection === "function") module.clearSelection();
+      inspector.reset();
+    }
+
     function updateTheme() {
       if (typeof module?.updateTheme === "function") module.updateTheme();
     }
 
-    return { load, focus, focusKey, updateTheme };
+    // Hands the live states to `target` once it has drawn, if it draws them.
+    async function applyLiveStates(target) {
+      if (!liveStates || typeof target?.setLiveStates !== "function") return;
+      await target.ready;
+      if (target === module) target.setLiveStates(liveStates);
+    }
+
+    function setLiveStates(states) {
+      liveStates = states;
+      applyLiveStates(module).catch((error) =>
+        console.warn("live states:", error),
+      );
+    }
+
+    // Reloads the mode's measurement on a module that shows one.
+    async function reloadMeasurement() {
+      const target = module;
+      if (typeof target?.reloadMeasurement !== "function") return;
+      await target.ready;
+      if (target === module) await target.reloadMeasurement();
+    }
+
+    return {
+      load,
+      focus,
+      focusKey,
+      clearSelection,
+      updateTheme,
+      setLiveStates,
+      reloadMeasurement,
+    };
   }
 
   explore.diagramHost = diagramHost;

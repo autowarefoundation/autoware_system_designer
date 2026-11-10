@@ -48,15 +48,27 @@ class Guard(Protocol):
 
 @dataclass
 class MemberRecord:
-    """Run state of one member: ``state`` token, its detail, and the wall-clock time of the change."""
+    """Run state of one member: ``state`` token, its detail, and the wall-clock time of the change.
+
+    ``restarts`` counts the starts after the first within the run, ``respawns`` the respawns among them.
+    """
 
     path: str
     state: str
     detail: dict[str, Any] = field(default_factory=dict)
     time: float = 0.0
+    restarts: int = 0
+    respawns: int = 0
 
     def as_dict(self) -> dict[str, Any]:
-        return {"path": self.path, "state": self.state, "detail": dict(self.detail), "time": self.time}
+        return {
+            "path": self.path,
+            "state": self.state,
+            "detail": dict(self.detail),
+            "time": self.time,
+            "restarts": self.restarts,
+            "respawns": self.respawns,
+        }
 
 
 class MemberStates:
@@ -64,6 +76,8 @@ class MemberStates:
 
     def __init__(self) -> None:
         self._records: dict[str, MemberRecord] = {}
+        # Member path -> [starts, respawns] over the whole run.
+        self._counts: dict[str, list[int]] = {}
         self._listeners: list[Callable[[MemberRecord], None]] = []
 
     def install(self, builder: "CoordinatorBuilder") -> None:
@@ -88,6 +102,12 @@ class MemberStates:
         record = self._translate(event)
         if record is None:
             return
+        counts = self._counts.setdefault(record.path, [0, 0])
+        if isinstance(event, (ev.Started, ev.LoadStarted)):
+            counts[0] += 1
+        elif isinstance(event, ev.Respawning):
+            counts[1] += 1
+        record.restarts, record.respawns = max(counts[0] - 1, 0), counts[1]
         self._records[record.path] = record
         for listener in list(self._listeners):
             listener(record)
@@ -152,21 +172,23 @@ class RuntimeCommands:
             "shutting_down": self._coord.shutdown_event.is_set(),
         }
 
-    def match(self, pattern: object) -> list[str]:
-        """The member named *pattern*, else every member whose name contains it."""
+    def match(self, pattern: object, *, exact: bool = False) -> list[str]:
+        """The member named *pattern*, else, unless *exact*, every member whose name contains it."""
         if not isinstance(pattern, str) or not pattern:
             raise CommandError("invalid_params", "a member name or substring is required")
         names = [name for name in self._coord.names() if pattern in name]
         if pattern in names:
             names = [pattern]
+        elif exact:
+            names = []
         if not names:
-            raise CommandError("not_found", f"no member matches {pattern!r}")
+            raise CommandError("not_found", f"no member {'named' if exact else 'matches'} {pattern!r}")
         return names
 
-    async def member_action(self, action: str, pattern: object) -> list[str]:
+    async def member_action(self, action: str, pattern: object, *, exact: bool = False) -> list[str]:
         if action not in MEMBER_ACTIONS:
             raise CommandError("invalid_params", f"unknown member action {action!r}")
-        names = self.match(pattern)
+        names = self.match(pattern, exact=exact)
         self._guard_check(action)
         for name in names:
             handle = self._coord.handle(name)

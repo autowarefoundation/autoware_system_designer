@@ -241,16 +241,16 @@ class ComposableNodeActor:
         container_ready: "asyncio.Future[int]",
         state_tx: asyncio.Queue,
         shutdown: asyncio.Event,
-        service_wait_timeout: float = 30.0,
-        load_call_timeout: float = 30.0,
+        service_wait_warn_s: float = 30.0,
+        load_call_warn_s: float = 30.0,
     ) -> None:
         self._spec = spec
         self._ros_worker = ros_worker
         self._container_ready = container_ready
         self._state_tx = state_tx
         self._shutdown = shutdown
-        self._service_wait_timeout = service_wait_timeout
-        self._load_call_timeout = load_call_timeout
+        self._service_wait_warn_s = service_wait_warn_s
+        self._load_call_warn_s = load_call_warn_s
         self._state: Any = ComposableBlocked(reason=BlockReason.NOT_STARTED)
 
     @property
@@ -343,8 +343,8 @@ class ComposableNodeActor:
             parameters=param_msgs,
             extra_arguments=extra_msgs,
             log_level=self._spec.log_level or 0,
-            service_wait_timeout=self._service_wait_timeout,
-            load_call_timeout=self._load_call_timeout,
+            service_wait_warn_s=self._service_wait_warn_s,
+            load_call_warn_s=self._load_call_warn_s,
         )
         return unique_id
 

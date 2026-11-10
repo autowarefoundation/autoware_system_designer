@@ -109,8 +109,11 @@ def test_config_quotes_strings_as_json(tmp_path):
         "label": "Node Diagram",
         "script": "../../../assets/js/diagrams/node_diagram.js",
         "searchable": True,
+        "layered": True,
     }
     assert [d["type"] for d in diagrams] == list(assets.DIAGRAMS)
+    assert "treemap" not in assets.DIAGRAMS
+    assert "js/diagrams/treemap.js" in assets.WORKBENCH_SCRIPTS
 
 
 def test_config_carries_the_selection_scope_and_launch_commands(tmp_path):

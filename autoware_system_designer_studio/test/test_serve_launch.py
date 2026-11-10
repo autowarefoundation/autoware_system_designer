@@ -89,7 +89,7 @@ async def main():
                           "error": {"code": "refused", "message": "stop refused: operation mode is autonomous"}})
                     continue
                 send({"event": "member", "path": pattern, "state": "stopped", "detail": {"exit_code": 0}, "time": 2.0})
-                result = {"members": [pattern]}
+                result = {"members": [pattern], **({"exact": True} if params.get("exact") is True else {})}
             elif method == "log.follow":
                 if params.get("path") not in [m["path"] for m in members]:
                     send({"id": req["id"], "ok": False, "error": {"code": "not_found", "message": "no member"}})
@@ -338,15 +338,24 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     assert {
         "compute_unit": "main_ecu",
         "system": f"{PKG}:{SYSTEM}",
+        "mode": "Runtime",
         "path": "/demo/talker",
         "state": "running",
         "detail": {"pid": 1},
         "time": 1.0,
+        "restarts": 0,
+        "respawns": 0,
     } in member_events
     while time.time() < deadline and not launching.events.of(launch.TOPIC_MEMBER_ACTIVITY):
         time.sleep(0.02)
     assert launching.events.of(launch.TOPIC_MEMBER_ACTIVITY) == [
-        {"compute_unit": "main_ecu", "system": f"{PKG}:{SYSTEM}", "window": 2.0, "rates": {"/demo/talker": 5120}}
+        {
+            "compute_unit": "main_ecu",
+            "system": f"{PKG}:{SYSTEM}",
+            "mode": "Runtime",
+            "window": 2.0,
+            "rates": {"/demo/talker": 5120},
+        }
     ]
     # Member output flows only once followed; the follow answers with the tail.
     assert launching.events.of(launch.TOPIC_MEMBER_LOG) == []
@@ -360,28 +369,28 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     assert launching.events.of(launch.TOPIC_MEMBER_LOG) == [
         {"compute_unit": "main_ecu", "path": "/demo/talker", "stream": "out", "lines": ["hello 2"]}
     ]
-    assert launching.daemon.launch.sessions["main_ecu"].follows == {"/demo/talker"}
+    assert launching.daemon.launch.session("main_ecu").follows == {"/demo/talker"}
     status, body = launching.rpc({"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/nope"}})
     assert status == 404 and body["error"]["code"] == api.NOT_FOUND
     status, body = launching.rpc({"method": "launch.unfollow", "params": {"compute_unit": "main_ecu"}})
     assert status == 200 and body["result"] == {"released": ["/demo/talker"]}
-    assert launching.daemon.launch.sessions["main_ecu"].follows == set()
+    assert launching.daemon.launch.session("main_ecu").follows == set()
     # Follows end with the last event stream.
     launching.rpc({"method": "launch.follow", "params": {"compute_unit": "main_ecu", "path": "/demo/talker"}})
-    assert launching.daemon.launch.sessions["main_ecu"].follows == {"/demo/talker"}
+    assert launching.daemon.launch.session("main_ecu").follows == {"/demo/talker"}
     launching.loop.call_soon_threadsafe(launching.daemon.launch.release_follows)
     deadline = time.time() + 5
-    while time.time() < deadline and launching.daemon.launch.sessions["main_ecu"].follows:
+    while time.time() < deadline and launching.daemon.launch.session("main_ecu").follows:
         time.sleep(0.02)
-    assert launching.daemon.launch.sessions["main_ecu"].follows == set()
+    assert launching.daemon.launch.session("main_ecu").follows == set()
     launches = launching.events.of(launch.TOPIC_LAUNCH)
     assert [e["state"] for e in launches][:2] == [launch.SESSION_STARTING, launch.SESSION_RUNNING]
     assert "members" not in launches[0]
 
     status, body = launching.rpc(
-        {"method": "launch.stop", "params": {"compute_unit": "main_ecu", "pattern": "/demo/listener"}}
+        {"method": "launch.stop", "params": {"compute_unit": "main_ecu", "pattern": "/demo/listener", "exact": True}}
     )
-    assert status == 200 and body["result"] == {"members": ["/demo/listener"]}
+    assert status == 200 and body["result"] == {"members": ["/demo/listener"], "exact": True}
     session = _wait_session(launching, lambda s: s["members"][1]["state"] == "stopped", "stop")
     assert session["members"][1]["detail"] == {"exit_code": 0}
 
@@ -390,6 +399,11 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     )
     assert status == 409
     assert body["error"] == {"code": api.REFUSED, "message": "stop refused: operation mode is autonomous"}
+
+    status, body = launching.rpc(
+        {"method": "launch.restart", "params": {"compute_unit": "main_ecu", "pattern": "/demo/talker", "exact": "yes"}}
+    )
+    assert status == 400 and body["error"]["code"] == api.INVALID_PARAMS
 
     status, body = launching.rpc({"method": "measure.status", "params": {"compute_unit": "main_ecu"}})
     assert status == 200 and body["result"] == {"state": "idle", "message": "measure idle"}
@@ -423,6 +437,61 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
         assert status == 404, method
     status, body = launching.rpc({"method": "launch.status", "params": {"compute_unit": "sub_ecu"}})
     assert status == 404
+
+
+def _sessions(running, unit):
+    _, body = running.rpc({"method": "launch.status", "params": {"compute_unit": unit}})
+    return {session["mode"]: session for session in body["result"]["sessions"]}
+
+
+def _shutdown(running, unit, mode):
+    status, body = running.rpc({"method": "launch.shutdown", "params": {"compute_unit": unit}})
+    assert status == 200, body
+    deadline = time.time() + 10
+    while time.time() < deadline and _sessions(running, unit)[mode]["state"] != launch.SESSION_EXITED:
+        time.sleep(0.05)
+    assert _sessions(running, unit)[mode]["state"] == launch.SESSION_EXITED
+
+
+def test_a_system_runs_one_mode_at_a_time_and_keeps_the_last_session_of_each(tmp_path, run_dir):
+    install = _install_tree(tmp_path, compute_units=UNITS)
+    structures = install / PKG / "share" / PKG / "exports" / SYSTEM / "system_structure"
+    (structures / "Simulation.json").write_text((structures / "Runtime.json").read_text())
+    running = _Running(
+        install,
+        served_units=["main_ecu", "sub_ecu"],
+        launch_env=_launch_env(_fake_launcher(tmp_path)),
+        heartbeat_s=60,
+    )
+    try:
+        nosocket = {"behaviour": "nosocket"}
+        status, body = _start(running, mode="Runtime", args=nosocket)
+        assert status == 200, body
+        # Another unit joins the running mode; another mode waits for every unit of the system.
+        status, body = _start(running, compute_unit="sub_ecu", mode="Simulation", args=nosocket)
+        assert status == 409 and body["error"]["code"] == api.CONFLICT, body
+        status, body = _start(running, compute_unit="sub_ecu", mode="Runtime", args=nosocket)
+        assert status == 200, body
+        _shutdown(running, "main_ecu", "Runtime")
+        status, body = _start(running, mode="Simulation", args=nosocket)
+        assert status == 409 and body["error"]["code"] == api.CONFLICT, body
+        _shutdown(running, "sub_ecu", "Runtime")
+
+        status, body = _start(running, mode="Simulation", args=nosocket)
+        assert status == 200, body
+        sessions = _sessions(running, "main_ecu")
+        assert sessions["Runtime"]["state"] == launch.SESSION_EXITED
+        assert sessions["Simulation"]["state"] != launch.SESSION_EXITED
+        manager = running.daemon.launch
+        assert manager.session("main_ecu").mode == "Simulation"
+        assert manager.session("main_ecu", system_id=f"{PKG}:{SYSTEM}", mode="Runtime").mode == "Runtime"
+        for scope in ({"system_id": f"{PKG}:{SYSTEM}"}, {"mode": "Runtime"}):
+            with pytest.raises(api.ApiError) as info:
+                manager.session("main_ecu", **scope)
+            assert info.value.code == api.INVALID_PARAMS
+        _shutdown(running, "main_ecu", "Simulation")
+    finally:
+        running.close()
 
 
 def test_shutdown_of_a_launch_without_a_channel_cancels_its_job(launching):
@@ -635,3 +704,16 @@ def test_the_run_of_a_session_is_listed_once_the_session_exited(launching):
     assert body["result"]["members"] == [{"path": "/demo/talker", "slug": "demo_talker"}]
     status, body = launching.rpc({"method": "launch.run_tail", "params": {"run": run, "member": "demo_talker"}})
     assert status == 200 and body["result"]["out"] == ["hello 1", "hello 2"] and body["result"]["err"] == ["bye"]
+
+
+def test_a_session_keeps_the_runtime_counts_of_its_members():
+    count = launch.LaunchSession.count
+    assert count({"path": "/a", "state": "running", "restarts": 3, "respawns": 2}) == {
+        "path": "/a",
+        "state": "running",
+        "restarts": 3,
+        "respawns": 2,
+    }
+    # A runtime without counts, or a malformed one, reads as no restarts.
+    assert count({"path": "/a", "state": "running"})["restarts"] == 0
+    assert count({"path": "/a", "restarts": "3", "respawns": -1}) == {"path": "/a", "restarts": 0, "respawns": 0}

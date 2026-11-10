@@ -81,6 +81,8 @@ class OperationModeGuard:
         return True
 
     def _on_message(self, msg, info) -> None:
+        # Both arguments are required: rclpy passes message info only to a callback that cannot be
+        # called with the message alone.
         stamp_ns = int(msg.stamp.sec) * 1_000_000_000 + int(msg.stamp.nanosec)
         published_ns = (
             info.get("source_timestamp") if isinstance(info, dict) else getattr(info, "source_timestamp", None)
@@ -89,8 +91,7 @@ class OperationModeGuard:
             if not self._replay_logged:
                 self._replay_logged = True
                 logger.info(
-                    "operation mode report stamped %.0f s from its publication ignored "
-                    "(replayed or simulated time)",
+                    "operation mode report stamped %.0f s from its publication ignored " "(replayed or simulated time)",
                     (published_ns - stamp_ns) / 1e9,
                 )
             return

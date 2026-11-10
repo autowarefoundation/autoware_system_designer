@@ -315,6 +315,25 @@
     };
   }
 
+  // Costs over `base` with the process gates of members that are down now
+  // dead: `deadOf(event)` names the reason, or null while the member runs or
+  // was never launched. A dead gate runs for nothing and waits on nothing, so
+  // the fold rules carry the outage downstream.
+  function liveCosts(base, deadOf) {
+    return {
+      wait(event) {
+        return deadOf(event) ? ZERO : base.wait(event);
+      },
+      exec(event) {
+        const reason = deadOf(event);
+        return reason ? dead(reason) : base.exec(event);
+      },
+      comm(edge, from, to) {
+        return base.comm(edge, from, to);
+      },
+    };
+  }
+
   // ── Solver ──────────────────────────────────────────────────────────────────
 
   // Gates of this type fire once at start-up and take no part in a steady chain;
@@ -736,6 +755,7 @@
     logicalCosts,
     designCosts,
     measuredCosts,
+    liveCosts,
     ChainSolver,
     chainTo,
     hopsOf,

@@ -4,7 +4,8 @@
 //
 // Page events: "daemon.connection" {connected}, "daemon.health" (health result),
 // "daemon.jobs" (job list), and "daemon.<topic>" for every event-stream topic
-// (job, job.log, systems.changed, daemon, launch, member, member.log).
+// (job, job.log, systems.changed, daemon, launch, member, member.log,
+// member.activity, records.changed).
 (function () {
   const SD = window.SD;
   const CLIENT_HEADER = "X-System-Designer-Client";
@@ -17,6 +18,7 @@
     "member",
     "member.log",
     "member.activity",
+    "records.changed",
   ];
 
   let root = "/";

@@ -58,7 +58,7 @@ autoware-system-designer-launch SYSTEM.json \
     --deploy my_vehicle \               # deploy variant whose arguments bind $(var ...)
     --arg map_path=/data/map \          # bind/override one system argument (repeatable)
     --log-dir /tmp/run1 \               # per-node logs land in /tmp/run1/<member>/
-    --respawn \                         # restart any node that exits for any reason
+    --respawn \                         # restart any node that exits abnormally (non-zero)
     --respawn-delay 1.0 \
     --max-respawn-attempts 5 \
     --graceful-shutdown-timeout 10 \    # seconds SIGTERM→SIGKILL grace
@@ -107,14 +107,14 @@ requests and gets one response each:
 → {"id":2,"ok":false,"error":{"code":"refused","message":"shutdown refused: operation mode is autonomous"}}
 ```
 
-| Method                                            | Params    | Result                                                   |
-| ------------------------------------------------- | --------- | -------------------------------------------------------- |
-| `status`                                          | -         | `{"members": [record], "launch_ready", "shutting_down"}` |
-| `stop`, `restart`, `kill`                         | `pattern` | `{"members": [matched names]}`                           |
-| `log.follow`                                      | `path`    | `{"path", "out": [lines], "err": [lines]}`, the tails    |
-| `log.unfollow`                                    | `path`?   | `{"released": [paths]}` (every follow without `path`)    |
-| `measure.start`, `measure.stop`, `measure.status` | -         | `{"state", "message"}` (needs `--measure`)               |
-| `shutdown`                                        | -         | `{"shutting_down": true}`                                |
+| Method                                            | Params              | Result                                                                       |
+| ------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------- |
+| `status`                                          | -                   | `{"members": [record], "launch_ready", "shutting_down"}`                     |
+| `stop`, `restart`, `kill`                         | `pattern`, `exact`? | `{"members": [matched names]}`; `exact` names one member, no substring match |
+| `log.follow`                                      | `path`              | `{"path", "out": [lines], "err": [lines]}`, the tails                        |
+| `log.unfollow`                                    | `path`?             | `{"released": [paths]}` (every follow without `path`)                        |
+| `measure.start`, `measure.stop`, `measure.status` | -                   | `{"state", "message"}` (needs `--measure`)                                   |
+| `shutdown`                                        | -                   | `{"shutting_down": true}`                                                    |
 
 A member record is `{"path", "state", "detail", "time"}`; `path` is the member name (the node's
 structural path), `state` one of `pending`, `running`, `stopped`, `respawning`, `failed`, `done`,
@@ -280,7 +280,7 @@ The two systems share the design pattern but not code. When play_launch's parser
 
 ## Caveats
 
-- **Composable params** are flattened from YAML in the actor; rclpy is on a worker thread and the LoadNode service has a 30 s default timeout per call.
+- **Composable params** are flattened from YAML in the actor; rclpy is on a worker thread and the LoadNode service wait and call are unbounded as in launch_ros, with a warning past 30 s each.
   Slow containers will need a higher timeout (configurable in `ComposableNodeActor.__init__`).
 - **`ros2_launch_file` entities** are wrapped as a single Python subprocess that runs `LaunchService` directly (not the `ros2 launch` CLI). Global parameters (`vehicle_info.param.yaml`) are injected as `SetParameter` actions before the include so all nodes in the subtree receive them — even though each wrapper runs in a separate process from the `global_parameter_loader`. You lose per-leaf-node visibility _inside_ the include — by design.
 - **Empty / placeholder nodes** (single_node entries whose `executable` is empty) are silently skipped during build; check the log at startup.

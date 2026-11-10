@@ -1,26 +1,4 @@
-/* Launch activity: the launchpad cards, the commands popup and the state monitor. */
-
-.launch-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.launch-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-}
-
-.launch-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
+/* Launch activity: the unit controls of the state map, the commands popup and the log view. */
 
 .launch-unit {
   font-size: 13px;
@@ -47,10 +25,61 @@
   word-break: break-word;
 }
 
-.launch-actions {
+/* Unit controls in a section head of the state map: one compact row */
+.unit-controls {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.unit-controls .panel-button {
+  flex-shrink: 0;
+  padding: 3px 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.unit-controls .unit-status {
+  font-size: 12px;
+}
+
+.unit-controls .launch-session,
+.unit-controls .launch-measure,
+.unit-controls .launch-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+
+/* Units with a launcher and no section on the map, above it, one row each */
+.control-undrawn-units {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.control-undrawn-unit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.restart-glyph {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Meaning of the marks on the map, in the Control view head */
+.control-legend {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* Commands table */
@@ -108,7 +137,7 @@
   color: var(--text-muted);
 }
 
-/* State monitor: member tree beside the selected member's log */
+/* Logs view: member tree beside the selected member's log */
 .monitor-tree {
   gap: 8px;
   width: 300px;
@@ -219,12 +248,6 @@
   color: var(--text-muted);
 }
 
-.monitor-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
 /* Launcher processes listed above the member tree */
 .monitor-launchers {
   display: flex;
@@ -305,17 +328,92 @@
   word-break: break-word;
 }
 
-.member-actions {
+/* Control view: the selected entity and the actions on its process, between the head and the map */
+.member-bar {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  min-width: 0;
+  padding: 4px 14px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.member-actions .panel-button {
+.member-bar[hidden] {
+  display: none;
+}
+
+.member-bar-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono-font);
+  font-size: 12px;
+}
+
+.member-bar-unit,
+.member-bar-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.member-bar-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.member-bar-actions .panel-button {
   padding: 2px 8px;
   font-size: 12px;
 }
 
-.member-note {
+/* Stop or Kill awaiting its answer, centred between the title and the actions */
+.member-bar-confirm {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  margin-inline: auto;
+}
+
+.member-bar-confirm + .member-bar-actions {
+  margin-left: 0;
+}
+
+.member-bar-confirm .panel-button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.member-bar-question {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--state-warning);
+}
+
+/* The action the confirmation is for */
+.member-bar-actions .panel-button.armed {
+  border-color: var(--state-warning);
+  color: var(--state-warning);
+}
+
+.panel-button.member-bar-link {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 8px;
+  font-family: var(--mono-font);
+  font-size: 12px;
+}
+
+.member-bar-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
   color: var(--state-failed);
 }
@@ -323,6 +421,11 @@
 /* Output growth of the selected member's log */
 .member-rate {
   font-size: 12px;
+  color: var(--text-muted);
+}
+
+.member-restarts {
+  font-size: 11px;
   color: var(--text-muted);
 }
 

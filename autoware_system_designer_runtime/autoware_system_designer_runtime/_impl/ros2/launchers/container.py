@@ -31,6 +31,9 @@ from ..common.params import _ros_args, build_cmd
 
 logger = logging.getLogger(__name__)
 
+# Poll period of the LoadNode service and response waits; bounds how late a shutdown is noticed.
+WAIT_POLL_S = 1.0
+
 
 def container_cmdline(spec: Mapping) -> list[str]:
     launcher = spec["launcher"]
@@ -102,7 +105,7 @@ class RosWorker:
     def _run(self) -> None:
         try:
             import rclpy
-            from rclpy.executors import SingleThreadedExecutor
+            from rclpy.signals import SignalHandlerOptions
         except ImportError as e:
             logger.error("rclpy not available: %s", e)
             self._init_error = RuntimeError(f"rclpy not available: {e}")
@@ -111,15 +114,22 @@ class RosWorker:
 
         try:
             if not rclpy.ok():
-                rclpy.init()
+                # The coordinator owns SIGINT/SIGTERM; the context lives until the worker stops.
+                rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
             self._node = rclpy.create_node(self.NODE_NAME)
-            self._executor = SingleThreadedExecutor()
+            self._executor = make_executor()
             self._executor.add_node(self._node)
             self._ready.set()
 
             while not self._stop.is_set():
                 self._run_jobs()
-                self._executor.spin_once(timeout_sec=0.1)
+                try:
+                    self._executor.spin_once(timeout_sec=0.1)
+                except Exception:  # noqa: BLE001
+                    # A failing callback costs only its own message; a lost context still ends the worker.
+                    if not rclpy.ok():
+                        raise
+                    logger.exception("ros worker callback failed")
         except Exception as exc:  # noqa: BLE001
             logger.exception("ros worker crashed")
             self._init_error = exc
@@ -218,8 +228,8 @@ class RosWorker:
         parameters: list,
         extra_arguments: list,
         log_level: int = 0,
-        service_wait_timeout: float = 30.0,
-        load_call_timeout: float = 30.0,
+        service_wait_warn_s: float = 30.0,
+        load_call_warn_s: float = 30.0,
     ) -> int:
         if self._crashed.is_set():
             raise RuntimeError("ros worker has crashed")
@@ -236,15 +246,24 @@ class RosWorker:
         req.extra_arguments = extra_arguments
 
         client = self._client_for(container_fqn)
+        target = f"{node_namespace.rstrip('/')}/{node_name}"
 
+        # Both waits are unbounded, as in launch_ros: past the warn threshold they log once and keep
+        # waiting; only shutdown (task cancellation) or a crashed ros worker ends them.
         loop = asyncio.get_running_loop()
-        ok = await loop.run_in_executor(None, client.wait_for_service, service_wait_timeout)
-        if self._crashed.is_set():
-            raise RuntimeError("ros worker crashed while waiting for service")
-        if not ok:
-            raise TimeoutError(
-                f"service {container_fqn}/_container/load_node " f"not available within {service_wait_timeout}s"
-            )
+        started = loop.time()
+        warned = False
+        while not await loop.run_in_executor(None, client.wait_for_service, WAIT_POLL_S):
+            if self._crashed.is_set():
+                raise RuntimeError("ros worker crashed while waiting for service")
+            if not warned and loop.time() - started >= service_wait_warn_s:
+                warned = True
+                logger.warning(
+                    "service %s/_container/load_node not available after %gs for %s; still waiting",
+                    container_fqn,
+                    service_wait_warn_s,
+                    target,
+                )
 
         rcl_future = client.call_async(req)
         aio_future: "asyncio.Future" = loop.create_future()
@@ -253,18 +272,33 @@ class RosWorker:
             try:
                 result = f.result()
             except Exception as e:  # noqa: BLE001
-                loop.call_soon_threadsafe(aio_future.set_exception, e)
+                loop.call_soon_threadsafe(_resolve, aio_future, None, e)
                 return
-            loop.call_soon_threadsafe(aio_future.set_result, result)
+            loop.call_soon_threadsafe(_resolve, aio_future, result, None)
 
         rcl_future.add_done_callback(_on_done)
 
+        started = loop.time()
+        warned = False
         try:
-            response = await asyncio.wait_for(aio_future, timeout=load_call_timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError(
-                f"LoadNode call for {node_namespace}/{node_name} " f"timed out after {load_call_timeout}s"
-            )
+            while True:
+                done, _ = await asyncio.wait({aio_future}, timeout=WAIT_POLL_S)
+                if done:
+                    break
+                if self._crashed.is_set():
+                    raise RuntimeError("ros worker crashed while waiting for LoadNode response")
+                if not warned and loop.time() - started >= load_call_warn_s:
+                    warned = True
+                    logger.warning(
+                        "LoadNode call for %s into %s not answered after %gs; still waiting",
+                        target,
+                        container_fqn,
+                        load_call_warn_s,
+                    )
+        except BaseException:
+            rcl_future.cancel()
+            raise
+        response = aio_future.result()
 
         if not response.success:
             raise RuntimeError(f"LoadNode rejected: {response.error_message or '(no error message)'}")
@@ -283,6 +317,52 @@ class RosWorker:
                 client = self._node.create_client(LoadNode, service_name)
                 self._clients[service_name] = client
             return client
+
+
+def takes_message_info(callback: Callable) -> bool:
+    """Whether rclpy (Iron and later) calls *callback* with the message and its message info."""
+    import inspect
+
+    signature = inspect.signature(callback)
+    try:
+        signature.bind(object())
+        return False
+    except TypeError:
+        pass
+    try:
+        signature.bind(object(), object())
+        return True
+    except TypeError:
+        return False
+
+
+def make_executor(context=None):
+    """Single-threaded executor that passes message info to two-argument subscription callbacks.
+
+    rclpy does so from Iron on; on Humble the message info that rcl returns with each take reaches
+    such callbacks through this executor.
+    """
+    from rclpy.executors import SingleThreadedExecutor, await_or_execute
+    from rclpy.subscription import Subscription
+
+    if hasattr(Subscription, "CallbackType"):
+        return SingleThreadedExecutor(context=context)
+
+    class _MessageInfoExecutor(SingleThreadedExecutor):
+        def _take_subscription(self, sub):
+            with sub.handle:
+                return sub.handle.take_message(sub.msg_type, sub.raw)
+
+        async def _execute_subscription(self, sub, taken):
+            if taken is None:
+                return
+            msg, info = taken
+            if takes_message_info(sub.callback):
+                await await_or_execute(sub.callback, msg, info)
+            else:
+                await await_or_execute(sub.callback, msg)
+
+    return _MessageInfoExecutor(context=context)
 
 
 def _discard(_msg) -> None:

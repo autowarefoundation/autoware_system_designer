@@ -272,7 +272,10 @@ class ControlChannel:
         if method == "status":
             return self._commands.status()
         if method in ("stop", "restart", "kill"):
-            return {"members": await self._commands.member_action(method, params.get("pattern"))}
+            exact = params.get("exact", False)
+            if not isinstance(exact, bool):
+                raise CommandError("invalid_params", "exact must be a boolean")
+            return {"members": await self._commands.member_action(method, params.get("pattern"), exact=exact)}
         if method == "log.follow":
             return self._follow(client, params.get("path"))
         if method == "log.unfollow":

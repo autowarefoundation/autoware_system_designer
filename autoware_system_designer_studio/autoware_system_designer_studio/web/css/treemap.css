@@ -1,0 +1,189 @@
+/* Treemap: one section per compute unit, slots in fixed rows, nested blocks coloured by run state. */
+
+/* The layout follows the width; sections past the height scroll. The
+   scrollbar is always present, so the layout width is the same with and
+   without overflow. */
+.diagram-canvas.treemap-canvas {
+  position: relative;
+  overflow-x: hidden;
+  overflow-y: scroll;
+}
+
+/* Host controls of a unit over its section head, between the name and the kind text */
+.tm-controls {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
+.tm-unit-controls {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tm-unit-controls > * {
+  pointer-events: auto;
+}
+
+.treemap {
+  display: block;
+}
+
+.treemap text {
+  font-family: "Segoe UI", sans-serif;
+  fill: var(--text-primary);
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Compute unit section: a dashed outline under a head bar with the state mark, the name and the kind */
+.tm-unit > .tm-head {
+  fill: var(--bg-tertiary);
+  stroke: var(--border-hover);
+  stroke-width: 1;
+  cursor: pointer;
+}
+
+.tm-unit.selected > .tm-head {
+  stroke: var(--highlight);
+  stroke-width: 2;
+}
+
+.tm-unit > .tm-rect {
+  fill: none;
+  stroke: var(--border-hover);
+  stroke-width: 1.2;
+  stroke-dasharray: 6 4;
+  cursor: pointer;
+}
+
+.tm-unit > .tm-title {
+  font-weight: 700;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.tm-unit > .tm-kind {
+  fill: var(--text-secondary);
+}
+
+.tm-unit.selected > .tm-rect {
+  stroke: var(--highlight);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+
+/* Slot: a faint well naming the component group on a title strip, outlined in the component's colour */
+.tm-slot > .tm-rect {
+  fill: var(--bg-primary);
+  stroke: var(--slot-color, var(--border-color));
+  stroke-width: 2;
+}
+
+[data-theme="dark"] .tm-slot > .tm-rect {
+  stroke: var(--slot-color-dark, var(--border-color));
+}
+
+.tm-slot > .tm-slot-head {
+  fill: var(--slot-color, transparent);
+}
+
+[data-theme="dark"] .tm-slot > .tm-slot-head {
+  fill: var(--slot-color-dark, transparent);
+}
+
+[data-theme="dark"] .tm-slot > text {
+  fill: var(--slot-text-dark, var(--text-secondary));
+}
+
+.tm-slot > text {
+  fill: var(--slot-text, var(--text-secondary));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Blocks: a module a tinted frame around its children, a node a solid cell;
+   neutral until a launched member within reports a state other than idle */
+.tm-block {
+  cursor: pointer;
+}
+
+.tm-block > .tm-rect {
+  fill: var(--state-idle);
+  fill-opacity: 0.12;
+  stroke: var(--border-color);
+  stroke-width: 1;
+  transition: fill 0.2s;
+}
+
+.tm-block[data-kind="node"] > .tm-rect {
+  fill: var(--bg-tertiary);
+  fill-opacity: 1;
+}
+
+.tm-block.state-running > .tm-rect {
+  fill: var(--state-running);
+}
+
+.tm-block.state-ok > .tm-rect {
+  fill: var(--state-ok);
+}
+
+.tm-block.state-warning > .tm-rect {
+  fill: var(--state-warning);
+}
+
+.tm-block.state-failed > .tm-rect {
+  fill: var(--state-failed);
+}
+
+.tm-block[data-kind="node"].state-running > .tm-rect,
+.tm-block[data-kind="node"].state-ok > .tm-rect,
+.tm-block[data-kind="node"].state-warning > .tm-rect,
+.tm-block[data-kind="node"].state-failed > .tm-rect {
+  fill-opacity: 0.55;
+}
+
+.tm-block[data-kind="module"].state-running > .tm-rect,
+.tm-block[data-kind="module"].state-ok > .tm-rect,
+.tm-block[data-kind="module"].state-warning > .tm-rect,
+.tm-block[data-kind="module"].state-failed > .tm-rect {
+  fill-opacity: 0.18;
+}
+
+.tm-block:hover > .tm-rect {
+  stroke: var(--border-hover);
+}
+
+.tm-block.selected > .tm-rect {
+  stroke: var(--highlight);
+  stroke-width: 2;
+}
+
+.tm-unit > .live-mark,
+.tm-block > .tm-dress {
+  pointer-events: none;
+}
+
+/* A block's mark sits on its own state colour: an outline keeps the shape apart */
+.tm-block > .tm-dress .state-glyph:not(.idle) {
+  stroke: var(--bg-primary);
+  stroke-width: 1.5px;
+  paint-order: stroke;
+}
+
+/* Busy-log mark and restart count after a block's state mark */
+.tm-busy {
+  fill: var(--state-warning);
+}
+
+.treemap .tm-restarts {
+  fill: var(--text-primary);
+  font-weight: 600;
+}

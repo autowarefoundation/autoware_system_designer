@@ -127,3 +127,8 @@
   stroke-width: 2px;
   fill: var(--highlight-bg);
 }
+
+/* Live state of a launched member: a mark in the box's corner */
+.live-mark {
+  pointer-events: none;
+}

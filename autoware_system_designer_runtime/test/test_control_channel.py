@@ -21,6 +21,7 @@ import json
 import os
 import stat
 import tempfile
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -32,6 +33,7 @@ from autoware_system_designer_runtime._impl.core.commands import CommandError, M
 from autoware_system_designer_runtime._impl.core.control_channel import METHODS, ControlChannel
 from autoware_system_designer_runtime._impl.core.regular_actor import _slug
 from autoware_system_designer_runtime._impl.core.stdin_console import _dispatch
+from autoware_system_designer_runtime._impl.ros2.launchers.container import takes_message_info
 from autoware_system_designer_runtime._impl.ros2.operation_mode import MODE_AUTONOMOUS, OperationModeGuard, is_replayed
 
 
@@ -138,6 +140,28 @@ def test_member_states_follow_actor_events():
     assert states.get("/n").state == "done" and states.get("/n").time > 0
 
 
+def test_member_records_count_restarts_and_respawns_over_the_run():
+    states = MemberStates()
+
+    def counts(event):
+        states.on_event(event)
+        record = states.get(event.name)
+        return record.restarts, record.respawns
+
+    # The first start is no restart; every later start counts, respawned or not.
+    assert counts(ev.Started(name="/n", pid=1)) == (0, 0)
+    assert counts(ev.Exited(name="/n", exit_code=0)) == (0, 0)
+    assert counts(ev.Started(name="/n", pid=2)) == (1, 0)
+    assert counts(ev.Respawning(name="/n", attempt=0, delay=1.0)) == (1, 1)
+    assert counts(ev.Started(name="/n", pid=3)) == (2, 1)
+    assert counts(ev.Terminated(name="/n")) == (2, 1)
+    # A composable node counts its loads.
+    assert counts(ev.LoadStarted(name="/c")) == (0, 0)
+    assert counts(ev.LoadSucceeded(name="/c", full_node_name="/c", unique_id=1)) == (0, 0)
+    assert counts(ev.LoadStarted(name="/c")) == (1, 0)
+    assert states.get("/n").as_dict()["restarts"] == 2
+
+
 def test_a_loaded_composable_keeps_its_state_when_its_task_ends():
     states = MemberStates()
     states.on_event(ev.LoadStarted(name="/c/filter"))
@@ -176,6 +200,15 @@ def test_member_actions_match_substrings_and_reach_the_handles():
     assert coord.calls[0] == ("stop", "/perception/detector")
     assert [c[0] for c in coord.calls] == ["stop", "restart", "restart", "restart", "kill"]
     assert coord.calls[-1][2] == 9
+
+
+def test_exact_member_actions_reach_the_named_member_only():
+    coord, commands = _commands()
+    assert _run(commands.member_action("stop", "/perception/detector", exact=True)) == ["/perception/detector"]
+    with pytest.raises(CommandError) as partial:
+        _run(commands.member_action("stop", "/perception", exact=True))
+    assert partial.value.code == "not_found"
+    assert coord.calls == [("stop", "/perception/detector")]
 
 
 def test_member_actions_reject_missing_and_unmatched_patterns():
@@ -259,7 +292,8 @@ def test_operation_mode_guard_refuses_autonomous_and_transitions_only():
 
 def _state(mode, stamp_ns, in_transition=False):
     return SimpleNamespace(
-        mode=mode, is_in_transition=in_transition,
+        mode=mode,
+        is_in_transition=in_transition,
         stamp=SimpleNamespace(sec=stamp_ns // 10**9, nanosec=stamp_ns % 10**9),
     )
 
@@ -338,6 +372,8 @@ def test_channel_greets_with_members_and_forwards_state_changes(tmp_path):
                 "state": "running",
                 "detail": {"pid": 42},
                 "time": member["time"],
+                "restarts": 0,
+                "respawns": 0,
             }
 
             reply = await c.call("status")
@@ -356,6 +392,8 @@ def test_channel_dispatches_member_measure_and_shutdown_methods(tmp_path):
             await c.event()
             assert (await c.call("stop", {"pattern": "/sensing"}))["result"] == {"members": ["/sensing/lidar/driver"]}
             assert (await c.call("kill", {"pattern": "container"}, request_id="k"))["id"] == "k"
+            assert (await c.call("stop", {"pattern": "/sensing", "exact": True}))["error"]["code"] == "not_found"
+            assert (await c.call("stop", {"pattern": "/sensing", "exact": "yes"}))["error"]["code"] == "invalid_params"
             assert coord.calls == [("stop", "/sensing/lidar/driver"), ("kill", "/pointcloud_container", 9)]
             assert (await c.call("measure.start"))["result"]["state"] == "open"
             assert (await c.call("measure.status"))["result"]["message"] == "state=open"
@@ -539,3 +577,18 @@ def test_channel_replaces_a_stale_socket_file(tmp_path):
             assert (await c.event())["event"] == "hello"
 
     _run(scenario())
+
+
+def test_operation_mode_guard_callback_is_given_message_info():
+    # rclpy passes message info only to a callback that cannot be called with the message alone.
+    assert takes_message_info(OperationModeGuard(worker=None)._on_message)
+    assert not takes_message_info(lambda msg, info=None: None)
+    assert not takes_message_info(lambda msg: None)
+
+
+def test_operation_mode_guard_trusts_a_latched_report_published_long_ago():
+    # A late subscriber receives the latched state with its original stamp and publication time.
+    published = time.time_ns() - 3600 * 10**9
+    guard = OperationModeGuard(worker=None)
+    guard._on_message(_state(MODE_AUTONOMOUS, published), {"source_timestamp": published})
+    assert guard.check("stop") == "stop refused: operation mode is autonomous"

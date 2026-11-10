@@ -24,6 +24,9 @@ stream and relays the
 ``launch.*`` and ``measure.*`` methods as requests over the socket. A ``launch`` event carries the
 session view (without members) whenever its job, connection or runtime state changes.
 
+Every member record the daemon keeps or forwards carries the runtime's ``restarts``, the times the
+member was started again within the launch, and ``respawns``, the respawns among them.
+
 Member output flows only for followed members: ``launch.follow`` asks the runtime to tail one
 member and answers with the current tail of its files, ``launch.unfollow`` releases it. The daemon
 is one runtime client, so follows are shared by every event stream and released together once the
@@ -217,6 +220,10 @@ class ControlClient:
             self._writer.close()
 
 
+def _count(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
 class LaunchSession:
     """One launch of a compute unit: its job, the control connection and the runtime's member records."""
 
@@ -234,7 +241,13 @@ class LaunchSession:
         self.log_dir: Optional[Path] = None
         self.launch_ready = False
         self.shutting_down = False
-        self.updated_at = time.time()
+        self.started_at = time.time()
+        self.updated_at = self.started_at
+
+    @staticmethod
+    def count(record: dict[str, Any]) -> dict[str, Any]:
+        """``record`` with the runtime's ``restarts`` and ``respawns``, 0 where it reports none."""
+        return {**record, "restarts": _count(record.get("restarts")), "respawns": _count(record.get("respawns"))}
 
     @property
     def active(self) -> bool:
@@ -273,7 +286,8 @@ class LaunchSession:
 
 
 class LaunchManager:
-    """Launch sessions of this daemon, one per compute unit; the last session of a unit stays until the next."""
+    """Launch sessions of this daemon: one running per compute unit, and one mode of a system at a time
+    across its units. The last session of each mode of a system on a unit stays until that mode's next."""
 
     def __init__(
         self,
@@ -296,7 +310,8 @@ class LaunchManager:
         self.env_script = env_script
         self.launcher = launcher or find_launcher(install_root, self.env)
         self.rviz_config = rviz_config or find_rviz_config(self.env)
-        self.sessions: dict[str, LaunchSession] = {}
+        # (compute unit, system id, mode) -> the last session of that mode on the unit.
+        self.sessions: dict[tuple[str, str, str], LaunchSession] = {}
         self._tasks: set[asyncio.Task] = set()
 
     def info(self) -> dict[str, Any]:
@@ -310,17 +325,36 @@ class LaunchManager:
         }
 
     def running_units(self, system_id: str) -> set[str]:
-        return {unit for unit, session in self.sessions.items() if session.active and session.system.id == system_id}
+        return {
+            session.compute_unit
+            for session in self.sessions.values()
+            if session.active and session.system.id == system_id
+        }
 
     def views(self, compute_unit: Optional[str] = None) -> list[dict[str, Any]]:
-        sessions = self.sessions.values() if compute_unit is None else [self.session(compute_unit)]
-        return [session.to_view(members=True) for session in sorted(sessions, key=lambda s: s.compute_unit)]
+        sessions = list(self.sessions.values()) if compute_unit is None else self._of_unit(compute_unit)
+        sessions.sort(key=lambda s: (s.compute_unit, s.started_at))
+        return [session.to_view(members=True) for session in sessions]
 
-    def session(self, compute_unit: str) -> LaunchSession:
-        session = self.sessions.get(compute_unit)
-        if session is None:
+    def _of_unit(self, compute_unit: str) -> list[LaunchSession]:
+        sessions = [session for session in self.sessions.values() if session.compute_unit == compute_unit]
+        if not sessions:
             raise api.ApiError(api.NOT_FOUND, f"no launch of compute unit {compute_unit!r}")
-        return session
+        return sessions
+
+    def session(
+        self, compute_unit: str, *, system_id: Optional[str] = None, mode: Optional[str] = None
+    ) -> LaunchSession:
+        """The unit's session of ``mode`` of a system; without both the running one, else the latest."""
+        sessions = self._of_unit(compute_unit)
+        if (system_id is None) != (mode is None):
+            raise api.ApiError(api.INVALID_PARAMS, "a launch scope needs both system and mode, or neither")
+        if system_id is not None:
+            session = self.sessions.get((compute_unit, system_id, mode))
+            if session is None:
+                raise api.ApiError(api.NOT_FOUND, f"no launch of mode {mode!r} on compute unit {compute_unit!r}")
+            return session
+        return max(sessions, key=lambda s: (s.active, s.started_at))
 
     def active_session(self, compute_unit: str) -> LaunchSession:
         session = self.session(compute_unit)
@@ -343,11 +377,18 @@ class LaunchManager:
         if self.launcher is None:
             raise api.ApiError(api.UNAVAILABLE, f"{LAUNCHER} not found on the launch PATH or under the install tree")
         self._require_ros()
-        running = self.sessions.get(compute_unit)
-        if running is not None and running.active:
-            raise api.ApiError(
-                api.CONFLICT, f"compute unit {compute_unit!r} is already launched (job {running.job.id})"
-            )
+        for running in self.sessions.values():
+            if not running.active:
+                continue
+            if running.compute_unit == compute_unit:
+                raise api.ApiError(
+                    api.CONFLICT, f"compute unit {compute_unit!r} is already launched (job {running.job.id})"
+                )
+            if running.system.id == system.id and running.mode != mode:
+                raise api.ApiError(
+                    api.CONFLICT,
+                    f"{system.id} runs mode {running.mode!r} on compute unit {running.compute_unit!r}",
+                )
         socket = socket_dir() / f"{os.getpid()}-{compute_unit}.sock"
         argv = [
             str(self.launcher),
@@ -390,7 +431,7 @@ class LaunchManager:
             on_exit=lambda job: self._on_exit(session),
         )
         session.job = await self._jobs.start(spec)
-        self.sessions[compute_unit] = session
+        self.sessions[(compute_unit, system.id, mode)] = session
         self._publish(session)
         task = asyncio.ensure_future(self._attach(session))
         self._tasks.add(task)
@@ -423,10 +464,12 @@ class LaunchManager:
             raise api.ApiError(api.UNAVAILABLE, f"the control channel of {compute_unit!r} is not connected yet")
         return await session.client.call(method, params)
 
-    async def follow(self, compute_unit: str, path: str) -> dict[str, Any]:
+    async def follow(
+        self, compute_unit: str, path: str, *, system_id: Optional[str] = None, mode: Optional[str] = None
+    ) -> dict[str, Any]:
         """Tails one member on the runtime; the result carries the current ``out`` and ``err`` tails.
         Without a channel, the tails come from the member's files in the runtime's log directory."""
-        session = self.session(compute_unit)
+        session = self.session(compute_unit, system_id=system_id, mode=mode)
         if session.client is not None:
             result = await session.client.call("log.follow", {"path": path})
             session.follows.add(path)
@@ -440,10 +483,12 @@ class LaunchManager:
         member_dir = session.log_dir / member_slug(path)
         return {"path": path, "out": tail_lines(member_dir / "out"), "err": tail_lines(member_dir / "err")}
 
-    async def unfollow(self, compute_unit: str, path: Optional[str]) -> dict[str, Any]:
+    async def unfollow(
+        self, compute_unit: str, path: Optional[str], *, system_id: Optional[str] = None, mode: Optional[str] = None
+    ) -> dict[str, Any]:
         """Releases one followed member, or every one of the unit when no path is given; a session
         without a channel has nothing to release."""
-        session = self.session(compute_unit)
+        session = self.session(compute_unit, system_id=system_id, mode=mode)
         if session.client is None:
             session.follows.clear()
             return {"released": []}
@@ -593,14 +638,21 @@ class LaunchManager:
             session.launch_ready = bool(obj.get("launch_ready"))
             session.shutting_down = bool(obj.get("shutting_down"))
             records = obj.get("members") if isinstance(obj.get("members"), list) else []
-            session.members = {r["path"]: r for r in records if isinstance(r, dict) and isinstance(r.get("path"), str)}
+            listed = [r for r in records if isinstance(r, dict) and isinstance(r.get("path"), str)]
+            session.members = {r["path"]: session.count(r) for r in listed}
             session.follows.clear()
             self._publish(session)
         elif kind == "member" and isinstance(obj.get("path"), str):
-            record = {k: v for k, v in obj.items() if k != "event"}
+            record = session.count({k: v for k, v in obj.items() if k != "event"})
             session.members[record["path"]] = record
             self._hub.publish(
-                TOPIC_MEMBER, {"compute_unit": session.compute_unit, "system": session.system.id, **record}
+                TOPIC_MEMBER,
+                {
+                    "compute_unit": session.compute_unit,
+                    "system": session.system.id,
+                    "mode": session.mode,
+                    **record,
+                },
             )
         elif kind == "member.log" and isinstance(obj.get("path"), str):
             self._hub.publish(
@@ -618,6 +670,7 @@ class LaunchManager:
                 {
                     "compute_unit": session.compute_unit,
                     "system": session.system.id,
+                    "mode": session.mode,
                     "window": obj.get("window"),
                     "rates": obj["rates"],
                 },

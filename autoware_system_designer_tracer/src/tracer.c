@@ -47,6 +47,9 @@ static int g_state = TRACER_UNSET;
 static pthread_mutex_t g_state_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_clock_lock = PTHREAD_MUTEX_INITIALIZER;
 static __thread uint32_t tls_tid = 0;
+// Set while a timer hook forwards to rcl; Jazzy's rcl_timer_call and rcl_timer_init reach the
+// hooked rcl_timer_call_with_info and rcl_timer_init2, which then only forward.
+static __thread bool tls_in_timer_hook = false;
 
 static uint32_t current_tid(void)
 {
@@ -417,7 +420,9 @@ rcl_ret_t rcl_timer_call(rcl_timer_t * timer)
   if (!tracing()) {
     return real_rcl_timer_call(timer);
   }
+  tls_in_timer_hook = true;
   rcl_ret_t ret = real_rcl_timer_call(timer);
+  tls_in_timer_hook = false;
   if (ret == RCL_RET_OK) {
     record_timer(timer, asd_now_realtime_ns());
   }
@@ -437,7 +442,7 @@ rcl_ret_t rcl_timer_call_with_info(rcl_timer_t * timer, struct rcl_timer_call_in
       return RCL_RET_ERROR;
     }
   }
-  if (!tracing()) {
+  if (tls_in_timer_hook || !tracing()) {
     return real_call(timer, call_info);
   }
   rcl_ret_t ret = real_call(timer, call_info);
@@ -462,7 +467,9 @@ rcl_ret_t rcl_timer_init(
       return RCL_RET_ERROR;
     }
   }
+  tls_in_timer_hook = true;
   rcl_ret_t ret = real_init(timer, clock, context, period, callback, allocator);
+  tls_in_timer_hook = false;
   if (ret == RCL_RET_OK && tracing()) {
     name_timer(timer, period);
   }
@@ -486,7 +493,7 @@ rcl_ret_t rcl_timer_init2(
     }
   }
   rcl_ret_t ret = real_init2(timer, clock, context, period, callback, allocator, autostart);
-  if (ret == RCL_RET_OK && tracing()) {
+  if (ret == RCL_RET_OK && !tls_in_timer_hook && tracing()) {
     name_timer(timer, period);
   }
   return ret;

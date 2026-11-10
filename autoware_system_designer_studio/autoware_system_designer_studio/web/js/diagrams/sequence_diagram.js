@@ -108,7 +108,7 @@
     ],
     [
       "dead",
-      "a process the recorded run never fired: node gone, never initialized, or output never published; a fold skips it",
+      "a process that never fires: its node gone, never initialized or its output never published in the recorded run, or its member down in the live launch; a fold skips it",
     ],
   ];
 
@@ -139,6 +139,9 @@
       this.state = "logical";
       this.driver = "mean";
       this.measured = null; // loaded measurement, see latency_source.js
+      this.measuredFromFile = false; // the measurement was dropped in, not the mode's record
+      this.liveStates = null; // node path -> live member state, see explore/live_overlay.js
+      this.liveDeadKey = "";
       this.pxPerMs = null;
       this.fitPxPerMs = null;
       this.legendOpen = false;
@@ -175,9 +178,49 @@
       this.solveAndRender();
     }
 
-    // A loaded measurement opens the measured state.
-    attachMeasurement(measured) {
+    // The mode's latency file again, after a new record was written behind
+    // it. The shown state, group and selection stay; a dropped-in
+    // measurement stays in place of the record.
+    async reloadMeasurement() {
+      if (!window.LatencySource || this.measuredFromFile) return;
+      const measured = await window.LatencySource.loadBundled(
+        this.options.mode,
+        this.options.dataBase,
+        { fresh: true },
+      );
+      if (!measured || this.measuredFromFile) return;
       this.measured = measured;
+      if (!this.groups.length) return;
+      if (this.state === "measured") {
+        this.pxPerMs = null;
+        this.solveAndRender();
+      } else this.render();
+    }
+
+    // Live member states of the nodes; a change in which members are down re-solves the chains.
+    setLiveStates(states) {
+      this.liveStates = states;
+      const key = Array.from(states || [])
+        .filter(([, state]) => state.dead)
+        .map(([path, state]) => `${path}=${state.dead}`)
+        .sort()
+        .join("\n");
+      if (key === this.liveDeadKey) return;
+      this.liveDeadKey = key;
+      if (this.groups.length) this.solveAndRender();
+    }
+
+    // Why a gate cannot fire now: its node's member is down in the live launch.
+    liveDeadReason(event) {
+      if (event.kind !== "process" || !this.liveStates?.size) return null;
+      const path = this.graph.ownerOf(event.id)?.path;
+      return (path && this.liveStates.get(path)?.dead) || null;
+    }
+
+    // A loaded measurement opens the measured state.
+    attachMeasurement(measured, { fromFile = false } = {}) {
+      this.measured = measured;
+      this.measuredFromFile = fromFile;
       this.state = "measured";
       this.activeGroup = null;
       this.selectedId = null;
@@ -209,11 +252,13 @@
     // ── Solve ───────────────────────────────────────────────────────────────────
 
     costs() {
-      if (this.state === "logical") return T.logicalCosts();
-      if (this.state === "measured" && this.measured) {
-        return T.measuredCosts(this.graph, this.measured.costs(this.graph));
-      }
-      return T.designCosts(this.graph);
+      let base;
+      if (this.state === "logical") base = T.logicalCosts();
+      else if (this.state === "measured" && this.measured) {
+        base = T.measuredCosts(this.graph, this.measured.costs(this.graph));
+      } else base = T.designCosts(this.graph);
+      if (!this.liveDeadKey) return base;
+      return T.liveCosts(base, (event) => this.liveDeadReason(event));
     }
 
     // One group per set of peer clock roots: the chain a periodic source
@@ -1926,6 +1971,14 @@
       if (focus) this.focusElement(gateHit.gate.element);
     }
 
+    // Drops the selected element; the active group stays for enumeration.
+    clearSelection() {
+      this.container
+        .querySelectorAll(".seq-selected")
+        .forEach((el) => el.classList.remove("seq-selected"));
+      this.selectedId = null;
+    }
+
     setActiveGroup(group) {
       if (this.activeGroup === group) return;
       const previous = this.activeGroup;
@@ -2331,7 +2384,9 @@
     async loadMeasurement(file) {
       if (!window.LatencySource) return;
       try {
-        this.attachMeasurement(await window.LatencySource.fromFile(file));
+        this.attachMeasurement(await window.LatencySource.fromFile(file), {
+          fromFile: true,
+        });
         this.pxPerMs = null;
         this.solveAndRender();
       } catch (error) {
@@ -2539,6 +2594,10 @@
       if (this.activeGroup) parts.push(`active: ${this.activeGroup.title}`);
       if (this.highlightEdges) parts.push("showing one enumerated chain");
       if (this.measured) parts.push(`measurement: ${this.measured.label}`);
+      const down = Array.from(this.liveStates?.values() || []).filter(
+        (state) => state.dead,
+      ).length;
+      if (down) parts.push(`live: ${down} member${down === 1 ? "" : "s"} down`);
       return parts.join(" · ");
     }
 
