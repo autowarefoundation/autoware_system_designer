@@ -36,11 +36,17 @@
     slotHead: 16,
     moduleHead: 14,
     minUnit: 140,
+    // Section area per node, and the least height of a row of slots, at a
+    // section's own height.
+    nodeArea: 6400,
+    unitRow: 64,
     minRow: 40,
     minSlot: 24,
     // Smallest inside still laid out with children.
     minOpen: 10,
     font: { unit: 15, kind: 12, slot: 11, block: 10, restarts: 9 },
+    // Line pitch of a block's wrapped name.
+    blockLine: 12,
     // State mark of a unit, and of a block.
     mark: 11,
     blockMark: 7,
@@ -254,6 +260,40 @@
     return cells;
   }
 
+  // `text` in lines of at most `maxWidth` by `measure(text)`, at most
+  // `maxLines`: broken after an underscore, slash or dot where one fits the
+  // line, anywhere otherwise; the last line ends in an ellipsis when the text
+  // runs past it. Empty when a line holds less than a few characters.
+  function wrap(text, maxWidth, maxLines, measure) {
+    if (!text || maxWidth <= 0 || maxLines < 1) return [];
+    const fits = (part) => measure(part) <= maxWidth;
+    if (fits(text)) return [text];
+    if (!fits(`${text.slice(0, 3)}…`)) return [];
+    const lines = [];
+    let rest = text;
+    while (rest && lines.length < maxLines) {
+      if (fits(rest)) {
+        lines.push(rest);
+        rest = "";
+        break;
+      }
+      let end = 1;
+      while (end < rest.length && fits(rest.slice(0, end + 1))) end += 1;
+      const at = Math.max(
+        ...["_", "/", "."].map((mark) => rest.lastIndexOf(mark, end - 1)),
+      );
+      if (at >= 2) end = at + 1;
+      lines.push(rest.slice(0, end));
+      rest = rest.slice(end);
+    }
+    if (rest) {
+      let last = lines.pop() + rest;
+      while (last.length > 3 && !fits(`${last}…`)) last = last.slice(0, -1);
+      lines.push(`${last}…`);
+    }
+    return lines;
+  }
+
   function inset(rect, d) {
     return {
       x: rect.x + d,
@@ -263,13 +303,24 @@
     };
   }
 
+  // Own height of a filled section at `width`: its head over a body of
+  // nodeArea per node, the body at least unitRow per row of slots and the
+  // whole at least minUnit.
+  function sectionHeight(section, width, unitHead = G.unitHead) {
+    const rows = slotRows(section.children).length;
+    const body = Math.max(
+      rows * G.unitRow + (rows - 1) * G.gap,
+      (section.nodes * G.nodeArea) / Math.max(1, width - 2 * G.pad),
+    );
+    return Math.max(G.minUnit, unitHead + body + G.pad);
+  }
+
   // Boxes of the sections laid over `width` x `height`: an empty section is
-  // its head alone, the others take the rest of the height in proportion to
-  // their nodes, each at least minUnit tall, so the
-  // layout may run past `height`; `unitHead` is the height of a section's
-  // head. A box carries its kind (unit, slot, module
-  // or node), rect, and the section or instance it draws; a module box is
-  // `open` when its children are laid inside it.
+  // its head alone, the others are their own height, so the layout may run
+  // past `height`; height left over is shared among them in proportion to
+  // their nodes. `unitHead` is the height of a section's head. A box carries
+  // its kind (unit, slot, module or node), rect, and the section or instance
+  // it draws; a module box is `open` when its children are laid inside it.
   function layout(
     sections,
     width,
@@ -279,12 +330,18 @@
   ) {
     const boxes = [];
     const filled = sections.filter((section) => section.children.length);
-    const shares = proportional(
-      filled.map((section) => section.nodes),
-      height - (sections.length - filled.length) * unitHead,
-      G.minUnit,
-      true,
+    const shares = filled.map((section) =>
+      sectionHeight(section, width, unitHead),
     );
+    const free =
+      height -
+      (sections.length - filled.length) * unitHead -
+      shares.reduce((sum, h) => sum + h, 0);
+    const nodes = filled.reduce((sum, section) => sum + section.nodes, 0);
+    if (free > 0)
+      filled.forEach((section, i) => {
+        shares[i] += nodes ? (free * section.nodes) / nodes : free / filled.length;
+      });
     let y = 0;
     sections.forEach((section, index) => {
       const h = section.children.length
@@ -313,7 +370,7 @@
       );
       y += h;
     });
-    return { height: y, boxes };
+    return { height: free > 0 ? height : y, boxes };
   }
 
   function layoutRows(rows, rect, section, depthLimit, boxes) {
@@ -470,7 +527,7 @@
       walk(root, null);
     }
 
-    // The layout follows the canvas width; one relayout per frame.
+    // The layout follows the canvas size; one relayout per frame.
     onContainerResize() {
       if (this.frame || !this.svg) return;
       this.frame = requestAnimationFrame(() => {
@@ -597,10 +654,11 @@
     // within is launched): the state mark, then the busy-log mark, then a
     // node's restart count, then the name. An open module has them in its
     // label strip. A closed block tall enough has the marks along its top
-    // and the name centred; a shorter one has them on one line, the name
-    // centred when it clears the marks and after them otherwise. Marks go
-    // before the name: those that fit are drawn in order, and the name where
-    // room is left. Redrawn only when the marks change.
+    // and the name centred, wrapped over the lines its height holds; a
+    // shorter one has them on one line, the name centred when it clears the
+    // marks and after them otherwise. Marks go before the name: those that
+    // fit are drawn in order, and the name where room is left. Redrawn only
+    // when the marks change.
     _dress(g, box, info) {
       const count = info && box.kind === "node" ? restartCount(info) : 0;
       const busy = !!info?.busy;
@@ -698,10 +756,25 @@
         drawMarks(fitted, (box.w - fitted.width) / 2, centre.y);
         return;
       }
-      const row = 2 + G.blockMark + 1;
+      const row = marks.length ? 2 + G.blockMark + 1 : 0;
       if (box.h >= size + 2 * row) {
-        const text = this._fit(name, box.w - 2 * G.pad, size);
-        if (text) addName(text, centred);
+        const below = box.h - row - 2;
+        const lines = wrap(
+          name,
+          box.w - 2 * G.pad,
+          Math.max(1, Math.floor(below / G.blockLine)),
+          (text) => this._measure(text, size),
+        );
+        // Centred on the block while the lines clear the marks, else on the
+        // room below them.
+        const clear = lines.length * G.blockLine <= box.h - 2 * row;
+        const middle = clear ? centre.y : row + below / 2;
+        lines.forEach((line, i) =>
+          addName(line, {
+            ...centred,
+            y: middle + (i - (lines.length - 1) / 2) * G.blockLine,
+          }),
+        );
         drawMarks(fitMarks(box.w - 2 * gap), gap, 2 + G.blockMark / 2);
         return;
       }
@@ -934,6 +1007,8 @@
   TreemapModule.slotRows = slotRows;
   TreemapModule.proportional = proportional;
   TreemapModule.squarify = squarify;
+  TreemapModule.wrap = wrap;
+  TreemapModule.sectionHeight = sectionHeight;
   TreemapModule.layout = layout;
 
   SD.diagrams.register("treemap", TreemapModule);

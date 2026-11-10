@@ -1,9 +1,12 @@
 /* Treemap: one section per compute unit, slots in fixed rows, nested blocks coloured by run state. */
 
-/* The layout follows the width; sections past the height scroll. */
+/* The layout follows the width; sections past the height scroll. The
+   scrollbar is always present, so the layout width is the same with and
+   without overflow. */
 .diagram-canvas.treemap-canvas {
   position: relative;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: scroll;
 }
 
 /* Host controls of a unit over its section head, between the name and the kind text */
