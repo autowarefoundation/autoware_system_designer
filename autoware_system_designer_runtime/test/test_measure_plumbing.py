@@ -36,6 +36,7 @@ from autoware_system_designer_runtime._impl.measure.session import (
     tracer_env,
 )
 from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir, trace_dir_progress
+from autoware_system_designer_runtime._impl.measure.tracer import TraceControl, TracerArming
 from autoware_system_designer_runtime._impl.measure.writer import LATENCY_SCHEMA
 
 from .measure_fixtures import MS, chain_design, write_chain_traces, write_clock_trace
@@ -325,11 +326,13 @@ def _session(tmp_path, monkeypatch, **options):
     write_chain_traces(tmp_path / "trace")
     graph = NodeGraph.from_system_structure(chain_design())
     worker = _StubWorker()
+    arming = TracerArming(tracer, tmp_path / "trace")
+    arming.control.create()
     session = MeasureSession(
         graph,
         worker,
         MeasureOptions(**options),
-        log_dir=tmp_path,
+        arming=arming,
         latency_out=tmp_path / "out" / "Test_latency.json",
         mode="Test",
     )
@@ -419,9 +422,13 @@ def test_console_close_and_analyze_are_idempotent(tmp_path, monkeypatch):
 
     async def run():
         assert await session.close("console stop") == "measurement is armed, nothing to close"
+        control = TraceControl(session.trace_dir)
+        assert not control.events()
         await session.start()
+        assert control.events()  # the window switches event recording on in every traced process
         assert await session.start() == "measurement already running"
         assert (await session.close("console stop")).startswith("window closed (console stop): ")
+        assert not control.events()
         assert (await session.analyze()).startswith("analysis done in ")
         assert await session.analyze() == "measurement is done, nothing to analyze"
         assert await session.start() == "measurement done; one window per launch"

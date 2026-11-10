@@ -22,6 +22,7 @@ Supported commands (one per line)::
     restart <name>    send Restart to matching members
     kill    <name>    send SIGKILL to matching members
     measure start|stop|status  control the latency measurement window
+    rates   [name]    topic and timer rates per node over one second
     quit                     request shutdown
 
 Names are matched as substrings, so ``stop /perception`` stops everything
@@ -44,6 +45,7 @@ import sys
 import threading
 from typing import Optional
 
+from ..measure.monitor import format_rates
 from .commands import CommandError, RuntimeCommands
 from .coordinator import Coordinator
 
@@ -193,6 +195,7 @@ async def _dispatch(commands: RuntimeCommands, line: str) -> None:
             "  restart <name>      — send Restart to matching members\n"
             "  kill    <name>      — send SIGKILL to matching members\n"
             "  measure start|stop|status — control the latency measurement window\n"
+            "  rates   [name]      — topic and timer rates per node over one second\n"
             "  quit                — request graceful shutdown\n"
             "  help / ?            — show this message\n"
             "  Names are matched as substrings, e.g. 'stop /perception'."
@@ -207,6 +210,8 @@ async def _dispatch(commands: RuntimeCommands, line: str) -> None:
             commands.shutdown()
         elif op == "measure":
             print(f"[console] {(await commands.measure((arg or 'status').lower()))['message']}")
+        elif op == "rates":
+            print("\n".join(format_rates(await commands.rates(), arg)))
         elif op in ("stop", "restart", "kill"):
             if not arg:
                 print(f"[console] {op} needs a name or prefix")

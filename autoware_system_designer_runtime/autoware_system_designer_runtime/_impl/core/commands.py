@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import signal
 import time
 from dataclasses import dataclass, field
@@ -24,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
 from . import events as ev
 
 if TYPE_CHECKING:
+    from ..measure.monitor import RateMonitor
     from ..measure.session import MeasureSession
     from .coordinator import Coordinator, CoordinatorBuilder
 
@@ -146,11 +148,13 @@ class RuntimeCommands:
         states: MemberStates,
         *,
         measure: "Optional[MeasureSession]" = None,
+        monitor: "Optional[RateMonitor]" = None,
         guard: Optional[Guard] = None,
     ) -> None:
         self._coord = coord
         self._states = states
         self._measure = measure
+        self._monitor = monitor
         self._guard = guard
 
     @property
@@ -160,6 +164,10 @@ class RuntimeCommands:
     @property
     def measure_armed(self) -> bool:
         return self._measure is not None
+
+    @property
+    def monitor(self) -> "Optional[RateMonitor]":
+        return self._monitor
 
     def status(self) -> dict[str, Any]:
         known = {record.path: record for record in self._states.records()}
@@ -202,7 +210,7 @@ class RuntimeCommands:
 
     async def measure(self, verb: str) -> dict[str, Any]:
         if self._measure is None:
-            raise CommandError("unavailable", "measurement is not armed; launch with --measure")
+            raise CommandError("unavailable", "measurement needs the tracer, which this launch did not preload")
         if verb == "start":
             message = await self._measure.start()
         elif verb == "stop":
@@ -214,6 +222,16 @@ class RuntimeCommands:
         else:
             raise CommandError("invalid_params", f"measure needs start, stop or status, not {verb!r}")
         return {"state": self._measure.state, "message": message}
+
+    async def rates(self, interval: float = 1.0) -> dict[str, Any]:
+        """Per-node rates over *interval* seconds from the tracer's counters."""
+        if self._monitor is None:
+            raise CommandError("unavailable", "live rates need the tracer, which this launch did not preload")
+        if not isinstance(interval, (int, float)) or isinstance(interval, bool) or not 0.1 <= interval <= 60:
+            raise CommandError("invalid_params", "interval must be a number of seconds in [0.1, 60]")
+        before = self._monitor.read()
+        await asyncio.sleep(interval)
+        return self._monitor.rates(before, self._monitor.read())
 
     def shutdown(self) -> None:
         self._guard_check("shutdown")

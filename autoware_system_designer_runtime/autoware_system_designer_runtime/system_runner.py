@@ -39,8 +39,10 @@ from ._impl.core.control_channel import ControlChannel
 from ._impl.core.coordinator import ensure_output_dir
 from ._impl.core.stdin_console import run_console
 from ._impl.measure.clock import CLOCK_AUTO, CLOCK_CHOICES
+from ._impl.measure.monitor import RateMonitor
 from ._impl.measure.node_graph import NodeGraph
-from ._impl.measure.session import MeasureOptions, MeasureSession, default_latency_out
+from ._impl.measure.session import TRACE_SUBDIR, MeasureOptions, MeasureSession, default_latency_out
+from ._impl.measure.tracer import TracerArming, locate_tracer
 from ._impl.ros2.builder import populate_builder
 from ._impl.ros2.common.substitutions import bind_variables, resolve_argument_values, unresolved_var_names
 from ._impl.ros2.operation_mode import POLICIES, OperationModeGuard
@@ -166,6 +168,7 @@ def launch_from_json(
     measure: Optional[MeasureOptions] = None,
     control: Optional[Path] = None,
     control_policy: str = "guard",
+    tracer: bool = True,
 ) -> int:
     with open(json_path) as f:
         data = json.load(f)
@@ -175,12 +178,22 @@ def launch_from_json(
     out_dir = output_dir or ensure_output_dir()
     logger.info("logs: %s", out_dir)
 
+    # The tracer is armed on every launch: counters feed live rates, a measure window adds event records.
+    arming: Optional[TracerArming] = None
+    if tracer or measure is not None:
+        try:
+            arming = TracerArming(locate_tracer(), out_dir / TRACE_SUBDIR)
+        except FileNotFoundError as exc:
+            if measure is not None:
+                raise
+            logger.warning("tracer not armed, no live rates or measurement: %s", exc)
     graph: Optional[NodeGraph] = None
     latency_out: Optional[Path] = None
-    if measure is not None:
+    if arming is not None:
         graph = NodeGraph.from_system_structure(data, ecu=ecu)
         mode = graph.mode or Path(json_path).stem
-        latency_out = measure.latency_out or default_latency_out(mode, Path(json_path), out_dir)
+        options = measure or MeasureOptions(auto_open=False)
+        latency_out = options.latency_out or default_latency_out(mode, Path(json_path), out_dir)
 
     config = ActorConfig(
         respawn_enabled=respawn,
@@ -193,16 +206,19 @@ def launch_from_json(
     async def _run() -> int:
         builder, worker = populate_builder(data["data"], ecu=ecu, config=config)
         session: Optional[MeasureSession] = None
-        if measure is not None and graph is not None and latency_out is not None:
+        monitor: Optional[RateMonitor] = None
+        if arming is not None and graph is not None and latency_out is not None:
+            arming.install(builder)
             session = MeasureSession(
                 graph,
                 worker,
-                measure,
-                log_dir=out_dir,
+                options,
+                arming=arming,
                 latency_out=latency_out,
                 mode=graph.mode or Path(json_path).stem,
             )
             session.install(builder)
+            monitor = RateMonitor(arming.trace_dir, graph)
         states = MemberStates()
         states.install(builder)
         coord = builder.build()
@@ -218,7 +234,7 @@ def launch_from_json(
             if (interactive or control is not None) and control_policy == "guard":
                 guard = OperationModeGuard(worker)
                 await guard.install()
-            commands = RuntimeCommands(coord, states, measure=session, guard=guard)
+            commands = RuntimeCommands(coord, states, measure=session, monitor=monitor, guard=guard)
             if control is not None:
                 channel = ControlChannel(commands, states, socket_path=control, log_dir=out_dir, policy=control_policy)
                 await channel.start()
@@ -234,6 +250,8 @@ def launch_from_json(
                     pass
             if channel is not None:
                 await channel.close()
+            if monitor is not None:
+                monitor.close()
             await worker.stop()
 
     try:
@@ -327,13 +345,20 @@ def main() -> None:
     )
     measure_group = parser.add_argument_group(
         "latency measurement",
-        "Preload the rcl tracer into every process and analyze node process time, "
-        "topic communication and event chains into a latency file.",
+        "The rcl tracer is preloaded into every process: it counts publishes, takes and timer fires "
+        "for live rates, and records events during a measurement window, which is analyzed into "
+        "node process time, topic communication and event chains in a latency file.",
+    )
+    measure_group.add_argument(
+        "--no-tracer",
+        action="store_true",
+        help="Do not preload the tracer: no live rates and no measurement window.",
     )
     measure_group.add_argument(
         "--measure",
         action="store_true",
-        help="Arm the tracer and open the measurement window once every actor has started.",
+        help="Open the measurement window once every actor has started; without it the window opens "
+        "on 'measure start'.",
     )
     measure_group.add_argument(
         "--measure-duration",
@@ -411,5 +436,6 @@ def main() -> None:
             measure=measure,
             control=args.control,
             control_policy=args.control_policy,
+            tracer=not args.no_tracer,
         )
     )

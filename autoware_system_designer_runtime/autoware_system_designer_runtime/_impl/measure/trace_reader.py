@@ -16,7 +16,8 @@
 
 Mirrors ``autoware_system_designer_tracer/trace_format.h`` field for field: a
 64-byte header, fixed 64-byte records, and a tab-separated name table joining
-record handles to node names, topics, publisher gids and timer periods.
+record handles and counter slots to node names, topics, publisher gids and timer
+periods. A process with a name table and no event file recorded no events.
 """
 
 from __future__ import annotations
@@ -103,6 +104,7 @@ class Endpoint:
     topic: str
     gid: str  # hex, publishers only
     t_init: int
+    slot: Optional[int] = None  # counter slot in <pid>.stats
 
 
 @dataclass(slots=True)
@@ -111,6 +113,7 @@ class TimerInfo:
     handle: int
     period_ns: int
     t_init: int
+    slot: Optional[int] = None
 
 
 class _HandleTable:
@@ -245,29 +248,64 @@ def read_trace_file(path: Union[str, Path]) -> ProcessTrace:
     return proc
 
 
+def parse_name_line(line: str, pid: int) -> Union[Endpoint, TimerInfo, None]:
+    """One name-table line; None for comments and malformed lines."""
+    if not line or line.startswith("#"):
+        return None
+    fields = line.rstrip("\n").split("\t")
+    if len(fields) < 4:
+        return None
+    try:
+        t_init = int(fields[0])
+        obj = int(fields[2], 16)
+    except ValueError:
+        return None
+    kind = fields[1]
+    if kind in ("pub", "sub") and len(fields) >= 5:
+        gid = fields[5] if len(fields) > 5 else ""
+        slot = _slot(fields[6]) if len(fields) > 6 else None
+        return Endpoint(pid, kind, obj, fields[3], fields[4], gid, t_init, slot)
+    if kind == "timer":
+        try:
+            period = int(fields[3])
+        except ValueError:
+            return None
+        slot = _slot(fields[4]) if len(fields) > 4 else None
+        return TimerInfo(pid, obj, period, t_init, slot)
+    return None
+
+
+def _slot(text: str) -> Optional[int]:
+    try:
+        value = int(text)
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
 def _read_names(path: Path, proc: ProcessTrace) -> None:
     with open(path, encoding="utf-8", errors="replace") as handle:
         for line in handle:
-            if not line or line.startswith("#"):
-                continue
-            fields = line.rstrip("\n").split("\t")
-            if len(fields) < 4:
-                continue
-            try:
-                t_init = int(fields[0])
-                obj = int(fields[2], 16)
-            except ValueError:
-                continue
-            kind = fields[1]
-            if kind in ("pub", "sub") and len(fields) >= 5:
-                gid = fields[5] if len(fields) > 5 else ""
-                proc.endpoints.add(obj, Endpoint(proc.pid, kind, obj, fields[3], fields[4], gid, t_init), t_init)
-            elif kind == "timer":
-                try:
-                    period = int(fields[3])
-                except ValueError:
-                    continue
-                proc.timer_infos.add(obj, TimerInfo(proc.pid, obj, period, t_init), t_init)
+            entry = parse_name_line(line, proc.pid)
+            if isinstance(entry, Endpoint):
+                proc.endpoints.add(entry.handle, entry, entry.t_init)
+            elif isinstance(entry, TimerInfo):
+                proc.timer_infos.add(entry.handle, entry, entry.t_init)
+
+
+def _names_only(path: Path) -> Optional[ProcessTrace]:
+    """A process that never recorded an event: its name table alone, started at its first line."""
+    try:
+        pid = int(path.stem)
+    except ValueError:
+        return None
+    proc = ProcessTrace(pid=pid, capacity=0, claimed=0, start_ns=0)
+    _read_names(path, proc)
+    times = [entry.t_init for entry in proc.endpoints.values()] + [t.t_init for t in proc.timer_infos.values()]
+    if not times:
+        return None
+    proc.start_ns = min(times)
+    return proc
 
 
 @dataclass(slots=True)
@@ -315,4 +353,10 @@ def read_trace_dir(path: Union[str, Path]) -> TraceSet:
         if proc.record_count == 0 and not list(proc.endpoints.values()):
             continue
         trace_set.processes[proc.pid] = proc
+    for file in sorted(Path(path).glob("*.names")):
+        if file.with_suffix(".trace").exists():
+            continue
+        proc = _names_only(file)
+        if proc is not None and proc.pid not in trace_set.processes:
+            trace_set.processes[proc.pid] = proc
     return trace_set

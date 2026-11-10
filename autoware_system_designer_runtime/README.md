@@ -95,12 +95,16 @@ lines, for a supervising process such as the studio daemon. The runtime sends ev
 requests and gets one response each:
 
 ```text
-→ {"event":"hello","pid":4242,"methods":[...],"policy":"guard","measure_armed":false,
+→ {"event":"hello","pid":4242,"methods":[...],"policy":"guard","measure_armed":true,"monitor":true,
    "log_dir":"/tmp/autoware_system_designer_logs/20260521_153012","members":[{"path":"/sensing/lidar/driver","state":"pending","detail":{},"time":0}],
    "launch_ready":false,"shutting_down":false}
 → {"event":"member","path":"/sensing/lidar/driver","state":"running","detail":{"pid":4310},"time":1793930000.1}
 → {"event":"member.log","path":"/sensing/lidar/driver","stream":"out","lines":["[INFO] ready"]}
 → {"event":"member.activity","window":2.0,"rates":{"/sensing/lidar/driver":5120}}
+→ {"event":"monitor","time_ns":1793930002000000000,"interval_s":2.0,"processes":12,"untracked_endpoints":0,
+   "nodes":[{"node":"/sensing/lidar/driver","pids":[4310],"inputs":[],
+             "outputs":[{"topic":"/sensing/lidar/points","hz":10.0,"callback_ms":3.1}],
+             "timers":[{"period_ms":100.0,"hz":10.0}]}]}
 ← {"id":1,"method":"stop","params":{"pattern":"/perception"}}
 → {"id":1,"ok":true,"result":{"members":["/perception/detector"]}}
 ← {"id":2,"method":"shutdown"}
@@ -113,7 +117,10 @@ requests and gets one response each:
 | `stop`, `restart`, `kill`                         | `pattern`, `exact`? | `{"members": [matched names]}`; `exact` names one member, no substring match |
 | `log.follow`                                      | `path`              | `{"path", "out": [lines], "err": [lines]}`, the tails                        |
 | `log.unfollow`                                    | `path`?             | `{"released": [paths]}` (every follow without `path`)                        |
-| `measure.start`, `measure.stop`, `measure.status` | -                   | `{"state", "message"}` (needs `--measure`)                                   |
+| `measure.start`, `measure.stop`, `measure.status` | -                   | `{"state", "message"}` (needs the tracer)                                    |
+| `monitor.sample`                                  | `interval`?         | rates over `interval` seconds (default 1), the `monitor` event's body        |
+| `monitor.follow`                                  | -                   | `{"interval_s"}`; `monitor` events every interval until unfollowed           |
+| `monitor.unfollow`                                | -                   | `{"released": bool}`                                                         |
 | `shutdown`                                        | -                   | `{"shutting_down": true}`                                                    |
 
 A member record is `{"path", "state", "detail", "time"}`; `path` is the member name (the node's
@@ -123,7 +130,9 @@ structural path), `state` one of `pending`, `running`, `stopped`, `respawning`, 
 member (`log.follow`) gets the files' current tails in the reply and new lines as `member.log`
 events until it unfollows or disconnects. Unfollowed members cost the channel nothing. While a
 client is connected, `member.activity` reports once per window (2 s) the bytes per second each
-member's files grew by, leaving quiet members out; a window without growth is reported once. The
+member's files grew by, leaving quiet members out; a window without growth is reported once. A
+client that follows the monitor gets per-node rates (see [Live rates](#live-rates)) every 2 s; the
+counters are read only while some client follows them. The
 hello's `log_dir` names the run's log directory, where the files outlive the runtime. Error codes
 are stable strings: `bad_request`, `invalid_params`, `unknown_method`, `not_found`,
 `unavailable`, `refused`, `payload_too_large`, `internal`.
@@ -290,9 +299,25 @@ The two systems share the design pattern but not code. When play_launch's parser
 
 ---
 
+## Live rates
+
+Every launch preloads a small C recorder (`autoware_system_designer_tracer`, an `LD_PRELOAD` interposer over the `rcl` C API) into every spawned process. It keeps one counter slot per publisher, subscription and timer in a shared-memory file (`<log-dir>/trace/<pid>.stats`), bumped with atomic adds on each publish, take and timer fire; nothing subscribes to a topic and no message is copied. The measured cost is tens of nanoseconds per publish or take. `--no-tracer` launches without it (and without measurement).
+
+The runtime turns two reads of the counters into per-node rates: input topics with take rate and mean communication time (take time minus the DDS source timestamp), output topics with publish rate and mean callback time (publish minus the thread's latest take or timer fire), and timers with fire rate, listed under the node of the latest publish they led to. A topic whose rate is zero carries `silent_s`, the time since its last message. Nodes are keyed by design path, else by their fully qualified name. Rates are in wall time.
+
+```text
+[console] rates /sensing                    # --interactive; over one second
+rates over 1 s, 12 traced processes
+/sensing/lidar/driver
+  -> /sensing/lidar/points                                         10.00 Hz  callback 3.100 ms
+  timer 100 ms                                                     10.00 Hz
+```
+
+Over the control channel: `monitor.sample` once, `monitor.follow` for a `monitor` event every 2 s. A publish whose every matched reader is intra-process does not reach `rcl_publish`, so it is not counted; the measurement window's probe subscriptions cover that case.
+
 ## Latency measurement
 
-`--measure` preloads a small C recorder (`autoware_system_designer_tracer`, an `LD_PRELOAD` interposer over the `rcl` C API) into every spawned process and analyzes the recording per node: process time, topic communication time and event-chain end-to-end time, measured separately and never derived from one another. No CARET, no rclcpp fork, no rebuild of Autoware.
+The same tracer records one event per publish, take, timer fire and ROS time override while a measurement window is open (a `control` word in the trace directory, read by every traced process, switches recording), and the analysis turns the recording into per-node process time, topic communication time and event-chain end-to-end time, measured separately and never derived from one another. No CARET, no rclcpp fork, no rebuild of Autoware.
 
 ```bash
 autoware-system-designer-launch SYSTEM.json \
@@ -306,7 +331,7 @@ autoware-system-designer-launch SYSTEM.json \
 
 The session logs every step under the `measure:` prefix: the window opening (with the wall-clock time it closes), a heartbeat every 10 s with the phase (`settling` / `recording x/y s`) and the trace counters, the window closing with its reason, the shutdown it requests, and the analysis start and result. With `--measure-duration` the system is shut down as soon as the window closes; the analysis reads the trace files after the actors have terminated. A shutdown from elsewhere (signal, actor failure) closes the window at that moment and analyzes what was recorded.
 
-Without `--measure-duration` the window opens at `launch_ready` and closes at shutdown or on the console verb `measure stop` (`--interactive`: `measure start | stop | status`; `status` prints the heartbeat line on demand). Trace files stay under `<log-dir>/trace/` and can be re-analyzed offline:
+Without `--measure-duration` the window opens at `launch_ready` and closes at shutdown or on the console verb `measure stop` (`--interactive`: `measure start | stop | status`; `status` prints the heartbeat line on demand). Without `--measure` the window opens on `measure start` (console or control channel); one window per launch. Trace files stay under `<log-dir>/trace/` and can be re-analyzed offline:
 
 ```bash
 autoware-system-designer-measure-analyze <log-dir>/trace SYSTEM.json -o FILE

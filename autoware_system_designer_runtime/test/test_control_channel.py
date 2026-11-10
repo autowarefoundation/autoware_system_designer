@@ -271,7 +271,7 @@ def test_console_prints_results_and_refusals(capsys):
     assert "[console] stop -> /perception/detector" in out
     assert "[console] kill refused: operation mode is autonomous" in out
     assert "/sensing/lidar/driver  pending" in out
-    assert "measurement is not armed" in out
+    assert "measurement needs the tracer" in out
     assert coord.calls == [("stop", "/perception/detector")]
 
 

@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The trace file the writer leaves behind must be readable field for field
-// from a plain file: header, committed records, overflow accounting, names.
+// The files the writers leave behind must be readable field for field from
+// plain files: event header, committed records, overflow accounting, names,
+// counters and the control word.
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,15 +47,81 @@ static int read_file(const char * path, unsigned char ** out, size_t * size)
   return 0;
 }
 
+// Counters land in the slot of their handle; a re-registered handle moves to a
+// fresh slot; claims past capacity are counted and get none.
+static int check_stats(const char * dir)
+{
+  asd_stats_t s;
+  CHECK(asd_stats_open(&s, dir, 77, 3) == 0);
+  int a = 0, b = 0, c = 0;
+  CHECK(asd_stats_find(&s, &a) == NULL);
+  CHECK(asd_stats_register(&s, ASD_SLOT_PUB, &a) == 0);
+  CHECK(asd_stats_register(&s, ASD_SLOT_SUB, &b) == 1);
+  asd_stats_slot_t * slot = asd_stats_find(&s, &a);
+  CHECK(slot == &s.slots[0]);
+  asd_stats_count(slot, 100);
+  asd_stats_count(slot, 200);
+  asd_stats_latency(slot, 5);
+  asd_stats_latency(slot, -1);
+  asd_stats_latency(slot, (int64_t)ASD_STATS_LATENCY_LIMIT_NS + 1);
+  asd_stats_link(&s, &s.slots[1], slot);
+  CHECK(asd_stats_register(&s, ASD_SLOT_PUB, &a) == 2);
+  CHECK(asd_stats_find(&s, &a) == &s.slots[2]);
+  CHECK(asd_stats_find(&s, &b) == &s.slots[1]);
+  CHECK(asd_stats_register(&s, ASD_SLOT_TIMER, &c) == -1);
+  CHECK(asd_stats_find(&s, &c) == NULL);
+  asd_stats_close(&s);
+
+  char path[4200];
+  snprintf(path, sizeof(path), "%s/77.stats", dir);
+  unsigned char * bytes = NULL;
+  size_t size = 0;
+  CHECK(read_file(path, &bytes, &size) == 0);
+  CHECK(size == ASD_STATS_HEADER_SIZE + 3 * ASD_STATS_SLOT_SIZE);
+  const asd_stats_header_t * h = (const asd_stats_header_t *)bytes;
+  CHECK(memcmp(h->magic, ASD_STATS_MAGIC, 8) == 0);
+  CHECK(h->version == ASD_STATS_VERSION && h->pid == 77 && h->capacity == 3 && h->claimed == 4);
+  const asd_stats_slot_t * slots = (const asd_stats_slot_t *)(bytes + ASD_STATS_HEADER_SIZE);
+  CHECK(slots[0].kind == ASD_SLOT_PUB && slots[0].handle == (uint64_t)(uintptr_t)&a);
+  CHECK(slots[0].count == 2 && slots[0].last_ns == 200);
+  CHECK(slots[0].lat_sum_ns == 5 && slots[0].lat_count == 1);
+  CHECK(slots[1].kind == ASD_SLOT_SUB && slots[1].count == 0 && slots[1].next_slot == 1);
+  CHECK(slots[2].kind == ASD_SLOT_PUB && slots[2].count == 0);
+  free(bytes);
+  return 0;
+}
+
+// The control file maps only with its magic and version.
+static int check_control(const char * dir)
+{
+  CHECK(asd_control_map(dir) == NULL);
+  char path[4200];
+  snprintf(path, sizeof(path), "%s/%s", dir, ASD_CONTROL_FILE);
+  asd_control_t control;
+  memset(&control, 0, sizeof(control));
+  memcpy(control.magic, ASD_CONTROL_MAGIC, sizeof(ASD_CONTROL_MAGIC));
+  control.version = ASD_CONTROL_VERSION;
+  control.events = 1;
+  FILE * f = fopen(path, "wb");
+  CHECK(f != NULL);
+  CHECK(fwrite(&control, sizeof(control), 1, f) == 1);
+  fclose(f);
+  const asd_control_t * mapped = asd_control_map(dir);
+  CHECK(mapped != NULL && mapped->events == 1);
+  return 0;
+}
+
 int main(void)
 {
   char dir[] = "/tmp/asd_writer_test_XXXXXX";
   CHECK(mkdtemp(dir) != NULL);
 
-  asd_writer_t w;
-  CHECK(asd_writer_open(&w, dir, 4242, 3) == 0);
+  asd_events_t w;
+  CHECK(asd_events_open(&w, dir, 4242, 3) == 0);
+  asd_names_t names;
+  CHECK(asd_names_open(&names, dir, 4242) == 0);
 
-  asd_trace_record_t * r = asd_writer_claim(&w);
+  asd_trace_record_t * r = asd_events_claim(&w);
   CHECK(r != NULL);
   r->tid = 7;
   r->t_ns = 1000;
@@ -61,24 +129,25 @@ int main(void)
   r->handle = 0xabc;
   memset(r->gid, 0x11, ASD_TRACE_GID_SIZE);
   r->seq = 5;
-  asd_writer_commit(r, ASD_REC_TAKE);
+  asd_events_commit(r, ASD_REC_TAKE);
 
-  r = asd_writer_claim(&w);
+  r = asd_events_claim(&w);
   CHECK(r != NULL);
   r->tid = 8;
   r->t_ns = 3000;
   r->handle = 0xdef;
-  asd_writer_commit(r, ASD_REC_TIMER);
+  asd_events_commit(r, ASD_REC_TIMER);
 
   // The third slot is claimed but left uncommitted: readers must skip it.
-  CHECK(asd_writer_claim(&w) != NULL);
+  CHECK(asd_events_claim(&w) != NULL);
   // Past capacity the claim is counted and dropped.
-  CHECK(asd_writer_claim(&w) == NULL);
-  CHECK(asd_writer_claim(&w) == NULL);
+  CHECK(asd_events_claim(&w) == NULL);
+  CHECK(asd_events_claim(&w) == NULL);
 
-  asd_writer_name(&w, "1\tpub\tabc\t/ns/node\t/topic\t00ff");
-  asd_writer_name(&w, "2\ttimer\tdef\t100000000");
-  asd_writer_close(&w);
+  asd_names_line(&names, "1\tpub\tabc\t/ns/node\t/topic\t00ff\t0");
+  asd_names_line(&names, "2\ttimer\tdef\t100000000\t1");
+  asd_names_close(&names);
+  asd_events_close(&w);
 
   char path[4200];
   snprintf(path, sizeof(path), "%s/4242.trace", dir);
@@ -112,13 +181,19 @@ int main(void)
 
   snprintf(path, sizeof(path), "%s/4242.names", dir);
   CHECK(read_file(path, &bytes, &size) == 0);
-  const char expected[] = "# asd-names 1 pid=4242\n1\tpub\tabc\t/ns/node\t/topic\t00ff\n2\ttimer\tdef\t100000000\n";
+  const char expected[] =
+    "# asd-names 1 pid=4242\n1\tpub\tabc\t/ns/node\t/topic\t00ff\t0\n2\ttimer\tdef\t100000000\t1\n";
   CHECK(size == sizeof(expected) - 1);
   CHECK(memcmp(bytes, expected, size) == 0);
   free(bytes);
 
   CHECK(sizeof(asd_trace_header_t) == ASD_TRACE_HEADER_SIZE);
   CHECK(sizeof(asd_trace_record_t) == ASD_TRACE_RECORD_SIZE);
+  CHECK(sizeof(asd_stats_header_t) == ASD_STATS_HEADER_SIZE);
+  CHECK(sizeof(asd_stats_slot_t) == ASD_STATS_SLOT_SIZE);
+  CHECK(sizeof(asd_control_t) == ASD_CONTROL_SIZE);
+  CHECK(check_stats(dir) == 0);
+  CHECK(check_control(dir) == 0);
 
   snprintf(path, sizeof(path), "rm -rf %s", dir);
   if (system(path) != 0) {
