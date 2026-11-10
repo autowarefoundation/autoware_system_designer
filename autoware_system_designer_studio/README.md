@@ -128,8 +128,8 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn` | session                                     |
 | `launch.status`                                   | `compute_unit` (optional)                                                          | `{"sessions": [session]}`, members included |
 | `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`                                                          | `{"members": [path]}` acted on              |
-| `launch.follow`                                   | `compute_unit`, `path`                                                             | `{"path", "out": [lines], "err": [lines]}`  |
-| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow)                                    | `{"released": [path]}`                      |
+| `launch.follow`                                   | `compute_unit`, `path`, `system` and `mode` (optional: the session of that mode)   | `{"path", "out": [lines], "err": [lines]}`  |
+| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow), `system` and `mode` (optional)    | `{"released": [path]}`                      |
 | `launch.runs`                                     | `system` (optional)                                                                | `{"runs": [run]}`, newest first             |
 | `launch.run`                                      | `run`                                                                              | run with `members: [{"path", "slug"}]`      |
 | `launch.run_tail`                                 | `run`, `member` (its directory name)                                               | `{"run", "member", "out", "err"}`           |
@@ -146,9 +146,9 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `systems.changed` | A build rebuilt an export package; re-read `systems.list`                                  |
 | `daemon`          | `{"restart_required": true}`                                                               |
 | `launch`          | Session view (without members) on every change of a launch                                 |
-| `member`          | `{"compute_unit", "system", "path", "state", "detail", "time", "restarts", "respawns"}`    |
+| `member`          | `{"compute_unit", "system", "mode", "path", "state", "detail", "time", "restarts", "respawns"}` |
 | `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new lines of a followed member              |
-| `member.activity` | `{"compute_unit", "system", "window", "rates": {path: bytes/s}}`, output growth per window |
+| `member.activity` | `{"compute_unit", "system", "mode", "window", "rates": {path: bytes/s}}`, output growth per window |
 | `records.changed` | `{"system", "mode", "record"}`: a new latency record of the mode is complete               |
 
 Responses use one envelope: `{"ok": true, "result": ...}` or
@@ -198,6 +198,12 @@ runtime's `member`, `member.log` and `member.activity` events and relays `launch
 (a member `pattern`: the exact path, else every path containing it), `launch.shutdown` and
 `measure.*` as requests. A shutdown asked before the channel is up cancels the job. The runtime's own
 output is the job's log.
+
+A compute unit runs one launch at a time, and a system one mode at a time across its units: a start
+on a running unit, or of another mode while a unit of the system runs, answers `conflict`. The daemon
+keeps the last session of each mode of a system on a unit, with its member states, until that mode
+is launched there again; requests by `compute_unit` alone address the unit's running session, else
+its latest.
 
 Member output is tailed on demand: `launch.follow` asks the runtime to tail one member's `out` and
 `err` files and answers with their current tails, after which the member's new lines arrive as

@@ -31,6 +31,7 @@ require(path.join(JS_DIR, "activities", "launch", "sessions.js"));
 require(path.join(JS_DIR, "activities", "launch", "member_tree.js"));
 const T = require(path.join(JS_DIR, "diagrams", "timing_model.js"));
 const launch = global.window.SD.activities.launch;
+const live = launch.scope("pkg:Sys", () => "default");
 
 function node(name, namespace, launchState, extra = {}) {
   return {
@@ -62,10 +63,11 @@ function session(unit, system, job = "job-1", mode = "default") {
   });
 }
 
-function member(unit, memberPath, state, detail = {}, counts = {}) {
+function member(unit, memberPath, state, detail = {}, counts = {}, system = "pkg:Sys") {
   handlers["daemon.member"]({
     compute_unit: unit,
-    system: "pkg:Sys",
+    system,
+    mode: "default",
     path: memberPath,
     state,
     detail,
@@ -80,7 +82,7 @@ test("member states are keyed by node path for the system's own sessions", () =>
   member("main_ecu", "/a/alpha", "running", { pid: 3 });
   member("main_ecu", "/a/container", "running", { pid: 4 });
   member("main_ecu", "/a/comp", "loaded", { node: "comp" });
-  member("other", "/b/beta", "running", { pid: 9 });
+  member("other", "/b/beta", "running", { pid: 9 }, {}, "pkg:Other");
 
   const states = launch.memberStates(ENTITIES, "pkg:Sys", "default");
   assert.deepEqual([...states.keys()].sort(), [
@@ -121,9 +123,9 @@ test("a stopped member is dead and a composable follows its container down", () 
 
 test("restart counts are read from the daemon's member record", () => {
   member("main_ecu", "/a/alpha", "running", { pid: 5 });
-  assert.equal(launch.restartsOf("/a/alpha"), null);
+  assert.equal(live.restartsOf("/a/alpha"), null);
   member("main_ecu", "/a/alpha", "running", { pid: 7 }, { restarts: 3, respawns: 2 });
-  assert.deepEqual(launch.restartsOf("/a/alpha"), {
+  assert.deepEqual(live.restartsOf("/a/alpha"), {
     unit: "main_ecu",
     restarts: 3,
     respawns: 2,
@@ -132,11 +134,11 @@ test("restart counts are read from the daemon's member record", () => {
     launch.memberStates(ENTITIES, "pkg:Sys", "default").get("/a/alpha").restarts.restarts,
     3,
   );
-  assert.equal(launch.restartsOf("/b/beta"), null);
+  assert.equal(live.restartsOf("/b/beta"), null);
   // The record of a new launch carries its own counts.
   session("main_ecu", "pkg:Sys", "job-2");
   member("main_ecu", "/a/alpha", "running", { pid: 8 }, { restarts: 0, respawns: 0 });
-  assert.equal(launch.restartsOf("/a/alpha"), null);
+  assert.equal(live.restartsOf("/a/alpha"), null);
 });
 
 test("the overlay switch off leaves no state for the diagrams", () => {

@@ -31,6 +31,7 @@
     // (`rate`) and, from the busy threshold up, a note of it (`busy`); a
     // composable node's output is its container's.
     function liveStates() {
+      const { logRate } = launch.scope(config.systemId, () => entitiesMode);
       const states = launch.memberStates(
         entities,
         config.systemId,
@@ -39,7 +40,7 @@
       entities.forEach((entity) => {
         const state = states.get(entity.member_path);
         if (!state || entity.container_path) return;
-        const rate = launch.logRate(entity.member_path);
+        const rate = logRate(entity.member_path);
         state.rate = rate;
         state.busy = launch.busyLog(rate)
           ? `log ${launch.rateLabel(rate)}`

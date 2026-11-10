@@ -59,10 +59,14 @@
     function sessionsOfSystem() {
       return Array.from(launch.sessions.values())
         .filter((session) => session.system === config.systemId)
-        .sort((a, b) => a.compute_unit.localeCompare(b.compute_unit));
+        .sort(
+          (a, b) =>
+            a.compute_unit.localeCompare(b.compute_unit) ||
+            a.mode.localeCompare(b.mode),
+        );
     }
 
-    // One row per session of this system: its unit, state and member counts.
+    // One row per session of this system: its unit, mode, state and member counts.
     function renderSummary() {
       summary.replaceChildren();
       const sessions = sessionsOfSystem();
@@ -76,7 +80,11 @@
         const row = element("div", "live-session");
         row.append(
           SD.RunState.mark(launch.sessionToken(session)),
-          element("span", "live-session-unit", session.compute_unit),
+          element(
+            "span",
+            "live-session-unit",
+            `${session.compute_unit} · ${session.mode}`,
+          ),
           element("span", "live-session-state", launch.sessionLabel(session)),
         );
         summary.appendChild(row);

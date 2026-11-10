@@ -404,11 +404,21 @@ class ServeDaemon:
 
     async def _launch_follow(self, params: dict[str, Any]) -> dict[str, Any]:
         compute_unit = _str_param(params, "compute_unit", required=True)
-        return await self.launch.follow(compute_unit, _str_param(params, "path", required=True))
+        return await self.launch.follow(
+            compute_unit,
+            _str_param(params, "path", required=True),
+            system_id=_str_param(params, "system"),
+            mode=_str_param(params, "mode"),
+        )
 
     async def _launch_unfollow(self, params: dict[str, Any]) -> dict[str, Any]:
         compute_unit = _str_param(params, "compute_unit", required=True)
-        return await self.launch.unfollow(compute_unit, _str_param(params, "path"))
+        return await self.launch.unfollow(
+            compute_unit,
+            _str_param(params, "path"),
+            system_id=_str_param(params, "system"),
+            mode=_str_param(params, "mode"),
+        )
 
     async def _launch_runs(self, params: dict[str, Any]) -> dict[str, Any]:
         system_id = _str_param(params, "system")

@@ -87,6 +87,9 @@
         method = hasNative ? "native" : "xml";
       let unitStatus = new Map();
       const { sessions } = SD.activities.launch;
+      const ofMode = SD.activities.launch.scope(config.systemId, () =>
+        store.get("mode"),
+      );
       // Per unit: the last error of a control, and the last measurement result.
       const errors = new Map();
       const measures = new Map();
@@ -234,6 +237,20 @@
           });
       }
 
+      // The live session a launch of `unit` in the shown mode waits for: a unit
+      // runs one launch at a time, a system one mode at a time across its units.
+      function holderOf(unit) {
+        const mode = store.get("mode");
+        let holder = null;
+        sessions.forEach((session) => {
+          if (session.state === "exited") return;
+          const own = session.system === config.systemId;
+          if (own && session.mode === mode) return;
+          if (session.compute_unit === unit || own) holder = session;
+        });
+        return holder;
+      }
+
       // Controls of `unit` for its section head on the map: Launch and Shutdown,
       // always offered with the one that applies coloured, the measurement
       // window of an armed session, then the session or the unit's reach.
@@ -244,15 +261,10 @@
         const row = launchRows(config, store).find((r) => r.unit === unit);
         if (!row) return null;
         const status = unitStatus.get(unit);
-        const known = sessions.get(unit);
-        const session =
-          known && known.system === config.systemId && known.mode === row.mode
-            ? known
-            : null;
+        const session = ofMode.sessions.get(unit) || null;
         const controls = element("div", "unit-controls");
         const active = !!session && session.state !== "exited";
-        // The unit runs one launch at a time: a live session of another mode or system holds it.
-        const holder = known && !session && known.state !== "exited" ? known : null;
+        const holder = active ? null : holderOf(unit);
         const canLaunch = status === "available" && !active && !holder;
         const launch = button("Launch", canLaunch ? "primary" : "", () => {
           const params = {
@@ -301,7 +313,13 @@
           );
         else if (holder)
           controls.appendChild(
-            element("span", "unit-status", `in use · ${holder.mode}`),
+            element(
+              "span",
+              "unit-status",
+              holder.compute_unit === unit
+                ? `in use · ${holder.mode}`
+                : `${holder.mode} runs on ${holder.compute_unit}`,
+            ),
           );
         else if (status)
           controls.appendChild(
@@ -389,9 +407,15 @@
       }
 
       function onSessions() {
-        sessions.forEach((session, unit) => {
-          if (session.state === "exited") measures.delete(unit);
-          else if (
+        const live = new Map();
+        sessions.forEach((session) => {
+          if (session.state !== "exited") live.set(session.compute_unit, session);
+        });
+        measures.forEach((_measure, unit) => {
+          if (!live.has(unit)) measures.delete(unit);
+        });
+        live.forEach((session, unit) => {
+          if (
             session.connected &&
             session.control.measure_armed &&
             !measures.has(unit)

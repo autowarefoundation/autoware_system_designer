@@ -229,6 +229,8 @@
         ? {
             path,
             unit: session.compute_unit,
+            system: session.system,
+            mode: session.mode,
             job: session.job,
             live: session.connected,
             ended,
@@ -241,7 +243,12 @@
       }
       memberLog.clear("Loading…");
       daemon
-        .rpc("launch.follow", { compute_unit: session.compute_unit, path })
+        .rpc("launch.follow", {
+          compute_unit: session.compute_unit,
+          path,
+          system: session.system,
+          mode: session.mode,
+        })
         .then((result) => {
           if (seq !== followSeq) return;
           memberLog.clear("No output yet.");
@@ -257,7 +264,12 @@
     function release(entry) {
       if (!entry?.unit) return;
       daemon
-        .rpc("launch.unfollow", { compute_unit: entry.unit, path: entry.path })
+        .rpc("launch.unfollow", {
+          compute_unit: entry.unit,
+          path: entry.path,
+          system: entry.system,
+          mode: entry.mode,
+        })
         .catch(() => {});
     }
 
