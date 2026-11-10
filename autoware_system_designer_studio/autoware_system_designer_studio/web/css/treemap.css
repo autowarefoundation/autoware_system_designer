@@ -76,15 +76,27 @@
   stroke-dasharray: none;
 }
 
-/* Slot: a faint well naming the component group */
+/* Slot: a faint well naming the component group on a title strip in the component's colour */
 .tm-slot > .tm-rect {
   fill: var(--bg-primary);
   stroke: var(--border-color);
   stroke-width: 1;
 }
 
+.tm-slot > .tm-slot-head {
+  fill: var(--slot-color, transparent);
+}
+
+[data-theme="dark"] .tm-slot > .tm-slot-head {
+  fill: var(--slot-color-dark, transparent);
+}
+
+[data-theme="dark"] .tm-slot > text {
+  fill: var(--slot-text-dark, var(--text-secondary));
+}
+
 .tm-slot > text {
-  fill: var(--text-secondary);
+  fill: var(--slot-text, var(--text-secondary));
   font-weight: 600;
   letter-spacing: 0.02em;
 }

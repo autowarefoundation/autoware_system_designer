@@ -1,13 +1,15 @@
 // Treemap: the run state of every node of the mode at a glance, one section
 // per compute unit. A section holds rows of slots named by the first path
 // segment of the top-level components, in fixed places: sensing,
-// localization, perception and planning on top; api, adapi, system and control in
-// the middle; node containers and every other segment below. Blocks nest as
-// the design does, cut at the depth option, every node an equal area. A
-// block's colour and state mark are its live state, a module's the severest
-// within; a block with no launched member within stays neutral and unmarked. A click selects a block or a
-// unit, and search locates one. The `unitControls` option puts the host's
-// controls of a unit in the section head, after its name.
+// localization, perception and planning on top; api, adapi, system and
+// control in the middle; node containers and every other segment below. A
+// slot's title strip carries the colour of its component. Blocks nest as the
+// design does, cut at the depth option, every node an equal area. A block's
+// colour and state mark are its live state, a module's the severest within;
+// a block with no launched member within stays neutral and unmarked. A click
+// selects a block or a unit, and search locates one. The `unitControls`
+// option puts the host's controls of a unit in the section head, after its
+// name.
 (function () {
   const SD = window.SD;
   const SVG_NS = "http://www.w3.org/2000/svg";
@@ -318,6 +320,7 @@
         boxes.push({
           kind: "slot",
           slot: slot.slot,
+          guide: slot.components[0].vis_guide || null,
           section,
           x,
           y,
@@ -544,6 +547,21 @@
       }
       if (box.kind === "slot") {
         g.classList.add("tm-slot");
+        const guide = box.guide;
+        if (guide) {
+          g.style.setProperty("--slot-color", guide.medium_color);
+          g.style.setProperty("--slot-text", guide.text_color);
+          g.style.setProperty("--slot-color-dark", guide.dark_medium_color);
+          g.style.setProperty("--slot-text-dark", guide.dark_text_color);
+        }
+        g.appendChild(
+          svgElement("rect", {
+            class: "tm-slot-head",
+            width: box.w,
+            height: G.slotHead,
+            rx: 3,
+          }),
+        );
         const text = svgElement("text", { x: G.pad, y: G.slotHead / 2 });
         text.style.fontSize = `${G.font.slot}px`;
         text.textContent = this._fit(box.slot, box.w - 2 * G.pad, G.font.slot);
@@ -564,8 +582,11 @@
 
     // Block name and the place of its state mark (`box.mark`, null when the
     // block is too small for one). An open module has the mark then the name
-    // in its label strip. A closed block has the name centred when it fits,
-    // the mark in its top-left corner, and the mark alone centred otherwise.
+    // in its label strip. A closed block has the name centred: a tall one
+    // with the mark in its top-left corner, a shorter one with the mark at
+    // its left, the name moved after it when it would not clear the mark,
+    // and no mark where the name fits only alone. A block without a name has
+    // the mark centred.
     _label(g, box) {
       const name = box.instance.name || "";
       const size = G.font.block;
@@ -584,24 +605,35 @@
         if (text) addLabel(text, { x: lead, y: G.moduleHead / 2 });
         return;
       }
-      const corner = G.blockMark + G.pad;
-      // A short block keeps the name clear of the corner on both sides.
-      const clear = box.h >= size + 2 * (corner + 1) ? G.pad : corner + G.pad;
-      const text =
-        box.h < size + 2
-          ? ""
-          : this._fit(name, box.w - 2 * clear, size) ||
-            this._fit(name, box.w - 2 * G.pad, size);
-      if (text) {
-        addLabel(text, {
-          x: box.w / 2,
-          y: box.h / 2,
-          "text-anchor": "middle",
-        });
-        if (box.w >= corner + G.pad && box.h >= corner)
-          box.mark = { x: 2 + r, y: 2 + r };
-      } else if (Math.min(box.w, box.h) >= G.blockMark + 2) {
-        box.mark = { x: box.w / 2, y: box.h / 2 };
+      if (box.h < size + 2) {
+        if (Math.min(box.w, box.h) >= G.blockMark + 2)
+          box.mark = { x: box.w / 2, y: box.h / 2 };
+        return;
+      }
+      const centre = { x: box.w / 2, y: box.h / 2 };
+      const centred = { ...centre, "text-anchor": "middle" };
+      const corner = 2 + G.blockMark + 1;
+      if (box.h >= size + 2 * corner) {
+        const text = this._fit(name, box.w - 2 * G.pad, size);
+        if (text) addLabel(text, centred);
+        if (box.w >= corner + G.pad)
+          box.mark = text ? { x: 2 + r, y: 2 + r } : centre;
+        return;
+      }
+      const lead = 3 + G.blockMark + 3;
+      const left = { x: 3 + r, y: box.h / 2 };
+      const beside = this._fit(name, box.w - 2 * lead, size);
+      const after = beside ? "" : this._fit(name, box.w - lead - 3, size);
+      if (beside) {
+        addLabel(beside, centred);
+        box.mark = left;
+      } else if (after) {
+        addLabel(after, { x: lead, y: box.h / 2 });
+        box.mark = left;
+      } else {
+        const text = this._fit(name, box.w - 2 * G.pad, size);
+        if (text) addLabel(text, centred);
+        else if (box.w >= G.blockMark + 2) box.mark = centre;
       }
     }
 

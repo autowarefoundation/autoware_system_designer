@@ -23,11 +23,14 @@ from typing import Dict, List, Optional, Tuple
 BASE_COLOR_MAP = {
     "sensing": "#cc6666",  # red
     "localization": "#cc8855",  # orange
-    "map": "#6699aa",  # cyan/teal
+    "map": "#5f9fb8",  # sky blue
     "perception": "#ccaa55",  # yellow
     "planning": "#6b9b6b",  # green
     "control": "#6677bb",  # blue
     "system": "#9966bb",  # purple
+    "vehicle": "#bb6699",  # pink
+    "api": "#8fa84f",  # olive
+    "adapi": "#4fa88a",  # sea green
     "gray": "#888888",  # gray
 }
 
