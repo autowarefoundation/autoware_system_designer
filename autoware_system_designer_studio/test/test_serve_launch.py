@@ -30,7 +30,8 @@ from .test_serve import PKG, SYSTEM, UNITS, _install_tree, _Running
 from .test_serve_jobs import _wait_job
 
 # A runtime stand-in: serves the control protocol on the --control socket. Behaviour switches come
-# in as system arguments (``--arg behaviour=...``): ``nosocket`` never serves the socket.
+# in as system arguments (``--arg behaviour=...``): ``nosocket`` never serves the socket, ``big`` sends
+# a monitor snapshot far over 64 KiB.
 # Fake tools run on this interpreter: the launch PATH under test holds only the fake bin.
 SHEBANG = f"#!{sys.executable}\n"
 
@@ -49,7 +50,11 @@ with open(os.path.join(log_dir, "demo_talker", "out"), "w") as f:
     f.write("hello 1\\nhello 2\\n")
 with open(os.path.join(log_dir, "demo_talker", "err"), "w") as f:
     f.write("bye")
-METHODS = ["status", "stop", "restart", "kill", "measure.start", "measure.stop", "measure.status", "shutdown"]
+METHODS = ["status", "stop", "restart", "kill", "measure.start", "measure.stop", "measure.status",
+           "monitor.sample", "monitor.follow", "monitor.unfollow", "shutdown"]
+RATES = {"time_ns": 1, "interval_s": 2.0, "processes": 1, "untracked_endpoints": 0,
+         "nodes": [{"node": "/demo/talker", "pids": [1], "inputs": [],
+                    "outputs": [{"topic": "/chatter", "hz": 1.0, "callback_ms": 0.1}], "timers": []}]}
 members = [
     {"path": "/demo/talker", "state": "pending", "detail": {}, "time": 0.0},
     {"path": "/demo/listener", "state": "pending", "detail": {}, "time": 0.0},
@@ -69,7 +74,7 @@ async def main():
             writer.write((json.dumps(obj) + "\\n").encode())
 
         send({"event": "hello", "pid": os.getpid(), "methods": METHODS, "policy": "guard",
-              "measure_armed": "--measure" in args, "members": members, "launch_ready": True,
+              "measure_armed": "--measure" in args, "monitor": True, "members": members, "launch_ready": True,
               "shutting_down": False, "log_dir": log_dir})
         send({"event": "member", "path": "/demo/talker", "state": "running", "detail": {"pid": 1}, "time": 1.0})
         send({"event": "member.activity", "window": 2.0, "rates": {"/demo/talker": 5120}})
@@ -103,6 +108,19 @@ async def main():
                 result = {"released": released}
             elif method == "measure.status":
                 result = {"state": "idle", "message": "measure idle"}
+            elif method == "monitor.sample":
+                result = RATES
+            elif method == "monitor.follow":
+                result = {"interval_s": 2.0}
+                rates = RATES
+                if behaviour == "big":
+                    node = RATES["nodes"][0]
+                    rates = {**RATES, "nodes": [{**node, "node": f"/n{i:05d}"} for i in range(3000)]}
+                send({"event": "monitor", **rates})
+            elif method == "monitor.unfollow":
+                result = {"released": True}
+                with open(log_dir + "/unfollowed", "a") as f:
+                    f.write("x")
             elif method == "shutdown":
                 result = {"shutting_down": True}
                 stop.set()
@@ -407,6 +425,29 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
 
     status, body = launching.rpc({"method": "measure.status", "params": {"compute_unit": "main_ecu"}})
     assert status == 200 and body["result"] == {"state": "idle", "message": "measure idle"}
+
+    # Topic rates: sampled once, or followed by counted callers and forwarded as the monitor topic.
+    assert session["control"]["monitor"] is True
+    status, body = launching.rpc({"method": "monitor.sample", "params": {"compute_unit": "main_ecu"}})
+    assert status == 200 and body["result"]["nodes"][0]["node"] == "/demo/talker"
+    for _ in range(2):
+        status, body = launching.rpc({"method": "monitor.follow", "params": {"compute_unit": "main_ecu"}})
+        assert status == 200 and body["result"] == {"interval_s": 2.0}
+    deadline = time.time() + 5
+    while time.time() < deadline and not launching.events.of(launch.TOPIC_MONITOR):
+        time.sleep(0.02)
+    monitor_event = launching.events.of(launch.TOPIC_MONITOR)[0]
+    assert monitor_event["compute_unit"] == "main_ecu" and monitor_event["mode"] == "Runtime"
+    assert monitor_event["nodes"][0]["outputs"][0]["hz"] == 1.0
+    unfollowed = Path(session["log_dir"]) / "unfollowed"
+    status, body = launching.rpc({"method": "monitor.unfollow", "params": {"compute_unit": "main_ecu"}})
+    assert body["result"] == {"released": False}  # one follower is left
+    assert launching.daemon.launch.session("main_ecu").monitors == 1
+    launching.loop.call_soon_threadsafe(launching.daemon.launch.release_follows)
+    deadline = time.time() + 5
+    while time.time() < deadline and not unfollowed.exists():
+        time.sleep(0.02)
+    assert launching.daemon.launch.session("main_ecu").monitors == 0 and unfollowed.read_text() == "x"
 
     status, body = launching.rpc({"method": "launch.shutdown", "params": {"compute_unit": "main_ecu"}})
     assert status == 200 and body["result"] == {"shutting_down": True}
@@ -717,3 +758,20 @@ def test_a_session_keeps_the_runtime_counts_of_its_members():
     # A runtime without counts, or a malformed one, reads as no restarts.
     assert count({"path": "/a", "state": "running"})["restarts"] == 0
     assert count({"path": "/a", "restarts": "3", "respawns": -1}) == {"path": "/a", "restarts": 0, "respawns": 0}
+
+
+def test_a_monitor_snapshot_far_over_64_kib_keeps_the_channel(launching):
+    status, _ = _start(launching, mode="Runtime", args={"behaviour": "big"})
+    assert status == 200
+    _wait_session(launching, lambda s: s["connected"], "connection")
+    status, body = launching.rpc({"method": "monitor.follow", "params": {"compute_unit": "main_ecu"}})
+    assert status == 200, body
+    deadline = time.time() + 5
+    while time.time() < deadline and not launching.events.of(launch.TOPIC_MONITOR):
+        time.sleep(0.02)
+    (event,) = launching.events.of(launch.TOPIC_MONITOR)
+    assert len(event["nodes"]) == 3000
+    assert len(json.dumps(event)) > 64 * 1024
+    status, body = launching.rpc({"method": "measure.status", "params": {"compute_unit": "main_ecu"}})
+    assert status == 200  # still connected
+    launching.rpc({"method": "launch.shutdown", "params": {"compute_unit": "main_ecu"}})

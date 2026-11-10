@@ -99,6 +99,7 @@ ACTIVITIES = {
             "js/diagrams/treemap.js",
             "js/activities/launch/state_map.js",
             "js/activities/launch/member_actions.js",
+            "js/activities/launch/topic_rates.js",
             "js/activities/launch/index.js",
         ),
         "styles": ("css/activities/launch.css",),
