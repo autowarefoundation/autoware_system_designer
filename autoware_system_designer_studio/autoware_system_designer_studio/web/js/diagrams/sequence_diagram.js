@@ -1971,6 +1971,14 @@
       if (focus) this.focusElement(gateHit.gate.element);
     }
 
+    // Drops the selected element; the active group stays for enumeration.
+    clearSelection() {
+      this.container
+        .querySelectorAll(".seq-selected")
+        .forEach((el) => el.classList.remove("seq-selected"));
+      this.selectedId = null;
+    }
+
     setActiveGroup(group) {
       if (this.activeGroup === group) return;
       const previous = this.activeGroup;

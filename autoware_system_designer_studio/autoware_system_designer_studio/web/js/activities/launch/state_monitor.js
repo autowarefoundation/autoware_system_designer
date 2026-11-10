@@ -401,6 +401,16 @@
       store.set("entity", entity.key);
     }
 
+    // Drops the selected entity and its follow; a shown launcher log stays.
+    function clearSelection() {
+      selected = null;
+      unfollow();
+      showNothing();
+      showState();
+      renderTree();
+      renderLaunchers();
+    }
+
     function showNothing() {
       view.body.replaceChildren();
       view.setEmpty(EMPTY_LOG);
@@ -692,7 +702,8 @@
       loadMode().catch((error) => console.warn("launch monitor:", error));
     store.onChange("mode", reload);
     store.onChange("entity", (key) => {
-      if (key !== selected?.key) selectKey(key);
+      if (!key && selected) clearSelection();
+      else if (key !== selected?.key) selectKey(key);
     });
     reload();
     showState();

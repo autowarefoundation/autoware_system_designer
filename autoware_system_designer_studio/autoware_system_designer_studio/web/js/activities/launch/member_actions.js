@@ -4,8 +4,8 @@
 // container instead, and a module or namespace has none. Each action is offered
 // in the member states it applies to, while the session of the shown mode is
 // connected; Stop and Kill ask for a confirmation in the bar, dropped once the
-// selection or the session changes. The runtime's operation-mode guard decides;
-// a refusal shows in the bar.
+// selection or the session changes, or by `cancel`. The runtime's
+// operation-mode guard decides; a refusal shows in the bar.
 (function () {
   const SD = window.SD;
   const { element } = SD.widgets;
@@ -107,30 +107,39 @@
         (confirming.path !== path || confirming.job !== session?.job)
       )
         confirming = null;
-      const actions = element("span", "member-bar-actions");
-      const busy = pending.has(path);
+      // The confirmation sits apart from the actions, which stay in place and
+      // disabled meanwhile, so a second click on an action never confirms it.
       if (confirming) {
         const [, actionLabel] = ACTIONS.find(([a]) => a === confirming.action);
         const action = confirming.action;
-        actions.append(
-          element("span", "member-bar-confirm", `${actionLabel} this process?`),
-          button(actionLabel, "danger", () => act(entity, action)),
+        const confirm = element("span", "member-bar-confirm");
+        confirm.append(
+          element(
+            "span",
+            "member-bar-question",
+            `${actionLabel} this process?`,
+          ),
+          button(`Confirm ${action}`, "danger", () => act(entity, action)),
           button("Cancel", "", () => {
             confirming = null;
             render();
           }),
         );
-      } else {
-        ACTIONS.forEach(([action, actionLabel, states, confirm]) => {
-          const node = button(actionLabel, "", () => {
-            if (!confirm) return act(entity, action);
-            confirming = { action, path, job: session.job };
-            render();
-          });
-          node.disabled = busy || !live(session) || !states.includes(state);
-          actions.appendChild(node);
-        });
+        bar.appendChild(confirm);
       }
+      const actions = element("span", "member-bar-actions");
+      const busy = pending.has(path);
+      ACTIONS.forEach(([action, actionLabel, states, confirm]) => {
+        const node = button(actionLabel, "", () => {
+          if (!confirm) return act(entity, action);
+          confirming = { action, path, job: session.job };
+          render();
+        });
+        node.disabled =
+          !!confirming || busy || !live(session) || !states.includes(state);
+        node.classList.toggle("armed", confirming?.action === action);
+        actions.appendChild(node);
+      });
       bar.appendChild(actions);
       if (note?.path === path) {
         const text = element("span", "member-bar-note", note.text);
@@ -204,7 +213,15 @@
     SD.on("launch.sessions", render);
     render();
 
-    return { element: bar, render };
+    // Drops the confirmation awaiting an answer; false when none was.
+    function cancel() {
+      if (!confirming) return false;
+      confirming = null;
+      render();
+      return true;
+    }
+
+    return { element: bar, render, cancel };
   }
 
   launch.memberActions = memberActions;

@@ -68,13 +68,18 @@
         depth.hidden = !diagram?.layered;
       }
 
-      // The diagram locates the store's entity when it loads and on show; a
-      // change while shown comes from this canvas and is already in place.
+      // The diagram locates the store's entity when it loads and on show, and
+      // drops its selection once the entity is cleared; a change while shown
+      // comes from this canvas and is already in place.
       let shownKey = "";
       function followEntity() {
         const key = store.get("entity");
-        if (!key || key === shownKey) return;
+        if (key === shownKey) return;
         shownKey = key;
+        if (!key) {
+          host.clearSelection();
+          return;
+        }
         host.focusKey(key).catch((error) => console.warn("explore:", error));
       }
       function load() {
@@ -100,8 +105,31 @@
           reload();
       });
       store.onChange("entity", (key) => {
-        if (!main.hidden) shownKey = key;
+        if (main.hidden) return;
+        shownKey = key;
+        if (!key) host.clearSelection();
       });
+      // A selection dropped on another activity, an element that is no entity included.
+      SD.on("selection.clear", () => host.clearSelection());
+      // Escape drops the selection; captured ahead of the popups' own Escape,
+      // so one that closes a popup does nothing here.
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key !== "Escape" || main.hidden || event.defaultPrevented)
+            return;
+          if (
+            document.querySelector(
+              ".popup-overlay.open, #settings-overlay.open",
+            )
+          )
+            return;
+          if (event.target.closest?.("input, textarea, select")) return;
+          host.clearSelection();
+          store.set("entity", "");
+        },
+        true,
+      );
       SD.on("themechange", host.updateTheme);
 
       showDiagramOptions();

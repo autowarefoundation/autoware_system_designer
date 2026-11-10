@@ -371,9 +371,33 @@
   font-size: 12px;
 }
 
+/* Stop or Kill awaiting its answer, centred between the title and the actions */
 .member-bar-confirm {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  margin-inline: auto;
+}
+
+.member-bar-confirm + .member-bar-actions {
+  margin-left: 0;
+}
+
+.member-bar-confirm .panel-button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.member-bar-question {
   font-size: 12px;
   font-weight: 600;
+  color: var(--state-warning);
+}
+
+/* The action the confirmation is for */
+.member-bar-actions .panel-button.armed {
+  border-color: var(--state-warning);
   color: var(--state-warning);
 }
 

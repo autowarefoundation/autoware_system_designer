@@ -2,8 +2,9 @@
 // the system's launched members, their busy logs and restart counts, with
 // the caller's controls of each compute unit in its section head. A click on
 // a block selects its node or module as the store's `entity`, shared with
-// the log view and Explore; a double click on a node opens it there through
-// `onOpen`. The map lays out only while shown: a mode change made while
+// the log view and Explore, and a unit's head clears it; the map marks the
+// store's entity, none once it is cleared. A double click on a node opens it
+// there through `onOpen`. The map lays out only while shown: a mode change made while
 // hidden loads on the next show.
 (function () {
   const SD = window.SD;
@@ -64,6 +65,7 @@
       const key = store.get("entity");
       const entity = key && entities.find((e) => e.key === key);
       if (entity) module?.focusEntity(String(entity.unique_id));
+      else module?.clearSelection();
     }
 
     async function load() {
@@ -88,8 +90,10 @@
           dataBase: config.dataBase,
           unitControls,
           onInfoUpdate(_data, _type, entity) {
-            if (entity?.path)
-              store.set("entity", SD.NamespaceTree.entityKey(entity));
+            store.set(
+              "entity",
+              entity?.path ? SD.NamespaceTree.entityKey(entity) : "",
+            );
           },
         });
         await created.ready;
@@ -121,6 +125,9 @@
     SD.on("launch.member", schedule);
     SD.on("launch.sessions", schedule);
     SD.on("launch.activity", schedule);
+    store.onChange("entity", () => {
+      if (!hidden) followEntity();
+    });
     store.onChange("mode", () => {
       if (hidden) stale = true;
       else load();

@@ -879,6 +879,11 @@
       );
     }
 
+    clearSelection() {
+      this.selectedId = null;
+      this._markSelected();
+    }
+
     _unitInfo(box) {
       const section = this.sections[box.section];
       return {

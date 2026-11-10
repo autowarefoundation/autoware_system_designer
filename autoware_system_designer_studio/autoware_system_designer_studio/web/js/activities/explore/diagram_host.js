@@ -2,7 +2,8 @@
 // diagram and mode. The module reports the selected element through
 // `inspector.show`, and a reload clears it through `inspector.reset`. A
 // selected node or module is also recorded in the store under `entity`, and
-// `focusKey` locates the store's entity on the diagram. A module that draws
+// `focusKey` locates the store's entity on the diagram; `clearSelection`
+// drops the module's selection and empties the inspector. A module that draws
 // the hierarchy cut at a level is handed the store's `depth`. Live member
 // states set on the host reach the module shown, now and after each load,
 // where the module draws them; a measurement reload reaches it the same way.
@@ -117,6 +118,11 @@
       return true;
     }
 
+    function clearSelection() {
+      if (typeof module?.clearSelection === "function") module.clearSelection();
+      inspector.reset();
+    }
+
     function updateTheme() {
       if (typeof module?.updateTheme === "function") module.updateTheme();
     }
@@ -147,6 +153,7 @@
       load,
       focus,
       focusKey,
+      clearSelection,
       updateTheme,
       setLiveStates,
       reloadMeasurement,

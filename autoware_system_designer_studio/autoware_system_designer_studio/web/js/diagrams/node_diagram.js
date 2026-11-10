@@ -1092,6 +1092,11 @@
 
     // ── Highlighting ──────────────────────────────────────────────────────────────
 
+    // The selection is its highlights.
+    clearSelection() {
+      this.clearHighlights();
+    }
+
     clearHighlights() {
       this.nodeConnectionDirections.clear();
       this.activeGlobalTopic = null;

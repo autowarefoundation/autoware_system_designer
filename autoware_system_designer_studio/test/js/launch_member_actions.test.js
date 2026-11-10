@@ -28,6 +28,14 @@ function fakeElement(tag, className = "", text = "") {
     disabled: false,
     title: "",
     listeners: {},
+    classList: {
+      toggle(name, on) {
+        const names = new Set(node.className.split(" ").filter(Boolean));
+        if (on) names.add(name);
+        else names.delete(name);
+        node.className = [...names].join(" ");
+      },
+    },
     append(...items) {
       node.children.push(...items);
     },
@@ -40,8 +48,9 @@ function fakeElement(tag, className = "", text = "") {
     addEventListener(type, handler) {
       node.listeners[type] = handler;
     },
+    // A disabled button takes no click, as in a browser.
     click() {
-      node.listeners.click?.();
+      if (!node.disabled) node.listeners.click?.();
     },
   };
   return node;
@@ -231,6 +240,18 @@ test("stop and kill are confirmed first, and a selection change drops the confir
   assert.ok(!texts(bar.element).includes("Kill this process?"));
   button(bar.element, "Kill").click();
   button(bar.element, "Kill").click();
+  assert.equal(calls.length, 0, "a double click on Kill does not confirm it");
+  assert.deepEqual(
+    buttons(bar.element).map((b) => [b.textContent, b.disabled]),
+    [
+      ["Confirm kill", false],
+      ["Cancel", false],
+      ["Stop", true],
+      ["Restart", true],
+      ["Kill", true],
+    ],
+  );
+  button(bar.element, "Confirm kill").click();
   assert.deepEqual(calls, [
     ["launch.kill", { compute_unit: "main_ecu", pattern: "/c", exact: true }],
   ]);
@@ -273,4 +294,20 @@ test("a module and an empty selection have no actions", () => {
   assert.equal(buttons(bar.element).length, 0);
   store.set("entity", "");
   assert.equal(buttons(bar.element).length, 0);
+});
+
+test("cancel drops a pending confirmation only", () => {
+  setLive("running");
+  calls.length = 0;
+  const bar = memberActions(
+    { systemId: "pkg:Sys" },
+    makeStore("n:/a/x"),
+    hooks,
+  );
+  assert.equal(bar.cancel(), false);
+  button(bar.element, "Stop").click();
+  assert.equal(bar.cancel(), true);
+  assert.ok(!texts(bar.element).includes("Stop this process?"));
+  assert.equal(bar.cancel(), false);
+  assert.equal(calls.length, 0);
 });

@@ -1,7 +1,9 @@
 // Launch activity: two views of the mode, chosen in the side panel. Control
 // is the state map, with launch and shutdown of each compute unit in its
 // section head and the actions on the selected member above it; Logs is the
-// member tree beside the selected member's log, read only.
+// member tree beside the selected member's log, read only. Escape drops a
+// pending confirmation, else the selection, also on the other activities'
+// diagrams through `selection.clear`.
 // The side panel also holds the deploy, the launch options, the launch
 // commands of the mode and deploy in a popup, and the RViz start on the daemon.
 (function () {
@@ -441,6 +443,25 @@
 
       ["mode", "deploy"].forEach((key) => store.onChange(key, render));
       store.onChange("view", showView);
+      // Captured ahead of the popups' own Escape, so one that closes a popup does nothing here.
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key !== "Escape" || !shown || event.defaultPrevented)
+            return;
+          if (
+            document.querySelector(
+              ".popup-overlay.open, #settings-overlay.open",
+            )
+          )
+            return;
+          if (event.target.closest?.("input, textarea, select")) return;
+          if (memberBar.cancel()) return;
+          store.set("entity", "");
+          SD.emit("selection.clear");
+        },
+        true,
+      );
       SD.on("daemon.health", loadUnitStatus);
       SD.on("daemon.health", () => memberBar.render());
       SD.on("daemon.systems.changed", loadUnitStatus);
