@@ -2,14 +2,17 @@
 // (publishing and subscribing nodes, the rate and the warn and error rates
 // its output port declares) with the runtimes' counters of every compute unit
 // running the mode (publish and take rates, callback and communication times).
-// Rows are grouped by the publishing node's component or namespace, or by the
-// topic's namespace. The rates flow only while the view is shown: it follows
+// Rows sit in a tree of the publishing node's namespace or of the topic's
+// namespace, sorted by a column within each group, and filter by status. The
+// rates flow only while the view is shown: it follows
 // the monitor of each connected session and releases it when hidden; the last
 // rates of a launch stay shown after it ended, until its unit is launched
 // again. A selector beside the title shows a past run instead, from the rates
 // record the runtime leaves in the run's log directory, over the whole run or
-// a span ending at a chosen sample. A row click selects its publishing node as
-// the store's `entity`; rows touching that node are marked.
+// a span ending at a chosen sample. A row click selects the topic and its
+// publishing node as the store's `entity`; the interfaces of the topic's
+// publishers (else subscribers), or of the entity's node, are marked by
+// direction, the selected topic in the stronger shade of its own.
 (function () {
   const SD = window.SD;
   const launch = (SD.activities.launch ||= {});
@@ -77,11 +80,24 @@
   ];
 
   const GROUPS = [
-    ["component", "Component"],
     ["namespace", "Node namespace"],
     ["topic", "Topic namespace"],
     ["none", "None"],
   ];
+  // Group of the topics without a known node.
+  const NO_NODE = "(no node)";
+
+  // Sort keys by column; a missing value sorts last either way.
+  const SORT_KEYS = {
+    status: (row) => STATUS_ORDER.indexOf(row.status),
+    topic: (row) => row.topic,
+    hz: (row) => row.hz,
+    declared: (row) => row.declaredHz,
+    callback: (row) => row.callbackMs,
+    comm: (row) => row.commMs,
+    publisher: (row) => row.origin,
+    subs: (row) => row.subscribers.length,
+  };
 
   function topicName(topic) {
     if (Array.isArray(topic))
@@ -297,53 +313,130 @@
     return rows;
   }
 
-  function parent(path) {
-    const parts = String(path || "")
+  function segments(path) {
+    return String(path || "")
       .split("/")
       .filter(Boolean);
-    parts.pop();
-    return `/${parts.join("/")}`;
   }
 
-  // Leading `depth` segments of a name's namespace.
-  function prefix(path, depth) {
-    const parts = String(path || "")
-      .split("/")
-      .filter(Boolean);
-    parts.pop();
-    return `/${parts.slice(0, depth).join("/")}`;
-  }
-
-  // Group label of a row: the publishing node's first path segment or parent path, or the first
-  // two segments of the topic's namespace. A topic without a known publisher groups under its first subscriber, else "(no publisher)".
-  function groupOf(row, method) {
-    if (method === "none") return "";
-    if (method === "topic") return prefix(row.topic, 2);
+  // Namespace segments a row groups under: those of its publishing node, else
+  // of its first subscriber, or of the topic; null for a topic without a node.
+  function groupPath(row, method) {
+    if (method === "topic") return segments(row.topic).slice(0, -1);
     const node =
       row.origin || row.designSubscribers[0] || row.subscribers[0]?.node;
-    if (!node) return "(no publisher)";
-    if (method === "component")
-      return `/${String(node).split("/").filter(Boolean)[0] || ""}`;
-    return parent(node);
+    return node ? segments(node).slice(0, -1) : null;
   }
 
-  // [[label, rows]] with groups by label and rows by status, then topic.
-  function groupRows(rows, method) {
-    const groups = new Map();
-    rows.forEach((row) => {
-      const label = groupOf(row, method);
-      if (!groups.has(label)) groups.set(label, []);
-      groups.get(label).push(row);
+  // Row order by `key`, ascending for a positive `dir`; ties by topic.
+  function compareRows(key = "status", dir = 1) {
+    const value = SORT_KEYS[key] || SORT_KEYS.status;
+    const missing = (v) => v === null || v === undefined;
+    return (a, b) => {
+      const x = value(a);
+      const y = value(b);
+      const absent = missing(x) - missing(y);
+      if (absent) return absent;
+      const order = missing(x)
+        ? 0
+        : typeof x === "string"
+          ? x.localeCompare(y)
+          : x - y;
+      return dir * order || a.topic.localeCompare(b.topic);
+    };
+  }
+
+  // Group tree of the rows: { label, path, children, rows, count, statuses },
+  // children by label and rows by `compare`. The root holds the ungrouped rows;
+  // a group with no topic of its own and a single sub-group merges with it.
+  function groupTree(rows, method, compare = compareRows()) {
+    const node = (label, path) => ({
+      label,
+      path,
+      children: new Map(),
+      rows: [],
+      count: 0,
+      statuses: new Map(),
     });
-    const rank = (row) => STATUS_ORDER.indexOf(row.status);
-    return Array.from(groups)
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([label, list]) => [
-        label,
-        list.sort(
-          (a, b) => rank(a) - rank(b) || a.topic.localeCompare(b.topic),
-        ),
-      ]);
+    const child = (at, label, path) => {
+      if (!at.children.has(label)) at.children.set(label, node(label, path));
+      return at.children.get(label);
+    };
+    const root = node("", "");
+    rows.forEach((row) => {
+      let at = root;
+      if (method !== "none") {
+        const parts = groupPath(row, method);
+        if (parts === null) at = child(root, NO_NODE, NO_NODE);
+        else
+          parts.forEach(
+            (part) => (at = child(at, `/${part}`, `${at.path}/${part}`)),
+          );
+      }
+      at.rows.push(row);
+    });
+    const finish = (at) => {
+      at.children = Array.from(at.children.values())
+        .map(finish)
+        .sort((a, b) => a.label.localeCompare(b.label));
+      at.rows.sort(compare);
+      at.count = at.rows.length;
+      at.rows.forEach((row) =>
+        at.statuses.set(row.status, (at.statuses.get(row.status) || 0) + 1),
+      );
+      at.children.forEach((sub) => {
+        at.count += sub.count;
+        sub.statuses.forEach((n, status) =>
+          at.statuses.set(status, (at.statuses.get(status) || 0) + n),
+        );
+      });
+      return at;
+    };
+    const compact = (at) => {
+      while (!at.rows.length && at.children.length === 1) {
+        const only = at.children[0];
+        at = { ...only, label: at.label + only.label };
+      }
+      at.children = at.children.map(compact);
+      return at;
+    };
+    finish(root);
+    root.children = root.children.map(compact);
+    return root;
+  }
+
+  // Publishing and subscribing nodes of a row, declared or seen.
+  function rowNodes(row) {
+    return {
+      pub: new Set([
+        ...row.designPublishers,
+        ...row.publishers.map((p) => p.node),
+      ]),
+      sub: new Set([
+        ...row.designSubscribers,
+        ...row.subscribers.map((s) => s.node),
+      ]),
+    };
+  }
+
+  // Nodes whose interfaces a selected topic marks: its publishers, else its subscribers.
+  function topicNodes(row) {
+    const { pub, sub } = rowNodes(row);
+    return pub.size ? pub : sub;
+  }
+
+  // Topic -> "in" | "out" | "both": the interfaces of `nodes` by direction.
+  function flowMarks(rows, nodes) {
+    const marks = new Map();
+    if (!nodes.size) return marks;
+    rows.forEach((row) => {
+      const { pub, sub } = rowNodes(row);
+      const out = [...nodes].some((n) => pub.has(n));
+      const input = [...nodes].some((n) => sub.has(n));
+      if (out || input)
+        marks.set(row.topic, out && input ? "both" : out ? "out" : "in");
+    });
+    return marks;
   }
 
   function hzLabel(hz) {
@@ -367,19 +460,52 @@
 
   const GROUP_KEY = "workbench.topicGroup";
   const UNDECLARED_KEY = "workbench.topicUndeclared";
-  const PROBLEMS_KEY = "workbench.topicProblems";
+  const STATUSES_KEY = "workbench.topicStatuses";
+  const SORT_KEY = "workbench.topicSort";
+
+  // Columns: label, sort key, meaning.
+  const COLUMNS = [
+    ["Status", "status", "problems first"],
+    ["Topic", "topic", ""],
+    ["Hz", "hz", "publish rate, else take rate"],
+    [
+      "Declared",
+      "declared",
+      "rate the design declares for the output, with its warn and error rates",
+    ],
+    [
+      "Callback",
+      "callback",
+      "mean publish time after the thread's latest take or timer fire",
+    ],
+    ["Comm", "comm", "mean take time after the DDS source timestamp"],
+    ["Publisher", "publisher", "the publishing node"],
+    ["Subs", "subs", "subscribers seen, of the declared ones"],
+  ];
 
   function topicRates(container, config, store) {
     const { element, segmented } = SD.widgets;
     const daemon = SD.daemon;
     const ofMode = launch.scope(config.systemId, () => store.get("mode"));
 
-    let group = SD.storage.get(GROUP_KEY) || "component";
-    if (!GROUPS.some(([value]) => value === group)) group = "component";
+    let group = SD.storage.get(GROUP_KEY) || "namespace";
+    if (!GROUPS.some(([value]) => value === group)) group = "namespace";
     let undeclared = SD.storage.get(UNDECLARED_KEY) === "true";
-    let problems = SD.storage.get(PROBLEMS_KEY) === "true";
+    // Statuses shown; every status when empty.
+    const statuses = new Set(
+      String(SD.storage.get(STATUSES_KEY) || "")
+        .split(",")
+        .filter((status) => STATUS[status]),
+    );
+    let [sortKey, sortDir] = String(SD.storage.get(SORT_KEY) || "").split(":");
+    if (!SORT_KEYS[sortKey]) sortKey = "status";
+    sortDir = sortDir === "-1" ? -1 : 1;
     let query = "";
+    // Collapsed groups by method and path.
     const collapsed = new Set();
+    // The selected topic, and the entity its click selected.
+    let selectedTopic = null;
+    let topicEntity = null;
 
     let entities = [];
     let design = new Map();
@@ -429,13 +555,6 @@
       element("span", "topic-toolbar-label", "Group"),
       groupSwitch.element,
       filter,
-      toggle(
-        "Problems only",
-        "rows whose status is not ok",
-        PROBLEMS_KEY,
-        () => problems,
-        (v) => (problems = v),
-      ),
       toggle(
         "Undeclared",
         "also topics the nodes use outside the design",
@@ -643,7 +762,7 @@
     }
 
     function matches(row) {
-      if (problems && row.status === "ok") return false;
+      if (statuses.size && !statuses.has(row.status)) return false;
       if (!query) return true;
       const needle = query.toLowerCase();
       return (
@@ -695,16 +814,14 @@
       return cell;
     }
 
-    function rowElement(row, selectedPath) {
+    function rowElement(row, depth, flow) {
       const tr = element("tr", "topic-row");
+      tr.dataset.topic = row.topic;
       if (row.origin) tr.dataset.node = row.origin;
-      const touches =
-        selectedPath &&
-        (row.origin === selectedPath ||
-          row.designSubscribers.includes(selectedPath) ||
-          row.subscribers.some((s) => s.node === selectedPath));
-      if (touches) tr.classList.add("selected");
+      if (flow) tr.classList.add(`flow-${flow}`);
+      if (row.topic === selectedTopic) tr.classList.add("chosen");
       const topicCell = element("td", "topic-name", row.topic);
+      topicCell.style.setProperty("--depth", depth);
       topicCell.title = row.msgType
         ? `${row.topic}\n${row.msgType}`
         : row.topic;
@@ -801,6 +918,98 @@
       };
     }
 
+    // Status chip that toggles the status in the shown set.
+    function statusFilterItem(status, count) {
+      const item = element("button", "topic-summary-item topic-status-filter");
+      item.type = "button";
+      const active = statuses.has(status);
+      item.classList.toggle("active", active);
+      item.classList.toggle("dimmed", statuses.size > 0 && !active);
+      item.setAttribute("aria-pressed", String(active));
+      item.append(statusChip(status), element("span", "", String(count)));
+      item.addEventListener("click", () => {
+        if (active) statuses.delete(status);
+        else statuses.add(status);
+        setStatuses();
+      });
+      return item;
+    }
+
+    function setStatuses(list = null) {
+      if (list) {
+        statuses.clear();
+        list.forEach((status) => statuses.add(status));
+      }
+      SD.storage.set(STATUSES_KEY, [...statuses].join(","));
+      render();
+    }
+
+    function headElement() {
+      const head = element("tr");
+      COLUMNS.forEach(([label, key, title]) => {
+        const th = element("th", "topic-sortable", label);
+        if (title) th.title = title;
+        if (key === sortKey) {
+          th.classList.add("sorted");
+          th.appendChild(
+            element("span", "topic-sort-mark", sortDir > 0 ? "▲" : "▼"),
+          );
+        }
+        th.addEventListener("click", () => {
+          sortDir = key === sortKey ? -sortDir : 1;
+          sortKey = key;
+          SD.storage.set(SORT_KEY, `${sortKey}:${sortDir}`);
+          render();
+        });
+        head.appendChild(th);
+      });
+      const thead = element("thead");
+      thead.appendChild(head);
+      return thead;
+    }
+
+    function groupElement(node, depth, open, key) {
+      const tr = element("tr", "topic-group");
+      const td = element("td", "", "");
+      td.colSpan = COLUMNS.length;
+      td.style.setProperty("--depth", depth);
+      td.append(
+        element("span", "topic-caret", open ? "▾" : "▸"),
+        element("span", "topic-group-label", node.label),
+      );
+      STATUS_ORDER.filter(
+        (status) => status !== "ok" && node.statuses.get(status),
+      ).forEach((status) => {
+        const item = element("span", "topic-summary-item");
+        item.append(
+          statusChip(status),
+          element("span", "", String(node.statuses.get(status))),
+        );
+        td.appendChild(item);
+      });
+      td.appendChild(element("span", "topic-group-count", `${node.count}`));
+      tr.appendChild(td);
+      tr.addEventListener("click", () => {
+        if (collapsed.has(key)) collapsed.delete(key);
+        else collapsed.add(key);
+        render();
+      });
+      return tr;
+    }
+
+    // Sub-groups of a tree node, then its own topics.
+    function appendTree(body, node, depth, marks) {
+      node.children.forEach((child) => {
+        const key = `${group}:${child.path}`;
+        const open = !collapsed.has(key);
+        body.appendChild(groupElement(child, depth, open, key));
+        if (open) appendTree(body, child, depth + 1, marks);
+      });
+      node.rows.forEach((row) =>
+        body.appendChild(rowElement(row, depth, marks.get(row.topic))),
+      );
+    }
+
     function render() {
       if (!shown) return;
       const view = source();
@@ -814,6 +1023,41 @@
       rows.forEach((row) =>
         counts.set(row.status, (counts.get(row.status) || 0) + 1),
       );
+      const filterAction = element("button", "topic-filter-action");
+      filterAction.type = "button";
+      if (statuses.size) {
+        filterAction.textContent = "Show all";
+        filterAction.addEventListener("click", () => setStatuses([]));
+      } else {
+        filterAction.textContent = "Problems";
+        filterAction.title = "every status but ok";
+        filterAction.addEventListener("click", () =>
+          setStatuses(STATUS_ORDER.filter((status) => status !== "ok")),
+        );
+      }
+
+      // Nodes whose interfaces are marked: the selected topic's, else the entity's.
+      const selected = rows.find((row) => row.topic === selectedTopic) || null;
+      const selectedKey = store.get("entity");
+      const entityPath =
+        entities.find((e) => e.key === selectedKey)?.member_path || "";
+      const nodes = selected
+        ? topicNodes(selected)
+        : new Set(entityPath ? [entityPath] : []);
+      const marks = flowMarks(rows, nodes);
+      const legend = element("span", "topic-flow-legend");
+      if (nodes.size) {
+        const of =
+          nodes.size === 1 ? shortNode([...nodes][0]) : `${nodes.size} nodes`;
+        legend.title = [...nodes].join("\n");
+        legend.append(
+          element("span", "topic-flow-swatch flow-in"),
+          element("span", "", "input"),
+          element("span", "topic-flow-swatch flow-out"),
+          element("span", "", `output of ${of}`),
+        );
+      }
+
       summary.replaceChildren(
         element(
           "span",
@@ -822,96 +1066,43 @@
             ? `${view.heading} · ${rows.length} topics`
             : `${rows.length} topics`,
         ),
-        ...STATUS_ORDER.filter((status) => counts.get(status)).map((status) => {
-          const item = element("span", "topic-summary-item");
-          item.append(
-            statusChip(status),
-            element("span", "", String(counts.get(status))),
-          );
-          return item;
-        }),
+        ...STATUS_ORDER.filter((status) => counts.get(status)).map((status) =>
+          statusFilterItem(status, counts.get(status)),
+        ),
+        filterAction,
+        legend,
       );
 
-      const selectedKey = store.get("entity");
-      const selectedPath =
-        entities.find((e) => e.key === selectedKey)?.member_path || "";
       const table = element("table", "topic-table");
-      const head = element("tr");
-      [
-        ["", ""],
-        ["Topic", ""],
-        ["Hz", "publish rate, else take rate"],
-        [
-          "Declared",
-          "rate the design declares for the output, with its warn and error rates",
-        ],
-        [
-          "Callback",
-          "mean publish time after the thread's latest take or timer fire",
-        ],
-        ["Comm", "mean take time after the DDS source timestamp"],
-        ["Publisher", "the publishing node"],
-        ["Subs", "subscribers seen, of the declared ones"],
-      ].forEach(([label, title]) => {
-        const th = element("th", "", label);
-        if (title) th.title = title;
-        head.appendChild(th);
-      });
-      const thead = element("thead");
-      thead.appendChild(head);
-      table.appendChild(thead);
-      groupRows(rows.filter(matches), group).forEach(([label, list]) => {
-        const body = element("tbody");
-        if (group !== "none") {
-          const tr = element("tr", "topic-group");
-          const td = element("td", "", "");
-          td.colSpan = 8;
-          const open = !collapsed.has(label);
-          td.append(
-            element("span", "topic-caret", open ? "▾" : "▸"),
-            element("span", "topic-group-label", label),
-          );
-          const groupCounts = new Map();
-          list.forEach((row) =>
-            groupCounts.set(row.status, (groupCounts.get(row.status) || 0) + 1),
-          );
-          STATUS_ORDER.filter(
-            (status) => status !== "ok" && groupCounts.get(status),
-          ).forEach((status) => {
-            const item = element("span", "topic-summary-item");
-            item.append(
-              statusChip(status),
-              element("span", "", String(groupCounts.get(status))),
-            );
-            td.appendChild(item);
-          });
-          td.appendChild(
-            element("span", "topic-group-count", `${list.length}`),
-          );
-          tr.appendChild(td);
-          tr.addEventListener("click", () => {
-            if (collapsed.has(label)) collapsed.delete(label);
-            else collapsed.add(label);
-            render();
-          });
-          body.appendChild(tr);
-          if (!open) {
-            table.appendChild(body);
-            return;
-          }
-        }
-        list.forEach((row) => body.appendChild(rowElement(row, selectedPath)));
-        table.appendChild(body);
-      });
+      table.appendChild(headElement());
+      const body = element("tbody");
+      appendTree(
+        body,
+        groupTree(rows.filter(matches), group, compareRows(sortKey, sortDir)),
+        0,
+        marks,
+      );
+      table.appendChild(body);
       const scroll = tableHost.scrollTop;
       tableHost.replaceChildren(table);
       tableHost.scrollTop = scroll;
     }
 
+    // A row click selects its topic and publishing node; a second click drops both.
     tableHost.addEventListener("click", (event) => {
       const row = event.target.closest?.("tr.topic-row");
-      if (!row?.dataset.node) return;
-      store.set("entity", keyOfNode(row.dataset.node));
+      if (!row) return;
+      if (row.dataset.topic === selectedTopic) {
+        selectedTopic = null;
+        topicEntity = null;
+        store.set("entity", "");
+        render();
+        return;
+      }
+      selectedTopic = row.dataset.topic;
+      topicEntity = row.dataset.node ? keyOfNode(row.dataset.node) : "";
+      store.set("entity", topicEntity);
+      render();
     });
     SD.on("daemon.monitor", (event) => {
       if (event.system !== config.systemId || event.mode !== store.get("mode"))
@@ -923,9 +1114,23 @@
       syncFollows();
       loadRuns();
     });
-    store.onChange("entity", schedule);
+    // An entity selected elsewhere drops the selected topic.
+    store.onChange("entity", (key) => {
+      if (selectedTopic !== null && key !== topicEntity) {
+        selectedTopic = null;
+        topicEntity = null;
+      }
+      schedule();
+    });
+    SD.on("selection.clear", () => {
+      selectedTopic = null;
+      topicEntity = null;
+      schedule();
+    });
     store.onChange("mode", () => {
       snapshots.clear();
+      selectedTopic = null;
+      topicEntity = null;
       if (run) setRun("");
       entitiesMode = null;
       followed.forEach((unit) =>
@@ -961,6 +1166,9 @@
   launch.designTopics = designTopics;
   launch.observedTopics = observedTopics;
   launch.topicRows = topicRows;
-  launch.groupRows = groupRows;
+  launch.groupTree = groupTree;
+  launch.compareRows = compareRows;
+  launch.flowMarks = flowMarks;
+  launch.topicNodes = topicNodes;
   launch.TOPIC_STATUS = STATUS;
 })();

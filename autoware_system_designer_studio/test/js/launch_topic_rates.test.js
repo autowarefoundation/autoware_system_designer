@@ -216,39 +216,125 @@ test("a topic without counted publishes takes its subscribers' rate; unseen and 
   assert.equal(status.get("/sensing/lidar/points"), "unseen"); // its subscriber runs
 });
 
-test("rows group by component, node namespace or topic namespace, problems first", () => {
+// Labels of a group tree, nested as [label, [sub-groups...], [topics...]].
+function shape(node) {
+  return [
+    node.label,
+    node.children.map(shape),
+    node.rows.map((row) => row.topic),
+  ];
+}
+
+test("rows sit in a namespace tree; single-child chains merge", () => {
   const design = launch.designTopics(ENTITIES);
   const rows = launch.topicRows(design, new Map());
-  const labels = (method) =>
-    launch.groupRows(rows, method).map(([label]) => label);
-  assert.deepEqual(labels("component"), [
-    "/control",
-    "/map",
-    "/perception",
-    "/sensing",
+  const tree = launch.groupTree(rows, "namespace");
+  // /map and /control publish from the root namespace.
+  assert.deepEqual(shape(tree), [
+    "",
+    [
+      ["/perception", [], ["/perception/filtered", "/perception/objects"]],
+      ["/sensing/lidar", [], ["/sensing/lidar/points"]],
+    ],
+    ["/control/cmd", "/map/vector_map"],
   ]);
-  assert.deepEqual(labels("namespace"), ["/", "/perception", "/sensing/lidar"]);
-  assert.deepEqual(labels("topic"), [
-    "/control",
-    "/map",
-    "/perception",
-    "/sensing/lidar",
+  assert.equal(tree.count, rows.length);
+  assert.equal(tree.children[0].statuses.get("unseen"), 2);
+
+  const topics = [
+    "/perception/object_recognition/detection/objects",
+    "/perception/object_recognition/tracking/objects",
+    "/perception/object_recognition/objects",
+    "/perception/traffic_light/signals",
+  ].map((topic) => ({ ...rows[0], topic }));
+  assert.deepEqual(shape(launch.groupTree(topics, "topic")), [
+    "",
+    [
+      [
+        "/perception",
+        [
+          [
+            "/object_recognition",
+            [
+              [
+                "/detection",
+                [],
+                ["/perception/object_recognition/detection/objects"],
+              ],
+              [
+                "/tracking",
+                [],
+                ["/perception/object_recognition/tracking/objects"],
+              ],
+            ],
+            ["/perception/object_recognition/objects"],
+          ],
+          ["/traffic_light", [], ["/perception/traffic_light/signals"]],
+        ],
+        [],
+      ],
+    ],
+    [],
   ]);
-  const deep = {
+  const flat = launch.groupTree(rows, "none");
+  assert.equal(flat.children.length, 0);
+  assert.equal(flat.rows.length, rows.length);
+
+  const orphan = {
     ...rows[0],
-    topic: "/perception/object_recognition/detection/objects",
+    topic: "/x",
+    origin: null,
+    designSubscribers: [],
+    subscribers: [],
   };
   assert.deepEqual(
-    launch.groupRows([deep], "topic").map(([label]) => label),
-    ["/perception/object_recognition"],
+    launch.groupTree([orphan], "namespace").children.map((n) => n.label),
+    ["(no node)"],
   );
-  assert.deepEqual(labels("none"), [""]);
+});
 
-  const ok = { ...rows[0], topic: "/a", status: "ok" };
-  const silent = { ...rows[0], topic: "/b", status: "silent" };
-  const [[, ordered]] = launch.groupRows([ok, silent], "none");
-  assert.deepEqual(
-    ordered.map((row) => row.topic),
-    ["/b", "/a"],
+test("rows sort by a column within their group, missing values last", () => {
+  const base = launch.topicRows(launch.designTopics(ENTITIES), new Map())[0];
+  const row = (topic, status, hz) => ({ ...base, topic, status, hz });
+  const rows = [
+    row("/a", "ok", 5),
+    row("/b", "silent", 0),
+    row("/c", "ok", null),
+    row("/d", "slow", 20),
+  ];
+  const order = (key, dir) =>
+    launch
+      .groupTree(rows, "none", launch.compareRows(key, dir))
+      .rows.map((r) => r.topic);
+  assert.deepEqual(order("status", 1), ["/b", "/d", "/a", "/c"]);
+  assert.deepEqual(order("hz", 1), ["/b", "/a", "/d", "/c"]);
+  assert.deepEqual(order("hz", -1), ["/d", "/a", "/b", "/c"]);
+  assert.deepEqual(order("topic", -1), ["/d", "/c", "/b", "/a"]);
+});
+
+test("a selected topic marks its publishers' interfaces by direction", () => {
+  const design = launch.designTopics(ENTITIES);
+  const rows = launch.topicRows(design, new Map());
+  const byTopic = new Map(rows.map((r) => [r.topic, r]));
+  const objects = byTopic.get("/perception/objects");
+  const nodes = launch.topicNodes(objects);
+  assert.deepEqual([...nodes], ["/perception/detector"]);
+  const marks = launch.flowMarks(rows, nodes);
+  assert.equal(marks.get("/perception/objects"), "out");
+  assert.equal(marks.get("/sensing/lidar/points"), "in");
+  assert.equal(marks.has("/control/cmd"), false);
+  // A topic without a publisher marks its subscribers' interfaces.
+  const orphan = {
+    ...objects,
+    topic: "/orphan",
+    designPublishers: [],
+    publishers: [],
+    designSubscribers: ["/planning/planner"],
+  };
+  assert.deepEqual([...launch.topicNodes(orphan)], ["/planning/planner"]);
+  assert.equal(
+    launch.flowMarks([orphan], new Set(["/planning/planner"])).get("/orphan"),
+    "in",
   );
+  assert.equal(launch.flowMarks(rows, new Set()).size, 0);
 });
