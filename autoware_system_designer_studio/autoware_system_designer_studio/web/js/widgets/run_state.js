@@ -1,6 +1,6 @@
 // Run-state marks shared by the Launch monitor and the diagram overlays: one
-// shape and colour per token (tokens.css), as a DOM mark or an SVG glyph, and
-// the legend naming them.
+// shape and colour per token (tokens.css), as a DOM mark or an SVG glyph, the
+// legend naming them, and the roll-up of member states over a design tree.
 (function () {
   const SD = window.SD;
   const SVG_NS = "http://www.w3.org/2000/svg";
@@ -78,5 +78,55 @@
     return node;
   }
 
-  SD.RunState = { LEGEND, RANK, mark, svgMark, legend };
+  // Live state of a group from its parts' states: the severest token, the
+  // members per token (`counts`, summed through nested groups) as the label,
+  // dead when every part is down.
+  function summarize(parts) {
+    const counts = new Map();
+    parts.forEach((part) => {
+      const own = part.counts || new Map([[part.token, part.members]]);
+      own.forEach((count, token) =>
+        counts.set(token, (counts.get(token) || 0) + count),
+      );
+    });
+    const worst = parts.reduce((a, b) =>
+      (RANK[b.token] || 0) > (RANK[a.token] || 0) ? b : a,
+    );
+    return {
+      token: worst.token,
+      label: Array.from(counts)
+        .sort((a, b) => (RANK[b[0]] || 0) - (RANK[a[0]] || 0))
+        .map(([token, count]) => `${count} ${token}`)
+        .join(" \u00b7 "),
+      dead: parts.every((part) => part.dead) ? "every member down" : null,
+      restarts: null,
+      members: parts.reduce((sum, part) => sum + part.members, 0),
+      counts,
+    };
+  }
+
+  // Live state per design instance under `root`, keyed by unique_id: a
+  // node's own entry of `states` (node path -> state) as one member, a
+  // module's the summary of the nodes within. An instance with no launched
+  // member within has no entry.
+  function rollup(root, states) {
+    const byId = new Map();
+    const visit = (instance) => {
+      if (!instance?.unique_id) return null;
+      let info = null;
+      if (instance.entity_type === "node") {
+        const state = instance.path && states.get(instance.path);
+        if (state) info = { ...state, members: 1 };
+      } else {
+        const parts = (instance.children || []).map(visit).filter(Boolean);
+        if (parts.length) info = summarize(parts);
+      }
+      if (info) byId.set(String(instance.unique_id), info);
+      return info;
+    };
+    if (states?.size) visit(root);
+    return byId;
+  }
+
+  SD.RunState = { LEGEND, RANK, mark, svgMark, legend, summarize, rollup };
 })();

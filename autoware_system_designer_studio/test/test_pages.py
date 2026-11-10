@@ -110,8 +110,10 @@ def test_config_quotes_strings_as_json(tmp_path):
         "script": "../../../assets/js/diagrams/node_diagram.js",
         "searchable": True,
         "layered": True,
+        "always_live": False,
     }
     assert [d["type"] for d in diagrams] == list(assets.DIAGRAMS)
+    assert next(d for d in diagrams if d["type"] == "treemap")["always_live"] is True
 
 
 def test_config_carries_the_selection_scope_and_launch_commands(tmp_path):

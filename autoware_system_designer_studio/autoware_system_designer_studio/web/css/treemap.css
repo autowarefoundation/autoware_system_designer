@@ -1,0 +1,135 @@
+/* Treemap: one section per compute unit, slots in fixed rows, nested blocks coloured by run state. */
+
+/* The layout follows the width; sections past the height scroll. */
+.diagram-canvas.treemap-canvas {
+  overflow: auto;
+}
+
+.treemap {
+  display: block;
+}
+
+.treemap text {
+  font-family: "Segoe UI", sans-serif;
+  fill: var(--text-primary);
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Compute unit section: a dashed outline, the name and a state mark in its head */
+.tm-unit > .tm-rect {
+  fill: none;
+  stroke: var(--border-hover);
+  stroke-width: 1.2;
+  stroke-dasharray: 6 4;
+  cursor: pointer;
+}
+
+.tm-unit > .tm-title {
+  font-weight: 600;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.tm-unit > .tm-kind {
+  fill: var(--text-muted);
+}
+
+.tm-unit.selected > .tm-rect {
+  stroke: var(--highlight);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+
+/* Slot: a faint well naming the component group */
+.tm-slot > .tm-rect {
+  fill: var(--bg-primary);
+  stroke: var(--border-color);
+  stroke-width: 1;
+}
+
+.tm-slot > text {
+  fill: var(--text-secondary);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Blocks: a module a tinted frame around its children, a node a solid cell;
+   neutral until a launched member within reports its state */
+.tm-block {
+  cursor: pointer;
+}
+
+.tm-block > .tm-rect {
+  fill: var(--state-idle);
+  fill-opacity: 0.12;
+  stroke: var(--border-color);
+  stroke-width: 1;
+  transition: fill 0.2s;
+}
+
+.tm-block[data-kind="node"] > .tm-rect {
+  fill: var(--bg-tertiary);
+  fill-opacity: 1;
+}
+
+.tm-block.state-running > .tm-rect {
+  fill: var(--state-running);
+}
+
+.tm-block.state-ok > .tm-rect {
+  fill: var(--state-ok);
+}
+
+.tm-block.state-warning > .tm-rect {
+  fill: var(--state-warning);
+}
+
+.tm-block.state-failed > .tm-rect {
+  fill: var(--state-failed);
+}
+
+.tm-block.state-idle > .tm-rect {
+  fill: var(--state-idle);
+}
+
+.tm-block[data-kind="node"].state-running > .tm-rect,
+.tm-block[data-kind="node"].state-ok > .tm-rect,
+.tm-block[data-kind="node"].state-warning > .tm-rect,
+.tm-block[data-kind="node"].state-failed > .tm-rect,
+.tm-block[data-kind="node"].state-idle > .tm-rect {
+  fill-opacity: 0.55;
+}
+
+.tm-block[data-kind="module"].state-running > .tm-rect,
+.tm-block[data-kind="module"].state-ok > .tm-rect,
+.tm-block[data-kind="module"].state-warning > .tm-rect,
+.tm-block[data-kind="module"].state-failed > .tm-rect,
+.tm-block[data-kind="module"].state-idle > .tm-rect {
+  fill-opacity: 0.18;
+}
+
+/* A member that is down keeps its colour faded, its frame broken */
+.tm-block[data-kind="node"].live-dead > .tm-rect {
+  fill-opacity: 0.3;
+  stroke-dasharray: 4 3;
+}
+
+.tm-block[data-kind="module"].live-dead > .tm-rect {
+  fill-opacity: 0.08;
+  stroke-dasharray: 4 3;
+}
+
+.tm-block:hover > .tm-rect {
+  stroke: var(--border-hover);
+}
+
+.tm-block.selected > .tm-rect {
+  stroke: var(--highlight);
+  stroke-width: 2;
+}
+
+.tm-unit > .live-mark {
+  pointer-events: none;
+}

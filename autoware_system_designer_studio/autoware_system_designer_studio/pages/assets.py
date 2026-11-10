@@ -34,25 +34,36 @@ DATA_GLOBAL = "systemStructureData"
 
 # Diagrams of the Explore activity, in menu order: the module script loaded when the diagram is
 # first shown, whether the module locates entities (``focusEntity``), which Explore search needs,
-# and whether it draws the design hierarchy cut at a chosen depth (the ``depth`` option).
+# whether it draws the design hierarchy cut at a chosen depth (the ``depth`` option), and whether
+# it is drawn from the live member states at all times, outside the overlay switch.
 DIAGRAMS = {
     "node_diagram": {
         "label": "Node Diagram",
         "script": "js/diagrams/node_diagram.js",
         "searchable": True,
         "layered": True,
+        "always_live": False,
     },
     "logic_diagram": {
         "label": "Logic Diagram",
         "script": "js/diagrams/logic_diagram.js",
         "searchable": True,
         "layered": False,
+        "always_live": False,
     },
     "sequence_diagram": {
         "label": "Sequence Diagram",
         "script": "js/diagrams/sequence_diagram.js",
         "searchable": False,
         "layered": False,
+        "always_live": False,
+    },
+    "treemap": {
+        "label": "Treemap",
+        "script": "js/diagrams/treemap.js",
+        "searchable": True,
+        "layered": True,
+        "always_live": True,
     },
 }
 
@@ -144,6 +155,7 @@ WORKBENCH_STYLESHEETS = (
     "css/node_diagram.css",
     "css/logic_diagram.css",
     "css/sequence_diagram.css",
+    "css/treemap.css",
 ) + _activity_files("styles")
 
 # Content pages (systems index, status pages).
