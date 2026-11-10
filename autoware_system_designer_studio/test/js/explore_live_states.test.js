@@ -50,10 +50,11 @@ const ENTITIES = launch.nestComposables([
   node("beta", "/b", "single_node"),
 ]);
 
-function session(unit, system, job = "job-1") {
+function session(unit, system, job = "job-1", mode = "default") {
   handlers["daemon.launch"]({
     compute_unit: unit,
     system,
+    mode,
     job,
     state: "running",
     connected: true,
@@ -81,7 +82,7 @@ test("member states are keyed by node path for the system's own sessions", () =>
   member("main_ecu", "/a/comp", "loaded", { node: "comp" });
   member("other", "/b/beta", "running", { pid: 9 });
 
-  const states = launch.memberStates(ENTITIES, "pkg:Sys");
+  const states = launch.memberStates(ENTITIES, "pkg:Sys", "default");
   assert.deepEqual([...states.keys()].sort(), [
     "/a/alpha",
     "/a/comp",
@@ -92,11 +93,24 @@ test("member states are keyed by node path for the system's own sessions", () =>
   assert.equal(states.get("/a/comp").token, "running");
 });
 
+test("member states stay with the mode their session launched", () => {
+  session("main_ecu", "pkg:Sys", "job-1", "default");
+  member("main_ecu", "/a/alpha", "stopped", { exit_code: 0 });
+  assert.equal(launch.memberStates(ENTITIES, "pkg:Sys", "other").size, 0);
+  assert.equal(
+    launch.memberStates(ENTITIES, "pkg:Sys", "default").get("/a/alpha").token,
+    "ok",
+  );
+  const scoped = launch.scope("pkg:Sys", () => "other");
+  assert.equal(scoped.sessions.get("main_ecu"), undefined);
+  assert.equal(scoped.members.get("/a/alpha"), undefined);
+});
+
 test("a stopped member is dead and a composable follows its container down", () => {
   member("main_ecu", "/a/alpha", "stopped", { exit_code: 1 });
   member("main_ecu", "/a/container", "stopped", { exit_code: 0 });
 
-  const states = launch.memberStates(ENTITIES, "pkg:Sys");
+  const states = launch.memberStates(ENTITIES, "pkg:Sys", "default");
   assert.equal(states.get("/a/alpha").token, "warning");
   assert.equal(states.get("/a/alpha").dead, "stopped · exit 1");
   assert.equal(states.get("/a/container").token, "ok");
@@ -115,7 +129,7 @@ test("restart counts are read from the daemon's member record", () => {
     respawns: 2,
   });
   assert.equal(
-    launch.memberStates(ENTITIES, "pkg:Sys").get("/a/alpha").restarts.restarts,
+    launch.memberStates(ENTITIES, "pkg:Sys", "default").get("/a/alpha").restarts.restarts,
     3,
   );
   assert.equal(launch.restartsOf("/b/beta"), null);
@@ -126,7 +140,7 @@ test("restart counts are read from the daemon's member record", () => {
 });
 
 test("the overlay switch off leaves no state for the diagrams", () => {
-  assert.equal(launch.memberStates([], "pkg:Sys").size, 0);
+  assert.equal(launch.memberStates([], "pkg:Sys", "default").size, 0);
 });
 
 test("live costs kill the gates of dead members and leave the rest to the base", () => {

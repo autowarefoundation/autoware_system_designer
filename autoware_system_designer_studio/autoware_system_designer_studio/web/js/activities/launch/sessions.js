@@ -147,6 +147,33 @@
       : null;
   }
 
+  // The live records of one mode of a system: `sessions`, `members`, `logRate`
+  // and `restartsOf` limited to the sessions that launched `mode()` of `systemId`.
+  function scope(systemId, mode) {
+    const within = (session) =>
+      !!session && session.system === systemId && session.mode === mode();
+    const memberOf = (path) => {
+      const member = members.get(path);
+      return member && within(sessions.get(member.unit)) ? member : undefined;
+    };
+    return {
+      sessions: {
+        get(unit) {
+          const session = sessions.get(unit);
+          return within(session) ? session : undefined;
+        },
+        forEach(visit) {
+          sessions.forEach((session, unit) => {
+            if (within(session)) visit(session, unit);
+          });
+        },
+      },
+      members: { get: memberOf },
+      logRate: (path) => (memberOf(path) ? logRate(path) : 0),
+      restartsOf: (path) => (memberOf(path) ? restartsOf(path) : null),
+    };
+  }
+
   function setMember(unit, record) {
     const session = sessions.get(unit);
     members.set(record.path, { unit, job: session?.job || "", record });
@@ -216,6 +243,7 @@
   launch.sessions = sessions;
   launch.members = members;
   launch.restartsOf = restartsOf;
+  launch.scope = scope;
   launch.activity = activity;
   launch.logRate = logRate;
   launch.busyLog = busyLog;

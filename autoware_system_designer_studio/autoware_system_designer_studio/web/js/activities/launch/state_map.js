@@ -20,6 +20,7 @@
     let module = null;
     // Entities of the loaded mode, composables nested under their container.
     let entities = [];
+    let entitiesMode = null;
     let hidden = true;
     let stale = true;
     let loadSeq = 0;
@@ -30,7 +31,11 @@
     // (`rate`) and, from the busy threshold up, a note of it (`busy`); a
     // composable node's output is its container's.
     function liveStates() {
-      const states = launch.memberStates(entities, config.systemId);
+      const states = launch.memberStates(
+        entities,
+        config.systemId,
+        entitiesMode,
+      );
       entities.forEach((entity) => {
         const state = states.get(entity.member_path);
         if (!state || entity.container_path) return;
@@ -76,6 +81,7 @@
         );
         if (seq !== loadSeq) return;
         entities = launch.nestComposables(SD.NamespaceTree.entities(data));
+        entitiesMode = mode;
         const created = new (SD.diagrams.get("treemap"))(canvas, {
           mode,
           dataBase: config.dataBase,

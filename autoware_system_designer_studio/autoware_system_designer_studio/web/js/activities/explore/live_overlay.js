@@ -87,7 +87,7 @@
       timer = null;
       if (!entities || entitiesMode !== store.get("mode")) await loadEntities();
       const states = toggle.checked
-        ? launch.memberStates(entities, config.systemId)
+        ? launch.memberStates(entities, config.systemId, entitiesMode)
         : new Map();
       host.setLiveStates(states);
       renderSummary();

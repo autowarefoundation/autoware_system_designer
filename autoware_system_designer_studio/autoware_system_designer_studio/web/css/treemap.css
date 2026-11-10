@@ -76,11 +76,15 @@
   stroke-dasharray: none;
 }
 
-/* Slot: a faint well naming the component group on a title strip in the component's colour */
+/* Slot: a faint well naming the component group on a title strip, outlined in the component's colour */
 .tm-slot > .tm-rect {
   fill: var(--bg-primary);
-  stroke: var(--border-color);
-  stroke-width: 1;
+  stroke: var(--slot-color, var(--border-color));
+  stroke-width: 2;
+}
+
+[data-theme="dark"] .tm-slot > .tm-rect {
+  stroke: var(--slot-color-dark, var(--border-color));
 }
 
 .tm-slot > .tm-slot-head {

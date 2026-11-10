@@ -33,16 +33,17 @@
 
   function stateMonitor(container, config, store) {
     const daemon = SD.daemon;
+    // Live records of the shown mode; a session of another mode or system is not launched here.
+    const { members, sessions, logRate, restartsOf } = launch.scope(
+      config.systemId,
+      () => store.get("mode"),
+    );
     const {
-      members,
-      sessions,
       sessionLabel,
       sessionFailures,
       sessionToken,
-      logRate,
       busyLog,
       rateLabel,
-      restartsOf,
       BUSY_LOG_BPS,
       nestComposables,
       worstToken,
@@ -320,7 +321,7 @@
         return;
       }
       sessions.forEach((session) => {
-        if (session.system !== config.systemId || !session.job) return;
+        if (!session.job) return;
         const row = element("button", "monitor-launcher");
         row.type = "button";
         row.classList.toggle("selected", session.job === selectedJob);
@@ -344,7 +345,6 @@
         return;
       }
       sessions.forEach((session) => {
-        if (session.system !== config.systemId) return;
         sessionFailures(session).forEach((record) => {
           const entry = byMember.get(record.path);
           const row = element("button", "monitor-failure");
@@ -682,7 +682,7 @@
       root.children.forEach((child) => expand(child));
       if (run) placeRun();
       renderTree();
-      renderFailures();
+      renderLaunchers();
       renderExtras();
       selectKey(store.get("entity"));
     }

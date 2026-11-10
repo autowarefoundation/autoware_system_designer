@@ -251,7 +251,9 @@
             : null;
         const controls = element("div", "unit-controls");
         const active = !!session && session.state !== "exited";
-        const canLaunch = status === "available" && !active;
+        // The unit runs one launch at a time: a live session of another mode or system holds it.
+        const holder = known && !session && known.state !== "exited" ? known : null;
+        const canLaunch = status === "available" && !active && !holder;
         const launch = button("Launch", canLaunch ? "primary" : "", () => {
           const params = {
             system: config.systemId,
@@ -296,6 +298,10 @@
               `launch-session ${session.state}`,
               sessionLabel(session),
             ),
+          );
+        else if (holder)
+          controls.appendChild(
+            element("span", "unit-status", `in use · ${holder.mode}`),
           );
         else if (status)
           controls.appendChild(

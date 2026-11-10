@@ -102,17 +102,18 @@
     };
   }
 
-  // Live states of a system's launched members, keyed by the node path of the
-  // mode's entities (nestComposables output): token, label, `dead` with the
-  // reason while the process is down, and the restart counts. Members of other
-  // systems' sessions are left out; a node never launched has no entry.
-  function memberStates(entities, systemId) {
-    const { members, sessions, restartsOf } = launch;
+  // Live states of the members launched in `mode` of a system, keyed by the
+  // node path of the mode's entities (nestComposables output): token, label,
+  // `dead` with the reason while the process is down, and the restart counts.
+  // Members of sessions of another system or mode are left out; a node never
+  // launched has no entry.
+  function memberStates(entities, systemId, mode) {
+    const { members, restartsOf } = launch.scope(systemId, () => mode);
     const states = new Map();
     entities.forEach((entity) => {
       if (entity.entity_type !== "node") return;
       const member = members.get(entity.member_path);
-      if (!member || sessions.get(member.unit)?.system !== systemId) return;
+      if (!member) return;
       const state = memberState(entity, members);
       const dead = DEAD_STATES.has(state.record?.state) ? state.label : null;
       states.set(entity.member_path, {
