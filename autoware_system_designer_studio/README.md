@@ -65,8 +65,15 @@ live in the activity that uses them, as store keys mirrored in the URL.
 | Activity | Side panel                                                          | Main area                                            |
 | -------- | ------------------------------------------------------------------- | ---------------------------------------------------- |
 | Explore  | diagram list; entity search; live state of the launched members     | diagram canvas; inspector shows the selected element |
-| Launch   | deploy, launch options, unit launch (daemon), launch commands popup | state monitor of the mode (daemon `launch.status`)   |
+| Launch   | view list, deploy, launch options, launch commands popup, RViz      | Control or Logs view of the mode (`?view=`)          |
 | Build    | target, compute unit, start; job list (daemon)                      | log of the selected job (`?job=`)                    |
+
+Launch has two main views, chosen from the list in its side panel. Control is the treemap of the
+mode coloured by the live member states, with Launch and Shutdown of each compute unit (and the
+measurement window of an armed session) in the unit's section head; a unit with a launcher and no
+section on the map gets the same controls above it. Logs is the member tree beside the selected
+member's log. Both select the store's `entity`, and a double click on a node of the map opens it in
+Logs.
 
 An activity is one `SD.workbench.registerActivity(def)` call from its `index.js`, with its parts
 attached to `SD.activities.<id>` by the scripts before it. `def` names the activity (`id`, `title`,
@@ -197,10 +204,10 @@ Member output is tailed on demand: `launch.follow` asks the runtime to tail one 
 by every event stream; they are released once the last stream closes, and a runtime's follows end
 with its channel. Once the channel is gone, a follow answers the tails of the member's files in the
 runtime's log directory (`log_dir` of the session view, from the runtime's hello), with no lines to
-come. The Launch monitor follows the selected node (a composable node through its container) while
+come. The Logs view follows the selected node (a composable node through its container) while
 it is shown, keeps the followed log once the launcher ended and marks where it ended.
 
-A selector beside the State monitor title shows a past run instead of the live sessions. A run is
+A selector beside the Logs title shows a past run instead of the live sessions. A run is
 a directory under the runtime's log base (`/tmp/autoware_system_designer_logs`, and the parents of
 the sessions' log directories) holding a `run.json`; a directory without one is not a run. The
 daemon lists the runs of the system that no active session is writing, newest first, labelled by
@@ -220,7 +227,7 @@ the job, `connected`, the runtime's `control` facts (pid, `policy`, `measure_arm
 `exit_code`. `policy` is `guard` (default: stop, restart, kill and shutdown are refused with
 `refused` while the operation mode is autonomous or in transition) or `open`.
 
-The workbench's state monitor lists composable nodes under their container, whose process holds
+The Logs view lists composable nodes under their container, whose process holds
 their output and whose exit they follow; a module or container shows the severest state among its
 members. Failed members are listed with their error above the tree, in the order they failed, and
 stay listed until the unit is launched again; one node failure shuts the whole runtime down, so

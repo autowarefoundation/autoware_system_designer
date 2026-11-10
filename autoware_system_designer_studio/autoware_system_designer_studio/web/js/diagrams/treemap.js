@@ -6,7 +6,8 @@
 // the design does, cut at the depth option, every node an equal area. A
 // block's colour is its live state, a module's the severest within; a block
 // with no launched member within stays neutral. A click selects a block or a
-// unit, and search locates one.
+// unit, and search locates one. The `unitControls` option puts the host's
+// controls of a unit in the section head, after its name.
 (function () {
   const SD = window.SD;
   const SVG_NS = "http://www.w3.org/2000/svg";
@@ -170,7 +171,8 @@
   function proportional(weights, length, min, overflow = false) {
     const n = weights.length;
     if (!n) return [];
-    if (n * min >= length) return weights.map(() => (overflow ? min : length / n));
+    if (n * min >= length)
+      return weights.map(() => (overflow ? min : length / n));
     const total = weights.reduce((sum, w) => sum + w, 0);
     const free = length - n * min;
     if (!total) return weights.map(() => length / n);
@@ -243,10 +245,17 @@
 
   // Boxes of the sections laid over `width` x `height`: sections take the
   // height in proportion to their nodes, each at least minUnit tall, so the
-  // layout may run past `height`. A box carries its kind (unit, slot, module
+  // layout may run past `height`; `unitHead` is the height of a section's
+  // head. A box carries its kind (unit, slot, module
   // or node), rect, and the section or instance it draws; a module box is
   // `open` when its children are laid inside it.
-  function layout(sections, width, height, depthLimit = Infinity) {
+  function layout(
+    sections,
+    width,
+    height,
+    depthLimit = Infinity,
+    unitHead = G.unitHead,
+  ) {
     const boxes = [];
     const heights = proportional(
       sections.map((section) => section.nodes),
@@ -270,9 +279,9 @@
         slotRows(section.children),
         {
           x: G.pad,
-          y: y + G.unitHead,
+          y: y + unitHead,
           w: width - 2 * G.pad,
-          h: h - G.unitHead - G.pad,
+          h: h - unitHead - G.pad,
         },
         index,
         depthLimit,
@@ -388,6 +397,15 @@
       this.depthLimit = Number.isInteger(options.depth)
         ? Math.max(1, options.depth)
         : Infinity;
+      // unitControls(name) -> element or null: the host's controls of a unit,
+      // laid over the section head; unitHead is the head's height.
+      this.unitControls =
+        typeof options.unitControls === "function"
+          ? options.unitControls
+          : null;
+      this.unitHead = options.unitHead || G.unitHead;
+      // Unit name -> the slot over its section head holding the host's controls.
+      this.controlSlots = new Map();
       this.structureRoot = null;
       this.sections = [];
       // Instance and parent id of every entity in the structure, drawn or not.
@@ -444,7 +462,13 @@
         this.showError("No node of this mode is placed on a compute unit.");
         return;
       }
-      const laid = layout(this.sections, width, height, this.depthLimit);
+      const laid = layout(
+        this.sections,
+        width,
+        height,
+        this.depthLimit,
+        this.unitHead,
+      );
       this.boxes = laid.boxes;
       const svg = svgElement("svg", {
         class: "treemap",
@@ -454,6 +478,7 @@
       laid.boxes.forEach((box) => svg.appendChild(this._draw(box)));
       this.container.replaceChildren(svg);
       this.svg = svg;
+      this._layControlSlots();
       this.applyLiveStates();
       this._markSelected();
     }
@@ -475,7 +500,7 @@
         const title = svgElement("text", {
           class: "tm-title",
           x: G.pad + G.mark + G.pad,
-          y: G.unitHead / 2,
+          y: this.unitHead / 2,
         });
         title.style.fontSize = `${G.font.unit}px`;
         title.textContent = section.name || "unassigned";
@@ -483,7 +508,7 @@
         const kind = svgElement("text", {
           class: "tm-kind",
           x: box.w - G.pad,
-          y: G.unitHead / 2,
+          y: this.unitHead / 2,
           "text-anchor": "end",
         });
         kind.style.fontSize = `${G.font.slot}px`;
@@ -505,11 +530,7 @@
         g.classList.add("tm-slot");
         const text = svgElement("text", { x: G.pad, y: G.slotHead / 2 });
         text.style.fontSize = `${G.font.slot}px`;
-        text.textContent = this._fit(
-          box.slot,
-          box.w - 2 * G.pad,
-          G.font.slot,
-        );
+        text.textContent = this._fit(box.slot, box.w - 2 * G.pad, G.font.slot);
         g.appendChild(text);
         return g;
       }
@@ -573,6 +594,46 @@
       if (!this._measureCtx) return text.length * fontSize * 0.6;
       this._measureCtx.font = `${fontSize}px ${this._measureFamily}`;
       return this._measureCtx.measureText(text).width;
+    }
+
+    // ── Unit controls ───────────────────────────────────────────────────────
+
+    // One slot per section head, from the end of the unit name to the start
+    // of the kind text, in a layer over the drawing.
+    _layControlSlots() {
+      this.controlSlots = new Map();
+      if (!this.unitControls) return;
+      const layer = document.createElement("div");
+      layer.className = "tm-controls";
+      this.boxes.forEach((box, index) => {
+        if (box.kind !== "unit") return;
+        const g = this.svg.childNodes[index];
+        const width = (selector) =>
+          g.querySelector(selector)?.getComputedTextLength?.() || 0;
+        const slot = document.createElement("div");
+        slot.className = "tm-unit-controls";
+        slot.style.left = `${3 * G.pad + G.mark + width(".tm-title")}px`;
+        slot.style.right = `${2 * G.pad + width(".tm-kind")}px`;
+        slot.style.top = `${box.y}px`;
+        slot.style.height = `${this.unitHead}px`;
+        layer.appendChild(slot);
+        this.controlSlots.set(this.sections[box.section].name, slot);
+      });
+      this.container.appendChild(layer);
+      this.renderUnitControls();
+    }
+
+    // Refills every slot from the host; called by the host when its controls changed.
+    renderUnitControls() {
+      this.controlSlots.forEach((slot, name) => {
+        const controls = this.unitControls(name);
+        slot.replaceChildren(...(controls ? [controls] : []));
+      });
+    }
+
+    // Names of the units drawn as sections.
+    unitNames() {
+      return this.sections.map((section) => section.name);
     }
 
     // ── Selection ───────────────────────────────────────────────────────────
@@ -680,7 +741,7 @@
               SD.RunState.svgMark(
                 info.token,
                 G.pad + G.mark / 2,
-                G.unitHead / 2,
+                this.unitHead / 2,
                 G.mark,
               ),
             );

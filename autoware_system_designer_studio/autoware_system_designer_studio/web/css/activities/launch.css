@@ -1,26 +1,4 @@
-/* Launch activity: the launchpad cards, the commands popup and the state monitor. */
-
-.launch-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.launch-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-}
-
-.launch-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
+/* Launch activity: the unit controls of the state map, the commands popup and the log view. */
 
 .launch-unit {
   font-size: 13px;
@@ -47,10 +25,51 @@
   word-break: break-word;
 }
 
-.launch-actions {
+/* Unit controls in a section head of the state map: one compact row */
+.unit-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.unit-controls .panel-button {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.unit-controls .launch-session,
+.unit-controls .launch-measure,
+.unit-controls .launch-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+
+/* Units with a launcher and no section on the map, above it */
+.control-undrawn-units {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 6px 16px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.control-undrawn-unit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Meaning of the run-state marks, in the Control view head */
+.control-legend {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* Commands table */
@@ -108,7 +127,7 @@
   color: var(--text-muted);
 }
 
-/* State monitor: member tree beside the selected member's log */
+/* Logs view: member tree beside the selected member's log */
 .monitor-tree {
   gap: 8px;
   width: 300px;

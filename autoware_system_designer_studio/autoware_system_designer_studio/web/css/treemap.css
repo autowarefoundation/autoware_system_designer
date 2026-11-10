@@ -2,7 +2,29 @@
 
 /* The layout follows the width; sections past the height scroll. */
 .diagram-canvas.treemap-canvas {
+  position: relative;
   overflow: auto;
+}
+
+/* Host controls of a unit over its section head, between the name and the kind text */
+.tm-controls {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
+.tm-unit-controls {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tm-unit-controls > * {
+  pointer-events: auto;
 }
 
 .treemap {

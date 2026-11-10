@@ -232,3 +232,19 @@ test("the depth limit closes the blocks at that level", () => {
   assert.ok(two.some((b) => b.instance.name === "lidar" && !b.open));
   assert.ok(two.some((b) => b.instance.name === "sensing" && b.open));
 });
+
+test("a taller unit head lowers the slots of every section by the difference", () => {
+  const sections = unitSections(structure());
+  const head = GEOMETRY.unitHead + 10;
+  const slotTops = (boxes) => {
+    const units = boxes.filter((b) => b.kind === "unit");
+    return units.map((unit, index) =>
+      Math.min(...boxes.filter((b) => b.kind === "slot" && b.section === index).map((b) => b.y - unit.y)),
+    );
+  };
+  const base = layout(sections, 800, 2000);
+  const tall = layout(sections, 800, 2000, Infinity, head);
+  assert.equal(tall.height, base.height);
+  slotTops(base.boxes).forEach((top) => assert.equal(top, GEOMETRY.unitHead));
+  slotTops(tall.boxes).forEach((top) => assert.equal(top, head));
+});

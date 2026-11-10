@@ -3,7 +3,8 @@
 // the daemon's event stream, keyed by member path. One member's log is
 // followed at a time: `launch.follow` brings its current tail, `member.log`
 // events the lines after, and the follow is released when the selection
-// leaves it or the monitor hides; a composable node follows its container's
+// leaves it or the monitor hides, and a selection made while hidden is
+// followed on the next show; a composable node follows its container's
 // log. Once the launcher ended, the followed log stays with a note where it
 // ended, and a follow brings the tail the daemon reads from the runtime's
 // files. Failed members are listed with their errors above the tree. A member
@@ -375,7 +376,7 @@
       selectedExtra = null;
       view.body.replaceChildren(memberLog.element);
       if (run) showRunLog(run.slugs.get(logHolder(entity)));
-      else follow(logHolder(entity));
+      else if (!hidden) follow(logHolder(entity));
       view.setEmpty("");
       const title = entity.container_path
         ? `${entity.member_path} · in ${entity.container_path}`

@@ -107,6 +107,7 @@ ACTIVITIES = {
             "js/activities/launch/member_tree.js",
             "js/activities/launch/commands_table.js",
             "js/activities/launch/state_monitor.js",
+            "js/activities/launch/state_map.js",
             "js/activities/launch/index.js",
         ),
         "styles": ("css/activities/launch.css",),

@@ -1,11 +1,29 @@
-// Launch activity: launch options and per-unit launch controls beside the
-// state monitor of the mode; the launch commands of the mode and deploy open
-// in a popup from the side panel, which also starts RViz on the daemon.
+// Launch activity: two views of the mode, chosen in the side panel. Control
+// is the state map, with launch and shutdown of each compute unit in its
+// section head; Logs is the member tree beside the selected member's log.
+// The side panel also holds the deploy, the launch options, the launch
+// commands of the mode and deploy in a popup, and the RViz start on the daemon.
 (function () {
   const SD = window.SD;
-  const { element, field, section, boundSelect, segmented, mainView, popup } =
-    SD.widgets;
-  const { commandsTable, stateMonitor, sessionLabel } = SD.activities.launch;
+  const {
+    element,
+    field,
+    section,
+    list,
+    boundSelect,
+    segmented,
+    mainView,
+    popup,
+  } = SD.widgets;
+  const { commandsTable, stateMonitor, stateMap, sessionLabel } =
+    SD.activities.launch;
+
+  // Main views by the store's `view`.
+  const VIEWS = [
+    ["control", "Control"],
+    ["logs", "Logs"],
+  ];
+  const DEFAULT_VIEW = "control";
 
   const METHOD_KEY = "workbench.launchMethod";
   const MEASURE_KEY = "workbench.launchMeasure";
@@ -73,7 +91,14 @@
       const errors = new Map();
       const measures = new Map();
 
-      // -- side: options, launch controls and the commands popup
+      store.define("view", DEFAULT_VIEW, (v) =>
+        VIEWS.some(([value]) => value === v),
+      );
+      store.syncUrl();
+
+      // -- side: the view list, options and the commands popup
+      const views = list(VIEWS, (value) => store.set("view", value));
+      side.appendChild(section("View", views.element));
       if (config.deployNames.length) {
         side.appendChild(
           field(
@@ -100,8 +125,6 @@
         measureOption.element,
         respawnOption.element,
       );
-      const unitList = element("div", "launch-list");
-      const units = section("Compute units", unitList);
 
       const commands = popup("Launch commands");
       const methodSwitch = segmented(
@@ -144,17 +167,39 @@
       rvizError.hidden = true;
       side.append(
         options,
-        units,
         section("Commands", commandsButton, rvizButton, rvizError),
       );
 
-      // -- main: the state monitor
-      const view = mainView({ title: "State monitor" });
+      // -- main: the state map with the unit controls, and the member logs
+      const controlView = mainView({ title: "Control" });
+      controlView.trailing.appendChild(SD.RunState.legend("control-legend"));
+      const undrawnUnits = element("div", "control-undrawn-units");
+      controlView.body.appendChild(undrawnUnits);
+      const map = stateMap(controlView.body, config, store, {
+        unitControls,
+        onOpen: () => store.set("view", "logs"),
+        onLoad: () => render(),
+      });
+      const logsView = mainView({ title: "Logs" });
       const monitorPane = element("div", "split-h");
-      view.body.appendChild(monitorPane);
-      main.appendChild(view.element);
+      logsView.body.appendChild(monitorPane);
+      main.append(controlView.element, logsView.element);
       const monitor = stateMonitor(monitorPane, config, store);
-      view.head.insertBefore(monitor.runSelector, view.trailing);
+      logsView.head.insertBefore(monitor.runSelector, logsView.trailing);
+      // The activity's slots are visible from mount until another activity takes over.
+      let shown = true;
+
+      // Shows the store's view; the other one stops following and laying out.
+      function showView() {
+        const current = store.get("view");
+        views.mark(current);
+        controlView.element.hidden = current !== "control";
+        logsView.element.hidden = current !== "logs";
+        if (shown && current === "control") map.show();
+        else map.hide();
+        if (shown && current === "logs") monitor.show();
+        else monitor.hide();
+      }
 
       function control(unit, method, params, then) {
         errors.delete(unit);
@@ -170,93 +215,102 @@
           });
       }
 
-      // Launch and Shutdown are always offered; the one that applies is coloured.
-      function launchCard(row, status, session) {
-        const card = element("div", "launch-card");
-        const head = element("div", "launch-card-head");
-        head.appendChild(element("span", "launch-unit", row.unit));
-        if (status)
-          head.appendChild(
-            element("span", `unit-status ${status}`, status.replace(/_/g, " ")),
-          );
-        card.appendChild(head);
-        if (session)
-          card.appendChild(
-            element(
-              "div",
-              `launch-session ${session.state}`,
-              sessionLabel(session),
-            ),
-          );
-        const actions = element("div", "launch-actions");
+      // Controls of `unit` for its section head on the map: Launch and Shutdown,
+      // always offered with the one that applies coloured, the measurement
+      // window of an armed session, then the session or the unit's reach.
+      // Null for a unit without a launcher of the mode and deploy, or a daemon
+      // that launches nothing.
+      function unitControls(unit) {
+        if (!daemon.offers("launch.start")) return null;
+        const row = launchRows(config, store).find((r) => r.unit === unit);
+        if (!row) return null;
+        const status = unitStatus.get(unit);
+        const known = sessions.get(unit);
+        const session =
+          known && known.system === config.systemId && known.mode === row.mode
+            ? known
+            : null;
+        const controls = element("div", "unit-controls");
         const active = !!session && session.state !== "exited";
         const canLaunch = status === "available" && !active;
         const launch = button("Launch", canLaunch ? "primary" : "", () => {
           const params = {
             system: config.systemId,
             mode: row.mode,
-            compute_unit: row.unit,
+            compute_unit: unit,
             measure: measureOption.input.checked,
             respawn: respawnOption.input.checked,
           };
           if (row.deploy) params.deploy = row.deploy;
-          errors.delete(row.unit);
+          errors.delete(unit);
           daemon
             .rpc("launch.start", params)
-            .catch((error) => errors.set(row.unit, error.message))
+            .catch((error) => errors.set(unit, error.message))
             .then(render);
         });
         launch.disabled = !canLaunch;
         const canShutdown = active && !session.shutting_down;
         const shutdown = button("Shutdown", canShutdown ? "danger" : "", () =>
-          control(row.unit, "launch.shutdown", {}),
+          control(unit, "launch.shutdown", {}),
         );
         shutdown.disabled = !canShutdown;
-        actions.append(launch, shutdown);
+        controls.append(launch, shutdown);
+        let measure = null;
         if (active && session.connected && session.control.measure_armed) {
-          const measure = measures.get(row.unit);
+          measure = measures.get(unit);
           const open = measure && MEASURE_OPEN.includes(measure.state);
-          actions.appendChild(
+          controls.appendChild(
             button(open ? "Stop measure" : "Start measure", "", () =>
               control(
-                row.unit,
+                unit,
                 open ? "measure.stop" : "measure.start",
                 {},
-                (result) => measures.set(row.unit, result),
+                (result) => measures.set(unit, result),
               ),
             ),
           );
-          if (measure)
-            card.appendChild(
-              element("div", "launch-measure", `measure: ${measure.message}`),
-            );
         }
-        card.appendChild(actions);
-        const error = errors.get(row.unit);
-        if (error) card.appendChild(element("div", "launch-error", error));
-        return card;
-      }
-
-      function renderUnits(rows) {
-        const canLaunch = daemon.offers("launch.start");
-        units.hidden = !canLaunch;
-        options.hidden = !canLaunch;
-        unitList.replaceChildren();
-        if (!canLaunch) return;
-        rows.forEach((row) => {
-          const session = sessions.get(row.unit);
-          const forThisSystem =
-            session &&
-            session.system === config.systemId &&
-            session.mode === row.mode;
-          unitList.appendChild(
-            launchCard(
-              row,
-              unitStatus.get(row.unit),
-              forThisSystem ? session : null,
+        if (session)
+          controls.appendChild(
+            element(
+              "span",
+              `launch-session ${session.state}`,
+              sessionLabel(session),
             ),
           );
+        else if (status)
+          controls.appendChild(
+            element("span", `unit-status ${status}`, status.replace(/_/g, " ")),
+          );
+        if (measure)
+          controls.appendChild(
+            element("span", "launch-measure", `measure: ${measure.message}`),
+          );
+        const error = errors.get(unit);
+        if (error) {
+          const note = element("span", "launch-error", error);
+          note.title = error;
+          controls.appendChild(note);
+        }
+        return controls;
+      }
+
+      // The map's unit controls, and above it the units with a launcher that
+      // the map draws no section for.
+      function renderUnits(rows) {
+        options.hidden = !daemon.offers("launch.start");
+        map.renderControls();
+        const drawn = map.drawnUnits();
+        undrawnUnits.replaceChildren();
+        (drawn ? rows : []).forEach((row) => {
+          if (drawn.includes(row.unit)) return;
+          const controls = unitControls(row.unit);
+          if (!controls) return;
+          const entry = element("div", "control-undrawn-unit");
+          entry.append(element("span", "launch-unit", row.unit), controls);
+          undrawnUnits.appendChild(entry);
         });
+        undrawnUnits.hidden = !undrawnUnits.childElementCount;
       }
 
       // RViz is one job per daemon; the button waits while it runs.
@@ -327,16 +381,22 @@
       }
 
       ["mode", "deploy"].forEach((key) => store.onChange(key, render));
+      store.onChange("view", showView);
       SD.on("daemon.health", loadUnitStatus);
       SD.on("daemon.systems.changed", loadUnitStatus);
       SD.on("launch.sessions", onSessions);
       SD.on("daemon.jobs", renderRviz);
       if (daemon.health) loadUnitStatus();
       render();
+      showView();
       return {
-        show: () => monitor.show(),
-        hide: () => {
-          monitor.hide();
+        show() {
+          shown = true;
+          showView();
+        },
+        hide() {
+          shown = false;
+          showView();
           commands.close();
         },
       };
