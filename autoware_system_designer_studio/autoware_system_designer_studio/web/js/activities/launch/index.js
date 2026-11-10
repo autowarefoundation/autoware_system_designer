@@ -409,7 +409,8 @@
       function onSessions() {
         const live = new Map();
         sessions.forEach((session) => {
-          if (session.state !== "exited") live.set(session.compute_unit, session);
+          if (session.state !== "exited")
+            live.set(session.compute_unit, session);
         });
         measures.forEach((_measure, unit) => {
           if (!live.has(unit)) measures.delete(unit);

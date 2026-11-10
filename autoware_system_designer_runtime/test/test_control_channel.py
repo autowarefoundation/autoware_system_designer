@@ -259,7 +259,8 @@ def test_operation_mode_guard_refuses_autonomous_and_transitions_only():
 
 def _state(mode, stamp_ns, in_transition=False):
     return SimpleNamespace(
-        mode=mode, is_in_transition=in_transition,
+        mode=mode,
+        is_in_transition=in_transition,
         stamp=SimpleNamespace(sec=stamp_ns // 10**9, nanosec=stamp_ns % 10**9),
     )
 

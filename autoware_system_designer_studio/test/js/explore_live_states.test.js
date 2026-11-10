@@ -63,7 +63,14 @@ function session(unit, system, job = "job-1", mode = "default") {
   });
 }
 
-function member(unit, memberPath, state, detail = {}, counts = {}, system = "pkg:Sys") {
+function member(
+  unit,
+  memberPath,
+  state,
+  detail = {},
+  counts = {},
+  system = "pkg:Sys",
+) {
   handlers["daemon.member"]({
     compute_unit: unit,
     system,
@@ -124,20 +131,33 @@ test("a stopped member is dead and a composable follows its container down", () 
 test("restart counts are read from the daemon's member record", () => {
   member("main_ecu", "/a/alpha", "running", { pid: 5 });
   assert.equal(live.restartsOf("/a/alpha"), null);
-  member("main_ecu", "/a/alpha", "running", { pid: 7 }, { restarts: 3, respawns: 2 });
+  member(
+    "main_ecu",
+    "/a/alpha",
+    "running",
+    { pid: 7 },
+    { restarts: 3, respawns: 2 },
+  );
   assert.deepEqual(live.restartsOf("/a/alpha"), {
     unit: "main_ecu",
     restarts: 3,
     respawns: 2,
   });
   assert.equal(
-    launch.memberStates(ENTITIES, "pkg:Sys", "default").get("/a/alpha").restarts.restarts,
+    launch.memberStates(ENTITIES, "pkg:Sys", "default").get("/a/alpha").restarts
+      .restarts,
     3,
   );
   assert.equal(live.restartsOf("/b/beta"), null);
   // The record of a new launch carries its own counts.
   session("main_ecu", "pkg:Sys", "job-2");
-  member("main_ecu", "/a/alpha", "running", { pid: 8 }, { restarts: 0, respawns: 0 });
+  member(
+    "main_ecu",
+    "/a/alpha",
+    "running",
+    { pid: 8 },
+    { restarts: 0, respawns: 0 },
+  );
   assert.equal(live.restartsOf("/a/alpha"), null);
 });
 

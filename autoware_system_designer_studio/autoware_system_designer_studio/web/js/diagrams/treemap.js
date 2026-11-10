@@ -340,7 +340,9 @@
     const nodes = filled.reduce((sum, section) => sum + section.nodes, 0);
     if (free > 0)
       filled.forEach((section, i) => {
-        shares[i] += nodes ? (free * section.nodes) / nodes : free / filled.length;
+        shares[i] += nodes
+          ? (free * section.nodes) / nodes
+          : free / filled.length;
       });
     let y = 0;
     sections.forEach((section, index) => {

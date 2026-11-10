@@ -80,14 +80,24 @@ function structure() {
         ]),
         node("camera", "/sensing", "main_ecu"),
       ]),
-      module("object_recognition", "/perception/object_recognition", "perception_ecu", [
-        node("detector", "/perception/object_recognition", "perception_ecu"),
-        node("tracker", "/perception/object_recognition", "perception_ecu"),
-      ]),
+      module(
+        "object_recognition",
+        "/perception/object_recognition",
+        "perception_ecu",
+        [
+          node("detector", "/perception/object_recognition", "perception_ecu"),
+          node("tracker", "/perception/object_recognition", "perception_ecu"),
+        ],
+      ),
       node("control", "/control", "main_ecu"),
       node("vehicle", "/vehicle", "main_ecu"),
       node("map", "/map", "extra_ecu"),
-      node("pointcloud_container", "/pointcloud_container", "main_ecu", "node_container"),
+      node(
+        "pointcloud_container",
+        "/pointcloud_container",
+        "main_ecu",
+        "node_container",
+      ),
       module("dummy", "/dummy", "main_ecu", []),
       node("orphan", "/orphan", undefined),
     ],
@@ -95,10 +105,16 @@ function structure() {
 }
 
 test("slot of a component is its first path segment, containers aside", () => {
-  assert.equal(slotOf(module("object_recognition", "/perception/object_recognition")), "perception");
+  assert.equal(
+    slotOf(module("object_recognition", "/perception/object_recognition")),
+    "perception",
+  );
   assert.equal(slotOf(node("control", "/control")), "control");
   assert.equal(slotOf(node("pc", "/pc", "u", "node_container")), CONTAINERS);
-  assert.equal(slotOf({ entity_type: "module", name: "bare", path: "" }), "bare");
+  assert.equal(
+    slotOf({ entity_type: "module", name: "bare", path: "" }),
+    "bare",
+  );
 });
 
 test("sections follow declaration order, name undeclared units, keep declared empty ones", () => {
@@ -120,9 +136,15 @@ test("sections follow declaration order, name undeclared units, keep declared em
   );
   // A module split across units keeps only the unit's nodes in each section.
   const lidar = main.children[0].children[0];
-  assert.deepEqual(lidar.children.map((c) => c.name), ["driver"]);
+  assert.deepEqual(
+    lidar.children.map((c) => c.name),
+    ["driver"],
+  );
   const perception = sections[1];
-  assert.deepEqual(perception.children.map((c) => c.name), ["sensing", "object_recognition"]);
+  assert.deepEqual(
+    perception.children.map((c) => c.name),
+    ["sensing", "object_recognition"],
+  );
   assert.deepEqual(
     perception.children[0].children[0].children.map((c) => c.name),
     ["filter"],
@@ -166,8 +188,12 @@ test("squarified cells tile the rect with areas in proportion to the weights", (
   cells.forEach((cell) => {
     const expected = (cell.item.weight / 10) * rect.w * rect.h;
     assert.ok(Math.abs(area(cell) - expected) < 1e-6);
-    assert.ok(cell.x >= rect.x - 1e-9 && cell.x + cell.w <= rect.x + rect.w + 1e-9);
-    assert.ok(cell.y >= rect.y - 1e-9 && cell.y + cell.h <= rect.y + rect.h + 1e-9);
+    assert.ok(
+      cell.x >= rect.x - 1e-9 && cell.x + cell.w <= rect.x + rect.w + 1e-9,
+    );
+    assert.ok(
+      cell.y >= rect.y - 1e-9 && cell.y + cell.h <= rect.y + rect.h + 1e-9,
+    );
   });
   assert.deepEqual(squarify([], rect), []);
   assert.deepEqual(squarify(items, { x: 0, y: 0, w: 0, h: 10 }), []);
@@ -191,7 +217,10 @@ test("layout stacks the unit sections and nests every block in its slot", () => 
   assert.equal(height, 2000);
   // An empty section is its head alone.
   const empty = units.filter((unit) => !sections[unit.section].children.length);
-  assert.deepEqual(empty.map((unit) => unit.h), [GEOMETRY.unitHead]);
+  assert.deepEqual(
+    empty.map((unit) => unit.h),
+    [GEOMETRY.unitHead],
+  );
   const filled = units.filter((unit) => !empty.includes(unit));
   filled.forEach((unit) => assert.ok(unit.h >= GEOMETRY.minUnit));
   assert.ok(Math.abs(units.reduce((sum, u) => sum + u.h, 0) - height) < 1e-6);
@@ -203,15 +232,21 @@ test("layout stacks the unit sections and nests every block in its slot", () => 
   const slots = boxes.filter((b) => b.kind === "slot");
   const blocks = boxes.filter((b) => b.kind === "module" || b.kind === "node");
   blocks.forEach((block) => {
-    const slot = slots.find((s) => s.section === block.section && within(block, s));
+    const slot = slots.find(
+      (s) => s.section === block.section && within(block, s),
+    );
     assert.ok(slot, `${block.instance.name} lies in a slot`);
     assert.ok(within(block, units[block.section]));
   });
-  const nodes = blocks.filter((b) => b.kind === "node").map((b) => b.instance.name);
+  const nodes = blocks
+    .filter((b) => b.kind === "node")
+    .map((b) => b.instance.name);
   assert.equal(nodes.length, 10);
   const byId = new Map(blocks.map((b) => [`${b.section}:${b.id}`, b]));
   // A child lies inside its open parent.
-  const lidar = blocks.find((b) => b.instance.name === "lidar" && b.section === 0);
+  const lidar = blocks.find(
+    (b) => b.instance.name === "lidar" && b.section === 0,
+  );
   assert.ok(lidar.open);
   const driver = blocks.find((b) => b.instance.name === "driver");
   assert.ok(within(driver, lidar));
@@ -225,13 +260,21 @@ test("a short canvas keeps every section at its own height", () => {
   const own = sections.map((section) =>
     section.children.length ? sectionHeight(section, 800) : GEOMETRY.unitHead,
   );
-  assert.deepEqual(units.map((unit) => unit.h), own);
-  assert.equal(height, own.reduce((sum, h) => sum + h, 0));
+  assert.deepEqual(
+    units.map((unit) => unit.h),
+    own,
+  );
+  assert.equal(
+    height,
+    own.reduce((sum, h) => sum + h, 0),
+  );
   assert.ok(height > 300);
   // The same sections at any canvas height that they overflow.
   assert.deepEqual(layout(sections, 800, 100).boxes, boxes);
   const blocks = boxes.filter((b) => b.kind === "module" || b.kind === "node");
-  const sensing = blocks.find((b) => b.instance.name === "sensing" && b.section === 0);
+  const sensing = blocks.find(
+    (b) => b.instance.name === "sensing" && b.section === 0,
+  );
   assert.ok(sensing && sensing.open);
 });
 
@@ -241,7 +284,9 @@ test("the depth limit closes the blocks at that level", () => {
   const blocks = boxes.filter((b) => b.kind === "module" || b.kind === "node");
   assert.ok(blocks.every((b) => b.depth === 1 && !b.open));
   assert.ok(!blocks.some((b) => b.instance.name === "lidar"));
-  const two = layout(sections, 800, 600, 2).boxes.filter((b) => b.kind === "module");
+  const two = layout(sections, 800, 600, 2).boxes.filter(
+    (b) => b.kind === "module",
+  );
   assert.ok(two.some((b) => b.instance.name === "lidar" && !b.open));
   assert.ok(two.some((b) => b.instance.name === "sensing" && b.open));
 });
@@ -254,7 +299,11 @@ test("a taller unit head lowers the slots of every section by the difference", (
     return units
       .filter((unit) => sections[unit.section].children.length)
       .map((unit) =>
-        Math.min(...boxes.filter((b) => b.kind === "slot" && b.section === unit.section).map((b) => b.y - unit.y)),
+        Math.min(
+          ...boxes
+            .filter((b) => b.kind === "slot" && b.section === unit.section)
+            .map((b) => b.y - unit.y),
+        ),
       );
   };
   const base = layout(sections, 800, 2000);
@@ -265,13 +314,23 @@ test("a taller unit head lowers the slots of every section by the difference", (
 });
 
 test("adapi sits between api and system in the middle row", () => {
-  const rows = slotRows(["control", "system", "adapi", "api"].map((name) => node(name, "", "u")).map((n) => ({ ...n, path: `/${n.name}` })));
-  assert.deepEqual(rows.map((row) => row.map((slot) => slot.slot)), [["api", "adapi", "system", "control"]]);
+  const rows = slotRows(
+    ["control", "system", "adapi", "api"]
+      .map((name) => node(name, "", "u"))
+      .map((n) => ({ ...n, path: `/${n.name}` })),
+  );
+  assert.deepEqual(
+    rows.map((row) => row.map((slot) => slot.slot)),
+    [["api", "adapi", "system", "control"]],
+  );
 });
 
 test("a section's own height grows with its nodes and narrows with the width", () => {
   const section = (count) => {
-    const children = Array.from({ length: count }, (_, i) => ({ ...node(`n${i}`, "", "u"), path: `/sensing/n${i}` }));
+    const children = Array.from({ length: count }, (_, i) => ({
+      ...node(`n${i}`, "", "u"),
+      path: `/sensing/n${i}`,
+    }));
     return { name: "u", children, nodes: count };
   };
   assert.equal(sectionHeight(section(1), 800), GEOMETRY.minUnit);
@@ -285,8 +344,16 @@ test("a section's own height grows with its nodes and narrows with the width", (
 test("a long name wraps at its separators and ends in an ellipsis past the last line", () => {
   const measure = (text) => text.length;
   assert.deepEqual(wrap("short", 10, 3, measure), ["short"]);
-  assert.deepEqual(wrap("pointcloud_concatenate_data", 12, 3, measure), ["pointcloud_", "concatenate_", "data"]);
-  assert.deepEqual(wrap("abcdefghijkl", 5, 3, measure), ["abcde", "fghij", "kl"]);
+  assert.deepEqual(wrap("pointcloud_concatenate_data", 12, 3, measure), [
+    "pointcloud_",
+    "concatenate_",
+    "data",
+  ]);
+  assert.deepEqual(wrap("abcdefghijkl", 5, 3, measure), [
+    "abcde",
+    "fghij",
+    "kl",
+  ]);
   const cut = wrap("pointcloud_concatenate_data", 12, 2, measure);
   assert.equal(cut.length, 2);
   assert.ok(cut[1].endsWith("…") && cut[1].length <= 12);

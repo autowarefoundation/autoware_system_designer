@@ -25,8 +25,8 @@ let statusAnswer = {
   sessions: [
     {
       compute_unit: "main_ecu",
-    system: SYS,
-    mode: MODE,
+      system: SYS,
+      mode: MODE,
       state: "running",
       connected: true,
       member_count: 1,
@@ -289,11 +289,7 @@ test("output rates label, mark busy logs and follow activity events", () => {
     connected: false,
     member_count: 2,
   });
-  assert.equal(
-    live.logRate("/a/y"),
-    0,
-    "a lost channel ends its unit's rates",
-  );
+  assert.equal(live.logRate("/a/y"), 0, "a lost channel ends its unit's rates");
   assert.equal(live.logRate("/b/z"), 100);
   handlers["daemon.member.activity"]({
     compute_unit: "sub_ecu",
@@ -329,23 +325,34 @@ test("a status answer older than a received member event keeps the event's recor
     sessions: [
       {
         compute_unit: "main_ecu",
-    system: SYS,
-    mode: MODE,
+        system: SYS,
+        mode: MODE,
         job: "job-9",
         state: "running",
         connected: true,
         member_count: 2,
         members: [
           { path: "/a/x", state: "pending", detail: {}, time: 10 },
-          { path: "/a/y", state: "stopped", detail: { exit_code: 1 }, time: 10 },
+          {
+            path: "/a/y",
+            state: "stopped",
+            detail: { exit_code: 1 },
+            time: 10,
+          },
         ],
       },
     ],
   };
   await handlers["daemon.health"]();
-  handlers["daemon.member"]({ compute_unit: "main_ecu",
+  handlers["daemon.member"]({
+    compute_unit: "main_ecu",
     system: SYS,
-    mode: MODE, path: "/a/x", state: "running", detail: {}, time: 20 });
+    mode: MODE,
+    path: "/a/x",
+    state: "running",
+    detail: {},
+    time: 20,
+  });
   await handlers["daemon.health"]();
   assert.equal(live.members.get("/a/x").record.state, "running");
   assert.equal(live.members.get("/a/y").record.state, "stopped");

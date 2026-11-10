@@ -55,10 +55,15 @@ test("rollup keys every instance with a launched member within", () => {
     ["/s/cam", state("running")],
   ]);
   const byId = rollup(ROOT, states);
-  assert.deepEqual(
-    Array.from(byId.keys()).sort(),
-    ["a", "b", "c", "cam", "lidar", "root", "sensing"],
-  );
+  assert.deepEqual(Array.from(byId.keys()).sort(), [
+    "a",
+    "b",
+    "c",
+    "cam",
+    "lidar",
+    "root",
+    "sensing",
+  ]);
   assert.equal(byId.get("a").members, 1);
   const lidar = byId.get("lidar");
   assert.equal(lidar.token, "failed");
@@ -86,9 +91,25 @@ test("a group is dead when every part is down", () => {
 
 test("a group carries the busiest log within and no restart count", () => {
   const states = new Map([
-    ["/s/l/a", { ...state("running"), restarts: { restarts: 2, respawns: 1 }, rate: 100, busy: "" }],
+    [
+      "/s/l/a",
+      {
+        ...state("running"),
+        restarts: { restarts: 2, respawns: 1 },
+        rate: 100,
+        busy: "",
+      },
+    ],
     ["/s/l/b", { ...state("running"), rate: 9000, busy: "log 8.8 KB/s" }],
-    ["/s/cam", { ...state("running"), restarts: { restarts: 0, respawns: 4 }, rate: 5000, busy: "log 4.9 KB/s" }],
+    [
+      "/s/cam",
+      {
+        ...state("running"),
+        restarts: { restarts: 0, respawns: 4 },
+        rate: 5000,
+        busy: "log 4.9 KB/s",
+      },
+    ],
   ]);
   const byId = rollup(ROOT, states);
   assert.equal(byId.get("lidar").restarts, null);

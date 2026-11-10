@@ -94,7 +94,9 @@
       });
       store.onChange("mode", reload);
       store.onChange("depth", () => {
-        if (config.diagrams.find((d) => d.type === store.get("diagram"))?.layered)
+        if (
+          config.diagrams.find((d) => d.type === store.get("diagram"))?.layered
+        )
           reload();
       });
       store.onChange("entity", (key) => {

@@ -18,6 +18,7 @@
 import asyncio
 
 import pytest
+
 from autoware_system_designer_runtime._impl.core import events as ev
 from autoware_system_designer_runtime._impl.core import regular_actor
 from autoware_system_designer_runtime._impl.core.config import ActorConfig

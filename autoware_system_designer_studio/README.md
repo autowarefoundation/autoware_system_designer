@@ -62,11 +62,11 @@ its options in the side panel, its content in the main area and, when it selects
 inspector. The top bar holds the system and the mode, which every activity reads; other selections
 live in the activity that uses them, as store keys mirrored in the URL.
 
-| Activity | Side panel                                                          | Main area                                            |
-| -------- | ------------------------------------------------------------------- | ---------------------------------------------------- |
-| Explore  | diagram list; entity search; live state of the launched members     | diagram canvas; inspector shows the selected element |
-| Launch   | view list, deploy, launch options, launch commands popup, RViz      | Control or Logs view of the mode (`?view=`)          |
-| Build    | target, compute unit, start; job list (daemon)                      | log of the selected job (`?job=`)                    |
+| Activity | Side panel                                                      | Main area                                            |
+| -------- | --------------------------------------------------------------- | ---------------------------------------------------- |
+| Explore  | diagram list; entity search; live state of the launched members | diagram canvas; inspector shows the selected element |
+| Launch   | view list, deploy, launch options, launch commands popup, RViz  | Control or Logs view of the mode (`?view=`)          |
+| Build    | target, compute unit, start; job list (daemon)                  | log of the selected job (`?job=`)                    |
 
 Launch has two main views, chosen from the list in its side panel. Control is the treemap of the
 mode, every block coloured by its live member state and marked, before its name, with the state, a
@@ -137,19 +137,19 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                     | `{"state", "message"}` of the window        |
 | `rviz.start`                                      | -                                                                                  | job                                         |
 
-| Event topic       | Data                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------ |
-| `hello`           | Sent first on each stream; no replay, so clients resynchronise by request                  |
-| `heartbeat`       | `{"time"}`                                                                                 |
-| `job`             | Job record on every state change                                                           |
-| `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                                      |
-| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                                  |
-| `daemon`          | `{"restart_required": true}`                                                               |
-| `launch`          | Session view (without members) on every change of a launch                                 |
-| `member`          | `{"compute_unit", "system", "mode", "path", "state", "detail", "time", "restarts", "respawns"}` |
-| `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new lines of a followed member              |
+| Event topic       | Data                                                                                               |
+| ----------------- | -------------------------------------------------------------------------------------------------- |
+| `hello`           | Sent first on each stream; no replay, so clients resynchronise by request                          |
+| `heartbeat`       | `{"time"}`                                                                                         |
+| `job`             | Job record on every state change                                                                   |
+| `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                                              |
+| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                                          |
+| `daemon`          | `{"restart_required": true}`                                                                       |
+| `launch`          | Session view (without members) on every change of a launch                                         |
+| `member`          | `{"compute_unit", "system", "mode", "path", "state", "detail", "time", "restarts", "respawns"}`    |
+| `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new lines of a followed member                      |
 | `member.activity` | `{"compute_unit", "system", "mode", "window", "rates": {path: bytes/s}}`, output growth per window |
-| `records.changed` | `{"system", "mode", "record"}`: a new latency record of the mode is complete               |
+| `records.changed` | `{"system", "mode", "record"}`: a new latency record of the mode is complete                       |
 
 Responses use one envelope: `{"ok": true, "result": ...}` or
 `{"ok": false, "error": {"code", "message"}}`, with `id` echoed on `/api/rpc`. Error codes are
