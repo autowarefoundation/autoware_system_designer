@@ -24,6 +24,9 @@ stream and relays the
 ``launch.*`` and ``measure.*`` methods as requests over the socket. A ``launch`` event carries the
 session view (without members) whenever its job, connection or runtime state changes.
 
+Every member record the daemon keeps or forwards carries ``restarts``, the times the member was
+started again within the launch, and ``respawns``, the respawns among them.
+
 Member output flows only for followed members: ``launch.follow`` asks the runtime to tail one
 member and answers with the current tail of its files, ``launch.unfollow`` releases it. The daemon
 is one runtime client, so follows are shared by every event stream and released together once the
@@ -74,6 +77,9 @@ SESSION_STARTING = "starting"
 SESSION_RUNNING = "running"
 SESSION_STOPPING = "stopping"
 SESSION_EXITED = "exited"
+
+# Member states a start enters: a process running, a composable node loading.
+_STARTING_STATES = ("running", "loading")
 
 CONNECT_POLL_S = 0.2
 REQUEST_TIMEOUT_S = 30.0
@@ -229,12 +235,33 @@ class LaunchSession:
         self.job: Optional[jobs.Job] = None
         self.client: Optional[ControlClient] = None
         self.members: dict[str, dict[str, Any]] = {}
+        # Member path -> its starts and respawns within this launch.
+        self.starts: dict[str, dict[str, int]] = {}
         self.follows: set[str] = set()
         self.control: dict[str, Any] = {"pid": None, "policy": None, "methods": [], "measure_armed": False}
         self.log_dir: Optional[Path] = None
         self.launch_ready = False
         self.shutting_down = False
         self.updated_at = time.time()
+
+    def count(self, record: dict[str, Any], *, listed: bool = False) -> dict[str, Any]:
+        """``record`` with the member's ``restarts`` and ``respawns``, counted from its state change.
+
+        A record ``listed`` by the runtime's hello states where the member is, not a change: a member
+        first seen past pending has started once.
+        """
+        path, state = record["path"], record.get("state")
+        counts = self.starts.get(path)
+        if counts is None:
+            started = listed and state not in (None, "pending")
+            counts = self.starts[path] = {"starts": 1 if started else 0, "respawns": 0}
+        previous = self.members.get(path, {}).get("state")
+        if not listed and state != previous:
+            if state in _STARTING_STATES:
+                counts["starts"] += 1
+            elif state == "respawning":
+                counts["respawns"] += 1
+        return {**record, "restarts": max(counts["starts"] - 1, 0), "respawns": counts["respawns"]}
 
     @property
     def active(self) -> bool:
@@ -593,11 +620,12 @@ class LaunchManager:
             session.launch_ready = bool(obj.get("launch_ready"))
             session.shutting_down = bool(obj.get("shutting_down"))
             records = obj.get("members") if isinstance(obj.get("members"), list) else []
-            session.members = {r["path"]: r for r in records if isinstance(r, dict) and isinstance(r.get("path"), str)}
+            listed = [r for r in records if isinstance(r, dict) and isinstance(r.get("path"), str)]
+            session.members = {r["path"]: session.count(r, listed=True) for r in listed}
             session.follows.clear()
             self._publish(session)
         elif kind == "member" and isinstance(obj.get("path"), str):
-            record = {k: v for k, v in obj.items() if k != "event"}
+            record = session.count({k: v for k, v in obj.items() if k != "event"})
             session.members[record["path"]] = record
             self._hub.publish(
                 TOPIC_MEMBER, {"compute_unit": session.compute_unit, "system": session.system.id, **record}

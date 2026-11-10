@@ -1059,9 +1059,7 @@
         const pad = style.badgePad + size / 2;
         const mark = document.createElementNS(SVG_NS, "g");
         mark.classList.add("live-mark");
-        const restarts = info.restarts
-          ? info.restarts.restarts + info.restarts.respawns
-          : 0;
+        const restarts = info.restarts ? info.restarts.restarts : 0;
         const title = document.createElementNS(SVG_NS, "title");
         title.textContent = [
           info.dead ? `${info.label} · down` : info.label,

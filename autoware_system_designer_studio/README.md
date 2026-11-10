@@ -146,7 +146,7 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `systems.changed` | A build rebuilt an export package; re-read `systems.list`                                  |
 | `daemon`          | `{"restart_required": true}`                                                               |
 | `launch`          | Session view (without members) on every change of a launch                                 |
-| `member`          | `{"compute_unit", "system", "path", "state", "detail", "time"}` of one member              |
+| `member`          | `{"compute_unit", "system", "path", "state", "detail", "time", "restarts", "respawns"}`    |
 | `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new lines of a followed member              |
 | `member.activity` | `{"compute_unit", "system", "window", "rates": {path: bytes/s}}`, output growth per window |
 | `records.changed` | `{"system", "mode", "record"}`: a new latency record of the mode is complete               |
@@ -225,7 +225,8 @@ closed the channel for a requested shutdown, and `exited`; its view carries
 the job, `connected`, the runtime's `control` facts (pid, `policy`, `measure_armed`), its `log_dir`,
 `launch_ready` and `shutting_down`. Member records are the runtime's: `state` one of `pending`, `running`,
 `stopped`, `respawning`, `failed`, `done`, `loading`, `loaded`, with a `detail` such as `pid` or
-`exit_code`. `policy` is `guard` (default: stop, restart, kill and shutdown are refused with
+`exit_code`; the daemon adds `restarts`, the times the member was started again within the launch,
+and `respawns`, the respawns among them. `policy` is `guard` (default: stop, restart, kill and shutdown are refused with
 `refused` while the operation mode is autonomous or in transition) or `open`.
 
 The Logs view lists composable nodes under their container, whose process holds

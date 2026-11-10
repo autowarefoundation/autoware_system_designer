@@ -17,6 +17,19 @@ const PART = path.join(
   "sessions.js",
 );
 
+// The daemon's answer to launch.status.
+let statusAnswer = {
+  sessions: [
+    {
+      compute_unit: "main_ecu",
+      state: "running",
+      connected: true,
+      member_count: 1,
+      members: [{ path: "/a/x", state: "running", detail: { pid: 7 } }],
+    },
+  ],
+};
+
 const handlers = {};
 const emitted = [];
 global.window = {
@@ -28,17 +41,7 @@ global.window = {
     emit: (name, data) => emitted.push([name, data]),
     daemon: {
       offers: () => true,
-      rpc: async () => ({
-        sessions: [
-          {
-            compute_unit: "main_ecu",
-            state: "running",
-            connected: true,
-            member_count: 1,
-            members: [{ path: "/a/x", state: "running", detail: { pid: 7 } }],
-          },
-        ],
-      }),
+      rpc: async () => statusAnswer,
     },
   },
 };
@@ -248,4 +251,30 @@ test("a run is labelled by its start time and what it ran", () => {
     launch.runLabel({ run: "x", started: 0, compute_unit: "sub_ecu" }),
     "x · sub_ecu",
   );
+});
+
+test("a status answer older than a received member event keeps the event's record", async () => {
+  statusAnswer = {
+    sessions: [
+      {
+        compute_unit: "main_ecu",
+        job: "job-9",
+        state: "running",
+        connected: true,
+        member_count: 2,
+        members: [
+          { path: "/a/x", state: "pending", detail: {}, time: 10 },
+          { path: "/a/y", state: "stopped", detail: { exit_code: 1 }, time: 10 },
+        ],
+      },
+    ],
+  };
+  await handlers["daemon.health"]();
+  handlers["daemon.member"]({ compute_unit: "main_ecu", path: "/a/x", state: "running", detail: {}, time: 20 });
+  await handlers["daemon.health"]();
+  assert.equal(launch.members.get("/a/x").record.state, "running");
+  assert.equal(launch.members.get("/a/y").record.state, "stopped");
+  const records = launch.sessions.get("main_ecu").members;
+  assert.equal(records.find((r) => r.path === "/a/x").state, "running");
+  assert.equal(launch.restartsOf("/a/x"), null);
 });

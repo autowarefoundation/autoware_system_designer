@@ -619,8 +619,8 @@
       rateText.classList.toggle("busy", busyLog(rate));
       const restarts =
         selected?.entity_type === "node" && restartsOf(selected.member_path);
-      restartText.textContent = restarts
-        ? `restarted ×${restarts.restarts + restarts.respawns}`
+      restartText.textContent = restarts?.restarts
+        ? `restarted ×${restarts.restarts}`
         : "";
       restartText.title = restarts ? `${restarts.respawns} respawned` : "";
       badge.hidden = !!run;

@@ -342,6 +342,8 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
         "state": "running",
         "detail": {"pid": 1},
         "time": 1.0,
+        "restarts": 0,
+        "respawns": 0,
     } in member_events
     while time.time() < deadline and not launching.events.of(launch.TOPIC_MEMBER_ACTIVITY):
         time.sleep(0.02)
@@ -635,3 +637,33 @@ def test_the_run_of_a_session_is_listed_once_the_session_exited(launching):
     assert body["result"]["members"] == [{"path": "/demo/talker", "slug": "demo_talker"}]
     status, body = launching.rpc({"method": "launch.run_tail", "params": {"run": run, "member": "demo_talker"}})
     assert status == 200 and body["result"]["out"] == ["hello 1", "hello 2"] and body["result"]["err"] == ["bye"]
+
+
+def test_a_session_counts_the_restarts_and_respawns_of_its_members(tmp_path):
+    session = launch.LaunchSession(None, "main_ecu", "Runtime", None, tmp_path / "control.sock")
+
+    def member(path, state, *, listed=False):
+        record = session.count({"path": path, "state": state}, listed=listed)
+        session.members[path] = record
+        return record["restarts"], record["respawns"]
+
+    # The first start of a member is no restart.
+    assert member("/a", "pending", listed=True) == (0, 0)
+    assert member("/a", "running") == (0, 0)
+    assert member("/a", "running") == (0, 0)
+    # Stopped and started again, then respawned twice: every start counts once.
+    assert member("/a", "stopped") == (0, 0)
+    assert member("/a", "running") == (1, 0)
+    assert member("/a", "respawning") == (1, 1)
+    assert member("/a", "running") == (2, 1)
+    assert member("/a", "respawning") == (2, 2)
+    assert member("/a", "running") == (3, 2)
+    # A composable node counts its loads.
+    assert member("/c", "loading") == (0, 0)
+    assert member("/c", "loaded") == (0, 0)
+    assert member("/c", "loading") == (1, 0)
+    # A member the runtime lists as already started has started once; a later listing changes nothing.
+    assert member("/b", "running", listed=True) == (0, 0)
+    assert member("/b", "stopped") == (0, 0)
+    assert member("/b", "running") == (1, 0)
+    assert member("/a", "running", listed=True) == (3, 2)

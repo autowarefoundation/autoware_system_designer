@@ -102,7 +102,7 @@
 }
 
 /* Blocks: a module a tinted frame around its children, a node a solid cell;
-   neutral until a launched member within reports its state */
+   neutral until a launched member within reports a state other than idle */
 .tm-block {
   cursor: pointer;
 }
@@ -136,23 +136,17 @@
   fill: var(--state-failed);
 }
 
-.tm-block.state-idle > .tm-rect {
-  fill: var(--state-idle);
-}
-
 .tm-block[data-kind="node"].state-running > .tm-rect,
 .tm-block[data-kind="node"].state-ok > .tm-rect,
 .tm-block[data-kind="node"].state-warning > .tm-rect,
-.tm-block[data-kind="node"].state-failed > .tm-rect,
-.tm-block[data-kind="node"].state-idle > .tm-rect {
+.tm-block[data-kind="node"].state-failed > .tm-rect {
   fill-opacity: 0.55;
 }
 
 .tm-block[data-kind="module"].state-running > .tm-rect,
 .tm-block[data-kind="module"].state-ok > .tm-rect,
 .tm-block[data-kind="module"].state-warning > .tm-rect,
-.tm-block[data-kind="module"].state-failed > .tm-rect,
-.tm-block[data-kind="module"].state-idle > .tm-rect {
+.tm-block[data-kind="module"].state-failed > .tm-rect {
   fill-opacity: 0.18;
 }
 

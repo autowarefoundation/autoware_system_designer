@@ -56,9 +56,9 @@
     [6, 8],
   ];
 
-  // Restarts and respawns of a live state, summed.
+  // Times the member of a live state was started again, respawns among them.
   function restartCount(info) {
-    return info.restarts ? info.restarts.restarts + info.restarts.respawns : 0;
+    return info.restarts ? info.restarts.restarts : 0;
   }
 
   function isNode(instance) {

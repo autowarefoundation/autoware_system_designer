@@ -1,5 +1,5 @@
 // Unit tests for the live state the diagrams overlay: member states keyed by
-// node path with composables following their container, restart counts kept
+// node path with composables following their container, restart counts read
 // per launch, and the live cost wrapper that kills a dead member's gates.
 
 const test = require("node:test");
@@ -61,7 +61,7 @@ function session(unit, system, job = "job-1") {
   });
 }
 
-function member(unit, memberPath, state, detail = {}) {
+function member(unit, memberPath, state, detail = {}, counts = {}) {
   handlers["daemon.member"]({
     compute_unit: unit,
     system: "pkg:Sys",
@@ -69,6 +69,7 @@ function member(unit, memberPath, state, detail = {}) {
     state,
     detail,
     time: 1,
+    ...counts,
   });
 }
 
@@ -104,18 +105,10 @@ test("a stopped member is dead and a composable follows its container down", () 
   assert.match(states.get("/a/comp").dead, /container stopped · exit 0/);
 });
 
-test("restarts count re-entries into running, respawns among them", () => {
+test("restart counts are read from the daemon's member record", () => {
   member("main_ecu", "/a/alpha", "running", { pid: 5 });
-  assert.deepEqual(launch.restartsOf("/a/alpha"), {
-    unit: "main_ecu",
-    restarts: 1,
-    respawns: 0,
-  });
-  member("main_ecu", "/a/alpha", "stopped", { exit_code: 2 });
-  member("main_ecu", "/a/alpha", "respawning", { attempt: 1 });
-  member("main_ecu", "/a/alpha", "running", { pid: 6 });
-  member("main_ecu", "/a/alpha", "respawning", { attempt: 2 });
-  member("main_ecu", "/a/alpha", "running", { pid: 7 });
+  assert.equal(launch.restartsOf("/a/alpha"), null);
+  member("main_ecu", "/a/alpha", "running", { pid: 7 }, { restarts: 3, respawns: 2 });
   assert.deepEqual(launch.restartsOf("/a/alpha"), {
     unit: "main_ecu",
     restarts: 3,
@@ -126,12 +119,9 @@ test("restarts count re-entries into running, respawns among them", () => {
     3,
   );
   assert.equal(launch.restartsOf("/b/beta"), null);
-});
-
-test("a new launch of the unit resets its counters", () => {
+  // The record of a new launch carries its own counts.
   session("main_ecu", "pkg:Sys", "job-2");
-  assert.equal(launch.restartsOf("/a/alpha"), null);
-  member("main_ecu", "/a/alpha", "running", { pid: 8 });
+  member("main_ecu", "/a/alpha", "running", { pid: 8 }, { restarts: 0, respawns: 0 });
   assert.equal(launch.restartsOf("/a/alpha"), null);
 });
 
