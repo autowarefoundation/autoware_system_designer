@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -80,11 +81,16 @@ class OperationModeGuard:
             return False
         return True
 
-    def _on_message(self, msg, info) -> None:
+    def _on_message(self, msg, info=None) -> None:
+        # rclpy passes message info only from Jazzy on; on Humble the receive time stands in for
+        # the publication time.
         stamp_ns = int(msg.stamp.sec) * 1_000_000_000 + int(msg.stamp.nanosec)
-        published_ns = (
-            info.get("source_timestamp") if isinstance(info, dict) else getattr(info, "source_timestamp", None)
-        )
+        if info is None:
+            published_ns = time.time_ns()
+        else:
+            published_ns = (
+                info.get("source_timestamp") if isinstance(info, dict) else getattr(info, "source_timestamp", None)
+            )
         if is_replayed(stamp_ns, published_ns):
             if not self._replay_logged:
                 self._replay_logged = True

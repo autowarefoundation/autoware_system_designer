@@ -21,6 +21,7 @@ import json
 import os
 import stat
 import tempfile
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -575,3 +576,14 @@ def test_channel_replaces_a_stale_socket_file(tmp_path):
             assert (await c.event())["event"] == "hello"
 
     _run(scenario())
+
+
+def test_operation_mode_guard_takes_message_without_info():
+    # Humble's rclpy calls subscription callbacks with the message only.
+    now = time.time_ns()
+    guard = OperationModeGuard(worker=None)
+    guard._on_message(_state(MODE_AUTONOMOUS, now))
+    assert guard.check("stop") == "stop refused: operation mode is autonomous"
+    guard._on_message(_state(1, now))
+    guard._on_message(_state(MODE_AUTONOMOUS, now - 3600 * 10**9))
+    assert guard.check("stop") is None

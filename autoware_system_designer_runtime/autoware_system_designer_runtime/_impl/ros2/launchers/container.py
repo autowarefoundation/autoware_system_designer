@@ -122,7 +122,13 @@ class RosWorker:
 
             while not self._stop.is_set():
                 self._run_jobs()
-                self._executor.spin_once(timeout_sec=0.1)
+                try:
+                    self._executor.spin_once(timeout_sec=0.1)
+                except Exception:  # noqa: BLE001
+                    # A failing callback costs only its own message; a lost context still ends the worker.
+                    if not rclpy.ok():
+                        raise
+                    logger.exception("ros worker callback failed")
         except Exception as exc:  # noqa: BLE001
             logger.exception("ros worker crashed")
             self._init_error = exc
