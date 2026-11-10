@@ -33,6 +33,7 @@ from autoware_system_designer_runtime._impl.core.commands import CommandError, M
 from autoware_system_designer_runtime._impl.core.control_channel import METHODS, ControlChannel
 from autoware_system_designer_runtime._impl.core.regular_actor import _slug
 from autoware_system_designer_runtime._impl.core.stdin_console import _dispatch
+from autoware_system_designer_runtime._impl.ros2.launchers.container import takes_message_info
 from autoware_system_designer_runtime._impl.ros2.operation_mode import MODE_AUTONOMOUS, OperationModeGuard, is_replayed
 
 
@@ -578,12 +579,16 @@ def test_channel_replaces_a_stale_socket_file(tmp_path):
     _run(scenario())
 
 
-def test_operation_mode_guard_takes_message_without_info():
-    # Humble's rclpy calls subscription callbacks with the message only.
-    now = time.time_ns()
+def test_operation_mode_guard_callback_is_given_message_info():
+    # rclpy passes message info only to a callback that cannot be called with the message alone.
+    assert takes_message_info(OperationModeGuard(worker=None)._on_message)
+    assert not takes_message_info(lambda msg, info=None: None)
+    assert not takes_message_info(lambda msg: None)
+
+
+def test_operation_mode_guard_trusts_a_latched_report_published_long_ago():
+    # A late subscriber receives the latched state with its original stamp and publication time.
+    published = time.time_ns() - 3600 * 10**9
     guard = OperationModeGuard(worker=None)
-    guard._on_message(_state(MODE_AUTONOMOUS, now))
+    guard._on_message(_state(MODE_AUTONOMOUS, published), {"source_timestamp": published})
     assert guard.check("stop") == "stop refused: operation mode is autonomous"
-    guard._on_message(_state(1, now))
-    guard._on_message(_state(MODE_AUTONOMOUS, now - 3600 * 10**9))
-    assert guard.check("stop") is None

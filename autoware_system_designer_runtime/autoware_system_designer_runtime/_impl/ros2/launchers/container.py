@@ -105,7 +105,7 @@ class RosWorker:
     def _run(self) -> None:
         try:
             import rclpy
-            from rclpy.executors import SingleThreadedExecutor
+            from rclpy.signals import SignalHandlerOptions
         except ImportError as e:
             logger.error("rclpy not available: %s", e)
             self._init_error = RuntimeError(f"rclpy not available: {e}")
@@ -114,9 +114,10 @@ class RosWorker:
 
         try:
             if not rclpy.ok():
-                rclpy.init()
+                # The coordinator owns SIGINT/SIGTERM; the context lives until the worker stops.
+                rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
             self._node = rclpy.create_node(self.NODE_NAME)
-            self._executor = SingleThreadedExecutor()
+            self._executor = make_executor()
             self._executor.add_node(self._node)
             self._ready.set()
 
@@ -316,6 +317,52 @@ class RosWorker:
                 client = self._node.create_client(LoadNode, service_name)
                 self._clients[service_name] = client
             return client
+
+
+def takes_message_info(callback: Callable) -> bool:
+    """Whether rclpy (Iron and later) calls *callback* with the message and its message info."""
+    import inspect
+
+    signature = inspect.signature(callback)
+    try:
+        signature.bind(object())
+        return False
+    except TypeError:
+        pass
+    try:
+        signature.bind(object(), object())
+        return True
+    except TypeError:
+        return False
+
+
+def make_executor(context=None):
+    """Single-threaded executor that passes message info to two-argument subscription callbacks.
+
+    rclpy does so from Iron on; on Humble the message info that rcl returns with each take reaches
+    such callbacks through this executor.
+    """
+    from rclpy.executors import SingleThreadedExecutor, await_or_execute
+    from rclpy.subscription import Subscription
+
+    if hasattr(Subscription, "CallbackType"):
+        return SingleThreadedExecutor(context=context)
+
+    class _MessageInfoExecutor(SingleThreadedExecutor):
+        def _take_subscription(self, sub):
+            with sub.handle:
+                return sub.handle.take_message(sub.msg_type, sub.raw)
+
+        async def _execute_subscription(self, sub, taken):
+            if taken is None:
+                return
+            msg, info = taken
+            if takes_message_info(sub.callback):
+                await await_or_execute(sub.callback, msg, info)
+            else:
+                await await_or_execute(sub.callback, msg)
+
+    return _MessageInfoExecutor(context=context)
 
 
 def _discard(_msg) -> None:
