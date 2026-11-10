@@ -959,19 +959,18 @@
         TOKENS.forEach((token) => g.classList.remove(`state-${token}`));
         if (info) g.classList.add(`state-${info.token}`);
         g.querySelector(":scope > .live-mark")?.remove();
+        // A unit always carries a mark: idle until a member within reports.
         if (box.kind === "unit") {
-          if (info) {
-            const mark = svgElement("g", { class: "live-mark" });
-            mark.appendChild(
-              SD.RunState.svgMark(
-                info.token,
-                G.pad + G.mark / 2,
-                this.unitHead / 2,
-                G.mark,
-              ),
-            );
-            g.appendChild(mark);
-          }
+          const mark = svgElement("g", { class: "live-mark" });
+          mark.appendChild(
+            SD.RunState.svgMark(
+              info?.token || "idle",
+              G.pad + G.mark / 2,
+              this.unitHead / 2,
+              G.mark,
+            ),
+          );
+          g.appendChild(mark);
           return;
         }
         g.querySelector(":scope > title").textContent = this._title(box, info);
