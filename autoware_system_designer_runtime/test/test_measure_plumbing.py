@@ -40,7 +40,7 @@ from autoware_system_designer_runtime._impl.measure.trace_reader import read_tra
 from autoware_system_designer_runtime._impl.measure.tracer import TraceControl, TracerArming
 from autoware_system_designer_runtime._impl.measure.writer import LATENCY_SCHEMA
 
-from .measure_fixtures import MS, S, US, chain_design, write_chain_traces, write_clock_trace
+from .measure_fixtures import MS, US, S, chain_design, write_chain_traces, write_clock_trace
 
 
 def _read_latency(path: Path) -> dict:

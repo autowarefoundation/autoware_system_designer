@@ -21,11 +21,11 @@ The layout is `include/autoware_system_designer_tracer/trace_format.h`; the Pyth
 
 ## Environment
 
-| Variable             | Role                                                                                                      |
-| -------------------- | --------------------------------------------------------------------------------------------------------- |
-| `ASD_TRACE_DIR`      | arms the tracer; the directory the files go to                                                            |
+| Variable             | Role                                                                                                     |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| `ASD_TRACE_DIR`      | arms the tracer; the directory the files go to                                                           |
 | `ASD_TRACE_CAPACITY` | event records per process file, a ring of the latest ones (default 4194304, at most 16777216)            |
-| `ASD_STATS_SLOTS`    | counter slots per process (default 1024, at most 65536); live endpoints past it are counted, not tracked  |
+| `ASD_STATS_SLOTS`    | counter slots per process (default 1024, at most 65536); live endpoints past it are counted, not tracked |
 
 The runtime sets `LD_PRELOAD` and `ASD_TRACE_DIR` on every process it spawns and locates the library through the ament index or `ASD_TRACER_LIB`.
 
