@@ -314,3 +314,9 @@ Launch jobs need the ROS environment the daemon itself does without: start `serv
 shell, or pass `--env-script` with a setup script, sourced once at start into the job environment.
 Without `ROS_DISTRO` in that environment `launch.start` and `rviz.start` answer `unavailable`. RViz
 also needs the display of that environment (`DISPLAY` or `WAYLAND_DISPLAY`).
+
+### Multi-unit environment
+
+[`docker/multi_unit`](../docker/multi_unit/README.md) runs one daemon per compute unit of a demo system in
+Docker containers, as containers of one ECU or as separate ECUs reached over SSH, with tests that
+drive them through the API.

@@ -1,0 +1,48 @@
+autoware_system_design_format: 0.5.0
+
+name: MultiUnitDemo.system
+
+description: Talkers and listeners spread over three onboard units, every unit subscribing a topic published on another one.
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+
+compute_units:
+  - name: main_ecu
+    description: Publishes the command chatter, listens to the report.
+  - name: sub_ecu_1
+    description: Listens to the command chatter.
+  - name: sub_ecu_2
+    description: Listens to the command chatter, publishes the report.
+
+components:
+  - name: command_talker
+    entity: Talker.node
+    path: /command/talker
+    compute_unit: main_ecu
+  - name: report_listener
+    entity: Listener.node
+    path: /report/listener
+    compute_unit: main_ecu
+  - name: command_listener_1
+    entity: Listener.node
+    path: /command/listener_1
+    compute_unit: sub_ecu_1
+  - name: command_listener_2
+    entity: Listener.node
+    path: /command/listener_2
+    compute_unit: sub_ecu_2
+  - name: report_talker
+    entity: Talker.node
+    path: /report/talker
+    compute_unit: sub_ecu_2
+
+connections:
+  - - command_talker.publisher.chatter
+    - command_listener_1.subscriber.chatter
+  - - command_talker.publisher.chatter
+    - command_listener_2.subscriber.chatter
+  - - report_talker.publisher.chatter
+    - report_listener.subscriber.chatter
