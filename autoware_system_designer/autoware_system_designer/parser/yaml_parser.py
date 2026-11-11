@@ -27,6 +27,9 @@ from autoware_system_designer.common.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
+# libyaml-backed loader when PyYAML is built with it.
+_SafeLoader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 
 @dataclass
 class _CacheEntry:
@@ -34,7 +37,7 @@ class _CacheEntry:
 
     stamp: Tuple[int, int]
     data: Dict[str, Any]
-    source_map: Optional[Dict[str, Dict[str, int]]] = None
+    source_map: Dict[str, Dict[str, int]]
 
 
 class YamlParser:
@@ -65,61 +68,56 @@ class YamlParser:
         return token.replace("~", "~0").replace("/", "~1")
 
     @classmethod
-    def _build_source_map_from_yaml(cls, content: str) -> Dict[str, Dict[str, int]]:
-        """Build a mapping from YAML JSON-pointer-like paths to 1-based line/column.
-
-        This uses PyYAML's node tree (yaml.compose) so we can track locations without
-        changing the parsed data shapes returned by safe_load.
-        """
+    def _build_source_map(cls, root) -> Dict[str, Dict[str, int]]:
+        """Map JSON-pointer-like paths of a composed node tree to 1-based line/column."""
         source_map: Dict[str, Dict[str, int]] = {}
 
-        try:
-            root = yaml.compose(content, Loader=yaml.SafeLoader)
-        except Exception:
-            # If compose fails, return empty source map. Parsing errors are handled elsewhere.
-            return source_map
-
-        if root is None:
-            return source_map
-
-        def _record(path: str, node) -> None:
-            mark = getattr(node, "start_mark", None)
-            if mark is None:
-                return
-            # PyYAML uses 0-based line/column
-            source_map[path] = {"line": int(mark.line) + 1, "column": int(mark.column) + 1}
-
         def _walk(node, path: str) -> None:
-            _record(path, node)
+            mark = node.start_mark
+            if mark is not None:
+                # PyYAML uses 0-based line/column
+                source_map[path] = {"line": mark.line + 1, "column": mark.column + 1}
 
             if isinstance(node, yaml.nodes.MappingNode):
                 for key_node, value_node in node.value:
                     key = getattr(key_node, "value", None)
                     if key is None:
                         continue
-                    child_path = (
-                        f"{path}/{cls._json_pointer_escape(str(key))}"
-                        if path
-                        else f"/{cls._json_pointer_escape(str(key))}"
-                    )
-                    _walk(value_node, child_path)
+                    _walk(value_node, f"{path}/{cls._json_pointer_escape(str(key))}")
             elif isinstance(node, yaml.nodes.SequenceNode):
                 for idx, item_node in enumerate(node.value):
-                    child_path = f"{path}/{idx}" if path else f"/{idx}"
-                    _walk(item_node, child_path)
-            else:
-                # ScalarNode - already recorded
-                return
+                    _walk(item_node, f"{path}/{idx}")
 
         _walk(root, "")
         return source_map
 
-    def load_config_with_source(self, file_path: Union[str, Path]) -> Tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
-        """Load YAML configuration file and return (data, source_map).
+    @classmethod
+    def _parse_with(cls, loader_cls, content: str) -> Tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
+        """Data and source map of one YAML document, both taken from a single composed node tree."""
+        loader = loader_cls(content)
+        try:
+            root = loader.get_single_node()
+            if root is None:
+                return {}, {}
+            # Construction flattens merge keys in place; the source map reads the tree as written.
+            source_map = cls._build_source_map(root)
+            config_data = loader.construct_document(root)
+            return ({} if config_data is None else config_data), source_map
+        finally:
+            loader.dispose()
 
-        source_map keys are JSON-pointer-like YAML paths (e.g. "/parameters/0/value").
-        Values contain 1-based line/column.
-        """
+    @classmethod
+    def _parse(cls, content: str) -> Tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
+        """Parse one YAML document; a syntax error is reported by the pure-Python loader, which quotes the source."""
+        try:
+            return cls._parse_with(_SafeLoader, content)
+        except yaml.YAMLError:
+            if _SafeLoader is yaml.SafeLoader:
+                raise
+            return cls._parse_with(yaml.SafeLoader, content)
+
+    def _load(self, file_path: Union[str, Path]) -> _CacheEntry:
+        """Parsed content of a file, served from the cache while its stamp is unchanged."""
         path = Path(file_path)
 
         if not path.exists():
@@ -128,39 +126,38 @@ class YamlParser:
         if not path.is_file():
             raise ValidationError(f"Path is not a file: {path}")
 
-        # Callers own the returned data; the cache keeps a private copy.
         stamp = self._stamp(path)
         entry = self._cached(path, stamp)
-        if entry is not None and entry.source_map is not None:
-            logger.debug(f"Loading configuration (with source) from cache: {path}")
-            return copy.deepcopy(entry.data), entry.source_map
+        if entry is not None:
+            logger.debug(f"Loading configuration from cache: {path}")
+            return entry
 
         try:
-            logger.debug(f"Loading configuration file (with source): {path}")
-            content = path.read_text(encoding="utf-8")
-            config_data = yaml.safe_load(content)
-            if config_data is None:
-                config_data = {}
-
-            source_map = self._build_source_map_from_yaml(content)
-
-            if self.cache_enabled:
-                self._cache[path] = _CacheEntry(stamp, copy.deepcopy(config_data), source_map)
-
-            return config_data, source_map
+            logger.debug(f"Loading configuration file: {path}")
+            entry = _CacheEntry(stamp, *self._parse(path.read_text(encoding="utf-8")))
         except yaml.YAMLError as exc:
             raise ValidationError(f"Failed to parse YAML file {path}: {exc}")
         except Exception as exc:
             raise ValidationError(f"Failed to read configuration file {path}: {exc}")
 
+        if self.cache_enabled:
+            self._cache[path] = entry
+        return entry
+
+    def load_config_with_source(self, file_path: Union[str, Path]) -> Tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
+        """Load YAML configuration file and return (data, source_map).
+
+        source_map keys are JSON-pointer-like YAML paths (e.g. "/parameters/0/value").
+        Values contain 1-based line/column.
+        """
+        entry = self._load(file_path)
+        # Callers own the returned data; the cache keeps a private copy.
+        return copy.deepcopy(entry.data), entry.source_map
+
     def load_config_from_string_with_source(self, content: str) -> Tuple[Dict[str, Any], Dict[str, Dict[str, int]]]:
         """Load YAML configuration from string content and return (data, source_map)."""
         try:
-            config_data = yaml.safe_load(content)
-            if config_data is None:
-                config_data = {}
-            source_map = self._build_source_map_from_yaml(content)
-            return config_data, source_map
+            return self._parse(content)
         except yaml.YAMLError as exc:
             raise ValidationError(f"Failed to parse YAML content: {exc}")
         except Exception as exc:
@@ -178,38 +175,8 @@ class YamlParser:
         Raises:
             ValidationError: If file cannot be read or parsed
         """
-        path = Path(file_path)
-
-        if not path.exists():
-            raise ValidationError(f"Configuration file not found: {path}")
-
-        if not path.is_file():
-            raise ValidationError(f"Path is not a file: {path}")
-
         # Callers own the returned data; the cache keeps a private copy.
-        stamp = self._stamp(path)
-        entry = self._cached(path, stamp)
-        if entry is not None:
-            logger.debug(f"Loading configuration from cache: {path}")
-            return copy.deepcopy(entry.data)
-
-        try:
-            logger.debug(f"Loading configuration file: {path}")
-            with open(path, "r", encoding="utf-8") as stream:
-                config_data = yaml.safe_load(stream)
-
-            if config_data is None:
-                config_data = {}
-
-            if self.cache_enabled:
-                self._cache[path] = _CacheEntry(stamp, copy.deepcopy(config_data))
-
-            return config_data
-
-        except yaml.YAMLError as exc:
-            raise ValidationError(f"Failed to parse YAML file {path}: {exc}")
-        except Exception as exc:
-            raise ValidationError(f"Failed to read configuration file {path}: {exc}")
+        return copy.deepcopy(self._load(file_path).data)
 
     def load_config_from_string(self, content: str) -> Dict[str, Any]:
         """Load YAML configuration from string content.
@@ -223,18 +190,7 @@ class YamlParser:
         Raises:
             ValidationError: If content cannot be parsed
         """
-        try:
-            config_data = yaml.safe_load(content)
-
-            if config_data is None:
-                config_data = {}
-
-            return config_data
-
-        except yaml.YAMLError as exc:
-            raise ValidationError(f"Failed to parse YAML content: {exc}")
-        except Exception as exc:
-            raise ValidationError(f"Failed to process configuration content: {exc}")
+        return self.load_config_from_string_with_source(content)[0]
 
     def load_config_list(self, file_list_path: Union[str, Path]) -> Dict[str, Any]:
         """Load configuration files from a list file.

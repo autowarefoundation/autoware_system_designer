@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import jsonschema
-from jsonschema.exceptions import ValidationError
 
 from autoware_system_designer.common.parameter_types import is_supported_parameter_type, normalize_type_name
 from autoware_system_designer.schema.format_version import check_format_version
@@ -21,6 +20,34 @@ class SchemaIssue:
 
 def _jp_escape(token: str) -> str:
     return token.replace("~", "~0").replace("/", "~1")
+
+
+# Compiled validators by schema identity; each entry holds its schema so the id stays unique.
+_VALIDATOR_CACHE: Dict[int, Tuple[dict, Any]] = {}
+
+
+def _validator_for(schema: dict) -> Any:
+    """Validator for a schema, checked against its metaschema once."""
+    cached = _VALIDATOR_CACHE.get(id(schema))
+    if cached is not None:
+        return cached[1]
+    validator_cls = jsonschema.validators.validator_for(schema)
+    validator_cls.check_schema(schema)
+    validator = validator_cls(schema)
+    _VALIDATOR_CACHE[id(schema)] = (schema, validator)
+    return validator
+
+
+def _schema_issues(data: Any, schema: dict) -> List[SchemaIssue]:
+    """Most relevant violation of the schema, if any, as a SchemaIssue."""
+    try:
+        error = jsonschema.exceptions.best_match(_validator_for(schema).iter_errors(data))
+    except Exception as e:
+        return [SchemaIssue(message=f"JSON Schema validation error: {str(e)}", yaml_path="")]
+    if error is None:
+        return []
+    path = "/" + "/".join(str(p) for p in error.absolute_path) if error.absolute_path else ""
+    return [SchemaIssue(message=error.message, yaml_path=path)]
 
 
 def validate_against_schema(
@@ -43,40 +70,22 @@ def validate_against_schema(
     Returns:
         List of SchemaIssue objects
     """
-    issues: List[SchemaIssue] = []
-
     if not isinstance(data, dict):
         return [SchemaIssue(message="Root must be a mapping/object", yaml_path="")]
 
-    # Use JSON Schema validation if provided
     if json_schema_dict is not None:
-        try:
-            jsonschema.validate(instance=data, schema=json_schema_dict)
-        except ValidationError as e:
-            # Convert JSON Schema validation errors to SchemaIssue format
-            path = "/" + "/".join(str(p) for p in e.absolute_path) if e.absolute_path else ""
-            issues.append(SchemaIssue(message=e.message, yaml_path=path))
-        except Exception as e:
-            issues.append(SchemaIssue(message=f"JSON Schema validation error: {str(e)}", yaml_path=""))
-    elif entity_type is not None and format_version is not None:
-        # Load JSON Schema and validate
+        return _schema_issues(data, json_schema_dict)
+
+    if entity_type is not None and format_version is not None:
         try:
             json_schema = load_schema(entity_type, format_version)
-            try:
-                jsonschema.validate(instance=data, schema=json_schema)
-            except ValidationError as e:
-                path = "/" + "/".join(str(p) for p in e.absolute_path) if e.absolute_path else ""
-                issues.append(SchemaIssue(message=e.message, yaml_path=path))
-            except Exception as e:
-                issues.append(SchemaIssue(message=f"JSON Schema validation error: {str(e)}", yaml_path=""))
         except FileNotFoundError as e:
-            issues.append(SchemaIssue(message=str(e), yaml_path=""))
+            return [SchemaIssue(message=str(e), yaml_path="")]
         except Exception as e:
-            issues.append(SchemaIssue(message=f"Failed to load JSON Schema: {str(e)}", yaml_path=""))
-    else:
-        issues.append(SchemaIssue(message="No schema provided for validation", yaml_path=""))
+            return [SchemaIssue(message=f"Failed to load JSON Schema: {str(e)}", yaml_path="")]
+        return _schema_issues(data, json_schema)
 
-    return issues
+    return [SchemaIssue(message="No schema provided for validation", yaml_path="")]
 
 
 # -------------------------
