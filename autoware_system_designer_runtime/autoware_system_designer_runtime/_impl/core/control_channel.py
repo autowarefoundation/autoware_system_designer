@@ -189,8 +189,6 @@ class ControlChannel:
             self._unsubscribe = None
         if self._server is not None:
             self._server.close()
-            await self._server.wait_closed()
-            self._server = None
         for client in list(self._clients):
             client.close()
         for task in list(self._tasks):
@@ -201,6 +199,10 @@ class ControlChannel:
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
         self._clients.clear()
+        # wait_closed waits for the connections from Python 3.12 on, so they are closed first.
+        if self._server is not None:
+            await self._server.wait_closed()
+            self._server = None
         try:
             self._path.unlink()
         except OSError:
