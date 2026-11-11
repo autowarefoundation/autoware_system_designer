@@ -26,6 +26,7 @@ three roles:
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 import os
 import signal
@@ -450,9 +451,17 @@ def _signame(sig: int) -> str:
 
 
 def ensure_output_dir(base: Optional[Path] = None) -> Path:
-    """Create a timestamped log directory under *base* (or /tmp by default)."""
+    """Create a timestamped log directory under *base* (or /tmp by default).
+
+    Each call owns its directory: a run starting within the second of another gets a numbered one.
+    """
     base = base or Path("/tmp/autoware_system_designer_logs")
+    base.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d_%H%M%S")
-    out = base / stamp
-    out.mkdir(parents=True, exist_ok=True)
-    return out
+    for name in itertools.chain([stamp], (f"{stamp}_{n}" for n in itertools.count(2))):
+        out = base / name
+        try:
+            out.mkdir()
+        except FileExistsError:
+            continue
+        return out

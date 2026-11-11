@@ -45,3 +45,11 @@ def test_run_manifest_falls_back_to_the_structure_file_name(tmp_path):
     )
     manifest = json.loads(path.read_text())
     assert manifest["system"] is None and manifest["mode"] == "Vehicle" and manifest["deploy"] == "site"
+
+
+def test_runs_starting_in_one_second_get_their_own_log_directory(tmp_path):
+    from autoware_system_designer_runtime import ensure_output_dir
+
+    dirs = [ensure_output_dir(tmp_path) for _ in range(3)]
+    assert len(set(dirs)) == 3
+    assert all(d.is_dir() and d.parent == tmp_path for d in dirs)
