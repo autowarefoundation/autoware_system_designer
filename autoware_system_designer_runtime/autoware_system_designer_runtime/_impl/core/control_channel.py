@@ -16,12 +16,14 @@
 
 One object per line. The runtime sends events ``{"event": ...}``: ``hello`` on connect, ``member``
 on every state change, ``member.log`` for new stdout/stderr lines of a member the client follows,
-``member.activity`` with the output growth rate of every member whose files grew in the last window.
+``member.activity`` with the output growth rate of every member whose files grew in the last window,
+``monitor`` with per-node topic and timer rates from the tracer's counters to the clients that follow them.
 A client sends requests ``{"id", "method", "params"}`` and receives ``{"id", "ok", "result" | "error"}``.
 
 Member output stays in the per-member ``out``/``err`` files the actors write; the channel tails a
 file only while some client follows that member, so an idle channel costs nothing per member. The
-activity scan sizes every member's files once per window while a client is connected.
+activity scan sizes every member's files once per window while a client is connected; the counters
+are read only while some client follows the rates.
 """
 
 from __future__ import annotations
@@ -49,8 +51,13 @@ METHODS = (
     "measure.start",
     "measure.stop",
     "measure.status",
+    "monitor.sample",
+    "monitor.follow",
+    "monitor.unfollow",
     "shutdown",
 )
+# Methods that wait: answered from a task of their own, so the requests behind them are not held up.
+DETACHED_METHODS = ("monitor.sample",)
 STREAMS = ("out", "err")
 MAX_LINE = 64 * 1024
 LOG_POLL_S = 0.2
@@ -62,6 +69,8 @@ BACKFILL_LINES = 200
 BACKFILL_BYTES = 64 * 1024
 # Outgoing bytes a client may have queued before it counts as stalled.
 QUEUE_BYTES = 8 << 20
+# Interval of the ``monitor`` rates sent to following clients.
+MONITOR_POLL_S = 2.0
 
 
 def _error(request_id: Any, code: str, message: str) -> dict[str, Any]:
@@ -81,6 +90,7 @@ class _Client:
         self._queued = 0
         self.dropped = False
         self.follows: set[str] = set()
+        self.follows_rates = False
 
     def send(self, obj: dict[str, Any]) -> None:
         self.send_bytes(_encode(obj))
@@ -137,6 +147,7 @@ class ControlChannel:
         self._tasks: set[asyncio.Task] = set()
         self._tail_task: Optional[asyncio.Task] = None
         self._activity_task: Optional[asyncio.Task] = None
+        self._monitor_task: Optional[asyncio.Task] = None
         self._unsubscribe = None
         # Read position and the unterminated tail per followed (member, stream).
         self._offsets: dict[tuple[str, str], int] = {}
@@ -159,10 +170,12 @@ class ControlChannel:
         self._unsubscribe = self._states.subscribe(self._on_state)
         self._tail_task = asyncio.ensure_future(self._tail_logs())
         self._activity_task = asyncio.ensure_future(self._scan_activity())
+        if self._commands.monitor is not None:
+            self._monitor_task = asyncio.ensure_future(self._report_rates())
         logger.info("control channel: %s", self._path)
 
     async def close(self) -> None:
-        for task in (self._tail_task, self._activity_task):
+        for task in (self._tail_task, self._activity_task, self._monitor_task):
             if task is None:
                 continue
             task.cancel()
@@ -170,7 +183,7 @@ class ControlChannel:
                 await task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
-        self._tail_task = self._activity_task = None
+        self._tail_task = self._activity_task = self._monitor_task = None
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
@@ -212,7 +225,9 @@ class ControlChannel:
                     break
                 if not line.strip():
                     continue
-                client.send(await self._handle(client, line))
+                reply = await self._handle(client, line)
+                if reply is not None:
+                    client.send(reply)
         except (ConnectionError, asyncio.CancelledError):
             pass
         finally:
@@ -229,6 +244,7 @@ class ControlChannel:
             "methods": list(METHODS),
             "policy": self._policy,
             "measure_armed": self._commands.measure_armed,
+            "monitor": self._commands.monitor is not None,
             "log_dir": str(self._log_dir),
             **status,
         }
@@ -243,7 +259,8 @@ class ControlChannel:
 
     # ---- requests ----------------------------------------------------------
 
-    async def _handle(self, client: _Client, line: bytes) -> dict[str, Any]:
+    async def _handle(self, client: _Client, line: bytes) -> Optional[dict[str, Any]]:
+        """The reply to one request line; None for a detached method, whose reply its task sends."""
         try:
             request = json.loads(line)
         except ValueError:
@@ -259,6 +276,17 @@ class ControlChannel:
             params = {}
         if not isinstance(params, dict):
             return _error(request_id, "invalid_params", "params must be an object")
+        if method in DETACHED_METHODS:
+            task = asyncio.ensure_future(self._answer_detached(client, request_id, method, params))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+            return None
+        return await self._answer(client, request_id, method, params)
+
+    async def _answer_detached(self, client: _Client, request_id: Any, method: str, params: dict[str, Any]) -> None:
+        client.send(await self._answer(client, request_id, method, params))
+
+    async def _answer(self, client: _Client, request_id: Any, method: str, params: dict[str, Any]) -> dict[str, Any]:
         try:
             result = await self._dispatch(client, method, params)
         except CommandError as exc:
@@ -282,6 +310,17 @@ class ControlChannel:
             return self._unfollow(client, params.get("path"))
         if method.startswith("measure."):
             return await self._commands.measure(method[len("measure.") :])
+        if method == "monitor.sample":
+            return await self._commands.rates(params.get("interval", 1.0))
+        if method == "monitor.follow":
+            if self._commands.monitor is None:
+                await self._commands.rates()  # raises the unavailable error
+            client.follows_rates = True
+            return {"interval_s": MONITOR_POLL_S}
+        if method == "monitor.unfollow":
+            released = client.follows_rates
+            client.follows_rates = False
+            return {"released": released}
         if method == "shutdown":
             self._commands.shutdown()
             return {"shutting_down": True}
@@ -429,6 +468,28 @@ class ControlChannel:
             except OSError:
                 pass
         return total
+
+    # ---- rates -----------------------------------------------------------------
+
+    async def _report_rates(self) -> None:
+        """Sends per-node rates to the clients following them, one snapshot per interval."""
+        monitor = self._commands.monitor
+        previous = None
+        while True:
+            await asyncio.sleep(MONITOR_POLL_S)
+            followers = [client for client in self._clients if client.follows_rates]
+            if not followers:
+                previous = None
+                continue
+            try:
+                reading = monitor.read()
+                if previous is not None:
+                    data = _encode({"event": "monitor", **monitor.rates(previous, reading)})
+                    for client in followers:
+                        client.send_bytes(data)
+                previous = reading
+            except Exception:  # noqa: BLE001
+                logger.exception("reading the tracer counters failed")
 
 
 def _tail_lines(path: Path, size: int) -> tuple[list[str], bytes]:

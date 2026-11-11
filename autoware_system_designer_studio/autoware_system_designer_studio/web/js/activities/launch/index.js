@@ -1,7 +1,8 @@
-// Launch activity: two views of the mode, chosen in the side panel. Control
+// Launch activity: three views of the mode, chosen in the side panel. Control
 // is the state map, with launch and shutdown of each compute unit in its
 // section head and the actions on the selected member above it; Logs is the
-// member tree beside the selected member's log, read only. Escape drops a
+// member tree beside the selected member's log, read only; Topics is the
+// live rate of every topic against the design. Escape drops a
 // pending confirmation, else the selection, also on the other activities'
 // diagrams through `selection.clear`.
 // The side panel also holds the deploy, the launch options, the launch
@@ -18,13 +19,20 @@
     mainView,
     popup,
   } = SD.widgets;
-  const { commandsTable, stateMonitor, stateMap, memberActions, sessionLabel } =
-    SD.activities.launch;
+  const {
+    commandsTable,
+    stateMonitor,
+    stateMap,
+    memberActions,
+    sessionLabel,
+    topicRates,
+  } = SD.activities.launch;
 
   // Main views by the store's `view`.
   const VIEWS = [
     ["control", "Control"],
     ["logs", "Logs"],
+    ["topics", "Topics"],
   ];
   const DEFAULT_VIEW = "control";
 
@@ -47,6 +55,11 @@
   const RVIZ_KIND = "rviz";
   // Measurement window states in which the next verb is stop.
   const MEASURE_OPEN = ["running"];
+  // Button label while a measurement request awaits its answer.
+  const MEASURE_PENDING = {
+    "measure.start": "Starting measure…",
+    "measure.stop": "Stopping measure…",
+  };
 
   function launchRows(config, store) {
     const mode = store.get("mode");
@@ -96,6 +109,8 @@
       // Per unit: the last error of a control, and the last measurement result.
       const errors = new Map();
       const measures = new Map();
+      // Unit -> the measurement request awaiting its answer; its button takes no click meanwhile.
+      const measuring = new Map();
 
       store.define("view", DEFAULT_VIEW, (v) =>
         VIEWS.some(([value]) => value === v),
@@ -116,11 +131,10 @@
           ),
         );
       }
-      const measureOption = checkbox(
-        "Arm latency measurement",
-        MEASURE_KEY,
-        false,
-      );
+      const measureOption = checkbox("Measure from launch", MEASURE_KEY, false);
+      measureOption.element.title =
+        "Open the latency measurement window once every member started; " +
+        "without it a window opens on Start measure.";
       const respawnOption = checkbox(
         "Respawn exited processes",
         RESPAWN_KEY,
@@ -216,8 +230,13 @@
       const logsView = mainView({ title: "Logs" });
       const monitorPane = element("div", "split-h");
       logsView.body.appendChild(monitorPane);
-      main.append(controlView.element, logsView.element);
+      const topicsView = mainView({ title: "Topics" });
+      const topicsPane = element("div", "topic-pane");
+      topicsView.body.appendChild(topicsPane);
+      main.append(controlView.element, logsView.element, topicsView.element);
       const monitor = stateMonitor(monitorPane, config, store);
+      const topics = topicRates(topicsPane, config, store);
+      topicsView.head.insertBefore(topics.runSelector, topicsView.trailing);
       logsView.head.insertBefore(monitor.runSelector, logsView.trailing);
       // The activity's slots are visible from mount until another activity takes over.
       let shown = true;
@@ -228,10 +247,13 @@
         views.mark(current);
         controlView.element.hidden = current !== "control";
         logsView.element.hidden = current !== "logs";
+        topicsView.element.hidden = current !== "topics";
         if (shown && current === "control") map.show();
         else map.hide();
         if (shown && current === "logs") monitor.show();
         else monitor.hide();
+        if (shown && current === "topics") topics.show();
+        else topics.hide();
       }
 
       function control(unit, method, params, then) {
@@ -303,16 +325,29 @@
         if (active && session.connected && session.control.measure_armed) {
           measure = measures.get(unit);
           const open = measure && MEASURE_OPEN.includes(measure.state);
-          controls.appendChild(
-            button(open ? "Stop measure" : "Start measure", "", () =>
-              control(
-                unit,
-                open ? "measure.stop" : "measure.start",
-                {},
-                (result) => measures.set(unit, result),
-              ),
-            ),
+          const pending = measuring.get(unit);
+          const toggle = button(
+            pending
+              ? MEASURE_PENDING[pending]
+              : open
+                ? "Stop measure"
+                : "Start measure",
+            "",
+            () => {
+              if (measuring.has(unit)) return;
+              const method = open ? "measure.stop" : "measure.start";
+              measuring.set(unit, method);
+              control(unit, method, {}, (result) =>
+                measures.set(unit, result),
+              ).finally(() => {
+                measuring.delete(unit);
+                render();
+              });
+              render();
+            },
           );
+          toggle.disabled = !!pending;
+          controls.appendChild(toggle);
         }
         if (session)
           controls.appendChild(

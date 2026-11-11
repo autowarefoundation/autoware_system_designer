@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Measurement session: arms the tracer on every spawned process, owns the window, runs the analysis.
+"""Measurement session: owns the window over an armed tracer and runs the analysis.
 
-Tracing is armed at spawn (``LD_PRELOAD`` + ``ASD_TRACE_DIR``); the session only
-decides which part of the recording is analyzed. Probe subscriptions are attached
-when the window opens and removed when it closes.
+The tracer is armed at spawn (``TracerArming``); the session switches its event
+recording on when the window opens and off when it closes. Probe subscriptions
+are attached when the window opens and removed when it closes.
 
 Lifecycle: ``armed`` → ``running`` → ``closed`` → ``analyzing`` → ``done`` | ``failed``.
 Every transition is logged; while the window is open a heartbeat reports the phase,
@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -43,17 +42,24 @@ from .node_graph import NodeGraph
 from .node_stats import NS_PER_S, ProcessExit, analyze
 from .probe import ProbeResult, attach_probes, detach_probes, probe_topics
 from .trace_reader import read_trace_dir, trace_dir_progress
+from .tracer import (  # noqa: F401 - re-exported
+    TRACE_CAPACITY_ENV,
+    TRACE_DIR_ENV,
+    TRACER_LIB_ENV,
+    TRACER_PACKAGE,
+    TracerArming,
+    locate_tracer,
+    tracer_env,
+)
 from .writer import build_latency_file, write_latency_file
 
 logger = logging.getLogger(__name__)
 
-TRACER_PACKAGE = "autoware_system_designer_tracer"
-TRACER_LIB_ENV = "ASD_TRACER_LIB"
-TRACE_DIR_ENV = "ASD_TRACE_DIR"
-TRACE_CAPACITY_ENV = "ASD_TRACE_CAPACITY"
 TRACE_SUBDIR = "trace"
 LATENCY_DIR_NAME = "latency"
 DEFAULT_HEARTBEAT_S = 10.0
+# Longest analyzed window: the latest part of a recording that ran longer.
+MAX_WINDOW_S = 1800.0
 
 
 @dataclass
@@ -64,44 +70,10 @@ class MeasureOptions:
     keep_running: bool = False
     latency_out: Optional[Path] = None
     heartbeat: float = DEFAULT_HEARTBEAT_S
+    # Open the window at launch_ready; otherwise it opens on request.
+    auto_open: bool = True
     # auto: ROS time when the traced processes ran on /clock, else wall time.
     clock: str = CLOCK_AUTO
-
-
-def locate_tracer() -> Path:
-    """The preload library, from ``ASD_TRACER_LIB`` or the ament index."""
-    override = os.environ.get(TRACER_LIB_ENV)
-    if override:
-        path = Path(override)
-        if path.is_file():
-            return path
-        raise FileNotFoundError(f"{TRACER_LIB_ENV}={override} is not a file")
-    try:
-        from ament_index_python.packages import PackageNotFoundError, get_package_prefix
-    except ImportError as exc:  # pragma: no cover - ament is part of every ROS install
-        raise FileNotFoundError("ament_index_python is not available") from exc
-    try:
-        prefix = Path(get_package_prefix(TRACER_PACKAGE))
-    except PackageNotFoundError as exc:
-        raise FileNotFoundError(f"package {TRACER_PACKAGE} is not installed; build it or set {TRACER_LIB_ENV}") from exc
-    path = prefix / "lib" / f"lib{TRACER_PACKAGE}.so"
-    if not path.is_file():
-        raise FileNotFoundError(f"tracer library missing at {path}")
-    return path
-
-
-def tracer_env(tracer: Path, trace_dir: Path, base: Optional[dict[str, str]] = None) -> dict[str, str]:
-    """Environment of a traced process: the preload prepended, the trace directory set."""
-    env = dict(base if base is not None else os.environ)
-    preload = str(tracer)
-    existing = env.get("LD_PRELOAD", "")
-    if existing and preload not in existing.split(":"):
-        preload = f"{preload}:{existing}"
-    elif existing:
-        preload = existing
-    env["LD_PRELOAD"] = preload
-    env[TRACE_DIR_ENV] = str(trace_dir)
-    return env
 
 
 def default_latency_out(mode: str, json_path: Path, log_dir: Path, stamp: Optional[str] = None) -> Path:
@@ -129,12 +101,25 @@ def analyze_traces(
 ) -> dict[str, Any]:
     """Blocking: read the trace directory, analyze, write the latency file.
 
-    ``settle_ns`` is skipped after the window start, whether given or the first record.
+    ``settle_ns`` is skipped after the window start, whether given or the first record. The window
+    is the latest ``MAX_WINDOW_S`` of the recording at most, and starts where every process still
+    holds its records.
     """
     trace_set = read_trace_dir(trace_dir)
     span_start, span_end = trace_set.time_span()
     t0 = (window_start_ns if window_start_ns is not None else span_start) + settle_ns
     t1 = window_end_ns if window_end_ns is not None else span_end
+    latest = t1 - int(MAX_WINDOW_S * NS_PER_S)
+    if t0 < latest:
+        logger.info("measure: the window is the last %g s of the recording", MAX_WINDOW_S)
+        t0 = latest
+    retained = trace_set.retained_from()
+    if retained is not None and retained > t0:
+        logger.warning(
+            "measure: an event ring wrapped inside the window; the window is the last %.1f s it holds",
+            (t1 - retained) / NS_PER_S,
+        )
+        t0 = retained
     time_base = clock_for(trace_set, clock)
     logger.info("measure: durations in %s", time_base.describe())
     analysis = analyze(trace_set, graph, t0, t1, clock=time_base, exits=exits)
@@ -159,17 +144,20 @@ class MeasureSession:
         worker,
         options: MeasureOptions,
         *,
-        log_dir: Path,
+        arming: TracerArming,
         latency_out: Path,
         mode: Optional[str],
     ) -> None:
         self._graph = graph
         self._worker = worker
         self._options = options
-        self._trace_dir = log_dir / TRACE_SUBDIR
+        if options.duration is not None and options.duration > MAX_WINDOW_S:
+            logger.warning("measure: duration %g s is over the maximum; recording %g s", options.duration, MAX_WINDOW_S)
+            options.duration = MAX_WINDOW_S
+        self._arming = arming
+        self._trace_dir = arming.trace_dir
         self._latency_out = latency_out
         self._mode = mode
-        self._tracer = locate_tracer()
         self._state = "armed"
         self._started_ns: Optional[int] = None
         self._stopped_ns: Optional[int] = None
@@ -183,16 +171,10 @@ class MeasureSession:
     # ---- wiring -------------------------------------------------------------
 
     def install(self, builder: CoordinatorBuilder) -> None:
-        builder.add_pre_start_hook(self._pre_start)
-        builder.add_post_start_hook(self._post_start)
+        if self._options.auto_open:
+            builder.add_post_start_hook(self._post_start)
         builder.add_shutdown_hook(self._on_shutdown)
         builder.add_state_hook(self.on_state_event)
-
-    async def _pre_start(self, coord: Coordinator) -> None:
-        self._trace_dir.mkdir(parents=True, exist_ok=True)
-        for spec in coord.specs():
-            spec.env = tracer_env(self._tracer, self._trace_dir, spec.env)
-        logger.info("measure: tracer %s armed, traces in %s", self._tracer, self._trace_dir)
 
     async def _post_start(self, coord: Coordinator) -> None:
         coord.schedule_task(self._auto(coord))
@@ -260,6 +242,7 @@ class MeasureSession:
                 return "measurement already running"
             if self._state != "armed":
                 return f"measurement {self._state}; one window per launch"
+            self._arming.control.set_events(True)
             self._started_ns = time.time_ns()
             self._state = "running"
             if self._options.probe:
@@ -270,7 +253,7 @@ class MeasureSession:
                 probe_note = ", probes off"
             duration = self._options.duration
             if duration is None:
-                plan = "closes at shutdown or on 'measure stop'"
+                plan = f"closes at shutdown or on 'measure stop', the last {MAX_WINDOW_S:g} s are analyzed"
             else:
                 plan = f"record {duration:g} s, closes at {_clock(self._deadline_s())}"
             return f"window open: settle {self._options.settle:g} s, {plan}{probe_note}"
@@ -281,6 +264,7 @@ class MeasureSession:
             if self._state != "running":
                 return f"measurement is {self._state}, nothing to close"
             self._stopped_ns = time.time_ns()
+            self._arming.control.set_events(False)
             self._state = "closed"
             if self._options.probe:
                 await detach_probes(self._worker)
@@ -329,7 +313,8 @@ class MeasureSession:
 
     def status(self) -> str:
         if self._state == "armed":
-            return f"armed, waiting for launch_ready; traces in {self._trace_dir}"
+            waiting = "waiting for launch_ready" if self._options.auto_open else "opens on 'measure start'"
+            return f"armed, {waiting}; traces in {self._trace_dir}"
         if self._state == "running":
             elapsed = (time.time_ns() - self._started_ns) / NS_PER_S
             settle = self._options.settle

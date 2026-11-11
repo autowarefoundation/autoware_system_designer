@@ -29,6 +29,7 @@ from autoware_system_designer_runtime._impl.core.regular_actor import NodeSpec, 
 from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
 from autoware_system_designer_runtime._impl.measure.node_stats import ProcessExit
 from autoware_system_designer_runtime._impl.measure.session import (
+    MAX_WINDOW_S,
     MeasureOptions,
     MeasureSession,
     analyze_traces,
@@ -36,9 +37,10 @@ from autoware_system_designer_runtime._impl.measure.session import (
     tracer_env,
 )
 from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir, trace_dir_progress
+from autoware_system_designer_runtime._impl.measure.tracer import TraceControl, TracerArming
 from autoware_system_designer_runtime._impl.measure.writer import LATENCY_SCHEMA
 
-from .measure_fixtures import MS, chain_design, write_chain_traces, write_clock_trace
+from .measure_fixtures import MS, US, S, chain_design, write_chain_traces, write_clock_trace
 
 
 def _read_latency(path: Path) -> dict:
@@ -325,15 +327,39 @@ def _session(tmp_path, monkeypatch, **options):
     write_chain_traces(tmp_path / "trace")
     graph = NodeGraph.from_system_structure(chain_design())
     worker = _StubWorker()
+    arming = TracerArming(tracer, tmp_path / "trace")
+    arming.control.create()
     session = MeasureSession(
         graph,
         worker,
         MeasureOptions(**options),
-        log_dir=tmp_path,
+        arming=arming,
         latency_out=tmp_path / "out" / "Test_latency.json",
         mode="Test",
     )
     return session, worker
+
+
+def test_the_window_is_the_latest_part_every_ring_holds(tmp_path):
+    traces = tmp_path / "trace"
+    start, end = write_chain_traces(traces)
+    graph = NodeGraph.from_system_structure(chain_design())
+
+    def window_wall_s(**window):
+        out = tmp_path / "Test_latency.json"
+        return analyze_traces(traces, graph, mode="Test", probe=True, latency_out=out, **window)["run"]["window_wall_s"]
+
+    assert window_wall_s(window_start_ns=start, window_end_ns=end) == 1.0
+    assert window_wall_s(window_start_ns=start, window_end_ns=start + 3 * 3600 * S) == MAX_WINDOW_S
+
+    # /b's ring wrapped: its oldest record, the first take, is where the window starts.
+    path = traces / "200.trace"
+    data = bytearray(path.read_bytes())
+    capacity = int.from_bytes(data[24:32], "little")
+    data[32:40] = (capacity + 1).to_bytes(8, "little")  # count
+    path.write_bytes(bytes(data))
+    first_take = start + 1 * MS + 50 * US + 500 * US
+    assert window_wall_s(window_start_ns=start, window_end_ns=end) == round((end - first_take) / S, 3)
 
 
 def test_trace_dir_progress_reads_headers_only(tmp_path):
@@ -342,7 +368,7 @@ def test_trace_dir_progress_reads_headers_only(tmp_path):
     full = read_trace_dir(tmp_path)
     assert progress.processes == len(full.processes)
     assert progress.records == sum(p.record_count for p in full.processes.values())
-    assert progress.dropped == 0
+    assert progress.overwritten == 0
     assert progress.describe().endswith(f"{progress.records} records")
 
 
@@ -419,9 +445,13 @@ def test_console_close_and_analyze_are_idempotent(tmp_path, monkeypatch):
 
     async def run():
         assert await session.close("console stop") == "measurement is armed, nothing to close"
+        control = TraceControl(session.trace_dir)
+        assert not control.events()
         await session.start()
+        assert control.events()  # the window switches event recording on in every traced process
         assert await session.start() == "measurement already running"
         assert (await session.close("console stop")).startswith("window closed (console stop): ")
+        assert not control.events()
         assert (await session.analyze()).startswith("analysis done in ")
         assert await session.analyze() == "measurement is done, nothing to analyze"
         assert await session.start() == "measurement done; one window per launch"

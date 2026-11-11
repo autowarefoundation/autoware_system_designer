@@ -271,7 +271,7 @@ def test_console_prints_results_and_refusals(capsys):
     assert "[console] stop -> /perception/detector" in out
     assert "[console] kill refused: operation mode is autonomous" in out
     assert "/sensing/lidar/driver  pending" in out
-    assert "measurement is not armed" in out
+    assert "measurement needs the tracer" in out
     assert coord.calls == [("stop", "/perception/detector")]
 
 
@@ -400,6 +400,30 @@ def test_channel_dispatches_member_measure_and_shutdown_methods(tmp_path):
             assert (await c.call("shutdown"))["result"] == {"shutting_down": True}
             assert coord.shutdown_event.is_set()
             assert (await c.call("status"))["result"]["shutting_down"] is True
+
+    _run(scenario())
+
+
+class _Monitor:
+    def read(self):
+        return 0
+
+    def rates(self, before, after):
+        return {"nodes": []}
+
+    def close(self):
+        pass
+
+
+def test_a_rates_sample_does_not_hold_up_the_requests_behind_it(tmp_path):
+    async def scenario():
+        coord, commands = _commands(monitor=_Monitor())
+        async with _Channel(commands, commands._states, tmp_path) as c:
+            await c.event()
+            c.writer.write(json.dumps({"id": "slow", "method": "monitor.sample", "params": {"interval": 5}}).encode())
+            c.writer.write(b"\n")
+            assert (await c.call("status", request_id="fast"))["id"] == "fast"
+            assert (await c.call("monitor.sample", {"interval": 0.1}, request_id="short"))["result"] == {"nodes": []}
 
     _run(scenario())
 

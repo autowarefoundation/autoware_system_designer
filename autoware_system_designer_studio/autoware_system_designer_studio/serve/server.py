@@ -196,9 +196,13 @@ class ServeDaemon:
         self.methods.register("launch.runs", self._launch_runs)
         self.methods.register("launch.run", self._launch_run)
         self.methods.register("launch.run_tail", self._launch_run_tail)
+        self.methods.register("launch.run_rates", self._launch_run_rates)
         self.methods.register("launch.shutdown", self._launch_shutdown)
         for verb in launch.MEASURE_VERBS:
             self.methods.register(f"measure.{verb}", self._measure(verb))
+        self.methods.register("monitor.follow", self._monitor_follow)
+        self.methods.register("monitor.unfollow", self._monitor_unfollow)
+        self.methods.register("monitor.sample", self._monitor_sample)
         self.methods.register("rviz.start", self._rviz_start)
         self.jobs = jobs.JobRunner(self.hub)
         self.launch = launch.LaunchManager(
@@ -433,6 +437,18 @@ class ServeDaemon:
         run = _str_param(params, "run", required=True)
         return self.launch.run_tail(run, _str_param(params, "member", required=True))
 
+    async def _launch_run_rates(self, params: dict[str, Any]) -> dict[str, Any]:
+        sample = params.get("sample")
+        start = params.get("start")
+        span_s = params.get("span_s")
+        for name, number in (("sample", sample), ("start", start)):
+            if number is not None and (not isinstance(number, int) or isinstance(number, bool) or number < 0):
+                raise api.ApiError(api.INVALID_PARAMS, f"{name} must be a sample number")
+        if span_s is not None and (not isinstance(span_s, (int, float)) or isinstance(span_s, bool) or span_s <= 0):
+            raise api.ApiError(api.INVALID_PARAMS, "span_s must be a positive number of seconds")
+        run = _str_param(params, "run", required=True)
+        return await self.launch.run_rates(run, sample=sample, start=start, span_s=span_s)
+
     async def _launch_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
         return await self.launch.shutdown(_str_param(params, "compute_unit", required=True))
 
@@ -442,6 +458,27 @@ class ServeDaemon:
             return await self.launch.call(compute_unit, f"measure.{verb}", {})
 
         return handler
+
+    async def _monitor_follow(self, params: dict[str, Any]) -> dict[str, Any]:
+        compute_unit = _str_param(params, "compute_unit", required=True)
+        return await self.launch.monitor_follow(compute_unit, _str_param(params, "client") or "")
+
+    async def _monitor_unfollow(self, params: dict[str, Any]) -> dict[str, Any]:
+        compute_unit = _str_param(params, "compute_unit", required=True)
+        return await self.launch.monitor_unfollow(compute_unit, _str_param(params, "client") or "")
+
+    async def _monitor_sample(self, params: dict[str, Any]) -> dict[str, Any]:
+        compute_unit = _str_param(params, "compute_unit", required=True)
+        interval = params.get("interval", 1.0)
+        if (
+            not isinstance(interval, (int, float))
+            or isinstance(interval, bool)
+            or not 0.1 <= interval <= launch.MONITOR_SAMPLE_MAX_S
+        ):
+            raise api.ApiError(
+                api.INVALID_PARAMS, f"interval must be a number of seconds in [0.1, {launch.MONITOR_SAMPLE_MAX_S:g}]"
+            )
+        return await self.launch.call(compute_unit, "monitor.sample", {"interval": interval})
 
     async def _rviz_start(self, params: dict[str, Any]) -> dict[str, Any]:
         return (await self.launch.start_rviz()).to_view()

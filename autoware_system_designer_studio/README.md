@@ -65,21 +65,46 @@ live in the activity that uses them, as store keys mirrored in the URL.
 | Activity | Side panel                                                      | Main area                                            |
 | -------- | --------------------------------------------------------------- | ---------------------------------------------------- |
 | Explore  | diagram list; entity search; live state of the launched members | diagram canvas; inspector shows the selected element |
-| Launch   | view list, deploy, launch options, launch commands popup, RViz  | Control or Logs view of the mode (`?view=`)          |
+| Launch   | view list, deploy, launch options, launch commands popup, RViz  | Control, Logs or Topics view of the mode (`?view=`)  |
 | Build    | target, compute unit, start; job list (daemon)                  | log of the selected job (`?job=`)                    |
 
-Launch has two main views, chosen from the list in its side panel. Control is the treemap of the
+Launch has three main views, chosen from the list in its side panel. Control is the treemap of the
 mode, every block coloured by its live member state and marked, before its name, with the state, a
 busy log and, on a node, its restart count. Launch and Shutdown of each compute unit (and the
-measurement window of an armed session) are in the unit's head bar. Every declared unit has its own
+measurement window of a session whose runtime preloads the tracer) are in the unit's head bar;
+"Measure from launch" opens the window at launch. Every declared unit has its own
 section, a head alone when the mode places no node on it; a launcher of an undeclared unit gets the
 same controls in a row above the map. A bar between the head and the map holds the selected
 entity and the only actions on a launched member: Stop, Restart and Kill of a node outside a
 container, each in the member states it applies to while the session of the mode is connected, sent
 with `exact` so they reach that member alone; each is confirmed in the bar. A composable
 node links to its container there, and a module has no actions. Logs is the member tree beside the
-selected member's log, read only. Both select the store's `entity`, and a double click on a node of
-the map opens it in Logs.
+selected member's log, read only. Topics is one row per topic of the mode: the design's publisher,
+subscribers and declared rate (the output port's `frequency`, with the system monitor's `warn_rate`
+and `error_rate`), beside the publish rate, mean callback time and mean communication time the
+runtimes count. A row's status is `silent` (no message), `error` or `slow` (below the declared
+error or warn rate, else below 0.8 of the rate), `fast` (above 1.25 of it), `ok`, `once` (declared
+to publish once), `intra` (intra-process only, which rcl does not count), `new`, `unseen` or
+`offline` (every node of the topic on a unit that is not running). The list is one of three: Nodes,
+the nodes in their namespace tree, each with the worst status of its outputs (else of its inputs);
+Topics, the topic rows in the topic namespace tree; Table, the topic rows flat. Above the Nodes and
+Topics lists a viewer draws the selected one left to right: a node with its ports between the
+topics it subscribes and the topics it publishes, each with its status, rate, declared rate, type
+and the node's own communication or callback time; a topic's detail between its publishers
+and its subscribers, each with its own rate and time. Nodes are square blocks and topics
+rounded tinted ones. A port of role `server` or `client` (else of a `/srv/` type, on an export
+without roles) is a service: status `service`, no rate, since its calls are not counted. Services
+sit in a Services group under the topic tree, below the topics on each side of a node as Client
+and Server, dashed and of another tint, and a selected service is drawn between its server and its
+clients. A topic card opens the topic in Topics, a node card the node in Nodes. The groups of a
+tree start closed at the top and open below it, the Services group open with its sub-groups closed.
+The view opens on the list of the selection with its row unfolded, and a port selected on an
+Explore diagram selects its topic (the store's `topic`) in Topics. The view follows the rates of every connected session of the mode while shown, and
+keeps the last rates of a launch that ended until its unit is launched again. A selector beside the
+Topics title shows a past run of the mode instead, from the rates record in its log directory, over
+a span brushed on a strip of the run's event density (counted events per second per 10 s sample
+interval, scaled to the peak): the whole run at first, then any span between two samples. All three
+select the store's `entity`, and a double click on a node of the map opens it in Logs.
 
 An activity is one `SD.workbench.registerActivity(def)` call from its `index.js`, with its parts
 attached to `SD.activities.<id>` by the scripts before it. `def` names the activity (`id`, `title`,
@@ -122,39 +147,43 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `GET /api/events`  | Server-Sent Events with daemon-wide sequence numbers as event ids (topics below)                             |
 | `POST /api/rpc`    | Request envelope `{"id", "method", "params"}` for any method below                                           |
 
-| Method                                            | Params                                                                             | Result                                      |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------- |
-| `health`                                          | -                                                                                  | Daemon status                               |
-| `systems.list`                                    | -                                                                                  | Exported systems                            |
-| `jobs.list`                                       | -                                                                                  | `{"jobs": [job]}`                           |
-| `jobs.get`                                        | `job`, `since` (log seq, default 0), `limit`                                       | `{"job", "log": {"first_seq", "lines"}}`    |
-| `jobs.cancel`                                     | `job`                                                                              | job                                         |
-| `build.start`                                     | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit`                        | job                                         |
-| `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn` | session                                     |
-| `launch.status`                                   | `compute_unit` (optional)                                                          | `{"sessions": [session]}`, members included |
-| `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`, `exact` (optional: the member named `pattern` only)     | `{"members": [path]}` acted on              |
-| `launch.follow`                                   | `compute_unit`, `path`, `system` and `mode` (optional: the session of that mode)   | `{"path", "out": [lines], "err": [lines]}`  |
-| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow), `system` and `mode` (optional)    | `{"released": [path]}`                      |
-| `launch.runs`                                     | `system` (optional)                                                                | `{"runs": [run]}`, newest first             |
-| `launch.run`                                      | `run`                                                                              | run with `members: [{"path", "slug"}]`      |
-| `launch.run_tail`                                 | `run`, `member` (its directory name)                                               | `{"run", "member", "out", "err"}`           |
-| `launch.shutdown`                                 | `compute_unit`                                                                     | `{"shutting_down": true}`                   |
-| `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                     | `{"state", "message"}` of the window        |
-| `rviz.start`                                      | -                                                                                  | job                                         |
+| Method                                            | Params                                                                             | Result                                                  |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `health`                                          | -                                                                                  | Daemon status                                           |
+| `systems.list`                                    | -                                                                                  | Exported systems                                        |
+| `jobs.list`                                       | -                                                                                  | `{"jobs": [job]}`                                       |
+| `jobs.get`                                        | `job`, `since` (log seq, default 0), `limit`                                       | `{"job", "log": {"first_seq", "lines"}}`                |
+| `jobs.cancel`                                     | `job`                                                                              | job                                                     |
+| `build.start`                                     | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit`                        | job                                                     |
+| `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn` | session                                                 |
+| `launch.status`                                   | `compute_unit` (optional)                                                          | `{"sessions": [session]}`, members included             |
+| `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`, `exact` (optional: the member named `pattern` only)     | `{"members": [path]}` acted on                          |
+| `launch.follow`                                   | `compute_unit`, `path`, `system` and `mode` (optional: the session of that mode)   | `{"path", "out": [lines], "err": [lines]}`              |
+| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow), `system` and `mode` (optional)    | `{"released": [path]}`                                  |
+| `launch.runs`                                     | `system` (optional)                                                                | `{"runs": [run]}`, newest first                         |
+| `launch.run`                                      | `run`                                                                              | run with `members: [{"path", "slug"}]`                  |
+| `launch.run_tail`                                 | `run`, `member` (its directory name)                                               | `{"run", "member", "out", "err"}`                       |
+| `launch.run_rates`                                | `run`, `start`, `sample`, `span_s` (optional: the span between two sample numbers) | run with `times`, `density` and the rates over the span |
+| `launch.shutdown`                                 | `compute_unit`                                                                     | `{"shutting_down": true}`                               |
+| `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                     | `{"state", "message"}` of the window                    |
+| `monitor.follow`, `monitor.unfollow`              | `compute_unit`, `client` (optional: the caller's name)                             | `{"interval_s"}`, `{"released"}`                        |
+| `monitor.sample`                                  | `compute_unit`, `interval` (seconds, default 1, at most 20)                        | rates over the interval                                 |
+| `rviz.start`                                      | -                                                                                  | job                                                     |
 
-| Event topic       | Data                                                                                               |
-| ----------------- | -------------------------------------------------------------------------------------------------- |
-| `hello`           | Sent first on each stream; no replay, so clients resynchronise by request                          |
-| `heartbeat`       | `{"time"}`                                                                                         |
-| `job`             | Job record on every state change                                                                   |
-| `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                                              |
-| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                                          |
-| `daemon`          | `{"restart_required": true}`                                                                       |
-| `launch`          | Session view (without members) on every change of a launch                                         |
-| `member`          | `{"compute_unit", "system", "mode", "path", "state", "detail", "time", "restarts", "respawns"}`    |
-| `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new lines of a followed member                      |
-| `member.activity` | `{"compute_unit", "system", "mode", "window", "rates": {path: bytes/s}}`, output growth per window |
-| `records.changed` | `{"system", "mode", "record"}`: a new latency record of the mode is complete                       |
+| Event topic       | Data                                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------ |
+| `hello`           | Sent first on each stream; no replay, so clients resynchronise by request                              |
+| `heartbeat`       | `{"time"}`                                                                                             |
+| `job`             | Job record on every state change                                                                       |
+| `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                                                  |
+| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                                              |
+| `daemon`          | `{"restart_required": true}`                                                                           |
+| `launch`          | Session view (without members) on every change of a launch                                             |
+| `member`          | `{"compute_unit", "system", "mode", "path", "state", "detail", "time", "restarts", "respawns"}`        |
+| `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new lines of a followed member                          |
+| `member.activity` | `{"compute_unit", "system", "mode", "window", "rates": {path: bytes/s}}`, output growth per window     |
+| `monitor`         | `{"compute_unit", "system", "mode", "interval_s", "nodes": [{"node", "inputs", "outputs", "timers"}]}` |
+| `records.changed` | `{"system", "mode", "record"}`: a new latency record of the mode is complete                           |
 
 Responses use one envelope: `{"ok": true, "result": ...}` or
 `{"ok": false, "error": {"code", "message"}}`, with `id` echoed on `/api/rpc`. Error codes are
@@ -216,7 +245,16 @@ Member output is tailed on demand: `launch.follow` asks the runtime to tail one 
 by every event stream; they are released once the last stream closes, and a runtime's follows end
 with its channel. Once the channel is gone, a follow answers the tails of the member's files in the
 runtime's log directory (`log_dir` of the session view, from the runtime's hello), with no lines to
-come. The Logs view follows the selected node (a composable node through its container) while
+come.
+
+Topic rates are followed the same way: `monitor.follow` makes its `client` a follower of a unit and
+asks the runtime for its per-node rates (the tracer's counters, see the runtime README), which
+arrive as `monitor` events every 2 s; `monitor.unfollow` ends that client's follow and the last one
+releases them. Following twice under one name is following once, so a page follows again after its
+event stream reconnected. Every follow ends with the last event stream, and a reconnected channel is
+followed again.
+
+The Logs view follows the selected node (a composable node through its container) while
 it is shown, keeps the followed log once the launcher ended and marks where it ended.
 
 A selector beside the Logs title shows a past run instead of the live sessions. A run is

@@ -31,6 +31,23 @@
   --state-warning: #b7791f;
   --state-failed: #dc3545;
   --state-idle: #6c757d;
+  /* Interface direction: inputs green, outputs orange, as on the node diagram */
+  --flow-in: #28a745;
+  --flow-in-bg: rgba(40, 167, 69, 0.12);
+  --flow-in-strong-bg: rgba(40, 167, 69, 0.34);
+  --flow-out: #fd7e14;
+  --flow-out-bg: rgba(253, 126, 20, 0.12);
+  --flow-out-strong-bg: rgba(253, 126, 20, 0.36);
+  /* Entity kinds of the flow diagrams: a node block and a topic block */
+  --flow-node-bg: #ffffff;
+  --flow-node-head-bg: #dfe3e7;
+  --flow-node-border: #7d8791;
+  --flow-topic-bg: #eaf1fd;
+  --flow-topic-head-bg: #cfe0fb;
+  --flow-topic-border: #7ba3e6;
+  --flow-service-bg: #f4edfb;
+  --flow-service-head-bg: #e3d3f6;
+  --flow-service-border: #a583d6;
 }
 
 [data-theme="dark"] {
@@ -62,4 +79,19 @@
   --state-warning: #e0a84f;
   --state-failed: #f06572;
   --state-idle: #8d959c;
+  --flow-in: #3fb950;
+  --flow-in-bg: rgba(63, 185, 80, 0.16);
+  --flow-in-strong-bg: rgba(63, 185, 80, 0.4);
+  --flow-out: #f0883e;
+  --flow-out-bg: rgba(240, 136, 62, 0.16);
+  --flow-out-strong-bg: rgba(240, 136, 62, 0.42);
+  --flow-node-bg: #262626;
+  --flow-node-head-bg: #3a3a3a;
+  --flow-node-border: #7d8791;
+  --flow-topic-bg: #1b2a40;
+  --flow-topic-head-bg: #223a5c;
+  --flow-topic-border: #3f6fb5;
+  --flow-service-bg: #2b2140;
+  --flow-service-head-bg: #3c2c5a;
+  --flow-service-border: #8a67c4;
 }

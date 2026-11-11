@@ -25,10 +25,12 @@ from pathlib import Path
 import pytest
 
 from autoware_system_designer_runtime._impl.measure.clock import RosClock, clock_for
+from autoware_system_designer_runtime._impl.measure.monitor import RateMonitor
 from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
 from autoware_system_designer_runtime._impl.measure.node_stats import analyze
 from autoware_system_designer_runtime._impl.measure.session import locate_tracer, tracer_env
 from autoware_system_designer_runtime._impl.measure.trace_reader import FLAG_CLOCK_LAST, read_trace_dir
+from autoware_system_designer_runtime._impl.measure.tracer import TraceControl
 
 from .measure_fixtures import in_port, node, out_port, process, system
 
@@ -215,3 +217,52 @@ def test_an_rclpy_timer_is_recorded_once_per_fire(tmp_path):
     assert len(fires) >= 10
     gaps = [b.t - a.t for a, b in zip(fires, fires[1:]) if a.handle == b.handle]
     assert min(gaps) > 50_000_000
+
+
+def _rows(snapshot, node, direction):
+    for record in snapshot["nodes"]:
+        if record["node"] == node:
+            return record[direction]
+    return []
+
+
+def test_counters_give_live_rates_and_events_follow_the_control_file(tmp_path):
+    trace_dir = tmp_path / "trace"
+    control = TraceControl(trace_dir)
+    control.create(events=False)
+    env = tracer_env(_tracer(), trace_dir)
+    env["ROS_DOMAIN_ID"] = str(random.randint(150, 230))
+    procs = [
+        subprocess.Popen(
+            [str(_demo(name))], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+        )
+        for name in ("talker", "listener")
+    ]
+    monitor = RateMonitor(trace_dir)
+    try:
+        time.sleep(2.0)
+        before = monitor.read()
+        time.sleep(3.0)
+        snapshot = monitor.rates(before, monitor.read())
+        # Counters alone: no event file while recording is off.
+        assert not list(trace_dir.glob("*.trace"))
+        control.set_events(True)
+        time.sleep(2.5)
+    finally:
+        _terminate(procs)
+        monitor.close()
+
+    assert snapshot["processes"] == 2
+    (out,) = _rows(snapshot, "/talker", "outputs")
+    assert out["topic"] == "/chatter" and 0.6 <= out["hz"] <= 1.4  # the demo talker publishes at 1 Hz
+    assert 0 <= out["callback_ms"] < 100
+    (timer,) = _rows(snapshot, "/talker", "timers")  # the timer is attributed through its publish
+    assert timer["period_ms"] == 1000.0 and 0.6 <= timer["hz"] <= 1.4
+    (inp,) = _rows(snapshot, "/listener", "inputs")
+    assert inp["topic"] == "/chatter" and 0.6 <= inp["hz"] <= 1.4
+    assert 0 <= inp["comm_ms"] < 1000
+
+    trace_set = read_trace_dir(trace_dir)
+    assert len(trace_set.processes) == 2
+    publishes = [p for proc in trace_set.processes.values() for p in proc.publishes]
+    assert publishes and min(p.t_in for p in publishes) > before.t_ns + 3_000_000_000

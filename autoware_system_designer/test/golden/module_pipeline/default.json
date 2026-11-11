@@ -83,6 +83,7 @@
             ],
             "port_path": "/sensing/lidar/output/pointcloud",
             "remap_target": "~/output/pointcloud",
+            "role": "publisher",
             "topic": [
               "sensing",
               "lidar",
@@ -161,6 +162,7 @@
                 ],
                 "port_path": "/perception/pipeline/filter_primary/input/pointcloud",
                 "remap_target": "~/input/pointcloud",
+                "role": "subscriber",
                 "topic": [
                   "sensing",
                   "lidar",
@@ -239,6 +241,7 @@
                 ],
                 "port_path": "/perception/pipeline/filter_primary/output/objects",
                 "remap_target": "~/output/objects",
+                "role": "publisher",
                 "topic": [
                   "perception",
                   "pipeline",
@@ -343,6 +346,7 @@
                 ],
                 "port_path": "/perception/pipeline/filter_secondary/input/pointcloud",
                 "remap_target": "~/input/pointcloud",
+                "role": "subscriber",
                 "topic": [
                   "sensing",
                   "lidar",
@@ -421,6 +425,7 @@
                 ],
                 "port_path": "/perception/pipeline/filter_secondary/output/objects",
                 "remap_target": "~/output/objects",
+                "role": "publisher",
                 "topic": [
                   "perception",
                   "pipeline",
@@ -526,6 +531,7 @@
                 ],
                 "port_path": "/perception/pipeline/node_merger/input/objects1",
                 "remap_target": "~/input/objects1",
+                "role": "subscriber",
                 "topic": [
                   "perception",
                   "pipeline",
@@ -569,6 +575,7 @@
                 ],
                 "port_path": "/perception/pipeline/node_merger/input/objects2",
                 "remap_target": "~/input/objects2",
+                "role": "subscriber",
                 "topic": [
                   "perception",
                   "pipeline",
@@ -646,6 +653,7 @@
                 ],
                 "port_path": "/perception/pipeline/node_merger/output/objects",
                 "remap_target": "~/output/objects",
+                "role": "publisher",
                 "topic": [
                   "perception",
                   "pipeline",
@@ -696,6 +704,7 @@
             ],
             "port_path": "/perception/pipeline/input/pointcloud",
             "remap_target": "~/input/pointcloud",
+            "role": "subscriber",
             "topic": [
               "sensing",
               "lidar",
@@ -737,6 +746,7 @@
               ],
               "port_path": "/perception/pipeline/input/pointcloud",
               "remap_target": "~/input/pointcloud",
+              "role": "subscriber",
               "topic": [
                 "sensing",
                 "lidar",
@@ -780,6 +790,7 @@
               ],
               "port_path": "/perception/pipeline/filter_primary/input/pointcloud",
               "remap_target": "~/input/pointcloud",
+              "role": "subscriber",
               "topic": [
                 "sensing",
                 "lidar",
@@ -822,6 +833,7 @@
               ],
               "port_path": "/perception/pipeline/input/pointcloud",
               "remap_target": "~/input/pointcloud",
+              "role": "subscriber",
               "topic": [
                 "sensing",
                 "lidar",
@@ -865,6 +877,7 @@
               ],
               "port_path": "/perception/pipeline/filter_secondary/input/pointcloud",
               "remap_target": "~/input/pointcloud",
+              "role": "subscriber",
               "topic": [
                 "sensing",
                 "lidar",
@@ -912,6 +925,7 @@
               ],
               "port_path": "/perception/pipeline/filter_primary/output/objects",
               "remap_target": "~/output/objects",
+              "role": "publisher",
               "topic": [
                 "perception",
                 "pipeline",
@@ -956,6 +970,7 @@
               ],
               "port_path": "/perception/pipeline/node_merger/input/objects1",
               "remap_target": "~/input/objects1",
+              "role": "subscriber",
               "topic": [
                 "perception",
                 "pipeline",
@@ -1004,6 +1019,7 @@
               ],
               "port_path": "/perception/pipeline/filter_secondary/output/objects",
               "remap_target": "~/output/objects",
+              "role": "publisher",
               "topic": [
                 "perception",
                 "pipeline",
@@ -1048,6 +1064,7 @@
               ],
               "port_path": "/perception/pipeline/node_merger/input/objects2",
               "remap_target": "~/input/objects2",
+              "role": "subscriber",
               "topic": [
                 "perception",
                 "pipeline",
@@ -1096,6 +1113,7 @@
               ],
               "port_path": "/perception/pipeline/node_merger/output/objects",
               "remap_target": "~/output/objects",
+              "role": "publisher",
               "topic": [
                 "perception",
                 "pipeline",
@@ -1134,6 +1152,7 @@
               ],
               "port_path": "/perception/pipeline/output/objects",
               "remap_target": "~/output/objects",
+              "role": "publisher",
               "topic": [
                 "perception",
                 "pipeline",
@@ -1178,6 +1197,7 @@
             ],
             "port_path": "/perception/pipeline/output/objects",
             "remap_target": "~/output/objects",
+            "role": "publisher",
             "topic": [
               "perception",
               "pipeline",
@@ -1248,6 +1268,7 @@
             ],
             "port_path": "/sink/input/objects",
             "remap_target": "~/input/objects",
+            "role": "subscriber",
             "topic": [
               "perception",
               "pipeline",
@@ -1357,6 +1378,7 @@
           ],
           "port_path": "/sensing/lidar/output/pointcloud",
           "remap_target": "~/output/pointcloud",
+          "role": "publisher",
           "topic": [
             "sensing",
             "lidar",
@@ -1395,6 +1417,7 @@
           ],
           "port_path": "/perception/pipeline/input/pointcloud",
           "remap_target": "~/input/pointcloud",
+          "role": "subscriber",
           "topic": [
             "sensing",
             "lidar",
@@ -1437,6 +1460,7 @@
           ],
           "port_path": "/perception/pipeline/output/objects",
           "remap_target": "~/output/objects",
+          "role": "publisher",
           "topic": [
             "perception",
             "pipeline",
@@ -1478,6 +1502,7 @@
           ],
           "port_path": "/sink/input/objects",
           "remap_target": "~/input/objects",
+          "role": "subscriber",
           "topic": [
             "perception",
             "pipeline",

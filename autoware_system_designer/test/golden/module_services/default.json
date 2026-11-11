@@ -94,6 +94,7 @@
                 ],
                 "port_path": "/api/provider/output/status",
                 "remap_target": "~/output/status",
+                "role": "publisher",
                 "topic": [
                   "api",
                   "status"
@@ -134,6 +135,7 @@
                 ],
                 "port_path": "/api/provider/output/set_mode",
                 "remap_target": "~/output/set_mode",
+                "role": "server",
                 "topic": [
                   "api",
                   "set_mode"
@@ -174,6 +176,7 @@
                 ],
                 "port_path": "/api/provider/output/reset",
                 "remap_target": "~/output/reset",
+                "role": "server",
                 "topic": [
                   "api",
                   "reset"
@@ -246,6 +249,7 @@
                 ],
                 "port_path": "/api/consumer/input/status",
                 "remap_target": "~/input/status",
+                "role": "subscriber",
                 "topic": [
                   "api",
                   "status"
@@ -284,6 +288,7 @@
                 ],
                 "port_path": "/api/consumer/input/set_mode",
                 "remap_target": "~/input/set_mode",
+                "role": "client",
                 "topic": [
                   "api",
                   "set_mode"
@@ -322,6 +327,7 @@
                 ],
                 "port_path": "/api/consumer/input/reset",
                 "remap_target": "~/input/reset",
+                "role": "client",
                 "topic": [
                   "api",
                   "reset"
@@ -411,6 +417,7 @@
               ],
               "port_path": "/api/provider/output/status",
               "remap_target": "~/output/status",
+              "role": "publisher",
               "topic": [
                 "api",
                 "status"
@@ -452,6 +459,7 @@
               ],
               "port_path": "/api/consumer/input/status",
               "remap_target": "~/input/status",
+              "role": "subscriber",
               "topic": [
                 "api",
                 "status"
@@ -497,6 +505,7 @@
               ],
               "port_path": "/api/provider/output/set_mode",
               "remap_target": "~/output/set_mode",
+              "role": "server",
               "topic": [
                 "api",
                 "set_mode"
@@ -536,6 +545,7 @@
               ],
               "port_path": "/api/consumer/input/set_mode",
               "remap_target": "~/input/set_mode",
+              "role": "client",
               "topic": [
                 "api",
                 "set_mode"
@@ -581,6 +591,7 @@
               ],
               "port_path": "/api/provider/output/reset",
               "remap_target": "~/output/reset",
+              "role": "server",
               "topic": [
                 "api",
                 "reset"
@@ -620,6 +631,7 @@
               ],
               "port_path": "/api/consumer/input/reset",
               "remap_target": "~/input/reset",
+              "role": "client",
               "topic": [
                 "api",
                 "reset"
@@ -667,6 +679,7 @@
               ],
               "port_path": "/api/provider/output/status",
               "remap_target": "~/output/status",
+              "role": "publisher",
               "topic": [
                 "api",
                 "status"
@@ -703,6 +716,7 @@
               ],
               "port_path": "/api/output/status",
               "remap_target": "~/output/status",
+              "role": "publisher",
               "topic": [
                 "api",
                 "status"
@@ -748,6 +762,7 @@
               ],
               "port_path": "/api/provider/output/set_mode",
               "remap_target": "~/output/set_mode",
+              "role": "server",
               "topic": [
                 "api",
                 "set_mode"
@@ -784,6 +799,7 @@
               ],
               "port_path": "/api/output/set_mode",
               "remap_target": "~/output/set_mode",
+              "role": "server",
               "topic": [
                 "api",
                 "set_mode"
@@ -829,6 +845,7 @@
               ],
               "port_path": "/api/provider/output/reset",
               "remap_target": "~/output/reset",
+              "role": "server",
               "topic": [
                 "api",
                 "reset"
@@ -865,6 +882,7 @@
               ],
               "port_path": "/api/output/reset",
               "remap_target": "~/output/reset",
+              "role": "server",
               "topic": [
                 "api",
                 "reset"
@@ -907,6 +925,7 @@
             ],
             "port_path": "/api/output/status",
             "remap_target": "~/output/status",
+            "role": "publisher",
             "topic": [
               "api",
               "status"
@@ -942,6 +961,7 @@
             ],
             "port_path": "/api/output/set_mode",
             "remap_target": "~/output/set_mode",
+            "role": "server",
             "topic": [
               "api",
               "set_mode"
@@ -977,6 +997,7 @@
             ],
             "port_path": "/api/output/reset",
             "remap_target": "~/output/reset",
+            "role": "server",
             "topic": [
               "api",
               "reset"
@@ -1046,6 +1067,7 @@
             ],
             "port_path": "/watcher/input/status",
             "remap_target": "~/input/status",
+            "role": "subscriber",
             "topic": [
               "api",
               "status"
@@ -1083,6 +1105,7 @@
             ],
             "port_path": "/watcher/input/set_mode",
             "remap_target": "~/input/set_mode",
+            "role": "client",
             "topic": [
               "api",
               "set_mode"
@@ -1120,6 +1143,7 @@
             ],
             "port_path": "/watcher/input/reset",
             "remap_target": "~/input/reset",
+            "role": "client",
             "topic": [
               "api",
               "reset"
@@ -1202,6 +1226,7 @@
           ],
           "port_path": "/api/output/status",
           "remap_target": "~/output/status",
+          "role": "publisher",
           "topic": [
             "api",
             "status"
@@ -1242,6 +1267,7 @@
           ],
           "port_path": "/watcher/input/status",
           "remap_target": "~/input/status",
+          "role": "subscriber",
           "topic": [
             "api",
             "status"
@@ -1282,6 +1308,7 @@
           ],
           "port_path": "/api/output/set_mode",
           "remap_target": "~/output/set_mode",
+          "role": "server",
           "topic": [
             "api",
             "set_mode"
@@ -1320,6 +1347,7 @@
           ],
           "port_path": "/watcher/input/set_mode",
           "remap_target": "~/input/set_mode",
+          "role": "client",
           "topic": [
             "api",
             "set_mode"
@@ -1360,6 +1388,7 @@
           ],
           "port_path": "/api/output/reset",
           "remap_target": "~/output/reset",
+          "role": "server",
           "topic": [
             "api",
             "reset"
@@ -1398,6 +1427,7 @@
           ],
           "port_path": "/watcher/input/reset",
           "remap_target": "~/input/reset",
+          "role": "client",
           "topic": [
             "api",
             "reset"

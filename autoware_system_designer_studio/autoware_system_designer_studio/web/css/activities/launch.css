@@ -458,3 +458,800 @@
 .member-state.failed {
   color: var(--state-failed);
 }
+
+/* Topics view */
+.topic-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.topic-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.topic-toolbar-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.topic-filter {
+  flex: 1 1 200px;
+  min-width: 140px;
+  padding: 3px 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+}
+
+.topic-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.topic-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.topic-summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.topic-status-filter {
+  padding: 0 5px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.topic-status-filter:hover {
+  border-color: var(--border-hover);
+}
+
+.topic-status-filter.active {
+  border-color: var(--highlight);
+  background: var(--highlight-bg);
+}
+
+.topic-status-filter.dimmed {
+  opacity: 0.45;
+}
+
+.topic-filter-action {
+  padding: 1px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.topic-flow-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-family: var(--mono-font);
+}
+
+.topic-flow-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  border-radius: 2px;
+}
+
+.topic-flow-swatch.flow-in {
+  background: var(--flow-in);
+}
+
+.topic-flow-swatch.flow-out {
+  background: var(--flow-out);
+}
+
+/* Viewer of the selected node or topic over its list. */
+.topic-viewer {
+  flex: 0 0 auto;
+  height: 36%;
+  min-height: 70px;
+  max-height: 80%;
+  overflow: auto;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.topic-viewer[hidden],
+.topic-divider[hidden] {
+  display: none;
+}
+
+/* Boundary between the viewer and its list; dragging it sizes the viewer. */
+.topic-divider {
+  flex-shrink: 0;
+  height: 6px;
+  margin: -3px 0;
+  cursor: row-resize;
+  background: transparent;
+  z-index: 2;
+  touch-action: none;
+  transition: background 0.2s;
+}
+
+.topic-divider:hover,
+.topic-divider.resizing {
+  background: var(--border-active);
+  opacity: 0.5;
+}
+
+.topic-viewer-hint {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Flow diagram: heads over a row of left cards, the centre and right cards.
+   Cards and ports share the pitch --flow-row + --flow-gap. A node is a square
+   block, a topic a rounded tinted one. */
+.flow {
+  --flow-row: 36px;
+  --flow-gap: 3px;
+  --flow-link: 22px;
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) minmax(220px, 0.8fr) minmax(
+      230px,
+      1fr
+    );
+  column-gap: var(--flow-link);
+  min-width: 740px;
+  padding: 6px 12px 8px;
+  font-size: 12px;
+}
+
+.flow-col-title {
+  align-self: end;
+  padding-bottom: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.flow-col-title.flow-right {
+  text-align: right;
+}
+
+.flow-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--flow-gap);
+  padding-top: var(--flow-gap);
+}
+
+.flow-none {
+  height: var(--flow-row);
+  line-height: var(--flow-row);
+  color: var(--text-muted);
+}
+
+.flow-right .flow-none {
+  text-align: right;
+}
+
+.flow-node {
+  background: var(--flow-node-bg);
+  border: 1px solid var(--flow-node-border);
+  border-radius: 0;
+}
+
+.flow-topic {
+  background: var(--flow-topic-bg);
+  border: 1px solid var(--flow-topic-border);
+  border-radius: 12px;
+}
+
+.flow-service {
+  background: var(--flow-service-bg);
+  border: 1px dashed var(--flow-service-border);
+  border-radius: 12px;
+}
+
+/* Row over the services of a node's side, in the card column and the port column alike. */
+.flow-section {
+  box-sizing: border-box;
+  height: 16px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--text-muted);
+}
+
+.flow-right .flow-section {
+  text-align: right;
+}
+
+.flow-card {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: var(--flow-row);
+  padding: 0 8px;
+}
+
+.flow-card.flow-topic,
+.flow-card.flow-service {
+  padding: 0 10px;
+}
+
+.flow-card.flow-in {
+  border-left: 3px solid var(--flow-in);
+}
+
+.flow-card.flow-out {
+  border-right: 3px solid var(--flow-out);
+}
+
+.flow-card.flow-service::after {
+  border-top-style: dashed;
+}
+
+.flow-card.openable {
+  cursor: pointer;
+}
+
+.flow-card.openable:hover {
+  box-shadow: 0 1px 4px var(--shadow);
+  filter: brightness(1.06);
+}
+
+.flow-card.unconnected {
+  background: none;
+  border-style: dashed;
+}
+
+/* Connector from a card to the centre. */
+.flow-card::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: var(--flow-link);
+  border-top: 2px solid var(--flow-in);
+}
+
+.flow-card.flow-in::after {
+  left: 100%;
+}
+
+.flow-card.flow-out::after {
+  right: 100%;
+  border-top-color: var(--flow-out);
+}
+
+.flow-card.unconnected::after {
+  display: none;
+}
+
+.flow-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  line-height: 15px;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.flow-line > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flow-line > .topic-status,
+.flow-line > .flow-rate,
+.flow-line > .flow-unit {
+  flex-shrink: 0;
+}
+
+.flow-line.flow-muted,
+.flow-muted {
+  color: var(--text-muted);
+}
+
+.flow-name,
+.flow-center-name {
+  font-family: var(--mono-font);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.flow-name.undeclared,
+.flow-center-name.undeclared {
+  font-style: italic;
+  font-weight: 400;
+}
+
+.flow-rate {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.flow-unit {
+  color: var(--text-muted);
+}
+
+.flow-center-head {
+  padding: 3px 10px;
+  border-bottom: none;
+}
+
+.flow-center-head.flow-node {
+  background: var(--flow-node-head-bg);
+  border-width: 2px 2px 0;
+}
+
+.flow-center-head.flow-topic {
+  background: var(--flow-topic-head-bg);
+  border-radius: 14px 14px 0 0;
+}
+
+.flow-center-head.flow-service {
+  background: var(--flow-service-head-bg);
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+}
+
+.flow-center-name {
+  font-size: 13px;
+}
+
+.flow-center-body {
+  box-sizing: border-box;
+  min-height: calc(var(--flow-row) + 2 * var(--flow-gap));
+}
+
+.flow-center-body.flow-node {
+  border-width: 1px 2px 2px;
+}
+
+.flow-center-body.flow-topic,
+.flow-center-body.flow-service {
+  border-radius: 0 0 14px 14px;
+}
+
+.flow-node-ports {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(var(--flow-gap) - 1px) 0 var(--flow-gap);
+}
+
+.flow-ports {
+  display: flex;
+  flex-direction: column;
+  gap: var(--flow-gap);
+  min-width: 0;
+}
+
+.flow-port {
+  box-sizing: border-box;
+  height: var(--flow-row);
+  max-width: 100%;
+  padding: 0 8px;
+  line-height: var(--flow-row);
+  font-family: var(--mono-font);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-ports.flow-in .flow-port {
+  border-left: 4px solid var(--flow-in);
+}
+
+.flow-ports.flow-out .flow-port {
+  text-align: right;
+  border-right: 4px solid var(--flow-out);
+}
+
+.flow-ports .flow-port.service {
+  border-left-style: dashed;
+  border-right-style: dashed;
+}
+
+.flow-port.unconnected {
+  color: var(--text-muted);
+  border-color: var(--border-color) !important;
+}
+
+.flow-detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 1px 10px;
+  margin: 0;
+  padding: 5px 12px;
+  line-height: 15px;
+}
+
+.flow-detail dt {
+  color: var(--text-muted);
+}
+
+.flow-detail dd {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.topic-table-host {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.topic-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.topic-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  box-shadow: inset 0 -1px 0 var(--border-color);
+  white-space: nowrap;
+}
+
+/* Numeric columns head their figures at the right edge */
+.topic-table th.topic-num {
+  text-align: right;
+}
+
+.topic-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.topic-sortable:hover,
+.topic-sortable.sorted {
+  color: var(--text-primary);
+}
+
+.topic-sort-mark {
+  margin-left: 4px;
+  font-size: 8px;
+}
+
+.topic-table td {
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.topic-row {
+  cursor: pointer;
+}
+
+.topic-row:hover {
+  background: var(--bg-tertiary);
+}
+
+.topic-row.chosen {
+  background: var(--highlight-bg);
+}
+
+/* Interfaces of the marked nodes by direction; the selected topic in the stronger shade with a thicker bar. */
+.topic-row.flow-in {
+  background: var(--flow-in-bg);
+}
+
+.topic-row.flow-out,
+.topic-row.flow-both {
+  background: var(--flow-out-bg);
+}
+
+.topic-row.flow-in > td:first-child {
+  box-shadow: inset 2px 0 0 var(--flow-in);
+}
+
+.topic-row.flow-out > td:first-child {
+  box-shadow: inset 2px 0 0 var(--flow-out);
+}
+
+.topic-row.flow-both > td:first-child {
+  box-shadow:
+    inset 2px 0 0 var(--flow-out),
+    inset 4px 0 0 var(--flow-in);
+}
+
+.topic-row.chosen.flow-in {
+  background: var(--flow-in-strong-bg);
+}
+
+.topic-row.chosen.flow-out,
+.topic-row.chosen.flow-both {
+  background: var(--flow-out-strong-bg);
+}
+
+.topic-row.chosen.flow-in > td:first-child {
+  box-shadow: inset 5px 0 0 var(--flow-in);
+}
+
+.topic-row.chosen.flow-out > td:first-child {
+  box-shadow: inset 5px 0 0 var(--flow-out);
+}
+
+.topic-row.chosen .topic-name {
+  font-weight: 700;
+}
+
+.topic-name,
+.topic-node {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topic-name {
+  display: inline-block;
+  max-width: 440px;
+  font-family: var(--mono-font);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+/* Status chip and name of a row, stepping in with the depth of its group */
+.topic-table td.topic-name-cell {
+  padding-left: calc(8px + var(--depth, 0) * 14px);
+}
+
+.topic-name-cell > .topic-status {
+  min-width: 48px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.topic-table.node-list th:nth-child(2) {
+  width: 100%;
+}
+
+/* Node containers, the hosts of composable nodes */
+.topic-name.container {
+  font-style: italic;
+}
+
+.topic-name.undeclared {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.topic-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+td.topic-num.muted,
+.topic-node {
+  color: var(--text-muted);
+}
+
+.topic-node {
+  font-family: var(--mono-font);
+  max-width: 260px;
+}
+
+/* Row status: the run-state mark of its token before a short label */
+.topic-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+  color: var(--state-idle);
+}
+
+/* The status head spans the chip slot of an unindented row */
+.topic-table th:first-child {
+  width: 46px;
+}
+
+.topic-status .state-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.topic-status.ok {
+  color: var(--state-ok);
+}
+
+.topic-status.warning {
+  color: var(--state-warning);
+}
+
+.topic-status.failed {
+  color: var(--state-failed);
+}
+
+/* Namespace rows of the tree, as the namespace rows of the member tree */
+.topic-group td {
+  padding: 3px 8px 3px calc(4px + var(--depth, 0) * 14px);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.topic-group:hover {
+  background: var(--bg-tertiary);
+}
+
+.topic-group td > * {
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.topic-group td > .topic-caret {
+  width: 12px;
+  margin-right: 4px;
+  font-size: 10px;
+  text-align: center;
+}
+
+.topic-caret {
+  display: inline-block;
+}
+
+.topic-group .topic-summary-item {
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.topic-group-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.topic-run-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+
+.topic-run-bar[hidden] {
+  display: none;
+}
+
+.topic-run-brush {
+  position: relative;
+  flex: 1;
+  min-width: 160px;
+  height: 34px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.topic-run-density {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.topic-run-density path {
+  fill: var(--text-muted);
+  opacity: 0.55;
+}
+
+.topic-run-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--highlight) 22%, transparent);
+  border-inline: 1px solid var(--highlight);
+  cursor: grab;
+}
+
+.topic-run-brush.dragging,
+.topic-run-brush.dragging .topic-run-range {
+  cursor: grabbing;
+}
+
+.topic-run-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  cursor: ew-resize;
+}
+
+.topic-run-handle:first-child {
+  left: -5px;
+}
+
+.topic-run-handle:last-child {
+  right: -5px;
+}
+
+.topic-run-handle::after {
+  content: "";
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  left: 3px;
+  width: 3px;
+  background: var(--highlight);
+  border-radius: 2px;
+}
+
+.topic-run-handle:focus-visible {
+  outline: 2px solid var(--highlight);
+}
+
+.topic-run-time {
+  font-family: var(--mono-font);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.topic-run-hover {
+  min-width: 120px;
+  font-family: var(--mono-font);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.topic-run-whole {
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  cursor: pointer;
+}

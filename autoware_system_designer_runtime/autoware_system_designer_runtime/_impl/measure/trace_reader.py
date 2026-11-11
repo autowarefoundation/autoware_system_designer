@@ -16,7 +16,8 @@
 
 Mirrors ``autoware_system_designer_tracer/trace_format.h`` field for field: a
 64-byte header, fixed 64-byte records, and a tab-separated name table joining
-record handles to node names, topics, publisher gids and timer periods.
+record handles and counter slots to node names, topics, publisher gids and timer
+periods. A process with a name table and no event file recorded no events.
 """
 
 from __future__ import annotations
@@ -103,6 +104,9 @@ class Endpoint:
     topic: str
     gid: str  # hex, publishers only
     t_init: int
+    slot: Optional[int] = None  # counter slot in <pid>.stats
+    # count, lat_sum_ns, lat_count, last_ns of the slot when the endpoint was created
+    base: tuple[int, int, int, int] = (0, 0, 0, 0)
 
 
 @dataclass(slots=True)
@@ -111,6 +115,8 @@ class TimerInfo:
     handle: int
     period_ns: int
     t_init: int
+    slot: Optional[int] = None
+    base: tuple[int, int, int, int] = (0, 0, 0, 0)
 
 
 class _HandleTable:
@@ -152,8 +158,23 @@ class ProcessTrace:
     timer_infos: _HandleTable = field(default_factory=_HandleTable)
 
     @property
-    def dropped(self) -> int:
+    def overwritten(self) -> int:
+        """Records the ring no longer holds."""
         return max(0, self.claimed - self.capacity)
+
+    @property
+    def retained_from_ns(self) -> Optional[int]:
+        """Time of the oldest record of a ring that wrapped; None while every record is held."""
+        if not self.overwritten:
+            return None
+        firsts = [self.takes[0].t] if self.takes else []
+        if self.timers:
+            firsts.append(self.timers[0].t)
+        if self.publishes:
+            firsts.append(self.publishes[0].t_in)
+        if self.clocks:
+            firsts.append(self.clocks[0].t)
+        return min(firsts, default=None)
 
     @property
     def record_count(self) -> int:
@@ -197,8 +218,12 @@ class TraceSet:
         ends = [p.last_time() for p in self.processes.values()]
         return min(starts), max(ends)
 
-    def total_dropped(self) -> int:
-        return sum(p.dropped for p in self.processes.values())
+    def total_overwritten(self) -> int:
+        return sum(p.overwritten for p in self.processes.values())
+
+    def retained_from(self) -> Optional[int]:
+        """Earliest time from which every process still holds its records; None when no ring wrapped."""
+        return max((t for p in self.processes.values() if (t := p.retained_from_ns) is not None), default=None)
 
     def clock_samples(self) -> list[ClockSample]:
         """Every ROS time override of every process, ordered by wall time."""
@@ -209,7 +234,7 @@ class TraceSet:
 
 def read_trace_file(path: Union[str, Path]) -> ProcessTrace:
     path = Path(path)
-    # The file is sized for its capacity; only the claimed slots are read.
+    # The file is sized for its capacity, a ring once claimed past it; only the claimed slots are read.
     with path.open("rb") as handle:
         head = handle.read(_HEADER.size)
         if len(head) < _HEADER.size:
@@ -245,29 +270,72 @@ def read_trace_file(path: Union[str, Path]) -> ProcessTrace:
     return proc
 
 
+def parse_name_line(line: str, pid: int) -> Union[Endpoint, TimerInfo, None]:
+    """One name-table line; None for comments and malformed lines."""
+    if not line or line.startswith("#"):
+        return None
+    fields = line.rstrip("\n").split("\t")
+    if len(fields) < 4:
+        return None
+    try:
+        t_init = int(fields[0])
+        obj = int(fields[2], 16)
+    except ValueError:
+        return None
+    kind = fields[1]
+    if kind in ("pub", "sub") and len(fields) >= 5:
+        gid = fields[5] if len(fields) > 5 else ""
+        slot = _slot(fields[6]) if len(fields) > 6 else None
+        return Endpoint(pid, kind, obj, fields[3], fields[4], gid, t_init, slot, _base(fields[7:11]))
+    if kind == "timer":
+        try:
+            period = int(fields[3])
+        except ValueError:
+            return None
+        slot = _slot(fields[4]) if len(fields) > 4 else None
+        return TimerInfo(pid, obj, period, t_init, slot, _base(fields[5:9]))
+    return None
+
+
+def _slot(text: str) -> Optional[int]:
+    try:
+        value = int(text)
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
+def _base(fields: list[str]) -> tuple[int, int, int, int]:
+    try:
+        count, lat_sum, lat_count, last_ns = (int(text) for text in fields)
+    except ValueError:
+        return (0, 0, 0, 0)
+    return (count, lat_sum, lat_count, last_ns)
+
+
 def _read_names(path: Path, proc: ProcessTrace) -> None:
     with open(path, encoding="utf-8", errors="replace") as handle:
         for line in handle:
-            if not line or line.startswith("#"):
-                continue
-            fields = line.rstrip("\n").split("\t")
-            if len(fields) < 4:
-                continue
-            try:
-                t_init = int(fields[0])
-                obj = int(fields[2], 16)
-            except ValueError:
-                continue
-            kind = fields[1]
-            if kind in ("pub", "sub") and len(fields) >= 5:
-                gid = fields[5] if len(fields) > 5 else ""
-                proc.endpoints.add(obj, Endpoint(proc.pid, kind, obj, fields[3], fields[4], gid, t_init), t_init)
-            elif kind == "timer":
-                try:
-                    period = int(fields[3])
-                except ValueError:
-                    continue
-                proc.timer_infos.add(obj, TimerInfo(proc.pid, obj, period, t_init), t_init)
+            entry = parse_name_line(line, proc.pid)
+            if isinstance(entry, Endpoint):
+                proc.endpoints.add(entry.handle, entry, entry.t_init)
+            elif isinstance(entry, TimerInfo):
+                proc.timer_infos.add(entry.handle, entry, entry.t_init)
+
+
+def _names_only(path: Path) -> Optional[ProcessTrace]:
+    """A process that never recorded an event: its name table alone, started at its first line."""
+    try:
+        pid = int(path.stem)
+    except ValueError:
+        return None
+    proc = ProcessTrace(pid=pid, capacity=0, claimed=0, start_ns=0)
+    _read_names(path, proc)
+    times = [entry.t_init for entry in proc.endpoints.values()] + [t.t_init for t in proc.timer_infos.values()]
+    if not times:
+        return None
+    proc.start_ns = min(times)
+    return proc
 
 
 @dataclass(slots=True)
@@ -276,12 +344,12 @@ class TraceProgress:
 
     processes: int = 0
     records: int = 0
-    dropped: int = 0
+    overwritten: int = 0
 
     def describe(self) -> str:
         text = f"{self.processes} traced processes, {self.records} records"
-        if self.dropped:
-            text += f" ({self.dropped} dropped)"
+        if self.overwritten:
+            text += f" ({self.overwritten} older ones overwritten)"
         return text
 
 
@@ -300,7 +368,7 @@ def trace_dir_progress(path: Union[str, Path]) -> TraceProgress:
             continue
         progress.processes += 1
         progress.records += min(count, capacity)
-        progress.dropped += max(count - capacity, 0)
+        progress.overwritten += max(count - capacity, 0)
     return progress
 
 
@@ -315,4 +383,10 @@ def read_trace_dir(path: Union[str, Path]) -> TraceSet:
         if proc.record_count == 0 and not list(proc.endpoints.values()):
             continue
         trace_set.processes[proc.pid] = proc
+    for file in sorted(Path(path).glob("*.names")):
+        if file.with_suffix(".trace").exists():
+            continue
+        proc = _names_only(file)
+        if proc is not None and proc.pid not in trace_set.processes:
+            trace_set.processes[proc.pid] = proc
     return trace_set

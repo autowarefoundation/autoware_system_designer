@@ -80,6 +80,7 @@
             ],
             "port_path": "/sensing/imu/output/imu",
             "remap_target": "~/output/imu",
+            "role": "publisher",
             "topic": [
               "sensing",
               "imu",
@@ -174,6 +175,7 @@
             ],
             "port_path": "/sensing/lidar/output/pointcloud",
             "remap_target": "~/output/pointcloud",
+            "role": "publisher",
             "topic": [
               "sensing",
               "lidar",
@@ -290,6 +292,7 @@
             ],
             "port_path": "/sensing/corrector/input/pointcloud",
             "remap_target": "~/input/pointcloud",
+            "role": "subscriber",
             "topic": [
               "sensing",
               "lidar",
@@ -331,6 +334,7 @@
             ],
             "port_path": "/sensing/corrector/input/imu",
             "remap_target": "~/input/imu",
+            "role": "subscriber",
             "topic": [
               "sensing",
               "imu",
@@ -400,6 +404,7 @@
             ],
             "port_path": "/sensing/corrector/output/pointcloud",
             "remap_target": "~/output/pointcloud",
+            "role": "publisher",
             "topic": [
               "sensing",
               "corrector",
@@ -457,6 +462,7 @@
           ],
           "port_path": "/sensing/imu/output/imu",
           "remap_target": "~/output/imu",
+          "role": "publisher",
           "topic": [
             "sensing",
             "imu",
@@ -499,6 +505,7 @@
           ],
           "port_path": "/sensing/corrector/input/imu",
           "remap_target": "~/input/imu",
+          "role": "subscriber",
           "topic": [
             "sensing",
             "imu",
@@ -545,6 +552,7 @@
           ],
           "port_path": "/sensing/lidar/output/pointcloud",
           "remap_target": "~/output/pointcloud",
+          "role": "publisher",
           "topic": [
             "sensing",
             "lidar",
@@ -587,6 +595,7 @@
           ],
           "port_path": "/sensing/corrector/input/pointcloud",
           "remap_target": "~/input/pointcloud",
+          "role": "subscriber",
           "topic": [
             "sensing",
             "lidar",

@@ -202,7 +202,7 @@ def build_latency_file(
             "probe": probe,
             "tracer": TRACER_VERSION,
             "processes": analysis.process_count,
-            "dropped_records": analysis.dropped_records,
+            "overwritten_records": analysis.overwritten_records,
             "invalid_communication_samples": analysis.comm_invalid,
         },
         "summary": {
