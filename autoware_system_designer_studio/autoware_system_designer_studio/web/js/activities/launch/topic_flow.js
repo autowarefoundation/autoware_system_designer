@@ -134,7 +134,7 @@
     const state = service
       ? ""
       : !end.seen
-        ? "not seen"
+        ? "unseen"
         : end.hz === null
           ? "new"
           : `${hz(end.hz)} Hz`;

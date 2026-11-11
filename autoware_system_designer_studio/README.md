@@ -84,7 +84,7 @@ subscribers and declared rate (the output port's `frequency`, with the system mo
 and `error_rate`), beside the publish rate, mean callback time and mean communication time the
 runtimes count. A row's status is `silent` (no message), `error` or `slow` (below the declared
 error or warn rate, else below 0.8 of the rate), `fast` (above 1.25 of it), `ok`, `once` (declared
-to publish once), `intra` (intra-process only, which rcl does not count), `new`, `not seen` or
+to publish once), `intra` (intra-process only, which rcl does not count), `new`, `unseen` or
 `offline` (every node of the topic on a unit that is not running). The list is one of three: Nodes,
 the nodes in their namespace tree, each with the worst status of its outputs (else of its inputs);
 Topics, the topic rows in the topic namespace tree; Table, the topic rows flat. Above the Nodes and

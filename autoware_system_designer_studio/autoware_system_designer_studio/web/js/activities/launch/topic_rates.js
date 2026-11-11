@@ -62,7 +62,7 @@
       "idle",
     ],
     unseen: [
-      "not seen",
+      "unseen",
       "declared, no traced endpoint although a unit of its nodes runs",
       "idle",
     ],
@@ -504,6 +504,7 @@
         key: entity.key || "",
         unit: entity.compute_unit || "",
         declared: true,
+        container: entity.launcher?.launch_state === "node_container",
         inputs: [],
         outputs: [],
       };
@@ -633,6 +634,7 @@
   const UNDECLARED_KEY = "workbench.topicUndeclared";
   const STATUSES_KEY = "workbench.topicStatuses";
   const SORT_KEY = "workbench.topicSort";
+  const VIEWER_KEY = "workbench.topicViewerHeight";
   const NODE_SORT_KEY = "workbench.topicNodeSort";
 
   // Columns: label, sort key, meaning.
@@ -663,9 +665,22 @@
     ["Unit", "unit", "compute unit"],
   ];
 
+  // Sort keys of the columns holding figures.
+  const NUMERIC = new Set([
+    "hz",
+    "declared",
+    "callback",
+    "comm",
+    "subs",
+    "ins",
+    "outs",
+  ]);
+
   function statusChip(status) {
     const [label, meaning, token] = STATUS[status];
-    const chip = SD.widgets.element("span", `topic-status ${token}`, label);
+    const { element } = SD.widgets;
+    const chip = element("span", `topic-status ${token}`);
+    chip.append(element("span", `state-dot ${token}`), label);
     chip.title = meaning;
     return chip;
   }
@@ -812,7 +827,46 @@
     const note = element("p", "main-empty");
     const viewer = element("div", "topic-viewer");
     const tableHost = element("div", "topic-table-host");
-    container.append(toolbar, runBar, summary, note, viewer, tableHost);
+    const divider = element("div", "topic-divider");
+    container.append(
+      toolbar,
+      runBar,
+      summary,
+      note,
+      viewer,
+      divider,
+      tableHost,
+    );
+
+    // Dragging the divider sets the viewer's height, kept across visits.
+    const viewerHeight = parseInt(SD.storage.get(VIEWER_KEY), 10);
+    if (viewerHeight) viewer.style.height = `${viewerHeight}px`;
+    let drag = null;
+    divider.addEventListener("pointerdown", (event) => {
+      drag = {
+        y: event.clientY,
+        height: viewer.getBoundingClientRect().height,
+      };
+      divider.setPointerCapture(event.pointerId);
+      divider.classList.add("resizing");
+      event.preventDefault();
+    });
+    divider.addEventListener("pointermove", (event) => {
+      if (!drag) return;
+      const height = drag.height + event.clientY - drag.y;
+      viewer.style.height = `${Math.max(0, height)}px`;
+    });
+    const endDrag = () => {
+      if (!drag) return;
+      drag = null;
+      divider.classList.remove("resizing");
+      SD.storage.set(
+        VIEWER_KEY,
+        String(Math.round(viewer.getBoundingClientRect().height)),
+      );
+    };
+    divider.addEventListener("pointerup", endDrag);
+    divider.addEventListener("pointercancel", endDrag);
 
     function setList(value) {
       list = value;
@@ -1058,7 +1112,7 @@
       const missing = row.designSubscribers.filter(
         (path) => !row.subscribers.some((s) => s.node === path),
       );
-      missing.forEach((path) => lines.push(`sub ${path} (not seen)`));
+      missing.forEach((path) => lines.push(`sub ${path} (unseen)`));
       return lines.join("\n");
     }
 
@@ -1082,22 +1136,35 @@
       return services ? `${topics} +${services}` : String(topics);
     }
 
+    // Cell under the status and name heads: the row's status chip, or its
+    // blank slot, before the name.
+    function nameCell(status, name) {
+      const cell = element("td", "topic-name-cell");
+      cell.colSpan = 2;
+      cell.append(
+        status ? statusChip(status) : element("span", "topic-status"),
+        name,
+      );
+      return cell;
+    }
+
     function nodeRowElement(row) {
       const tr = element("tr", "topic-row");
       tr.dataset.node = row.node;
       if (row.node === selectedNode) tr.classList.add("chosen");
-      const statusCell = element("td", "topic-status-cell");
-      if (row.status) statusCell.appendChild(statusChip(row.status));
       const name = element(
-        "td",
+        "span",
         "topic-name",
         segments(row.node).pop() || row.node,
       );
       name.title = row.node;
       if (!row.declared) name.classList.add("undeclared");
+      if (row.container) {
+        name.classList.add("container");
+        name.title = `${row.node}\nnode container`;
+      }
       tr.append(
-        statusCell,
-        name,
+        nameCell(row.status, name),
         element("td", "topic-num", faceCount(row.inputs)),
         element("td", "topic-num", faceCount(row.outputs)),
         element("td", "topic-node", row.unit),
@@ -1111,7 +1178,7 @@
       if (row.origin) tr.dataset.node = row.origin;
       if (flow) tr.classList.add(`flow-${flow}`);
       if (row.topic === selectedTopic) tr.classList.add("chosen");
-      const topicCell = element("td", "topic-name", row.topic);
+      const topicCell = element("span", "topic-name", row.topic);
       topicCell.title = row.msgType
         ? `${row.topic}\n${row.msgType}`
         : row.topic;
@@ -1143,11 +1210,8 @@
           : "",
       );
       pubCell.title = endpointsTitle(row);
-      const statusCell = element("td", "topic-status-cell");
-      statusCell.appendChild(statusChip(row.status));
       tr.append(
-        statusCell,
-        topicCell,
+        nameCell(row.status, topicCell),
         rate,
         declaredCell(row),
         element("td", "topic-num", msLabel(row.callbackMs)),
@@ -1242,6 +1306,7 @@
       columns.forEach(([label, key, title]) => {
         const th = element("th", "topic-sortable", label);
         if (title) th.title = title;
+        if (NUMERIC.has(key)) th.classList.add("topic-num");
         if (key === sort.key) {
           th.classList.add("sorted");
           th.appendChild(
@@ -1290,20 +1355,48 @@
       return tr;
     }
 
-    // Sub-groups of a tree node, indented by depth, then its own rows drawn by
-    // `rowOf(row)`; rows keep one column whatever their depth.
+    // The group "/" of the rows the root of a tree holds beside its sub-groups.
+    function rootGroup(root) {
+      const statuses = new Map();
+      root.rows.forEach((row) => {
+        if (row.status)
+          statuses.set(row.status, (statuses.get(row.status) || 0) + 1);
+      });
+      return {
+        label: "/",
+        path: "/",
+        children: [],
+        rows: root.rows,
+        count: root.rows.length,
+        statuses,
+      };
+    }
+
+    // A tree node's own rows drawn by `rowOf(row)`, then its sub-groups, each
+    // level indented by depth. Root rows beside sub-groups sit in the group "/".
     function appendTree(body, node, depth, span, rowOf) {
-      node.children.forEach((child) => {
+      const children =
+        !depth && node.rows.length && node.children.length
+          ? [rootGroup(node), ...node.children]
+          : node.children;
+      if (children === node.children)
+        node.rows.forEach((row) => {
+          const tr = rowOf(row);
+          tr.style.setProperty("--depth", depth);
+          body.appendChild(tr);
+        });
+      children.forEach((child) => {
         const key = `${list}:${child.path}`;
         const open = !collapsed.has(key);
         body.appendChild(groupElement(child, depth, open, key, span));
         if (open) appendTree(body, child, depth + 1, span, rowOf);
       });
-      node.rows.forEach((row) => body.appendChild(rowOf(row)));
     }
 
-    // Unfolds the groups over a row sitting under the namespace `parts`.
+    // Unfolds the groups over a row sitting under the namespace `parts`, the
+    // group "/" for none.
     function unfold(parts) {
+      if (!parts.length) collapsed.delete(`${list}:/`);
       let path = "";
       parts.forEach((part) => {
         path += `/${part}`;
@@ -1318,6 +1411,7 @@
     // The diagram of the selected node or topic over its list.
     function renderViewer(rows, nodes) {
       viewer.hidden = list === "table";
+      divider.hidden = viewer.hidden;
       if (viewer.hidden) return;
       let content;
       if (list === "node") {
