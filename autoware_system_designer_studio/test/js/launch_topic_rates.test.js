@@ -179,6 +179,42 @@ test("rows compare the observed rate with the declared one", () => {
   assert.equal(all.has("/rosout"), false);
 });
 
+test("a topic of several publishers compares each with its own declared rate", () => {
+  const sources = ["/a", "/b", "/c"].map((path, index) =>
+    node(path, {
+      outs: [port("/diagnostics", `${path}.out`, [`${path}.tick`])],
+      events: [{ unique_id: `${path}.tick`, type: "periodic", frequency: 10 }],
+    }),
+  );
+  const design = launch.designTopics(sources);
+  // The declared rate of the topic is the sum, as its observed rate is.
+  assert.equal(design.get("/diagnostics").declaredHz, 30);
+  const statusWith = (rates) => {
+    const observed = launch.observedTopics(
+      new Map([
+        [
+          "main_ecu",
+          snapshot(
+            Object.entries(rates).map(([path, hz]) => ({
+              node: path,
+              outputs: [{ topic: "/diagnostics", hz }],
+              inputs: [],
+            })),
+          ),
+        ],
+      ]),
+    );
+    const [row] = launch.topicRows(design, observed);
+    return [row.hz, row.status];
+  };
+  assert.deepEqual(statusWith({ "/a": 10, "/b": 10, "/c": 10 }), [30, "ok"]);
+  // One stopped publisher shows although the sum is within the tolerance of the declared sum.
+  assert.deepEqual(statusWith({ "/a": 13, "/b": 13, "/c": 0 }), [26, "silent"]);
+  assert.deepEqual(statusWith({ "/a": 10, "/b": 5, "/c": 10 }), [25, "slow"]);
+  // A publisher that is not seen says nothing about the others.
+  assert.deepEqual(statusWith({ "/a": 10 }), [10, "ok"]);
+});
+
 test("a topic without counted publishes takes its subscribers' rate; unseen and new are told apart", () => {
   const design = launch.designTopics(ENTITIES);
   const observed = launch.observedTopics(

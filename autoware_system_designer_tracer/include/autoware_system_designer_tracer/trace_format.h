@@ -16,7 +16,8 @@
 //   <pid>.stats  always: a 64-byte header followed by fixed 64-byte counter slots,
 //                one per publisher, subscription and timer;
 //   <pid>.names  always: the text table that joins record handles and stats slots
-//                to node names, topics, publisher gids and timer periods;
+//                to node names, topics, publisher gids and timer periods; a line
+//                ends with the slot's counters as its endpoint starts;
 //   <pid>.trace  while event recording is on: a 64-byte header followed by fixed
 //                64-byte event records.
 // <dir>/control is written by the runtime and read by every traced process; it
@@ -105,7 +106,8 @@ enum asd_slot_kind {
   ASD_SLOT_TIMER = 3,
 };
 
-// `claimed` counts slot claims; claims at or past `capacity` are endpoints without counters.
+// `claimed` counts claims of a fresh slot; claims at or past `capacity` are endpoints
+// without counters. The magic is written last: a header that has it is complete.
 typedef struct asd_stats_header {
   char magic[8];
   uint32_t version;
@@ -118,8 +120,11 @@ typedef struct asd_stats_header {
   uint64_t reserved[3];
 } asd_stats_header_t;
 
-// Cumulative since the endpoint was created; a reader takes rates and means from
-// the difference of two reads. `kind` is stored last with release semantics.
+// Cumulative over the endpoints the slot served: a finalized endpoint's slot goes
+// to the next one with its counters as they stand, and the name-table line of
+// each endpoint carries the counters it started from. A reader takes rates and
+// means from the difference of two reads. `kind` is stored last with release
+// semantics.
 // Latency: take, wall time of the take minus the source timestamp (communication);
 // publish, entry of the publish minus the thread's latest take or timer fire
 // (callback time up to the publish); timer, none.

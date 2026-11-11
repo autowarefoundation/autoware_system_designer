@@ -22,7 +22,7 @@ from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
 from autoware_system_designer_runtime._impl.measure.stats_reader import SLOT_PUB, SLOT_SUB, SLOT_TIMER
 from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir
 from autoware_system_designer_runtime._impl.measure.tracer import TraceControl
-from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord
+from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord, RatesWriter, Sample
 
 from .measure_fixtures import node, out_port, system
 
@@ -57,6 +57,14 @@ class _Proc:
         with open(self.names, "a") as f:
             f.write(f"1\ttimer\t{handle:x}\t{period_ns}\t{slot}\n")
         return slot
+
+    def reuse(self, slot: int, kind: str, handle: int, fqn: str, topic: str) -> None:
+        """Hands the slot of a finalized endpoint to a new one, counters kept, the way the tracer does."""
+        _kind, _handle, count, last_ns, lat_sum, lat_count, _next = self.slots[slot]
+        self.slots[slot] = (SLOT_PUB if kind == "pub" else SLOT_SUB, handle, count, last_ns, lat_sum, lat_count, 0)
+        self._flush()
+        with open(self.names, "a") as f:
+            f.write(f"2\t{kind}\t{handle:x}\t{fqn}\t{topic}\t\t{slot}\t{count}\t{lat_sum}\t{lat_count}\t{last_ns}\n")
 
     def set(self, slot: int, *, count: int, last_ns: int = 0, lat_sum: int = 0, lat_count: int = 0, next_slot=None):
         kind, handle = self.slots[slot][:2]
@@ -132,6 +140,67 @@ def test_new_slots_count_from_zero_and_silent_endpoints_say_since_when(tmp_path)
     # A timer that never led to a publish belongs to its process.
     assert _node(snapshot, "(process 100)")["timers"] == [{"period_ms": 50.0, "hz": 0.0}]
     assert timer == 2
+
+
+def test_a_timer_moves_to_its_node_with_the_fires_since_and_keeps_a_row_of_its_own(tmp_path):
+    proc = _Proc(tmp_path, 100)
+    late = proc.timer(0x10, 100_000_000)
+    idle = proc.timer(0x11, 100_000_000)
+    pub = proc.endpoint("pub", 0x20, "/ns/talker", "/chatter")
+    monitor = _monitor(tmp_path)
+    proc.set(late, count=6000)
+    proc.set(idle, count=10)
+    first = monitor.read()
+    assert first.totals[("(process 100)", "timer", (100_000_000, 0))][0] == 6000
+    assert first.totals[("(process 100)", "timer", (100_000_000, 1))][0] == 10
+
+    # The first publish of the timer: the node's key starts at the fires since the last reading.
+    proc.set(late, count=6020, next_slot=pub)
+    proc.set(idle, count=30)
+    second = monitor.read()
+    second.t_ns = first.t_ns + 2 * S
+    assert ("(process 100)", "timer", (100_000_000, 0)) not in second.totals
+    assert second.totals[("/ns/talker", "timer", (100_000_000, 0))][0] == 20
+    snapshot = monitor.rates(first, second)
+    assert _node(snapshot, "/ns/talker")["timers"] == [{"period_ms": 100.0, "hz": 10.0}]
+    assert _node(snapshot, "(process 100)")["timers"] == [{"period_ms": 100.0, "hz": 10.0}]
+
+    # A later publish of another node on the thread does not move the timer.
+    other = proc.endpoint("pub", 0x21, "/ns/other", "/x")
+    proc.set(late, count=6040, next_slot=other)
+    third = monitor.read()
+    assert third.totals[("/ns/talker", "timer", (100_000_000, 0))][0] == 40
+    assert not any(key[0] == "/ns/other" and key[1] == "timer" for key in third.totals)
+
+
+def test_a_reused_slot_keeps_the_counts_of_the_endpoint_that_ended(tmp_path):
+    proc = _Proc(tmp_path, 100)
+    slot = proc.endpoint("sub", 0x20, "/a", "/x")
+    proc.set(slot, count=5, last_ns=3 * S, lat_sum=50, lat_count=5)
+    monitor = _monitor(tmp_path)
+    before = monitor.read()
+    # Two more takes, then the subscription ends; two endpoints follow it in the slot between readings.
+    proc.set(slot, count=7, last_ns=4 * S, lat_sum=70, lat_count=7)
+    proc.reuse(slot, "sub", 0x21, "/a", "/x")
+    proc.set(slot, count=8, last_ns=5 * S, lat_sum=80, lat_count=8)
+    proc.reuse(slot, "pub", 0x22, "/b", "/y")
+    proc.set(slot, count=11, last_ns=6 * S, lat_sum=80, lat_count=8)
+    after = monitor.read()
+    assert after.totals[("/a", "in", "/x")] == (8, 80, 8, 5 * S)
+    assert after.totals[("/b", "out", "/y")] == (3, 0, 0, 6 * S)
+    after.t_ns = before.t_ns + S
+    assert _node(monitor.rates(before, after), "/a")["inputs"] == [{"topic": "/x", "hz": 3.0, "comm_ms": 0.0}]
+
+
+def test_counters_with_an_unfinished_header_are_read_once_it_is_complete(tmp_path):
+    proc = _Proc(tmp_path, 100)
+    proc.set(proc.endpoint("pub", 0x20, "/a", "/x"), count=4)
+    complete = proc.stats.read_bytes()
+    proc.stats.write_bytes(_HEADER.pack(b"ASDSTATS", 1, 64, 100, 0, 0, 0, 0, b"") + complete[64:])
+    monitor = _monitor(tmp_path)
+    assert monitor.read().totals == {}
+    proc.stats.write_bytes(complete)
+    assert monitor.read().totals[("/a", "out", "/x")][0] == 4
 
 
 def test_nodes_are_keyed_by_design_path_and_ended_processes_keep_their_counts(tmp_path):
@@ -212,6 +281,23 @@ def test_the_run_record_holds_changed_counters_and_reads_back_any_span(tmp_path)
     assert _node(whole, "/a")["outputs"] == [{"topic": "/q", "hz": 0.0, "silent_s": 40.0}, {"topic": "/x", "hz": 15.0}]
     span = record.rates(until_ns=30 * S, span_s=10)
     assert span["from_ns"] == 20 * S and _node(span, "/a")["outputs"][1] == {"topic": "/x", "hz": 30.0}
+    assert span["sample"] == 3 and record.rates(sample=3, span_s=10) == span
+    assert record.rates(sample=99)["sample"] == 4
+
+
+def test_the_run_record_drops_a_key_the_samples_no_longer_hold(tmp_path):
+    writer = RatesWriter(tmp_path / RATES_FILE, interval_s=10)
+    waiting = ("(process 1)", "timer", (100_000_000, 0))
+    owned = ("/a", "timer", (100_000_000, 0))
+    writer.write(Sample(0, {waiting: (5, 0, 0, 1)}))
+    writer.write(Sample(10 * S, {owned: (100, 0, 0, 2)}))
+    writer.write(Sample(20 * S, {owned: (200, 0, 0, 3)}))
+    writer.close()
+    record = RatesRecord.load(tmp_path / RATES_FILE)
+    first, last = record.samples(0, 2)
+    assert list(first.totals) == [waiting] and list(last.totals) == [owned]
+    assert [n["node"] for n in record.rates()["nodes"]] == ["/a"]
+    assert _node(record.rates(span_s=10), "/a")["timers"] == [{"period_ms": 100.0, "hz": 10.0}]
 
 
 def test_a_process_without_events_is_still_read_from_its_name_table(tmp_path):

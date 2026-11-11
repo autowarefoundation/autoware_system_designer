@@ -178,7 +178,8 @@
   // Topic -> { topic, msgType, publishers: [{path, declaredHz, warnHz, errorHz, once, intra}],
   // subscribers: [path], units, declaredHz, warnHz, errorHz, once } from the node entities of the
   // mode; `path` is the runtime member path, `units` the compute units of its nodes. The topic's
-  // rates are its fastest publisher's.
+  // rates are the sums over its publishers that declare one, as its observed rate is the sum of
+  // their publishes; a warn or error rate that one of them lacks is none.
   function designTopics(entities) {
     const topics = new Map();
     const entry = (topic, msgType) => {
@@ -209,15 +210,6 @@
         if (entity.compute_unit) record.units.add(entity.compute_unit);
         const rates = declaredRates(entity, port);
         record.publishers.push({ path, ...rates, intra });
-        if (
-          rates.declaredHz !== null &&
-          rates.declaredHz > (record.declaredHz || 0)
-        )
-          Object.assign(record, {
-            declaredHz: rates.declaredHz,
-            warnHz: rates.warnHz,
-            errorHz: rates.errorHz,
-          });
         if (rates.once) record.once = true;
       });
       (entity.in_ports || []).forEach((port) => {
@@ -228,6 +220,15 @@
         if (entity.compute_unit) record.units.add(entity.compute_unit);
         record.subscribers.push(path);
       });
+    });
+    topics.forEach((record) => {
+      const rated = record.publishers.filter((p) => p.declaredHz !== null);
+      if (!rated.length) return;
+      const total = (field) =>
+        rated.every((p) => p[field]) ? sum(rated.map((p) => p[field])) : null;
+      record.declaredHz = sum(rated.map((p) => p.declaredHz));
+      record.warnHz = total("warnHz");
+      record.errorHz = total("errorHz");
     });
     return topics;
   }
@@ -291,13 +292,35 @@
         design?.publishers.length && design.publishers.every((p) => p.intra);
       return intra ? "intra" : "silent";
     }
-    if (row.declaredHz) {
-      if (row.errorHz && row.hz < row.errorHz) return "error";
-      if (row.warnHz && row.hz < row.warnHz) return "slow";
-      if (!row.warnHz && row.hz < row.declaredHz * LOW) return "slow";
-      if (row.hz > row.declaredHz * HIGH) return "fast";
-    }
+    const rated = (design?.publishers || []).filter((p) => p.declaredHz);
+    if (rated.length > 1) return publishersStatus(rated, row.publishers);
+    return row.declaredHz ? rateStatus(row.hz, row) : "ok";
+  }
+
+  // A rate against the declared one and its warn and error rates.
+  function rateStatus(hz, { declaredHz, warnHz, errorHz }) {
+    if (errorHz && hz < errorHz) return "error";
+    if (warnHz && hz < warnHz) return "slow";
+    if (!warnHz && hz < declaredHz * LOW) return "slow";
+    if (hz > declaredHz * HIGH) return "fast";
     return "ok";
+  }
+
+  // Status of a topic with several rated publishers: each one's own publish rate against its own
+  // declaration, the first in STATUS_ORDER of them; a publisher not seen says nothing.
+  function publishersStatus(rated, seen) {
+    const found = rated.map((declared) => {
+      const own = seen.filter(
+        (p) => p.node === declared.path && p.hz !== null && p.hz !== undefined,
+      );
+      if (!own.length) return "ok";
+      const hz = sum(own.map((p) => p.hz));
+      if (hz === 0) return declared.intra ? "intra" : "silent";
+      return rateStatus(hz, declared);
+    });
+    return STATUS_ORDER[
+      Math.min(...found.map((status) => STATUS_ORDER.indexOf(status)))
+    ];
   }
 
   // Table rows: one per declared topic, plus the observed undeclared ones when `undeclared`;
@@ -729,11 +752,14 @@
     // Unit -> { job, data }: the latest snapshot of the unit's launch of the shown mode.
     const snapshots = new Map();
     // The past run shown instead of the live sessions, or null:
-    // { name, until, span, result, error }.
+    // { name, sample, span, result, error }; `sample` is the number of the end sample, null for the last.
     let run = null;
     let runSeq = 0;
     // Units whose monitor this view follows.
     const followed = new Set();
+    // Unit -> its latest follow or unfollow request; the next one leaves once it is answered, so
+    // the daemon sees them in the order they were made.
+    const requests = new Map();
     let shown = false;
     let timer = null;
 
@@ -818,7 +844,7 @@
       runTime.textContent = clock(run.result.times[Number(slider.value)]);
       clearTimeout(slideTimer);
       slideTimer = setTimeout(() => {
-        run.until = run.result.times[Number(slider.value)];
+        run.sample = Number(slider.value);
         loadRun();
       }, 150);
     });
@@ -886,7 +912,7 @@
       runSelect.value = name;
       runSeq += 1;
       run = name
-        ? { name, until: null, span: null, result: null, error: "" }
+        ? { name, sample: null, span: null, result: null, error: "" }
         : null;
       runBar.hidden = !run;
       spanSelect.value = "";
@@ -898,7 +924,7 @@
     function loadRun() {
       const seq = runSeq;
       const params = { run: run.name };
-      if (run.until !== null) params.until_ns = run.until;
+      if (run.sample !== null) params.sample = run.sample;
       if (run.span !== null) params.span_s = run.span;
       daemon
         .rpc("launch.run_rates", params)
@@ -907,7 +933,7 @@
           run.result = result;
           run.error = "";
           slider.max = String(Math.max(result.times.length - 1, 0));
-          slider.value = String(result.times.indexOf(result.time_ns));
+          slider.value = String(result.sample);
           runTime.textContent = clock(result.time_ns);
           render();
         })
@@ -1011,6 +1037,17 @@
       render();
     }
 
+    function monitorRpc(unit, method) {
+      const request = (requests.get(unit) || Promise.resolve()).then(() =>
+        daemon.rpc(method, { compute_unit: unit, client: daemon.clientId }),
+      );
+      requests.set(
+        unit,
+        request.catch(() => {}),
+      );
+      return request;
+    }
+
     // Follows the monitor of every connected session of the mode that offers one while the live
     // sessions are shown; drops the rest.
     function syncFollows() {
@@ -1027,8 +1064,7 @@
       wanted.forEach((unit) => {
         if (followed.has(unit)) return;
         followed.add(unit);
-        daemon
-          .rpc("monitor.follow", { compute_unit: unit })
+        monitorRpc(unit, "monitor.follow")
           .then(() =>
             daemon.rpc("monitor.sample", { compute_unit: unit, interval: 1.0 }),
           )
@@ -1041,7 +1077,7 @@
       followed.forEach((unit) => {
         if (wanted.has(unit)) return;
         followed.delete(unit);
-        daemon.rpc("monitor.unfollow", { compute_unit: unit }).catch(() => {});
+        monitorRpc(unit, "monitor.unfollow").catch(() => {});
       });
       schedule();
     }
@@ -1584,6 +1620,12 @@
       syncFollows();
       loadRuns();
     });
+    // The daemon drops every follow with the last event stream; a reconnected page follows anew.
+    SD.on("daemon.connection", ({ connected }) => {
+      if (!connected) return;
+      followed.clear();
+      syncFollows();
+    });
     // An entity selected elsewhere drops the selected topic and moves the selected node.
     store.onChange("entity", (key) => {
       if (selectedTopic !== null && key !== topicEntity) {
@@ -1609,7 +1651,7 @@
       if (run) setRun("");
       entitiesMode = null;
       followed.forEach((unit) =>
-        daemon.rpc("monitor.unfollow", { compute_unit: unit }).catch(() => {}),
+        monitorRpc(unit, "monitor.unfollow").catch(() => {}),
       );
       followed.clear();
       if (shown) {

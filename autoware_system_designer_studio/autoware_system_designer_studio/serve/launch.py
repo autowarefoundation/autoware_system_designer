@@ -34,8 +34,9 @@ last stream closes. Once the channel is gone, a follow answers the tails read fr
 directory, with no lines to come.
 
 Topic rates flow only while followed: ``monitor.follow`` asks the runtime for a ``monitor`` event per
-interval, forwarded as the ``monitor`` topic, and ``monitor.unfollow`` releases it. Follows of a unit
-are counted over the callers and released together once the last event stream closes.
+interval, forwarded as the ``monitor`` topic, and ``monitor.unfollow`` releases it. A unit is followed
+while any caller, told apart by its ``client`` name, follows it; all are released together once the
+last event stream closes.
 
 RViz is a job of its own (``rviz2``, one per daemon) in the same launch environment.
 """
@@ -87,6 +88,8 @@ SESSION_EXITED = "exited"
 
 CONNECT_POLL_S = 0.2
 REQUEST_TIMEOUT_S = 30.0
+# Longest ``monitor.sample`` interval: its answer comes after the interval, within the request timeout.
+MONITOR_SAMPLE_MAX_S = 20.0
 # Longest line read from a runtime; a ``monitor`` snapshot of a large unit is hundreds of KB.
 MAX_LINE = 8 << 20
 # Tail of a member file read from the log directory: at most this many lines from its last bytes.
@@ -245,8 +248,8 @@ class LaunchSession:
         self.client: Optional[ControlClient] = None
         self.members: dict[str, dict[str, Any]] = {}
         self.follows: set[str] = set()
-        # Callers following the unit's topic rates; the runtime is asked once while any does.
-        self.monitors = 0
+        # Callers following the unit's topic rates; the runtime sends them while any does.
+        self.monitors: set[str] = set()
         self.control: dict[str, Any] = {
             "pid": None,
             "policy": None,
@@ -329,6 +332,8 @@ class LaunchManager:
         # (compute unit, system id, mode) -> the last session of that mode on the unit.
         self.sessions: dict[tuple[str, str, str], LaunchSession] = {}
         self._tasks: set[asyncio.Task] = set()
+        # The rates record read last, with the path, change time and size of its file.
+        self._rates_record: Optional[tuple[tuple[Path, int, int], RatesRecord]] = None
 
     def info(self) -> dict[str, Any]:
         rviz = shutil.which(RVIZ, path=self.env.get("PATH"))
@@ -515,19 +520,24 @@ class LaunchManager:
             session.follows.discard(path)
         return result
 
-    async def monitor_follow(self, compute_unit: str) -> dict[str, Any]:
-        """Counts one more follower of the unit's topic rates; the first one asks the runtime."""
+    async def monitor_follow(self, compute_unit: str, client: str = "") -> dict[str, Any]:
+        """Makes ``client`` a follower of the unit's topic rates; following twice is following once."""
         session = self.active_session(compute_unit)
         if session.client is None:
             raise api.ApiError(api.UNAVAILABLE, f"the control channel of {compute_unit!r} is not connected yet")
-        result = await session.client.call("monitor.follow", {})
-        session.monitors += 1
-        return result
+        known = client in session.monitors
+        session.monitors.add(client)
+        try:
+            return await session.client.call("monitor.follow", {})
+        except Exception:
+            if not known:
+                session.monitors.discard(client)
+            raise
 
-    async def monitor_unfollow(self, compute_unit: str) -> dict[str, Any]:
-        """Counts one follower less; the last one releases the runtime's rates."""
+    async def monitor_unfollow(self, compute_unit: str, client: str = "") -> dict[str, Any]:
+        """Ends the follow of ``client``; the last follower releases the runtime's rates."""
         session = self.active_session(compute_unit)
-        session.monitors = max(session.monitors - 1, 0)
+        session.monitors.discard(client)
         if session.monitors or session.client is None:
             return {"released": False}
         return await session.client.call("monitor.unfollow", {})
@@ -585,19 +595,31 @@ class LaunchManager:
         ]
         return {**_run_summary(run_dir, manifest), "members": members}
 
-    def run_rates(self, name: str, *, until_ns: Optional[int] = None, span_s: Optional[float] = None) -> dict[str, Any]:
-        """Topic rates of a past run from its rates record: over ``span_s`` seconds up to the last sample at
-        or before ``until_ns``, the whole run by default; ``times`` lists the record's samples."""
+    async def run_rates(
+        self, name: str, *, sample: Optional[int] = None, span_s: Optional[float] = None
+    ) -> dict[str, Any]:
+        """Topic rates of a past run from its rates record: over ``span_s`` seconds up to sample number
+        ``sample``, the whole run by default; ``times`` lists the record's samples and ``sample`` is the
+        number of the end one. The record is read on a worker thread."""
         run_dir, manifest = self.run(name)
         path = run_dir / RATES_FILE
         if not path.is_file():
             raise api.ApiError(api.NOT_FOUND, f"run {name!r} recorded no topic rates")
         try:
-            record = RatesRecord.load(path)
-            rates = record.rates(until_ns=until_ns, span_s=span_s)
+            rates = await asyncio.get_running_loop().run_in_executor(None, self._read_rates, path, sample, span_s)
         except (OSError, ValueError) as exc:
             raise api.ApiError(api.NOT_FOUND, f"rates of run {name!r} are not readable: {exc}") from exc
-        return {**_run_summary(run_dir, manifest), "times": record.times, **rates}
+        return {**_run_summary(run_dir, manifest), **rates}
+
+    def _read_rates(self, path: Path, sample: Optional[int], span_s: Optional[float]) -> dict[str, Any]:
+        """Rates of the record at ``path``, which stays loaded while its file is unchanged."""
+        stat = path.stat()
+        version = (path, stat.st_mtime_ns, stat.st_size)
+        held = self._rates_record
+        if held is None or held[0] != version:
+            held = self._rates_record = (version, RatesRecord.load(path))
+        record = held[1]
+        return {"times": record.times, **record.rates(sample=sample, span_s=span_s)}
 
     def run_tail(self, name: str, member: str) -> dict[str, Any]:
         """Tails of a member's ``out`` and ``err`` files in a past run; ``member`` is its directory name."""
@@ -622,7 +644,7 @@ class LaunchManager:
                 session.follows.clear()
                 self._request(session, "log.unfollow")
             if session.monitors:
-                session.monitors = 0
+                session.monitors.clear()
                 self._request(session, "monitor.unfollow")
 
     def _request(self, session: LaunchSession, method: str) -> None:
@@ -698,7 +720,7 @@ class LaunchManager:
             listed = [r for r in records if isinstance(r, dict) and isinstance(r.get("path"), str)]
             session.members = {r["path"]: session.count(r) for r in listed}
             session.follows.clear()
-            # A reconnected channel is a new runtime client: the counted followers keep their rates.
+            # A reconnected channel is a new runtime client: the followers keep their rates.
             if session.monitors and session.control["monitor"]:
                 self._request(session, "monitor.follow")
             self._publish(session)

@@ -426,12 +426,15 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     status, body = launching.rpc({"method": "measure.status", "params": {"compute_unit": "main_ecu"}})
     assert status == 200 and body["result"] == {"state": "idle", "message": "measure idle"}
 
-    # Topic rates: sampled once, or followed by counted callers and forwarded as the monitor topic.
+    # Topic rates: sampled once, or followed by named callers and forwarded as the monitor topic.
     assert session["control"]["monitor"] is True
     status, body = launching.rpc({"method": "monitor.sample", "params": {"compute_unit": "main_ecu"}})
     assert status == 200 and body["result"]["nodes"][0]["node"] == "/demo/talker"
-    for _ in range(2):
-        status, body = launching.rpc({"method": "monitor.follow", "params": {"compute_unit": "main_ecu"}})
+    status, body = launching.rpc({"method": "monitor.sample", "params": {"compute_unit": "main_ecu", "interval": 60}})
+    assert status == 400 and body["error"]["code"] == api.INVALID_PARAMS
+    for client in ("a", "a", "b"):  # following twice is following once
+        params = {"compute_unit": "main_ecu", "client": client}
+        status, body = launching.rpc({"method": "monitor.follow", "params": params})
         assert status == 200 and body["result"] == {"interval_s": 2.0}
     deadline = time.time() + 5
     while time.time() < deadline and not launching.events.of(launch.TOPIC_MONITOR):
@@ -440,14 +443,14 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     assert monitor_event["compute_unit"] == "main_ecu" and monitor_event["mode"] == "Runtime"
     assert monitor_event["nodes"][0]["outputs"][0]["hz"] == 1.0
     unfollowed = Path(session["log_dir"]) / "unfollowed"
-    status, body = launching.rpc({"method": "monitor.unfollow", "params": {"compute_unit": "main_ecu"}})
+    status, body = launching.rpc({"method": "monitor.unfollow", "params": {"compute_unit": "main_ecu", "client": "a"}})
     assert body["result"] == {"released": False}  # one follower is left
-    assert launching.daemon.launch.session("main_ecu").monitors == 1
+    assert launching.daemon.launch.session("main_ecu").monitors == {"b"}
     launching.loop.call_soon_threadsafe(launching.daemon.launch.release_follows)
     deadline = time.time() + 5
     while time.time() < deadline and not unfollowed.exists():
         time.sleep(0.02)
-    assert launching.daemon.launch.session("main_ecu").monitors == 0 and unfollowed.read_text() == "x"
+    assert launching.daemon.launch.session("main_ecu").monitors == set() and unfollowed.read_text() == "x"
 
     status, body = launching.rpc({"method": "launch.shutdown", "params": {"compute_unit": "main_ecu"}})
     assert status == 200 and body["result"] == {"shutting_down": True}
@@ -749,12 +752,22 @@ def test_a_past_run_reads_back_its_topic_rates(archived, tmp_path):
     assert status == 200, body
     result = body["result"]
     assert result["times"] == [0, 10_000_000_000, 20_000_000_000] and result["interval_s"] == 20.0
+    assert result["sample"] == 2
     assert result["mode"] == "Runtime" and result["compute_unit"] == "main_ecu"
     assert result["nodes"][0]["outputs"] == [{"topic": "/chatter", "hz": 2.5}]
     status, body = archived.rpc(
-        {"method": "launch.run_rates", "params": {"run": "20260101_000000", "until_ns": 20_000_000_000, "span_s": 10}}
+        {"method": "launch.run_rates", "params": {"run": "20260101_000000", "sample": 1, "span_s": 10}}
     )
-    assert body["result"]["nodes"][0]["outputs"] == [{"topic": "/chatter", "hz": 4.0}]
+    assert body["result"]["sample"] == 1 and body["result"]["nodes"][0]["outputs"] == [{"topic": "/chatter", "hz": 1.0}]
+    # The record is read again once its file changed.
+    writer = RatesWriter(run / RATES_FILE, interval_s=10)
+    for second, count in ((0, 0), (10, 30)):
+        writer.write(Sample(second * 1_000_000_000, {key: (count, 0, 0, second)}, processes=1))
+    writer.close()
+    status, body = archived.rpc({"method": "launch.run_rates", "params": {"run": "20260101_000000"}})
+    assert body["result"]["nodes"][0]["outputs"] == [{"topic": "/chatter", "hz": 3.0}]
+    status, body = archived.rpc({"method": "launch.run_rates", "params": {"run": "20260101_000000", "sample": -1}})
+    assert status == 400 and body["error"]["code"] == api.INVALID_PARAMS
     status, body = archived.rpc({"method": "launch.run_rates", "params": {"run": "20260102_000000"}})
     assert status == 404 and body["error"]["code"] == api.NOT_FOUND
     status, body = archived.rpc({"method": "launch.run_rates", "params": {"run": "20260101_000000", "span_s": 0}})

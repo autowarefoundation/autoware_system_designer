@@ -17,9 +17,11 @@
 // function. Two tiers sit behind them:
 //   counters  always on: atomic adds on the endpoint's slot of <pid>.stats;
 //   events    while the control file says so: one fixed record in <pid>.trace.
-// Init hooks register the endpoint's slot and append a name-table line. No hook
-// inspects a message or takes a lock on the per-message path. The tracer is
-// armed by ASD_TRACE_DIR; without it every hook is a plain forward.
+// Init hooks register the endpoint's slot and append a name-table line; fini
+// hooks release the slot. No hook inspects a message or takes a lock on the
+// per-message path. The tracer is armed by ASD_TRACE_DIR; without it every hook
+// is a plain forward. The files open on the first hook, so a process that never
+// reaches rcl leaves none.
 //
 // Entry points per ROS distribution (add a row and a hook for a new one):
 //   publish   rcl_publish, rcl_publish_serialized_message, rcl_publish_loaned_message
@@ -28,6 +30,7 @@
 //             reached from rcl_timer_call)
 //   init      rcl_publisher_init, rcl_subscription_init, rcl_timer_init (Humble);
 //             rcl_timer_init2 (Jazzy+, also reached from rcl_timer_init)
+//   fini      rcl_publisher_fini, rcl_subscription_fini, rcl_timer_fini
 //   clock     rcl_set_ros_time_override
 
 #include <dlfcn.h>
@@ -193,7 +196,6 @@ static inline bool recording(void)
 __attribute__((constructor)) static void tracer_init(void)
 {
   pthread_atfork(on_fork_prepare, on_fork_parent, on_fork_child);
-  (void)tracing();
 }
 
 // Exit only turns the hooks off: a spinner thread may still be inside one, and
@@ -351,7 +353,23 @@ static void gid_hex(const rmw_gid_t * gid, char out[ASD_TRACE_GID_SIZE * 2 + 1])
   out[ASD_TRACE_GID_SIZE * 2] = '\0';
 }
 
-// Name-table line: time, kind, handle, node, topic, publisher gid, stats slot (-1: none).
+// Counters of `slot` as its endpoint starts: count, latency sum, latency count, latest time.
+static void slot_base(int64_t slot, char out[96])
+{
+  if (slot < 0) {
+    strcpy(out, "0\t0\t0\t0");
+    return;
+  }
+  const asd_stats_slot_t * s = &g.stats.slots[slot];
+  snprintf(
+    out, 96, "%llu\t%llu\t%llu\t%llu", (unsigned long long)__atomic_load_n(&s->count, __ATOMIC_RELAXED),
+    (unsigned long long)__atomic_load_n(&s->lat_sum_ns, __ATOMIC_RELAXED),
+    (unsigned long long)__atomic_load_n(&s->lat_count, __ATOMIC_RELAXED),
+    (unsigned long long)__atomic_load_n(&s->last_ns, __ATOMIC_RELAXED));
+}
+
+// Name-table line: time, kind, handle, node, topic, publisher gid, stats slot (-1: none),
+// the slot's counters.
 static void register_endpoint(
   const char * kind, uint8_t slot_kind, const void * handle, const rcl_node_t * node, const char * topic,
   const rmw_gid_t * gid)
@@ -362,23 +380,40 @@ static void register_endpoint(
   if (gid != NULL) {
     gid_hex(gid, gid_text);
   }
+  char base[96];
+  slot_base(slot, base);
   char line[4096];
   snprintf(
-    line, sizeof(line), "%llu\t%s\t%llx\t%s\t%s\t%s\t%lld", (unsigned long long)asd_now_realtime_ns(), kind,
+    line, sizeof(line), "%llu\t%s\t%llx\t%s\t%s\t%s\t%lld\t%s", (unsigned long long)asd_now_realtime_ns(), kind,
     (unsigned long long)(uintptr_t)handle, fqn != NULL ? fqn : "?", topic != NULL ? topic : "?", gid_text,
-    (long long)slot);
+    (long long)slot, base);
   asd_names_line(&g.names, line);
 }
 
-// Name-table line: time, "timer", handle, period, stats slot (-1: none).
+// Name-table line: time, "timer", handle, period, stats slot (-1: none), the slot's counters.
 static void register_timer(const void * handle, int64_t period)
 {
   int64_t slot = asd_stats_register(&g.stats, ASD_SLOT_TIMER, handle);
+  char base[96];
+  slot_base(slot, base);
   char line[256];
   snprintf(
-    line, sizeof(line), "%llu\ttimer\t%llx\t%lld\t%lld", (unsigned long long)asd_now_realtime_ns(),
-    (unsigned long long)(uintptr_t)handle, (long long)period, (long long)slot);
+    line, sizeof(line), "%llu\ttimer\t%llx\t%lld\t%lld\t%s", (unsigned long long)asd_now_realtime_ns(),
+    (unsigned long long)(uintptr_t)handle, (long long)period, (long long)slot, base);
   asd_names_line(&g.names, line);
+}
+
+// Frees the slot of a finalized endpoint for the next one. Opens nothing: a
+// process whose first hook is a fini has no endpoint to release.
+static void release_endpoint(const void * handle)
+{
+  if (__atomic_load_n(&g.state, __ATOMIC_ACQUIRE) != TRACER_ON) {
+    return;
+  }
+  const asd_stats_slot_t * released = asd_stats_unregister(&g.stats, handle);
+  if (released != NULL && released == tls_trigger_slot) {
+    tls_trigger_slot = NULL;
+  }
 }
 
 // ---- real-function lookup ---------------------------------------------------------
@@ -637,4 +672,31 @@ rcl_ret_t rcl_subscription_init(
       "sub", ASD_SLOT_SUB, subscription, node, rcl_subscription_get_topic_name(subscription), NULL);
   }
   return ret;
+}
+
+// ---- endpoint fini hooks ---------------------------------------------------------------
+
+typedef rcl_ret_t (*publisher_fini_fn)(rcl_publisher_t *, rcl_node_t *);
+typedef rcl_ret_t (*subscription_fini_fn)(rcl_subscription_t *, rcl_node_t *);
+typedef rcl_ret_t (*timer_fini_fn)(rcl_timer_t *);
+
+rcl_ret_t rcl_publisher_fini(rcl_publisher_t * publisher, rcl_node_t * node)
+{
+  FORWARD(publisher_fini_fn, "rcl_publisher_fini");
+  release_endpoint(publisher);
+  return real(publisher, node);
+}
+
+rcl_ret_t rcl_subscription_fini(rcl_subscription_t * subscription, rcl_node_t * node)
+{
+  FORWARD(subscription_fini_fn, "rcl_subscription_fini");
+  release_endpoint(subscription);
+  return real(subscription, node);
+}
+
+rcl_ret_t rcl_timer_fini(rcl_timer_t * timer)
+{
+  FORWARD(timer_fini_fn, "rcl_timer_fini");
+  release_endpoint(timer);
+  return real(timer);
 }

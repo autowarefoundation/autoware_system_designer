@@ -301,9 +301,9 @@ The two systems share the design pattern but not code. When play_launch's parser
 
 ## Live rates
 
-Every launch preloads a small C recorder (`autoware_system_designer_tracer`, an `LD_PRELOAD` interposer over the `rcl` C API) into every spawned process. It keeps one counter slot per publisher, subscription and timer in a shared-memory file (`<log-dir>/trace/<pid>.stats`), bumped with atomic adds on each publish, take and timer fire; nothing subscribes to a topic and no message is copied. The measured cost is tens of nanoseconds per publish or take. `--no-tracer` launches without it (and without measurement).
+Every launch preloads a small C recorder (`autoware_system_designer_tracer`, an `LD_PRELOAD` interposer over the `rcl` C API) into every spawned process. It keeps one counter slot per publisher, subscription and timer in a shared-memory file (`<log-dir>/trace/<pid>.stats`), bumped with atomic adds on each publish, take and timer fire; nothing subscribes to a topic and no message is copied. A process that never calls rcl leaves no file, and the slot of a finalized endpoint serves the next one created, so a node that keeps creating and destroying endpoints stays counted. The measured cost is tens of nanoseconds per publish or take. `--no-tracer` launches without it (and without measurement).
 
-The runtime turns two reads of the counters into per-node rates: input topics with take rate and mean communication time (take time minus the DDS source timestamp), output topics with publish rate and mean callback time (publish minus the thread's latest take or timer fire), and timers with fire rate, listed under the node of the latest publish they led to. A topic whose rate is zero carries `silent_s`, the time since its last message. Nodes are keyed by design path, else by their fully qualified name. Rates are in wall time.
+The runtime turns two reads of the counters into per-node rates: input topics with take rate and mean communication time (take time minus the DDS source timestamp), output topics with publish rate and mean callback time (publish minus the thread's latest take or timer fire), and timers with fire rate. A timer has a row of its own; it is listed under its process until a fire of it leads to a publish, from then on under the node of that publish with the fires since. A topic whose rate is zero carries `silent_s`, the time since its last message. Nodes are keyed by design path, else by their fully qualified name. Rates are in wall time.
 
 ```text
 [console] rates /sensing                    # --interactive; over one second
@@ -313,9 +313,9 @@ rates over 1 s, 12 traced processes
   timer 100 ms                                                     10.00 Hz
 ```
 
-Over the control channel: `monitor.sample` once, `monitor.follow` for a `monitor` event every 2 s.
+Over the control channel: `monitor.sample` once, `monitor.follow` for a `monitor` event every 2 s. A sample is answered after its interval; the requests behind it are answered meanwhile.
 
-Every run also keeps its rates: `<log-dir>/rates.jsonl` records the counters per node and topic every 10 s and once more at shutdown, cumulative over the run (a process that ends or respawns keeps its counts), so the rates over any span of a past run are the difference of two samples. A sample line lists only the counters that changed since the previous one. `autoware_system_designer_runtime.rates_record` (no ROS import) reads it back: `RatesRecord.load(path).rates(until_ns=..., span_s=...)`, the whole run by default. A publish whose every matched reader is intra-process does not reach `rcl_publish`, so it is not counted; the measurement window's probe subscriptions cover that case.
+Every run also keeps its rates: `<log-dir>/rates.jsonl` records the counters per node and topic every 10 s and once more at shutdown, cumulative over the run (a process that ends or respawns keeps its counts), so the rates over any span of a past run are the difference of two samples. A sample line lists only the counters that changed since the previous one. `autoware_system_designer_runtime.rates_record` (no ROS import) reads it back: `RatesRecord.load(path).rates(until_ns=..., span_s=...)`, or `rates(sample=..., span_s=...)` by sample number, the whole run by default. A publish whose every matched reader is intra-process does not reach `rcl_publish`, so it is not counted; the measurement window's probe subscriptions cover that case.
 
 ## Latency measurement
 

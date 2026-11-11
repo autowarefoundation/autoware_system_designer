@@ -404,6 +404,30 @@ def test_channel_dispatches_member_measure_and_shutdown_methods(tmp_path):
     _run(scenario())
 
 
+class _Monitor:
+    def read(self):
+        return 0
+
+    def rates(self, before, after):
+        return {"nodes": []}
+
+    def close(self):
+        pass
+
+
+def test_a_rates_sample_does_not_hold_up_the_requests_behind_it(tmp_path):
+    async def scenario():
+        coord, commands = _commands(monitor=_Monitor())
+        async with _Channel(commands, commands._states, tmp_path) as c:
+            await c.event()
+            c.writer.write(json.dumps({"id": "slow", "method": "monitor.sample", "params": {"interval": 5}}).encode())
+            c.writer.write(b"\n")
+            assert (await c.call("status", request_id="fast"))["id"] == "fast"
+            assert (await c.call("monitor.sample", {"interval": 0.1}, request_id="short"))["result"] == {"nodes": []}
+
+    _run(scenario())
+
+
 def test_channel_answers_errors_in_the_envelope(tmp_path):
     async def scenario():
         coord, commands = _commands(guard=_Guard("stop refused: operation mode is autonomous"))

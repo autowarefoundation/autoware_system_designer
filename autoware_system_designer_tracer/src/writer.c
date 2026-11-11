@@ -147,6 +147,54 @@ static uint32_t map_index(uint64_t handle, uint32_t mask)
   return (uint32_t)((handle * 0x9E3779B97F4A7C15ull) >> 32) & mask;
 }
 
+static asd_slot_table_t * table_new(uint32_t mask)
+{
+  return calloc(1, sizeof(asd_slot_table_t) + ((size_t)mask + 1) * sizeof(asd_slot_entry_t));
+}
+
+// The entry of `key`, else the empty entry that ends its probe sequence.
+static asd_slot_entry_t * table_entry(asd_slot_table_t * table, uint32_t mask, uint64_t key)
+{
+  for (uint32_t i = map_index(key, mask);; i = (i + 1) & mask) {
+    asd_slot_entry_t * entry = &table->entries[i];
+    uint64_t current = __atomic_load_n(&entry->handle, __ATOMIC_ACQUIRE);
+    if (current == key || current == 0) {
+      return entry;
+    }
+  }
+}
+
+static void table_put(asd_slot_table_t * table, uint32_t mask, uint64_t key, uint32_t slot)
+{
+  asd_slot_entry_t * entry = table_entry(table, mask, key);
+  if (entry->handle == key) {
+    __atomic_store_n(&entry->slot, slot, __ATOMIC_RELEASE);
+    return;
+  }
+  entry->slot = slot;
+  __atomic_store_n(&entry->handle, key, __ATOMIC_RELEASE);
+  table->used += 1;
+}
+
+// Replaces the table by one of its live handles; keeps it when memory is short.
+static asd_slot_table_t * table_compact(asd_stats_t * s)
+{
+  asd_slot_table_t * old = s->table;
+  asd_slot_table_t * table = table_new(s->mask);
+  if (table == NULL) {
+    return old;
+  }
+  for (uint32_t i = 0; i <= s->mask; ++i) {
+    const asd_slot_entry_t * entry = &old->entries[i];
+    if (entry->handle != 0 && entry->slot != ASD_SLOT_NONE) {
+      table_put(table, s->mask, entry->handle, entry->slot);
+    }
+  }
+  table->replaced = old;
+  __atomic_store_n(&s->table, table, __ATOMIC_RELEASE);
+  return table;
+}
+
 int asd_stats_open(asd_stats_t * s, const char * dir, uint32_t pid, uint32_t capacity)
 {
   memset(s, 0, sizeof(*s));
@@ -154,22 +202,21 @@ int asd_stats_open(asd_stats_t * s, const char * dir, uint32_t pid, uint32_t cap
     errno = EINVAL;
     return -1;
   }
-  // At most half full: every live handle holds one entry and owns at least one slot.
-  uint32_t entries = 2;
+  // At most half full of live handles: each holds one entry and owns one slot.
+  uint32_t entries = 4;
   while (entries < 2 * capacity) {
     entries <<= 1;
   }
-  s->entries = calloc(entries, sizeof(asd_slot_entry_t));
-  if (s->entries == NULL) {
-    return -1;
-  }
+  s->table = table_new(entries - 1);
+  s->free_slots = calloc(capacity, sizeof(uint32_t));
   char path[4096];
   snprintf(path, sizeof(path), "%s/%u.stats", dir, pid);
   size_t size = ASD_STATS_HEADER_SIZE + (size_t)capacity * ASD_STATS_SLOT_SIZE;
-  void * map = map_new_file(path, size);
+  void * map = s->table != NULL && s->free_slots != NULL ? map_new_file(path, size) : NULL;
   if (map == NULL) {
-    free(s->entries);
-    s->entries = NULL;
+    free(s->table);
+    free(s->free_slots);
+    memset(s, 0, sizeof(*s));
     return -1;
   }
   s->header = (asd_stats_header_t *)map;
@@ -179,7 +226,6 @@ int asd_stats_open(asd_stats_t * s, const char * dir, uint32_t pid, uint32_t cap
   s->mask = entries - 1;
   pthread_mutex_init(&s->lock, NULL);
 
-  memcpy(s->header->magic, ASD_STATS_MAGIC, 8);
   s->header->version = ASD_STATS_VERSION;
   s->header->slot_size = ASD_STATS_SLOT_SIZE;
   s->header->header_size = ASD_STATS_HEADER_SIZE;
@@ -187,6 +233,8 @@ int asd_stats_open(asd_stats_t * s, const char * dir, uint32_t pid, uint32_t cap
   s->header->capacity = capacity;
   s->header->claimed = 0;
   s->header->start_realtime_ns = asd_now_realtime_ns();
+  // The magic goes last: a reader takes the header as complete once it is there.
+  memcpy(s->header->magic, ASD_STATS_MAGIC, 8);
   return 0;
 }
 
@@ -196,7 +244,12 @@ void asd_stats_close(asd_stats_t * s)
     munmap(s->header, s->map_size);
     pthread_mutex_destroy(&s->lock);
   }
-  free(s->entries);
+  for (asd_slot_table_t * table = s->table; table != NULL;) {
+    asd_slot_table_t * replaced = table->replaced;
+    free(table);
+    table = replaced;
+  }
+  free(s->free_slots);
   memset(s, 0, sizeof(*s));
 }
 
@@ -206,43 +259,70 @@ int64_t asd_stats_register(asd_stats_t * s, uint8_t kind, const void * handle)
   if (s->header == NULL || key == 0) {
     return -1;
   }
-  uint32_t slot = __atomic_fetch_add(&s->header->claimed, 1, __ATOMIC_RELAXED);
-  if (slot >= s->capacity) {
-    return -1;
-  }
-  asd_stats_slot_t * target = &s->slots[slot];
-  target->handle = key;
-  __atomic_store_n(&target->kind, kind, __ATOMIC_RELEASE);
-
   pthread_mutex_lock(&s->lock);
-  for (uint32_t i = map_index(key, s->mask);; i = (i + 1) & s->mask) {
-    asd_slot_entry_t * entry = &s->entries[i];
-    uint64_t current = __atomic_load_n(&entry->handle, __ATOMIC_ACQUIRE);
-    if (current == key) {
-      __atomic_store_n(&entry->slot, slot, __ATOMIC_RELEASE);
-      break;
+  asd_slot_table_t * table = s->table;
+  // Three quarters of the entries in use: finalized handles hold at least a quarter.
+  if (table->used >= (s->mask + 1) / 4 * 3) {
+    table = table_compact(s);
+  }
+  int64_t slot = -1;
+  if (table->used < s->mask) {
+    if (s->free_count > 0) {
+      slot = s->free_slots[--s->free_count];
+    } else {
+      uint32_t claimed = __atomic_fetch_add(&s->header->claimed, 1, __ATOMIC_RELAXED);
+      slot = claimed < s->capacity ? (int64_t)claimed : -1;
     }
-    if (current == 0) {
-      entry->slot = slot;
-      __atomic_store_n(&entry->handle, key, __ATOMIC_RELEASE);
-      break;
+  }
+  if (slot >= 0) {
+    asd_stats_slot_t * target = &s->slots[slot];
+    target->handle = key;
+    __atomic_store_n(&target->next_slot, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&target->kind, kind, __ATOMIC_RELEASE);
+    table_put(table, s->mask, key, (uint32_t)slot);
+  } else {
+    // An address rcl reuses must not resolve to the slot of its previous owner.
+    asd_slot_entry_t * entry = table_entry(table, s->mask, key);
+    if (entry->handle == key && entry->slot != ASD_SLOT_NONE) {
+      s->free_slots[s->free_count++] = entry->slot;
+      __atomic_store_n(&entry->slot, ASD_SLOT_NONE, __ATOMIC_RELEASE);
     }
   }
   pthread_mutex_unlock(&s->lock);
   return slot;
 }
 
+asd_stats_slot_t * asd_stats_unregister(asd_stats_t * s, const void * handle)
+{
+  uint64_t key = (uint64_t)(uintptr_t)handle;
+  if (s->header == NULL || key == 0) {
+    return NULL;
+  }
+  asd_stats_slot_t * released = NULL;
+  pthread_mutex_lock(&s->lock);
+  asd_slot_entry_t * entry = table_entry(s->table, s->mask, key);
+  if (entry->handle == key && entry->slot != ASD_SLOT_NONE) {
+    released = &s->slots[entry->slot];
+    s->free_slots[s->free_count++] = entry->slot;
+    __atomic_store_n(&entry->slot, ASD_SLOT_NONE, __ATOMIC_RELEASE);
+  }
+  pthread_mutex_unlock(&s->lock);
+  return released;
+}
+
 asd_stats_slot_t * asd_stats_find(const asd_stats_t * s, const void * handle)
 {
   uint64_t key = (uint64_t)(uintptr_t)handle;
-  if (s->entries == NULL || key == 0) {
+  const asd_slot_table_t * table = __atomic_load_n(&s->table, __ATOMIC_ACQUIRE);
+  if (table == NULL || key == 0) {
     return NULL;
   }
   for (uint32_t i = map_index(key, s->mask);; i = (i + 1) & s->mask) {
-    const asd_slot_entry_t * entry = &s->entries[i];
+    const asd_slot_entry_t * entry = &table->entries[i];
     uint64_t current = __atomic_load_n(&entry->handle, __ATOMIC_ACQUIRE);
     if (current == key) {
-      return &s->slots[__atomic_load_n(&entry->slot, __ATOMIC_ACQUIRE)];
+      uint32_t slot = __atomic_load_n(&entry->slot, __ATOMIC_ACQUIRE);
+      return slot == ASD_SLOT_NONE ? NULL : &s->slots[slot];
     }
     if (current == 0) {
       return NULL;

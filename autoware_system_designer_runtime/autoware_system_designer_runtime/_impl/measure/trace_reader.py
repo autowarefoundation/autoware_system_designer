@@ -105,6 +105,8 @@ class Endpoint:
     gid: str  # hex, publishers only
     t_init: int
     slot: Optional[int] = None  # counter slot in <pid>.stats
+    # count, lat_sum_ns, lat_count, last_ns of the slot when the endpoint was created
+    base: tuple[int, int, int, int] = (0, 0, 0, 0)
 
 
 @dataclass(slots=True)
@@ -114,6 +116,7 @@ class TimerInfo:
     period_ns: int
     t_init: int
     slot: Optional[int] = None
+    base: tuple[int, int, int, int] = (0, 0, 0, 0)
 
 
 class _HandleTable:
@@ -264,14 +267,14 @@ def parse_name_line(line: str, pid: int) -> Union[Endpoint, TimerInfo, None]:
     if kind in ("pub", "sub") and len(fields) >= 5:
         gid = fields[5] if len(fields) > 5 else ""
         slot = _slot(fields[6]) if len(fields) > 6 else None
-        return Endpoint(pid, kind, obj, fields[3], fields[4], gid, t_init, slot)
+        return Endpoint(pid, kind, obj, fields[3], fields[4], gid, t_init, slot, _base(fields[7:11]))
     if kind == "timer":
         try:
             period = int(fields[3])
         except ValueError:
             return None
         slot = _slot(fields[4]) if len(fields) > 4 else None
-        return TimerInfo(pid, obj, period, t_init, slot)
+        return TimerInfo(pid, obj, period, t_init, slot, _base(fields[5:9]))
     return None
 
 
@@ -281,6 +284,14 @@ def _slot(text: str) -> Optional[int]:
     except ValueError:
         return None
     return value if value >= 0 else None
+
+
+def _base(fields: list[str]) -> tuple[int, int, int, int]:
+    try:
+        count, lat_sum, lat_count, last_ns = (int(text) for text in fields)
+    except ValueError:
+        return (0, 0, 0, 0)
+    return (count, lat_sum, lat_count, last_ns)
 
 
 def _read_names(path: Path, proc: ProcessTrace) -> None:

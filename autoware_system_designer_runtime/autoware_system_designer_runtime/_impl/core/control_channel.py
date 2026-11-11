@@ -56,6 +56,8 @@ METHODS = (
     "monitor.unfollow",
     "shutdown",
 )
+# Methods that wait: answered from a task of their own, so the requests behind them are not held up.
+DETACHED_METHODS = ("monitor.sample",)
 STREAMS = ("out", "err")
 MAX_LINE = 64 * 1024
 LOG_POLL_S = 0.2
@@ -223,7 +225,9 @@ class ControlChannel:
                     break
                 if not line.strip():
                     continue
-                client.send(await self._handle(client, line))
+                reply = await self._handle(client, line)
+                if reply is not None:
+                    client.send(reply)
         except (ConnectionError, asyncio.CancelledError):
             pass
         finally:
@@ -255,7 +259,8 @@ class ControlChannel:
 
     # ---- requests ----------------------------------------------------------
 
-    async def _handle(self, client: _Client, line: bytes) -> dict[str, Any]:
+    async def _handle(self, client: _Client, line: bytes) -> Optional[dict[str, Any]]:
+        """The reply to one request line; None for a detached method, whose reply its task sends."""
         try:
             request = json.loads(line)
         except ValueError:
@@ -271,6 +276,17 @@ class ControlChannel:
             params = {}
         if not isinstance(params, dict):
             return _error(request_id, "invalid_params", "params must be an object")
+        if method in DETACHED_METHODS:
+            task = asyncio.ensure_future(self._answer_detached(client, request_id, method, params))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+            return None
+        return await self._answer(client, request_id, method, params)
+
+    async def _answer_detached(self, client: _Client, request_id: Any, method: str, params: dict[str, Any]) -> None:
+        client.send(await self._answer(client, request_id, method, params))
+
+    async def _answer(self, client: _Client, request_id: Any, method: str, params: dict[str, Any]) -> dict[str, Any]:
         try:
             result = await self._dispatch(client, method, params)
         except CommandError as exc:

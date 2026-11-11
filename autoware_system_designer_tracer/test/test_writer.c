@@ -48,7 +48,8 @@ static int read_file(const char * path, unsigned char ** out, size_t * size)
 }
 
 // Counters land in the slot of their handle; a re-registered handle moves to a
-// fresh slot; claims past capacity are counted and get none.
+// fresh slot; claims past capacity are counted and get none; a finalized handle
+// resolves to nothing and its slot serves the next one with its counters kept.
 static int check_stats(const char * dir)
 {
   asd_stats_t s;
@@ -70,6 +71,15 @@ static int check_stats(const char * dir)
   CHECK(asd_stats_find(&s, &b) == &s.slots[1]);
   CHECK(asd_stats_register(&s, ASD_SLOT_TIMER, &c) == -1);
   CHECK(asd_stats_find(&s, &c) == NULL);
+  asd_stats_count(&s.slots[1], 300);
+  CHECK(asd_stats_unregister(&s, &b) == &s.slots[1]);
+  CHECK(asd_stats_unregister(&s, &b) == NULL);
+  CHECK(asd_stats_find(&s, &b) == NULL);
+  CHECK(asd_stats_register(&s, ASD_SLOT_TIMER, &c) == 1);
+  CHECK(asd_stats_find(&s, &c) == &s.slots[1]);
+  // Full again: the address of a live handle registered anew loses its slot.
+  CHECK(asd_stats_register(&s, ASD_SLOT_SUB, &a) == -1);
+  CHECK(asd_stats_find(&s, &a) == NULL);
   asd_stats_close(&s);
 
   char path[4200];
@@ -80,14 +90,39 @@ static int check_stats(const char * dir)
   CHECK(size == ASD_STATS_HEADER_SIZE + 3 * ASD_STATS_SLOT_SIZE);
   const asd_stats_header_t * h = (const asd_stats_header_t *)bytes;
   CHECK(memcmp(h->magic, ASD_STATS_MAGIC, 8) == 0);
-  CHECK(h->version == ASD_STATS_VERSION && h->pid == 77 && h->capacity == 3 && h->claimed == 4);
+  CHECK(h->version == ASD_STATS_VERSION && h->pid == 77 && h->capacity == 3 && h->claimed == 5);
   const asd_stats_slot_t * slots = (const asd_stats_slot_t *)(bytes + ASD_STATS_HEADER_SIZE);
   CHECK(slots[0].kind == ASD_SLOT_PUB && slots[0].handle == (uint64_t)(uintptr_t)&a);
   CHECK(slots[0].count == 2 && slots[0].last_ns == 200);
   CHECK(slots[0].lat_sum_ns == 5 && slots[0].lat_count == 1);
-  CHECK(slots[1].kind == ASD_SLOT_SUB && slots[1].count == 0 && slots[1].next_slot == 1);
+  CHECK(slots[1].kind == ASD_SLOT_TIMER && slots[1].handle == (uint64_t)(uintptr_t)&c);
+  CHECK(slots[1].count == 1 && slots[1].last_ns == 300 && slots[1].next_slot == 0);
   CHECK(slots[2].kind == ASD_SLOT_PUB && slots[2].count == 0);
   free(bytes);
+  return 0;
+}
+
+// Endpoints created and finalized without end keep getting a slot, each at an
+// address of its own.
+static int check_stats_churn(const char * dir)
+{
+  enum { HANDLES = 4096 };
+  asd_stats_t s;
+  CHECK(asd_stats_open(&s, dir, 78, 4) == 0);
+  static char handles[HANDLES];
+  CHECK(asd_stats_register(&s, ASD_SLOT_PUB, &s) == 0);
+  for (int i = 0; i < HANDLES; ++i) {
+    int64_t slot = asd_stats_register(&s, ASD_SLOT_SUB, &handles[i]);
+    CHECK(slot >= 1 && slot < 4);
+    CHECK(asd_stats_find(&s, &handles[i]) == &s.slots[slot]);
+    if (i >= 2) {
+      CHECK(asd_stats_unregister(&s, &handles[i - 2]) != NULL);
+      CHECK(asd_stats_find(&s, &handles[i - 2]) == NULL);
+    }
+  }
+  CHECK(asd_stats_find(&s, &s) == &s.slots[0]);
+  CHECK(s.header->claimed == 4);
+  asd_stats_close(&s);
   return 0;
 }
 
@@ -193,6 +228,7 @@ int main(void)
   CHECK(sizeof(asd_stats_slot_t) == ASD_STATS_SLOT_SIZE);
   CHECK(sizeof(asd_control_t) == ASD_CONTROL_SIZE);
   CHECK(check_stats(dir) == 0);
+  CHECK(check_stats_churn(dir) == 0);
   CHECK(check_control(dir) == 0);
 
   snprintf(path, sizeof(path), "rm -rf %s", dir);

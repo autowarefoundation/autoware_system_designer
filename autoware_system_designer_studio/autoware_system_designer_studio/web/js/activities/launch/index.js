@@ -55,6 +55,11 @@
   const RVIZ_KIND = "rviz";
   // Measurement window states in which the next verb is stop.
   const MEASURE_OPEN = ["running"];
+  // Button label while a measurement request awaits its answer.
+  const MEASURE_PENDING = {
+    "measure.start": "Starting measure…",
+    "measure.stop": "Stopping measure…",
+  };
 
   function launchRows(config, store) {
     const mode = store.get("mode");
@@ -104,6 +109,8 @@
       // Per unit: the last error of a control, and the last measurement result.
       const errors = new Map();
       const measures = new Map();
+      // Unit -> the measurement request awaiting its answer; its button takes no click meanwhile.
+      const measuring = new Map();
 
       store.define("view", DEFAULT_VIEW, (v) =>
         VIEWS.some(([value]) => value === v),
@@ -318,16 +325,29 @@
         if (active && session.connected && session.control.measure_armed) {
           measure = measures.get(unit);
           const open = measure && MEASURE_OPEN.includes(measure.state);
-          controls.appendChild(
-            button(open ? "Stop measure" : "Start measure", "", () =>
-              control(
-                unit,
-                open ? "measure.stop" : "measure.start",
-                {},
-                (result) => measures.set(unit, result),
-              ),
-            ),
+          const pending = measuring.get(unit);
+          const toggle = button(
+            pending
+              ? MEASURE_PENDING[pending]
+              : open
+                ? "Stop measure"
+                : "Start measure",
+            "",
+            () => {
+              if (measuring.has(unit)) return;
+              const method = open ? "measure.stop" : "measure.start";
+              measuring.set(unit, method);
+              control(unit, method, {}, (result) =>
+                measures.set(unit, result),
+              ).finally(() => {
+                measuring.delete(unit);
+                render();
+              });
+              render();
+            },
           );
+          toggle.disabled = !!pending;
+          controls.appendChild(toggle);
         }
         if (session)
           controls.appendChild(

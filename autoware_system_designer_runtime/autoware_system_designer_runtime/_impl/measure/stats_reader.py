@@ -18,6 +18,11 @@ Mirrors ``asd_stats_header_t`` / ``asd_stats_slot_t`` of ``trace_format.h``. The
 files are mapped read-only and read while the processes write them; a read is a
 copy of the claimed slots, the name table is followed from where the last read
 stopped.
+
+A slot serves one endpoint after another: its counters run on, and each
+name-table line carries the counters its endpoint started from. The counts of an
+endpoint are the slot's counters minus that base while it holds the slot, and
+the next endpoint's base minus its own once it ended.
 """
 
 from __future__ import annotations
@@ -30,12 +35,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Union
 
+from ...rates_record import Counters
 from .trace_reader import Endpoint, TimerInfo, parse_name_line
 
 logger = logging.getLogger(__name__)
 
 STATS_MAGIC = b"ASDSTATS"
 STATS_VERSION = 1
+HEADER_SIZE = 64
 _HEADER = struct.Struct("<8sIIIIIIQ24s")
 _SLOT = struct.Struct("<B7sQQQQQQQ")
 SLOT_SIZE = _SLOT.size
@@ -82,6 +89,7 @@ class ProcessStats:
         self._names_offset = 0
         self._names_partial = ""
         self.names: dict[int, Union[Endpoint, TimerInfo]] = {}
+        self._ended: list[tuple[Union[Endpoint, TimerInfo], Counters]] = []
         with open(self.path, "rb") as handle:
             size = os.fstat(handle.fileno()).st_size
             if size < _HEADER.size:
@@ -91,6 +99,9 @@ class ProcessStats:
         if magic != STATS_MAGIC or version != STATS_VERSION or slot_size != SLOT_SIZE:
             self._map.close()
             raise ValueError(f"{self.path}: unsupported counters version {version} / slot size {slot_size}")
+        if header_size != HEADER_SIZE or capacity == 0 or size < header_size + capacity * SLOT_SIZE:
+            self._map.close()
+            raise ValueError(f"{self.path}: incomplete header")
         self._header_size = header_size
         self._capacity = capacity
         self._start_ns = start_ns
@@ -121,6 +132,7 @@ class ProcessStats:
                 if os.fstat(handle.fileno()).st_size < self._names_offset:  # rewritten by a new process of the pid
                     self._names_offset, self._names_partial = 0, ""
                     self.names.clear()
+                    self._ended.clear()
                 handle.seek(self._names_offset)
                 text = handle.read()
                 self._names_offset = handle.tell()
@@ -130,9 +142,24 @@ class ProcessStats:
         self._names_partial = lines.pop()
         for line in lines:
             entry = parse_name_line(line, self.pid)
-            if entry is not None and entry.slot is not None:
-                self.names[entry.slot] = entry
+            if entry is None or entry.slot is None:
+                continue
+            previous = self.names.get(entry.slot)
+            if previous is not None:
+                self._ended.append((previous, counts_since(previous.base, entry.base)))
+            self.names[entry.slot] = entry
         return self.names
+
+    def take_ended(self) -> list[tuple[Union[Endpoint, TimerInfo], Counters]]:
+        """The endpoints whose slot went to another one since the last call, each with its final counts."""
+        ended, self._ended = self._ended, []
+        return ended
+
+
+def counts_since(base: Counters, now: Counters) -> Counters:
+    """Counts of an endpoint whose slot held ``base`` at its start and holds ``now``."""
+    count = max(now[0] - base[0], 0)
+    return (count, max(now[1] - base[1], 0), max(now[2] - base[2], 0), now[3] if count else 0)
 
 
 def _pid_alive(pid: int) -> bool:

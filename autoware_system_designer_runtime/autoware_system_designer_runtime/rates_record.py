@@ -17,14 +17,15 @@
 A sample holds, per key ``(node, kind, label)``, the counters ``(count, lat_sum_ns, lat_count,
 last_ns)`` accumulated over the run, processes that ended included, so the rates over any span are
 the difference of two samples. ``kind`` is ``in`` (takes of a topic), ``out`` (publishes of a topic)
-or ``timer`` (fires of a timer, ``label`` its period in ns); the latency is the communication time of
-a take and the callback time of a publish.
+or ``timer`` (fires of a timer, ``label`` its period in ns and its rank among the owner's timers of
+that period); the latency is the communication time of a take and the callback time of a publish.
 
 ``<log-dir>/rates.jsonl`` records the samples of a run, one JSON object per line: a header
 ``{"schema", "interval_s"}``, then per sample ``{"t", "processes", "untracked", "keys"?, "c"}`` where
 ``keys`` names the keys new since the previous sample (``{id: [node, kind, label]}``) and ``c`` lists
 ``[id, count, lat_sum_ns, lat_count, last_ns]`` of the keys whose counters changed; the others keep
-their values. The module imports no ROS package.
+their values, except those listed by id in ``d``, which the sample no longer holds. The module
+imports no ROS package.
 """
 
 from __future__ import annotations
@@ -70,7 +71,9 @@ def rates_between(before: Sample, after: Sample) -> dict[str, Any]:
         node, kind, label = key
         count, lat_sum, lat_count, last_ns = after.totals[key]
         earlier = before.totals.get(key, (0, 0, 0, 0))
-        record: dict[str, Any] = {"period_ms": round(label / NS_PER_MS, 3)} if kind == "timer" else {"topic": label}
+        record: dict[str, Any] = (
+            {"period_ms": round(_period_ns(label) / NS_PER_MS, 3)} if kind == "timer" else {"topic": label}
+        )
         moved = max(count - earlier[0], 0)
         lat_sum_d, lat_count_d = lat_sum - earlier[1], lat_count - earlier[2]
         record["hz"] = round(moved * NS_PER_S / interval_ns, 3)
@@ -91,9 +94,14 @@ def rates_between(before: Sample, after: Sample) -> dict[str, Any]:
     }
 
 
+def _period_ns(label: Any) -> int:
+    return label[0] if isinstance(label, tuple) else label
+
+
 def _order(key: Key) -> tuple:
     node, kind, label = key
-    return (node, kind, f"{label:020d}" if isinstance(label, int) else str(label))
+    parts = label if isinstance(label, tuple) else (label,)
+    return (node, kind, tuple(f"{part:020d}" if isinstance(part, int) else str(part) for part in parts))
 
 
 class RatesWriter:
@@ -123,9 +131,14 @@ class RatesWriter:
             if self._last.get(key) != counters:
                 self._last[key] = counters
                 changed.append([self._ids[key], *counters])
+        gone = [key for key in self._last if key not in sample.totals]
+        for key in gone:
+            del self._last[key]
         if new:
             line["keys"] = new
         line["c"] = changed
+        if gone:
+            line["d"] = [self._ids[key] for key in gone]
         self._line(line)
 
     def close(self) -> None:
@@ -174,7 +187,7 @@ class RatesRecord:
                     continue
                 for key_id, key in (obj.get("keys") or {}).items():
                     node, kind, label = key
-                    keys[int(key_id)] = (node, kind, label)
+                    keys[int(key_id)] = (node, kind, tuple(label) if isinstance(label, list) else label)
                 lines.append(obj)
         return cls(interval_s, lines, keys)
 
@@ -197,17 +210,24 @@ class RatesRecord:
                 key = self._keys.get(key_id)
                 if key is not None:
                     totals[key] = (count, lat_sum, lat_count, last_ns)
+            for key_id in line.get("d", []):
+                totals.pop(self._keys.get(key_id), None)
             if index in wanted:
                 out[index] = Sample(line["t"], dict(totals), line.get("processes", 0), line.get("untracked", 0))
         return [out[index] for index in indices]
 
-    def rates(self, *, until_ns: Optional[int] = None, span_s: Optional[float] = None) -> dict[str, Any]:
-        """Rates over ``span_s`` seconds up to the last sample at or before ``until_ns``; the whole run by default."""
+    def rates(
+        self, *, until_ns: Optional[int] = None, sample: Optional[int] = None, span_s: Optional[float] = None
+    ) -> dict[str, Any]:
+        """Rates over ``span_s`` seconds up to sample number ``sample``, else the last sample at or before
+        ``until_ns``; the whole run by default. ``sample`` in the result is the number of the end sample."""
         if len(self._lines) < 2:
             raise ValueError("the record holds fewer than two samples")
         times = self.times
         end = len(times) - 1
-        if until_ns is not None:
+        if sample is not None:
+            end = min(max(sample, 0), end)
+        elif until_ns is not None:
             end = max((i for i, t in enumerate(times) if t <= until_ns), default=0)
         start = 0
         if span_s is not None:
@@ -215,4 +235,4 @@ class RatesRecord:
         if start >= end:
             start, end = (end - 1, end) if end > 0 else (0, 1)
         before, after = self.samples(start, end)
-        return rates_between(before, after)
+        return {**rates_between(before, after), "sample": end}

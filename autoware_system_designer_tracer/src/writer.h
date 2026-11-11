@@ -59,30 +59,45 @@ void asd_names_line(asd_names_t * w, const char * line);
 
 // ---- counters: <pid>.stats --------------------------------------------------------
 
+#define ASD_SLOT_NONE UINT32_MAX
+
 typedef struct asd_slot_entry {
   uint64_t handle;  // stored last with release semantics; zero is an empty entry
-  uint32_t slot;
+  uint32_t slot;    // ASD_SLOT_NONE once the handle is finalized
   uint32_t reserved;
 } asd_slot_entry_t;
 
-// Counter slots plus an open-addressed map from rcl handle to slot. Inserts are
-// serialized by `lock`; lookups take no lock.
+// Open-addressed map from rcl handle to slot. A table that fills with finalized
+// handles is replaced by one of the live handles; the replaced table stays
+// allocated until close, since a lookup may still be probing it.
+typedef struct asd_slot_table {
+  struct asd_slot_table * replaced;
+  uint32_t used;
+  asd_slot_entry_t entries[];
+} asd_slot_table_t;
+
+// Counter slots plus the handle map. Registration and release are serialized by
+// `lock`; lookups take no lock.
 typedef struct asd_stats {
   asd_stats_header_t * header;
   asd_stats_slot_t * slots;
   uint32_t capacity;
   size_t map_size;
-  asd_slot_entry_t * entries;
+  asd_slot_table_t * table;
   uint32_t mask;
+  uint32_t * free_slots;  // slots of finalized handles
+  uint32_t free_count;
   pthread_mutex_t lock;
 } asd_stats_t;
 
 int asd_stats_open(asd_stats_t * s, const char * dir, uint32_t pid, uint32_t capacity);
 void asd_stats_close(asd_stats_t * s);
-// Gives `handle` a fresh slot of `kind`; a handle seen before is remapped, since
-// rcl reuses the address of a finalized object. Returns the slot, -1 when full.
+// Gives `handle` a slot of `kind`: the slot of a finalized handle with its counters
+// as they stand, else a fresh one. Returns the slot, -1 when none is left.
 int64_t asd_stats_register(asd_stats_t * s, uint8_t kind, const void * handle);
-// The slot of `handle`, NULL when it was never registered.
+// Ends the tracking of a finalized `handle`. Returns its slot, NULL when it had none.
+asd_stats_slot_t * asd_stats_unregister(asd_stats_t * s, const void * handle);
+// The slot of `handle`, NULL when it has none.
 asd_stats_slot_t * asd_stats_find(const asd_stats_t * s, const void * handle);
 void asd_stats_count(asd_stats_slot_t * slot, uint64_t t_ns);
 // Adds one latency sample; samples outside [0, ASD_STATS_LATENCY_LIMIT_NS] are dropped.

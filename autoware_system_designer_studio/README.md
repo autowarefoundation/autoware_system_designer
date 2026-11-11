@@ -159,11 +159,11 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `launch.runs`                                     | `system` (optional)                                                                | `{"runs": [run]}`, newest first              |
 | `launch.run`                                      | `run`                                                                              | run with `members: [{"path", "slug"}]`       |
 | `launch.run_tail`                                 | `run`, `member` (its directory name)                                               | `{"run", "member", "out", "err"}`            |
-| `launch.run_rates`                                | `run`, `until_ns`, `span_s` (optional: the span ending at that sample)             | run with `times` and the rates over the span |
+| `launch.run_rates`                                | `run`, `sample`, `span_s` (optional: the span ending at that sample number)        | run with `times` and the rates over the span |
 | `launch.shutdown`                                 | `compute_unit`                                                                     | `{"shutting_down": true}`                    |
 | `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                     | `{"state", "message"}` of the window         |
-| `monitor.follow`, `monitor.unfollow`              | `compute_unit`                                                                     | `{"interval_s"}`, `{"released"}`             |
-| `monitor.sample`                                  | `compute_unit`, `interval` (seconds, default 1)                                    | rates over the interval                      |
+| `monitor.follow`, `monitor.unfollow`              | `compute_unit`, `client` (optional: the caller's name)                             | `{"interval_s"}`, `{"released"}`             |
+| `monitor.sample`                                  | `compute_unit`, `interval` (seconds, default 1, at most 20)                        | rates over the interval                      |
 | `rviz.start`                                      | -                                                                                  | job                                          |
 
 | Event topic       | Data                                                                                                   |
@@ -243,10 +243,12 @@ with its channel. Once the channel is gone, a follow answers the tails of the me
 runtime's log directory (`log_dir` of the session view, from the runtime's hello), with no lines to
 come.
 
-Topic rates are followed the same way: `monitor.follow` counts one more follower of a unit and the
-first asks the runtime for its per-node rates (the tracer's counters, see the runtime README), which
-arrive as `monitor` events every 2 s; `monitor.unfollow` counts one less and the last releases them.
-Every follow ends with the last event stream, and a reconnected channel is followed again.
+Topic rates are followed the same way: `monitor.follow` makes its `client` a follower of a unit and
+asks the runtime for its per-node rates (the tracer's counters, see the runtime README), which
+arrive as `monitor` events every 2 s; `monitor.unfollow` ends that client's follow and the last one
+releases them. Following twice under one name is following once, so a page follows again after its
+event stream reconnected. Every follow ends with the last event stream, and a reconnected channel is
+followed again.
 
 The Logs view follows the selected node (a composable node through its container) while
 it is shown, keeps the followed log once the launcher ended and marks where it ended.

@@ -14,18 +14,20 @@
 
 """Live and recorded rates of a running system from the tracer's counters.
 
-A reading sums the counters of every traced process per key (node, ``in`` /
-``out`` / ``timer``, topic or period), the final counters of processes that
-ended included, so the totals of a key never fall over a run; rates and mean
-latencies are the difference of two readings (``rates_record.rates_between``).
+A reading sums the counts of every endpoint per key (node, ``in`` / ``out`` /
+``timer``, topic or timer label), endpoints and processes that ended included,
+so the totals of a key never fall over a run; rates and mean latencies are the
+difference of two readings (``rates_record.rates_between``).
 Nothing subscribes to a topic: publishes and takes are the ones the nodes make
 through rcl, so a publish that reaches intra-process readers only is not seen.
 
 Per node: input topics with take rate and mean communication time (take minus
 DDS source timestamp), output topics with publish rate and mean callback time
 (publish minus the thread's latest take or timer fire), timers with fire rate.
-rcl timers belong to no node; a timer is listed under the node of the latest
-publish it led to, else under its process.
+rcl timers belong to no node; a timer is listed under its process until a fire
+of it leads to a publish, from then on under the node of that publish with the
+fires since. Each timer has a key of its own: its label is its period and its
+rank among the timers of that period under the same owner.
 
 The recorder appends a reading to the run's ``rates.jsonl`` at a fixed
 interval and once more at shutdown, so a past run's rates can be read back.
@@ -36,13 +38,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
 
 from ...rates_record import Counters, Key, RatesWriter, Sample, rates_between
 from .node_graph import NodeGraph
 from .node_stats import LIFECYCLE_TOPICS
-from .stats_reader import SLOT_PUB, SLOT_SUB, SLOT_TIMER, ProcessStats, StatsDir
+from .stats_reader import ProcessStats, StatsDir, counts_since
 from .trace_reader import Endpoint, TimerInfo
 
 logger = logging.getLogger(__name__)
@@ -59,6 +62,26 @@ def _add(totals: dict[Key, Counters], key: Key, count: int, lat_sum: int, lat_co
         totals[key] = (held[0] + count, held[1] + lat_sum, held[2] + lat_count, max(held[3], last_ns))
 
 
+@dataclass
+class _Timer:
+    """One timer between its creation and its end."""
+
+    t_init: int
+    owner: str
+    rank: int
+    pinned: bool = False  # owned by a node
+    seen: int = 0  # fires at the latest reading
+    skipped: int = 0  # fires before it was pinned, left out of the node's key
+
+
+@dataclass
+class _Process:
+    # Totals of the endpoints that ended, per key.
+    retired: dict[Key, Counters] = field(default_factory=dict)
+    # Live timers by slot.
+    timers: dict[int, _Timer] = field(default_factory=dict)
+
+
 class RateMonitor:
     """Reads the counters of a trace directory into per-key totals over the run."""
 
@@ -69,6 +92,9 @@ class RateMonitor:
         # Final totals of the processes that ended.
         self._ended: dict[Key, Counters] = {}
         self._untracked_ended = 0
+        self._processes: dict[int, _Process] = {}
+        # Ranks in use per (owner, period).
+        self._ranks: dict[tuple[str, int], set[int]] = {}
 
     def close(self) -> None:
         self._dir.close()
@@ -95,30 +121,92 @@ class RateMonitor:
 
     def _retire(self, proc: ProcessStats) -> None:
         self._untracked_ended += self._accumulate(proc, self._ended)
+        state = self._processes.pop(proc.pid, None)
+        for slot, timer in (state.timers if state is not None else {}).items():
+            entry = proc.names.get(slot)
+            if isinstance(entry, TimerInfo):
+                self._release(timer, entry.period_ns)
 
     def _accumulate(self, proc: ProcessStats, totals: dict[Key, Counters]) -> int:
-        """Adds one process's slots to ``totals``; returns its endpoints without counters."""
+        """Adds one process's endpoints to ``totals``; returns its endpoints without counters."""
+        state = self._processes.setdefault(proc.pid, _Process())
         counters = proc.read()
         names = proc.read_names()
+        for entry, counts in proc.take_ended():
+            self._end(proc.pid, state, entry, counts)
+        for key, counts in state.retired.items():
+            _add(totals, key, *counts)
         for index, slot in counters.slots.items():
             entry = names.get(index)
-            key = self._key(proc.pid, slot.kind, entry, slot.next_slot, names) if entry is not None else None
+            if entry is None:
+                continue
+            counts = counts_since(entry.base, (slot.count, slot.lat_sum_ns, slot.lat_count, slot.last_ns))
+            if isinstance(entry, TimerInfo):
+                timer = self._timer(proc.pid, state, entry)
+                output = names.get(slot.next_slot) if slot.next_slot is not None else None
+                if not timer.pinned and isinstance(output, Endpoint) and output.kind == "pub":
+                    self._pin(timer, entry.period_ns, self.node_key(output.fqn))
+                timer.seen = counts[0]
+                _add(totals, self._timer_key(timer, entry), *self._timer_counts(timer, counts))
+                continue
+            key = self._endpoint_key(entry)
             if key is not None:
-                _add(totals, key, slot.count, slot.lat_sum_ns, slot.lat_count, slot.last_ns)
+                _add(totals, key, *counts)
         return counters.dropped
 
-    def _key(self, pid, kind, entry, next_slot, names) -> Optional[Key]:
-        if kind == SLOT_TIMER and isinstance(entry, TimerInfo):
-            output = names.get(next_slot) if next_slot is not None else None
-            owner = self.node_key(output.fqn) if isinstance(output, Endpoint) else f"(process {pid})"
-            return owner, "timer", entry.period_ns
-        if not isinstance(entry, Endpoint) or entry.topic in LIFECYCLE_TOPICS:
+    def _end(self, pid: int, state: _Process, entry: Union[Endpoint, TimerInfo], counts: Counters) -> None:
+        """Moves the counts of an endpoint whose slot went to another one to the retired totals."""
+        if isinstance(entry, TimerInfo):
+            timer = self._timer(pid, state, entry)
+            _add(state.retired, self._timer_key(timer, entry), *self._timer_counts(timer, counts))
+            self._release(timer, entry.period_ns)
+            del state.timers[entry.slot]
+            return
+        key = self._endpoint_key(entry)
+        if key is not None:
+            _add(state.retired, key, *counts)
+
+    def _endpoint_key(self, entry: Endpoint) -> Optional[Key]:
+        if entry.topic in LIFECYCLE_TOPICS:
             return None
-        if kind == SLOT_SUB:
-            return self.node_key(entry.fqn), "in", entry.topic
-        if kind == SLOT_PUB:
-            return self.node_key(entry.fqn), "out", entry.topic
-        return None
+        return self.node_key(entry.fqn), "in" if entry.kind == "sub" else "out", entry.topic
+
+    # ---- timers ------------------------------------------------------------------
+
+    def _timer(self, pid: int, state: _Process, entry: TimerInfo) -> _Timer:
+        timer = state.timers.get(entry.slot)
+        if timer is None or timer.t_init != entry.t_init:
+            owner = f"(process {pid})"
+            timer = state.timers[entry.slot] = _Timer(entry.t_init, owner, self._claim(owner, entry.period_ns))
+        return timer
+
+    def _pin(self, timer: _Timer, period_ns: int, node: str) -> None:
+        """Hands a timer to the node it publishes for; the fires read so far stay out of the node's key."""
+        self._release(timer, period_ns)
+        timer.owner, timer.rank, timer.pinned = node, self._claim(node, period_ns), True
+        timer.skipped = timer.seen
+
+    @staticmethod
+    def _timer_key(timer: _Timer, entry: TimerInfo) -> Key:
+        return timer.owner, "timer", (entry.period_ns, timer.rank)
+
+    @staticmethod
+    def _timer_counts(timer: _Timer, counts: Counters) -> Counters:
+        fires = max(counts[0] - timer.skipped, 0)
+        return (fires, 0, 0, counts[3] if fires else 0)
+
+    def _claim(self, owner: str, period_ns: int) -> int:
+        used = self._ranks.setdefault((owner, period_ns), set())
+        rank = next(n for n in range(len(used) + 1) if n not in used)
+        used.add(rank)
+        return rank
+
+    def _release(self, timer: _Timer, period_ns: int) -> None:
+        used = self._ranks.get((timer.owner, period_ns))
+        if used is not None:
+            used.discard(timer.rank)
+            if not used:
+                del self._ranks[(timer.owner, period_ns)]
 
 
 class RatesRecorder:

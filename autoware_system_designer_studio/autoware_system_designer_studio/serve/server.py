@@ -438,13 +438,14 @@ class ServeDaemon:
         return self.launch.run_tail(run, _str_param(params, "member", required=True))
 
     async def _launch_run_rates(self, params: dict[str, Any]) -> dict[str, Any]:
-        until_ns = params.get("until_ns")
+        sample = params.get("sample")
         span_s = params.get("span_s")
-        if until_ns is not None and (not isinstance(until_ns, int) or isinstance(until_ns, bool)):
-            raise api.ApiError(api.INVALID_PARAMS, "until_ns must be an integer")
+        if sample is not None and (not isinstance(sample, int) or isinstance(sample, bool) or sample < 0):
+            raise api.ApiError(api.INVALID_PARAMS, "sample must be a sample number")
         if span_s is not None and (not isinstance(span_s, (int, float)) or isinstance(span_s, bool) or span_s <= 0):
             raise api.ApiError(api.INVALID_PARAMS, "span_s must be a positive number of seconds")
-        return self.launch.run_rates(_str_param(params, "run", required=True), until_ns=until_ns, span_s=span_s)
+        run = _str_param(params, "run", required=True)
+        return await self.launch.run_rates(run, sample=sample, span_s=span_s)
 
     async def _launch_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
         return await self.launch.shutdown(_str_param(params, "compute_unit", required=True))
@@ -457,16 +458,24 @@ class ServeDaemon:
         return handler
 
     async def _monitor_follow(self, params: dict[str, Any]) -> dict[str, Any]:
-        return await self.launch.monitor_follow(_str_param(params, "compute_unit", required=True))
+        compute_unit = _str_param(params, "compute_unit", required=True)
+        return await self.launch.monitor_follow(compute_unit, _str_param(params, "client") or "")
 
     async def _monitor_unfollow(self, params: dict[str, Any]) -> dict[str, Any]:
-        return await self.launch.monitor_unfollow(_str_param(params, "compute_unit", required=True))
+        compute_unit = _str_param(params, "compute_unit", required=True)
+        return await self.launch.monitor_unfollow(compute_unit, _str_param(params, "client") or "")
 
     async def _monitor_sample(self, params: dict[str, Any]) -> dict[str, Any]:
         compute_unit = _str_param(params, "compute_unit", required=True)
         interval = params.get("interval", 1.0)
-        if not isinstance(interval, (int, float)) or isinstance(interval, bool):
-            raise api.ApiError(api.INVALID_PARAMS, "interval must be a number of seconds")
+        if (
+            not isinstance(interval, (int, float))
+            or isinstance(interval, bool)
+            or not 0.1 <= interval <= launch.MONITOR_SAMPLE_MAX_S
+        ):
+            raise api.ApiError(
+                api.INVALID_PARAMS, f"interval must be a number of seconds in [0.1, {launch.MONITOR_SAMPLE_MAX_S:g}]"
+            )
         return await self.launch.call(compute_unit, "monitor.sample", {"interval": interval})
 
     async def _rviz_start(self, params: dict[str, Any]) -> dict[str, Any]:
