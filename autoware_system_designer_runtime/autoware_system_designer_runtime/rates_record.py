@@ -163,6 +163,7 @@ class RatesRecord:
         self.interval_s = interval_s
         self._lines = lines
         self._keys = keys
+        self._density: Optional[list[float]] = None
 
     @classmethod
     def load(cls, path: Union[str, Path]) -> "RatesRecord":
@@ -216,11 +217,39 @@ class RatesRecord:
                 out[index] = Sample(line["t"], dict(totals), line.get("processes", 0), line.get("untracked", 0))
         return [out[index] for index in indices]
 
+    def density(self) -> list[float]:
+        """Per sample, the takes, publishes and timer fires of every key per second over the interval
+        ending at it; zero at the first sample."""
+        if self._density is None:
+            counts: dict[int, int] = {}
+            density: list[float] = []
+            previous_ns: Optional[int] = None
+            for line in self._lines:
+                moved = 0
+                for key_id, count, *_ in line.get("c", []):
+                    moved += max(count - counts.get(key_id, 0), 0)
+                    counts[key_id] = count
+                for key_id in line.get("d", []):
+                    counts.pop(key_id, None)
+                if previous_ns is None:
+                    density.append(0.0)
+                else:
+                    density.append(round(moved * NS_PER_S / max(line["t"] - previous_ns, 1), 3))
+                previous_ns = line["t"]
+            self._density = density
+        return self._density
+
     def rates(
-        self, *, until_ns: Optional[int] = None, sample: Optional[int] = None, span_s: Optional[float] = None
+        self,
+        *,
+        until_ns: Optional[int] = None,
+        sample: Optional[int] = None,
+        start: Optional[int] = None,
+        span_s: Optional[float] = None,
     ) -> dict[str, Any]:
-        """Rates over ``span_s`` seconds up to sample number ``sample``, else the last sample at or before
-        ``until_ns``; the whole run by default. ``sample`` in the result is the number of the end sample."""
+        """Rates from sample number ``start``, else from ``span_s`` seconds earlier, up to sample number
+        ``sample``, else the last sample at or before ``until_ns``; the whole run by default. ``start``
+        and ``sample`` in the result are the numbers of the span's first and end samples."""
         if len(self._lines) < 2:
             raise ValueError("the record holds fewer than two samples")
         times = self.times
@@ -229,10 +258,13 @@ class RatesRecord:
             end = min(max(sample, 0), end)
         elif until_ns is not None:
             end = max((i for i, t in enumerate(times) if t <= until_ns), default=0)
-        start = 0
-        if span_s is not None:
+        if start is not None:
+            start = max(start, 0)
+        elif span_s is None:
+            start = 0
+        else:
             start = max((i for i, t in enumerate(times) if t <= times[end] - span_s * NS_PER_S), default=0)
         if start >= end:
             start, end = (end - 1, end) if end > 0 else (0, 1)
         before, after = self.samples(start, end)
-        return {**rates_between(before, after), "sample": end}
+        return {**rates_between(before, after), "start": start, "sample": end}

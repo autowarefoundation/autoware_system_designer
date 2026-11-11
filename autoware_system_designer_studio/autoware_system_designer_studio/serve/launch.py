@@ -596,22 +596,33 @@ class LaunchManager:
         return {**_run_summary(run_dir, manifest), "members": members}
 
     async def run_rates(
-        self, name: str, *, sample: Optional[int] = None, span_s: Optional[float] = None
+        self,
+        name: str,
+        *,
+        sample: Optional[int] = None,
+        start: Optional[int] = None,
+        span_s: Optional[float] = None,
     ) -> dict[str, Any]:
-        """Topic rates of a past run from its rates record: over ``span_s`` seconds up to sample number
-        ``sample``, the whole run by default; ``times`` lists the record's samples and ``sample`` is the
-        number of the end one. The record is read on a worker thread."""
+        """Topic rates of a past run from its rates record: from sample number ``start``, else from
+        ``span_s`` seconds earlier, up to sample number ``sample``, the whole run by default. ``times``
+        lists the record's samples, ``density`` the counted events per second over the interval ending
+        at each, and ``start`` and ``sample`` are the numbers of the span's first and end samples. The
+        record is read on a worker thread."""
         run_dir, manifest = self.run(name)
         path = run_dir / RATES_FILE
         if not path.is_file():
             raise api.ApiError(api.NOT_FOUND, f"run {name!r} recorded no topic rates")
         try:
-            rates = await asyncio.get_running_loop().run_in_executor(None, self._read_rates, path, sample, span_s)
+            rates = await asyncio.get_running_loop().run_in_executor(
+                None, self._read_rates, path, sample, start, span_s
+            )
         except (OSError, ValueError) as exc:
             raise api.ApiError(api.NOT_FOUND, f"rates of run {name!r} are not readable: {exc}") from exc
         return {**_run_summary(run_dir, manifest), **rates}
 
-    def _read_rates(self, path: Path, sample: Optional[int], span_s: Optional[float]) -> dict[str, Any]:
+    def _read_rates(
+        self, path: Path, sample: Optional[int], start: Optional[int], span_s: Optional[float]
+    ) -> dict[str, Any]:
         """Rates of the record at ``path``, which stays loaded while its file is unchanged."""
         stat = path.stat()
         version = (path, stat.st_mtime_ns, stat.st_size)
@@ -619,7 +630,11 @@ class LaunchManager:
         if held is None or held[0] != version:
             held = self._rates_record = (version, RatesRecord.load(path))
         record = held[1]
-        return {"times": record.times, **record.rates(sample=sample, span_s=span_s)}
+        return {
+            "times": record.times,
+            "density": record.density(),
+            **record.rates(sample=sample, start=start, span_s=span_s),
+        }
 
     def run_tail(self, name: str, member: str) -> dict[str, Any]:
         """Tails of a member's ``out`` and ``err`` files in a past run; ``member`` is its directory name."""

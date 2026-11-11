@@ -283,6 +283,11 @@ def test_the_run_record_holds_changed_counters_and_reads_back_any_span(tmp_path)
     assert span["from_ns"] == 20 * S and _node(span, "/a")["outputs"][1] == {"topic": "/x", "hz": 30.0}
     assert span["sample"] == 3 and record.rates(sample=3, span_s=10) == span
     assert record.rates(sample=99)["sample"] == 4
+    between = record.rates(start=1, sample=2)
+    assert (between["start"], between["sample"]) == (1, 2) and between["from_ns"] == 10 * S
+    assert _node(between, "/a")["outputs"][1] == {"topic": "/x", "hz": 20.0}
+    assert record.rates(start=3, sample=1)["start"] == 0
+    assert record.density() == [0.0, 10.0, 20.0, 30.0, 0.0]
 
 
 def test_the_run_record_drops_a_key_the_samples_no_longer_hold(tmp_path):

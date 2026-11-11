@@ -15,7 +15,7 @@
 // rates of a launch stay shown after it ended, until its unit is launched
 // again. A selector beside the title shows a past run instead, from the rates
 // record the runtime leaves in the run's log directory, over the whole run or
-// a span ending at a chosen sample. A topic row click selects the topic and
+// the span between two samples, brushed over the run's event density. A topic row click selects the topic and
 // its publishing node as the store's `entity`, a node row click the node; the
 // topic rows of the interfaces of the topic's publishers (else subscribers),
 // or of the entity's node, are marked by direction, the selected topic in the
@@ -709,6 +709,40 @@
   }
 
   // Sort column and direction kept under `key`.
+  // View box of the density strip.
+  const DENSITY_WIDTH = 1000;
+  const DENSITY_HEIGHT = 100;
+
+  // Share of the run's duration elapsed at sample number `index`.
+  function timeShare(times, index) {
+    const total = times[times.length - 1] - times[0];
+    return total > 0 ? (times[index] - times[0]) / total : 0;
+  }
+
+  // Number of the sample nearest to a share of the run's duration.
+  function sampleAtShare(times, share) {
+    const t = times[0] + share * (times[times.length - 1] - times[0]);
+    let best = 0;
+    times.forEach((time, index) => {
+      if (Math.abs(time - t) < Math.abs(times[best] - t)) best = index;
+    });
+    return best;
+  }
+
+  // Closed step outline of the density in a width by height box: the rate of a
+  // sample spans the interval ending at it, scaled to the peak of the run.
+  function densityPath(times, density, width, height) {
+    const peak = density.reduce((a, b) => Math.max(a, b), 0);
+    if (!(peak > 0) || times.length < 2) return "";
+    const round = (value) => Math.round(value * 10) / 10;
+    let d = `M0,${height}`;
+    for (let i = 1; i < times.length; i++) {
+      const y = round(height * (1 - (density[i] || 0) / peak));
+      d += `V${y}H${round(width * timeShare(times, i))}`;
+    }
+    return `${d}V${height}Z`;
+  }
+
   function storedSort(key, keys) {
     let [column, dir] = String(SD.storage.get(key) || "").split(":");
     if (!keys[column]) column = "status";
@@ -752,7 +786,8 @@
     // Unit -> { job, data }: the latest snapshot of the unit's launch of the shown mode.
     const snapshots = new Map();
     // The past run shown instead of the live sessions, or null:
-    // { name, sample, span, result, error }; `sample` is the number of the end sample, null for the last.
+    // { name, start, sample, result, error }; `start` and `sample` are the numbers of the span's
+    // first and end samples, null for the first and the last of the run.
     let run = null;
     let runSeq = 0;
     // Units whose monitor this view follows.
@@ -804,49 +839,176 @@
       filter,
       undeclaredToggle.element,
     );
-    // -- past runs: the selector beside the title, the span and the end sample
+    // -- past runs: the selector beside the title, and the span brushed over the run's density
     const runSelect = element("select", "monitor-run-select");
     runSelect.title = "Live sessions, or the rates record of a past run";
     runSelect.addEventListener("change", () => setRun(runSelect.value));
     const runBar = element("div", "topic-run-bar");
-    const spanSelect = element("select", "topic-run-span");
-    [
-      ["", "Whole run"],
-      ["10", "Last 10 s"],
-      ["60", "Last 1 min"],
-      ["300", "Last 5 min"],
-    ].forEach(([value, label]) => {
-      const option = element("option", "", label);
-      option.value = value;
-      spanSelect.appendChild(option);
-    });
-    const slider = element("input", "topic-run-slider");
-    slider.type = "range";
-    slider.min = "0";
-    slider.step = "1";
-    const runTime = element("span", "topic-run-time");
-    runBar.append(
-      element("span", "topic-toolbar-label", "Span"),
-      spanSelect,
-      element("span", "topic-toolbar-label", "ending at"),
-      slider,
-      runTime,
+    const spanLabel = element("span", "topic-toolbar-label", "Span");
+    spanLabel.title =
+      "Publishes, takes and timer fires per second over the run; " +
+      "drag across it to choose the span, its ends or its body to adjust it";
+    const brush = element("div", "topic-run-brush");
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const densitySvg = document.createElementNS(SVG_NS, "svg");
+    densitySvg.setAttribute("class", "topic-run-density");
+    densitySvg.setAttribute(
+      "viewBox",
+      `0 0 ${DENSITY_WIDTH} ${DENSITY_HEIGHT}`,
     );
+    densitySvg.setAttribute("preserveAspectRatio", "none");
+    const densityArea = document.createElementNS(SVG_NS, "path");
+    densitySvg.appendChild(densityArea);
+    const range = element("div", "topic-run-range");
+    const spanHandle = (label) => {
+      const handle = element("div", "topic-run-handle");
+      handle.tabIndex = 0;
+      handle.setAttribute("role", "slider");
+      handle.setAttribute("aria-label", label);
+      return handle;
+    };
+    const fromHandle = spanHandle("Span start");
+    const toHandle = spanHandle("Span end");
+    range.append(fromHandle, toHandle);
+    brush.append(densitySvg, range);
+    const runTime = element("span", "topic-run-time");
+    const runHover = element("span", "topic-run-hover");
+    const wholeRun = element("button", "topic-run-whole", "Whole run");
+    wholeRun.type = "button";
+    runBar.append(spanLabel, brush, runTime, runHover, wholeRun);
     runBar.hidden = true;
-    let slideTimer = null;
-    spanSelect.addEventListener("change", () => {
-      if (!run) return;
-      run.span = spanSelect.value ? Number(spanSelect.value) : null;
+    // Sample numbers { from, to } of a span picked on the brush and not loaded yet.
+    let picked = null;
+    let pickTimer = null;
+    // The brush gesture under way: { anchor } stretches the span from a fixed sample,
+    // { grab, from, to } shifts it whole.
+    let brushDrag = null;
+
+    function spanEnds() {
+      return picked || { from: run.result.start, to: run.result.sample };
+    }
+
+    function drawSpan() {
+      const { times } = run.result;
+      const { from, to } = spanEnds();
+      const left = 100 * timeShare(times, from);
+      range.style.left = `${left}%`;
+      range.style.width = `${100 * timeShare(times, to) - left}%`;
+      const seconds = Math.round((times[to] - times[from]) / 1e9);
+      runTime.textContent = `${clock(times[from])} – ${clock(times[to])} · ${seconds} s`;
+      [
+        [fromHandle, from],
+        [toHandle, to],
+      ].forEach(([handle, index]) => {
+        handle.setAttribute("aria-valuemin", "0");
+        handle.setAttribute("aria-valuemax", String(times.length - 1));
+        handle.setAttribute("aria-valuenow", String(index));
+        handle.setAttribute("aria-valuetext", clock(times[index]));
+      });
+    }
+
+    function pickSpan(from, to) {
+      picked = { from, to };
+      drawSpan();
+    }
+
+    function loadPicked() {
+      if (!picked || !run) return;
+      run.start = picked.from;
+      run.sample = picked.to;
       loadRun();
+    }
+
+    function brushShare(clientX) {
+      const box = brush.getBoundingClientRect();
+      const share = (clientX - box.left) / Math.max(box.width, 1);
+      return Math.min(Math.max(share, 0), 1);
+    }
+
+    brush.addEventListener("pointerdown", (event) => {
+      if (!run?.result || event.button !== 0) return;
+      const { from, to } = spanEnds();
+      const at = sampleAtShare(run.result.times, brushShare(event.clientX));
+      if (event.target === fromHandle) brushDrag = { anchor: to };
+      else if (event.target === toHandle) brushDrag = { anchor: from };
+      else if (event.target === range) brushDrag = { grab: at, from, to };
+      else brushDrag = { anchor: at };
+      if (event.target === fromHandle || event.target === toHandle)
+        event.target.focus();
+      brush.setPointerCapture(event.pointerId);
+      brush.classList.add("dragging");
+      event.preventDefault();
     });
-    slider.addEventListener("input", () => {
+    brush.addEventListener("pointermove", (event) => {
       if (!run?.result) return;
-      runTime.textContent = clock(run.result.times[Number(slider.value)]);
-      clearTimeout(slideTimer);
-      slideTimer = setTimeout(() => {
-        run.sample = Number(slider.value);
-        loadRun();
-      }, 150);
+      const { times, density = [] } = run.result;
+      const share = brushShare(event.clientX);
+      if (!brushDrag) {
+        const t = times[0] + share * (times[times.length - 1] - times[0]);
+        const index = Math.max(
+          times.findIndex((time) => time >= t),
+          1,
+        );
+        runHover.textContent = `${clock(t)} · ${Math.round(density[index] || 0)} /s`;
+        return;
+      }
+      const at = sampleAtShare(times, share);
+      if ("grab" in brushDrag) {
+        const shift = Math.min(
+          Math.max(at - brushDrag.grab, -brushDrag.from),
+          times.length - 1 - brushDrag.to,
+        );
+        pickSpan(brushDrag.from + shift, brushDrag.to + shift);
+      } else if (at !== brushDrag.anchor) {
+        pickSpan(
+          Math.min(at, brushDrag.anchor),
+          Math.max(at, brushDrag.anchor),
+        );
+      }
+    });
+    brush.addEventListener("pointerleave", () => {
+      runHover.textContent = "";
+    });
+    const endBrush = () => {
+      if (!brushDrag) return;
+      brushDrag = null;
+      brush.classList.remove("dragging");
+      loadPicked();
+    };
+    brush.addEventListener("pointerup", endBrush);
+    brush.addEventListener("pointercancel", endBrush);
+    // Arrow keys move a focused end by one sample, Home and End to the farthest it reaches.
+    [fromHandle, toHandle].forEach((handle) => {
+      handle.addEventListener("keydown", (event) => {
+        if (!run?.result) return;
+        const last = run.result.times.length - 1;
+        const step = {
+          ArrowLeft: -1,
+          ArrowDown: -1,
+          ArrowRight: 1,
+          ArrowUp: 1,
+          Home: -last,
+          End: last,
+        }[event.key];
+        if (!step) return;
+        event.preventDefault();
+        const { from, to } = spanEnds();
+        if (handle === fromHandle)
+          pickSpan(Math.min(Math.max(from + step, 0), to - 1), to);
+        else pickSpan(from, Math.min(Math.max(to + step, from + 1), last));
+        clearTimeout(pickTimer);
+        pickTimer = setTimeout(() => {
+          pickTimer = null;
+          loadPicked();
+        }, 150);
+      });
+    });
+    wholeRun.addEventListener("click", () => {
+      if (!run) return;
+      picked = null;
+      run.start = null;
+      run.sample = null;
+      loadRun();
     });
 
     const summary = element("div", "topic-summary");
@@ -912,29 +1074,40 @@
       runSelect.value = name;
       runSeq += 1;
       run = name
-        ? { name, sample: null, span: null, result: null, error: "" }
+        ? { name, start: null, sample: null, result: null, error: "" }
         : null;
       runBar.hidden = !run;
-      spanSelect.value = "";
+      picked = null;
+      range.style.width = "0";
+      runTime.textContent = "";
+      densityArea.setAttribute("d", "");
       syncFollows();
       if (run) loadRun();
       else render();
     }
 
     function loadRun() {
-      const seq = runSeq;
+      const seq = ++runSeq;
       const params = { run: run.name };
+      if (run.start !== null) params.start = run.start;
       if (run.sample !== null) params.sample = run.sample;
-      if (run.span !== null) params.span_s = run.span;
       daemon
         .rpc("launch.run_rates", params)
         .then((result) => {
           if (seq !== runSeq) return;
           run.result = result;
           run.error = "";
-          slider.max = String(Math.max(result.times.length - 1, 0));
-          slider.value = String(result.sample);
-          runTime.textContent = clock(result.time_ns);
+          if (!brushDrag && !pickTimer) picked = null;
+          densityArea.setAttribute(
+            "d",
+            densityPath(
+              result.times,
+              result.density || [],
+              DENSITY_WIDTH,
+              DENSITY_HEIGHT,
+            ),
+          );
+          drawSpan();
           render();
         })
         .catch((error) => {
@@ -1699,5 +1872,8 @@
   };
   launch.flowMarks = flowMarks;
   launch.topicNodes = topicNodes;
+  launch.timeShare = timeShare;
+  launch.sampleAtShare = sampleAtShare;
+  launch.densityPath = densityPath;
   launch.TOPIC_STATUS = STATUS;
 })();

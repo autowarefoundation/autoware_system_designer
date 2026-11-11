@@ -439,13 +439,15 @@ class ServeDaemon:
 
     async def _launch_run_rates(self, params: dict[str, Any]) -> dict[str, Any]:
         sample = params.get("sample")
+        start = params.get("start")
         span_s = params.get("span_s")
-        if sample is not None and (not isinstance(sample, int) or isinstance(sample, bool) or sample < 0):
-            raise api.ApiError(api.INVALID_PARAMS, "sample must be a sample number")
+        for name, number in (("sample", sample), ("start", start)):
+            if number is not None and (not isinstance(number, int) or isinstance(number, bool) or number < 0):
+                raise api.ApiError(api.INVALID_PARAMS, f"{name} must be a sample number")
         if span_s is not None and (not isinstance(span_s, (int, float)) or isinstance(span_s, bool) or span_s <= 0):
             raise api.ApiError(api.INVALID_PARAMS, "span_s must be a positive number of seconds")
         run = _str_param(params, "run", required=True)
-        return await self.launch.run_rates(run, sample=sample, span_s=span_s)
+        return await self.launch.run_rates(run, sample=sample, start=start, span_s=span_s)
 
     async def _launch_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
         return await self.launch.shutdown(_str_param(params, "compute_unit", required=True))

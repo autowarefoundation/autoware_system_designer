@@ -752,13 +752,19 @@ def test_a_past_run_reads_back_its_topic_rates(archived, tmp_path):
     assert status == 200, body
     result = body["result"]
     assert result["times"] == [0, 10_000_000_000, 20_000_000_000] and result["interval_s"] == 20.0
-    assert result["sample"] == 2
+    assert (result["start"], result["sample"]) == (0, 2) and result["density"] == [0.0, 1.0, 4.0]
     assert result["mode"] == "Runtime" and result["compute_unit"] == "main_ecu"
     assert result["nodes"][0]["outputs"] == [{"topic": "/chatter", "hz": 2.5}]
     status, body = archived.rpc(
         {"method": "launch.run_rates", "params": {"run": "20260101_000000", "sample": 1, "span_s": 10}}
     )
     assert body["result"]["sample"] == 1 and body["result"]["nodes"][0]["outputs"] == [{"topic": "/chatter", "hz": 1.0}]
+    status, body = archived.rpc(
+        {"method": "launch.run_rates", "params": {"run": "20260101_000000", "start": 1, "sample": 2}}
+    )
+    assert body["result"]["start"] == 1 and body["result"]["nodes"][0]["outputs"] == [{"topic": "/chatter", "hz": 4.0}]
+    status, body = archived.rpc({"method": "launch.run_rates", "params": {"run": "20260101_000000", "start": -1}})
+    assert status == 400 and body["error"]["code"] == api.INVALID_PARAMS
     # The record is read again once its file changed.
     writer = RatesWriter(run / RATES_FILE, interval_s=10)
     for second, count in ((0, 0), (10, 30)):

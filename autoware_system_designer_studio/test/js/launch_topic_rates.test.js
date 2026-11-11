@@ -548,3 +548,23 @@ test("services are told from topics by the port role, else by the type", () => {
   );
   assert.equal(loader.status, "unseen");
 });
+
+test("the span brush maps samples to shares of the run and outlines its density", () => {
+  const times = [0, 10e9, 20e9, 40e9];
+  assert.deepEqual(
+    times.map((_, index) => launch.timeShare(times, index)),
+    [0, 0.25, 0.5, 1],
+  );
+  assert.equal(launch.timeShare([5, 5], 1), 0);
+  assert.deepEqual(
+    [0, 0.1, 0.3, 0.7, 0.8, 1].map((share) =>
+      launch.sampleAtShare(times, share),
+    ),
+    [0, 0, 1, 2, 3, 3],
+  );
+  assert.equal(
+    launch.densityPath(times, [0, 5, 20, 10], 1000, 100),
+    "M0,100V75H250V0H500V50H1000V100Z",
+  );
+  assert.equal(launch.densityPath(times, [0, 0, 0, 0], 1000, 100), "");
+});
