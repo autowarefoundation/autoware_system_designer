@@ -60,7 +60,9 @@ def test_from_queue_without_a_filler_is_rejected(tmp_path):
         run_pipeline(workspace, "queue_pkg/Unknown.system.yaml", tmp_path)
 
 
-def test_queue_without_a_reader_is_reported(tmp_path, capfd):
+def test_queue_without_a_reader_is_reported(tmp_path, capfd, monkeypatch):
+    # Warnings reach the terminal at the print level the package build runs with.
+    monkeypatch.setenv("AUTOWARE_SYSTEM_DESIGNER_PRINT_LEVEL", "WARNING")
     workspace = stage_case("queue_reads", tmp_path)
     corrector = workspace / "queue_pkg" / "Corrector.node.yaml"
     corrector.write_text(corrector.read_text().replace("    reads:\n      - from_queue: imu\n", ""))
