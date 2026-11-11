@@ -85,3 +85,16 @@ def test_syntax_error_quotes_the_offending_line():
 
     assert "line 2, column 2" in str(excinfo.value)
     assert "b: 3" in str(excinfo.value)
+
+
+def test_peek_reads_a_top_level_value(tmp_path):
+    path = tmp_path / "x.yaml"
+    path.write_text("a: 1\n")
+    parser = YamlParser(cache_enabled=True)
+
+    assert parser.peek(path, "a") == 1
+    assert parser.peek(path, "missing") is None
+
+    path.write_text("- 1\n- 22\n")
+    with pytest.raises(ValidationError):
+        parser.peek(path, "a")

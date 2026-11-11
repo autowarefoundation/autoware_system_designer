@@ -178,6 +178,13 @@ class YamlParser:
         # Callers own the returned data; the cache keeps a private copy.
         return copy.deepcopy(self._load(file_path).data)
 
+    def peek(self, file_path: Union[str, Path], key: str) -> Any:
+        """Top-level value of a YAML mapping file, read without copying the document; None when absent."""
+        data = self._load(file_path).data
+        if not isinstance(data, dict):
+            raise ValidationError(f"Root of {file_path} is not a mapping")
+        return data.get(key)
+
     def load_config_from_string(self, content: str) -> Dict[str, Any]:
         """Load YAML configuration from string content.
 
