@@ -30,7 +30,7 @@ import pytest
 
 HERE = Path(__file__).resolve().parent.parent
 RUN = HERE / "run.sh"
-SYSTEM = "multi_unit_demo:MultiUnitDemo"
+SYSTEM = "autoware_system_design_examples:MultiUnitDemo"
 PORT_ENV = {"main_ecu": "ASD_PORT_MAIN_ECU", "sub_ecu_1": "ASD_PORT_SUB_ECU_1", "sub_ecu_2": "ASD_PORT_SUB_ECU_2"}
 DEFAULT_PORT = {"main_ecu": 8781, "sub_ecu_1": 8782, "sub_ecu_2": 8783}
 UNITS = tuple(DEFAULT_PORT)

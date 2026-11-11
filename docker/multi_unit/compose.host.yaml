@@ -15,7 +15,6 @@ x-unit: &unit
   stop_grace_period: 20s
   volumes:
     - ../..:/ws/src/autoware_system_designer:ro
-    - ./demo/multi_unit_demo:/ws/src/multi_unit_demo:ro
     - ws:/ws/out
 
 x-environment: &environment

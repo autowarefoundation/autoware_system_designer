@@ -25,5 +25,6 @@ autoware_system_designer_generate_robot_description(
 )
 
 autoware_system_designer_build_deploy(${PROJECT_NAME} type_alpha.deployments PRINT_LEVEL=WARNING STRICT=ON)
+autoware_system_designer_build_deploy(${PROJECT_NAME} MultiUnitDemo.system PRINT_LEVEL=WARNING STRICT=ON)
 
 autoware_ament_auto_package(INSTALL_TO_SHARE config design urdf)

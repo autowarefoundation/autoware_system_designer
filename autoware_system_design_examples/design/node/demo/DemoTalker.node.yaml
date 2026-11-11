@@ -1,6 +1,6 @@
 autoware_system_design_format: 0.4.0
 
-name: Talker.node
+name: DemoTalker.node
 
 description: demo_nodes_cpp talker publishing chatter at 1 Hz.
 

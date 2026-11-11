@@ -1,9 +1,9 @@
 # Multi-unit environment on Docker
 
 One studio daemon per compute unit, each in its own container, standing in for a multi-ECU bench.
-The containers build the system designer packages of this checkout and the demo system
-`multi_unit_demo:MultiUnitDemo`: `demo_nodes_cpp` talkers and listeners on three onboard units,
-every unit subscribing a topic published on another one.
+The containers build the system designer packages of this checkout and run the example system
+`autoware_system_design_examples:MultiUnitDemo`: `demo_nodes_cpp` talkers and listeners on three
+onboard units, every unit subscribing a topic published on another one.
 
 | Unit        | Nodes                                   | Daemon port |
 | ----------- | --------------------------------------- | ----------- |
@@ -39,7 +39,7 @@ what changed. Launch a unit from the Launch activity of its workbench, or by req
 
 ```bash
 curl -s http://127.0.0.1:8781/api/rpc -H 'Content-Type: application/json' -H 'X-System-Designer-Client: shell' \
-    -d '{"id": 1, "method": "launch.start", "params": {"system": "multi_unit_demo:MultiUnitDemo", "compute_unit": "main_ecu", "mode": "default"}}'
+    -d '{"id": 1, "method": "launch.start", "params": {"system": "autoware_system_design_examples:MultiUnitDemo", "compute_unit": "main_ecu", "mode": "default"}}'
 ```
 
 | Variable             | Default                           | Role                                                |
@@ -50,7 +50,7 @@ curl -s http://127.0.0.1:8781/api/rpc -H 'Content-Type: application/json' -H 'X-
 | `ASD_SUBNET_PREFIX`  | `172.30.87`                       | first three octets of the bridge network            |
 | `ASD_UID`, `ASD_GID` | the calling user's                | ids of the container user                           |
 | `ASD_STATE_DIR`      | `$XDG_RUNTIME_DIR/asd-multi-unit` | client key, known hosts, SSH control sockets        |
-| `ASD_PACKAGES`       | studio and demo                   | packages the `build` service builds up to           |
+| `ASD_PACKAGES`       | studio, examples                  | packages the `build` service builds up to           |
 
 The variables are the environment's own: `ROS_DISTRO` and `ROS_DOMAIN_ID` of the calling shell are
 not read.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Multi-unit environment on Docker: one studio daemon per compute unit of the demo system.
+# Multi-unit environment on Docker: one studio daemon per compute unit of MultiUnitDemo.
 #   run.sh up host|bridge       build, start and wait until every daemon is healthy
 #   run.sh down host|bridge     stop and remove the containers (--volumes drops the built workspace)
 #   run.sh compose host|bridge ARGS...   docker compose on the topology (ps, logs, pause, exec, ...)

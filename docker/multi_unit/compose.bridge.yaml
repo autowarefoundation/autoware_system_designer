@@ -17,7 +17,6 @@ x-unit: &unit
     - NET_ADMIN # tc netem on the unit's interface
   volumes:
     - ../..:/ws/src/autoware_system_designer:ro
-    - ./demo/multi_unit_demo:/ws/src/multi_unit_demo:ro
     - ws:/ws/out
     - ${ASD_KEY_DIR:?directory holding authorized_keys, made by run.sh}:/run/asd/keys:ro
 

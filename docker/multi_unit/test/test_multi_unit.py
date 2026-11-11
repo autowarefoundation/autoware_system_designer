@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The demo system on one daemon per compute unit, in both Docker topologies.
+"""MultiUnitDemo on one daemon per compute unit, in both Docker topologies.
 
 Tests run in file order on one environment per topology: the units are launched once, observed,
 then shut down one by one.
@@ -21,7 +21,7 @@ then shut down one by one.
 from __future__ import annotations
 
 import pytest
-from conftest import UNITS, Environment, wait_for
+from conftest import SYSTEM, UNITS, Environment, wait_for
 
 pytestmark = pytest.mark.docker
 
@@ -98,5 +98,5 @@ def test_shutdown_stops_one_unit(launched: Environment) -> None:
 
 def test_past_runs_listed_per_unit(launched: Environment) -> None:
     for unit, daemon in launched.daemons.items():
-        runs = daemon.rpc("launch.runs", system="multi_unit_demo:MultiUnitDemo")["runs"]
+        runs = daemon.rpc("launch.runs", system=SYSTEM)["runs"]
         assert [run["compute_unit"] for run in runs] == [unit]

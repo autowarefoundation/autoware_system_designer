@@ -15,6 +15,8 @@
 
   <build_depend>xacro</build_depend>
 
+  <exec_depend>demo_nodes_cpp</exec_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>

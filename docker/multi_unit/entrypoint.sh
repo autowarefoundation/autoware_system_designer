@@ -5,10 +5,12 @@
 set -eo pipefail
 
 OUT=/ws/out
-PACKAGES="${ASD_PACKAGES:-autoware_system_designer_studio multi_unit_demo}"
+PACKAGES="${ASD_PACKAGES:-autoware_system_designer_studio autoware_system_design_examples}"
 
 # shellcheck disable=SC1090
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
+# shellcheck disable=SC1091
+source /opt/autoware_cmake/setup.bash
 
 build() {
   # shellcheck disable=SC2086

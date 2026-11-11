@@ -19,23 +19,23 @@ compute_units:
 
 components:
   - name: command_talker
-    entity: Talker.node
+    entity: DemoTalker.node
     path: /command/talker
     compute_unit: main_ecu
   - name: report_listener
-    entity: Listener.node
+    entity: DemoListener.node
     path: /report/listener
     compute_unit: main_ecu
   - name: command_listener_1
-    entity: Listener.node
+    entity: DemoListener.node
     path: /command/listener_1
     compute_unit: sub_ecu_1
   - name: command_listener_2
-    entity: Listener.node
+    entity: DemoListener.node
     path: /command/listener_2
     compute_unit: sub_ecu_2
   - name: report_talker
-    entity: Talker.node
+    entity: DemoTalker.node
     path: /report/talker
     compute_unit: sub_ecu_2
 

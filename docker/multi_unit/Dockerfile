@@ -6,13 +6,25 @@ ARG GID=1000
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl \
+      git \
       iproute2 \
       openssh-server \
       python3-jinja2 \
       python3-jsonschema \
       python3-yaml \
       ros-${ROS_DISTRO}-demo-nodes-cpp \
+      ros-${ROS_DISTRO}-xacro \
     && rm -rf /var/lib/apt/lists/*
+
+# autoware_cmake, the build dependency outside this repository, as an underlay.
+ARG AUTOWARE_CMAKE_VERSION=main
+RUN git clone --depth 1 --branch "${AUTOWARE_CMAKE_VERSION}" \
+      https://github.com/autowarefoundation/autoware_cmake.git /tmp/autoware_cmake \
+    && . "/opt/ros/${ROS_DISTRO}/setup.sh" \
+    && cd /tmp/autoware_cmake \
+    && colcon build --packages-up-to autoware_cmake --merge-install --install-base /opt/autoware_cmake \
+         --cmake-args -DBUILD_TESTING=OFF \
+    && rm -rf /tmp/autoware_cmake
 
 # Unprivileged user "asd" on the host user's ids, so files in shared memory and volumes stay the host user's.
 RUN set -eu; \
