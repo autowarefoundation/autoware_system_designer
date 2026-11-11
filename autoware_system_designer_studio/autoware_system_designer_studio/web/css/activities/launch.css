@@ -657,6 +657,26 @@
   border-radius: 12px;
 }
 
+.flow-service {
+  background: var(--flow-service-bg);
+  border: 1px dashed var(--flow-service-border);
+  border-radius: 12px;
+}
+
+/* Row over the services of a node's side, in the card column and the port column alike. */
+.flow-section {
+  box-sizing: border-box;
+  height: 16px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--text-muted);
+}
+
+.flow-right .flow-section {
+  text-align: right;
+}
+
 .flow-card {
   position: relative;
   box-sizing: border-box;
@@ -667,7 +687,8 @@
   padding: 0 8px;
 }
 
-.flow-card.flow-topic {
+.flow-card.flow-topic,
+.flow-card.flow-service {
   padding: 0 10px;
 }
 
@@ -677,6 +698,10 @@
 
 .flow-card.flow-out {
   border-right: 3px solid var(--flow-out);
+}
+
+.flow-card.flow-service::after {
+  border-top-style: dashed;
 }
 
 .flow-card.openable {
@@ -786,6 +811,12 @@
   border-radius: 14px 14px 0 0;
 }
 
+.flow-center-head.flow-service {
+  background: var(--flow-service-head-bg);
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+}
+
 .flow-center-name {
   font-size: 13px;
 }
@@ -799,7 +830,8 @@
   border-width: 1px 2px 2px;
 }
 
-.flow-center-body.flow-topic {
+.flow-center-body.flow-topic,
+.flow-center-body.flow-service {
   border-radius: 0 0 14px 14px;
 }
 
@@ -837,6 +869,11 @@
 .flow-ports.flow-out .flow-port {
   text-align: right;
   border-right: 4px solid var(--flow-out);
+}
+
+.flow-ports .flow-port.service {
+  border-left-style: dashed;
+  border-right-style: dashed;
 }
 
 .flow-port.unconnected {

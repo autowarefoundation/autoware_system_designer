@@ -67,7 +67,7 @@ class Port:
     is_remapped: bool = False
     remap_target: Optional[str] = None
     # ROS interface kind: publisher/subscriber/server/client
-    role: Optional[str] = field(default=None, metadata={"exclude": True})
+    role: Optional[str] = None
 
     __serde_computed__: ClassVar[tuple] = (
         ("topic", "topic"),

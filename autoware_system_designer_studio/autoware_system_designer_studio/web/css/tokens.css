@@ -45,6 +45,9 @@
   --flow-topic-bg: #eaf1fd;
   --flow-topic-head-bg: #cfe0fb;
   --flow-topic-border: #7ba3e6;
+  --flow-service-bg: #f4edfb;
+  --flow-service-head-bg: #e3d3f6;
+  --flow-service-border: #a583d6;
 }
 
 [data-theme="dark"] {
@@ -88,4 +91,7 @@
   --flow-topic-bg: #1b2a40;
   --flow-topic-head-bg: #223a5c;
   --flow-topic-border: #3f6fb5;
+  --flow-service-bg: #2b2140;
+  --flow-service-head-bg: #3c2c5a;
+  --flow-service-border: #8a67c4;
 }

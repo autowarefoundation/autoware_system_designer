@@ -1,8 +1,10 @@
 // Launch: diagrams of the Topics view's viewer, drawn left to right. A node
 // stands between the topics it subscribes and the topics it publishes, one
-// port per topic on the facing edge; a topic stands between its publish
-// servers and its subscribe clients. Nodes are square blocks and topics
-// rounded tinted ones, in the centre as on the cards. Cards and ports share
+// port per topic on the facing edge, the services it calls and serves below
+// them; a topic stands between its publishers and its subscribers, a service
+// between its server and its clients. Nodes are square blocks, topics rounded
+// tinted ones and services dashed ones of another tint, in the centre as on
+// the cards. Cards and ports share
 // one row pitch, so a card's connector meets its port, or the edge of the
 // topic, on a straight line. A topic card opens the topic, a node card the
 // node.
@@ -40,7 +42,7 @@
     );
   }
 
-  // Card of a `kind` ("node" or "topic") on the `side` ("in" or "out") of the centre.
+  // Card of a `kind` ("node", "topic" or "service") on the `side` ("in" or "out") of the centre.
   function card(kind, side, title, onOpen) {
     const node = SD.widgets.element(
       "div",
@@ -54,14 +56,15 @@
     return node;
   }
 
-  // Topic of a node's interface: its status, rate against the declared one,
-  // the node's own callback or communication time, its type and the nodes at
-  // its other end.
+  // Topic or service of a node's interface. A topic: its status, rate against
+  // the declared one, the node's own callback or communication time, its type
+  // and the nodes at its other end. A service: its type and those nodes.
   function topicCard(face, side, openTopic) {
     const { ms, node: shortNode, statusChip } = launch.topicLabels;
     const row = face.row;
+    const kind = face.service ? "service" : "topic";
     if (!row) {
-      const empty = card("topic", side, "connected to no topic");
+      const empty = card(kind, side, `connected to no ${kind}`);
       empty.classList.add("unconnected");
       empty.append(line("flow-muted", span("", "not connected")));
       return empty;
@@ -72,28 +75,34 @@
       (end) => end.node,
     );
     const peers = [...new Set([...others, ...seenOthers])];
+    const [toward, none] = face.service
+      ? input
+        ? ["served by", "no server"]
+        : ["called by", "no client"]
+      : input
+        ? ["from", "no publisher"]
+        : ["to", "no subscriber"];
     const peerText = peers.length
-      ? `${input ? "from" : "to"} ${
+      ? `${toward} ${
           peers.length === 1 ? shortNode(peers[0]) : `${peers.length} nodes`
         }`
-      : input
-        ? "no server"
-        : "no client";
+      : none;
     const time =
       face.ms !== null && `${input ? "comm" : "callback"} ${ms(face.ms)}`;
     const own =
       face.seen && face.hz !== null
         ? `${input ? "take" : "publish"} ${launch.topicLabels.hz(face.hz)} Hz`
         : "";
+    const rate = face.service ? "" : rateText(row);
     const node = card(
-      "topic",
+      kind,
       side,
       [
         row.topic,
         row.msgType,
-        parts(rateText(row), limitsText(row)),
+        parts(rate, limitsText(row)),
         parts(own, time),
-        peers.length ? `${input ? "from" : "to"}\n  ${peers.join("\n  ")}` : "",
+        peers.length ? `${toward}\n  ${peers.join("\n  ")}` : "",
       ]
         .filter(Boolean)
         .join("\n"),
@@ -101,29 +110,34 @@
     );
     const name = span("flow-name", row.topic);
     if (!row.declared || face.port === null) name.classList.add("undeclared");
+    const type = row.msgType.split("/").pop();
     node.append(
       line("", name, statusChip(row.status)),
-      line(
-        "",
-        span("flow-rate", parts(rateText(row), time)),
-        span("flow-muted", parts(row.msgType.split("/").pop(), peerText)),
-      ),
+      face.service
+        ? line("", span("", type), span("flow-muted", peerText))
+        : line(
+            "",
+            span("flow-rate", parts(rate, time)),
+            span("flow-muted", parts(type, peerText)),
+          ),
     );
     return node;
   }
 
-  // Node at an end of a topic: its unit, its own rate and callback or
-  // communication time, and its path.
-  function nodeCard(end, side, openNode) {
+  // Node at an end of a topic or service: its unit and path, and at a topic
+  // its own rate and callback or communication time.
+  function nodeCard(end, side, service, openNode) {
     const { hz, ms, node: shortNode } = launch.topicLabels;
     const source = side === "in";
     const time =
       end.ms !== null && `${source ? "callback" : "comm"} ${ms(end.ms)}`;
-    const state = !end.seen
-      ? "not seen"
-      : end.hz === null
-        ? "new"
-        : `${hz(end.hz)} Hz`;
+    const state = service
+      ? ""
+      : !end.seen
+        ? "not seen"
+        : end.hz === null
+          ? "new"
+          : `${hz(end.hz)} Hz`;
     const node = card(
       "node",
       side,
@@ -143,7 +157,8 @@
       line("", name, end.unit && span("flow-unit", end.unit)),
       line(
         "",
-        span(end.seen ? "flow-rate" : "flow-muted", parts(state, time)),
+        state &&
+          span(end.seen ? "flow-rate" : "flow-muted", parts(state, time)),
         span("flow-muted flow-path", end.node),
       ),
     );
@@ -159,34 +174,47 @@
     return [head, body];
   }
 
-  function ports(faces, side) {
+  // Cards and ports of a node's side, row for row: its topics, then its
+  // services under a section row titled `title`.
+  function nodeSide(faces, side, title, openTopic) {
     const { element } = SD.widgets;
+    const cards = [];
     const list = element("div", `flow-ports flow-${side}`);
-    faces.forEach((face) => {
+    const services = faces.filter((face) => face.service).length;
+    faces.forEach((face, index) => {
+      if (face.service && !faces[index - 1]?.service) {
+        cards.push(element("div", "flow-section", `${title} · ${services}`));
+        list.appendChild(element("div", "flow-section"));
+      }
+      cards.push(topicCard(face, side, openTopic));
       const port = element("div", "flow-port", face.port ?? "–");
       port.title =
         face.port === null ? "seen off the design's ports" : face.port;
       if (!face.row) port.classList.add("unconnected");
+      if (face.service) port.classList.add("service");
       list.appendChild(port);
     });
-    return list;
+    return { cards, ports: list, topics: faces.length - services };
   }
 
-  // Subscribed topics, the node with its ports, published topics.
+  // Subscribed topics and called services, the node with its ports,
+  // published topics and served services.
   function nodeDiagram(node, { openTopic }) {
     const { element } = SD.widgets;
     const { statusChip } = launch.topicLabels;
     const root = element("div", "flow");
+    const left = nodeSide(node.inputs, "in", "Client", openTopic);
+    const right = nodeSide(node.outputs, "out", "Server", openTopic);
     const [inHead, inBody] = column(
       "flow-left",
-      `Subscribe · ${node.inputs.length}`,
-      node.inputs.map((face) => topicCard(face, "in", openTopic)),
+      `Subscribe · ${left.topics}`,
+      left.cards,
       "no subscription",
     );
     const [outHead, outBody] = column(
       "flow-right",
-      `Publish · ${node.outputs.length}`,
-      node.outputs.map((face) => topicCard(face, "out", openTopic)),
+      `Publish · ${right.topics}`,
+      right.cards,
       "no publisher",
     );
     const head = element("div", "flow-center-head flow-node");
@@ -201,29 +229,34 @@
       line("flow-muted", span("", parts(node.node, node.unit))),
     );
     const body = element("div", "flow-center-body flow-node flow-node-ports");
-    body.append(ports(node.inputs, "in"), ports(node.outputs, "out"));
+    body.append(left.ports, right.ports);
     root.append(inHead, head, outHead, inBody, body, outBody);
     return root;
   }
 
-  // Publish servers, the topic's detail, subscribe clients.
+  // Publishers, the topic's detail, subscribers; for a service its server,
+  // its detail and its clients.
   function topicDiagram(row, ends, { openNode }) {
     const { element } = SD.widgets;
     const { hz, ms, statusChip } = launch.topicLabels;
     const root = element("div", "flow");
+    const kind = row.service ? "service" : "topic";
+    const [from, to, noFrom, noTo] = row.service
+      ? ["Server", "Client", "no server", "no client"]
+      : ["Publish", "Subscribe", "no publisher", "no subscriber"];
     const [inHead, inBody] = column(
       "flow-left",
-      `Publish servers · ${ends.sources.length}`,
-      ends.sources.map((end) => nodeCard(end, "in", openNode)),
-      "no publish server",
+      `${from} · ${ends.sources.length}`,
+      ends.sources.map((end) => nodeCard(end, "in", row.service, openNode)),
+      noFrom,
     );
     const [outHead, outBody] = column(
       "flow-right",
-      `Subscribe clients · ${ends.consumers.length}`,
-      ends.consumers.map((end) => nodeCard(end, "out", openNode)),
-      "no subscribe client",
+      `${to} · ${ends.consumers.length}`,
+      ends.consumers.map((end) => nodeCard(end, "out", row.service, openNode)),
+      noTo,
     );
-    const head = element("div", "flow-center-head flow-topic");
+    const head = element("div", `flow-center-head flow-${kind}`);
     const name = span("flow-center-name", row.topic);
     if (!row.declared) name.classList.add("undeclared");
     head.title = row.topic;
@@ -231,7 +264,7 @@
       line("", name, statusChip(row.status)),
       line("flow-muted", span("", row.msgType || "outside the design")),
     );
-    const body = element("div", "flow-center-body flow-topic");
+    const body = element("div", `flow-center-body flow-${kind}`);
     const detail = element("dl", "flow-detail");
     const [, meaning] = launch.TOPIC_STATUS[row.status];
     [

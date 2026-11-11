@@ -86,6 +86,7 @@
             ],
             "port_path": "/sensor/output/scan",
             "remap_target": "~/output/scan",
+            "role": "publisher",
             "topic": [
               "sensor",
               "scan"
@@ -170,6 +171,7 @@
             ],
             "port_path": "/consumer/input/scan",
             "remap_target": "~/input/scan",
+            "role": "subscriber",
             "topic": [
               "sensor",
               "scan"
@@ -260,6 +262,7 @@
           ],
           "port_path": "/sensor/output/scan",
           "remap_target": "~/output/scan",
+          "role": "publisher",
           "topic": [
             "sensor",
             "scan"
@@ -300,6 +303,7 @@
           ],
           "port_path": "/consumer/input/scan",
           "remap_target": "~/input/scan",
+          "role": "subscriber",
           "topic": [
             "sensor",
             "scan"

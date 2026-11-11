@@ -3,10 +3,12 @@
 // its output port declares) with the runtimes' counters of every compute unit
 // running the mode (publish and take rates, callback and communication times).
 // The list is one of three: the nodes in their namespace tree, the topics in
-// the topic namespace tree, or the flat topic table; each sorts by a column
+// the topic namespace tree with the services in a group of their own, or the
+// flat topic table; each sorts by a column
 // within its groups and filters by status. Above the node and topic lists a
 // viewer draws the selected one: a node between the topics it subscribes and
-// publishes, a topic between its publish servers and subscribe clients; a card of the diagram opens
+// publishes with the services it calls and serves, a topic between its
+// publishers and subscribers, a service between its server and clients; a card of the diagram opens
 // its topic or node in the other list. The
 // rates flow only while the view is shown: it follows
 // the monitor of each connected session and releases it when hidden; the last
@@ -69,7 +71,10 @@
       "every node of the topic is on a compute unit that is not running",
       "idle",
     ],
+    service: ["service", "a service: its calls are not counted", "idle"],
   };
+  // Statuses that tell of no problem.
+  const QUIET = new Set(["ok", "service"]);
   // Problems first within a group.
   const STATUS_ORDER = [
     "silent",
@@ -82,6 +87,7 @@
     "once",
     "ok",
     "offline",
+    "service",
   ];
 
   // Lists of the view: nodes or topics in their namespace tree under the
@@ -126,6 +132,13 @@
     if (port.topic === undefined || port.topic === null) return null;
     const name = topicName(port.topic);
     return name === "/" ? null : name;
+  }
+
+  // Whether a port is a service's server or client: by its role, else by its
+  // type on an export that carries no role.
+  function isService(port) {
+    if (port.role) return port.role === "server" || port.role === "client";
+    return String(port.msg_type || "").includes("/srv/");
   }
 
   function positive(value) {
@@ -180,6 +193,7 @@
           warnHz: null,
           errorHz: null,
           once: false,
+          service: false,
         });
       return topics.get(topic);
     };
@@ -191,6 +205,7 @@
         const name = portTopic(port);
         if (!name) return;
         const record = entry(name, port.msg_type);
+        if (isService(port)) record.service = true;
         if (entity.compute_unit) record.units.add(entity.compute_unit);
         const rates = declaredRates(entity, port);
         record.publishers.push({ path, ...rates, intra });
@@ -209,6 +224,7 @@
         const name = portTopic(port);
         if (!name) return;
         const record = entry(name, port.msg_type);
+        if (isService(port)) record.service = true;
         if (entity.compute_unit) record.units.add(entity.compute_unit);
         record.subscribers.push(path);
       });
@@ -302,6 +318,7 @@
       const row = {
         topic,
         declared: !!declared,
+        service: !!declared?.service,
         msgType: declared?.msgType || "",
         declaredHz: declared?.declaredHz ?? null,
         warnHz: declared?.warnHz ?? null,
@@ -328,7 +345,9 @@
           Math.max(0, ...seen.publishers.map((p) => p.silent_s || 0)) || null,
       };
       row.origin = row.designPublishers[0] || seen.publishers[0]?.node || null;
-      row.status = statusOf(row, declared, runningUnits);
+      row.status = row.service
+        ? "service"
+        : statusOf(row, declared, runningUnits);
       rows.push(row);
     });
     return rows;
@@ -341,7 +360,12 @@
   }
 
   // Namespace segments a topic row or a node row groups under.
-  const topicGroup = (row) => segments(row.topic).slice(0, -1);
+  // The services sit under a group of their own.
+  const SERVICES = "(services)";
+  const topicGroup = (row) => {
+    const namespace = segments(row.topic).slice(0, -1);
+    return row.service ? [SERVICES, ...namespace] : namespace;
+  };
   const nodeGroup = (row) => segments(row.node).slice(0, -1);
 
   // Order by `value`, ascending for a positive `dir`, a missing value last
@@ -377,8 +401,8 @@
   }
 
   // Group tree of the rows: { label, path, children, rows, count, statuses },
-  // children by label and rows by `compare`; `pathOf` gives the namespace
-  // segments a row sits under, none for the root. A group with no row of its
+  // children by label with the services last and rows by `compare`; `pathOf`
+  // gives the namespace segments a row sits under, none for the root. A group with no row of its
   // own and a single sub-group merges with it.
   function groupTree(rows, pathOf = () => [], compare = compareRows()) {
     const node = (label, path) => ({
@@ -394,7 +418,13 @@
       let at = root;
       pathOf(row).forEach((part) => {
         if (!at.children.has(part))
-          at.children.set(part, node(`/${part}`, `${at.path}/${part}`));
+          at.children.set(
+            part,
+            node(
+              part === SERVICES ? "Services" : `/${part}`,
+              `${at.path}/${part}`,
+            ),
+          );
         at = at.children.get(part);
       });
       at.rows.push(row);
@@ -402,7 +432,11 @@
     const finish = (at) => {
       at.children = Array.from(at.children.values())
         .map(finish)
-        .sort((a, b) => a.label.localeCompare(b.label));
+        .sort(
+          (a, b) =>
+            (a.label[0] !== "/") - (b.label[0] !== "/") ||
+            a.label.localeCompare(b.label),
+        );
       at.rows.sort(compare);
       at.count = at.rows.length;
       at.rows.forEach((row) => {
@@ -441,9 +475,10 @@
   // Node rows: one per node of the design, plus, when `undeclared`, the nodes
   // seen outside it and the interfaces seen off the ports:
   // { node, key, unit, declared, inputs, outputs, status }. An interface is
-  // { port, topic, row, seen, hz, ms }: the port's name (null off the design),
-  // its topic's row (null for a port connected to no topic) and the node's own
-  // take or publish rate with its communication or callback time. The status
+  // { port, topic, row, service, seen, hz, ms }: the port's name (null off the
+  // design), its topic's row (null for a port connected to no topic), whether
+  // it is a service's, and the node's own take or publish rate with its
+  // communication or callback time; topics come ahead of services. The status
   // is the worst of the outputs, else of the inputs.
   function nodeRows(entities, rows, { undeclared = false } = {}) {
     const byTopic = new Map(rows.map((row) => [row.topic, row]));
@@ -452,10 +487,11 @@
       ["inputs", "in_ports", "subscribers", "comm_ms"],
       ["outputs", "out_ports", "publishers", "callback_ms"],
     ];
-    const face = (port, topic, row, end, time) => ({
+    const face = (port, topic, row, service, end, time) => ({
       port,
       topic,
       row,
+      service,
       seen: !!end,
       hz: end?.hz ?? null,
       ms: end?.[time] ?? null,
@@ -478,7 +514,9 @@
           const row = topic ? byTopic.get(topic) : null;
           if (topic && !row) return;
           const end = row?.[ends].find((e) => e.node === path);
-          record[side].push(face(port.name, topic, row, end, time));
+          record[side].push(
+            face(port.name, topic, row, isService(port), end, time),
+          );
         }),
       );
     });
@@ -497,11 +535,15 @@
               });
             const record = nodes.get(end.node);
             if (record[side].some((f) => f.topic === row.topic)) return;
-            record[side].push(face(null, row.topic, row, end, time));
+            record[side].push(
+              face(null, row.topic, row, row.service, end, time),
+            );
           }),
         ),
       );
     nodes.forEach((record) => {
+      record.inputs.sort((a, b) => a.service - b.service);
+      record.outputs.sort((a, b) => a.service - b.service);
       record.status = worstStatus(record.outputs) || worstStatus(record.inputs);
     });
     return [...nodes.values()];
@@ -616,8 +658,8 @@
   const NODE_COLUMNS = [
     ["Status", "status", "worst status of the outputs, else of the inputs"],
     ["Node", "node", ""],
-    ["Sub", "ins", "subscribed topics"],
-    ["Pub", "outs", "published topics"],
+    ["Sub", "ins", "subscribed topics, + services called"],
+    ["Pub", "outs", "published topics, + services served"],
     ["Unit", "unit", "compute unit"],
   ];
 
@@ -1033,6 +1075,13 @@
       return cell;
     }
 
+    // Topics of a node's side, with its services after a plus.
+    function faceCount(faces) {
+      const services = faces.filter((face) => face.service).length;
+      const topics = faces.length - services;
+      return services ? `${topics} +${services}` : String(topics);
+    }
+
     function nodeRowElement(row, depth) {
       const tr = element("tr", "topic-row");
       tr.dataset.node = row.node;
@@ -1050,8 +1099,8 @@
       tr.append(
         statusCell,
         name,
-        element("td", "topic-num", String(row.inputs.length)),
-        element("td", "topic-num", String(row.outputs.length)),
+        element("td", "topic-num", faceCount(row.inputs)),
+        element("td", "topic-num", faceCount(row.outputs)),
         element("td", "topic-node", row.unit),
       );
       return tr;
@@ -1078,9 +1127,11 @@
       const subsCell = element(
         "td",
         "topic-num",
-        designSubs && subs < designSubs
-          ? `${subs}/${designSubs}`
-          : String(subs),
+        row.service
+          ? String(designSubs)
+          : designSubs && subs < designSubs
+            ? `${subs}/${designSubs}`
+            : String(subs),
       );
       subsCell.title = endpointsTitle(row);
       const pubCell = element(
@@ -1222,7 +1273,7 @@
         element("span", "topic-group-label", node.label),
       );
       STATUS_ORDER.filter(
-        (status) => status !== "ok" && node.statuses.get(status),
+        (status) => !QUIET.has(status) && node.statuses.get(status),
       ).forEach((status) => {
         const item = element("span", "topic-summary-item");
         item.append(
@@ -1288,7 +1339,7 @@
               { openNode },
             )
           : hint(
-              "Select a topic to see its publish servers and subscribe clients.",
+              "Select a topic to see its publishers and subscribers, or a service to see its server and clients.",
             );
       }
       const [top, left] = [viewer.scrollTop, viewer.scrollLeft];
@@ -1317,9 +1368,9 @@
         filterAction.addEventListener("click", () => setStatuses([]));
       } else {
         filterAction.textContent = "Problems";
-        filterAction.title = "every status but ok";
+        filterAction.title = "every status but ok and service";
         filterAction.addEventListener("click", () =>
-          setStatuses(STATUS_ORDER.filter((status) => status !== "ok")),
+          setStatuses(STATUS_ORDER.filter((status) => !QUIET.has(status))),
         );
       }
 
@@ -1353,7 +1404,9 @@
         );
       }
 
-      const counted = [`${rows.length} topics`];
+      const services = rows.filter((row) => row.service).length;
+      const counted = [`${rows.length - services} topics`];
+      if (services) counted.push(`${services} services`);
       if (list === "node") counted.unshift(`${nodes.length} nodes`);
       if (view.heading) counted.unshift(view.heading);
       summary.replaceChildren(
@@ -1387,8 +1440,7 @@
         );
       } else {
         const sort = sorts.topic;
-        if (reveal && selectedTopic)
-          unfold(topicGroup({ topic: selectedTopic }));
+        if (reveal && selected) unfold(topicGroup(selected));
         table.appendChild(headElement(COLUMNS, sort, SORT_KEY));
         appendTree(
           body,
@@ -1500,6 +1552,7 @@
   launch.compareRows = compareRows;
   launch.compareNodes = compareNodes;
   launch.topicGroup = topicGroup;
+  launch.isService = isService;
   launch.nodeGroup = nodeGroup;
   launch.nodeRows = nodeRows;
   launch.topicEnds = topicEnds;

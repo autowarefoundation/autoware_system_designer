@@ -444,3 +444,71 @@ test("a selected topic marks its publishers' interfaces by direction", () => {
   );
   assert.equal(launch.flowMarks(rows, new Set()).size, 0);
 });
+
+test("services are told from topics by the port role, else by the type", () => {
+  const srv = (name, role) => ({
+    name,
+    msg_type: "std_srvs/srv/Trigger",
+    topic: name.split("/").filter(Boolean),
+    event: { unique_id: `${name}.${role}`, trigger_ids: [], action_ids: [] },
+    ...(role ? { role } : {}),
+  });
+  const entities = [
+    node("/map/loader", {
+      outs: [srv("/map/get_map", "server"), port("/map/vector_map", "l.out")],
+    }),
+    node("/planning/planner", {
+      ins: [srv("/map/get_map", "client"), port("/map/vector_map", "p.in")],
+    }),
+    // An export without roles: the type tells.
+    node("/old", { outs: [srv("/old/reset")] }),
+  ];
+  assert.equal(
+    launch.isService({ msg_type: "a/srv/B", role: "publisher" }),
+    false,
+  );
+  const rows = launch.topicRows(launch.designTopics(entities), new Map());
+  const byTopic = new Map(rows.map((row) => [row.topic, row]));
+  const getMap = byTopic.get("/map/get_map");
+  assert.deepEqual(
+    [
+      getMap.service,
+      getMap.status,
+      getMap.designPublishers,
+      getMap.designSubscribers,
+    ],
+    [true, "service", ["/map/loader"], ["/planning/planner"]],
+  );
+  assert.equal(byTopic.get("/old/reset").service, true);
+  assert.equal(byTopic.get("/map/vector_map").service, false);
+
+  // The services sit in their own group, after the namespaces.
+  const tree = launch.groupTree(rows, launch.topicGroup);
+  assert.deepEqual(
+    tree.children.map((group) => group.label),
+    ["/map", "Services"],
+  );
+  assert.deepEqual(
+    tree.children[1].children.map((group) => [
+      group.label,
+      group.rows.map((row) => row.topic),
+    ]),
+    [
+      ["/map", ["/map/get_map"]],
+      ["/old", ["/old/reset"]],
+    ],
+  );
+
+  // A node's topics come ahead of its services; a service decides no status.
+  const loader = launch
+    .nodeRows(entities, rows)
+    .find((row) => row.node === "/map/loader");
+  assert.deepEqual(
+    loader.outputs.map((face) => [face.topic, face.service]),
+    [
+      ["/map/vector_map", false],
+      ["/map/get_map", true],
+    ],
+  );
+  assert.equal(loader.status, "unseen");
+});

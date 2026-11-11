@@ -88,6 +88,7 @@
             ],
             "port_path": "/talker/output/chatter",
             "remap_target": "~/output/chatter",
+            "role": "publisher",
             "topic": [
               "talker",
               "chatter"
@@ -172,6 +173,7 @@
             ],
             "port_path": "/listener/input/chatter",
             "remap_target": "~/input/chatter",
+            "role": "subscriber",
             "topic": [
               "talker",
               "chatter"
@@ -265,6 +267,7 @@
             ],
             "port_path": "/sim/monitor/input/chatter",
             "remap_target": "~/input/chatter",
+            "role": "subscriber",
             "topic": [
               "talker",
               "chatter"
@@ -343,6 +346,7 @@
           ],
           "port_path": "/talker/output/chatter",
           "remap_target": "~/output/chatter",
+          "role": "publisher",
           "topic": [
             "talker",
             "chatter"
@@ -383,6 +387,7 @@
           ],
           "port_path": "/listener/input/chatter",
           "remap_target": "~/input/chatter",
+          "role": "subscriber",
           "topic": [
             "talker",
             "chatter"
@@ -429,6 +434,7 @@
           ],
           "port_path": "/talker/output/chatter",
           "remap_target": "~/output/chatter",
+          "role": "publisher",
           "topic": [
             "talker",
             "chatter"
@@ -470,6 +476,7 @@
           ],
           "port_path": "/sim/monitor/input/chatter",
           "remap_target": "~/input/chatter",
+          "role": "subscriber",
           "topic": [
             "talker",
             "chatter"

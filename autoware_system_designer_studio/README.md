@@ -90,9 +90,13 @@ the nodes in their namespace tree, each with the worst status of its outputs (el
 Topics, the topic rows in the topic namespace tree; Table, the topic rows flat. Above the Nodes and
 Topics lists a viewer draws the selected one left to right: a node with its ports between the
 topics it subscribes and the topics it publishes, each with its status, rate, declared rate, type
-and the node's own communication or callback time; a topic's detail between its publish servers
-and its subscribe clients, each with its own rate and time. Nodes are square blocks and topics
-rounded tinted ones. A topic card opens the topic in Topics, a node card the node in Nodes. The view follows the rates of every connected session of the mode while shown, and
+and the node's own communication or callback time; a topic's detail between its publishers
+and its subscribers, each with its own rate and time. Nodes are square blocks and topics
+rounded tinted ones. A port of role `server` or `client` (else of a `/srv/` type, on an export
+without roles) is a service: status `service`, no rate, since its calls are not counted. Services
+sit in a Services group under the topic tree, below the topics on each side of a node as Client
+and Server, dashed and of another tint, and a selected service is drawn between its server and its
+clients. A topic card opens the topic in Topics, a node card the node in Nodes. The view follows the rates of every connected session of the mode while shown, and
 keeps the last rates of a launch that ended until its unit is launched again. A selector beside the
 Topics title shows a past run of the mode instead, from the rates record in its log directory, over
 the whole run or the last 10 s, 1 min or 5 min up to a sample chosen on a slider. All three

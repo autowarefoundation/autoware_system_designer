@@ -89,6 +89,7 @@
             ],
             "port_path": "/feeder/output/output",
             "remap_target": "~/output/output",
+            "role": "publisher",
             "topic": [
               "feeder",
               "output"
@@ -177,6 +178,7 @@
                 ],
                 "port_path": "/app/duo/worker_a/input/input",
                 "remap_target": "~/input/input",
+                "role": "subscriber",
                 "topic": [
                   "feeder",
                   "output"
@@ -325,6 +327,7 @@
                 ],
                 "port_path": "/app/duo/worker_b/input/input",
                 "remap_target": "~/input/input",
+                "role": "subscriber",
                 "topic": [
                   "feeder",
                   "output"
@@ -449,6 +452,7 @@
             ],
             "port_path": "/app/duo/input/input",
             "remap_target": "~/input/input",
+            "role": "subscriber",
             "topic": [
               "feeder",
               "output"
@@ -489,6 +493,7 @@
               ],
               "port_path": "/app/duo/input/input",
               "remap_target": "~/input/input",
+              "role": "subscriber",
               "topic": [
                 "feeder",
                 "output"
@@ -531,6 +536,7 @@
               ],
               "port_path": "/app/duo/worker_a/input/input",
               "remap_target": "~/input/input",
+              "role": "subscriber",
               "topic": [
                 "feeder",
                 "output"
@@ -572,6 +578,7 @@
               ],
               "port_path": "/app/duo/input/input",
               "remap_target": "~/input/input",
+              "role": "subscriber",
               "topic": [
                 "feeder",
                 "output"
@@ -614,6 +621,7 @@
               ],
               "port_path": "/app/duo/worker_b/input/input",
               "remap_target": "~/input/input",
+              "role": "subscriber",
               "topic": [
                 "feeder",
                 "output"
@@ -676,6 +684,7 @@
           ],
           "port_path": "/feeder/output/output",
           "remap_target": "~/output/output",
+          "role": "publisher",
           "topic": [
             "feeder",
             "output"
@@ -713,6 +722,7 @@
           ],
           "port_path": "/app/duo/input/input",
           "remap_target": "~/input/input",
+          "role": "subscriber",
           "topic": [
             "feeder",
             "output"

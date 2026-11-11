@@ -94,6 +94,7 @@
             ],
             "port_path": "/talker/output/status",
             "remap_target": "~/output/status",
+            "role": "publisher",
             "topic": [
               "talker",
               "status"
