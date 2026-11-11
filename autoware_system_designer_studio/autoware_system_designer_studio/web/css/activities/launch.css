@@ -1014,10 +1014,6 @@
   max-width: 440px;
 }
 
-.topic-table td.topic-name {
-  padding-left: calc(8px + var(--depth, 0) * 14px);
-}
-
 .topic-table.node-list td.topic-name {
   width: 100%;
   max-width: none;

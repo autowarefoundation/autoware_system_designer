@@ -1082,7 +1082,7 @@
       return services ? `${topics} +${services}` : String(topics);
     }
 
-    function nodeRowElement(row, depth) {
+    function nodeRowElement(row) {
       const tr = element("tr", "topic-row");
       tr.dataset.node = row.node;
       if (row.node === selectedNode) tr.classList.add("chosen");
@@ -1093,7 +1093,6 @@
         "topic-name",
         segments(row.node).pop() || row.node,
       );
-      name.style.setProperty("--depth", depth);
       name.title = row.node;
       if (!row.declared) name.classList.add("undeclared");
       tr.append(
@@ -1106,14 +1105,13 @@
       return tr;
     }
 
-    function rowElement(row, depth, flow) {
+    function rowElement(row, flow) {
       const tr = element("tr", "topic-row");
       tr.dataset.topic = row.topic;
       if (row.origin) tr.dataset.node = row.origin;
       if (flow) tr.classList.add(`flow-${flow}`);
       if (row.topic === selectedTopic) tr.classList.add("chosen");
       const topicCell = element("td", "topic-name", row.topic);
-      topicCell.style.setProperty("--depth", depth);
       topicCell.title = row.msgType
         ? `${row.topic}\n${row.msgType}`
         : row.topic;
@@ -1292,7 +1290,8 @@
       return tr;
     }
 
-    // Sub-groups of a tree node, then its own rows drawn by `rowOf(row, depth)`.
+    // Sub-groups of a tree node, indented by depth, then its own rows drawn by
+    // `rowOf(row)`; rows keep one column whatever their depth.
     function appendTree(body, node, depth, span, rowOf) {
       node.children.forEach((child) => {
         const key = `${list}:${child.path}`;
@@ -1300,7 +1299,7 @@
         body.appendChild(groupElement(child, depth, open, key, span));
         if (open) appendTree(body, child, depth + 1, span, rowOf);
       });
-      node.rows.forEach((row) => body.appendChild(rowOf(row, depth)));
+      node.rows.forEach((row) => body.appendChild(rowOf(row)));
     }
 
     // Unfolds the groups over a row sitting under the namespace `parts`.
@@ -1451,7 +1450,7 @@
           ),
           0,
           COLUMNS.length,
-          (row, depth) => rowElement(row, depth, marks.get(row.topic)),
+          (row) => rowElement(row, marks.get(row.topic)),
         );
       }
       table.appendChild(body);
