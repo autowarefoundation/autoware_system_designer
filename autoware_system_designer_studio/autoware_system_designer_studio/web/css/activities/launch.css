@@ -574,6 +574,267 @@
   background: var(--flow-out);
 }
 
+/* Viewer of the selected node or topic over its list; its lower edge drags. */
+.topic-viewer {
+  flex: 0 0 auto;
+  height: 42%;
+  min-height: 90px;
+  max-height: 80%;
+  overflow: auto;
+  resize: vertical;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.topic-viewer[hidden] {
+  display: none;
+}
+
+.topic-viewer-hint {
+  margin: 0;
+  padding: 24px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Flow diagram: heads over a row of left cards, the centre and right cards.
+   Cards and ports share the pitch --flow-row + --flow-gap. */
+.flow {
+  --flow-row: 58px;
+  --flow-gap: 6px;
+  --flow-link: 30px;
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) minmax(240px, 0.9fr) minmax(
+      230px,
+      1fr
+    );
+  column-gap: var(--flow-link);
+  min-width: 760px;
+  padding: 10px 14px 14px;
+  font-size: 12px;
+}
+
+.flow-col-title {
+  align-self: end;
+  padding-bottom: 6px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.flow-col-title.flow-right {
+  text-align: right;
+}
+
+.flow-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--flow-gap);
+  padding-top: var(--flow-gap);
+}
+
+.flow-none {
+  height: var(--flow-row);
+  line-height: var(--flow-row);
+  color: var(--text-muted);
+}
+
+.flow-right .flow-none {
+  text-align: right;
+}
+
+.flow-card {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: var(--flow-row);
+  padding: 3px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.flow-card.flow-in {
+  border-left: 3px solid var(--flow-in);
+}
+
+.flow-card.flow-out {
+  border-right: 3px solid var(--flow-out);
+}
+
+.flow-card.openable {
+  cursor: pointer;
+}
+
+.flow-card.openable:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 1px 4px var(--shadow);
+}
+
+.flow-card.flow-in.openable:hover {
+  border-left-color: var(--flow-in);
+}
+
+.flow-card.flow-out.openable:hover {
+  border-right-color: var(--flow-out);
+}
+
+.flow-card.unconnected {
+  border-style: dashed;
+}
+
+/* Connector from a card to the centre. */
+.flow-card::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: var(--flow-link);
+  border-top: 2px solid var(--flow-in);
+}
+
+.flow-card.flow-in::after {
+  left: 100%;
+}
+
+.flow-card.flow-out::after {
+  right: 100%;
+  border-top-color: var(--flow-out);
+}
+
+.flow-card.unconnected::after {
+  display: none;
+}
+
+.flow-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  line-height: 16px;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.flow-line > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flow-line > .topic-status {
+  flex-shrink: 0;
+  line-height: 14px;
+}
+
+.flow-line.flow-muted,
+.flow-muted {
+  color: var(--text-muted);
+}
+
+.flow-name,
+.flow-center-name {
+  font-family: var(--mono-font);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.flow-name.undeclared,
+.flow-center-name.undeclared {
+  font-style: italic;
+  font-weight: 400;
+}
+
+.flow-rate {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.flow-unit {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.flow-center-head {
+  padding: 6px 10px;
+  background: var(--bg-sidebar-header);
+  border: 1px solid var(--border-hover);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+}
+
+.flow-center-name {
+  font-size: 13px;
+}
+
+.flow-center-body {
+  box-sizing: border-box;
+  min-height: calc(var(--flow-row) + 2 * var(--flow-gap));
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-hover);
+  border-radius: 0 0 6px 6px;
+}
+
+.flow-node-ports {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: var(--flow-gap) 0;
+}
+
+.flow-ports {
+  display: flex;
+  flex-direction: column;
+  gap: var(--flow-gap);
+  min-width: 0;
+}
+
+.flow-port {
+  box-sizing: border-box;
+  height: var(--flow-row);
+  max-width: 100%;
+  padding: 0 8px;
+  line-height: var(--flow-row);
+  font-family: var(--mono-font);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-ports.flow-in .flow-port {
+  border-left: 4px solid var(--flow-in);
+}
+
+.flow-ports.flow-out .flow-port {
+  text-align: right;
+  border-right: 4px solid var(--flow-out);
+}
+
+.flow-port.unconnected {
+  color: var(--text-muted);
+  border-color: var(--border-color) !important;
+}
+
+.flow-detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.flow-detail dt {
+  color: var(--text-muted);
+}
+
+.flow-detail dd {
+  margin: 0;
+  color: var(--text-primary);
+}
+
 .topic-table-host {
   flex: 1;
   min-height: 0;
@@ -626,6 +887,10 @@
 
 .topic-row:hover {
   background: var(--bg-primary);
+}
+
+.topic-row.chosen {
+  background: var(--highlight-bg);
 }
 
 /* Interfaces of the marked nodes by direction; the selected topic in the stronger shade with a thicker bar. */
@@ -687,6 +952,11 @@
 
 .topic-table td.topic-name {
   padding-left: calc(8px + var(--depth, 0) * 14px);
+}
+
+.topic-table.node-list td.topic-name {
+  width: 100%;
+  max-width: none;
 }
 
 .topic-name.undeclared {

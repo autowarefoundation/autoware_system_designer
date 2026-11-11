@@ -1,5 +1,6 @@
 // Unit tests for the Topics view's model: design topics with their declared
-// rates, observed rates of the running units, row status and grouping.
+// rates, observed rates of the running units, row status and grouping, the
+// node rows and the ends of a topic.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -232,18 +233,19 @@ function shape(node) {
 test("rows sit in a namespace tree; single-child chains merge", () => {
   const design = launch.designTopics(ENTITIES);
   const rows = launch.topicRows(design, new Map());
-  const tree = launch.groupTree(rows, "namespace");
-  // /map and /control publish from the root namespace.
+  const tree = launch.groupTree(rows, launch.topicGroup);
   assert.deepEqual(shape(tree), [
     "",
     [
+      ["/control", [], ["/control/cmd"]],
+      ["/map", [], ["/map/vector_map"]],
       ["/perception", [], ["/perception/filtered", "/perception/objects"]],
       ["/sensing/lidar", [], ["/sensing/lidar/points"]],
     ],
-    ["/control/cmd", "/map/vector_map"],
+    [],
   ]);
   assert.equal(tree.count, rows.length);
-  assert.equal(tree.children[0].statuses.get("unseen"), 2);
+  assert.equal(tree.children[2].statuses.get("unseen"), 2);
 
   const topics = [
     "/perception/object_recognition/detection/objects",
@@ -251,7 +253,7 @@ test("rows sit in a namespace tree; single-child chains merge", () => {
     "/perception/object_recognition/objects",
     "/perception/traffic_light/signals",
   ].map((topic) => ({ ...rows[0], topic }));
-  assert.deepEqual(shape(launch.groupTree(topics, "topic")), [
+  assert.deepEqual(shape(launch.groupTree(topics, launch.topicGroup)), [
     "",
     [
       [
@@ -280,20 +282,120 @@ test("rows sit in a namespace tree; single-child chains merge", () => {
     ],
     [],
   ]);
-  const flat = launch.groupTree(rows, "none");
+  const flat = launch.groupTree(rows);
   assert.equal(flat.children.length, 0);
   assert.equal(flat.rows.length, rows.length);
+});
 
-  const orphan = {
-    ...rows[0],
-    topic: "/x",
-    origin: null,
-    designSubscribers: [],
-    subscribers: [],
-  };
+const OBSERVED = new Map([
+  [
+    "main_ecu",
+    snapshot([
+      {
+        node: "/sensing/lidar/driver",
+        outputs: [{ topic: "/sensing/lidar/points", hz: 6, callback_ms: 1.5 }],
+        inputs: [],
+      },
+      {
+        node: "/perception/detector",
+        inputs: [{ topic: "/sensing/lidar/points", hz: 6, comm_ms: 0.4 }],
+        outputs: [{ topic: "/perception/objects", hz: 0, silent_s: 4 }],
+      },
+      {
+        node: "/rviz",
+        inputs: [{ topic: "/perception/objects", hz: 0 }],
+        outputs: [{ topic: "/debug/markers", hz: 2 }],
+      },
+    ]),
+  ],
+]);
+
+test("node rows carry the interfaces of each node with its own rates", () => {
+  const design = launch.designTopics(ENTITIES);
+  const rows = launch.topicRows(design, launch.observedTopics(OBSERVED));
+  const nodes = new Map(
+    launch.nodeRows(ENTITIES, rows).map((row) => [row.node, row]),
+  );
+  assert.equal(nodes.size, ENTITIES.length);
+  const detector = nodes.get("/perception/detector");
   assert.deepEqual(
-    launch.groupTree([orphan], "namespace").children.map((n) => n.label),
-    ["(no node)"],
+    detector.inputs.map((f) => [f.port, f.topic, f.seen, f.hz, f.ms]),
+    [["/sensing/lidar/points", "/sensing/lidar/points", true, 6, 0.4]],
+  );
+  assert.equal(detector.outputs[0].row.status, "silent");
+  // The worst output decides; a node without outputs takes its inputs' status.
+  assert.equal(detector.status, "silent");
+  assert.equal(nodes.get("/sensing/lidar/driver").status, "slow");
+  const planner = nodes.get("/planning/planner");
+  assert.equal(planner.status, "silent");
+  // A port connected to no topic stays an interface without a row.
+  assert.deepEqual(
+    planner.inputs.map((f) => [f.topic, f.seen]),
+    [
+      ["/perception/objects", false],
+      [null, false],
+    ],
+  );
+  assert.equal(nodes.has("/rviz"), false);
+
+  // Undeclared: nodes seen outside the design, with their interfaces off the ports.
+  const all = launch.topicRows(design, launch.observedTopics(OBSERVED), {
+    undeclared: true,
+  });
+  const rviz = launch
+    .nodeRows(ENTITIES, all, { undeclared: true })
+    .find((row) => row.node === "/rviz");
+  assert.equal(rviz.declared, false);
+  assert.equal(rviz.unit, "main_ecu");
+  assert.deepEqual(
+    rviz.inputs.map((f) => [f.port, f.topic]),
+    [[null, "/perception/objects"]],
+  );
+  assert.deepEqual(
+    rviz.outputs.map((f) => f.topic),
+    ["/debug/markers"],
+  );
+
+  const tree = launch.groupTree(
+    [...nodes.values()],
+    launch.nodeGroup,
+    launch.compareNodes("node", 1),
+  );
+  assert.deepEqual(
+    tree.children.map((group) => group.label),
+    ["/perception", "/planning", "/sensing/lidar"],
+  );
+  assert.deepEqual(
+    tree.rows.map((row) => row.node),
+    ["/control", "/map"],
+  );
+  assert.deepEqual(
+    tree.children[0].rows.map((row) => row.node),
+    ["/perception/detector", "/perception/filter"],
+  );
+});
+
+test("a topic's ends are its declared and seen nodes", () => {
+  const design = launch.designTopics(ENTITIES);
+  const rows = launch.topicRows(design, launch.observedTopics(OBSERVED));
+  const objects = rows.find((row) => row.topic === "/perception/objects");
+  const ends = launch.topicEnds(objects, () => "main_ecu");
+  assert.deepEqual(ends.sources, [
+    {
+      node: "/perception/detector",
+      declared: true,
+      unit: "main_ecu",
+      seen: true,
+      hz: 0,
+      ms: null,
+    },
+  ]);
+  assert.deepEqual(
+    ends.consumers.map((e) => [e.node, e.declared, e.seen, e.unit]),
+    [
+      ["/planning/planner", true, false, "main_ecu"],
+      ["/rviz", false, true, "main_ecu"],
+    ],
   );
 });
 
@@ -308,7 +410,7 @@ test("rows sort by a column within their group, missing values last", () => {
   ];
   const order = (key, dir) =>
     launch
-      .groupTree(rows, "none", launch.compareRows(key, dir))
+      .groupTree(rows, undefined, launch.compareRows(key, dir))
       .rows.map((r) => r.topic);
   assert.deepEqual(order("status", 1), ["/b", "/d", "/a", "/c"]);
   assert.deepEqual(order("hz", 1), ["/b", "/a", "/d", "/c"]);
