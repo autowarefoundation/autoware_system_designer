@@ -38,30 +38,23 @@ macro(autoware_system_designer_generate_launcher)
     if(NODE_YAML_FILES)
       message(STATUS "Found node YAML files in ${PROJECT_NAME}: ${NODE_YAML_FILES}")
 
-      # Create output files list for dependencies and individual commands
-      set(LAUNCHER_FILES "")
-      set(LAUNCHER_COMMANDS "")
-
-      foreach(NODE_YAML_FILE ${NODE_YAML_FILES})
-        get_filename_component(NODE_NAME ${NODE_YAML_FILE} NAME_WE)
-        set(LAUNCHER_FILE "${LAUNCHER_FILE_DIR}/${NODE_NAME}.launch.xml")
-        list(APPEND LAUNCHER_FILES ${LAUNCHER_FILE})
-
-        # Create individual custom command for each node
-        add_custom_command(
-          OUTPUT ${LAUNCHER_FILE}
-          COMMAND ${CMAKE_COMMAND} -E make_directory ${LAUNCHER_FILE_DIR}
-          COMMAND ${CMAKE_COMMAND} -E make_directory ${LOG_DIR}
-          COMMAND ${Python3_EXECUTABLE} ${SYSTEM_DESIGNER_RUNNER_SCRIPT} run --log-file ${LOG_FILE} --append -- ${Python3_EXECUTABLE} ${GENERATE_LAUNCHER_PY_SCRIPT} ${NODE_YAML_FILE} ${LAUNCHER_FILE_DIR}
-          DEPENDS ${NODE_YAML_FILE} ${GENERATE_LAUNCHER_PY_SCRIPT} ${SYSTEM_DESIGNER_RUNNER_SCRIPT}
-          COMMENT "Generating launcher file ${NODE_NAME}.launch.xml. Terminal shows warnings/errors; full log: ${LOG_FILE}"
-          VERBATIM
-        )
-      endforeach()
+      # One process generates every launcher of the package. The stamp lives beside the
+      # launchers, so removing the install tree regenerates them.
+      set(LAUNCHER_STAMP "${LAUNCHER_FILE_DIR}/.launcher_generation.stamp")
+      add_custom_command(
+        OUTPUT ${LAUNCHER_STAMP}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${LAUNCHER_FILE_DIR}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${LOG_DIR}
+        COMMAND ${Python3_EXECUTABLE} ${SYSTEM_DESIGNER_RUNNER_SCRIPT} run --log-file ${LOG_FILE} -- ${Python3_EXECUTABLE} ${GENERATE_LAUNCHER_PY_SCRIPT} ${NODE_YAML_FILES} ${LAUNCHER_FILE_DIR}
+        COMMAND ${CMAKE_COMMAND} -E touch ${LAUNCHER_STAMP}
+        DEPENDS ${NODE_YAML_FILES} ${GENERATE_LAUNCHER_PY_SCRIPT} ${SYSTEM_DESIGNER_RUNNER_SCRIPT}
+        COMMENT "Generating node launcher files of ${PROJECT_NAME}. Terminal shows warnings/errors; full log: ${LOG_FILE}"
+        VERBATIM
+      )
 
       # Create custom target for all launcher generation
       add_custom_target(${PROJECT_NAME}_generate_launcher ALL
-        DEPENDS ${LAUNCHER_FILES}
+        DEPENDS ${LAUNCHER_STAMP}
       )
 
       # Make sure the launcher generation runs before the main project target
