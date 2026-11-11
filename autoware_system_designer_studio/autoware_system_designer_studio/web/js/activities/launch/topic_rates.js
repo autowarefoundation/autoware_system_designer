@@ -5,8 +5,8 @@
 // The list is one of three: the nodes in their namespace tree, the topics in
 // the topic namespace tree, or the flat topic table; each sorts by a column
 // within its groups and filters by status. Above the node and topic lists a
-// viewer draws the selected one: a node between its input and output topics,
-// a topic between its source and consumer nodes; a card of the diagram opens
+// viewer draws the selected one: a node between the topics it subscribes and
+// publishes, a topic between its publish servers and subscribe clients; a card of the diagram opens
 // its topic or node in the other list. The
 // rates flow only while the view is shown: it follows
 // the monitor of each connected session and releases it when hidden; the last
@@ -616,8 +616,8 @@
   const NODE_COLUMNS = [
     ["Status", "status", "worst status of the outputs, else of the inputs"],
     ["Node", "node", ""],
-    ["In", "ins", "input topics"],
-    ["Out", "outs", "output topics"],
+    ["Sub", "ins", "subscribed topics"],
+    ["Pub", "outs", "published topics"],
     ["Unit", "unit", "compute unit"],
   ];
 
@@ -1277,7 +1277,7 @@
           : hint(
               selectedNode
                 ? `${selectedNode} is not listed.`
-                : "Select a node to see its input and output topics.",
+                : "Select a node to see the topics it subscribes and publishes.",
             );
       } else {
         const row = rows.find((r) => r.topic === selectedTopic);
@@ -1287,7 +1287,9 @@
               topicEnds(row, (path) => entityOfNode(path)?.compute_unit),
               { openNode },
             )
-          : hint("Select a topic to see its source and consumer nodes.");
+          : hint(
+              "Select a topic to see its publish servers and subscribe clients.",
+            );
       }
       const [top, left] = [viewer.scrollTop, viewer.scrollLeft];
       viewer.replaceChildren(content);
@@ -1345,9 +1347,9 @@
         legend.title = [...marked].join("\n");
         legend.append(
           element("span", "topic-flow-swatch flow-in"),
-          element("span", "", "input"),
+          element("span", "", "subscribe"),
           element("span", "topic-flow-swatch flow-out"),
-          element("span", "", `output of ${of}`),
+          element("span", "", `publish of ${of}`),
         );
       }
 

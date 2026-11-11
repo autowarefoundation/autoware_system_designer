@@ -1,9 +1,11 @@
 // Launch: diagrams of the Topics view's viewer, drawn left to right. A node
-// stands between its input topics and its output topics, one port per topic
-// on the facing edge; a topic stands between its source nodes and its
-// consumer nodes. Cards and ports share one row pitch, so a card's connector
-// meets its port, or the edge of the topic, on a straight line. A topic card
-// opens the topic, a node card the node.
+// stands between the topics it subscribes and the topics it publishes, one
+// port per topic on the facing edge; a topic stands between its publish
+// servers and its subscribe clients. Nodes are square blocks and topics
+// rounded tinted ones, in the centre as on the cards. Cards and ports share
+// one row pitch, so a card's connector meets its port, or the edge of the
+// topic, on a straight line. A topic card opens the topic, a node card the
+// node.
 (function () {
   const SD = window.SD;
   const launch = (SD.activities.launch ||= {});
@@ -25,8 +27,9 @@
   // Rate against the declared one.
   function rateText(row) {
     const { hz } = launch.topicLabels;
-    const rate = `${hz(row.hz)} Hz`;
-    return row.declaredHz ? `${rate} / ${hz(row.declaredHz)} declared` : rate;
+    return row.declaredHz
+      ? `${hz(row.hz)} / ${hz(row.declaredHz)} Hz`
+      : `${hz(row.hz)} Hz`;
   }
 
   function limitsText(row) {
@@ -37,8 +40,12 @@
     );
   }
 
-  function card(className, title, onOpen) {
-    const node = SD.widgets.element("div", `flow-card ${className}`);
+  // Card of a `kind` ("node" or "topic") on the `side` ("in" or "out") of the centre.
+  function card(kind, side, title, onOpen) {
+    const node = SD.widgets.element(
+      "div",
+      `flow-card flow-${kind} flow-${side}`,
+    );
     node.title = title;
     if (onOpen) {
       node.classList.add("openable");
@@ -47,13 +54,15 @@
     return node;
   }
 
-  // Topic of a node's interface: its status, rate and type, the node's own
-  // callback or communication time, and the nodes at its other end.
+  // Topic of a node's interface: its status, rate against the declared one,
+  // the node's own callback or communication time, its type and the nodes at
+  // its other end.
   function topicCard(face, side, openTopic) {
     const { ms, node: shortNode, statusChip } = launch.topicLabels;
     const row = face.row;
     if (!row) {
-      const empty = card(`flow-${side} unconnected`, "connected to no topic");
+      const empty = card("topic", side, "connected to no topic");
+      empty.classList.add("unconnected");
       empty.append(line("flow-muted", span("", "not connected")));
       return empty;
     }
@@ -68,8 +77,8 @@
           peers.length === 1 ? shortNode(peers[0]) : `${peers.length} nodes`
         }`
       : input
-        ? "no source"
-        : "no consumer";
+        ? "no server"
+        : "no client";
     const time =
       face.ms !== null && `${input ? "comm" : "callback"} ${ms(face.ms)}`;
     const own =
@@ -77,7 +86,8 @@
         ? `${input ? "take" : "publish"} ${launch.topicLabels.hz(face.hz)} Hz`
         : "";
     const node = card(
-      `flow-${side}`,
+      "topic",
+      side,
       [
         row.topic,
         row.msgType,
@@ -93,16 +103,17 @@
     if (!row.declared || face.port === null) name.classList.add("undeclared");
     node.append(
       line("", name, statusChip(row.status)),
-      line("", span("flow-rate", rateText(row)), time && span("", time)),
       line(
-        "flow-muted",
-        span("", parts(row.msgType.split("/").pop(), peerText)),
+        "",
+        span("flow-rate", parts(rateText(row), time)),
+        span("flow-muted", parts(row.msgType.split("/").pop(), peerText)),
       ),
     );
     return node;
   }
 
-  // Node at an end of a topic: its own rate and callback or communication time.
+  // Node at an end of a topic: its unit, its own rate and callback or
+  // communication time, and its path.
   function nodeCard(end, side, openNode) {
     const { hz, ms, node: shortNode } = launch.topicLabels;
     const source = side === "in";
@@ -114,7 +125,8 @@
         ? "new"
         : `${hz(end.hz)} Hz`;
     const node = card(
-      `flow-${side}`,
+      "node",
+      side,
       [
         end.node,
         end.unit,
@@ -131,10 +143,9 @@
       line("", name, end.unit && span("flow-unit", end.unit)),
       line(
         "",
-        span(end.seen ? "flow-rate" : "flow-muted", state),
-        time && span("", time),
+        span(end.seen ? "flow-rate" : "flow-muted", parts(state, time)),
+        span("flow-muted flow-path", end.node),
       ),
-      line("flow-muted", span("", end.node)),
     );
     return node;
   }
@@ -161,24 +172,24 @@
     return list;
   }
 
-  // Input topics, the node with its ports, output topics.
+  // Subscribed topics, the node with its ports, published topics.
   function nodeDiagram(node, { openTopic }) {
     const { element } = SD.widgets;
     const { statusChip } = launch.topicLabels;
     const root = element("div", "flow");
     const [inHead, inBody] = column(
       "flow-left",
-      `Input topics · ${node.inputs.length}`,
+      `Subscribe · ${node.inputs.length}`,
       node.inputs.map((face) => topicCard(face, "in", openTopic)),
-      "no input",
+      "no subscription",
     );
     const [outHead, outBody] = column(
       "flow-right",
-      `Output topics · ${node.outputs.length}`,
+      `Publish · ${node.outputs.length}`,
       node.outputs.map((face) => topicCard(face, "out", openTopic)),
-      "no output",
+      "no publisher",
     );
-    const head = element("div", "flow-center-head");
+    const head = element("div", "flow-center-head flow-node");
     const name = span(
       "flow-center-name",
       node.node.split("/").filter(Boolean).pop() || node.node,
@@ -189,30 +200,30 @@
       line("", name, node.status && statusChip(node.status)),
       line("flow-muted", span("", parts(node.node, node.unit))),
     );
-    const body = element("div", "flow-center-body flow-node-ports");
+    const body = element("div", "flow-center-body flow-node flow-node-ports");
     body.append(ports(node.inputs, "in"), ports(node.outputs, "out"));
     root.append(inHead, head, outHead, inBody, body, outBody);
     return root;
   }
 
-  // Source nodes, the topic's detail, consumer nodes.
+  // Publish servers, the topic's detail, subscribe clients.
   function topicDiagram(row, ends, { openNode }) {
     const { element } = SD.widgets;
     const { hz, ms, statusChip } = launch.topicLabels;
     const root = element("div", "flow");
     const [inHead, inBody] = column(
       "flow-left",
-      `Sources · ${ends.sources.length}`,
+      `Publish servers · ${ends.sources.length}`,
       ends.sources.map((end) => nodeCard(end, "in", openNode)),
-      "no source",
+      "no publish server",
     );
     const [outHead, outBody] = column(
       "flow-right",
-      `Consumers · ${ends.consumers.length}`,
+      `Subscribe clients · ${ends.consumers.length}`,
       ends.consumers.map((end) => nodeCard(end, "out", openNode)),
-      "no consumer",
+      "no subscribe client",
     );
-    const head = element("div", "flow-center-head");
+    const head = element("div", "flow-center-head flow-topic");
     const name = span("flow-center-name", row.topic);
     if (!row.declared) name.classList.add("undeclared");
     head.title = row.topic;
@@ -220,7 +231,7 @@
       line("", name, statusChip(row.status)),
       line("flow-muted", span("", row.msgType || "outside the design")),
     );
-    const body = element("div", "flow-center-body");
+    const body = element("div", "flow-center-body flow-topic");
     const detail = element("dl", "flow-detail");
     const [, meaning] = launch.TOPIC_STATUS[row.status];
     [

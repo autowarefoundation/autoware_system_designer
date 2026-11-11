@@ -38,6 +38,13 @@
   --flow-out: #fd7e14;
   --flow-out-bg: rgba(253, 126, 20, 0.12);
   --flow-out-strong-bg: rgba(253, 126, 20, 0.36);
+  /* Entity kinds of the flow diagrams: a node block and a topic block */
+  --flow-node-bg: #ffffff;
+  --flow-node-head-bg: #dfe3e7;
+  --flow-node-border: #7d8791;
+  --flow-topic-bg: #eaf1fd;
+  --flow-topic-head-bg: #cfe0fb;
+  --flow-topic-border: #7ba3e6;
 }
 
 [data-theme="dark"] {
@@ -75,4 +82,10 @@
   --flow-out: #f0883e;
   --flow-out-bg: rgba(240, 136, 62, 0.16);
   --flow-out-strong-bg: rgba(240, 136, 62, 0.42);
+  --flow-node-bg: #262626;
+  --flow-node-head-bg: #3a3a3a;
+  --flow-node-border: #7d8791;
+  --flow-topic-bg: #1b2a40;
+  --flow-topic-head-bg: #223a5c;
+  --flow-topic-border: #3f6fb5;
 }

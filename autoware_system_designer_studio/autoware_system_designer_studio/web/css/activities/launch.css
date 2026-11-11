@@ -577,8 +577,8 @@
 /* Viewer of the selected node or topic over its list; its lower edge drags. */
 .topic-viewer {
   flex: 0 0 auto;
-  height: 42%;
-  min-height: 90px;
+  height: 36%;
+  min-height: 70px;
   max-height: 80%;
   overflow: auto;
   resize: vertical;
@@ -593,31 +593,33 @@
 
 .topic-viewer-hint {
   margin: 0;
-  padding: 24px;
+  padding: 12px 14px;
   font-size: 13px;
   color: var(--text-muted);
 }
 
 /* Flow diagram: heads over a row of left cards, the centre and right cards.
-   Cards and ports share the pitch --flow-row + --flow-gap. */
+   Cards and ports share the pitch --flow-row + --flow-gap. A node is a square
+   block, a topic a rounded tinted one. */
 .flow {
-  --flow-row: 58px;
-  --flow-gap: 6px;
-  --flow-link: 30px;
+  --flow-row: 36px;
+  --flow-gap: 3px;
+  --flow-link: 22px;
   display: grid;
-  grid-template-columns: minmax(230px, 1fr) minmax(240px, 0.9fr) minmax(
+  grid-template-columns: minmax(230px, 1fr) minmax(220px, 0.8fr) minmax(
       230px,
       1fr
     );
   column-gap: var(--flow-link);
-  min-width: 760px;
-  padding: 10px 14px 14px;
+  min-width: 740px;
+  padding: 6px 12px 8px;
   font-size: 12px;
 }
 
 .flow-col-title {
   align-self: end;
-  padding-bottom: 6px;
+  padding-bottom: 3px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
 }
@@ -643,6 +645,18 @@
   text-align: right;
 }
 
+.flow-node {
+  background: var(--flow-node-bg);
+  border: 1px solid var(--flow-node-border);
+  border-radius: 0;
+}
+
+.flow-topic {
+  background: var(--flow-topic-bg);
+  border: 1px solid var(--flow-topic-border);
+  border-radius: 12px;
+}
+
 .flow-card {
   position: relative;
   box-sizing: border-box;
@@ -650,10 +664,11 @@
   flex-direction: column;
   justify-content: center;
   height: var(--flow-row);
-  padding: 3px 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
+  padding: 0 8px;
+}
+
+.flow-card.flow-topic {
+  padding: 0 10px;
 }
 
 .flow-card.flow-in {
@@ -669,19 +684,12 @@
 }
 
 .flow-card.openable:hover {
-  border-color: var(--border-hover);
   box-shadow: 0 1px 4px var(--shadow);
-}
-
-.flow-card.flow-in.openable:hover {
-  border-left-color: var(--flow-in);
-}
-
-.flow-card.flow-out.openable:hover {
-  border-right-color: var(--flow-out);
+  filter: brightness(1.06);
 }
 
 .flow-card.unconnected {
+  background: none;
   border-style: dashed;
 }
 
@@ -713,7 +721,7 @@
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
-  line-height: 16px;
+  line-height: 15px;
   white-space: nowrap;
   color: var(--text-secondary);
 }
@@ -724,9 +732,16 @@
   text-overflow: ellipsis;
 }
 
-.flow-line > .topic-status {
+.flow-line > .topic-status,
+.flow-line > .flow-rate,
+.flow-line > .flow-unit {
   flex-shrink: 0;
-  line-height: 14px;
+}
+
+.flow-line > .topic-status {
+  min-width: 40px;
+  font-size: 10px;
+  line-height: 12px;
 }
 
 .flow-line.flow-muted,
@@ -753,16 +768,22 @@
 }
 
 .flow-unit {
-  flex-shrink: 0;
   color: var(--text-muted);
 }
 
 .flow-center-head {
-  padding: 6px 10px;
-  background: var(--bg-sidebar-header);
-  border: 1px solid var(--border-hover);
+  padding: 3px 10px;
   border-bottom: none;
-  border-radius: 6px 6px 0 0;
+}
+
+.flow-center-head.flow-node {
+  background: var(--flow-node-head-bg);
+  border-width: 2px 2px 0;
+}
+
+.flow-center-head.flow-topic {
+  background: var(--flow-topic-head-bg);
+  border-radius: 14px 14px 0 0;
 }
 
 .flow-center-name {
@@ -772,16 +793,21 @@
 .flow-center-body {
   box-sizing: border-box;
   min-height: calc(var(--flow-row) + 2 * var(--flow-gap));
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-hover);
-  border-radius: 0 0 6px 6px;
+}
+
+.flow-center-body.flow-node {
+  border-width: 1px 2px 2px;
+}
+
+.flow-center-body.flow-topic {
+  border-radius: 0 0 14px 14px;
 }
 
 .flow-node-ports {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: var(--flow-gap) 0;
+  padding: calc(var(--flow-gap) - 1px) 0 var(--flow-gap);
 }
 
 .flow-ports {
@@ -821,9 +847,10 @@
 .flow-detail {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 4px 12px;
+  gap: 1px 10px;
   margin: 0;
-  padding: 10px 12px;
+  padding: 5px 12px;
+  line-height: 15px;
 }
 
 .flow-detail dt {

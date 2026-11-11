@@ -88,11 +88,11 @@ to publish once), `intra` (intra-process only, which rcl does not count), `new`,
 `offline` (every node of the topic on a unit that is not running). The list is one of three: Nodes,
 the nodes in their namespace tree, each with the worst status of its outputs (else of its inputs);
 Topics, the topic rows in the topic namespace tree; Table, the topic rows flat. Above the Nodes and
-Topics lists a viewer draws the selected one left to right: a node with its ports between its input
-topics and its output topics, each with its status, rate, declared rate, type and the node's own
-communication or callback time; a topic's detail between its source nodes and its consumer nodes,
-each with its own rate and time. A topic card opens the topic in Topics, a node card the node in
-Nodes. The view follows the rates of every connected session of the mode while shown, and
+Topics lists a viewer draws the selected one left to right: a node with its ports between the
+topics it subscribes and the topics it publishes, each with its status, rate, declared rate, type
+and the node's own communication or callback time; a topic's detail between its publish servers
+and its subscribe clients, each with its own rate and time. Nodes are square blocks and topics
+rounded tinted ones. A topic card opens the topic in Topics, a node card the node in Nodes. The view follows the rates of every connected session of the mode while shown, and
 keeps the last rates of a launch that ended until its unit is launched again. A selector beside the
 Topics title shows a past run of the mode instead, from the rates record in its log directory, over
 the whole run or the last 10 s, 1 min or 5 min up to a sample chosen on a slider. All three
