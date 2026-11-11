@@ -368,9 +368,15 @@ class DeploymentBuilder:
         snapshot_store: Dict[str, Any],
     ):
         """Create callback for saving intermediate snapshots during instance population."""
+        stage_snapshots = self.deploy_config.stage_snapshots
 
         def snapshot_callback(step: str, error: Exception | None = None) -> None:
             snapshot_path = export_path(artifacts.layout.system_structure_dir, f"{mode_key}_{step}.json")
+            if error is None and not stage_snapshots:
+                # A snapshot left by an earlier build would describe another design.
+                if os.path.exists(snapshot_path):
+                    os.remove(snapshot_path)
+                return
             payload = save_system_structure_snapshot(
                 snapshot_path,
                 deploy_instance,

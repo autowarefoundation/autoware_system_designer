@@ -9,6 +9,9 @@ import yaml
 # Directory markers that exclude a subtree from the scan, matching colcon semantics.
 IGNORE_MARKERS = ("COLCON_IGNORE", "AMENT_IGNORE")
 
+# libyaml-backed loader when PyYAML is built with it.
+_SafeLoader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 
 def is_ignored_path(path, root_dir):
     """A path is ignored when any directory between root_dir and it holds an ignore marker."""
@@ -55,7 +58,7 @@ def find_packages(root_dir):
 def parse_design_file(filepath):
     try:
         with open(filepath, "r") as file:
-            content = yaml.safe_load(file)
+            content = yaml.load(file, Loader=_SafeLoader)
     except (yaml.YAMLError, UnicodeDecodeError) as exc:
         raise ValueError(f"Failed to parse YAML file: {filepath}") from exc
     except OSError as exc:

@@ -16,6 +16,9 @@
 
 from pathlib import Path
 
+import pytest
+
+from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.parser.data_parser import ConfigParser
 from autoware_system_designer.parser.yaml_parser import YamlParser
 
@@ -61,3 +64,37 @@ def test_entity_file_parses_repeatedly_with_cache(monkeypatch):
     second = parser.parse_entity_file(str(TALKER))
 
     assert [p.name for p in second.outputs] == [p.name for p in first.outputs]
+
+
+def test_data_and_source_map_come_from_one_document():
+    parser = YamlParser(cache_enabled=False)
+
+    data, source_map = parser.load_config_from_string_with_source("a:\n  - x\n  - k/1: 2\n")
+
+    assert data == {"a": ["x", {"k/1": 2}]}
+    assert source_map["/a/0"] == {"line": 2, "column": 5}
+    assert source_map["/a/1/k~11"] == {"line": 3, "column": 10}
+    assert parser.load_config_from_string_with_source("") == ({}, {})
+
+
+def test_syntax_error_quotes_the_offending_line():
+    parser = YamlParser(cache_enabled=False)
+
+    with pytest.raises(ValidationError) as excinfo:
+        parser.load_config_from_string("a: [1, 2\nb: 3\n")
+
+    assert "line 2, column 2" in str(excinfo.value)
+    assert "b: 3" in str(excinfo.value)
+
+
+def test_peek_reads_a_top_level_value(tmp_path):
+    path = tmp_path / "x.yaml"
+    path.write_text("a: 1\n")
+    parser = YamlParser(cache_enabled=True)
+
+    assert parser.peek(path, "a") == 1
+    assert parser.peek(path, "missing") is None
+
+    path.write_text("- 1\n- 22\n")
+    with pytest.raises(ValidationError):
+        parser.peek(path, "a")

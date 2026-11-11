@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from functools import lru_cache
+from typing import Tuple
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -52,6 +54,24 @@ def _get_template_directories() -> list[str]:
         return []
 
 
+@lru_cache(maxsize=None)
+def _environment(template_dirs: Tuple[str, ...]) -> Environment:
+    """Environment per template search path, shared by renderers so each template compiles once."""
+    env = Environment(
+        loader=FileSystemLoader(list(template_dirs)),
+        trim_blocks=True,
+        lstrip_blocks=True,
+        keep_trailing_newline=True,
+        newline_sequence="\n",
+        # Markup templates escape every interpolated value; JS templates quote via tojson.
+        autoescape=select_autoescape(enabled_extensions=("html.jinja2", "xml.jinja2"), default=False),
+    )
+    # tojson keeps declaration key order.
+    env.policies["json.dumps_kwargs"] = {}
+    env.filters["launch_param_attr"] = to_launch_param_attr
+    return env
+
+
 class TemplateRenderer:
     """Unified template rendering utility."""
 
@@ -64,18 +84,7 @@ class TemplateRenderer:
             template_dirs = list(template_dir)
 
         self.template_dirs = template_dirs
-        self.env = Environment(
-            loader=FileSystemLoader(self.template_dirs),
-            trim_blocks=True,
-            lstrip_blocks=True,
-            keep_trailing_newline=True,
-            newline_sequence="\n",
-            # Markup templates escape every interpolated value; JS templates quote via tojson.
-            autoescape=select_autoescape(enabled_extensions=("html.jinja2", "xml.jinja2"), default=False),
-        )
-        # tojson keeps declaration key order.
-        self.env.policies["json.dumps_kwargs"] = {}
-        self.env.filters["launch_param_attr"] = to_launch_param_attr
+        self.env = _environment(tuple(template_dirs))
 
     def render_template(self, template_name: str, **kwargs) -> str:
         template = self.env.get_template(template_name)

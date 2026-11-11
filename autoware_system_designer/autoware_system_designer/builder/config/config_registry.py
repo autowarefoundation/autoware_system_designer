@@ -226,12 +226,12 @@ class ConfigRegistry:
 
             # ── format-version gate ──────────────────────────────────
             try:
-                raw_config = _yaml_parser.load_config(file_path)
+                raw_ver = _yaml_parser.peek(file_path, "autoware_system_design_format")
+                version_readable = True
             except Exception:
-                raw_config = None  # let parse_entity_file report the real error
+                version_readable = False  # let parse_entity_file report the real error
 
-            if isinstance(raw_config, dict):
-                raw_ver = raw_config.get("autoware_system_design_format")
+            if version_readable:
                 ver_result = check_format_version(raw_ver)
                 if not ver_result.compatible:
                     # Major version mismatch → stop immediately
