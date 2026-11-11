@@ -769,16 +769,19 @@
       node: storedSort(NODE_SORT_KEY, NODE_SORT_KEYS),
     };
     let query = "";
-    // Collapsed groups by list and path.
-    const collapsed = new Set();
-    // The selected topic, and the entity its click selected.
-    let selectedTopic = null;
-    let topicEntity = null;
+    // Groups opened or closed by hand, by list and path: true for open.
+    const folds = new Map();
+    // The selected topic, kept in the store under `topic`, and the entity
+    // selected with it.
+    let selectedTopic = store.get("topic") || null;
+    let topicEntity = selectedTopic === null ? null : store.get("entity");
     // The selected node's member path, and the entity it stands for.
     let selectedNode = null;
     let nodeEntity = "";
-    // Whether the next render scrolls the selected row into view.
+    // Whether the next render unfolds the groups over the selected row and scrolls it into view.
     let reveal = false;
+    // Whether the view, just shown, has yet to open on the selection.
+    let opening = false;
 
     let entities = [];
     let design = new Map();
@@ -1153,7 +1156,19 @@
       design = designTopics(entities);
       entitiesMode = mode;
       followEntity(store.get("entity"));
+      openSelection();
       render();
+    }
+
+    // A view just shown opens on the list of the selection, the topic before
+    // the node, with the selected row revealed.
+    function openSelection() {
+      if (!opening || entitiesMode !== store.get("mode")) return;
+      opening = false;
+      if (selectedTopic !== null) setList("topic");
+      else if (selectedNode) setList("node");
+      else return;
+      reveal = true;
     }
 
     function entityOfNode(path) {
@@ -1178,8 +1193,15 @@
     function selectTopic(topic, origin) {
       selectedTopic = topic;
       topicEntity = origin ? keyOfNode(origin) : "";
+      store.set("topic", topic);
       store.set("entity", topicEntity);
       followEntity(topicEntity);
+    }
+
+    function dropTopic() {
+      selectedTopic = null;
+      topicEntity = null;
+      store.set("topic", "");
     }
 
     function selectNode(path) {
@@ -1557,8 +1579,7 @@
       td.appendChild(element("span", "topic-group-count", `${node.count}`));
       tr.appendChild(td);
       tr.addEventListener("click", () => {
-        if (collapsed.has(key)) collapsed.delete(key);
-        else collapsed.add(key);
+        folds.set(key, !open);
         render();
       });
       return tr;
@@ -1581,6 +1602,18 @@
       };
     }
 
+    // Whether a group left untouched is open: a top group is closed and the
+    // groups under it open; the services group is open, the groups right under
+    // it closed and the deeper ones open. A filter text opens every group.
+    function groupOpen(key, path, depth) {
+      if (query) return true;
+      if (folds.has(key)) return folds.get(key);
+      const services = `/${SERVICES}`;
+      return path === services || path.startsWith(`${services}/`)
+        ? depth !== 1
+        : depth > 0;
+    }
+
     // A tree node's own rows drawn by `rowOf(row)`, then its sub-groups, each
     // level indented by depth. Root rows beside sub-groups sit in the group "/".
     function appendTree(body, node, depth, span, rowOf) {
@@ -1596,7 +1629,7 @@
         });
       children.forEach((child) => {
         const key = `${list}:${child.path}`;
-        const open = !collapsed.has(key);
+        const open = groupOpen(key, child.path, depth);
         body.appendChild(groupElement(child, depth, open, key, span));
         if (open) appendTree(body, child, depth + 1, span, rowOf);
       });
@@ -1605,11 +1638,11 @@
     // Unfolds the groups over a row sitting under the namespace `parts`, the
     // group "/" for none.
     function unfold(parts) {
-      if (!parts.length) collapsed.delete(`${list}:/`);
+      if (!parts.length) folds.set(`${list}:/`, true);
       let path = "";
       parts.forEach((part) => {
         path += `/${part}`;
-        collapsed.delete(`${list}:${path}`);
+        folds.set(`${list}:${path}`, true);
       });
     }
 
@@ -1775,8 +1808,7 @@
       if (list === "node") {
         selectNode(row.dataset.node === selectedNode ? null : row.dataset.node);
       } else if (row.dataset.topic === selectedTopic) {
-        selectedTopic = null;
-        topicEntity = null;
+        dropTopic();
         store.set("entity", "");
       } else {
         selectTopic(row.dataset.topic, row.dataset.node);
@@ -1801,24 +1833,33 @@
     });
     // An entity selected elsewhere drops the selected topic and moves the selected node.
     store.onChange("entity", (key) => {
-      if (selectedTopic !== null && key !== topicEntity) {
-        selectedTopic = null;
-        topicEntity = null;
+      if (selectedTopic !== null && key !== topicEntity) dropTopic();
+      if (key !== nodeEntity) {
+        followEntity(key);
+        reveal = Boolean(selectedNode);
       }
-      if (key !== nodeEntity) followEntity(key);
+      schedule();
+    });
+    // A topic selected elsewhere, a port's on a diagram, is shown in the topic list.
+    store.onChange("topic", (name) => {
+      if ((name || null) === selectedTopic) return;
+      selectedTopic = name || null;
+      topicEntity = name ? store.get("entity") : null;
+      if (name) {
+        setList("topic");
+        reveal = true;
+      }
       schedule();
     });
     SD.on("selection.clear", () => {
-      selectedTopic = null;
-      topicEntity = null;
+      dropTopic();
       selectedNode = null;
       nodeEntity = "";
       schedule();
     });
     store.onChange("mode", () => {
       snapshots.clear();
-      selectedTopic = null;
-      topicEntity = null;
+      dropTopic();
       selectedNode = null;
       nodeEntity = "";
       if (run) setRun("");
@@ -1839,6 +1880,8 @@
       show() {
         if (shown) return;
         shown = true;
+        opening = true;
+        openSelection();
         loadDesign().catch((error) => console.error("topic rates:", error));
         syncFollows();
         loadRuns();

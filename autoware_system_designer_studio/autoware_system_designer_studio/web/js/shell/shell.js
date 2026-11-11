@@ -245,6 +245,8 @@
     );
     // Selected node or module, by entity key, shared by the activities.
     SD.store.define("entity", "");
+    // Selected topic, by name, shared by the activities.
+    SD.store.define("topic", "");
     SD.store.syncUrl();
 
     document.title = `${config.deploymentName} - Autoware System Designer Studio`;

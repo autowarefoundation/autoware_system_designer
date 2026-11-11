@@ -127,6 +127,7 @@
           if (event.target.closest?.("input, textarea, select")) return;
           host.clearSelection();
           store.set("entity", "");
+          store.set("topic", "");
         },
         true,
       );

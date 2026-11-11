@@ -96,7 +96,10 @@ rounded tinted ones. A port of role `server` or `client` (else of a `/srv/` type
 without roles) is a service: status `service`, no rate, since its calls are not counted. Services
 sit in a Services group under the topic tree, below the topics on each side of a node as Client
 and Server, dashed and of another tint, and a selected service is drawn between its server and its
-clients. A topic card opens the topic in Topics, a node card the node in Nodes. The view follows the rates of every connected session of the mode while shown, and
+clients. A topic card opens the topic in Topics, a node card the node in Nodes. The groups of a
+tree start closed at the top and open below it, the Services group open with its sub-groups closed.
+The view opens on the list of the selection with its row unfolded, and a port selected on an
+Explore diagram selects its topic (the store's `topic`) in Topics. The view follows the rates of every connected session of the mode while shown, and
 keeps the last rates of a launch that ended until its unit is launched again. A selector beside the
 Topics title shows a past run of the mode instead, from the rates record in its log directory, over
 a span brushed on a strip of the run's event density (counted events per second per 10 s sample

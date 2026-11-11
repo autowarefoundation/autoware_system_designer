@@ -1,7 +1,8 @@
 // Explore: canvas hosting one diagram module at a time for the selected
 // diagram and mode. The module reports the selected element through
 // `inspector.show`, and a reload clears it through `inspector.reset`. A
-// selected node or module is also recorded in the store under `entity`, and
+// selected node or module is also recorded in the store under `entity`, a
+// selected port's topic under `topic`, and
 // `focusKey` locates the store's entity on the diagram; `clearSelection`
 // drops the module's selection and empties the inspector. A module that draws
 // the hierarchy cut at a level is handed the store's `depth`. Live member
@@ -29,6 +30,15 @@
       (data?.entity_type === "node" || data?.entity_type === "module") &&
       typeof data.path === "string"
     );
+  }
+
+  // Topic name of a selected port, "" for any other element.
+  function topicOf(data, type) {
+    if (type !== "Port") return "";
+    const topic = data?.topic;
+    const parts = Array.isArray(topic) ? topic : String(topic || "").split("/");
+    const name = parts.filter(Boolean).join("/");
+    return name ? `/${name}` : "";
   }
 
   function diagramHost(main, inspector, config, store) {
@@ -78,6 +88,7 @@
           depth: parseInt(store.get("depth"), 10) || null,
           onInfoUpdate(data, type, entity) {
             inspector.show(data, type);
+            store.set("topic", topicOf(data, type));
             if (isEntity(entity))
               store.set("entity", SD.NamespaceTree.entityKey(entity));
           },
