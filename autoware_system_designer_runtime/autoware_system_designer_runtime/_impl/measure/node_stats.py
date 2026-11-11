@@ -247,7 +247,7 @@ class Analysis:
     pubs_by_trigger: dict[int, list[PubEvent]] = field(default_factory=dict)
     # publish event id → takes of that message
     takes_by_pub: dict[int, list[TakeEvent]] = field(default_factory=dict)
-    dropped_records: int = 0
+    overwritten_records: int = 0
     process_count: int = 0
     # pid → wall time of the process's last trace record
     process_last_ns: dict[int, int] = field(default_factory=dict)
@@ -301,7 +301,7 @@ def analyze(
     exits: Optional[dict[int, ProcessExit]] = None,
 ) -> Analysis:
     analysis = Analysis(window_start_ns=window_start_ns, window_end_ns=window_end_ns, clock=clock or WallClock())
-    analysis.dropped_records = trace_set.total_dropped()
+    analysis.overwritten_records = trace_set.total_overwritten()
     analysis.process_count = len(trace_set.processes)
     analysis.process_last_ns = {pid: proc.last_time() for pid, proc in trace_set.processes.items()}
     analysis.process_exits = {pid: exit_ for pid, exit_ in (exits or {}).items() if pid in trace_set.processes}

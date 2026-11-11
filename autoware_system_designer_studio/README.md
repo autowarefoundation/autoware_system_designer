@@ -99,7 +99,8 @@ and Server, dashed and of another tint, and a selected service is drawn between 
 clients. A topic card opens the topic in Topics, a node card the node in Nodes. The view follows the rates of every connected session of the mode while shown, and
 keeps the last rates of a launch that ended until its unit is launched again. A selector beside the
 Topics title shows a past run of the mode instead, from the rates record in its log directory, over
-the whole run or the last 10 s, 1 min or 5 min up to a sample chosen on a slider. All three
+a span brushed on a strip of the run's event density (counted events per second per 10 s sample
+interval, scaled to the peak): the whole run at first, then any span between two samples. All three
 select the store's `entity`, and a double click on a node of the map opens it in Logs.
 
 An activity is one `SD.workbench.registerActivity(def)` call from its `index.js`, with its parts

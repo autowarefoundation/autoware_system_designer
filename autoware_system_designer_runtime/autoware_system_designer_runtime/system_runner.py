@@ -379,8 +379,8 @@ def main() -> None:
         type=float,
         default=None,
         metavar="S",
-        help="Close the window after S seconds (after the settle time), shut the system down "
-        "and analyze once the actors have terminated.",
+        help="Close the window after S seconds (after the settle time, at most 1800), shut the system "
+        "down and analyze once the actors have terminated.",
     )
     measure_group.add_argument(
         "--measure-settle",

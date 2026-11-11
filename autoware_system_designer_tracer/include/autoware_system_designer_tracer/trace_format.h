@@ -42,8 +42,9 @@ extern "C" {
 // Environment the runtime sets on traced processes.
 #define ASD_TRACE_DIR_ENV "ASD_TRACE_DIR"
 #define ASD_TRACE_CAPACITY_ENV "ASD_TRACE_CAPACITY"
+// Records of the ring: the default holds 30 min of a process at 2300 events/s in 256 MiB.
 #define ASD_TRACE_DEFAULT_CAPACITY (1u << 22)
-#define ASD_TRACE_MAX_CAPACITY (1ull << 26)
+#define ASD_TRACE_MAX_CAPACITY (1ull << 24)
 
 enum asd_record_kind {
   ASD_REC_TAKE = 1,
@@ -60,8 +61,9 @@ enum asd_record_flags {
   ASD_FLAG_CLOCK_LAST = 16, // clock: last wall time a value was still held (a paused /clock)
 };
 
-// `count` is claimed atomically; slots at or past `capacity` are dropped, so
-// count - capacity is the number of dropped records.
+// The records are a ring: `count` is claimed atomically and claim i lives in slot
+// i % capacity, so the file holds the latest `capacity` records and
+// count - capacity older ones are overwritten.
 typedef struct asd_trace_header {
   char magic[8];
   uint32_t version;

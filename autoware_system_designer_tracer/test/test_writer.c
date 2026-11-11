@@ -175,9 +175,16 @@ int main(void)
 
   // The third slot is claimed but left uncommitted: readers must skip it.
   CHECK(asd_events_claim(&w) != NULL);
-  // Past capacity the claim is counted and dropped.
-  CHECK(asd_events_claim(&w) == NULL);
-  CHECK(asd_events_claim(&w) == NULL);
+  // Past capacity the ring wraps: the oldest slot is claimed, unfinished until committed.
+  r = asd_events_claim(&w);
+  CHECK(r != NULL && r->kind == 0 && r->t_ns == 1000);
+  r->tid = 9;
+  r->t_ns = 4000;
+  r->t2_ns = 5000;
+  r->handle = 0x123;
+  asd_events_commit(r, ASD_REC_PUBLISH);
+  r = asd_events_claim(&w);
+  CHECK(r != NULL && r->kind == 0 && r->handle == 0xdef);
 
   asd_names_line(&names, "1\tpub\tabc\t/ns/node\t/topic\t00ff\t0");
   asd_names_line(&names, "2\ttimer\tdef\t100000000\t1");
@@ -202,15 +209,12 @@ int main(void)
   CHECK(h->start_realtime_ns > 0);
 
   const asd_trace_record_t * recs = (const asd_trace_record_t *)(bytes + ASD_TRACE_HEADER_SIZE);
-  CHECK(recs[0].kind == ASD_REC_TAKE);
-  CHECK(recs[0].tid == 7);
-  CHECK(recs[0].t_ns == 1000);
-  CHECK(recs[0].t2_ns == 2000);
-  CHECK(recs[0].handle == 0xabc);
-  CHECK(recs[0].gid[0] == 0x11 && recs[0].gid[23] == 0x11);
-  CHECK(recs[0].seq == 5);
-  CHECK(recs[1].kind == ASD_REC_TIMER);
-  CHECK(recs[1].handle == 0xdef);
+  CHECK(recs[0].kind == ASD_REC_PUBLISH);
+  CHECK(recs[0].tid == 9);
+  CHECK(recs[0].t_ns == 4000);
+  CHECK(recs[0].t2_ns == 5000);
+  CHECK(recs[0].handle == 0x123);
+  CHECK(recs[1].kind == 0);
   CHECK(recs[2].kind == 0);
   free(bytes);
 

@@ -158,8 +158,23 @@ class ProcessTrace:
     timer_infos: _HandleTable = field(default_factory=_HandleTable)
 
     @property
-    def dropped(self) -> int:
+    def overwritten(self) -> int:
+        """Records the ring no longer holds."""
         return max(0, self.claimed - self.capacity)
+
+    @property
+    def retained_from_ns(self) -> Optional[int]:
+        """Time of the oldest record of a ring that wrapped; None while every record is held."""
+        if not self.overwritten:
+            return None
+        firsts = [self.takes[0].t] if self.takes else []
+        if self.timers:
+            firsts.append(self.timers[0].t)
+        if self.publishes:
+            firsts.append(self.publishes[0].t_in)
+        if self.clocks:
+            firsts.append(self.clocks[0].t)
+        return min(firsts, default=None)
 
     @property
     def record_count(self) -> int:
@@ -203,8 +218,12 @@ class TraceSet:
         ends = [p.last_time() for p in self.processes.values()]
         return min(starts), max(ends)
 
-    def total_dropped(self) -> int:
-        return sum(p.dropped for p in self.processes.values())
+    def total_overwritten(self) -> int:
+        return sum(p.overwritten for p in self.processes.values())
+
+    def retained_from(self) -> Optional[int]:
+        """Earliest time from which every process still holds its records; None when no ring wrapped."""
+        return max((t for p in self.processes.values() if (t := p.retained_from_ns) is not None), default=None)
 
     def clock_samples(self) -> list[ClockSample]:
         """Every ROS time override of every process, ordered by wall time."""
@@ -215,7 +234,7 @@ class TraceSet:
 
 def read_trace_file(path: Union[str, Path]) -> ProcessTrace:
     path = Path(path)
-    # The file is sized for its capacity; only the claimed slots are read.
+    # The file is sized for its capacity, a ring once claimed past it; only the claimed slots are read.
     with path.open("rb") as handle:
         head = handle.read(_HEADER.size)
         if len(head) < _HEADER.size:
@@ -325,12 +344,12 @@ class TraceProgress:
 
     processes: int = 0
     records: int = 0
-    dropped: int = 0
+    overwritten: int = 0
 
     def describe(self) -> str:
         text = f"{self.processes} traced processes, {self.records} records"
-        if self.dropped:
-            text += f" ({self.dropped} dropped)"
+        if self.overwritten:
+            text += f" ({self.overwritten} older ones overwritten)"
         return text
 
 
@@ -349,7 +368,7 @@ def trace_dir_progress(path: Union[str, Path]) -> TraceProgress:
             continue
         progress.processes += 1
         progress.records += min(count, capacity)
-        progress.dropped += max(count - capacity, 0)
+        progress.overwritten += max(count - capacity, 0)
     return progress
 
 

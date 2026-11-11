@@ -31,7 +31,7 @@ def test_records_and_names_round_trip(tmp_path):
 
     proc = read_trace_file(path)
     assert proc.pid == 11
-    assert proc.claimed == 4 and proc.capacity == 4 and proc.dropped == 0
+    assert proc.claimed == 4 and proc.capacity == 4 and proc.overwritten == 0 and proc.retained_from_ns is None
     assert [t.t for t in proc.timers] == [T0 + 1 * MS]
     assert proc.publishes[0].t_out - proc.publishes[0].t_in == 100
     take = proc.takes[0]
@@ -42,21 +42,20 @@ def test_records_and_names_round_trip(tmp_path):
     assert proc.record_count == 3  # the unfinished slot is skipped
 
 
-def test_dropped_records_are_counted_from_the_header(tmp_path):
+def test_a_wrapped_ring_holds_the_latest_records(tmp_path):
     b = TraceBuilder(pid=12)
-    for i in range(3):
+    # Claims 5 and 6 of a ring of 3 sit in slots 2 and 0, claim 4 in slot 1.
+    for i in (6, 4, 5):
         b.fire(T0 + i * MS, tid=1, handle=0x1)
-    b.write(tmp_path, capacity=2)
-    b.records = b.records[:2]
-    path = b.write(tmp_path, capacity=2)
-    # count in header is 2 (records) + 0; emulate an overflowed header by hand
+    path = b.write(tmp_path, capacity=3)
     data = bytearray(path.read_bytes())
     data[32:40] = (7).to_bytes(8, "little")  # count
     path.write_bytes(bytes(data))
 
     proc = read_trace_file(path)
-    assert proc.capacity == 2 and proc.claimed == 7 and proc.dropped == 5
-    assert len(proc.timers) == 2
+    assert proc.capacity == 3 and proc.claimed == 7 and proc.overwritten == 4
+    assert [fire.t for fire in proc.timers] == [T0 + 4 * MS, T0 + 5 * MS, T0 + 6 * MS]
+    assert proc.retained_from_ns == T0 + 4 * MS
 
 
 def test_handle_reuse_resolves_by_time(tmp_path):

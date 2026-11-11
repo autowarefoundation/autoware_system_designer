@@ -58,6 +58,8 @@ logger = logging.getLogger(__name__)
 TRACE_SUBDIR = "trace"
 LATENCY_DIR_NAME = "latency"
 DEFAULT_HEARTBEAT_S = 10.0
+# Longest analyzed window: the latest part of a recording that ran longer.
+MAX_WINDOW_S = 1800.0
 
 
 @dataclass
@@ -99,12 +101,25 @@ def analyze_traces(
 ) -> dict[str, Any]:
     """Blocking: read the trace directory, analyze, write the latency file.
 
-    ``settle_ns`` is skipped after the window start, whether given or the first record.
+    ``settle_ns`` is skipped after the window start, whether given or the first record. The window
+    is the latest ``MAX_WINDOW_S`` of the recording at most, and starts where every process still
+    holds its records.
     """
     trace_set = read_trace_dir(trace_dir)
     span_start, span_end = trace_set.time_span()
     t0 = (window_start_ns if window_start_ns is not None else span_start) + settle_ns
     t1 = window_end_ns if window_end_ns is not None else span_end
+    latest = t1 - int(MAX_WINDOW_S * NS_PER_S)
+    if t0 < latest:
+        logger.info("measure: the window is the last %g s of the recording", MAX_WINDOW_S)
+        t0 = latest
+    retained = trace_set.retained_from()
+    if retained is not None and retained > t0:
+        logger.warning(
+            "measure: an event ring wrapped inside the window; the window is the last %.1f s it holds",
+            (t1 - retained) / NS_PER_S,
+        )
+        t0 = retained
     time_base = clock_for(trace_set, clock)
     logger.info("measure: durations in %s", time_base.describe())
     analysis = analyze(trace_set, graph, t0, t1, clock=time_base, exits=exits)
@@ -136,6 +151,9 @@ class MeasureSession:
         self._graph = graph
         self._worker = worker
         self._options = options
+        if options.duration is not None and options.duration > MAX_WINDOW_S:
+            logger.warning("measure: duration %g s is over the maximum; recording %g s", options.duration, MAX_WINDOW_S)
+            options.duration = MAX_WINDOW_S
         self._arming = arming
         self._trace_dir = arming.trace_dir
         self._latency_out = latency_out
@@ -235,7 +253,7 @@ class MeasureSession:
                 probe_note = ", probes off"
             duration = self._options.duration
             if duration is None:
-                plan = "closes at shutdown or on 'measure stop'"
+                plan = f"closes at shutdown or on 'measure stop', the last {MAX_WINDOW_S:g} s are analyzed"
             else:
                 plan = f"record {duration:g} s, closes at {_clock(self._deadline_s())}"
             return f"window open: settle {self._options.settle:g} s, {plan}{probe_note}"

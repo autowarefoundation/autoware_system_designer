@@ -88,11 +88,10 @@ void asd_events_close(asd_events_t * w)
 
 asd_trace_record_t * asd_events_claim(asd_events_t * w)
 {
-  uint64_t slot = __atomic_fetch_add(&w->header->count, 1, __ATOMIC_RELAXED);
-  if (slot >= w->capacity) {
-    return NULL;
-  }
-  return &w->records[slot];
+  uint64_t claim = __atomic_fetch_add(&w->header->count, 1, __ATOMIC_RELAXED);
+  asd_trace_record_t * record = &w->records[claim % w->capacity];
+  __atomic_store_n(&record->kind, 0, __ATOMIC_RELEASE);
+  return record;
 }
 
 void asd_events_commit(asd_trace_record_t * record, uint8_t kind)

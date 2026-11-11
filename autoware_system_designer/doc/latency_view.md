@@ -72,7 +72,7 @@ The runtime writes the file (schema `autoware_system_designer/latency/2`) from a
     "probe": true,
     "tracer": "0.1.0",
     "processes": 55,
-    "dropped_records": 0
+    "overwritten_records": 0
   },
   "summary": {
     "design_nodes": 102,

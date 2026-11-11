@@ -40,7 +40,7 @@ typedef struct asd_events {
 // Returns 0 on success, -1 (errno set) on failure; the writer is unusable then.
 int asd_events_open(asd_events_t * w, const char * dir, uint32_t pid, uint64_t capacity);
 void asd_events_close(asd_events_t * w);
-// Claims the next slot; NULL once the file is full (the claim is still counted).
+// Claims the next slot of the ring, the oldest record once the file is full; never NULL.
 asd_trace_record_t * asd_events_claim(asd_events_t * w);
 // Publishes a filled slot to readers.
 void asd_events_commit(asd_trace_record_t * record, uint8_t kind);
