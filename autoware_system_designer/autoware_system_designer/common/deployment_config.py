@@ -34,6 +34,8 @@ class DeploymentConfig:
     max_cache_size: int = 128
     # Tolerated-in-general-workspace conditions are fatal when set.
     strict: bool = False
+    # Export the structure after each build stage; the stage a build fails at is always exported.
+    stage_snapshots: bool = False
 
     # paths
     deployment_file: str = ""
@@ -56,6 +58,7 @@ class DeploymentConfig:
             cache_enabled=env_flag("AUTOWARE_SYSTEM_DESIGNER_CACHE_ENABLED", True),
             max_cache_size=int(os.getenv("AUTOWARE_SYSTEM_DESIGNER_MAX_CACHE_SIZE", "128")),
             strict=env_flag("AUTOWARE_SYSTEM_DESIGNER_STRICT", False),
+            stage_snapshots=env_flag("AUTOWARE_SYSTEM_DESIGNER_STAGE_SNAPSHOTS", False),
         )
 
     def set_logging(self) -> logging.Logger:
