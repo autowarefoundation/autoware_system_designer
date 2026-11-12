@@ -17,6 +17,7 @@
 
 import asyncio
 import os
+import signal
 import sys
 import time
 
@@ -24,10 +25,12 @@ from autoware_system_designer_runtime._impl.core import events as ev
 from autoware_system_designer_runtime._impl.core import process
 from autoware_system_designer_runtime._impl.core.config import ActorConfig
 from autoware_system_designer_runtime._impl.core.coordinator import CoordinatorBuilder
-from autoware_system_designer_runtime._impl.core.regular_actor import NodeSpec
+from autoware_system_designer_runtime._impl.core.regular_actor import NodeSpec, RegularNodeActor
 
 # A child that takes no notice of the stop signal, as a node stuck in its shutdown.
-STUBBORN_CHILD = "import signal, time; signal.signal(signal.SIGINT, signal.SIG_IGN); print('up', flush=True); time.sleep(60)"
+STUBBORN_CHILD = (
+    "import signal, time; signal.signal(signal.SIGINT, signal.SIG_IGN); print('up', flush=True); time.sleep(60)"
+)
 
 # A process the stop signal ends by its default action.
 SLEEPER = "import signal, time; signal.signal(signal.SIGINT, signal.SIG_DFL); time.sleep(60)"
@@ -115,6 +118,92 @@ def test_a_leader_that_exits_by_itself_takes_its_group_with_it(tmp_path):
     child, alive_at_exit = asyncio.run(run())
     assert not alive_at_exit and not _running(child)
     assert [event.exit_code for event in seen if isinstance(event, ev.Exited)] == [3]
+
+
+def test_stop_of_a_leader_that_has_exited_ends_what_it_left(tmp_path):
+    async def scenario():
+        proc = await process.spawn_pgrp(_leader("sys.exit(3)"), stdout_path=tmp_path / "out")
+        child = await _child_pid(tmp_path / "out")
+        await proc.wait()
+        return child, await process.graceful_kill(proc, name="member", timeout=0.5)
+
+    child, exit_code = asyncio.run(scenario())
+    assert exit_code == 3 and not _running(child)
+
+
+def test_a_kill_signal_reaches_the_group_an_exited_leader_left(tmp_path):
+    config = ActorConfig(output_dir=tmp_path, graceful_shutdown_timeout=30.0)
+
+    async def run():
+        control, state, shutdown = asyncio.Queue(), asyncio.Queue(), asyncio.Event()
+        actor = RegularNodeActor(
+            NodeSpec(name="/wrapper", cmd=_leader("sys.exit(3)")), config, control, state, shutdown
+        )
+        task = asyncio.ensure_future(actor.run())
+        child = await _child_pid(tmp_path / "wrapper" / "out")
+        while _running(actor._proc.pid):
+            await asyncio.sleep(0.02)
+        started = time.monotonic()
+        control.put_nowait(ev.KillSignal(signum=signal.SIGKILL))
+        seen = []
+        while not any(isinstance(event, ev.Exited) for event in seen):
+            seen.append(await asyncio.wait_for(state.get(), timeout=10))
+        took = time.monotonic() - started
+        shutdown.set()
+        await asyncio.wait_for(task, timeout=10)
+        return child, took, actor.state
+
+    child, took, state = asyncio.run(run())
+    assert not _running(child) and took < 5
+    assert state.exit_code == 3
+
+
+def test_groups_ending_together_share_their_scans(monkeypatch):
+    scans = []
+    running_groups = process._running_groups
+    monkeypatch.setattr(process, "_running_groups", lambda: scans.append(1) or running_groups())
+
+    async def scenario():
+        procs = [await process.spawn_pgrp([sys.executable, "-c", SLEEPER]) for _ in range(5)]
+        try:
+            gone = await asyncio.gather(*(process._group_gone(proc.pid, 0.5) for proc in procs))
+            return gone, len(scans)
+        finally:
+            for proc in procs:
+                await process.graceful_kill(proc, name="member", timeout=5.0)
+
+    gone, scanned = asyncio.run(scenario())
+    assert gone == [False] * 5
+    # One scan per group at its first look, then one per poll for all of them.
+    assert scanned < 20
+
+
+def test_a_member_ends_on_the_stop_signal_under_a_runtime_started_with_it_ignored(tmp_path):
+    config = ActorConfig(output_dir=tmp_path, graceful_shutdown_timeout=30.0)
+    builder = CoordinatorBuilder(default_config=config)
+    # No handler of its own: the interpreter keeps the disposition it is started with.
+    plain = "import time; print('up', flush=True); time.sleep(60)"
+    builder.add_node(NodeSpec(name="/plain", cmd=[sys.executable, "-c", plain]))
+
+    async def run():
+        coord = builder.build()
+        run_task = asyncio.ensure_future(coord.run())
+        out = tmp_path / "plain" / "out"
+        deadline = time.monotonic() + 10
+        while not (out.exists() and out.read_text()):
+            assert time.monotonic() < deadline, "the member did not start"
+            await asyncio.sleep(0.02)
+        started = time.monotonic()
+        coord.request_shutdown()
+        await asyncio.wait_for(run_task, timeout=40)
+        return time.monotonic() - started
+
+    previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        took = asyncio.run(run())
+    finally:
+        signal.signal(signal.SIGINT, previous)
+    assert took < 10
 
 
 def test_a_zombie_does_not_keep_a_group_alive():

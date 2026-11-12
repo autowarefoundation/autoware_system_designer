@@ -90,18 +90,24 @@ def _killpg(pid: int, sig: int) -> None:
         logger.warning("killpg(%d, %d) failed: %s", pid, sig, e)
 
 
-def group_alive(pgid: int) -> bool:
-    """Whether a process of the group still runs; zombies awaiting their reaper do not count."""
+def _group_exists(pgid: int) -> bool:
+    """Whether the group holds a process, running or zombie."""
     try:
         os.killpg(pgid, 0)
     except ProcessLookupError:
         return False
     except OSError:
         return True
+    return True
+
+
+def _running_groups() -> Optional[set[int]]:
+    """The groups holding a running process, zombies not counted; None when /proc is unreadable."""
     try:
         entries = os.listdir("/proc")
     except OSError:
-        return True
+        return None
+    groups = set()
     for entry in entries:
         if not entry.isdigit():
             continue
@@ -111,17 +117,48 @@ def group_alive(pgid: int) -> bool:
                 fields = f.read().rpartition(")")[2].split()
         except OSError:
             continue
-        if len(fields) >= 3 and fields[0] != "Z" and fields[2] == str(pgid):
-            return True
-    return False
+        if len(fields) >= 3 and fields[0] != "Z" and fields[2].isdigit():
+            groups.add(int(fields[2]))
+    return groups
+
+
+def group_alive(pgid: int) -> bool:
+    """Whether a process of the group still runs; zombies awaiting their reaper do not count."""
+    if not _group_exists(pgid):
+        return False
+    groups = _running_groups()
+    return groups is None or pgid in groups
+
+
+class _GroupScan:
+    """The running groups as of one /proc scan, shared by every group polled within half a poll interval."""
+
+    def __init__(self) -> None:
+        self._at = float("-inf")
+        self._groups: Optional[set[int]] = None
+
+    def alive(self, pgid: int) -> bool:
+        if not _group_exists(pgid):
+            return False
+        now = time.monotonic()
+        if now - self._at >= GROUP_POLL_S / 2:
+            self._groups = _running_groups()
+            self._at = now
+        return self._groups is None or pgid in self._groups
+
+
+_scan = _GroupScan()
 
 
 async def _group_gone(pgid: int, timeout: float) -> bool:
     deadline = time.monotonic() + timeout
-    while group_alive(pgid):
+    # The first look is a scan of its own; a shared one may predate the group's processes.
+    alive = group_alive
+    while alive(pgid):
         if time.monotonic() >= deadline:
             return False
         await asyncio.sleep(GROUP_POLL_S)
+        alive = _scan.alive
     return True
 
 
@@ -153,10 +190,12 @@ async def graceful_kill(
 ) -> Optional[int]:
     """Send SIGINT to the process group, wait up to *timeout* for the whole group, then SIGKILL.
 
-    Returns the leader's exit code (or None if it could not be waited for).
+    Returns the leader's exit code (or None if it could not be waited for). A leader that has
+    exited already has what it left in its group ended the same way.
     """
     pid = proc.pid
     if proc.returncode is not None:
+        await reap_group(pid, name=name, timeout=timeout)
         return proc.returncode
 
     logger.debug("[%s] %s pgid=%d", name, STOP_SIGNAL.name, pid)

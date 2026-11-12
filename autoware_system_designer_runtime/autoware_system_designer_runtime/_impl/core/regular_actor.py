@@ -189,7 +189,7 @@ class RegularNodeActor:
                     self._control_rx.put_nowait(ctrl_task.result())
                 except Exception:  # noqa: BLE001
                     pass
-            await reap_group(self._proc.pid, name=self.name, timeout=self._config.graceful_shutdown_timeout)
+            await self._reap_group()
             await self._emit(ev.Exited(name=self.name, exit_code=exit_code))
             # Respawn covers abnormal exits only; a clean exit (code 0) stays stopped.
             if self._respawn_enabled and exit_code != 0 and not self._shutdown.is_set():
@@ -301,11 +301,43 @@ class RegularNodeActor:
         else:
             logger.debug("[%s] ignoring control %r in Running", self.name, cmd)
 
+    async def _reap_group(self) -> None:
+        """Ends what the exited leader left in its group. A kill signal reaches the group and a respawn
+        toggle applies meanwhile; other commands are kept for the state that follows.
+        """
+        assert self._proc is not None
+        reap_task = asyncio.create_task(
+            reap_group(self._proc.pid, name=self.name, timeout=self._config.graceful_shutdown_timeout)
+        )
+        kept = []
+        try:
+            while not reap_task.done():
+                ctrl_task = asyncio.create_task(self._control_rx.get())
+                done, _ = await asyncio.wait({reap_task, ctrl_task}, return_when=asyncio.FIRST_COMPLETED)
+                if ctrl_task not in done:
+                    ctrl_task.cancel()
+                    continue
+                cmd = ctrl_task.result()
+                if isinstance(cmd, ev.KillSignal):
+                    self._respawn_enabled = False
+                    self._send_signal(cmd.signum)
+                elif isinstance(cmd, ev.ToggleRespawn):
+                    self._respawn_enabled = cmd.enabled
+                else:
+                    kept.append(cmd)
+            reap_task.result()
+        finally:
+            reap_task.cancel()
+            for cmd in kept:
+                self._control_rx.put_nowait(cmd)
+
     def _send_signal(self, signum: int) -> None:
-        if self._proc is None or self._proc.returncode is not None:
+        if self._proc is None:
             return
         try:
             os.killpg(self._proc.pid, signum)
+        except ProcessLookupError:
+            pass
         except OSError as e:
             logger.warning("[%s] kill signal %d failed: %s", self.name, signum, e)
 
