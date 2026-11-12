@@ -49,6 +49,10 @@ not sourced the workspace (the launcher still needs ROS 2 sourced for `rclpy`).
 
 `Ctrl+C` triggers graceful shutdown: the coordinator broadcasts `Stop` to every
 member, each actor `SIGTERM`s its process group, waits 5s, then `SIGKILL`s.
+A member is its whole process group: it has stopped once its leader has exited and
+no process of the group is left, so the children of a launch file that ends before
+them are waited for and killed the same way. A member whose leader exits by itself
+takes what is left of its group with it.
 
 ### 3. Useful flags
 

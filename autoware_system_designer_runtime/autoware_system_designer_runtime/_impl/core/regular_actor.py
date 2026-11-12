@@ -31,7 +31,7 @@ from typing import Mapping, Optional, Sequence
 
 from . import events as ev
 from .config import ActorConfig
-from .process import graceful_kill, spawn_pgrp
+from .process import graceful_kill, reap_group, spawn_pgrp
 from .state import (
     NodeDone,
     NodeFailed,
@@ -189,6 +189,7 @@ class RegularNodeActor:
                     self._control_rx.put_nowait(ctrl_task.result())
                 except Exception:  # noqa: BLE001
                     pass
+            await reap_group(self._proc.pid, name=self.name, timeout=self._config.graceful_shutdown_timeout)
             await self._emit(ev.Exited(name=self.name, exit_code=exit_code))
             # Respawn covers abnormal exits only; a clean exit (code 0) stays stopped.
             if self._respawn_enabled and exit_code != 0 and not self._shutdown.is_set():

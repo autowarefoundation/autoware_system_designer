@@ -18,3 +18,16 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture
+def fake_process_groups(monkeypatch):
+    """For tests whose members are fake processes: their pids name no process group of the test."""
+    from autoware_system_designer_runtime._impl.core import regular_actor
+
+    async def no_group(pgid, *, name, timeout):
+        return None
+
+    monkeypatch.setattr(regular_actor, "reap_group", no_group)

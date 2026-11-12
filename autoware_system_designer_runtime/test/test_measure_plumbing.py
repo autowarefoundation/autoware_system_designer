@@ -20,6 +20,8 @@ import logging
 import time
 from pathlib import Path
 
+import pytest
+
 from autoware_system_designer_runtime import records
 from autoware_system_designer_runtime._impl.core import events as ev
 from autoware_system_designer_runtime._impl.core import regular_actor
@@ -41,6 +43,8 @@ from autoware_system_designer_runtime._impl.measure.tracer import TraceControl, 
 from autoware_system_designer_runtime._impl.measure.writer import LATENCY_SCHEMA
 
 from .measure_fixtures import MS, US, S, chain_design, write_chain_traces, write_clock_trace
+
+pytestmark = pytest.mark.usefixtures("fake_process_groups")
 
 
 def _read_latency(path: Path) -> dict:

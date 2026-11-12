@@ -26,7 +26,7 @@ import pytest
 
 from autoware_system_designer_studio.serve import api, jobs, launch
 
-from .test_serve import PKG, SYSTEM, UNITS, _install_tree, _Running
+from .test_serve import PKG, SYSTEM, UNITS, _await_job_output, _install_tree, _Running
 from .test_serve_jobs import _wait_job
 
 # A runtime stand-in: serves the control protocol on the --control socket. Behaviour switches come
@@ -212,13 +212,22 @@ def launching(tmp_path, run_dir):
 
 
 def _start(running, **params):
-    return running.rpc(
+    status, body = running.rpc(
         {
             "id": 1,
             "method": "launch.start",
             "params": {"system": f"{PKG}:{SYSTEM}", "compute_unit": "main_ecu", **params},
         }
     )
+    if status == 200:
+        _await_job_output(running, body["result"]["job"])
+    return status, body
+
+
+def _greeted(session):
+    """The runtime's hello and its first member event have arrived; the connection alone precedes both."""
+    states = {member["path"]: member["state"] for member in session["members"]}
+    return session["connected"] and bool(session["control"]) and states.get("/demo/talker") == "running"
 
 
 def _wait_session(running, predicate, what="session"):
@@ -333,7 +342,7 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     status, body = _start(launching)
     assert status == 409 and body["error"]["code"] == api.CONFLICT
 
-    session = _wait_session(launching, lambda s: s["connected"], "connection")
+    session = _wait_session(launching, _greeted, "connection")
     assert session["state"] == launch.SESSION_RUNNING
     assert session["control"]["measure_armed"] is True
     assert session["launch_ready"] is True
@@ -449,7 +458,8 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     assert launching.daemon.launch.session("main_ecu").monitors == {"b"}
     launching.loop.call_soon_threadsafe(launching.daemon.launch.release_follows)
     deadline = time.time() + 5
-    while time.time() < deadline and not unfollowed.exists():
+    # The file exists before its content is written.
+    while time.time() < deadline and not (unfollowed.exists() and unfollowed.read_text()):
         time.sleep(0.02)
     assert launching.daemon.launch.session("main_ecu").monitors == set() and unfollowed.read_text() == "x"
 
@@ -643,7 +653,7 @@ def test_daemon_stop_ends_a_running_launch(tmp_path, run_dir):
     running = _Running(install, launch_env=_launch_env(_fake_launcher(tmp_path)), heartbeat_s=60)
     status, body = _start(running)
     assert status == 200, body
-    _wait_session(running, lambda s: s["connected"], "connection")
+    _wait_session(running, _greeted, "connection")
     job = running.daemon.jobs.get("launch-1")
     running.close()
     assert job.state == jobs.STATE_CANCELLED
@@ -783,7 +793,7 @@ def test_a_past_run_reads_back_its_topic_rates(archived, tmp_path):
 
 def test_the_run_of_a_session_is_listed_once_the_session_exited(launching):
     _start(launching)
-    session = _wait_session(launching, lambda s: s["connected"], "connect")
+    session = _wait_session(launching, _greeted, "connect")
     run = Path(session["log_dir"]).name
     _, body = launching.rpc({"method": "launch.runs"})
     assert run not in [r["run"] for r in body["result"]["runs"]]
@@ -814,7 +824,7 @@ def test_a_session_keeps_the_runtime_counts_of_its_members():
 def test_a_monitor_snapshot_far_over_64_kib_keeps_the_channel(launching):
     status, _ = _start(launching, mode="Runtime", args={"behaviour": "big"})
     assert status == 200
-    _wait_session(launching, lambda s: s["connected"], "connection")
+    _wait_session(launching, _greeted, "connection")
     status, body = launching.rpc({"method": "monitor.follow", "params": {"compute_unit": "main_ecu"}})
     assert status == 200, body
     deadline = time.time() + 5

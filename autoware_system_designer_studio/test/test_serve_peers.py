@@ -26,8 +26,8 @@ from autoware_system_designer_studio import cli
 from autoware_system_designer_studio.serve import api, jobs, launch, peers
 from autoware_system_designer_studio.serve.server import ServeDaemon
 
-from .test_serve import PKG, SYSTEM, UNITS, _install_tree, _Running
-from .test_serve_launch import SHEBANG, _fake_launcher, _launch_env, _Recording, run_dir  # noqa: F401 - fixture
+from .test_serve import PKG, SYSTEM, UNITS, _await_job_output, _install_tree, _Running
+from .test_serve_launch import SHEBANG, _fake_launcher, _greeted, _launch_env, _Recording, run_dir  # noqa: F401 - fixture
 
 SYSTEM_ID = f"{PKG}:{SYSTEM}"
 
@@ -56,6 +56,12 @@ class _Daemon(_Running):
         status, body = self.rpc({"id": 1, "method": method, "params": params})
         assert status != 200, body
         return body["error"]["code"]
+
+    def launch(self, **params):
+        """Starts a launch of a unit of this daemon; returns once its runtime handles signals."""
+        session = self.call("launch.start", system=SYSTEM_ID, **params)
+        _await_job_output(self, session["job"])
+        return session
 
     def unit(self, name):
         (system,) = self.call("systems.list")["systems"]
@@ -111,7 +117,9 @@ class _Units:
         return _until(lambda: self.main.peer()["state"] == state and self.main.peer(), f"peer {state}")
 
     def launch_sub(self, **params):
-        return self.main.call("launch.start", system=SYSTEM_ID, compute_unit="sub_ecu", **params)
+        session = self.main.call("launch.start", system=SYSTEM_ID, compute_unit="sub_ecu", **params)
+        _await_job_output(self.sub, session["job"].partition("/")[2])
+        return session
 
     def close(self):
         self.main.close()
@@ -216,8 +224,8 @@ def test_an_ssh_destination_binds_a_peer_on_this_loopback(tmp_path):
 
 FAKE_SSH = """\
 import signal, sys, time
-print("argv: " + " ".join(sys.argv[1:]), flush=True)
 signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
+print("argv: " + " ".join(sys.argv[1:]), flush=True)
 while True:
     time.sleep(0.1)
 """
@@ -250,6 +258,7 @@ def test_a_forwarded_peer_keeps_an_ssh_tunnel_job_running(tmp_path, monkeypatch)
         main.call("jobs.cancel", job="tunnel-1")
         _until(lambda: main.peer()["tunnel"] == "tunnel-2", "tunnel restarted")
         assert [job["id"] for job in main.call("jobs.list")["jobs"]] == ["tunnel-2"]
+        _await_job_output(main, "tunnel-2")
         process = main.daemon.jobs.get("tunnel-2").process
     finally:
         main.close()
@@ -331,7 +340,7 @@ def test_a_peer_unit_is_launched_followed_and_shut_down_through_this_daemon(unit
 
     def connected():
         (listed,) = main.call("launch.status")["sessions"]
-        return listed["launch_ready"] and listed
+        return _greeted(listed) and listed
 
     listed = _until(connected, "connection")
     assert listed["job"] == "sub_ecu/launch-1" and listed["control"]["measure_armed"] is True
@@ -414,7 +423,7 @@ def test_a_build_names_no_peer_unit(tmp_path):
 def test_a_system_runs_one_mode_at_a_time_across_daemons(units):
     main = units.main
     nosocket = {"behaviour": "nosocket"}
-    main.call("launch.start", system=SYSTEM_ID, compute_unit="main_ecu", mode="Runtime", args=nosocket)
+    main.launch(compute_unit="main_ecu", mode="Runtime", args=nosocket)
     assert main.error("launch.start", system=SYSTEM_ID, compute_unit="sub_ecu", mode="Simulation") == api.CONFLICT
     assert units.sub.daemon.launch.sessions == {}
     units.launch_sub(args=nosocket)
@@ -430,7 +439,7 @@ def test_a_system_runs_one_mode_at_a_time_across_daemons(units):
     assert main.error("launch.start", system=SYSTEM_ID, compute_unit="main_ecu", mode="Simulation") == api.CONFLICT
     assert main.call("launch.shutdown", compute_unit="sub_ecu") == {"shutting_down": True, "cancelled": True}
     _until(lambda: main.unit("sub_ecu")["status"] == "available", "exit of the peer's launch")
-    main.call("launch.start", system=SYSTEM_ID, compute_unit="main_ecu", mode="Simulation", args=nosocket)
+    main.launch(compute_unit="main_ecu", mode="Simulation", args=nosocket)
     assert main.error("launch.start", system=SYSTEM_ID, compute_unit="sub_ecu", mode="Runtime") == api.CONFLICT
     main.call("launch.shutdown", compute_unit="main_ecu")
 
@@ -474,7 +483,7 @@ def test_a_peer_that_goes_away_is_unreachable_until_it_answers_again(units):
 def test_a_reconnected_peer_keeps_its_launch_and_the_rate_followers(units, monkeypatch):
     main, sub = units.main, units.sub
     units.launch_sub()
-    _until(lambda: main.call("launch.status")["sessions"][0]["connected"], "connection")
+    _until(lambda: _greeted(main.call("launch.status")["sessions"][0]), "connection")
     main.call("monitor.follow", compute_unit="sub_ecu", client="page-1")
     main.call("launch.follow", compute_unit="sub_ecu", path="/demo/talker")
     peer_session = sub.daemon.launch.session("sub_ecu")
@@ -555,7 +564,7 @@ def test_the_last_reported_session_of_an_unanswering_peer_is_forgotten(tmp_path,
         assert dropped["forgotten"] and dropped["compute_unit"] == "sub_ecu" and "members" not in dropped
         assert main.call("launch.status")["sessions"] == []
         assert main.call("launch.forget", compute_unit="sub_ecu") == {"forgotten": []}
-        main.call("launch.start", **start)
+        main.launch(compute_unit="main_ecu", mode="Simulation", args=nosocket)
         main.call("launch.shutdown", compute_unit="main_ecu")
         # The peer answering again reports the session it still has.
         running.wait_peer(peers.PEER_CONNECTED)

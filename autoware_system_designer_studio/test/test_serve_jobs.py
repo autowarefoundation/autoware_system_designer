@@ -129,8 +129,9 @@ def test_cancel_interrupts_the_process_group():
         job = await runner.start(
             _spec(
                 "import subprocess, sys, time; "
-                "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
-                "print(p.pid, flush=True); time.sleep(30)"
+                "code = 'import time; print(1, flush=True); time.sleep(30)'; "
+                "p = subprocess.Popen([sys.executable, '-c', code], stdout=subprocess.PIPE); "
+                "p.stdout.readline(); print(p.pid, flush=True); time.sleep(30)"
             )
         )
         while not job.log.last_seq:
