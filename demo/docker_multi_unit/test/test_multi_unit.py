@@ -23,6 +23,8 @@ A fault is made on a device, and takes every unit of the device with it.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from conftest import SYSTEM, Environment, RpcError, wait_for
 
@@ -39,6 +41,8 @@ MIN_RATE_HZ = 5.0  # the inputs arrive at 10 Hz or more
 NODES = "autoware_system_designer_demo_nodes|component_container|robot_state_publisher"
 # An SSH forward gone silent ends within 15 s and is tried again within 15 s.
 LINK_TIMEOUT_S = 90
+# Fast DDS participants frozen past their discovery lease do not always match their peers again.
+REMATCHES_AFTER_FREEZE = os.environ.get("ASD_RMW_IMPLEMENTATION") == "rmw_cyclonedds_cpp"
 
 
 def _remote_device(environment: Environment, unit: str) -> str:
@@ -55,6 +59,16 @@ def _receives(environment: Environment, unit: str) -> bool:
 def _wait_status(environment: Environment, units: list, status: str) -> None:
     for unit in units:
         wait_for(lambda: environment.main.unit_status(unit) == status, LINK_TIMEOUT_S, f"{unit} {status}")
+
+
+def _relaunch(environment: Environment, units: list) -> None:
+    """A new launch of ``units``, whose DDS participants are discovered anew."""
+    for unit in units:
+        environment.main.shutdown(unit)
+    _wait_status(environment, units, "available")
+    for unit in units:
+        environment.main.launch(unit)
+    wait_for(environment.all_running, 60, "every member running again")
 
 
 def _assert_cut_off(environment: Environment, device: str) -> None:
@@ -156,8 +170,11 @@ def test_frozen_device_is_unreachable_then_resynced(launched: Environment) -> No
     finally:
         assert launched.compose("unpause", *services).returncode == 0
     _wait_status(launched, launched.units_on(device), "running")
-    wait_for(lambda: _receives(launched, "sensing_perception"), 30, "messages again", period=0)
     assert launched.all_running()
+    if not REMATCHES_AFTER_FREEZE:
+        _relaunch(launched, launched.units_on(device))
+    for each in ["sensing_perception", *launched.units_on(device)]:
+        wait_for(lambda: _receives(launched, each), 60, f"messages on {LISTENERS[each][0]} again", period=0)
 
 
 def test_device_off_the_network_is_unreachable_then_resynced(launched: Environment) -> None:
@@ -175,12 +192,7 @@ def test_device_off_the_network_is_unreachable_then_resynced(launched: Environme
     assert launched.all_running()
     # Docker removed the device's interface, which its DDS participants do not find again; a launch
     # started anew does.
-    for each in units:
-        launched.main.shutdown(each)
-    _wait_status(launched, units, "available")
-    for each in units:
-        launched.main.launch(each)
-    wait_for(launched.all_running, 60, "every member running again")
+    _relaunch(launched, units)
     for each in units:
         wait_for(lambda: _receives(launched, each), 60, f"messages on {LISTENERS[each][0]} again", period=0)
 

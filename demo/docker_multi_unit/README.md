@@ -115,4 +115,8 @@ system, its deploy and the topics listened to are the tests' own. They are not p
 Docker does not reproduce NIC and switch timing, time synchronisation, GPU or Jetson targets, or
 the start order of system services. `docker network disconnect` removes the container's interface,
 where a pulled cable leaves it in place: the daemons find each other again, the DDS participants of
-a running launch do not, and the unit needs a new launch.
+a running launch do not, and the unit needs a new launch. The same holds, some of the time, for
+a device frozen longer than the discovery lease under Fast DDS, whose participants then never
+match their peers again; CycloneDDS (`ASD_RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`) finds them
+within seconds. The tests launch the units of such a device anew, except after a freeze under
+CycloneDDS.
