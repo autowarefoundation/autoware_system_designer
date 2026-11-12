@@ -29,17 +29,18 @@ another system.
 | -------------------- | ----------------------------------------------- | ---------------------------------------------------- | ----------------------------------------- |
 | `host`               | containers of one ECU                           | host network and IPC, DDS on loopback                | the shared loopback                       |
 | `bridge`             | separate ECUs                                   | bridge network `172.30.87.0/24`, fixed addresses     | SSH forwards it keeps as tunnel jobs      |
-| `two_ecus`           | two containers of the main ECU and a second ECU | the same network, two units in one network namespace | the shared loopback, an SSH forward       |
+| `local_pair`         | two containers of the main ECU and a second ECU | the same network, two units in one network namespace | the shared loopback, an SSH forward       |
 | `remote_pair`        | the main ECU and two containers of a second ECU | the same network, two peers behind one address       | two SSH forwards from one destination     |
 | `shared_environment` | the main ECU and one environment of two units   | the same network, one daemon serving two units       | one SSH forward, one link for both units  |
 
 In every topology the daemon of `sensing_perception` has the other two as
 [peers](../../autoware_system_designer_studio/README.md#peers): its workbench and API on port 8781
-launch, observe and shut down every unit. `run.sh` derives the peers from the bindings of the
-topology file and hands them to the service marked `ASD_MAIN`.
+launch, observe and shut down every unit. `run.py` derives the peers from the bindings of the
+topology file and writes them as the [site file](../../autoware_system_designer_studio/README.md#peers)
+of the service marked `ASD_MAIN`.
 
 Every daemon binds the loopback of its network namespace. A container standing for a device runs
-an `sshd` on port 2222 as the unprivileged user `asd`. `run.sh` makes two keys per `up`: the
+an `sshd` on port 2222 as the unprivileged user `asd`. `run.py` makes two keys per `up`: the
 host's, with which it forwards the main daemon's port to the same port on the host (a daemon
 answers only requests whose `Host` names its port), and the one the main daemon opens its forwards
 to the other devices with. DDS crosses the bridge network without shared memory.
@@ -47,14 +48,18 @@ to the other devices with. DDS crosses the bridge network without shared memory.
 ## Use
 
 ```bash
-./run.sh topologies              # bridge, host, remote_pair, shared_environment, two_ecus
-./run.sh up bridge               # build, start, wait until every daemon is healthy
-./run.sh url bridge              # http://127.0.0.1:8781/ the main daemon's workbench
-./run.sh units bridge            # unit, service, daemon port, address, device, network namespace, role
-./run.sh compose bridge logs -f sensing_perception
-./run.sh ssh bridge map_localization    # shell in a service with an sshd
-./run.sh down bridge             # --volumes also drops the built workspace
+./run.py topologies              # bridge, host, local_pair, remote_pair, shared_environment
+./run.py up bridge               # build, start, wait until every daemon is healthy
+./run.py url bridge              # http://127.0.0.1:8781/ the main daemon's workbench
+./run.py units bridge            # service, daemon port, address, device, network namespace, role of each unit
+./run.py compose bridge logs -f sensing_perception
+./run.py ssh bridge map_localization    # shell in a service with an sshd
+./run.py down bridge             # --volumes also drops the built workspace
 ```
+
+The image holds the repositories of [`build_depends.repos`](../../build_depends.repos) as an underlay,
+so this checkout alone is the workspace. One topology runs at a time: they share the daemon ports
+and the bridge subnet.
 
 `up` runs the `build` service first: `colcon build` of the checkout (mounted read-only) into the
 volume `asd-multi-unit-ws-<distro>`, which every topology shares, so a later `up` rebuilds only
@@ -71,7 +76,7 @@ curl -s http://127.0.0.1:8781/api/rpc -H 'Content-Type: application/json' -H 'X-
 | `ASD_ROS_DOMAIN_ID`      | `87`                                | DDS domain of the units                         |
 | `ASD_RMW_IMPLEMENTATION` | the distribution's                  | RMW implementation, e.g. `rmw_cyclonedds_cpp`   |
 | `ASD_UID`, `ASD_GID`     | the calling user's                  | ids of the container user                       |
-| `ASD_STATE_DIR`          | `$XDG_RUNTIME_DIR/asd-multi-unit`   | client key, known hosts, SSH control socket     |
+| `ASD_STATE_DIR`          | `$XDG_RUNTIME_DIR/asd-multi-unit`   | keys, known hosts, site file, control socket    |
 | `ASD_PACKAGES`           | studio, demo systems                | packages the `build` service builds up to       |
 | `ASD_SYSTEM`             | `TypeAlpha`                         | system whose topology files are run             |
 | `ASD_ARCHITECTURE_DIR`   | the demo systems' `ee_architecture` | directory of `<system>.<topology>.compose.yaml` |
@@ -86,13 +91,13 @@ The main daemon reports them `unreachable` within about 15 s and reads them anew
 answer again:
 
 ```bash
-./run.sh compose bridge pause planning_control                           # frozen ECU
-./run.sh compose bridge unpause planning_control
-./run.sh compose bridge kill planning_control                            # power loss
-./run.sh compose bridge start planning_control                           # power back, launch gone
+./run.py compose bridge pause planning_control                           # frozen ECU
+./run.py compose bridge unpause planning_control
+./run.py compose bridge kill planning_control                            # power loss
+./run.py compose bridge start planning_control                           # power back, launch gone
 docker network disconnect asd-multi-unit-bridge_vehicle asd-multi-unit-bridge-planning_control-1
 docker network connect --ip 172.30.87.13 asd-multi-unit-bridge_vehicle asd-multi-unit-bridge-planning_control-1
-./run.sh compose bridge exec -u root planning_control tc qdisc add dev eth0 root netem delay 50ms loss 5%
+./run.py compose bridge exec -u root planning_control tc qdisc add dev eth0 root netem delay 50ms loss 5%
 ```
 
 ## Tests
@@ -108,7 +113,7 @@ unit receives a topic of another unit, member output is readable, a shutdown end
 processes and leaves the others running, and the past runs of all three are listed and read. The
 units of a device other than the main daemon's also stay reachable over a slow, lossy link, and are
 reported `unreachable` and then read anew when the device is paused, taken off the network, or
-killed and started again. The units, their services and devices are read from `run.sh units`; the
+killed and started again. The units, their services and devices are read from `run.py`; the
 system, its deploy and the topics listened to are the tests' own. They are not part of
 `colcon test`.
 

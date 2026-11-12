@@ -17,15 +17,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-${ROS_DISTRO}-xacro \
     && rm -rf /var/lib/apt/lists/*
 
-# autoware_cmake, the build dependency outside this repository, as an underlay.
-ARG AUTOWARE_CMAKE_VERSION=main
-RUN git clone --depth 1 --branch "${AUTOWARE_CMAKE_VERSION}" \
-      https://github.com/autowarefoundation/autoware_cmake.git /tmp/autoware_cmake \
+# The repositories of build_depends.repos, the build dependencies outside this repository, as an underlay.
+COPY build_depends.repos /tmp/build_depends.repos
+RUN mkdir -p /tmp/build_depends/src \
+    && cd /tmp/build_depends \
+    && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf GIT_CONFIG_VALUE_0=git@github.com: \
+         vcs import --shallow src < /tmp/build_depends.repos \
     && . "/opt/ros/${ROS_DISTRO}/setup.sh" \
-    && cd /tmp/autoware_cmake \
-    && colcon build --packages-up-to autoware_cmake --merge-install --install-base /opt/autoware_cmake \
-         --cmake-args -DBUILD_TESTING=OFF \
-    && rm -rf /tmp/autoware_cmake
+    && colcon build --merge-install --install-base /opt/build_depends --cmake-args -DBUILD_TESTING=OFF \
+    && rm -rf /tmp/build_depends /tmp/build_depends.repos
 
 # Unprivileged user "asd" on the host user's ids, so files in shared memory and volumes stay the host user's.
 RUN set -eu; \
@@ -39,7 +39,7 @@ RUN set -eu; \
     mkdir -p /ws/src /ws/out /run/asd; \
     chown asd:asd /ws/out /run/asd
 
-COPY entrypoint.sh /usr/local/bin/asd-entrypoint
+COPY demo/docker_multi_unit/entrypoint.sh /usr/local/bin/asd-entrypoint
 RUN chmod 0755 /usr/local/bin/asd-entrypoint
 
 USER asd

@@ -3,7 +3,7 @@
 # The services and their image are in demo/docker_multi_unit/compose.base.yaml; this file states
 # where each compute unit runs: its service, device (hostname), address and daemon port, and the
 # daemon that has the others as peers (ASD_MAIN).
-name: asd-multi-unit-two-ecus
+name: asd-multi-unit-local-pair
 
 x-unit: &unit
   extends:

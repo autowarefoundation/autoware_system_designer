@@ -102,10 +102,9 @@ def test_main_daemon_serves_its_units_and_has_the_others_as_peers(environment: E
     for peer in peers:
         assert peer["mismatch"] == []
         for unit in peer["units"]:
-            # A unit on another device than the main daemon's is behind an SSH forward from its address.
-            remote = environment.remote(unit)
-            assert peer["ssh"] == (environment.address[unit] if remote else None)
-            assert (peer["tunnel"] is not None) == remote
+            # A unit on another device than the main daemon's is behind an SSH forward from that device.
+            assert peer["ssh"] == environment.ssh[unit]
+            assert (peer["tunnel"] is not None) == environment.remote(unit)
     for unit in environment.units:
         assert main.unit_status(unit) == "available"
 

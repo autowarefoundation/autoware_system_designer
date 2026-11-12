@@ -145,12 +145,9 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
             from_file = [] if site_file is None else peers.load_site_file(site_file)
             args.peer_specs = peers.merge_specs(from_file, [peers.parse_peer(text) for text in args.peers])
             args.peer_specs = peers.with_ssh(args.peer_specs, [peers.parse_peer_ssh(text) for text in args.peer_ssh])
-            peers.validate_specs(args.peer_specs)
+            peers.validate_specs(args.peer_specs, args.compute_units or ())
         except peers.PeerConfigError as exc:
             serve.error(str(exc))
-        local = set(args.compute_units or ()) & {spec.unit for spec in args.peer_specs}
-        if local:
-            serve.error(f"compute unit(s) {', '.join(sorted(local))} are both local and bound to a peer")
     return args
 
 

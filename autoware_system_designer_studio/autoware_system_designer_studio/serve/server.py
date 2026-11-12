@@ -49,22 +49,28 @@ from .. import exports
 from ..pages import assets
 from ..pages.render import INDEX_PAGE, Site, system_pages
 from . import api, build, events, jobs, launch, peers, record_watch
-from .http import MAX_HEADER_BYTES, HttpError, Request, Response, read_request, response_head, write_response
+from .events import TOPIC_DAEMON, TOPIC_SYSTEMS_CHANGED
+from .http import (
+    CLIENT_HEADER,
+    LOOPBACK_HOST_NAMES,
+    MAX_HEADER_BYTES,
+    HttpError,
+    Request,
+    Response,
+    read_request,
+    response_head,
+    write_response,
+)
 
 logger = logging.getLogger(__name__)
 
 BIND_HOST = "127.0.0.1"
-LOOPBACK_HOST_NAMES = ("127.0.0.1", "localhost")
-CLIENT_HEADER = "X-System-Designer-Client"
 RPC_PATH = "/api/rpc"
 EVENTS_PATH = "/api/events"
 API_PREFIX = "/api/"
 BUNDLE_PREFIX = f"/{assets.BUNDLE_DIR}/"
 # Packages whose code this daemon runs; rebuilding one inside the served install needs a restart.
 OWN_PACKAGES = ("autoware_system_designer_studio", "autoware_system_designer_runtime")
-
-TOPIC_DAEMON = "daemon"
-TOPIC_SYSTEMS_CHANGED = "systems.changed"
 
 # Seconds a status page waits before reloading while an export may be mid-rewrite.
 RETRY_RELOAD_S = 2
@@ -187,10 +193,7 @@ class ServeDaemon:
         self.heartbeat_s = heartbeat_s
         self.hub = events.EventHub(max_event_subscribers, heartbeat_s)
         self.jobs = jobs.JobRunner(self.hub)
-        self.peers = peers.PeerRegistry(peer_specs, self.hub, self._describe, self.jobs)
-        if self.served_units is not None and set(self.served_units) & set(self.peers.units):
-            both = ", ".join(sorted(set(self.served_units) & set(self.peers.units)))
-            raise ValueError(f"compute unit(s) {both} are both local and bound to a peer")
+        self.peers = peers.PeerRegistry(peer_specs, self.hub, self._describe, self.jobs, self.served_units or ())
         self.methods = api.MethodRegistry()
         self.methods.register("health", self._health, get_path="health")
         self.methods.register("systems.list", self._systems_list, get_path="systems")

@@ -62,7 +62,8 @@ from urllib.parse import urlsplit
 
 from .. import exports
 from . import api, jobs, launch
-from .events import TOPIC_HELLO, EventHub
+from .events import TOPIC_DAEMON, TOPIC_HELLO, TOPIC_SYSTEMS_CHANGED, EventHub
+from .http import CLIENT_HEADER, LOOPBACK_HOST_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +74,9 @@ PEER_CONNECTING = "connecting"
 PEER_CONNECTED = "connected"
 PEER_UNREACHABLE = "unreachable"
 
-TOPIC_DAEMON = "daemon"
-TOPIC_SYSTEMS_CHANGED = "systems.changed"
 # Peer topics relayed as they are for the units of the link.
 UNIT_TOPICS = (launch.TOPIC_MEMBER, launch.TOPIC_MEMBER_LOG, launch.TOPIC_MEMBER_ACTIVITY, launch.TOPIC_MONITOR)
 
-CLIENT_HEADER = "X-System-Designer-Client"
 CLIENT_NAME = "peer"
 ID_SEPARATOR = "/"
 
@@ -98,7 +96,6 @@ TUNNEL_JOB_KIND = "tunnel"
 SSH = "ssh"
 # Applied over the user's SSH configuration: no prompt, and a forward that fails or goes silent ends the job.
 SSH_OPTIONS = ("BatchMode=yes", "ExitOnForwardFailure=yes", "ServerAliveInterval=5", "ServerAliveCountMax=3")
-LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
 TUNNEL_RESTART_MIN_S = 1.0
 TUNNEL_RESTART_MAX_S = 15.0
 # A tunnel that lasted this long restarts without the backoff it had built up.
@@ -178,11 +175,17 @@ def with_ssh(specs: Iterable[PeerSpec], bindings: Iterable[tuple[str, str]]) -> 
     return list(by_unit.values())
 
 
-def validate_specs(specs: Iterable[PeerSpec]) -> None:
-    """A forwarded peer answers on this device's loopback, and one address has one way to it."""
+def validate_specs(specs: Iterable[PeerSpec], local_units: Iterable[str] = ()) -> None:
+    """A unit is local or bound to a peer, never both; a forwarded peer answers on this device's
+    loopback, and one address has one way to it.
+    """
+    specs = list(specs)
+    both = sorted(set(local_units) & {spec.unit for spec in specs})
+    if both:
+        raise PeerConfigError(f"compute unit(s) {', '.join(both)} are both local and bound to a peer")
     ssh_by_url: dict[str, Optional[str]] = {}
     for spec in specs:
-        if spec.ssh is not None and urlsplit(spec.url).hostname not in LOOPBACK_HOSTS:
+        if spec.ssh is not None and urlsplit(spec.url).hostname not in LOOPBACK_HOST_NAMES:
             raise PeerConfigError(f"peer of {spec.unit!r} is forwarded over SSH, so its URL must be on 127.0.0.1")
         if ssh_by_url.setdefault(spec.url, spec.ssh) != spec.ssh:
             raise PeerConfigError(f"peers at {spec.url} name different SSH destinations")
@@ -803,9 +806,16 @@ def _log_failure(task: asyncio.Task) -> None:
 class PeerRegistry:
     """The peer links of this daemon, by compute unit."""
 
-    def __init__(self, specs: Iterable[PeerSpec], hub: EventHub, describe: Describe, runner: jobs.JobRunner) -> None:
+    def __init__(
+        self,
+        specs: Iterable[PeerSpec],
+        hub: EventHub,
+        describe: Describe,
+        runner: jobs.JobRunner,
+        local_units: Iterable[str] = (),
+    ) -> None:
         specs = merge_specs(specs)
-        validate_specs(specs)
+        validate_specs(specs, local_units)
         units_by_url: dict[str, list[str]] = {}
         for spec in specs:
             units_by_url.setdefault(spec.url, []).append(spec.unit)

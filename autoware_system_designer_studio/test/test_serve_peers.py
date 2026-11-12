@@ -176,7 +176,7 @@ def test_a_unit_is_local_or_bound_to_a_peer_not_both(tmp_path, capsys):
     assert "both local and bound to a peer" in capsys.readouterr().err
     with pytest.raises(SystemExit):
         cli._parse_args(["serve", "--peer", "sub_ecu=127.0.0.1:1"])
-    with pytest.raises(ValueError):
+    with pytest.raises(peers.PeerConfigError):
         ServeDaemon(tmp_path, port=0, served_units=["a"], peer_specs=[peers.PeerSpec("a", "http://127.0.0.1:1")])
 
 

@@ -1,0 +1,4 @@
+# The build context is the repository; the image takes these two files of it.
+*
+!build_depends.repos
+!demo/docker_multi_unit/entrypoint.sh

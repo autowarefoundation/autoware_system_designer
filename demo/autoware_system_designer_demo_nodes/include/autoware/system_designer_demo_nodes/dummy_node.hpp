@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef AUTOWARE__SYSTEM_DUMMY_MODULES__DUMMY_NODE_HPP_
-#define AUTOWARE__SYSTEM_DUMMY_MODULES__DUMMY_NODE_HPP_
+#ifndef AUTOWARE__SYSTEM_DESIGNER_DEMO_NODES__DUMMY_NODE_HPP_
+#define AUTOWARE__SYSTEM_DESIGNER_DEMO_NODES__DUMMY_NODE_HPP_
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -30,7 +30,7 @@
 #include <utility>
 #include <vector>
 
-namespace autoware::system_dummy_modules
+namespace autoware::system_designer_demo_nodes
 {
 
 namespace detail
@@ -268,6 +268,6 @@ private:
   std::vector<rclcpp::TimerBase::SharedPtr> timers_;
 };
 
-}  // namespace autoware::system_dummy_modules
+}  // namespace autoware::system_designer_demo_nodes
 
-#endif  // AUTOWARE__SYSTEM_DUMMY_MODULES__DUMMY_NODE_HPP_
+#endif  // AUTOWARE__SYSTEM_DESIGNER_DEMO_NODES__DUMMY_NODE_HPP_

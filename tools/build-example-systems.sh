@@ -7,8 +7,6 @@ COLLECT_MANIFESTS_SCRIPT="${REPO_ROOT}/autoware_system_designer/script/collect_s
 DEPLOYMENT_PROCESS_SCRIPT="${REPO_ROOT}/autoware_system_designer/script/deployment_process.py"
 SYSTEM_DESIGNER_RUNNER_SCRIPT="${REPO_ROOT}/autoware_system_designer/script/system_designer_runner.py"
 DEPLOYMENT_FILE="${REPO_ROOT}/demo/autoware_system_designer_demo_systems/deployment/type_alpha.deployments.yaml"
-# Deploy targets: a deployments table by file, a system by entity name.
-DEPLOY_TARGETS=("${DEPLOYMENT_FILE}")
 
 if [[ ! -f "${COLLECT_MANIFESTS_SCRIPT}" ]]; then
   echo "[build-system-design-examples] Missing script: ${COLLECT_MANIFESTS_SCRIPT}"
@@ -50,18 +48,16 @@ python3 "${COLLECT_MANIFESTS_SCRIPT}" \
   "${TEMP_INSTALL_PREFIX}" \
   --package-map-mode source
 
-for target in "${DEPLOY_TARGETS[@]}"; do
-  echo "[build-system-design-examples] Running deployment_process.py via system_designer_runner.py on ${target##*/}..."
-  PYTHONPATH="${REPO_ROOT}/autoware_system_designer:${PYTHONPATH:-}" \
-    python3 "${SYSTEM_DESIGNER_RUNNER_SCRIPT}" deploy \
-      --log-file "${LOG_FILE}" \
-      --strict on \
-      --print-level ERROR \
-      --print-stdout \
-      "${DEPLOYMENT_PROCESS_SCRIPT}" \
-      "${target}" \
-      "${MANIFEST_DIR}" \
-      "${OUTPUT_DIR}"
-done
+echo "[build-system-design-examples] Running deployment_process.py via system_designer_runner.py..."
+PYTHONPATH="${REPO_ROOT}/autoware_system_designer:${PYTHONPATH:-}" \
+  python3 "${SYSTEM_DESIGNER_RUNNER_SCRIPT}" deploy \
+    --log-file "${LOG_FILE}" \
+    --strict on \
+    --print-level ERROR \
+    --print-stdout \
+    "${DEPLOYMENT_PROCESS_SCRIPT}" \
+    "${DEPLOYMENT_FILE}" \
+    "${MANIFEST_DIR}" \
+    "${OUTPUT_DIR}"
 
 echo "[build-system-design-examples] Deploy generation completed successfully. Log: ${LOG_FILE}"

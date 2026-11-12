@@ -7,7 +7,7 @@ binds them to an execution environment, as a Docker Compose project standing in 
 | ------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------- |
 | `TypeAlpha.host.compose.yaml`               | containers of one ECU                           | host network and IPC, DDS on loopback                |
 | `TypeAlpha.bridge.compose.yaml`             | separate ECUs                                   | bridge network `172.30.87.0/24`, fixed addresses     |
-| `TypeAlpha.two_ecus.compose.yaml`           | two containers of the main ECU and a second ECU | the same network, two units in one network namespace |
+| `TypeAlpha.local_pair.compose.yaml`         | two containers of the main ECU and a second ECU | the same network, two units in one network namespace |
 | `TypeAlpha.remote_pair.compose.yaml`        | the main ECU and two containers of a second ECU | the same network, two peers behind one address       |
 | `TypeAlpha.shared_environment.compose.yaml` | the main ECU and one environment of two units   | the same network, one daemon serving two units       |
 
@@ -38,4 +38,4 @@ tests, and the start order.
 An E/E architecture description of the system takes over this content: devices, their networks and
 addresses, the execution environments on each device, the binding of every compute unit to one of
 them, and the main environment. The runner and the tests read the bindings in one place,
-`run.sh units <topology>`, so they stay as they are when the description replaces these values.
+`Topology` of `run.py`, so they stay as they are when the description replaces these values.

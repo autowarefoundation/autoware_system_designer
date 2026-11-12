@@ -2,19 +2,18 @@
 # Container entry of the multi-unit environment.
 #   build   colcon build of ASD_PACKAGES and their dependencies from /ws/src into /ws/out
 #   serve   studio daemon of the units ASD_COMPUTE_UNITS on ASD_PORT, with sshd when ASD_SSHD_PORT
-#           is set; with ASD_MAIN=true it has the daemons of the other units as peers:
-#           ASD_PEERS lists them as <unit>=<url>, separated by spaces, and ASD_PEER_SSH the SSH
-#           destinations they are forwarded from as <unit>=<destination>;
-#           ASD_RMW_IMPLEMENTATION selects the RMW implementation
+#           is set; with ASD_MAIN=true it has the daemons of the other units as peers, bound by
+#           the site file in /run/asd/site; ASD_RMW_IMPLEMENTATION selects the RMW implementation
 set -eo pipefail
 
 OUT=/ws/out
+SITE=/run/asd/site
 PACKAGES="${ASD_PACKAGES:-autoware_system_designer_studio autoware_system_designer_demo_systems}"
 
 # shellcheck disable=SC1090
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
 # shellcheck disable=SC1091
-source /opt/autoware_cmake/setup.bash
+source /opt/build_depends/setup.bash
 
 build() {
   # shellcheck disable=SC2086
@@ -36,7 +35,7 @@ start_sshd() {
 Port ${ASD_SSHD_PORT}
 HostKey ${dir}/host_key
 PidFile ${dir}/sshd.pid
-AuthorizedKeysFile ${ASD_AUTHORIZED_KEYS:-/run/asd/keys/authorized_keys}
+AuthorizedKeysFile ${SITE}/authorized_keys
 StrictModes no
 UsePAM no
 PasswordAuthentication no
@@ -47,15 +46,13 @@ CONFIG
   /usr/sbin/sshd -f "${dir}/sshd_config" -E "${dir}/sshd.log"
 }
 
-# SSH client configuration of the daemon's user: how the peers' sshd are reached.
+# SSH client configuration of the daemon's user: the key and host key handling its peers' sshd take.
 write_ssh_config() {
   mkdir -p "${HOME}/.ssh"
   chmod 700 "${HOME}/.ssh"
   cat >"${HOME}/.ssh/config" <<CONFIG
 Host *
-  Port ${ASD_SSHD_PORT}
-  User asd
-  IdentityFile ${ASD_PEER_KEY:-/run/asd/keys/peer_ed25519}
+  IdentityFile ${SITE}/peer_ed25519
   IdentitiesOnly yes
   StrictHostKeyChecking accept-new
   UserKnownHostsFile /run/asd/known_hosts
@@ -77,24 +74,17 @@ serve() {
   if [[ -n "${ASD_SSHD_PORT:-}" ]]; then
     start_sshd
   fi
-  local unit units=() peer peers=()
+  local unit units=() peers=()
   for unit in ${ASD_COMPUTE_UNITS}; do
     units+=(--compute-unit "${unit}")
   done
   if [[ "${ASD_MAIN:-}" == true ]]; then
-    for peer in ${ASD_PEERS:-}; do
-      peers+=(--peer "${peer}")
-    done
-    if [[ -n "${ASD_PEER_SSH// /}" ]]; then
-      write_ssh_config
-      for peer in ${ASD_PEER_SSH}; do
-        peers+=(--peer-ssh "${peer}")
-      done
-    fi
+    write_ssh_config
+    peers=(--site-file "${SITE}/peers.site.yaml")
   fi
   exec autoware-system-designer-studio serve \
     --install-root "${OUT}/install" \
-    --port "${ASD_PORT:-8780}" \
+    --port "${ASD_PORT:?port of this daemon}" \
     "${units[@]}" \
     "${peers[@]}"
 }

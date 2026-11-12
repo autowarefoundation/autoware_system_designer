@@ -19,27 +19,21 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Callable, Dict, Iterator, Optional
+from typing import Callable, Iterator, Optional
 
 import pytest
 
-HERE = Path(__file__).resolve().parent.parent
-RUN = HERE / "run.sh"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import run  # noqa: E402
+
 SYSTEM = "autoware_system_designer_demo_systems:TypeAlpha"
 DEPLOY = "vehicle_x"
-
-
-def _topologies() -> list:
-    """Topologies of the system, one per compose file beside it."""
-    listed = subprocess.run([str(RUN), "topologies"], capture_output=True, text=True, check=False)
-    return listed.stdout.split()
-
-
-TOPOLOGIES = _topologies()
+TOPOLOGIES = run.topologies()
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -63,6 +57,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list) -> None:
     for item in items:
         if "docker" in item.keywords:
             item.add_marker(skip)
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    last = session.items[-1] if session.items else None
+    session.config.last_topology = getattr(last, "callspec", None) and last.callspec.params.get("environment")
 
 
 class RpcError(Exception):
@@ -133,31 +132,17 @@ class Environment:
 
     def __init__(self, topology: str):
         self.topology = topology
-        self.project = ""
-        self.units: list = []
-        self.service: Dict[str, str] = {}
-        self.address: Dict[str, str] = {}
-        self.device: Dict[str, str] = {}
-        self.netns: Dict[str, str] = {}
-        self.main_units: list = []
-        self.main = Daemon(0)
-
-    def read(self) -> None:
-        """Project name and, per unit, service, address, device and role, as the topology binds them."""
-        self.project = json.loads(self.compose("config", "--format", "json").stdout)["name"]
-        listed = self.run("units", self.topology, timeout=120.0)
-        assert listed.returncode == 0, listed.stderr
-        for line in listed.stdout.splitlines():
-            unit, service, port, address, device, netns, role = line.split()
-            self.units.append(unit)
-            self.service[unit] = service
-            self.address[unit] = address
-            self.device[unit] = device
-            self.netns[unit] = netns
-            if role == "main":
-                self.main_units.append(unit)
-                self.main = Daemon(int(port))
-        assert self.units and self.main_units
+        bindings = run.Topology(topology)
+        self.project = bindings.project
+        self.units = [unit.name for unit in bindings.units]
+        self.service = {unit.name: unit.service for unit in bindings.units}
+        self.address = {unit.name: unit.address for unit in bindings.units}
+        self.device = {unit.name: unit.device for unit in bindings.units}
+        self.netns = {unit.name: unit.netns for unit in bindings.units}
+        # SSH destination of the units on another device than the main daemon's, None for the others.
+        self.ssh = {unit.name: unit.destination if bindings.remote(unit) else None for unit in bindings.units}
+        self.main_units = [unit.name for unit in bindings.units if unit.main]
+        self.main = Daemon(bindings.main.port)
 
     def peer(self, unit: str) -> dict:
         """The main daemon's record of the peer serving ``unit``."""
@@ -165,7 +150,7 @@ class Environment:
 
     def remote(self, unit: str) -> bool:
         """Whether ``unit`` is on another device than the main daemon, behind an SSH forward."""
-        return self.device[unit] != self.device[self.main_units[0]]
+        return self.ssh[unit] is not None
 
     def units_on(self, device: str) -> list:
         return [unit for unit in self.units if self.device[unit] == device]
@@ -182,11 +167,13 @@ class Environment:
     def docker(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=60.0, check=False)
 
-    def run(self, *args: str, timeout: float = 600.0) -> subprocess.CompletedProcess:
-        return subprocess.run([str(RUN), *args], capture_output=True, text=True, timeout=timeout, check=False)
+    def run(self, command: str) -> subprocess.CompletedProcess:
+        """``run.py up`` or ``down`` of the topology."""
+        argv = [sys.executable, run.__file__, command, self.topology]
+        return subprocess.run(argv, capture_output=True, text=True, timeout=600.0, check=False)
 
     def compose(self, *args: str) -> subprocess.CompletedProcess:
-        return self.run("compose", self.topology, *args, timeout=120.0)
+        return run.compose(self.topology, *args, capture_output=True, text=True, timeout=120.0)
 
     def processes(self, unit: str, pattern: str) -> list:
         """Command lines in the unit's container matching ``pattern``."""
@@ -206,16 +193,15 @@ class Environment:
 @pytest.fixture(scope="module", params=TOPOLOGIES)
 def environment(request: pytest.FixtureRequest) -> Iterator[Environment]:
     env = Environment(request.param)
-    up = env.run("up", env.topology)
+    up = env.run("up")
     if up.returncode != 0:
-        env.run("down", env.topology)
-        pytest.fail(f"run.sh up {env.topology} failed:\n{up.stdout}\n{up.stderr}")
+        env.run("down")
+        pytest.fail(f"run.py up {env.topology} failed:\n{up.stdout}\n{up.stderr}")
     try:
-        env.read()
         yield env
     finally:
-        if not request.config.getoption("--keep"):
-            env.run("down", env.topology)
+        if not (request.config.getoption("--keep") and request.param == request.config.last_topology):
+            env.run("down")
 
 
 @pytest.fixture(scope="module")

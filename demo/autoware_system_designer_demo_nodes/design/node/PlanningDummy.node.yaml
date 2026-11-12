@@ -9,7 +9,7 @@ package:
   provider: dummy
 
 launch:
-  plugin: autoware::system_dummy_modules::Planning
+  plugin: autoware::system_designer_demo_nodes::Planning
   executable: planning_node
 
 # interfaces
