@@ -1,6 +1,6 @@
 // Launch: what a compute unit offers from its reach on the daemon, its session
-// of the shown mode and the session holding it, and the labels of the peer
-// daemon serving a unit.
+// of the shown mode and the session holding it, which session holds a unit,
+// and the labels of the peer daemon serving a unit.
 (function () {
   const SD = window.SD;
   const launch = (SD.activities.launch ||= {});
@@ -29,6 +29,33 @@
     };
   }
 
+  // The live session a launch of `unit` in `mode` of `system` waits for: a unit
+  // runs one launch at a time, a system one mode at a time across its units,
+  // and a mode shutting down on any unit of the system ends on all of them
+  // before it launches again.
+  function unitHolder(sessions, { system, mode, unit }) {
+    let holder = null;
+    sessions.forEach((session) => {
+      if (session.state === "exited") return;
+      const own = session.system === system;
+      if (own && session.mode === mode && !shuttingDown(session)) return;
+      if (session.compute_unit === unit || own) holder = session;
+    });
+    return holder;
+  }
+
+  function shuttingDown(session) {
+    return !!session.shutting_down || session.state === "stopping";
+  }
+
+  // What holds a launch of `unit`, in words.
+  function holderLabel(holder, unit) {
+    if (holder.compute_unit === unit) return `in use · ${holder.mode}`;
+    return shuttingDown(holder)
+      ? `${holder.compute_unit} shutting down`
+      : `${holder.mode} runs on ${holder.compute_unit}`;
+  }
+
   // "main@10.0.0.12" of a peer behind an SSH forward, else "127.0.0.1:8782".
   function peerLabel(peer) {
     if (!peer) return "";
@@ -51,6 +78,8 @@
   }
 
   launch.unitActions = unitActions;
+  launch.unitHolder = unitHolder;
+  launch.holderLabel = holderLabel;
   launch.peerLabel = peerLabel;
   launch.peerTitle = peerTitle;
 })();

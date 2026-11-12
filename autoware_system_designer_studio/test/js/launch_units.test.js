@@ -19,7 +19,7 @@ const PART = path.join(
 
 global.window = { SD: { activities: {} } };
 require(PART);
-const { unitActions, peerLabel, peerTitle } =
+const { unitActions, unitHolder, holderLabel, peerLabel, peerTitle } =
   global.window.SD.activities.launch;
 
 const RUNNING = {
@@ -91,6 +91,46 @@ test("an unreachable unit launches, shuts down and measures nothing", () => {
     assert.equal(actions.canShutdown, false);
     assert.equal(actions.canMeasure, false);
   });
+});
+
+const SHOWN = { system: "sys", mode: "main", unit: "main_ecu" };
+
+function sessionOn(compute_unit, fields = {}) {
+  return {
+    system: "sys",
+    mode: "main",
+    compute_unit,
+    state: "running",
+    ...fields,
+  };
+}
+
+test("a unit of the shown mode running elsewhere holds no launch", () => {
+  assert.equal(unitHolder([sessionOn("sub_ecu_1")], SHOWN), null);
+});
+
+test("a unit waits until every unit of the system has shut down", () => {
+  const requested = sessionOn("sub_ecu_1", { shutting_down: true });
+  const stopping = sessionOn("sub_ecu_2", { state: "stopping" });
+  const exited = sessionOn("main_ecu", { state: "exited" });
+  assert.equal(unitHolder([exited, requested], SHOWN), requested);
+  assert.equal(unitHolder([exited, stopping], SHOWN), stopping);
+  const done = [requested, stopping].map((s) => ({ ...s, state: "exited" }));
+  assert.equal(unitHolder([exited, ...done], SHOWN), null);
+  assert.equal(holderLabel(requested, "main_ecu"), "sub_ecu_1 shutting down");
+});
+
+test("another mode of the system or another launch on the unit holds it", () => {
+  const otherMode = sessionOn("sub_ecu_1", { mode: "other" });
+  assert.equal(unitHolder([otherMode], SHOWN), otherMode);
+  assert.equal(holderLabel(otherMode, "main_ecu"), "other runs on sub_ecu_1");
+  const otherSystem = sessionOn("main_ecu", { system: "else" });
+  assert.equal(unitHolder([otherSystem], SHOWN), otherSystem);
+  assert.equal(holderLabel(otherSystem, "main_ecu"), "in use · main");
+  assert.equal(
+    unitHolder([sessionOn("sub_ecu_1", { system: "else" })], SHOWN),
+    null,
+  );
 });
 
 test("a peer is labelled by its SSH destination, else by its address", () => {

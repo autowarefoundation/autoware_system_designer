@@ -28,6 +28,8 @@
     sessionLabel,
     topicRates,
     unitActions,
+    unitHolder,
+    holderLabel,
     peerLabel,
     peerTitle,
   } = SD.activities.launch;
@@ -286,18 +288,12 @@
           });
       }
 
-      // The live session a launch of `unit` in the shown mode waits for: a unit
-      // runs one launch at a time, a system one mode at a time across its units.
       function holderOf(unit) {
-        const mode = store.get("mode");
-        let holder = null;
-        sessions.forEach((session) => {
-          if (session.state === "exited") return;
-          const own = session.system === config.systemId;
-          if (own && session.mode === mode) return;
-          if (session.compute_unit === unit || own) holder = session;
+        return unitHolder(sessions, {
+          system: config.systemId,
+          mode: store.get("mode"),
+          unit,
         });
-        return holder;
       }
 
       // The launcher of `unit` in the shown mode and deploy with what the unit
@@ -369,6 +365,7 @@
           launchUnit(unit),
         );
         launch.disabled = !canLaunch;
+        if (holder) launch.title = `waits for ${holderLabel(holder, unit)}`;
         const shutdown = button("Shutdown", canShutdown ? "danger" : "", () =>
           control(unit, "launch.shutdown", {}),
         );
@@ -427,13 +424,7 @@
           controls.appendChild(label);
         } else if (holder && (reachable || holder.compute_unit === unit))
           controls.appendChild(
-            element(
-              "span",
-              "unit-status",
-              holder.compute_unit === unit
-                ? `in use · ${holder.mode}`
-                : `${holder.mode} runs on ${holder.compute_unit}`,
-            ),
+            element("span", "unit-status", holderLabel(holder, unit)),
           );
         else if (reachable && status)
           controls.appendChild(
