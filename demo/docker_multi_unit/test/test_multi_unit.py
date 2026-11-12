@@ -29,9 +29,9 @@ pytestmark = pytest.mark.docker
 
 # Per unit, a node and one of its inputs published on another unit.
 LISTENERS = {
-    "main_ecu": ("/perception/traffic_light_recognition/classification", "/planning/mission_planning/route"),
-    "sub_ecu_1": ("/localization", "/sensing/lidar/concatenated/pointcloud"),
-    "sub_ecu_2": ("/planning", "/perception/object_recognition/objects"),
+    "sensing_perception": ("/perception/traffic_light_recognition/classification", "/planning/mission_planning/route"),
+    "map_localization": ("/localization", "/sensing/lidar/concatenated/pointcloud"),
+    "planning_control": ("/planning", "/perception/object_recognition/objects"),
 }
 MIN_RATE_HZ = 5.0  # the inputs arrive at 10 Hz or more
 # Processes a launch of the units leaves behind when it does not end cleanly.
@@ -119,7 +119,7 @@ def test_member_log_over_api(launched: Environment) -> None:
 
 
 def test_slow_lossy_link_keeps_a_unit_reachable(launched: Environment) -> None:
-    unit = "sub_ecu_2"
+    unit = "planning_control"
     _remote_only(launched, unit)
     service = launched.service[unit]
     netem = ("exec", "-T", "-u", "root", service, "tc", "qdisc")
@@ -135,22 +135,23 @@ def test_slow_lossy_link_keeps_a_unit_reachable(launched: Environment) -> None:
 
 
 def test_frozen_unit_is_unreachable_then_resynced(launched: Environment) -> None:
-    unit = "sub_ecu_2"
+    unit = "planning_control"
     _remote_only(launched, unit)
     assert launched.compose("pause", launched.service[unit]).returncode == 0
     try:
-        # main_ecu listens to a topic the frozen unit publishes.
-        wait_for(lambda: launched.main.input_rate("main_ecu", *LISTENERS["main_ecu"]) == 0.0, 30, "silence", period=0)
+        # sensing_perception listens to a topic the frozen unit publishes.
+        listener = "sensing_perception"
+        wait_for(lambda: launched.main.input_rate(listener, *LISTENERS[listener]) == 0.0, 30, "silence", period=0)
         _assert_cut_off(launched, unit)
     finally:
         assert launched.compose("unpause", launched.service[unit]).returncode == 0
     _wait_status(launched, unit, "running")
-    wait_for(lambda: _receives(launched, "main_ecu"), 30, "messages again", period=0)
+    wait_for(lambda: _receives(launched, "sensing_perception"), 30, "messages again", period=0)
     assert launched.all_running()
 
 
 def test_unit_off_the_network_is_unreachable_then_resynced(launched: Environment) -> None:
-    unit = "sub_ecu_1"
+    unit = "map_localization"
     _remote_only(launched, unit)
     network, container = f"{launched.project}_vehicle", f"{launched.project}-{launched.service[unit]}-1"
     assert launched.docker("network", "disconnect", network, container).returncode == 0
@@ -171,7 +172,7 @@ def test_unit_off_the_network_is_unreachable_then_resynced(launched: Environment
 
 
 def test_killed_unit_comes_back_available(launched: Environment) -> None:
-    unit = "sub_ecu_1"
+    unit = "map_localization"
     _remote_only(launched, unit)
     assert launched.compose("kill", launched.service[unit]).returncode == 0
     _assert_cut_off(launched, unit)
@@ -188,7 +189,7 @@ def test_killed_unit_comes_back_available(launched: Environment) -> None:
 def test_shutdown_stops_one_unit(launched: Environment) -> None:
     main = launched.main
     remaining = list(UNITS)
-    for unit in ("sub_ecu_1", "sub_ecu_2", "main_ecu"):
+    for unit in ("map_localization", "planning_control", "sensing_perception"):
         main.shutdown(unit)
         wait_for(lambda: main.unit_status(unit) == "available", 30, f"{unit} available again")
         remaining.remove(unit)

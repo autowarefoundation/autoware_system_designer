@@ -31,7 +31,7 @@ HERE = Path(__file__).resolve().parent.parent
 RUN = HERE / "run.sh"
 SYSTEM = "autoware_system_designer_demo_systems:TypeAlpha"
 DEPLOY = "vehicle_x"
-UNITS = ("main_ecu", "sub_ecu_1", "sub_ecu_2")
+UNITS = ("sensing_perception", "map_localization", "planning_control")
 
 
 def _topologies() -> list:

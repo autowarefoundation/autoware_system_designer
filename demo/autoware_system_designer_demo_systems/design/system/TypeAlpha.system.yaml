@@ -25,47 +25,47 @@ modes:
     description: Simulation mode
 
 compute_units:
-  - name: main_ecu
+  - name: sensing_perception
     description: Sensing and perception.
-  - name: sub_ecu_1
+  - name: map_localization
     description: Map, localization and vehicle interface.
-  - name: sub_ecu_2
+  - name: planning_control
     description: Planning and control.
 
 components:
   - name: sensing
     entity: SensingDummy.module
     path: /sensing
-    compute_unit: main_ecu
+    compute_unit: sensing_perception
     parameter_set: [SensingDummy.parameter_set]
   - name: map
     entity: MapDummy.node
-    compute_unit: sub_ecu_1
+    compute_unit: map_localization
   - name: localization
     entity: LocalizationDummy.node
-    compute_unit: sub_ecu_1
+    compute_unit: map_localization
   - name: object_recognition
     entity: PerceptionA.module
     description: LiDAR object recognition pipeline.
     path: /perception/object_recognition
-    compute_unit: main_ecu
+    compute_unit: sensing_perception
     parameter_set: [PerceptionModuleA.parameter_set]
   - name: traffic_light_recognition
     entity: TrafficLightRecognitionDummy.module
     path: /perception/traffic_light_recognition
-    compute_unit: main_ecu
+    compute_unit: sensing_perception
   - name: planning
     entity: PlanningDummy.node
-    compute_unit: sub_ecu_2
+    compute_unit: planning_control
   - name: control
     entity: ControlDummy.node
-    compute_unit: sub_ecu_2
+    compute_unit: planning_control
   - name: vehicle
     entity: VehicleDummy.node
-    compute_unit: sub_ecu_1
+    compute_unit: map_localization
   - name: robot_state_publisher
     entity: RobotStatePublisherDummy.node
-    compute_unit: main_ecu
+    compute_unit: sensing_perception
 
 node_groups:
   - name: pointcloud_container
@@ -121,7 +121,7 @@ simulation:
       - name: object_recognition
         entity: PerceptionB.module
         path: /perception/object_recognition
-        compute_unit: main_ecu
+        compute_unit: sensing_perception
         parameter_set: [PerceptionModuleABuild.parameter_set]
     node_groups:
       - name: pointcloud_container

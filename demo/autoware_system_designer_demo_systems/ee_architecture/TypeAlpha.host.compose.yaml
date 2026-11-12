@@ -23,28 +23,28 @@ services:
       file: ${ASD_DOCKER_DIR}/compose.base.yaml
       service: build
 
-  main_ecu:
+  sensing_perception:
     <<: *unit
     environment:
       <<: *variables
-      ASD_COMPUTE_UNIT: main_ecu
+      ASD_COMPUTE_UNIT: sensing_perception
       ASD_PORT: 8781
       ASD_PEERS: >-
-        sub_ecu_1=http://127.0.0.1:8782
-        sub_ecu_2=http://127.0.0.1:8783
+        map_localization=http://127.0.0.1:8782
+        planning_control=http://127.0.0.1:8783
 
-  sub_ecu_1:
+  map_localization:
     <<: *unit
     environment:
       <<: *variables
-      ASD_COMPUTE_UNIT: sub_ecu_1
+      ASD_COMPUTE_UNIT: map_localization
       ASD_PORT: 8782
 
-  sub_ecu_2:
+  planning_control:
     <<: *unit
     environment:
       <<: *variables
-      ASD_COMPUTE_UNIT: sub_ecu_2
+      ASD_COMPUTE_UNIT: planning_control
       ASD_PORT: 8783
 
 volumes:

@@ -1,8 +1,8 @@
-# TypeAlpha on two ECUs: main_ecu and sub_ecu_1 as two containers of one ECU, sharing its network
-# and IPC namespace, and sub_ecu_2 on an ECU of its own. The services and their image are in
-# demo/docker_multi_unit/compose.base.yaml; this file holds the binding of each compute unit: its
-# address, its daemon port and, for the unit whose daemon serves the others, their daemons as peers
-# and the address the one on the other ECU is forwarded from.
+# TypeAlpha on two ECUs: sensing_perception and map_localization as two containers of one ECU,
+# sharing its network and IPC namespace, and planning_control on an ECU of its own. The services and
+# their image are in demo/docker_multi_unit/compose.base.yaml; this file holds the binding of each
+# compute unit: its address, its daemon port and, for the unit whose daemon serves the others, their
+# daemons as peers and the address the one on the other ECU is forwarded from.
 name: asd-multi-unit-two-ecus
 
 x-unit: &unit
@@ -19,7 +19,7 @@ services:
       service: build
     network_mode: none
 
-  main_ecu:
+  sensing_perception:
     <<: *unit
     hostname: ecu-a
     ipc: shareable
@@ -27,39 +27,39 @@ services:
       build:
         condition: service_completed_successfully
     environment:
-      ASD_COMPUTE_UNIT: main_ecu
+      ASD_COMPUTE_UNIT: sensing_perception
       ASD_PORT: 8781
       ASD_SSHD_PORT: "2222"
       ASD_PEERS: >-
-        sub_ecu_1=http://127.0.0.1:8782
-        sub_ecu_2=http://127.0.0.1:8783
+        map_localization=http://127.0.0.1:8782
+        planning_control=http://127.0.0.1:8783
       ASD_PEER_SSH: >-
-        sub_ecu_2=172.30.87.13
+        planning_control=172.30.87.13
     networks:
       vehicle:
         ipv4_address: 172.30.87.11
 
-  sub_ecu_1:
+  map_localization:
     <<: *unit
-    network_mode: service:main_ecu
-    ipc: service:main_ecu
+    network_mode: service:sensing_perception
+    ipc: service:sensing_perception
     depends_on:
       build:
         condition: service_completed_successfully
-      main_ecu:
+      sensing_perception:
         condition: service_started
     environment:
-      ASD_COMPUTE_UNIT: sub_ecu_1
+      ASD_COMPUTE_UNIT: map_localization
       ASD_PORT: 8782
 
-  sub_ecu_2:
+  planning_control:
     <<: *unit
     hostname: ecu-b
     depends_on:
       build:
         condition: service_completed_successfully
     environment:
-      ASD_COMPUTE_UNIT: sub_ecu_2
+      ASD_COMPUTE_UNIT: planning_control
       ASD_PORT: 8783
       ASD_SSHD_PORT: "2222"
     networks:

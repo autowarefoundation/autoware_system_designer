@@ -6,11 +6,11 @@ The containers build the system designer packages of this checkout and run the e
 [`autoware_system_designer_demo_nodes`](../autoware_system_designer_demo_nodes/README.md) on three onboard
 units, exchanging `std_msgs` messages, every unit subscribing topics published on the other two.
 
-| Unit        | Components                                 | Daemon port |
-| ----------- | ------------------------------------------ | ----------- |
-| `main_ecu`  | sensing, perception, robot state publisher | 8781        |
-| `sub_ecu_1` | map, localization, vehicle                 | 8782        |
-| `sub_ecu_2` | planning, control                          | 8783        |
+| Unit                 | Components                                 | Daemon port |
+| -------------------- | ------------------------------------------ | ----------- |
+| `sensing_perception` | sensing, perception, robot state publisher | 8781        |
+| `map_localization`   | map, localization, vehicle                 | 8782        |
+| `planning_control`   | planning, control                          | 8783        |
 
 This directory holds what every topology shares: the image, its entry point, the compose services
 (`compose.base.yaml`), the runner and the tests. Which units run where, on which ports and
@@ -22,13 +22,13 @@ another system.
 
 ## Topologies
 
-| Topology   | Stands for                                 | Network                                              | `main_ecu` reaches its peers by      |
-| ---------- | ------------------------------------------ | ---------------------------------------------------- | ------------------------------------ |
-| `host`     | containers of one ECU                      | host network and IPC, DDS on loopback                | the shared loopback                  |
-| `bridge`   | separate ECUs                              | bridge network `172.30.87.0/24`, fixed addresses     | SSH forwards it keeps as tunnel jobs |
-| `two_ecus` | two containers of one ECU and a second ECU | the same network, two units in one network namespace | the shared loopback, an SSH forward  |
+| Topology   | Stands for                                 | Network                                              | `sensing_perception` reaches its peers by |
+| ---------- | ------------------------------------------ | ---------------------------------------------------- | ----------------------------------------- |
+| `host`     | containers of one ECU                      | host network and IPC, DDS on loopback                | the shared loopback                       |
+| `bridge`   | separate ECUs                              | bridge network `172.30.87.0/24`, fixed addresses     | SSH forwards it keeps as tunnel jobs      |
+| `two_ecus` | two containers of one ECU and a second ECU | the same network, two units in one network namespace | the shared loopback, an SSH forward       |
 
-In every topology the daemon of `main_ecu` has the other two as
+In every topology the daemon of `sensing_perception` has the other two as
 [peers](../../autoware_system_designer_studio/README.md#peers): its workbench and API on port 8781
 launch, observe and shut down every unit.
 
@@ -45,8 +45,8 @@ to the other devices with. DDS crosses the bridge network without shared memory.
 ./run.sh up bridge               # build, start, wait until every daemon is healthy
 ./run.sh url bridge              # http://127.0.0.1:8781/ the main daemon's workbench
 ./run.sh units bridge            # unit, service, daemon port, address, role
-./run.sh compose bridge logs -f main_ecu
-./run.sh ssh bridge sub_ecu_1    # shell in a service with an sshd
+./run.sh compose bridge logs -f sensing_perception
+./run.sh ssh bridge map_localization    # shell in a service with an sshd
 ./run.sh down bridge             # --volumes also drops the built workspace
 ```
 
@@ -56,7 +56,7 @@ what changed. Launch a unit from the Launch activity of the workbench, or by req
 
 ```bash
 curl -s http://127.0.0.1:8781/api/rpc -H 'Content-Type: application/json' -H 'X-System-Designer-Client: shell' \
-    -d '{"id": 1, "method": "launch.start", "params": {"system": "autoware_system_designer_demo_systems:TypeAlpha", "compute_unit": "sub_ecu_1", "mode": "default", "deploy": "vehicle_x"}}'
+    -d '{"id": 1, "method": "launch.start", "params": {"system": "autoware_system_designer_demo_systems:TypeAlpha", "compute_unit": "map_localization", "mode": "default", "deploy": "vehicle_x"}}'
 ```
 
 | Variable                 | Default                           | Role                                            |
@@ -79,13 +79,13 @@ A unit on a device of its own can be cut off the way an ECU fails. The main daem
 `unreachable` within about 15 s and reads it anew once it answers again:
 
 ```bash
-./run.sh compose bridge pause sub_ecu_2                           # frozen ECU
-./run.sh compose bridge unpause sub_ecu_2
-./run.sh compose bridge kill sub_ecu_2                            # power loss
-./run.sh compose bridge start sub_ecu_2                           # power back, launch gone
-docker network disconnect asd-multi-unit-bridge_vehicle asd-multi-unit-bridge-sub_ecu_2-1
-docker network connect --ip 172.30.87.13 asd-multi-unit-bridge_vehicle asd-multi-unit-bridge-sub_ecu_2-1
-./run.sh compose bridge exec -u root sub_ecu_2 tc qdisc add dev eth0 root netem delay 50ms loss 5%
+./run.sh compose bridge pause planning_control                           # frozen ECU
+./run.sh compose bridge unpause planning_control
+./run.sh compose bridge kill planning_control                            # power loss
+./run.sh compose bridge start planning_control                           # power back, launch gone
+docker network disconnect asd-multi-unit-bridge_vehicle asd-multi-unit-bridge-planning_control-1
+docker network connect --ip 172.30.87.13 asd-multi-unit-bridge_vehicle asd-multi-unit-bridge-planning_control-1
+./run.sh compose bridge exec -u root planning_control tc qdisc add dev eth0 root netem delay 50ms loss 5%
 ```
 
 ## Tests

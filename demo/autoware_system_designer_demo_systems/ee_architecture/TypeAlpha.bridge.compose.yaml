@@ -24,40 +24,40 @@ services:
       service: build
     network_mode: none
 
-  main_ecu:
+  sensing_perception:
     <<: *unit
     hostname: main-ecu
     environment:
       <<: *variables
-      ASD_COMPUTE_UNIT: main_ecu
+      ASD_COMPUTE_UNIT: sensing_perception
       ASD_PORT: 8781
       ASD_PEERS: >-
-        sub_ecu_1=http://127.0.0.1:8782
-        sub_ecu_2=http://127.0.0.1:8783
+        map_localization=http://127.0.0.1:8782
+        planning_control=http://127.0.0.1:8783
       ASD_PEER_SSH: >-
-        sub_ecu_1=172.30.87.12
-        sub_ecu_2=172.30.87.13
+        map_localization=172.30.87.12
+        planning_control=172.30.87.13
     networks:
       vehicle:
         ipv4_address: 172.30.87.11
 
-  sub_ecu_1:
+  map_localization:
     <<: *unit
     hostname: sub-ecu-1
     environment:
       <<: *variables
-      ASD_COMPUTE_UNIT: sub_ecu_1
+      ASD_COMPUTE_UNIT: map_localization
       ASD_PORT: 8782
     networks:
       vehicle:
         ipv4_address: 172.30.87.12
 
-  sub_ecu_2:
+  planning_control:
     <<: *unit
     hostname: sub-ecu-2
     environment:
       <<: *variables
-      ASD_COMPUTE_UNIT: sub_ecu_2
+      ASD_COMPUTE_UNIT: planning_control
       ASD_PORT: 8783
     networks:
       vehicle:
