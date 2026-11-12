@@ -1,0 +1,39 @@
+autoware_system_design_format: 0.4.0
+
+name: PerceptionModuleA.parameter_set
+
+description: Parameter set binding param files and values for the nodes of the PerceptionA perception module.
+
+parameters:
+  - node: /perception/object_recognition/detector_a1/node_detector
+    param_files:
+      - model_param_path: $(find-pkg-share autoware_system_design_examples)/config/perception/object_recognition/detector_a1/node_detector/model_param_path.param.yaml
+      - ml_package_param_path: $(find-pkg-share autoware_system_design_examples)/config/perception/object_recognition/detector_a1/node_detector/ml_package_param_path.param.yaml
+      - class_remapper_param_path: $(find-pkg-share autoware_system_design_examples)/config/perception/object_recognition/detector_a1/node_detector/class_remapper_param_path.param.yaml
+    param_values:
+      - name: build_only
+        type: bool
+        value: false
+  - node: /perception/object_recognition/detector_a1/node_filter
+    param_files:
+      - filtering_range_param: $(find-pkg-share autoware_system_design_examples)/config/perception/object_recognition/detector_a1/node_filter/filtering_range_param.param.yaml
+    param_values: []
+  - node: /perception/object_recognition/detector_a2/node_detector
+    param_files:
+      - model_param_path: $(find-pkg-share autoware_system_design_examples)/config/perception/object_recognition/detector_a2/node_detector/model_param_path.param.yaml
+      - ml_package_param_path: $(find-pkg-share autoware_system_design_examples)/config/perception/object_recognition/detector_a2/node_detector/ml_package_param_path.param.yaml
+      - class_remapper_param_path: $(find-pkg-share autoware_system_design_examples)/config/perception/object_recognition/detector_a2/node_detector/class_remapper_param_path.param.yaml
+    param_values:
+      - name: build_only
+        type: bool
+        value: false
+  - node: /perception/object_recognition/detector_a2/node_filter
+    param_files:
+      - filtering_range_param: $(find-pkg-share autoware_system_design_examples)/config/perception/object_recognition/detector_a2/node_filter/filtering_range_param.param.yaml
+    param_values: []
+  - node: /perception/object_recognition/node_tracker
+    param_files:
+      - tracker_setting_path: $(find-pkg-share autoware_system_design_examples)/config/perception/object_recognition/node_tracker/tracker_setting_path.param.yaml
+      - data_association_matrix_path: $(find-pkg-share autoware_system_design_examples)/config/perception/object_recognition/node_tracker/data_association_matrix_path.param.yaml
+      - input_channels_path: $(find-pkg-share autoware_system_design_examples)/config/perception/object_recognition/node_tracker/input_channels_path.param.yaml
+    param_values: []

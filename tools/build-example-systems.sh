@@ -6,9 +6,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COLLECT_MANIFESTS_SCRIPT="${REPO_ROOT}/autoware_system_designer/script/collect_system_design_manifests.py"
 DEPLOYMENT_PROCESS_SCRIPT="${REPO_ROOT}/autoware_system_designer/script/deployment_process.py"
 SYSTEM_DESIGNER_RUNNER_SCRIPT="${REPO_ROOT}/autoware_system_designer/script/system_designer_runner.py"
-DEPLOYMENT_FILE="${REPO_ROOT}/autoware_system_design_examples/deployment/type_alpha.deployments.yaml"
+DEPLOYMENT_FILE="${REPO_ROOT}/demo/autoware_system_design_examples/deployment/type_alpha.deployments.yaml"
 # Deploy targets: a deployments table by file, a system by entity name.
-DEPLOY_TARGETS=("${DEPLOYMENT_FILE}" "MultiUnitDemo.system")
+DEPLOY_TARGETS=("${DEPLOYMENT_FILE}")
 
 if [[ ! -f "${COLLECT_MANIFESTS_SCRIPT}" ]]; then
   echo "[build-system-design-examples] Missing script: ${COLLECT_MANIFESTS_SCRIPT}"

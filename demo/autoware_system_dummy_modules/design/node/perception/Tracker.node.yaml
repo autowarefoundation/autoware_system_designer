@@ -1,0 +1,56 @@
+autoware_system_design_format: 0.4.0
+
+name: Tracker.node
+
+description: Dummy multi-object tracker that fuses detected objects from multiple detectors into tracked objects.
+
+package:
+  name: autoware_system_dummy_modules
+  provider: dummy
+
+launch:
+  plugin: autoware::system_dummy_modules::Tracker
+  executable: tracker_node
+
+# interfaces
+subscribers:
+  - name: objects1
+    message_type: std_msgs/msg/Int32MultiArray
+  - name: objects2
+    message_type: std_msgs/msg/Int32MultiArray
+  - name: objects3
+    message_type: std_msgs/msg/Int32MultiArray
+publishers:
+  - name: objects
+    message_type: std_msgs/msg/Int64MultiArray
+    qos:
+      reliability: reliable
+      durability: transient_local
+
+param_files:
+  - name: tracker_setting_path
+    default: config/tracker/tracker_setting.param.yaml
+  - name: data_association_matrix_path
+    default: config/tracker/data_association_matrix.param.yaml
+  - name: input_channels_path
+    default: config/tracker/input_channels.param.yaml
+
+param_values: []
+
+# processes
+processes:
+  - name: update
+    trigger_conditions:
+      - and:
+          - on_input: objects1
+          - or:
+              - on_input: objects2
+              - on_input: objects3
+    outcomes:
+      - to_trigger: predict
+  - name: predict
+    trigger_conditions:
+      - on_trigger: update
+      - periodic: 10.0 # Hz
+    outcomes:
+      - to_output: objects

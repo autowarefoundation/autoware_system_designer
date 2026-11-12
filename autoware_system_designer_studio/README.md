@@ -385,7 +385,7 @@ destination and `tunnel` the id of its current tunnel job, both null for a peer 
 
 ### Multi-unit environment
 
-[`docker/multi_unit`](../docker/multi_unit/README.md) runs one daemon per compute unit of a demo system in
+[`demo/docker/multi_unit`](../demo/docker/multi_unit/README.md) runs one daemon per compute unit of the example system `TypeAlpha` in
 Docker containers, as containers of one ECU or as separate ECUs reached over SSH, the daemon of
 `main_ecu` peered with the others in both, with tests that drive them through its API and cut units
 off.

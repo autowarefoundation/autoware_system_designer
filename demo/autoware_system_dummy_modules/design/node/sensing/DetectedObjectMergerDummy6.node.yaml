@@ -1,0 +1,60 @@
+autoware_system_design_format: 0.4.0
+
+name: DetectedObjectMergerDummy6.node
+
+description: Dummy node that merges detected objects from up to six input sources into a single output.
+
+package:
+  name: autoware_system_dummy_modules
+  provider: dummy
+
+launch:
+  plugin: autoware::system_dummy_modules::SimpleDetectedObjectMerger
+  executable: simple_detected_object_merger_node
+  node_output: screen
+
+# interfaces
+subscribers:
+  - name: ros_transform
+    message_type: tf2_msgs/msg/TFMessage
+    global: /tf
+  - name: object1
+    message_type: std_msgs/msg/Int32MultiArray
+  - name: object2
+    message_type: std_msgs/msg/Int32MultiArray
+  - name: object3
+    message_type: std_msgs/msg/Int32MultiArray
+  - name: object4
+    message_type: std_msgs/msg/Int32MultiArray
+  - name: object5
+    message_type: std_msgs/msg/Int32MultiArray
+  - name: object6
+    message_type: std_msgs/msg/Int32MultiArray
+
+publishers:
+  - name: merged_object
+    message_type: std_msgs/msg/Int32MultiArray
+    qos:
+      reliability: reliable
+      durability: transient_local
+
+param_files: []
+
+param_values:
+  - name: input_topics
+    type: array
+    default: "[${input object1}, ${input object2}, ${input object3}, ${input object4}, ${input object5}, ${input object6}]"
+
+# processes
+processes:
+  - name: merger
+    trigger_conditions:
+      - or:
+          - on_input: object1
+          - on_input: object2
+          - on_input: object3
+          - on_input: object4
+          - on_input: object5
+          - on_input: object6
+    outcomes:
+      - to_output: merged_object

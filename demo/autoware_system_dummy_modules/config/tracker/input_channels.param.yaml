@@ -1,0 +1,3 @@
+/**:
+  ros__parameters:
+    input_channels: [detector_a1, detector_a2]

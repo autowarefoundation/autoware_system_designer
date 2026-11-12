@@ -1,0 +1,48 @@
+autoware_system_design_format: 0.4.0
+
+name: PlanningDummy.node
+
+description: Dummy planning node that produces a mission route from the lanelet map, predicted objects and traffic signals.
+
+package:
+  name: autoware_system_dummy_modules
+  provider: dummy
+
+launch:
+  plugin: autoware::system_dummy_modules::Planning
+  executable: planning_node
+
+# interfaces
+subscribers:
+  - name: lanelet_map
+    message_type: std_msgs/msg/String
+    qos:
+      reliability: reliable
+      durability: transient_local
+  - name: predicted_objects
+    message_type: std_msgs/msg/UInt32MultiArray
+  - name: occupancy_grid_map
+    message_type: std_msgs/msg/Int8MultiArray
+  - name: traffic_signals
+    message_type: std_msgs/msg/ColorRGBA
+  - name: obstacle_pointcloud
+    message_type: std_msgs/msg/Float32MultiArray
+
+publishers:
+  - name: mission_planning/route
+    message_type: std_msgs/msg/String
+
+param_files: []
+param_values: []
+
+# processes
+processes:
+  - name: plan_path
+    trigger_conditions:
+      - and:
+          - once: lanelet_map
+          - or:
+              - on_input: predicted_objects
+              - on_input: traffic_signals
+    outcomes:
+      - to_output: mission_planning/route
