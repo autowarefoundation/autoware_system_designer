@@ -257,7 +257,6 @@ class ServeDaemon:
     async def stop(self) -> None:
         if self._server is not None:
             self._server.close()
-            await self._server.wait_closed()
         for task in (self._heartbeat, self._record_watch):
             if task is not None:
                 task.cancel()
@@ -269,6 +268,9 @@ class ServeDaemon:
             _, pending = await asyncio.wait(set(self._connections), timeout=SHUTDOWN_GRACE_S)
             for task in pending:
                 task.cancel()
+        # From Python 3.12 on, wait_closed waits for the open connections.
+        if self._server is not None:
+            await self._server.wait_closed()
 
     @property
     def allowed_hosts(self) -> frozenset[str]:
