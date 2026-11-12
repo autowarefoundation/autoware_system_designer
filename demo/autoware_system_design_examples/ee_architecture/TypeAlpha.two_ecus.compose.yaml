@@ -1,0 +1,78 @@
+# TypeAlpha on two ECUs: main_ecu and sub_ecu_1 as two containers of one ECU, sharing its network
+# and IPC namespace, and sub_ecu_2 on an ECU of its own. The services and their image are in
+# demo/docker/multi_unit/compose.base.yaml; this file holds the binding of each compute unit: its
+# address, its daemon port and, for the unit whose daemon serves the others, their daemons as peers
+# and the address the one on the other ECU is forwarded from.
+name: asd-multi-unit-two-ecus
+
+x-unit: &unit
+  extends:
+    file: ${ASD_DOCKER_DIR}/compose.base.yaml
+    service: unit
+  cap_add:
+    - NET_ADMIN # tc netem on the ECU's interface
+
+services:
+  build:
+    extends:
+      file: ${ASD_DOCKER_DIR}/compose.base.yaml
+      service: build
+    network_mode: none
+
+  main_ecu:
+    <<: *unit
+    hostname: ecu-a
+    ipc: shareable
+    depends_on:
+      build:
+        condition: service_completed_successfully
+    environment:
+      ASD_COMPUTE_UNIT: main_ecu
+      ASD_PORT: 8781
+      ASD_SSHD_PORT: "2222"
+      ASD_PEERS: >-
+        sub_ecu_1=http://127.0.0.1:8782
+        sub_ecu_2=http://127.0.0.1:8783
+      ASD_PEER_SSH: >-
+        sub_ecu_2=172.30.87.13
+    networks:
+      vehicle:
+        ipv4_address: 172.30.87.11
+
+  sub_ecu_1:
+    <<: *unit
+    network_mode: service:main_ecu
+    ipc: service:main_ecu
+    depends_on:
+      build:
+        condition: service_completed_successfully
+      main_ecu:
+        condition: service_started
+    environment:
+      ASD_COMPUTE_UNIT: sub_ecu_1
+      ASD_PORT: 8782
+
+  sub_ecu_2:
+    <<: *unit
+    hostname: ecu-b
+    depends_on:
+      build:
+        condition: service_completed_successfully
+    environment:
+      ASD_COMPUTE_UNIT: sub_ecu_2
+      ASD_PORT: 8783
+      ASD_SSHD_PORT: "2222"
+    networks:
+      vehicle:
+        ipv4_address: 172.30.87.13
+
+networks:
+  vehicle:
+    ipam:
+      config:
+        - subnet: 172.30.87.0/24
+
+volumes:
+  # Built workspace, shared by every topology and kept per ROS distribution.
+  ws:
+    name: asd-multi-unit-ws-${ASD_ROS_DISTRO:-humble}

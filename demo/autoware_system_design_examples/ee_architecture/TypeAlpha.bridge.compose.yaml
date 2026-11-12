@@ -1,96 +1,75 @@
-# TypeAlpha with its compute units as separate ECUs. One bridge network with fixed addresses; every
-# daemon listens on its own loopback and is reached through the container's sshd. A forward keeps
-# the daemon's port number, which the daemon requires in the Host header. The daemon of main_ecu
-# serves the other units through SSH forwards it keeps to their daemons.
-# Run by demo/docker/multi_unit/run.sh, which supplies the image context, the source checkout and the keys.
+# TypeAlpha with its compute units as separate ECUs: a container per ECU on a bridge network, each
+# with an sshd. The services and their image are in demo/docker/multi_unit/compose.base.yaml; this
+# file holds the binding of each compute unit: its address, its daemon port and, for the unit whose
+# daemon serves the others, their daemons as peers and the addresses they are forwarded from.
 name: asd-multi-unit-bridge
 
 x-unit: &unit
-  image: asd-multi-unit:${ASD_ROS_DISTRO:-humble}
-  build:
-    context: ${ASD_DOCKER_DIR:?directory of the Dockerfile, set by run.sh}
-    args:
-      ROS_DISTRO: ${ASD_ROS_DISTRO:-humble}
-      UID: ${ASD_UID:-1000}
-      GID: ${ASD_GID:-1000}
-  init: true
-  stop_grace_period: 20s
+  extends:
+    file: ${ASD_DOCKER_DIR}/compose.base.yaml
+    service: unit
   cap_add:
-    - NET_ADMIN # tc netem on the unit's interface
-  volumes:
-    - ${ASD_SOURCE_DIR:?source checkout, set by run.sh}:/ws/src/autoware_system_designer:ro
-    - ws:/ws/out
-    - ${ASD_KEY_DIR:?directory holding authorized_keys, made by run.sh}:/run/asd/keys:ro
-
-x-environment: &environment
-  ROS_DOMAIN_ID: ${ASD_ROS_DOMAIN_ID:-87}
-  ASD_SSHD_PORT: "2222"
-
-x-serve: &serve
-  <<: *unit
-  command: serve
+    - NET_ADMIN # tc netem on the ECU's interface
   depends_on:
     build:
       condition: service_completed_successfully
-  healthcheck:
-    test: [CMD-SHELL, "curl -fsS http://127.0.0.1:$${ASD_PORT}/api/health"]
-    interval: 2s
-    timeout: 3s
-    retries: 30
+
+x-variables: &variables
+  ASD_SSHD_PORT: "2222"
 
 services:
   build:
-    <<: *unit
-    command: build
-    environment: *environment
+    extends:
+      file: ${ASD_DOCKER_DIR}/compose.base.yaml
+      service: build
     network_mode: none
 
   main_ecu:
-    <<: *serve
+    <<: *unit
     hostname: main-ecu
     environment:
-      <<: *environment
+      <<: *variables
       ASD_COMPUTE_UNIT: main_ecu
-      ASD_PORT: ${ASD_PORT_MAIN_ECU:-8781}
+      ASD_PORT: 8781
       ASD_PEERS: >-
-        sub_ecu_1=http://127.0.0.1:${ASD_PORT_SUB_ECU_1:-8782}
-        sub_ecu_2=http://127.0.0.1:${ASD_PORT_SUB_ECU_2:-8783}
+        sub_ecu_1=http://127.0.0.1:8782
+        sub_ecu_2=http://127.0.0.1:8783
       ASD_PEER_SSH: >-
-        sub_ecu_1=${ASD_SUBNET_PREFIX:-172.30.87}.12
-        sub_ecu_2=${ASD_SUBNET_PREFIX:-172.30.87}.13
+        sub_ecu_1=172.30.87.12
+        sub_ecu_2=172.30.87.13
     networks:
       vehicle:
-        ipv4_address: ${ASD_SUBNET_PREFIX:-172.30.87}.11
+        ipv4_address: 172.30.87.11
 
   sub_ecu_1:
-    <<: *serve
+    <<: *unit
     hostname: sub-ecu-1
     environment:
-      <<: *environment
+      <<: *variables
       ASD_COMPUTE_UNIT: sub_ecu_1
-      ASD_PORT: ${ASD_PORT_SUB_ECU_1:-8782}
+      ASD_PORT: 8782
     networks:
       vehicle:
-        ipv4_address: ${ASD_SUBNET_PREFIX:-172.30.87}.12
+        ipv4_address: 172.30.87.12
 
   sub_ecu_2:
-    <<: *serve
+    <<: *unit
     hostname: sub-ecu-2
     environment:
-      <<: *environment
+      <<: *variables
       ASD_COMPUTE_UNIT: sub_ecu_2
-      ASD_PORT: ${ASD_PORT_SUB_ECU_2:-8783}
+      ASD_PORT: 8783
     networks:
       vehicle:
-        ipv4_address: ${ASD_SUBNET_PREFIX:-172.30.87}.13
+        ipv4_address: 172.30.87.13
 
 networks:
   vehicle:
     ipam:
       config:
-        - subnet: ${ASD_SUBNET_PREFIX:-172.30.87}.0/24
+        - subnet: 172.30.87.0/24
 
 volumes:
-  # Built workspace, shared by both topologies and kept per ROS distribution.
+  # Built workspace, shared by every topology and kept per ROS distribution.
   ws:
     name: asd-multi-unit-ws-${ASD_ROS_DISTRO:-humble}

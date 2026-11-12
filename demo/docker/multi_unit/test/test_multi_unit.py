@@ -12,17 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""TypeAlpha on one daemon per compute unit, in both Docker topologies.
+"""TypeAlpha on one daemon per compute unit, in every Docker topology of the system.
 
 Tests run in file order on one environment per topology: the units are launched once, observed,
-cut off and brought back (``bridge``), then shut down one by one. Every unit is driven through the
-daemon of ``main_ecu``.
+cut off and brought back where they are on a device of their own, then shut down one by one. Every
+unit is driven through the main daemon, and what a test knows of a topology it reads from the
+environment: the unit's service, its address, and whether it is behind an SSH forward.
 """
 
 from __future__ import annotations
 
 import pytest
-from conftest import ADDRESS, BRIDGE_PROJECT, SYSTEM, UNITS, Environment, RpcError, wait_for
+from conftest import SYSTEM, UNITS, Environment, RpcError, wait_for
 
 pytestmark = pytest.mark.docker
 
@@ -39,13 +40,13 @@ NODES = "autoware_system_dummy_modules|component_container|robot_state_publisher
 LINK_TIMEOUT_S = 90
 
 
-def _bridge_only(environment: Environment) -> None:
-    if environment.topology != "bridge":
-        pytest.skip("units of the host topology share the host")
+def _remote_only(environment: Environment, unit: str) -> None:
+    if not environment.remote(unit):
+        pytest.skip(f"{unit} shares the device of the main unit in topology {environment.topology}")
 
 
 def _receives(environment: Environment, unit: str) -> bool:
-    return environment.main.input_rate(*LISTENERS[unit], unit=unit) >= MIN_RATE_HZ
+    return environment.main.input_rate(unit, *LISTENERS[unit]) >= MIN_RATE_HZ
 
 
 def _wait_status(environment: Environment, unit: str, status: str) -> None:
@@ -64,24 +65,24 @@ def _assert_cut_off(environment: Environment, unit: str) -> None:
             assert environment.main.unit_status(other) == "running"
 
 
-def test_each_daemon_serves_its_unit(environment: Environment) -> None:
-    for unit, daemon in environment.daemons.items():
-        assert daemon.rpc("health")["served_units"] == [unit]
-        if unit == "main_ecu":
-            continue
-        for other in UNITS:
-            assert daemon.unit_status(other) == ("available" if other == unit else "remote_unsupported")
+def test_main_daemon_serves_its_unit_and_has_the_others_as_peers(environment: Environment) -> None:
     main = environment.main
+    health = main.rpc("health")
+    assert health["served_units"] == [environment.main_unit]
     wait_for(
         lambda: all(peer["state"] == "connected" for peer in main.rpc("health")["peers"]),
         LINK_TIMEOUT_S,
         "peers connected",
     )
     peers = main.rpc("health")["peers"]
-    assert sorted(unit for peer in peers for unit in peer["units"]) == ["sub_ecu_1", "sub_ecu_2"]
+    assert sorted(unit for peer in peers for unit in peer["units"]) == sorted(set(UNITS) - {environment.main_unit})
     assert [peer["mismatch"] for peer in peers] == [[], []]
-    forwarded = environment.topology == "bridge"
-    assert [peer["ssh"] is not None and peer["tunnel"] is not None for peer in peers] == [forwarded, forwarded]
+    for peer in peers:
+        # A unit at another address than the main unit's is on another device, behind an SSH forward.
+        address = environment.address[peer["units"][0]]
+        remote = address != environment.address[environment.main_unit]
+        assert peer["ssh"] == (address if remote else None)
+        assert (peer["tunnel"] is not None) == remote
     for unit in UNITS:
         assert main.unit_status(unit) == "available"
 
@@ -92,7 +93,7 @@ def test_launch_runs_every_unit(launched: Environment) -> None:
         assert main.unit_status(unit) == "running"
         session = main.session(unit)
         assert session["connected"]
-        assert session["job"].startswith(f"{unit}/") == (unit != "main_ecu")
+        assert session["job"].startswith(f"{unit}/") == (unit != launched.main_unit)
     assert sorted(s["compute_unit"] for s in main.rpc("launch.status")["sessions"]) == sorted(UNITS)
     launches = [job for job in main.rpc("jobs.list")["jobs"] if job["kind"] == "launch"]
     assert sorted(job["params"]["compute_unit"] for job in launches) == sorted(UNITS)
@@ -118,9 +119,10 @@ def test_member_log_over_api(launched: Environment) -> None:
 
 
 def test_slow_lossy_link_keeps_a_unit_reachable(launched: Environment) -> None:
-    _bridge_only(launched)
     unit = "sub_ecu_2"
-    netem = ("exec", "-T", "-u", "root", unit, "tc", "qdisc")
+    _remote_only(launched, unit)
+    service = launched.service[unit]
+    netem = ("exec", "-T", "-u", "root", service, "tc", "qdisc")
     added = launched.compose(*netem, "add", "dev", "eth0", "root", "netem", "delay", "100ms", "loss", "5%")
     assert added.returncode == 0, added.stderr
     try:
@@ -133,29 +135,29 @@ def test_slow_lossy_link_keeps_a_unit_reachable(launched: Environment) -> None:
 
 
 def test_frozen_unit_is_unreachable_then_resynced(launched: Environment) -> None:
-    _bridge_only(launched)
     unit = "sub_ecu_2"
-    assert launched.compose("pause", unit).returncode == 0
+    _remote_only(launched, unit)
+    assert launched.compose("pause", launched.service[unit]).returncode == 0
     try:
         # main_ecu listens to a topic the frozen unit publishes.
-        wait_for(lambda: launched.main.input_rate(*LISTENERS["main_ecu"]) == 0.0, 30, "silence", period=0)
+        wait_for(lambda: launched.main.input_rate("main_ecu", *LISTENERS["main_ecu"]) == 0.0, 30, "silence", period=0)
         _assert_cut_off(launched, unit)
     finally:
-        assert launched.compose("unpause", unit).returncode == 0
+        assert launched.compose("unpause", launched.service[unit]).returncode == 0
     _wait_status(launched, unit, "running")
     wait_for(lambda: _receives(launched, "main_ecu"), 30, "messages again", period=0)
     assert launched.all_running()
 
 
 def test_unit_off_the_network_is_unreachable_then_resynced(launched: Environment) -> None:
-    _bridge_only(launched)
     unit = "sub_ecu_1"
-    network, container = f"{BRIDGE_PROJECT}_vehicle", f"{BRIDGE_PROJECT}-{unit}-1"
+    _remote_only(launched, unit)
+    network, container = f"{launched.project}_vehicle", f"{launched.project}-{launched.service[unit]}-1"
     assert launched.docker("network", "disconnect", network, container).returncode == 0
     try:
         _assert_cut_off(launched, unit)
     finally:
-        connected = launched.docker("network", "connect", "--ip", ADDRESS[unit], network, container)
+        connected = launched.docker("network", "connect", "--ip", launched.address[unit], network, container)
         assert connected.returncode == 0, connected.stderr
     _wait_status(launched, unit, "running")
     assert launched.all_running()
@@ -169,11 +171,11 @@ def test_unit_off_the_network_is_unreachable_then_resynced(launched: Environment
 
 
 def test_killed_unit_comes_back_available(launched: Environment) -> None:
-    _bridge_only(launched)
     unit = "sub_ecu_1"
-    assert launched.compose("kill", unit).returncode == 0
+    _remote_only(launched, unit)
+    assert launched.compose("kill", launched.service[unit]).returncode == 0
     _assert_cut_off(launched, unit)
-    started = launched.compose("start", unit)
+    started = launched.compose("start", launched.service[unit])
     assert started.returncode == 0, started.stderr
     # The unit's launch ended with its container; the daemon that answers again reports none.
     _wait_status(launched, unit, "available")
@@ -202,6 +204,6 @@ def test_past_runs_listed_per_unit(launched: Environment) -> None:
     runs = main.rpc("launch.runs", system=SYSTEM)["runs"]
     assert {run["compute_unit"] for run in runs} == set(UNITS)
     for run in runs:
-        assert run["run"].startswith(f"{run['compute_unit']}/") == (run["compute_unit"] != "main_ecu")
+        assert run["run"].startswith(f"{run['compute_unit']}/") == (run["compute_unit"] != launched.main_unit)
         members = main.rpc("launch.run", run=run["run"])["members"]
         assert members and main.rpc("launch.run_tail", run=run["run"], member=members[0]["slug"])["run"]

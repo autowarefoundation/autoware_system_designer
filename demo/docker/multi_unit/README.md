@@ -12,75 +12,77 @@ units, exchanging `std_msgs` messages, every unit subscribing topics published o
 | `sub_ecu_1` | map, localization, vehicle                 | 8782        |
 | `sub_ecu_2` | planning, control                          | 8783        |
 
-This directory holds what every environment shares: the image, its entry point, the runner and
-the tests. Which units exist, on which ports and addresses, and which daemon serves the others is
-the content of one compose file per topology, kept with the system in
+This directory holds what every topology shares: the image, its entry point, the compose services
+(`compose.base.yaml`), the runner and the tests. Which units run where, on which ports and
+addresses, and which daemon serves the others is the content of one compose file per topology, kept
+with the system in
 [`autoware_system_design_examples/ee_architecture`](../../autoware_system_design_examples/ee_architecture/README.md).
-`run.sh` reads the units from that file; `ASD_SYSTEM` and `ASD_ARCHITECTURE_DIR` select the files
-of another system.
+A file added there is a new topology; `ASD_SYSTEM` and `ASD_ARCHITECTURE_DIR` select the files of
+another system.
 
 ## Topologies
 
-| Topology | Compose file                    | Stands for            | Network                                          | `main_ecu` reaches its peers by      |
-| -------- | ------------------------------- | --------------------- | ------------------------------------------------ | ------------------------------------ |
-| `host`   | `TypeAlpha.host.compose.yaml`   | containers of one ECU | host network and IPC, DDS on loopback            | the shared loopback                  |
-| `bridge` | `TypeAlpha.bridge.compose.yaml` | separate ECUs         | bridge network `172.30.87.0/24`, fixed addresses | SSH forwards it keeps as tunnel jobs |
+| Topology   | Stands for                                 | Network                                              | `main_ecu` reaches its peers by      |
+| ---------- | ------------------------------------------ | ---------------------------------------------------- | ------------------------------------ |
+| `host`     | containers of one ECU                      | host network and IPC, DDS on loopback                | the shared loopback                  |
+| `bridge`   | separate ECUs                              | bridge network `172.30.87.0/24`, fixed addresses     | SSH forwards it keeps as tunnel jobs |
+| `two_ecus` | two containers of one ECU and a second ECU | the same network, two units in one network namespace | the shared loopback, an SSH forward  |
 
-In both topologies the daemon of `main_ecu` has the other two as
+In every topology the daemon of `main_ecu` has the other two as
 [peers](../../../autoware_system_designer_studio/README.md#peers): its workbench and API on port 8781
 launch, observe and shut down every unit.
 
-Every daemon binds the loopback of its own network namespace. In the `bridge` topology each
-container runs an `sshd` on port 2222 as the unprivileged user `asd`. `run.sh` makes two keys per
-`up`: the host's, with which it forwards each daemon port to the same port on the host (a daemon
-answers only requests whose `Host` names its port), and the one the daemon of `main_ecu` opens its
-forwards to the other units with. DDS crosses the bridge network without shared memory.
+Every daemon binds the loopback of its network namespace. A container standing for a device runs
+an `sshd` on port 2222 as the unprivileged user `asd`. `run.sh` makes two keys per `up`: the
+host's, with which it forwards the main daemon's port to the same port on the host (a daemon
+answers only requests whose `Host` names its port), and the one the main daemon opens its forwards
+to the other devices with. DDS crosses the bridge network without shared memory.
 
 ## Use
 
 ```bash
-./run.sh up host            # or bridge: build, start, wait until every daemon is healthy
-./run.sh urls               # http://127.0.0.1:8781/ ... one workbench per unit
-./run.sh units bridge       # unit, daemon port and address
-./run.sh compose host logs -f main_ecu
-./run.sh ssh sub_ecu_1      # bridge only: shell on the unit
-./run.sh down host          # --volumes also drops the built workspace
+./run.sh topologies              # host, bridge, two_ecus
+./run.sh up bridge               # build, start, wait until every daemon is healthy
+./run.sh url bridge              # http://127.0.0.1:8781/ the main daemon's workbench
+./run.sh units bridge            # unit, service, daemon port, address, role
+./run.sh compose bridge logs -f main_ecu
+./run.sh ssh bridge sub_ecu_1    # shell in a service with an sshd
+./run.sh down bridge             # --volumes also drops the built workspace
 ```
 
 `up` runs the `build` service first: `colcon build` of the checkout (mounted read-only) into the
-volume `asd-multi-unit-ws-<distro>`, which both topologies share, so a later `up` rebuilds only
-what changed. Launch a unit from the Launch activity of its workbench, or by request:
+volume `asd-multi-unit-ws-<distro>`, which every topology shares, so a later `up` rebuilds only
+what changed. Launch a unit from the Launch activity of the workbench, or by request:
 
 ```bash
 curl -s http://127.0.0.1:8781/api/rpc -H 'Content-Type: application/json' -H 'X-System-Designer-Client: shell' \
-    -d '{"id": 1, "method": "launch.start", "params": {"system": "autoware_system_design_examples:TypeAlpha", "compute_unit": "main_ecu", "mode": "default", "deploy": "vehicle_x"}}'
+    -d '{"id": 1, "method": "launch.start", "params": {"system": "autoware_system_design_examples:TypeAlpha", "compute_unit": "sub_ecu_1", "mode": "default", "deploy": "vehicle_x"}}'
 ```
 
-| Variable               | Default                           | Role                                                |
-| ---------------------- | --------------------------------- | --------------------------------------------------- |
-| `ASD_ROS_DISTRO`       | `humble`                          | ROS distribution of the image                       |
-| `ASD_ROS_DOMAIN_ID`    | `87`                              | DDS domain of the units                             |
-| `ASD_PORT_<UNIT>`      | `8781` to `8783`                  | daemon port of `MAIN_ECU`, `SUB_ECU_1`, `SUB_ECU_2` |
-| `ASD_SUBNET_PREFIX`    | `172.30.87`                       | first three octets of the bridge network            |
-| `ASD_UID`, `ASD_GID`   | the calling user's                | ids of the container user                           |
-| `ASD_STATE_DIR`        | `$XDG_RUNTIME_DIR/asd-multi-unit` | client key, known hosts, SSH control sockets        |
-| `ASD_PACKAGES`         | studio, examples                  | packages the `build` service builds up to           |
-| `ASD_SYSTEM`           | `TypeAlpha`                       | system whose topology files are run                 |
-| `ASD_ARCHITECTURE_DIR` | the examples' `ee_architecture`   | directory of `<system>.<topology>.compose.yaml`     |
+| Variable                 | Default                           | Role                                            |
+| ------------------------ | --------------------------------- | ----------------------------------------------- |
+| `ASD_ROS_DISTRO`         | `humble`                          | ROS distribution of the image                   |
+| `ASD_ROS_DOMAIN_ID`      | `87`                              | DDS domain of the units                         |
+| `ASD_RMW_IMPLEMENTATION` | the distribution's                | RMW implementation, e.g. `rmw_cyclonedds_cpp`   |
+| `ASD_UID`, `ASD_GID`     | the calling user's                | ids of the container user                       |
+| `ASD_STATE_DIR`          | `$XDG_RUNTIME_DIR/asd-multi-unit` | client key, known hosts, SSH control socket     |
+| `ASD_PACKAGES`           | studio, examples                  | packages the `build` service builds up to       |
+| `ASD_SYSTEM`             | `TypeAlpha`                       | system whose topology files are run             |
+| `ASD_ARCHITECTURE_DIR`   | the examples' `ee_architecture`   | directory of `<system>.<topology>.compose.yaml` |
 
 The variables are the environment's own: `ROS_DISTRO` and `ROS_DOMAIN_ID` of the calling shell are
-not read.
+not read. Daemon ports and addresses are the topology file's.
 
 ## Faults
 
-In the `bridge` topology a unit can be cut off the way an ECU fails. The daemon of `main_ecu`
-reports it `unreachable` within about 15 s and reads it anew once it answers again:
+A unit on a device of its own can be cut off the way an ECU fails. The main daemon reports it
+`unreachable` within about 15 s and reads it anew once it answers again:
 
 ```bash
-./run.sh compose bridge pause sub_ecu_2                                   # frozen ECU
+./run.sh compose bridge pause sub_ecu_2                           # frozen ECU
 ./run.sh compose bridge unpause sub_ecu_2
-./run.sh compose bridge kill sub_ecu_2                                    # power loss
-./run.sh compose bridge start sub_ecu_2                                   # power back, launch gone
+./run.sh compose bridge kill sub_ecu_2                            # power loss
+./run.sh compose bridge start sub_ecu_2                           # power back, launch gone
 docker network disconnect asd-multi-unit-bridge_vehicle asd-multi-unit-bridge-sub_ecu_2-1
 docker network connect --ip 172.30.87.13 asd-multi-unit-bridge_vehicle asd-multi-unit-bridge-sub_ecu_2-1
 ./run.sh compose bridge exec -u root sub_ecu_2 tc qdisc add dev eth0 root netem delay 50ms loss 5%
@@ -93,12 +95,13 @@ python3 -m pytest demo/docker/multi_unit/test            # --keep leaves the las
 ```
 
 The tests carry the marker `docker` and are skipped without a Docker daemon. They bring up each
-topology in turn and drive every unit through the daemon of `main_ecu` alone: the peers connect
-without mismatch, every unit launches, each unit receives a topic of another unit, member
-output is readable, a shutdown ends one unit's processes and leaves the others running, and the
-past runs of all three are listed and read. In the `bridge` topology a unit also stays reachable
-over a slow, lossy link, and is reported `unreachable` and then read anew when it is paused, taken
-off the network, or killed and started again. They are not part of `colcon test`.
+topology in turn and drive every unit through its main daemon alone: the peers connect without
+mismatch, a peer on another device through an SSH forward, every unit launches, each
+unit receives a topic of another unit, member output is readable, a shutdown ends one unit's
+processes and leaves the others running, and the past runs of all three are listed and read. A unit
+on a device of its own also stays reachable over a slow, lossy link, and is reported `unreachable`
+and then read anew when it is paused, taken off the network, or killed and started again. They are
+not part of `colcon test`.
 
 ## Limits
 

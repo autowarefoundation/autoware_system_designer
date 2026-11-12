@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Fixtures of the multi-unit Docker tests: one environment per topology, one client per unit."""
+"""Fixtures of the multi-unit Docker tests: one environment per topology, driven through its main daemon."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Callable, Dict, Iterator, Optional, Tuple
+from typing import Callable, Dict, Iterator, Optional
 
 import pytest
 
@@ -31,27 +31,16 @@ HERE = Path(__file__).resolve().parent.parent
 RUN = HERE / "run.sh"
 SYSTEM = "autoware_system_design_examples:TypeAlpha"
 DEPLOY = "vehicle_x"
-BRIDGE_PROJECT = "asd-multi-unit-bridge"
+UNITS = ("main_ecu", "sub_ecu_1", "sub_ecu_2")
 
 
-def _topology_units(topology: str) -> Dict[str, Tuple[int, str]]:
-    """Daemon port and address of each unit, as the topology's compose file binds them."""
-    listed = subprocess.run([str(RUN), "units", topology], capture_output=True, text=True, check=True)
-    rows = (line.split() for line in listed.stdout.splitlines())
-    return {unit: (int(port), address) for unit, port, address in rows}
+def _topologies() -> list:
+    """Topologies of the system, one per compose file beside it."""
+    listed = subprocess.run([str(RUN), "topologies"], capture_output=True, text=True, check=False)
+    return listed.stdout.split()
 
 
-def _units() -> Dict[str, Tuple[int, str]]:
-    try:
-        return _topology_units("bridge")
-    except (OSError, subprocess.CalledProcessError):
-        return {}  # no Docker: every test is skipped
-
-
-_UNITS = _units()
-PORT = {unit: port for unit, (port, _) in _UNITS.items()}
-ADDRESS = {unit: address for unit, (_, address) in _UNITS.items()}
-UNITS = tuple(PORT)
+TOPOLOGIES = _topologies()
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -59,7 +48,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption("--keep", action="store_true", help="leave the containers up after the tests")
+    parser.addoption("--keep", action="store_true", help="leave the containers of the last topology up after the tests")
 
 
 def _docker_available() -> bool:
@@ -84,11 +73,10 @@ class RpcError(Exception):
 
 
 class Daemon:
-    """Request client of one unit's daemon."""
+    """Request client of the main daemon, which serves every unit."""
 
-    def __init__(self, unit: str):
-        self.unit = unit
-        self.port = PORT[unit]
+    def __init__(self, port: int):
+        self.port = port
 
     def rpc(self, method: str, timeout: float = 20.0, **params) -> dict:
         request = urllib.request.Request(
@@ -105,28 +93,28 @@ class Daemon:
             raise RpcError(reply["error"]["code"], reply["error"]["message"])
         return reply["result"]
 
-    def unit_status(self, unit: Optional[str] = None) -> str:
+    def unit_status(self, unit: str) -> str:
         system = next(s for s in self.rpc("systems.list")["systems"] if s["id"] == SYSTEM)
-        return next(u["status"] for u in system["compute_units"] if u["name"] == (unit or self.unit))
+        return next(u["status"] for u in system["compute_units"] if u["name"] == unit)
 
-    def session(self, unit: Optional[str] = None) -> Optional[dict]:
+    def session(self, unit: str) -> Optional[dict]:
         try:
-            sessions = self.rpc("launch.status", compute_unit=unit or self.unit)["sessions"]
+            sessions = self.rpc("launch.status", compute_unit=unit)["sessions"]
         except RpcError as exc:
             if exc.code != "not_found":
                 raise
             return None
         return sessions[0] if sessions else None
 
-    def launch(self, unit: Optional[str] = None) -> None:
-        self.rpc("launch.start", system=SYSTEM, compute_unit=unit or self.unit, mode="default", deploy=DEPLOY)
+    def launch(self, unit: str) -> None:
+        self.rpc("launch.start", system=SYSTEM, compute_unit=unit, mode="default", deploy=DEPLOY)
 
-    def shutdown(self, unit: Optional[str] = None) -> None:
-        self.rpc("launch.shutdown", compute_unit=unit or self.unit)
+    def shutdown(self, unit: str) -> None:
+        self.rpc("launch.shutdown", compute_unit=unit)
 
-    def input_rate(self, node: str, topic: str, interval: float = 3.0, unit: Optional[str] = None) -> float:
+    def input_rate(self, unit: str, node: str, topic: str, interval: float = 3.0) -> float:
         """Message rate of ``topic`` at ``node``, 0 while the node reports none."""
-        sample = self.rpc("monitor.sample", compute_unit=unit or self.unit, interval=interval)
+        sample = self.rpc("monitor.sample", compute_unit=unit, interval=interval)
         for entry in sample["nodes"]:
             if entry["node"] == node:
                 return next((record["hz"] for record in entry["inputs"] if record["topic"] == topic), 0.0)
@@ -142,16 +130,36 @@ def wait_for(condition: Callable[[], bool], timeout: float, what: str, period: f
 
 
 class Environment:
-    """One running topology; the daemon of ``main_ecu`` serves the other units through theirs."""
+    """One running topology; its main daemon serves the other units through theirs."""
 
     def __init__(self, topology: str):
         self.topology = topology
-        self.daemons: Dict[str, Daemon] = {unit: Daemon(unit) for unit in UNITS}
-        self.main = self.daemons["main_ecu"]
+        self.project = ""
+        self.service: Dict[str, str] = {}
+        self.address: Dict[str, str] = {}
+        self.main_unit = ""
+        self.main = Daemon(0)
+
+    def read(self) -> None:
+        """Project name and, per unit, service, address and role, as the topology binds them."""
+        self.project = json.loads(self.compose("config", "--format", "json").stdout)["name"]
+        listed = self.run("units", self.topology, timeout=120.0)
+        assert listed.returncode == 0, listed.stderr
+        for line in listed.stdout.splitlines():
+            unit, service, port, address, role = line.split()
+            self.service[unit] = service
+            self.address[unit] = address
+            if role == "main":
+                self.main_unit, self.main = unit, Daemon(int(port))
+        assert sorted(self.service) == sorted(UNITS) and self.main_unit
 
     def peer(self, unit: str) -> dict:
         """The main daemon's record of the peer serving ``unit``."""
         return next(peer for peer in self.main.rpc("health")["peers"] if unit in peer["units"])
+
+    def remote(self, unit: str) -> bool:
+        """Whether ``unit`` is on another device than the main unit, behind an SSH forward."""
+        return unit != self.main_unit and self.peer(unit)["ssh"] is not None
 
     def docker(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=60.0, check=False)
@@ -164,7 +172,7 @@ class Environment:
 
     def processes(self, unit: str, pattern: str) -> list:
         """Command lines in the unit's container matching ``pattern``."""
-        result = self.compose("exec", "-T", unit, "pgrep", "-af", pattern)
+        result = self.compose("exec", "-T", self.service[unit], "pgrep", "-af", pattern)
         return [line for line in result.stdout.splitlines() if "pgrep" not in line]
 
     def all_running(self) -> bool:
@@ -177,7 +185,7 @@ class Environment:
         return True
 
 
-@pytest.fixture(scope="module", params=["host", "bridge"])
+@pytest.fixture(scope="module", params=TOPOLOGIES)
 def environment(request: pytest.FixtureRequest) -> Iterator[Environment]:
     env = Environment(request.param)
     up = env.run("up", env.topology)
@@ -185,6 +193,7 @@ def environment(request: pytest.FixtureRequest) -> Iterator[Environment]:
         env.run("down", env.topology)
         pytest.fail(f"run.sh up {env.topology} failed:\n{up.stdout}\n{up.stderr}")
     try:
+        env.read()
         yield env
     finally:
         if not request.config.getoption("--keep"):

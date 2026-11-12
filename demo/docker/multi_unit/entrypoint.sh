@@ -3,7 +3,8 @@
 #   build   colcon build of ASD_PACKAGES and their dependencies from /ws/src into /ws/out
 #   serve   studio daemon of ASD_COMPUTE_UNIT on ASD_PORT, with sshd when ASD_SSHD_PORT is set;
 #           ASD_PEERS lists the daemons of other units as <unit>=<url>, separated by spaces;
-#           ASD_PEER_SSH lists the SSH destinations they are forwarded from as <unit>=<destination>
+#           ASD_PEER_SSH lists the SSH destinations they are forwarded from as <unit>=<destination>;
+#           ASD_RMW_IMPLEMENTATION selects the RMW implementation
 set -eo pipefail
 
 OUT=/ws/out
@@ -69,6 +70,9 @@ serve() {
   fi
   # shellcheck disable=SC1091
   source "${OUT}/install/setup.bash"
+  if [[ -n "${ASD_RMW_IMPLEMENTATION:-}" ]]; then
+    export RMW_IMPLEMENTATION="${ASD_RMW_IMPLEMENTATION}"
+  fi
   if [[ -n "${ASD_SSHD_PORT:-}" ]]; then
     start_sshd
   fi

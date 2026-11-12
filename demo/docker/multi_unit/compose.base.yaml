@@ -1,0 +1,36 @@
+# Services every topology's compose file extends: the workspace build and the daemon of one compute
+# unit. run.sh supplies the image context, the source checkout and the key directory.
+services:
+  build:
+    image: asd-multi-unit:${ASD_ROS_DISTRO:-humble}
+    build: &image
+      context: ${ASD_DOCKER_DIR:?directory of the Dockerfile, set by run.sh}
+      args:
+        ROS_DISTRO: ${ASD_ROS_DISTRO:-humble}
+        UID: ${ASD_UID:-1000}
+        GID: ${ASD_GID:-1000}
+    command: build
+    init: true
+    volumes:
+      - ${ASD_SOURCE_DIR:?source checkout, set by run.sh}:/ws/src/autoware_system_designer:ro
+      - ws:/ws/out
+
+  # Daemon of the compute unit ASD_COMPUTE_UNIT on ASD_PORT.
+  unit:
+    image: asd-multi-unit:${ASD_ROS_DISTRO:-humble}
+    build: *image
+    command: serve
+    init: true
+    stop_grace_period: 20s
+    environment:
+      ROS_DOMAIN_ID: ${ASD_ROS_DOMAIN_ID:-87}
+      ASD_RMW_IMPLEMENTATION: ${ASD_RMW_IMPLEMENTATION:-}
+    volumes:
+      - ${ASD_SOURCE_DIR:?source checkout, set by run.sh}:/ws/src/autoware_system_designer:ro
+      - ws:/ws/out
+      - ${ASD_KEY_DIR:?directory holding authorized_keys, made by run.sh}:/run/asd/keys:ro
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://127.0.0.1:$${ASD_PORT}/api/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

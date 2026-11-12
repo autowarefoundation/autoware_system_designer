@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3-jinja2 \
       python3-jsonschema \
       python3-yaml \
+      ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
       ros-${ROS_DISTRO}-robot-state-publisher \
       ros-${ROS_DISTRO}-xacro \
     && rm -rf /var/lib/apt/lists/*
