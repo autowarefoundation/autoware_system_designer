@@ -33,6 +33,7 @@ from .test_serve_launch import (  # noqa: F401 - fixture
     _greeted,
     _launch_env,
     _Recording,
+    _run_tree,
     run_dir,
 )
 
@@ -193,6 +194,17 @@ def test_a_unit_is_local_or_bound_to_a_peer_not_both(tmp_path, capsys):
         cli._parse_args(["serve", "--peer", "sub_ecu=127.0.0.1:1"])
     with pytest.raises(peers.PeerConfigError):
         ServeDaemon(tmp_path, port=0, served_units=["a"], peer_specs=[peers.PeerSpec("a", "http://127.0.0.1:1")])
+
+
+def test_a_peer_answers_on_this_loopback_at_another_port(tmp_path, capsys):
+    with pytest.raises(peers.PeerConfigError, match="127.0.0.1"):
+        peers.validate_specs([peers.PeerSpec("a", "http://10.0.0.2:8782")])
+    with pytest.raises(SystemExit):
+        cli._parse_args(["serve", "--port", "8781", "--peer", "a=http://localhost:8781"])
+    assert "own port 8781" in capsys.readouterr().err
+    with pytest.raises(peers.PeerConfigError, match="own port"):
+        ServeDaemon(tmp_path, port=8781, peer_specs=[peers.PeerSpec("a", "http://127.0.0.1:8781", "ecu-a")])
+    peers.validate_specs([peers.PeerSpec("a", "http://127.0.0.1:8782")], port=8781)
 
 
 def test_units_naming_one_address_share_a_link(tmp_path):
@@ -421,7 +433,9 @@ def test_a_peer_unit_is_launched_followed_and_shut_down_through_this_daemon(unit
 
 def test_a_build_names_no_peer_unit(tmp_path):
     install = _install_tree(tmp_path, compute_units=UNITS)
-    daemon = ServeDaemon(install, port=0, workspace=tmp_path, peer_specs=[peers.PeerSpec("sub_ecu", "http://h:1")])
+    daemon = ServeDaemon(
+        install, port=0, workspace=tmp_path, peer_specs=[peers.PeerSpec("sub_ecu", "http://127.0.0.1:1")]
+    )
     with pytest.raises(api.ApiError) as info:
         asyncio.run(daemon._build_start({"system": SYSTEM_ID, "target": "workspace", "compute_unit": "sub_ecu"}))
     assert info.value.code == api.INVALID_PARAMS and "its own daemon" in info.value.message
@@ -449,6 +463,26 @@ def test_a_system_runs_one_mode_at_a_time_across_daemons(units):
     main.launch(compute_unit="main_ecu", mode="Simulation", args=nosocket)
     assert main.error("launch.start", system=SYSTEM_ID, compute_unit="sub_ecu", mode="Runtime") == api.CONFLICT
     main.call("launch.shutdown", compute_unit="main_ecu")
+
+
+def test_a_mode_is_refused_while_another_mode_of_the_system_starts(units):
+    main = units.main
+    nosocket = {"behaviour": "nosocket"}
+    starting = main.daemon._starting
+    starting[(SYSTEM_ID, "Runtime")] = ["launch-a", 1]
+    assert main.error("launch.start", system=SYSTEM_ID, compute_unit="main_ecu", mode="Simulation") == api.CONFLICT
+    assert main.error("launch.start", system=SYSTEM_ID, compute_unit="sub_ecu", mode="Simulation") == api.CONFLICT
+    assert units.launch_sub(mode="Runtime", args=nosocket)["launch"] == "launch-a"
+    del starting[(SYSTEM_ID, "Runtime")]
+    main.call("launch.shutdown", compute_unit="sub_ecu")
+
+
+def test_the_runs_of_peer_units_do_not_crowd_out_local_runs(units, monkeypatch):
+    monkeypatch.setattr(launch, "MAX_RUNS", 1)
+    base = units.tmp_path / "logs_main"
+    _run_tree(base, "20260101_000000", {"system": SYSTEM, "compute_unit": "main_ecu", "started": 1.0})
+    _run_tree(base, "20260102_000000", {"system": SYSTEM, "compute_unit": "sub_ecu", "started": 2.0})
+    assert [run["run"] for run in units.main.call("launch.runs")["runs"]] == ["20260101_000000"]
 
 
 def test_the_units_of_a_system_share_a_launch_until_all_ended(units):
@@ -491,13 +525,13 @@ def test_a_peer_that_goes_away_is_unreachable_until_it_answers_again(units):
 
     assert main.error("launch.start", system=SYSTEM_ID, compute_unit="sub_ecu") == api.UNAVAILABLE
     assert main.error("launch.shutdown", compute_unit="sub_ecu") == api.UNAVAILABLE
-    assert main.error("launch.status", compute_unit="sub_ecu") == api.UNAVAILABLE
     assert main.error("jobs.get", job="sub_ecu/launch-1") == api.UNAVAILABLE
     # Lists leave the peer out, but for the session it last reported: the launch it ended while closing.
     stale = main.call("launch.status")["sessions"]
     assert [(s["compute_unit"], s["state"], s["stale"], s["members"]) for s in stale] == [
         ("sub_ecu", "exited", True, [])
     ]
+    assert main.call("launch.status", compute_unit="sub_ecu")["sessions"] == stale
     assert main.call("jobs.list")["jobs"] == []
     assert main.call("launch.runs")["runs"] == []
 
@@ -507,6 +541,36 @@ def test_a_peer_that_goes_away_is_unreachable_until_it_answers_again(units):
     assert main.unit("sub_ecu")["status"] == "available"
     assert units.launch_sub(mode="Simulation", args={"behaviour": "nosocket"})["job"] == "sub_ecu/launch-1"
     main.call("launch.shutdown", compute_unit="sub_ecu")
+
+
+def test_a_connected_peer_that_gives_no_status_is_listed_as_last_reported(units, monkeypatch):
+    main = units.main
+    units.launch_sub(mode="Runtime", args={"behaviour": "nosocket"})
+    rpc = peers.PeerClient.rpc
+
+    async def no_status(self, method, params=None, *, timeout):
+        if method == "launch.status":
+            raise peers.PeerUnreachable("no answer")
+        return await rpc(self, method, params, timeout=timeout)
+
+    monkeypatch.setattr(peers.PeerClient, "rpc", no_status)
+    for params in ({}, {"compute_unit": "sub_ecu"}):
+        listed = main.call("launch.status", **params)["sessions"]
+        assert [(s["compute_unit"], s["mode"], s["stale"]) for s in listed] == [("sub_ecu", "Runtime", True)]
+    assert main.peer()["state"] == peers.PEER_CONNECTED
+    monkeypatch.setattr(peers.PeerClient, "rpc", rpc)
+    main.call("launch.shutdown", compute_unit="sub_ecu")
+
+
+def test_a_change_of_the_peers_own_links_is_not_relayed(units):
+    main, sub = units.main, units.sub
+    before = len(main.events.of(peers.TOPIC_SYSTEMS_CHANGED))
+    publish = sub.daemon.hub.publish
+    sub.loop.call_soon_threadsafe(publish, peers.TOPIC_SYSTEMS_CHANGED, {"peer": main.url})
+    sub.loop.call_soon_threadsafe(publish, peers.TOPIC_SYSTEMS_CHANGED, {"job": "build-1", "package": PKG})
+    _until(lambda: len(main.events.of(peers.TOPIC_SYSTEMS_CHANGED)) > before, "relayed systems.changed")
+    time.sleep(0.3)
+    assert main.events.of(peers.TOPIC_SYSTEMS_CHANGED)[before:] == [{"peer": sub.url}]
 
 
 def test_a_reconnected_peer_keeps_its_launch_and_the_rate_followers(units, monkeypatch):

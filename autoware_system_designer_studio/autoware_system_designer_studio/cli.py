@@ -87,7 +87,7 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         action="append",
         default=[],
         metavar="UNIT=URL",
-        help="daemon serving another compute unit, as <unit>=http://<host>:<port> (repeatable; "
+        help="daemon serving another compute unit, as <unit>=http://127.0.0.1:<port> (repeatable; "
         "replaces the site file's binding of the unit)",
     )
     serve.add_argument(
@@ -145,7 +145,7 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
             from_file = [] if site_file is None else peers.load_site_file(site_file)
             args.peer_specs = peers.merge_specs(from_file, [peers.parse_peer(text) for text in args.peers])
             args.peer_specs = peers.with_ssh(args.peer_specs, [peers.parse_peer_ssh(text) for text in args.peer_ssh])
-            peers.validate_specs(args.peer_specs, args.compute_units or ())
+            peers.validate_specs(args.peer_specs, args.compute_units or (), args.port)
         except peers.PeerConfigError as exc:
             serve.error(str(exc))
     return args

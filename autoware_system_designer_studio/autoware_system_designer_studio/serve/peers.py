@@ -175,9 +175,9 @@ def with_ssh(specs: Iterable[PeerSpec], bindings: Iterable[tuple[str, str]]) -> 
     return list(by_unit.values())
 
 
-def validate_specs(specs: Iterable[PeerSpec], local_units: Iterable[str] = ()) -> None:
-    """A unit is local or bound to a peer, never both; a forwarded peer answers on this device's
-    loopback, and one address has one way to it.
+def validate_specs(specs: Iterable[PeerSpec], local_units: Iterable[str] = (), port: int = 0) -> None:
+    """A unit is local or bound to a peer, never both; a peer answers on this device's loopback, on
+    another port than this daemon's ``port``, and one address has one way to it.
     """
     specs = list(specs)
     both = sorted(set(local_units) & {spec.unit for spec in specs})
@@ -185,8 +185,14 @@ def validate_specs(specs: Iterable[PeerSpec], local_units: Iterable[str] = ()) -
         raise PeerConfigError(f"compute unit(s) {', '.join(both)} are both local and bound to a peer")
     ssh_by_url: dict[str, Optional[str]] = {}
     for spec in specs:
-        if spec.ssh is not None and urlsplit(spec.url).hostname not in LOOPBACK_HOST_NAMES:
-            raise PeerConfigError(f"peer of {spec.unit!r} is forwarded over SSH, so its URL must be on 127.0.0.1")
+        address = urlsplit(spec.url)
+        if address.hostname not in LOOPBACK_HOST_NAMES:
+            raise PeerConfigError(
+                f"peer of {spec.unit!r} must be on 127.0.0.1: a daemon answers on loopback only, "
+                "and one on another device is forwarded from its SSH destination"
+            )
+        if port and address.port == port:
+            raise PeerConfigError(f"peer of {spec.unit!r} is at this daemon's own port {port}")
         if ssh_by_url.setdefault(spec.url, spec.ssh) != spec.ssh:
             raise PeerConfigError(f"peers at {spec.url} name different SSH destinations")
 
@@ -592,7 +598,8 @@ class PeerLink:
             unit = self._job_units.get(data.get("job"))
             if unit is not None:
                 self._hub.publish(topic, {**data, "job": self._prefixed(unit, data["job"])})
-        elif topic == TOPIC_SYSTEMS_CHANGED:
+        elif topic == TOPIC_SYSTEMS_CHANGED and "peer" not in data:
+            # A change of the peer's own links leaves the systems it exports as they were.
             self._spawn(self._systems_changed())
 
     async def _systems_changed(self) -> None:
@@ -674,8 +681,6 @@ class PeerLink:
             view = self._session_view(result)
             self.sessions[_session_key(view)] = {k: v for k, v in view.items() if k != "members"}
             return view
-        if method == "launch.status":
-            return {"sessions": self._status_views(result)}
         if method == "launch.follow":
             self._follows.add(unit)
         elif method == "launch.unfollow" and params.get("path") is None:
@@ -690,11 +695,20 @@ class PeerLink:
         sessions = [s for s in _dict_items(status, "sessions") if s.get("compute_unit") in self.units]
         return [self._session_view(session) for session in sessions]
 
-    async def status_views(self) -> list[dict[str, Any]]:
-        """Sessions of the link's units with their members; the last reported, ``stale``, of an unanswering peer."""
-        if self.state != PEER_CONNECTED:
-            return self.stale_views()
-        return self._status_views(await self._aggregate("launch.status", {}))
+    async def status_views(self, unit: Optional[str] = None) -> list[dict[str, Any]]:
+        """Sessions of ``unit``, or of every unit of the link, with their members; the last reported,
+        ``stale``, of an unanswering peer.
+        """
+        if self.state == PEER_CONNECTED:
+            params = {} if unit is None else {"compute_unit": unit}
+            timeout = AGGREGATE_TIMEOUT_S if unit is None else FORWARD_TIMEOUT_S
+            try:
+                return self._status_views(await self.call("launch.status", params, timeout=timeout))
+            except api.ApiError as exc:
+                if unit is not None and exc.code != api.UNAVAILABLE:
+                    raise
+                logger.info("peer %s gave no launch.status: %s", self.url, exc.message)
+        return self.stale_views(unit)
 
     def stale_views(self, unit: Optional[str] = None) -> list[dict[str, Any]]:
         """The last reported sessions of an unanswering peer, of ``unit`` or of every unit of the link."""
@@ -813,9 +827,10 @@ class PeerRegistry:
         describe: Describe,
         runner: jobs.JobRunner,
         local_units: Iterable[str] = (),
+        port: int = 0,
     ) -> None:
         specs = merge_specs(specs)
-        validate_specs(specs, local_units)
+        validate_specs(specs, local_units, port)
         units_by_url: dict[str, list[str]] = {}
         for spec in specs:
             units_by_url.setdefault(spec.url, []).append(spec.unit)

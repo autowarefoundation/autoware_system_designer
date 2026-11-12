@@ -193,7 +193,7 @@ class ServeDaemon:
         self.heartbeat_s = heartbeat_s
         self.hub = events.EventHub(max_event_subscribers, heartbeat_s)
         self.jobs = jobs.JobRunner(self.hub)
-        self.peers = peers.PeerRegistry(peer_specs, self.hub, self._describe, self.jobs, self.served_units or ())
+        self.peers = peers.PeerRegistry(peer_specs, self.hub, self._describe, self.jobs, self.served_units or (), port)
         self.methods = api.MethodRegistry()
         self.methods.register("health", self._health, get_path="health")
         self.methods.register("systems.list", self._systems_list, get_path="systems")
@@ -314,7 +314,10 @@ class ServeDaemon:
         return {"version": _package_version(), "methods": self.methods.names(), "systems": views}
 
     def _mode_conflict(self, system_id: str, mode: str) -> None:
-        """Refuses a launch while a peer's unit runs another mode of the system, as last reported."""
+        """Refuses a launch while another mode of the system starts, or runs on a peer's unit as last reported."""
+        for starting_id, starting_mode in self._starting:
+            if starting_id == system_id and starting_mode != mode:
+                raise api.ApiError(api.CONFLICT, f"{system_id} is starting mode {starting_mode!r}")
         for link in self.peers.links:
             for session in link.sessions.values():
                 if not peers.PeerLink.session_active(session) or session.get("system") != system_id:
@@ -521,7 +524,7 @@ class ServeDaemon:
         compute_unit = _str_param(params, "compute_unit")
         link = self.peers.link_of(compute_unit)
         if link is not None:
-            return await link.forward("launch.status", params)
+            return {"sessions": await link.status_views(compute_unit)}
         sessions = self.launch.views(compute_unit)
         if compute_unit is None:
             sessions += await self.peers.gather(lambda link: link.status_views())
@@ -566,7 +569,7 @@ class ServeDaemon:
         system_id = _str_param(params, "system")
         system = None if system_id is None else await self._find_system(system_id)
         # A log base shared with a peer holds the runs of its units too; the peer lists those.
-        runs = [run for run in self.launch.runs(system) if self.peers.link_of(run["compute_unit"]) is None]
+        runs = self.launch.runs(system, exclude_units=self.peers.units)
         runs += await self.peers.gather(lambda link: link.run_views(params))
         runs.sort(key=lambda run: run.get("started") or 0, reverse=True)
         return {"runs": runs[: launch.MAX_RUNS]}

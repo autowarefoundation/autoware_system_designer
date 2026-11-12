@@ -343,9 +343,10 @@ autoware-system-designer-studio serve --port 8781 --compute-unit main_ecu \
     --peer sub_ecu_1=http://127.0.0.1:8782 --peer sub_ecu_2=http://127.0.0.1:8783
 ```
 
-A binding names a compute unit and the `http://<host>:<port>` its daemon answers on; a peer checks
+A binding names a compute unit and the `http://127.0.0.1:<port>` its daemon answers on; a peer checks
 `Host` like any daemon, so the address is the peer's own loopback port or a forward that keeps the
-port. Bindings also come from a site file, which a `--peer` of the same unit replaces:
+port, and never the port of the daemon given the binding. Bindings also come from a site file,
+which a `--peer` of the same unit replaces:
 
 ```yaml
 peers:

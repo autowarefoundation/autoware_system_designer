@@ -55,7 +55,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord
 
@@ -581,9 +581,11 @@ class LaunchManager:
                 bases.append(session.log_dir.parent)
         return bases
 
-    def runs(self, system: Optional[SystemExport] = None) -> list[dict[str, Any]]:
+    def runs(self, system: Optional[SystemExport] = None, *, exclude_units: Iterable[str] = ()) -> list[dict[str, Any]]:
         """Past runs, newest first: the directories holding a run manifest, less those an active session
-        writes, its session serving them. With ``system``, runs of other systems are left out."""
+        writes, its session serving them. Runs of ``exclude_units`` are left out, as are those of other
+        systems with ``system``."""
+        excluded = set(exclude_units)
         active = {session.log_dir for session in self.sessions.values() if session.active and session.log_dir}
         runs = []
         for base in self.log_bases():
@@ -597,7 +599,9 @@ class LaunchManager:
                     continue
                 if system is not None and not _run_of_system(manifest, system):
                     continue
-                runs.append(_run_summary(run_dir, manifest))
+                summary = _run_summary(run_dir, manifest)
+                if summary["compute_unit"] not in excluded:
+                    runs.append(summary)
         runs.sort(key=lambda run: run["started"], reverse=True)
         return runs[:MAX_RUNS]
 
