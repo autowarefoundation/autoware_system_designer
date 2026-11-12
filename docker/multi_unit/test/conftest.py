@@ -91,19 +91,24 @@ class Daemon:
         system = next(s for s in self.rpc("systems.list")["systems"] if s["id"] == SYSTEM)
         return next(u["status"] for u in system["compute_units"] if u["name"] == (unit or self.unit))
 
-    def session(self) -> Optional[dict]:
-        sessions = self.rpc("launch.status", compute_unit=self.unit)["sessions"]
+    def session(self, unit: Optional[str] = None) -> Optional[dict]:
+        try:
+            sessions = self.rpc("launch.status", compute_unit=unit or self.unit)["sessions"]
+        except RpcError as exc:
+            if exc.code != "not_found":
+                raise
+            return None
         return sessions[0] if sessions else None
 
-    def launch(self) -> None:
-        self.rpc("launch.start", system=SYSTEM, compute_unit=self.unit, mode="default")
+    def launch(self, unit: Optional[str] = None) -> None:
+        self.rpc("launch.start", system=SYSTEM, compute_unit=unit or self.unit, mode="default")
 
-    def shutdown(self) -> None:
-        self.rpc("launch.shutdown", compute_unit=self.unit)
+    def shutdown(self, unit: Optional[str] = None) -> None:
+        self.rpc("launch.shutdown", compute_unit=unit or self.unit)
 
-    def input_rate(self, node: str, interval: float = 3.0) -> float:
+    def input_rate(self, node: str, interval: float = 3.0, unit: Optional[str] = None) -> float:
         """Message rate on the only input of ``node``, 0 while the node reports none."""
-        sample = self.rpc("monitor.sample", compute_unit=self.unit, interval=interval)
+        sample = self.rpc("monitor.sample", compute_unit=unit or self.unit, interval=interval)
         for entry in sample["nodes"]:
             if entry["node"] == node and entry["inputs"]:
                 return entry["inputs"][0]["hz"]
@@ -119,11 +124,16 @@ def wait_for(condition: Callable[[], bool], timeout: float, what: str, period: f
 
 
 class Environment:
-    """One running topology."""
+    """One running topology; ``peered`` when the daemon of ``main_ecu`` serves the other units through theirs."""
 
     def __init__(self, topology: str):
         self.topology = topology
+        self.peered = topology == "host"
         self.daemons: Dict[str, Daemon] = {unit: Daemon(unit) for unit in UNITS}
+
+    def controller(self, unit: str) -> Daemon:
+        """The daemon a client drives ``unit`` through."""
+        return self.daemons["main_ecu" if self.peered else unit]
 
     def run(self, *args: str, timeout: float = 600.0) -> subprocess.CompletedProcess:
         return subprocess.run([str(RUN), *args], capture_output=True, text=True, timeout=timeout, check=False)
@@ -137,8 +147,8 @@ class Environment:
         return [line for line in result.stdout.splitlines() if "pgrep" not in line]
 
     def all_running(self) -> bool:
-        for daemon in self.daemons.values():
-            session = daemon.session()
+        for unit in UNITS:
+            session = self.controller(unit).session(unit)
             if session is None or session["state"] != "running" or not session["launch_ready"]:
                 return False
             if any(member["state"] != "running" for member in session["members"]):
@@ -163,7 +173,7 @@ def environment(request: pytest.FixtureRequest) -> Iterator[Environment]:
 @pytest.fixture(scope="module")
 def launched(environment: Environment) -> Environment:
     """The environment with every unit launched and all members running."""
-    for daemon in environment.daemons.values():
-        daemon.launch()
+    for unit in UNITS:
+        environment.controller(unit).launch(unit)
     wait_for(environment.all_running, 30, "every member running")
     return environment

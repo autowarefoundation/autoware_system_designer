@@ -127,6 +127,8 @@ autoware-system-designer-studio serve \
     --port 8780 \                  # 0 picks a free port
     --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
     --compute-unit main_ecu \      # units local to this daemon (repeatable; default: every onboard unit)
+    --peer sub_ecu=http://127.0.0.1:8782 \  # daemon serving another unit (repeatable), see Peers
+    --site-file bench.site.yaml \  # peer bindings of a site (default: $AUTOWARE_SYSTEM_DESIGNER_SITE_FILE)
     --env-script install/setup.bash \  # sourced once into the environment launch jobs run in
     --rviz-config autoware.rviz    # opened by rviz.start (default: autoware_launch's autoware.rviz)
 ```
@@ -140,7 +142,7 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `GET /`            | Systems index                                                                                                |
 | `GET /<site path>` | Page or data script of the [site layout](#site-layout)                                                       |
 | `GET /assets/<f>`  | Web bundle shipped with this package (`css/`, `js/`)                                                         |
-| `GET /api/health`  | Daemon status, including `workspace`, `record_root` and `restart_required`                                   |
+| `GET /api/health`  | Daemon status, including `workspace`, `record_root`, `restart_required`, `heartbeat_s` and `peers`           |
 | `GET /api/systems` | Exported systems: modes, compute units with their status, build scripts per mode, deploy variants, page URLs |
 | `GET /api/jobs`    | Jobs, newest first                                                                                           |
 | `GET /api/launch`  | Launch sessions with their members                                                                           |
@@ -176,8 +178,8 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `heartbeat`       | `{"time"}`                                                                                             |
 | `job`             | Job record on every state change                                                                       |
 | `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                                                  |
-| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                                              |
-| `daemon`          | `{"restart_required": true}`                                                                           |
+| `systems.changed` | A build rebuilt an export package, or a peer changed; re-read `systems.list`                           |
+| `daemon`          | `{"restart_required": true}`, or `{"peer": peer}` on a change of a peer                                |
 | `launch`          | Session view (without members) on every change of a launch                                             |
 | `member`          | `{"compute_unit", "system", "mode", "path", "state", "detail", "time", "restarts", "respawns"}`        |
 | `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new lines of a followed member                          |
@@ -190,8 +192,10 @@ Responses use one envelope: `{"ok": true, "result": ...}` or
 stable strings (`bad_request`, `forbidden`, `not_found`, `method_not_allowed`,
 `unsupported_media_type`, `payload_too_large`, `unknown_method`, `invalid_params`, `conflict`,
 `refused`, `unavailable`, `internal`), each mapped to one HTTP status. Compute unit `status` is
-open-ended; current values are `available`, `running` (an available unit launched by this daemon),
-`remote_unsupported` (an onboard unit served by another daemon), `offboard` and `unsupported`.
+open-ended; current values are `available`, `running` (an available unit with a launch active),
+`remote_unsupported` (an onboard unit of another daemon that is not bound as a peer, or that the
+bound peer does not serve), `unreachable` (the unit's peer does not answer), `offboard` and
+`unsupported`.
 
 Access rules: the listener binds `127.0.0.1` only; the `Host` header must name it (`127.0.0.1:<port>`
 or `localhost:<port>`); API requests the browser marks cross-site are refused; `POST /api/rpc` needs
@@ -315,8 +319,51 @@ shell, or pass `--env-script` with a setup script, sourced once at start into th
 Without `ROS_DISTRO` in that environment `launch.start` and `rviz.start` answer `unavailable`. RViz
 also needs the display of that environment (`DISPLAY` or `WAYLAND_DISPLAY`).
 
+### Peers
+
+One daemon runs per compute unit, inside the unit's environment. A daemon given the others as peers
+serves their units as well, so a client talks to it alone:
+
+```bash
+autoware-system-designer-studio serve --port 8781 --compute-unit main_ecu \
+    --peer sub_ecu_1=http://127.0.0.1:8782 --peer sub_ecu_2=http://127.0.0.1:8783
+```
+
+A binding names a compute unit and the `http://<host>:<port>` its daemon answers on; a peer checks
+`Host` like any daemon, so the address is the peer's own loopback port or a forward that keeps the
+port. Bindings also come from a site file, which a `--peer` of the same unit replaces:
+
+```yaml
+peers:
+  sub_ecu_1: http://127.0.0.1:8782
+  sub_ecu_2: { url: "http://127.0.0.1:8783" }
+```
+
+A unit is either local (`--compute-unit`) or bound to a peer. The daemon keeps one link per peer
+address: it reads the peer's health, systems, sessions and jobs, follows its event stream, and
+reconnects with backoff from 0.5 s up to 10 s. A stream silent for three of the peer's heartbeat
+intervals counts as lost.
+
+| Where          | With peers                                                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------------- |
+| `health`       | `peers`: `[{"units", "url", "state", "error", "version", "mismatch"}]`                                  |
+| `systems.list` | A peer's unit is `available`, `running` or `unreachable`, with the peer record under `daemon`           |
+| Unit methods   | `launch.*`, `measure.*` and `monitor.*` naming a peer's unit are forwarded                              |
+| Lists          | `launch.status`, `jobs.list` and `launch.runs` include the answering peers' sessions, launch jobs, runs |
+| Ids            | A peer's job and run ids read `<unit>/<id>`; `jobs.get`, `jobs.cancel` and `launch.run*` take them      |
+| Events         | `launch`, `member`, `member.log`, `member.activity`, `monitor`, and `job`/`job.log` of launch jobs      |
+| Follows        | Released on the peer once this daemon's last event stream closes; rate follows return after a reconnect |
+| Modes          | A system runs one mode at a time across all daemons, by each peer's last reported sessions              |
+| `build.start`  | Refused for a peer's unit; a unit is built by its own daemon                                            |
+
+Peer `state` is `connecting`, `connected` or `unreachable`. `mismatch` lists where a connected peer
+differs from this daemon: version, method set, units it serves, and the modes, compute units and
+deploy variants of the exported systems that have a unit on it. A mismatch is shown, not enforced.
+While a peer is unreachable, requests for its units answer `unavailable`, lists leave it out, and
+its last reported sessions still hold their system to their mode.
+
 ### Multi-unit environment
 
 [`docker/multi_unit`](../docker/multi_unit/README.md) runs one daemon per compute unit of a demo system in
-Docker containers, as containers of one ECU or as separate ECUs reached over SSH, with tests that
-drive them through the API.
+Docker containers, as containers of one ECU (the daemon of `main_ecu` peered with the others) or as
+separate ECUs reached over SSH, with tests that drive them through the API.

@@ -1,4 +1,5 @@
-# Topology A: the units as containers of one ECU. Host network and IPC, one daemon port per unit.
+# Topology A: the units as containers of one ECU. Host network and IPC, one daemon port per unit;
+# the daemon of main_ecu serves the other units through their daemons.
 name: asd-multi-unit-host
 
 x-unit: &unit
@@ -45,6 +46,9 @@ services:
       <<: *environment
       ASD_COMPUTE_UNIT: main_ecu
       ASD_PORT: ${ASD_PORT_MAIN_ECU:-8781}
+      ASD_PEERS: >-
+        sub_ecu_1=http://127.0.0.1:${ASD_PORT_SUB_ECU_1:-8782}
+        sub_ecu_2=http://127.0.0.1:${ASD_PORT_SUB_ECU_2:-8783}
 
   sub_ecu_1:
     <<: *serve

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Container entry of the multi-unit environment.
 #   build   colcon build of ASD_PACKAGES and their dependencies from /ws/src into /ws/out
-#   serve   studio daemon of ASD_COMPUTE_UNIT on ASD_PORT, with sshd when ASD_SSHD_PORT is set
+#   serve   studio daemon of ASD_COMPUTE_UNIT on ASD_PORT, with sshd when ASD_SSHD_PORT is set;
+#           ASD_PEERS lists the daemons of other units as <unit>=<url>, separated by spaces
 set -eo pipefail
 
 OUT=/ws/out
@@ -55,10 +56,15 @@ serve() {
   if [[ -n "${ASD_SSHD_PORT:-}" ]]; then
     start_sshd
   fi
+  local peer peers=()
+  for peer in ${ASD_PEERS:-}; do
+    peers+=(--peer "${peer}")
+  done
   exec autoware-system-designer-studio serve \
     --install-root "${OUT}/install" \
     --port "${ASD_PORT:-8780}" \
-    --compute-unit "${ASD_COMPUTE_UNIT}"
+    --compute-unit "${ASD_COMPUTE_UNIT}" \
+    "${peers[@]}"
 }
 
 case "${1:-serve}" in

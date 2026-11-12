@@ -399,17 +399,11 @@ class LaunchManager:
             raise api.ApiError(api.UNAVAILABLE, f"{LAUNCHER} not found on the launch PATH or under the install tree")
         self._require_ros()
         for running in self.sessions.values():
-            if not running.active:
-                continue
-            if running.compute_unit == compute_unit:
+            if running.active and running.compute_unit == compute_unit:
                 raise api.ApiError(
                     api.CONFLICT, f"compute unit {compute_unit!r} is already launched (job {running.job.id})"
                 )
-            if running.system.id == system.id and running.mode != mode:
-                raise api.ApiError(
-                    api.CONFLICT,
-                    f"{system.id} runs mode {running.mode!r} on compute unit {running.compute_unit!r}",
-                )
+        self.require_mode(system.id, mode)
         socket = socket_dir() / f"{os.getpid()}-{compute_unit}.sock"
         argv = [
             str(self.launcher),
@@ -458,6 +452,15 @@ class LaunchManager:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
         return session
+
+    def require_mode(self, system_id: str, mode: str) -> None:
+        """Refuses ``mode`` while a unit of this daemon runs another mode of the system."""
+        for running in self.sessions.values():
+            if running.active and running.system.id == system_id and running.mode != mode:
+                raise api.ApiError(
+                    api.CONFLICT,
+                    f"{system_id} runs mode {running.mode!r} on compute unit {running.compute_unit!r}",
+                )
 
     async def start_rviz(self) -> jobs.Job:
         """RViz on the daemon's configuration as a job; one RViz per daemon (``conflict`` while it runs)."""

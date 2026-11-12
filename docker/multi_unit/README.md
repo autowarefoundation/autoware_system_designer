@@ -13,10 +13,14 @@ onboard units, every unit subscribing a topic published on another one.
 
 ## Topologies
 
-| Topology | Compose file          | Stands for            | Network                                          | Daemon reached by                |
-| -------- | --------------------- | --------------------- | ------------------------------------------------ | -------------------------------- |
-| `host`   | `compose.host.yaml`   | containers of one ECU | host network and IPC, DDS on loopback            | the host's loopback              |
-| `bridge` | `compose.bridge.yaml` | separate ECUs         | bridge network `172.30.87.0/24`, fixed addresses | SSH forward to the unit's `sshd` |
+| Topology | Compose file          | Stands for            | Network                                          | Daemon reached by                | Peers                     |
+| -------- | --------------------- | --------------------- | ------------------------------------------------ | -------------------------------- | ------------------------- |
+| `host`   | `compose.host.yaml`   | containers of one ECU | host network and IPC, DDS on loopback            | the host's loopback              | `main_ecu` serves all     |
+| `bridge` | `compose.bridge.yaml` | separate ECUs         | bridge network `172.30.87.0/24`, fixed addresses | SSH forward to the unit's `sshd` | none, one client per unit |
+
+In the `host` topology the daemon of `main_ecu` has the other two as
+[peers](../../autoware_system_designer_studio/README.md#peers): its workbench and API on port 8781
+launch, observe and shut down every unit.
 
 Every daemon binds the loopback of its own network namespace. In the `bridge` topology each
 container runs an `sshd` on port 2222 as the unprivileged user `asd`; `run.sh` makes a client key
@@ -77,8 +81,9 @@ The tests carry the marker `docker` and are skipped without a Docker daemon. The
 topology in turn and check, through the daemons' API alone: each daemon serves its unit, every
 unit launches, each listener receives the topic of another unit, member output is readable, a
 paused unit silences its topics and resumes (`bridge`), a shutdown ends one unit's processes and
-leaves the others running, and each daemon lists the past run of its own unit. They are not part
-of `colcon test`.
+leaves the others running, and each daemon lists the past run of its own unit. In the `host`
+topology every unit is driven through the daemon of `main_ecu`, which also lists the sessions,
+jobs and past runs of all three. They are not part of `colcon test`.
 
 ## Limits
 

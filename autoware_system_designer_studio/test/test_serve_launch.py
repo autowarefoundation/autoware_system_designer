@@ -44,7 +44,8 @@ behaviour = next((a.split("=", 1)[1] for a in args if a.startswith("behaviour=")
 log_dir = sock + ".logs"
 os.makedirs(os.path.join(log_dir, "demo_talker"), exist_ok=True)
 with open(os.path.join(log_dir, "run.json"), "w") as f:
-    json.dump({"system_structure": args[0], "mode": "Runtime", "compute_unit": "main_ecu", "deploy": None,
+    json.dump({"system_structure": args[0], "mode": "Runtime", "compute_unit": args[args.index("--compute-unit") + 1],
+               "deploy": None,
                "started": 1.5, "members": ["/demo/talker", "/demo/listener"]}, f)
 with open(os.path.join(log_dir, "demo_talker", "out"), "w") as f:
     f.write("hello 1\\nhello 2\\n")

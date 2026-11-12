@@ -27,6 +27,7 @@ from typing import Optional, Sequence
 
 from .exports import resolve_install_root
 from .pack import PackError, pack
+from .serve import peers
 from .serve.build import resolve_workspace
 from .serve.launch import LaunchEnvError, capture_env
 from .serve.server import BIND_HOST, HEARTBEAT_INTERVAL_S, ServeDaemon
@@ -81,6 +82,20 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         help="compute unit local to this daemon (repeatable; default: every onboard unit)",
     )
     serve.add_argument(
+        "--peer",
+        dest="peers",
+        action="append",
+        default=[],
+        metavar="UNIT=URL",
+        help="daemon serving another compute unit, as <unit>=http://<host>:<port> (repeatable; "
+        "replaces the site file's binding of the unit)",
+    )
+    serve.add_argument(
+        "--site-file",
+        type=Path,
+        help=f"YAML file binding compute units to peer daemons under 'peers' (default: ${peers.SITE_FILE_ENV})",
+    )
+    serve.add_argument(
         "--env-script",
         type=Path,
         help="setup script sourced once into the environment launch jobs run in "
@@ -117,6 +132,15 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
             serve.error(f"--rviz-config {args.rviz_config} is not a file")
         if args.heartbeat_interval <= 0:
             serve.error("--heartbeat-interval must be positive")
+        try:
+            site_file = peers.site_file_path(args.site_file)
+            from_file = [] if site_file is None else peers.load_site_file(site_file)
+            args.peer_specs = peers.merge_specs(from_file, [peers.parse_peer(text) for text in args.peers])
+        except peers.PeerConfigError as exc:
+            serve.error(str(exc))
+        local = set(args.compute_units or ()) & {spec.unit for spec in args.peer_specs}
+        if local:
+            serve.error(f"compute unit(s) {', '.join(sorted(local))} are both local and bound to a peer")
     return args
 
 
@@ -155,6 +179,7 @@ def _run_serve(args: argparse.Namespace) -> None:
         launch_env=launch_env,
         env_script=args.env_script,
         rviz_config=args.rviz_config,
+        peer_specs=args.peer_specs,
         heartbeat_s=args.heartbeat_interval,
     )
     try:

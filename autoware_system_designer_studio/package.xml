@@ -10,6 +10,7 @@
 
   <exec_depend>autoware_system_designer_runtime</exec_depend>
   <exec_depend>python3-jinja2</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 
