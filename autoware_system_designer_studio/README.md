@@ -128,6 +128,7 @@ autoware-system-designer-studio serve \
     --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
     --compute-unit main_ecu \      # units local to this daemon (repeatable; default: every onboard unit)
     --peer sub_ecu=http://127.0.0.1:8782 \  # daemon serving another unit (repeatable), see Peers
+    --peer-ssh sub_ecu=sub-ecu \   # SSH destination a peer on another device is forwarded from
     --site-file bench.site.yaml \  # peer bindings of a site (default: $AUTOWARE_SYSTEM_DESIGNER_SITE_FILE)
     --env-script install/setup.bash \  # sourced once into the environment launch jobs run in
     --rviz-config autoware.rviz    # opened by rviz.start (default: autoware_launch's autoware.rviz)
@@ -336,8 +337,23 @@ port. Bindings also come from a site file, which a `--peer` of the same unit rep
 ```yaml
 peers:
   sub_ecu_1: http://127.0.0.1:8782
-  sub_ecu_2: { url: "http://127.0.0.1:8783" }
+  sub_ecu_2: { url: "http://127.0.0.1:8783", ssh: sub-ecu-2 }
 ```
+
+A peer on another device is reached through an SSH forward the daemon keeps itself. A binding with
+an SSH destination (`ssh` in the site file, or `--peer-ssh <unit>=<destination>`) has a loopback
+URL, and the daemon runs
+
+```bash
+ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=5 -o ServerAliveCountMax=3 \
+    -L 127.0.0.1:8783:127.0.0.1:8783 -- sub-ecu-2
+```
+
+as a job of kind `tunnel`, one per peer address, started again 1 s to 15 s after it ends. Only the
+running tunnel job stays in `jobs.list`; its log is the output of `ssh`. The destination is a host
+of the SSH configuration of the daemon's user or `[user@]host`; user, port, keys and host key
+checking come from that configuration, and nothing is ever prompted for. A forward that carries no
+traffic for 15 s ends, so a frozen or disconnected device turns `unreachable` within that time.
 
 A unit is either local (`--compute-unit`) or bound to a peer. The daemon keeps one link per peer
 address: it reads the peer's health, systems, sessions and jobs, follows its event stream, and
@@ -346,7 +362,7 @@ intervals counts as lost.
 
 | Where          | With peers                                                                                              |
 | -------------- | ------------------------------------------------------------------------------------------------------- |
-| `health`       | `peers`: `[{"units", "url", "state", "error", "version", "mismatch"}]`                                  |
+| `health`       | `peers`: `[{"units", "url", "state", "error", "version", "mismatch", "ssh", "tunnel"}]`                 |
 | `systems.list` | A peer's unit is `available`, `running` or `unreachable`, with the peer record under `daemon`           |
 | Unit methods   | `launch.*`, `measure.*` and `monitor.*` naming a peer's unit are forwarded                              |
 | Lists          | `launch.status`, `jobs.list` and `launch.runs` include the answering peers' sessions, launch jobs, runs |
@@ -360,10 +376,12 @@ Peer `state` is `connecting`, `connected` or `unreachable`. `mismatch` lists whe
 differs from this daemon: version, method set, units it serves, and the modes, compute units and
 deploy variants of the exported systems that have a unit on it. A mismatch is shown, not enforced.
 While a peer is unreachable, requests for its units answer `unavailable`, lists leave it out, and
-its last reported sessions still hold their system to their mode.
+its last reported sessions still hold their system to their mode. `ssh` is the peer's SSH
+destination and `tunnel` the id of its current tunnel job, both null for a peer reached directly.
 
 ### Multi-unit environment
 
 [`docker/multi_unit`](../docker/multi_unit/README.md) runs one daemon per compute unit of a demo system in
-Docker containers, as containers of one ECU (the daemon of `main_ecu` peered with the others) or as
-separate ECUs reached over SSH, with tests that drive them through the API.
+Docker containers, as containers of one ECU or as separate ECUs reached over SSH, the daemon of
+`main_ecu` peered with the others in both, with tests that drive them through its API and cut units
+off.

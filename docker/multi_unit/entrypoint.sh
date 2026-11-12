@@ -2,7 +2,8 @@
 # Container entry of the multi-unit environment.
 #   build   colcon build of ASD_PACKAGES and their dependencies from /ws/src into /ws/out
 #   serve   studio daemon of ASD_COMPUTE_UNIT on ASD_PORT, with sshd when ASD_SSHD_PORT is set;
-#           ASD_PEERS lists the daemons of other units as <unit>=<url>, separated by spaces
+#           ASD_PEERS lists the daemons of other units as <unit>=<url>, separated by spaces;
+#           ASD_PEER_SSH lists the SSH destinations they are forwarded from as <unit>=<destination>
 set -eo pipefail
 
 OUT=/ws/out
@@ -24,12 +25,11 @@ build() {
     --cmake-args -DBUILD_TESTING=OFF
 }
 
-# sshd of the unprivileged user: key login as "asd" only, host key made at each start.
+# sshd of the unprivileged user: key login as "asd" only, host key made once per container.
 start_sshd() {
   local dir=/run/asd/sshd
   mkdir -p "${dir}"
-  rm -f "${dir}/host_key" "${dir}/host_key.pub"
-  ssh-keygen -q -t ed25519 -N "" -f "${dir}/host_key"
+  [[ -f "${dir}/host_key" ]] || ssh-keygen -q -t ed25519 -N "" -f "${dir}/host_key"
   cat >"${dir}/sshd_config" <<CONFIG
 Port ${ASD_SSHD_PORT}
 HostKey ${dir}/host_key
@@ -43,6 +43,22 @@ AllowTcpForwarding local
 X11Forwarding no
 CONFIG
   /usr/sbin/sshd -f "${dir}/sshd_config" -E "${dir}/sshd.log"
+}
+
+# SSH client configuration of the daemon's user: how the peers' sshd are reached.
+write_ssh_config() {
+  mkdir -p "${HOME}/.ssh"
+  chmod 700 "${HOME}/.ssh"
+  cat >"${HOME}/.ssh/config" <<CONFIG
+Host *
+  Port ${ASD_SSHD_PORT}
+  User asd
+  IdentityFile ${ASD_PEER_KEY:-/run/asd/keys/peer_ed25519}
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+  UserKnownHostsFile /run/asd/known_hosts
+  ConnectTimeout 5
+CONFIG
 }
 
 serve() {
@@ -60,6 +76,12 @@ serve() {
   for peer in ${ASD_PEERS:-}; do
     peers+=(--peer "${peer}")
   done
+  if [[ -n "${ASD_PEER_SSH:-}" ]]; then
+    write_ssh_config
+    for peer in ${ASD_PEER_SSH}; do
+      peers+=(--peer-ssh "${peer}")
+    done
+  fi
   exec autoware-system-designer-studio serve \
     --install-root "${OUT}/install" \
     --port "${ASD_PORT:-8780}" \

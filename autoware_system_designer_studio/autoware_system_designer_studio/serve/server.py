@@ -186,7 +186,8 @@ class ServeDaemon:
         self._max_connections = max_connections
         self.heartbeat_s = heartbeat_s
         self.hub = events.EventHub(max_event_subscribers, heartbeat_s)
-        self.peers = peers.PeerRegistry(peer_specs, self.hub, self._describe)
+        self.jobs = jobs.JobRunner(self.hub)
+        self.peers = peers.PeerRegistry(peer_specs, self.hub, self._describe, self.jobs)
         if self.served_units is not None and set(self.served_units) & set(self.peers.units):
             both = ", ".join(sorted(set(self.served_units) & set(self.peers.units)))
             raise ValueError(f"compute unit(s) {both} are both local and bound to a peer")
@@ -217,7 +218,6 @@ class ServeDaemon:
         self._register_of_unit("monitor.unfollow", self._monitor_unfollow)
         self._register_of_unit("monitor.sample", self._monitor_sample)
         self.methods.register("rviz.start", self._rviz_start)
-        self.jobs = jobs.JobRunner(self.hub)
         self.launch = launch.LaunchManager(
             self.hub,
             self.jobs,

@@ -34,6 +34,9 @@ SYSTEM = "autoware_system_design_examples:MultiUnitDemo"
 PORT_ENV = {"main_ecu": "ASD_PORT_MAIN_ECU", "sub_ecu_1": "ASD_PORT_SUB_ECU_1", "sub_ecu_2": "ASD_PORT_SUB_ECU_2"}
 DEFAULT_PORT = {"main_ecu": 8781, "sub_ecu_1": 8782, "sub_ecu_2": 8783}
 UNITS = tuple(DEFAULT_PORT)
+SUBNET_PREFIX = os.environ.get("ASD_SUBNET_PREFIX", "172.30.87")
+ADDRESS = {"main_ecu": f"{SUBNET_PREFIX}.11", "sub_ecu_1": f"{SUBNET_PREFIX}.12", "sub_ecu_2": f"{SUBNET_PREFIX}.13"}
+BRIDGE_PROJECT = "asd-multi-unit-bridge"
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -124,16 +127,19 @@ def wait_for(condition: Callable[[], bool], timeout: float, what: str, period: f
 
 
 class Environment:
-    """One running topology; ``peered`` when the daemon of ``main_ecu`` serves the other units through theirs."""
+    """One running topology; the daemon of ``main_ecu`` serves the other units through theirs."""
 
     def __init__(self, topology: str):
         self.topology = topology
-        self.peered = topology == "host"
         self.daemons: Dict[str, Daemon] = {unit: Daemon(unit) for unit in UNITS}
+        self.main = self.daemons["main_ecu"]
 
-    def controller(self, unit: str) -> Daemon:
-        """The daemon a client drives ``unit`` through."""
-        return self.daemons["main_ecu" if self.peered else unit]
+    def peer(self, unit: str) -> dict:
+        """The main daemon's record of the peer serving ``unit``."""
+        return next(peer for peer in self.main.rpc("health")["peers"] if unit in peer["units"])
+
+    def docker(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=60.0, check=False)
 
     def run(self, *args: str, timeout: float = 600.0) -> subprocess.CompletedProcess:
         return subprocess.run([str(RUN), *args], capture_output=True, text=True, timeout=timeout, check=False)
@@ -148,7 +154,7 @@ class Environment:
 
     def all_running(self) -> bool:
         for unit in UNITS:
-            session = self.controller(unit).session(unit)
+            session = self.main.session(unit)
             if session is None or session["state"] != "running" or not session["launch_ready"]:
                 return False
             if any(member["state"] != "running" for member in session["members"]):
@@ -174,6 +180,6 @@ def environment(request: pytest.FixtureRequest) -> Iterator[Environment]:
 def launched(environment: Environment) -> Environment:
     """The environment with every unit launched and all members running."""
     for unit in UNITS:
-        environment.controller(unit).launch(unit)
+        environment.main.launch(unit)
     wait_for(environment.all_running, 30, "every member running")
     return environment

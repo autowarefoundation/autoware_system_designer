@@ -91,6 +91,14 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         "replaces the site file's binding of the unit)",
     )
     serve.add_argument(
+        "--peer-ssh",
+        dest="peer_ssh",
+        action="append",
+        default=[],
+        metavar="UNIT=DESTINATION",
+        help="SSH destination the unit's peer is forwarded from, for a peer on another device (repeatable)",
+    )
+    serve.add_argument(
         "--site-file",
         type=Path,
         help=f"YAML file binding compute units to peer daemons under 'peers' (default: ${peers.SITE_FILE_ENV})",
@@ -136,6 +144,8 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
             site_file = peers.site_file_path(args.site_file)
             from_file = [] if site_file is None else peers.load_site_file(site_file)
             args.peer_specs = peers.merge_specs(from_file, [peers.parse_peer(text) for text in args.peers])
+            args.peer_specs = peers.with_ssh(args.peer_specs, [peers.parse_peer_ssh(text) for text in args.peer_ssh])
+            peers.validate_specs(args.peer_specs)
         except peers.PeerConfigError as exc:
             serve.error(str(exc))
         local = set(args.compute_units or ()) & {spec.unit for spec in args.peer_specs}

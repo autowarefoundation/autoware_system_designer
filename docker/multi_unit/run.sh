@@ -56,13 +56,16 @@ ssh_options() {
     -o ServerAliveCountMax=3
 }
 
-# Client key of this run; the containers read its public half as authorized_keys.
+# Keys of this run: the host's client key, and the key the daemon of main_ecu reaches its peers
+# with. The containers read the public halves as authorized_keys.
 make_keys() {
   mkdir -p "${ASD_KEY_DIR}"
   chmod 700 "${STATE_DIR}"
   rm -f "${STATE_DIR}/id_ed25519" "${STATE_DIR}/id_ed25519.pub" "${STATE_DIR}/known_hosts"
+  rm -f "${ASD_KEY_DIR}/peer_ed25519" "${ASD_KEY_DIR}/peer_ed25519.pub"
   ssh-keygen -q -t ed25519 -N "" -C asd-multi-unit -f "${STATE_DIR}/id_ed25519"
-  cp "${STATE_DIR}/id_ed25519.pub" "${ASD_KEY_DIR}/authorized_keys"
+  ssh-keygen -q -t ed25519 -N "" -C asd-multi-unit-peer -f "${ASD_KEY_DIR}/peer_ed25519"
+  cat "${STATE_DIR}/id_ed25519.pub" "${ASD_KEY_DIR}/peer_ed25519.pub" >"${ASD_KEY_DIR}/authorized_keys"
 }
 
 open_tunnels() {

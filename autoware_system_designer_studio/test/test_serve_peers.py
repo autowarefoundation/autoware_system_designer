@@ -27,7 +27,7 @@ from autoware_system_designer_studio.serve import api, jobs, launch, peers
 from autoware_system_designer_studio.serve.server import ServeDaemon
 
 from .test_serve import PKG, SYSTEM, UNITS, _install_tree, _Running
-from .test_serve_launch import _fake_launcher, _launch_env, _Recording, run_dir  # noqa: F401 - fixture
+from .test_serve_launch import SHEBANG, _fake_launcher, _launch_env, _Recording, run_dir  # noqa: F401 - fixture
 
 SYSTEM_ID = f"{PKG}:{SYSTEM}"
 
@@ -190,6 +190,73 @@ def test_units_naming_one_address_share_a_link(tmp_path):
     assert daemon.peers.link_of_id("z/launch-3") is None
 
 
+def test_an_ssh_destination_binds_a_peer_on_this_loopback(tmp_path):
+    site = tmp_path / "bench.site.yaml"
+    site.write_text("peers:\n  a: {url: 'http://127.0.0.1:8782', ssh: ecu-a}\n  b: http://127.0.0.1:8783\n")
+    args = cli._parse_args(["serve", "--site-file", str(site), "--peer-ssh", "b=asd@ecu-b"])
+    assert args.peer_specs == [
+        peers.PeerSpec("a", "http://127.0.0.1:8782", "ecu-a"),
+        peers.PeerSpec("b", "http://127.0.0.1:8783", "asd@ecu-b"),
+    ]
+    for text in ("b", "=ecu", "b=", "b=-oProxyCommand=x", "b=ecu b"):
+        with pytest.raises(peers.PeerConfigError):
+            peers.parse_peer_ssh(text)
+    with pytest.raises(peers.PeerConfigError, match="has no peer"):
+        peers.with_ssh([], [("a", "ecu-a")])
+    with pytest.raises(peers.PeerConfigError, match="127.0.0.1"):
+        peers.validate_specs([peers.PeerSpec("a", "http://10.0.0.2:8782", "ecu-a")])
+    with pytest.raises(peers.PeerConfigError, match="different SSH destinations"):
+        peers.validate_specs(
+            [peers.PeerSpec("a", "http://127.0.0.1:1", "ecu-a"), peers.PeerSpec("b", "http://127.0.0.1:1")]
+        )
+    site.write_text("peers:\n  a: {url: 'http://127.0.0.1:8782', ssh: 5}\n")
+    with pytest.raises(peers.PeerConfigError):
+        peers.load_site_file(site)
+
+
+FAKE_SSH = """\
+import signal, sys, time
+print("argv: " + " ".join(sys.argv[1:]), flush=True)
+signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
+while True:
+    time.sleep(0.1)
+"""
+
+
+def test_a_forwarded_peer_keeps_an_ssh_tunnel_job_running(tmp_path, monkeypatch):
+    ssh = tmp_path / "ssh"
+    ssh.write_text(SHEBANG + FAKE_SSH)
+    ssh.chmod(0o755)
+    monkeypatch.setattr(peers, "SSH", str(ssh))
+    monkeypatch.setattr(peers, "TUNNEL_RESTART_MIN_S", 0.05)
+    install = _install_tree(tmp_path, compute_units=UNITS)
+    sub = _Daemon(install, served_units=["sub_ecu"], heartbeat_s=60)
+    spec = peers.PeerSpec("sub_ecu", sub.url, "ecu-sub")
+    main = _Daemon(install, served_units=["main_ecu"], heartbeat_s=60, peer_specs=[spec])
+    try:
+        view = _until(lambda: main.peer()["tunnel"] and main.peer(), "tunnel job")
+        assert view["ssh"] == "ecu-sub" and view["tunnel"] == "tunnel-1"
+        _until(lambda: main.call("jobs.get", job="tunnel-1")["log"]["lines"], "tunnel output")
+        got = main.call("jobs.get", job="tunnel-1")
+        forward = f"127.0.0.1:{sub.port}:127.0.0.1:{sub.port}"
+        assert got["log"]["lines"] == [
+            "argv: -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=5 "
+            f"-o ServerAliveCountMax=3 -L {forward} -- ecu-sub"
+        ]
+        assert got["job"]["kind"] == peers.TUNNEL_JOB_KIND and got["job"]["state"] == jobs.STATE_RUNNING
+        assert got["job"]["params"] == {"destination": "ecu-sub", "port": sub.port}
+
+        # A tunnel that ends is started again, and only the running one stays listed.
+        main.call("jobs.cancel", job="tunnel-1")
+        _until(lambda: main.peer()["tunnel"] == "tunnel-2", "tunnel restarted")
+        assert [job["id"] for job in main.call("jobs.list")["jobs"]] == ["tunnel-2"]
+        process = main.daemon.jobs.get("tunnel-2").process
+    finally:
+        main.close()
+        sub.close()
+    assert process.returncode is not None
+
+
 # -- status ----------------------------------------------------------------------
 
 
@@ -203,6 +270,8 @@ def test_a_peer_unit_reports_the_status_its_daemon_gives(units):
             "error": None,
             "version": health["version"],
             "mismatch": [],
+            "ssh": None,
+            "tunnel": None,
         }
     ]
     assert health["heartbeat_s"] == 60

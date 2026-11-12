@@ -13,19 +13,20 @@ onboard units, every unit subscribing a topic published on another one.
 
 ## Topologies
 
-| Topology | Compose file          | Stands for            | Network                                          | Daemon reached by                | Peers                     |
-| -------- | --------------------- | --------------------- | ------------------------------------------------ | -------------------------------- | ------------------------- |
-| `host`   | `compose.host.yaml`   | containers of one ECU | host network and IPC, DDS on loopback            | the host's loopback              | `main_ecu` serves all     |
-| `bridge` | `compose.bridge.yaml` | separate ECUs         | bridge network `172.30.87.0/24`, fixed addresses | SSH forward to the unit's `sshd` | none, one client per unit |
+| Topology | Compose file          | Stands for            | Network                                          | `main_ecu` reaches its peers by      |
+| -------- | --------------------- | --------------------- | ------------------------------------------------ | ------------------------------------ |
+| `host`   | `compose.host.yaml`   | containers of one ECU | host network and IPC, DDS on loopback            | the shared loopback                  |
+| `bridge` | `compose.bridge.yaml` | separate ECUs         | bridge network `172.30.87.0/24`, fixed addresses | SSH forwards it keeps as tunnel jobs |
 
-In the `host` topology the daemon of `main_ecu` has the other two as
+In both topologies the daemon of `main_ecu` has the other two as
 [peers](../../autoware_system_designer_studio/README.md#peers): its workbench and API on port 8781
 launch, observe and shut down every unit.
 
 Every daemon binds the loopback of its own network namespace. In the `bridge` topology each
-container runs an `sshd` on port 2222 as the unprivileged user `asd`; `run.sh` makes a client key
-per `up`, and forwards each daemon port to the same port on the host, since a daemon answers only
-requests whose `Host` names its port. DDS crosses the bridge network without shared memory.
+container runs an `sshd` on port 2222 as the unprivileged user `asd`. `run.sh` makes two keys per
+`up`: the host's, with which it forwards each daemon port to the same port on the host (a daemon
+answers only requests whose `Host` names its port), and the one the daemon of `main_ecu` opens its
+forwards to the other units with. DDS crosses the bridge network without shared memory.
 
 ## Use
 
@@ -61,13 +62,16 @@ not read.
 
 ## Faults
 
-In the `bridge` topology a unit can be cut off the way an ECU fails:
+In the `bridge` topology a unit can be cut off the way an ECU fails. The daemon of `main_ecu`
+reports it `unreachable` within about 15 s and reads it anew once it answers again:
 
 ```bash
 ./run.sh compose bridge pause sub_ecu_2                                   # frozen ECU
 ./run.sh compose bridge unpause sub_ecu_2
 ./run.sh compose bridge kill sub_ecu_2                                    # power loss
+./run.sh compose bridge start sub_ecu_2                                   # power back, launch gone
 docker network disconnect asd-multi-unit-bridge_vehicle asd-multi-unit-bridge-sub_ecu_2-1
+docker network connect --ip 172.30.87.13 asd-multi-unit-bridge_vehicle asd-multi-unit-bridge-sub_ecu_2-1
 ./run.sh compose bridge exec -u root sub_ecu_2 tc qdisc add dev eth0 root netem delay 50ms loss 5%
 ```
 
@@ -78,14 +82,16 @@ python3 -m pytest docker/multi_unit/test            # --keep leaves the last top
 ```
 
 The tests carry the marker `docker` and are skipped without a Docker daemon. They bring up each
-topology in turn and check, through the daemons' API alone: each daemon serves its unit, every
-unit launches, each listener receives the topic of another unit, member output is readable, a
-paused unit silences its topics and resumes (`bridge`), a shutdown ends one unit's processes and
-leaves the others running, and each daemon lists the past run of its own unit. In the `host`
-topology every unit is driven through the daemon of `main_ecu`, which also lists the sessions,
-jobs and past runs of all three. They are not part of `colcon test`.
+topology in turn and drive every unit through the daemon of `main_ecu` alone: the peers connect
+without mismatch, every unit launches, each listener receives the topic of another unit, member
+output is readable, a shutdown ends one unit's processes and leaves the others running, and the
+past runs of all three are listed and read. In the `bridge` topology a unit also stays reachable
+over a slow, lossy link, and is reported `unreachable` and then read anew when it is paused, taken
+off the network, or killed and started again. They are not part of `colcon test`.
 
 ## Limits
 
 Docker does not reproduce NIC and switch timing, time synchronisation, GPU or Jetson targets, or
-the start order of system services.
+the start order of system services. `docker network disconnect` removes the container's interface,
+where a pulled cable leaves it in place: the daemons find each other again, the DDS participants of
+a running launch do not, and the unit needs a new launch.

@@ -30,11 +30,18 @@ Requests naming a peer's unit are forwarded to it. Log and rate follows made thr
 are released on the peer once this daemon's last event stream closes; rate follows are made again
 after a reconnect.
 
+A peer on another device is reached through an SSH forward: a binding with an SSH destination
+(``--peer-ssh <unit>=<destination>`` or ``ssh`` in the site file) makes the daemon keep
+``ssh -N -L 127.0.0.1:<port>:127.0.0.1:<port> <destination>`` running as a job of kind ``tunnel``,
+started again with backoff whenever it ends. The forward keeps the peer's port, which the peer
+requires in ``Host``; everything else about the connection (user, port, keys, host keys) comes from
+the SSH configuration of the daemon's user.
+
 Site file (YAML)::
 
     peers:
       sub_ecu_1: http://127.0.0.1:8782
-      sub_ecu_2: {url: "http://127.0.0.1:8783"}
+      sub_ecu_2: {url: "http://127.0.0.1:8783", ssh: sub-ecu-2}
 """
 
 from __future__ import annotations
@@ -43,7 +50,9 @@ import asyncio
 import json
 import logging
 import os
-from dataclasses import dataclass
+import shutil
+import time
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Iterable, Mapping, Optional
 from urllib.parse import urlsplit
@@ -81,7 +90,16 @@ AGGREGATE_TIMEOUT_S = 5.0
 STREAM_IDLE_HEARTBEATS = 3.0
 STREAM_IDLE_MIN_S = 5.0
 DEFAULT_HEARTBEAT_S = 15.0
-MAX_HEAD_BYTES = 16 * 1024
+
+TUNNEL_JOB_KIND = "tunnel"
+SSH = "ssh"
+# Applied over the user's SSH configuration: no prompt, and a forward that fails or goes silent ends the job.
+SSH_OPTIONS = ("BatchMode=yes", "ExitOnForwardFailure=yes", "ServerAliveInterval=5", "ServerAliveCountMax=3")
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
+TUNNEL_RESTART_MIN_S = 1.0
+TUNNEL_RESTART_MAX_S = 15.0
+# A tunnel that lasted this long restarts without the backoff it had built up.
+TUNNEL_STABLE_S = 30.0
 MAX_BODY_BYTES = 64 << 20
 
 Describe = Callable[[], Awaitable[dict[str, Any]]]
@@ -101,8 +119,11 @@ class PeerUnreachable(Exception):
 
 @dataclass(frozen=True)
 class PeerSpec:
+    """A unit's peer address, and the SSH destination it is forwarded from when it is on another device."""
+
     unit: str
     url: str
+    ssh: Optional[str] = None
 
 
 def normalize_url(text: str) -> str:
@@ -126,6 +147,42 @@ def parse_peer(text: str) -> PeerSpec:
     if not sep or not unit.strip():
         raise PeerConfigError(f"invalid peer {text!r} (expected <unit>=http://<host>:<port>)")
     return PeerSpec(unit.strip(), normalize_url(url))
+
+
+def parse_destination(text: str) -> str:
+    """An SSH destination as ``ssh`` takes it: a configured host name or ``[user@]host``."""
+    destination = text.strip()
+    if not destination or destination.startswith("-") or any(ch.isspace() for ch in destination):
+        raise PeerConfigError(f"invalid SSH destination {text!r}")
+    return destination
+
+
+def parse_peer_ssh(text: str) -> tuple[str, str]:
+    """A ``<unit>=<destination>`` SSH binding."""
+    unit, sep, destination = text.partition("=")
+    if not sep or not unit.strip():
+        raise PeerConfigError(f"invalid peer SSH binding {text!r} (expected <unit>=<destination>)")
+    return unit.strip(), parse_destination(destination)
+
+
+def with_ssh(specs: Iterable[PeerSpec], bindings: Iterable[tuple[str, str]]) -> list[PeerSpec]:
+    """``specs`` with the SSH destination of each bound unit replaced."""
+    by_unit = {spec.unit: spec for spec in specs}
+    for unit, destination in bindings:
+        if unit not in by_unit:
+            raise PeerConfigError(f"SSH destination for compute unit {unit!r}, which has no peer")
+        by_unit[unit] = replace(by_unit[unit], ssh=destination)
+    return list(by_unit.values())
+
+
+def validate_specs(specs: Iterable[PeerSpec]) -> None:
+    """A forwarded peer answers on this device's loopback, and one address has one way to it."""
+    ssh_by_url: dict[str, Optional[str]] = {}
+    for spec in specs:
+        if spec.ssh is not None and urlsplit(spec.url).hostname not in LOOPBACK_HOSTS:
+            raise PeerConfigError(f"peer of {spec.unit!r} is forwarded over SSH, so its URL must be on 127.0.0.1")
+        if ssh_by_url.setdefault(spec.url, spec.ssh) != spec.ssh:
+            raise PeerConfigError(f"peers at {spec.url} name different SSH destinations")
 
 
 def site_file_path(explicit: Optional[Path]) -> Optional[Path]:
@@ -154,10 +211,13 @@ def load_site_file(path: Path) -> list[PeerSpec]:
     specs = []
     for unit, entry in peers.items():
         url = entry.get("url") if isinstance(entry, dict) else entry
+        ssh = entry.get("ssh") if isinstance(entry, dict) else None
         if not isinstance(unit, str) or not isinstance(url, str):
             raise PeerConfigError(f"site file {path}: peer {unit!r} needs a URL")
+        if ssh is not None and not isinstance(ssh, str):
+            raise PeerConfigError(f"site file {path}: ssh of peer {unit!r} must be a destination")
         try:
-            specs.append(PeerSpec(unit, normalize_url(url)))
+            specs.append(PeerSpec(unit, normalize_url(url), None if ssh is None else parse_destination(ssh)))
         except PeerConfigError as exc:
             raise PeerConfigError(f"site file {path}: {exc}") from exc
     return specs
@@ -292,6 +352,47 @@ class PeerClient:
         return reader, writer
 
 
+class PeerTunnel:
+    """The SSH forward a peer's address answers on, kept running as a job; ``job`` is the current one."""
+
+    def __init__(self, url: str, destination: str, runner: jobs.JobRunner) -> None:
+        self.destination = destination
+        self.job: Optional[jobs.Job] = None
+        self._port = urlsplit(url).port
+        self._runner = runner
+
+    def argv(self) -> list[str]:
+        forward = f"127.0.0.1:{self._port}:127.0.0.1:{self._port}"
+        options = [arg for option in SSH_OPTIONS for arg in ("-o", option)]
+        return [shutil.which(SSH) or SSH, "-N", *options, "-L", forward, "--", self.destination]
+
+    async def run(self) -> None:
+        delay = TUNNEL_RESTART_MIN_S
+        while True:
+            started = time.monotonic()
+            spec = jobs.JobSpec(
+                key=f"{TUNNEL_JOB_KIND}:{self._port}",
+                kind=TUNNEL_JOB_KIND,
+                title=f"tunnel {self.destination}:{self._port}",
+                argv=self.argv(),
+                cwd=Path("/"),
+                params={"destination": self.destination, "port": self._port},
+            )
+            try:
+                job = await self._runner.start(spec)
+            except api.ApiError as exc:
+                logger.warning("tunnel to %s not started: %s", self.destination, exc.message)
+            else:
+                previous, self.job = self.job, job
+                if previous is not None:
+                    self._runner.forget(previous.id)
+                await job.done.wait()
+                if time.monotonic() - started >= TUNNEL_STABLE_S:
+                    delay = TUNNEL_RESTART_MIN_S
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, TUNNEL_RESTART_MAX_S)
+
+
 def _session_key(view: Mapping[str, Any]) -> tuple[Any, Any, Any]:
     return view.get("compute_unit"), view.get("system"), view.get("mode")
 
@@ -303,9 +404,17 @@ class PeerLink:
     peer is unreachable.
     """
 
-    def __init__(self, url: str, units: Iterable[str], hub: EventHub, describe: Describe) -> None:
+    def __init__(
+        self,
+        url: str,
+        units: Iterable[str],
+        hub: EventHub,
+        describe: Describe,
+        tunnel: Optional[PeerTunnel] = None,
+    ) -> None:
         self.url = url
         self.units = sorted(set(units))
+        self.tunnel = tunnel
         self.client = PeerClient(url)
         self.state = PEER_CONNECTING
         self.error: Optional[str] = None
@@ -332,6 +441,8 @@ class PeerLink:
             "error": self.error,
             "version": self.version,
             "mismatch": list(self.mismatch),
+            "ssh": None if self.tunnel is None else self.tunnel.destination,
+            "tunnel": None if self.tunnel is None or self.tunnel.job is None else self.tunnel.job.id,
         }
 
     # -- connection --------------------------------------------------------
@@ -669,11 +780,17 @@ def _log_failure(task: asyncio.Task) -> None:
 class PeerRegistry:
     """The peer links of this daemon, by compute unit."""
 
-    def __init__(self, specs: Iterable[PeerSpec], hub: EventHub, describe: Describe) -> None:
+    def __init__(self, specs: Iterable[PeerSpec], hub: EventHub, describe: Describe, runner: jobs.JobRunner) -> None:
+        specs = merge_specs(specs)
+        validate_specs(specs)
         units_by_url: dict[str, list[str]] = {}
-        for spec in merge_specs(specs):
+        for spec in specs:
             units_by_url.setdefault(spec.url, []).append(spec.unit)
-        self.links = [PeerLink(url, units, hub, describe) for url, units in units_by_url.items()]
+        ssh_by_url = {spec.url: spec.ssh for spec in specs}
+        self.links = [
+            PeerLink(url, units, hub, describe, PeerTunnel(url, ssh_by_url[url], runner) if ssh_by_url[url] else None)
+            for url, units in units_by_url.items()
+        ]
         self._by_unit = {unit: link for link in self.links for unit in link.units}
         self._tasks: list[asyncio.Task] = []
 
@@ -683,6 +800,7 @@ class PeerRegistry:
 
     def start(self) -> None:
         self._tasks = [asyncio.ensure_future(link.run()) for link in self.links]
+        self._tasks += [asyncio.ensure_future(link.tunnel.run()) for link in self.links if link.tunnel is not None]
 
     async def stop(self) -> None:
         for link in self.links:

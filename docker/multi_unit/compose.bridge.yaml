@@ -1,6 +1,7 @@
 # Topology B: the units as separate ECUs. One bridge network with fixed addresses; every daemon
 # listens on its own loopback and is reached through the container's sshd. A forward keeps the
-# daemon's port number, which the daemon requires in the Host header.
+# daemon's port number, which the daemon requires in the Host header. The daemon of main_ecu serves
+# the other units through SSH forwards it keeps to their daemons.
 name: asd-multi-unit-bridge
 
 x-unit: &unit
@@ -50,6 +51,12 @@ services:
       <<: *environment
       ASD_COMPUTE_UNIT: main_ecu
       ASD_PORT: ${ASD_PORT_MAIN_ECU:-8781}
+      ASD_PEERS: >-
+        sub_ecu_1=http://127.0.0.1:${ASD_PORT_SUB_ECU_1:-8782}
+        sub_ecu_2=http://127.0.0.1:${ASD_PORT_SUB_ECU_2:-8783}
+      ASD_PEER_SSH: >-
+        sub_ecu_1=${ASD_SUBNET_PREFIX:-172.30.87}.12
+        sub_ecu_2=${ASD_SUBNET_PREFIX:-172.30.87}.13
     networks:
       vehicle:
         ipv4_address: ${ASD_SUBNET_PREFIX:-172.30.87}.11
