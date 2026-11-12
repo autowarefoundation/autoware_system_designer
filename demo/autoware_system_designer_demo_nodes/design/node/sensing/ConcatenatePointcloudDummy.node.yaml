@@ -1,0 +1,84 @@
+autoware_system_design_format: 0.4.1
+
+name: ConcatenatePointcloudDummy.node
+
+description: Dummy preprocessing node that queues up to eight LiDAR point clouds and odometry, and concatenates them into a single output cloud on its own timer.
+
+package:
+  name: autoware_system_designer_demo_nodes
+  provider: dummy
+
+launch:
+  plugin: autoware::system_dummy_modules::ConcatenatePointcloud
+  executable: concatenate_pointcloud_node
+  node_output: screen
+
+# interfaces
+subscribers:
+  - name: ros_transform_static
+    message_type: tf2_msgs/msg/TFMessage
+    global: /tf_static
+    qos:
+      reliability: reliable
+      durability: transient_local
+  - name: input1
+    message_type: std_msgs/msg/Float32MultiArray
+  - name: input2
+    message_type: std_msgs/msg/Float32MultiArray
+  - name: input3
+    message_type: std_msgs/msg/Float32MultiArray
+  - name: input4
+    message_type: std_msgs/msg/Float32MultiArray
+  - name: input5
+    message_type: std_msgs/msg/Float32MultiArray
+  - name: input6
+    message_type: std_msgs/msg/Float32MultiArray
+  - name: input7
+    message_type: std_msgs/msg/Float32MultiArray
+  - name: input8
+    message_type: std_msgs/msg/Float32MultiArray
+  - name: odometry
+    message_type: std_msgs/msg/Float64MultiArray
+publishers:
+  - name: output
+    message_type: std_msgs/msg/Float32MultiArray
+
+param_files:
+  - name: param_file
+    default: config/concatenate_pointclouds.param.yaml
+
+param_values:
+  - name: input_frame
+    type: string
+    default: base_link
+  - name: output_frame
+    type: string
+    default: base_link
+
+# processes
+processes:
+  - name: queue_pointcloud
+    trigger_conditions:
+      - on_input: input1
+      - on_input: input2
+      - on_input: input3
+      - on_input: input4
+      - on_input: input5
+      - on_input: input6
+      - on_input: input7
+      - on_input: input8
+    outcomes:
+      - to_queue: pointclouds
+  - name: queue_odometry
+    trigger_conditions:
+      - on_input: odometry
+    outcomes:
+      - to_queue: odometry
+  - name: concatenate
+    trigger_conditions:
+      - periodic: 10.0 # Hz
+    reads:
+      - from_queue: pointclouds
+      - from_queue: odometry
+    outcomes:
+      - to_output: output

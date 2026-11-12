@@ -25,7 +25,7 @@ You cannot tell which node crashed, kill one without killing all, or restart a s
 
 ```bash
 cd ~/workspace/awf/autoware
-colcon build --packages-up-to autoware_system_designer autoware_system_design_examples autoware_sample_designs
+colcon build --packages-up-to autoware_system_designer autoware_system_designer_demo_systems autoware_sample_designs
 source install/setup.bash
 ```
 
