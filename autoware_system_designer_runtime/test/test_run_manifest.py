@@ -27,6 +27,7 @@ def test_run_manifest_names_what_the_log_directory_holds(tmp_path):
         ecu="main_ecu",
         deploy=None,
         members=["/sensing/lidar/driver", "/perception/detector"],
+        launch="20260521_153012-a1b2",
     )
     assert path == tmp_path / RUN_MANIFEST
     manifest = json.loads(path.read_text())
@@ -34,6 +35,7 @@ def test_run_manifest_names_what_the_log_directory_holds(tmp_path):
     assert manifest["mode"] == "LoggingSimulation"
     assert manifest["compute_unit"] == "main_ecu"
     assert manifest["deploy"] is None
+    assert manifest["launch"] == "20260521_153012-a1b2"
     assert manifest["system_structure"] == str(structure.resolve())
     assert manifest["started"] > 0
     assert manifest["members"] == ["/sensing/lidar/driver", "/perception/detector"]
@@ -45,6 +47,7 @@ def test_run_manifest_falls_back_to_the_structure_file_name(tmp_path):
     )
     manifest = json.loads(path.read_text())
     assert manifest["system"] is None and manifest["mode"] == "Vehicle" and manifest["deploy"] == "site"
+    assert manifest["launch"] is None
 
 
 def test_runs_starting_in_one_second_get_their_own_log_directory(tmp_path):

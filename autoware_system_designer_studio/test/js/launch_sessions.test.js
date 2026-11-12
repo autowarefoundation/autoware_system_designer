@@ -300,6 +300,37 @@ test("output rates label, mark busy logs and follow activity events", () => {
   assert.equal(live.logRate("/b/z"), 0);
 });
 
+test("the runs of a launch are gathered where its first listed run stands", () => {
+  const at = (s) => new Date(2026, 10, 9, 12, 0, s).getTime() / 1000;
+  const run = (name, started, compute_unit, launchId) => ({
+    run: name,
+    started: at(started),
+    mode: "Runtime",
+    compute_unit,
+    launch: launchId,
+  });
+  const groups = launch.runGroups([
+    run("sub/c", 40, "sub_ecu", "A"),
+    run("d", 30, "main_ecu", undefined),
+    run("sub/b", 2, "sub_ecu", "A"),
+    run("a", 1, "main_ecu", "A"),
+  ]);
+  assert.deepEqual(
+    groups.map((g) => [g.launch, g.runs.map((r) => r.run)]),
+    [
+      ["A", ["sub/c", "sub/b", "a"]],
+      [null, ["d"]],
+    ],
+  );
+  assert.deepEqual(
+    groups.map((g) => [g.value, g.label]),
+    [
+      ["launch:A", "2026-11-09 12:00:01 · Runtime · main_ecu, sub_ecu"],
+      ["d", "2026-11-09 12:00:30 · Runtime · main_ecu"],
+    ],
+  );
+});
+
 test("a run is labelled by its start time and what it ran", () => {
   const label = launch.runLabel({
     run: "20261109_124314",

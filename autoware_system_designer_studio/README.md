@@ -155,28 +155,28 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `GET /api/events`  | Server-Sent Events with daemon-wide sequence numbers as event ids (topics below)                             |
 | `POST /api/rpc`    | Request envelope `{"id", "method", "params"}` for any method below                                           |
 
-| Method                                            | Params                                                                             | Result                                                  |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `health`                                          | -                                                                                  | Daemon status                                           |
-| `systems.list`                                    | -                                                                                  | Exported systems                                        |
-| `jobs.list`                                       | -                                                                                  | `{"jobs": [job]}`                                       |
-| `jobs.get`                                        | `job`, `since` (log seq, default 0), `limit`                                       | `{"job", "log": {"first_seq", "lines"}}`                |
-| `jobs.cancel`                                     | `job`                                                                              | job                                                     |
-| `build.start`                                     | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit`                        | job                                                     |
-| `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn` | session                                                 |
-| `launch.status`                                   | `compute_unit` (optional)                                                          | `{"sessions": [session]}`, members included             |
-| `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`, `exact` (optional: the member named `pattern` only)     | `{"members": [path]}` acted on                          |
-| `launch.follow`                                   | `compute_unit`, `path`, `system` and `mode` (optional: the session of that mode)   | `{"path", "out": [lines], "err": [lines]}`              |
-| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow), `system` and `mode` (optional)    | `{"released": [path]}`                                  |
-| `launch.runs`                                     | `system` (optional)                                                                | `{"runs": [run]}`, newest first                         |
-| `launch.run`                                      | `run`                                                                              | run with `members: [{"path", "slug"}]`                  |
-| `launch.run_tail`                                 | `run`, `member` (its directory name)                                               | `{"run", "member", "out", "err"}`                       |
-| `launch.run_rates`                                | `run`, `start`, `sample`, `span_s` (optional: the span between two sample numbers) | run with `times`, `density` and the rates over the span |
-| `launch.shutdown`                                 | `compute_unit`                                                                     | `{"shutting_down": true}`                               |
-| `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                     | `{"state", "message"}` of the window                    |
-| `monitor.follow`, `monitor.unfollow`              | `compute_unit`, `client` (optional: the caller's name)                             | `{"interval_s"}`, `{"released"}`                        |
-| `monitor.sample`                                  | `compute_unit`, `interval` (seconds, default 1, at most 20)                        | rates over the interval                                 |
-| `rviz.start`                                      | -                                                                                  | job                                                     |
+| Method                                            | Params                                                                                       | Result                                                  |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `health`                                          | -                                                                                            | Daemon status                                           |
+| `systems.list`                                    | -                                                                                            | Exported systems                                        |
+| `jobs.list`                                       | -                                                                                            | `{"jobs": [job]}`                                       |
+| `jobs.get`                                        | `job`, `since` (log seq, default 0), `limit`                                                 | `{"job", "log": {"first_seq", "lines"}}`                |
+| `jobs.cancel`                                     | `job`                                                                                        | job                                                     |
+| `build.start`                                     | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit`                                  | job                                                     |
+| `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn`, `launch` | session                                                 |
+| `launch.status`                                   | `compute_unit` (optional)                                                                    | `{"sessions": [session]}`, members included             |
+| `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`, `exact` (optional: the member named `pattern` only)               | `{"members": [path]}` acted on                          |
+| `launch.follow`                                   | `compute_unit`, `path`, `system` and `mode` (optional: the session of that mode)             | `{"path", "out": [lines], "err": [lines]}`              |
+| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow), `system` and `mode` (optional)              | `{"released": [path]}`                                  |
+| `launch.runs`                                     | `system` (optional)                                                                          | `{"runs": [run]}`, newest first                         |
+| `launch.run`                                      | `run`                                                                                        | run with `members: [{"path", "slug"}]`                  |
+| `launch.run_tail`                                 | `run`, `member` (its directory name)                                                         | `{"run", "member", "out", "err"}`                       |
+| `launch.run_rates`                                | `run`, `start`, `sample`, `span_s` (optional: the span between two sample numbers)           | run with `times`, `density` and the rates over the span |
+| `launch.shutdown`                                 | `compute_unit`                                                                               | `{"shutting_down": true}`                               |
+| `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                               | `{"state", "message"}` of the window                    |
+| `monitor.follow`, `monitor.unfollow`              | `compute_unit`, `client` (optional: the caller's name)                                       | `{"interval_s"}`, `{"released"}`                        |
+| `monitor.sample`                                  | `compute_unit`, `interval` (seconds, default 1, at most 20)                                  | rates over the interval                                 |
+| `rviz.start`                                      | -                                                                                            | job                                                     |
 
 | Event topic       | Data                                                                                                   |
 | ----------------- | ------------------------------------------------------------------------------------------------------ |
@@ -267,12 +267,20 @@ followed again.
 The Logs view follows the selected node (a composable node through its container) while
 it is shown, keeps the followed log once the launcher ended and marks where it ended.
 
-A selector beside the Logs title shows a past run instead of the live sessions. A run is
+A selector beside the Logs title shows a past launch instead of the live sessions. A run is
 a directory under the runtime's log base (`/tmp/autoware_system_designer_logs`, and the parents of
 the sessions' log directories) holding a `run.json`; a directory without one is not a run. The
 daemon lists the runs of the system that no active session is writing, newest first, labelled by
 start time, mode, deploy variant and compute unit from the manifest. A run is one runtime, so one
-compute unit: members of the other units are dimmed like members without a log. `launch.run` gives
+compute unit. A session and its
+run name their launch (`launch`): a unit started while another unit of the system runs or starts the
+mode joins that unit's launch, a peer's units as last reported, and the first unit opens a new one;
+`launch.start` takes `launch` to name it. The Logs selector lists one entry per launch, labelled by
+its first start, mode, deploy variant and compute units, and shows the members of all its runs on
+one tree; the log files stay per run on their unit and are read from there. A member with a
+directory in several runs of the launch, its unit started again within it, shows their tails in
+start order, each under its run's label. A run naming no launch is an entry of its own. The Topics
+selector lists the runs, grouped by launch. `launch.run` gives
 a run's members, the manifest's member paths that have a directory, each with its directory name;
 `launch.run_tail` the tails of one directory's `out` and `err` files. The tree keeps the mode's
 structure: members the run holds no log for are dimmed, its members outside the mode are listed

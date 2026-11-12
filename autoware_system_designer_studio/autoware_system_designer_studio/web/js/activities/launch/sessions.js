@@ -99,6 +99,62 @@
     return parts.join(" · ");
   }
 
+  // Runs in listing order, those of one launch gathered where its first run
+  // stands: [{ launch, value, label, runs }], `launch` null for a run naming
+  // none. `value` keys the group in a selector. A launch is labelled by its
+  // first start, mode, deploy variant and compute units.
+  function runGroups(runs) {
+    const groups = [];
+    const byLaunch = new Map();
+    runs.forEach((run) => {
+      let group = run.launch ? byLaunch.get(run.launch) : null;
+      if (!group) {
+        group = {
+          launch: run.launch || null,
+          value: run.launch ? `launch:${run.launch}` : run.run,
+          label: "",
+          runs: [],
+        };
+        if (run.launch) byLaunch.set(run.launch, group);
+        groups.push(group);
+      }
+      group.runs.push(run);
+    });
+    groups.forEach((group) => {
+      const first = group.runs.reduce((a, b) =>
+        (b.started || 0) < (a.started || 0) ? b : a,
+      );
+      const units = [
+        ...new Set(group.runs.map((run) => run.compute_unit).filter(Boolean)),
+      ].sort();
+      group.label = runLabel({ ...first, compute_unit: units.join(", ") });
+    });
+    return groups;
+  }
+
+  // The options of a run selector over `groups`: "Live", then one option per
+  // launch (`whole`), or a launch as a group of its units' runs.
+  function runOptions(groups, whole) {
+    const { element } = SD.widgets;
+    const option = (value, label) => {
+      const item = element("option", "", label);
+      item.value = value;
+      return item;
+    };
+    return [
+      option("", "Live"),
+      ...groups.map((group) => {
+        if (whole || !group.launch) return option(group.value, group.label);
+        const items = element("optgroup");
+        items.label = group.label;
+        items.append(
+          ...group.runs.map((run) => option(run.run, runLabel(run))),
+        );
+        return items;
+      }),
+    ];
+  }
+
   function sessionLabel(session) {
     if (!session) return "";
     const failed = sessionFailures(session).length;
@@ -290,7 +346,9 @@
   launch.stateToken = stateToken;
   launch.stateLabel = stateLabel;
   launch.sessionLabel = sessionLabel;
+  launch.runGroups = runGroups;
   launch.runLabel = runLabel;
+  launch.runOptions = runOptions;
   launch.sessionFailures = sessionFailures;
   launch.sessionToken = sessionToken;
 })();

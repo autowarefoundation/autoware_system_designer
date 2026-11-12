@@ -158,7 +158,7 @@ Each member gets its own directory under `--log-dir`:
 
 ```text
 /tmp/autoware_system_designer_logs/20260521_153012/
-├── run.json           the run: system, mode, compute unit, deploy, structure path, start time, member paths
+├── run.json           the run: system, mode, compute unit, deploy, launch, structure path, start time, member paths
 └── <member-slug>/
     ├── cmdline        full argv used to spawn the process
     ├── pid            the process group leader's PID
@@ -168,7 +168,9 @@ Each member gets its own directory under `--log-dir`:
 
 The default base path is `/tmp/autoware_system_designer_logs/`; a timestamped
 subdirectory is created per run unless `--log-dir` overrides it. `run.json` names what the
-directory holds, so a reader can map a member directory back to its member path.
+directory holds, so a reader can map a member directory back to its member path. `--launch-id`
+sets its `launch`: the runs of a system's compute units launched together carry one id, each in its
+own directory on its own unit. A restarted or respawned member appends to its `out` and `err`.
 
 ---
 

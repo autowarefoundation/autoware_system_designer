@@ -27,7 +27,14 @@ from autoware_system_designer_studio.serve import api, jobs, launch, peers
 from autoware_system_designer_studio.serve.server import ServeDaemon
 
 from .test_serve import PKG, SYSTEM, UNITS, _await_job_output, _install_tree, _Running
-from .test_serve_launch import SHEBANG, _fake_launcher, _greeted, _launch_env, _Recording, run_dir  # noqa: F401 - fixture
+from .test_serve_launch import (  # noqa: F401 - fixture
+    SHEBANG,
+    _fake_launcher,
+    _greeted,
+    _launch_env,
+    _Recording,
+    run_dir,
+)
 
 SYSTEM_ID = f"{PKG}:{SYSTEM}"
 
@@ -441,6 +448,28 @@ def test_a_system_runs_one_mode_at_a_time_across_daemons(units):
     _until(lambda: main.unit("sub_ecu")["status"] == "available", "exit of the peer's launch")
     main.launch(compute_unit="main_ecu", mode="Simulation", args=nosocket)
     assert main.error("launch.start", system=SYSTEM_ID, compute_unit="sub_ecu", mode="Runtime") == api.CONFLICT
+    main.call("launch.shutdown", compute_unit="main_ecu")
+
+
+def test_the_units_of_a_system_share_a_launch_until_all_ended(units):
+    main, sub = units.main, units.sub
+    nosocket = {"behaviour": "nosocket"}
+    first = main.launch(compute_unit="main_ecu", args=nosocket)["launch"]
+    assert units.launch_sub(args=nosocket)["launch"] == first
+    assert sub.daemon.launch.session("sub_ecu").launch_id == first
+
+    # A unit started again while another still runs stays in the launch.
+    main.call("launch.shutdown", compute_unit="sub_ecu")
+    _until(lambda: main.unit("sub_ecu")["status"] == "available", "exit of the peer's launch")
+    assert units.launch_sub(args=nosocket)["launch"] == first
+    main.call("launch.shutdown", compute_unit="main_ecu")
+    _until(lambda: main.unit("main_ecu")["status"] == "available", "exit of the local launch")
+    assert main.launch(compute_unit="main_ecu", args=nosocket)["launch"] == first
+
+    for unit in ("main_ecu", "sub_ecu"):
+        main.call("launch.shutdown", compute_unit=unit)
+        _until(lambda: main.unit(unit)["status"] == "available", f"exit of {unit}")
+    assert main.launch(compute_unit="main_ecu", args=nosocket)["launch"] != first
     main.call("launch.shutdown", compute_unit="main_ecu")
 
 

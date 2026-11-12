@@ -1133,14 +1133,7 @@
           );
           const current = run?.name || "";
           runSelect.replaceChildren(
-            ...[
-              ["", "Live"],
-              ...listed.map((r) => [r.run, launch.runLabel(r)]),
-            ].map(([value, label]) => {
-              const option = element("option", "", label);
-              option.value = value;
-              return option;
-            }),
+            ...launch.runOptions(launch.runGroups(listed)),
           );
           if (current && !listed.some((r) => r.run === current)) setRun("");
           else runSelect.value = current;

@@ -46,6 +46,7 @@ os.makedirs(os.path.join(log_dir, "demo_talker"), exist_ok=True)
 with open(os.path.join(log_dir, "run.json"), "w") as f:
     json.dump({"system_structure": args[0], "mode": "Runtime", "compute_unit": args[args.index("--compute-unit") + 1],
                "deploy": None,
+               "launch": args[args.index("--launch-id") + 1] if "--launch-id" in args else None,
                "started": 1.5, "members": ["/demo/talker", "/demo/listener"]}, f)
 with open(os.path.join(log_dir, "demo_talker", "out"), "w") as f:
     f.write("hello 1\\nhello 2\\n")
@@ -356,7 +357,18 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     assert argv[1].endswith("system_structure/Runtime.json")
     assert argv[2:6] == ["--compute-unit", "main_ecu", "--control", job["result"]["job"]["detail"]["socket"]]
     assert argv[6:8] == ["--control-policy", "guard"]
-    assert argv[8:] == ["--deploy", "car_a", "--arg", "behaviour=", "--arg", "x=1", "--measure"]
+    launch_id = job["result"]["job"]["params"]["launch"]
+    assert argv[8:] == [
+        "--deploy",
+        "car_a",
+        "--launch-id",
+        launch_id,
+        "--arg",
+        "behaviour=",
+        "--arg",
+        "x=1",
+        "--measure",
+    ]
     assert job["result"]["job"]["params"]["measure"] is True
 
     deadline = time.time() + 5
@@ -574,6 +586,7 @@ def test_shutdown_of_a_launch_without_a_channel_cancels_its_job(launching):
         ({"policy": "lax"}, api.INVALID_PARAMS),
         ({"measure": "yes"}, api.INVALID_PARAMS),
         ({"args": "x=1"}, api.INVALID_PARAMS),
+        ({"launch": "a/b"}, api.INVALID_PARAMS),
         ({"system": "x:y"}, api.NOT_FOUND),
     ],
 )
@@ -806,6 +819,22 @@ def test_the_run_of_a_session_is_listed_once_the_session_exited(launching):
     assert body["result"]["members"] == [{"path": "/demo/talker", "slug": "demo_talker"}]
     status, body = launching.rpc({"method": "launch.run_tail", "params": {"run": run, "member": "demo_talker"}})
     assert status == 200 and body["result"]["out"] == ["hello 1", "hello 2"] and body["result"]["err"] == ["bye"]
+
+
+def test_a_session_and_its_run_name_their_launch(launching):
+    _, body = _start(launching)
+    launch_id = body["result"]["launch"]
+    assert launch.valid_launch_id(launch_id)
+    session = _wait_session(launching, _greeted, "connect")
+    assert session["launch"] == launch_id
+    launching.rpc({"method": "launch.shutdown", "params": {"compute_unit": "main_ecu"}})
+    _wait_session(launching, lambda s: s["state"] == launch.SESSION_EXITED, "exit")
+    run = Path(session["log_dir"]).name
+    _, body = launching.rpc({"method": "launch.runs", "params": {"system": f"{PKG}:{SYSTEM}"}})
+    assert [r["launch"] for r in body["result"]["runs"] if r["run"] == run] == [launch_id]
+    # No unit of the system runs: the next start opens a launch, or takes the one it names.
+    _, body = _start(launching, launch="bench-1")
+    assert body["result"]["launch"] == "bench-1"
 
 
 def test_a_session_keeps_the_runtime_counts_of_its_members():

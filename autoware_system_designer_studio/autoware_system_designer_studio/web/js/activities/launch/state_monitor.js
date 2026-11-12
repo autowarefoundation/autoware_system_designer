@@ -13,10 +13,11 @@
 // `member.activity` rates; a composable node's output is its container's. The
 // selected node or module is the store's `entity`, shared with Explore; a
 // selected module shows the severest state among its members. A selector
-// beside the title shows a past run instead: the daemon lists the runtime's
-// log directories and tails their files; the tree keeps the mode's structure,
-// members the run holds no log for are dimmed, its members outside the mode
-// are listed below the tree, and no run state is shown.
+// beside the title shows a past launch instead, the runs of its compute units
+// as one tree: the daemon lists the runtime's log directories and tails their
+// files; the tree keeps the mode's structure, members no run holds a log for
+// are dimmed, members outside the mode are listed below the tree, and no run
+// state is shown.
 (function () {
   const SD = window.SD;
   const { element, terminal, mainView } = SD.widgets;
@@ -62,7 +63,7 @@
     const runNote = element(
       "p",
       "monitor-run-note",
-      "Logs of a past run; run states are not recorded.",
+      "Logs of a past launch; run states are not recorded.",
     );
     runNote.hidden = true;
     const extraList = element("div", "monitor-run-extras");
@@ -116,10 +117,13 @@
     let memberTokens = new Map();
     // Tree path -> the fastest output growth among the members within; filled per render.
     let logRates = new Map();
-    // The past run shown instead of the live sessions, or null: its summary and
-    // members from the daemon, member path -> directory name for the members of
-    // the tree, and {slug, label} of its members outside the tree.
+    // The past launch shown instead of the live sessions, or null: its label,
+    // its runs oldest first with their members from the daemon, member path ->
+    // the member's logs [{ run, slug, label }] for the members of the tree, and
+    // { path, logs } of its members outside the tree.
     let run = null;
+    // Past runs by launch, as the selector lists them.
+    let runGroups = [];
     let runSeq = 0;
     let selectedExtra = null;
 
@@ -380,7 +384,7 @@
       const title = entity.container_path
         ? `${entity.member_path} · in ${entity.container_path}`
         : entity.member_path;
-      view.setTitle(run ? `${title} · ${runLabel(run.summary)}` : title);
+      view.setTitle(run ? `${title} · ${run.label}` : title);
       showState();
       renderLaunchers();
       renderExtras();
@@ -419,21 +423,28 @@
 
     // -- past runs
 
-    // Fills the member log from a member directory of the shown run.
-    function showRunLog(slug) {
+    // Fills the member log from the member's directories in the shown launch,
+    // one run after another under the run's label where there are several.
+    function showRunLog(logs) {
       unfollow();
       const seq = ++runSeq;
-      if (!slug) {
+      if (!logs?.length) {
         memberLog.clear("No log in this run.");
         return;
       }
       memberLog.clear("Loading…");
-      daemon
-        .rpc("launch.run_tail", { run: run.name, member: slug })
-        .then((result) => {
+      Promise.all(
+        logs.map(({ run: name, slug }) =>
+          daemon.rpc("launch.run_tail", { run: name, member: slug }),
+        ),
+      )
+        .then((results) => {
           if (seq !== runSeq) return;
           memberLog.clear("No output.");
-          memberLog.append([...(result.out || []), ...(result.err || [])]);
+          results.forEach((result, index) => {
+            if (logs.length > 1) memberLog.note(logs[index].label);
+            memberLog.append([...(result.out || []), ...(result.err || [])]);
+          });
         })
         .catch((error) => {
           if (seq === runSeq) memberLog.clear(error.message);
@@ -448,36 +459,41 @@
       extraList.appendChild(
         element("div", "monitor-run-extras-title", "Members outside this mode"),
       );
-      run.extras.forEach(({ slug, label }) => {
-        const row = element("button", "monitor-run-extra", label);
+      run.extras.forEach((extra) => {
+        const row = element("button", "monitor-run-extra", extra.path);
         row.type = "button";
-        row.classList.toggle("selected", slug === selectedExtra);
-        row.addEventListener("click", () => showExtra(slug, label));
+        row.classList.toggle("selected", extra.path === selectedExtra);
+        row.addEventListener("click", () => showExtra(extra));
         extraList.appendChild(row);
       });
     }
 
-    function showExtra(slug, label) {
+    function showExtra({ path, logs }) {
       selected = null;
       selectedJob = "";
-      selectedExtra = slug;
+      selectedExtra = path;
       view.body.replaceChildren(memberLog.element);
       view.setEmpty("");
-      view.setTitle(`${label} · ${runLabel(run.summary)}`);
-      showRunLog(slug);
+      view.setTitle(`${path} · ${run.label}`);
+      showRunLog(logs);
       showState();
       renderTree();
       renderExtras();
     }
 
-    // Places the run's members on the tree by path; the rest are listed outside it.
+    // Places the members of the launch's runs on the tree by path; the rest are
+    // listed outside it.
     function placeRun() {
       run.slugs = new Map();
-      run.extras = [];
-      run.members.forEach(({ slug, path }) => {
-        if (byMember.has(path)) run.slugs.set(path, slug);
-        else run.extras.push({ slug, label: path });
+      const extras = new Map();
+      run.runs.forEach(({ name, label, members }) => {
+        members.forEach(({ slug, path }) => {
+          const logs = byMember.has(path) ? run.slugs : extras;
+          if (!logs.has(path)) logs.set(path, []);
+          logs.get(path).push({ run: name, slug, label });
+        });
       });
+      run.extras = [...extras].map(([path, logs]) => ({ path, logs }));
     }
 
     // Renders the selection against the shown run or the live sessions.
@@ -495,38 +511,55 @@
       showState();
     }
 
-    // Shows the live sessions (an empty name) or a past run.
-    function setRun(name) {
-      runSelect.value = name;
-      if (!name) {
+    // Shows the live sessions (an empty value) or a past launch: the runs of
+    // its units, a unit started again within it holding several.
+    function setRun(value) {
+      runSelect.value = value;
+      const group = runGroups.find((g) => g.value === value);
+      if (!group) {
+        runSelect.value = "";
         run = null;
         runSeq += 1;
         selectedExtra = null;
         reselect();
         return;
       }
-      daemon
-        .rpc("launch.run", { run: name })
-        .then((result) => {
-          if (runSelect.value !== name) return;
-          unfollow();
-          run = {
-            name,
-            summary: result,
-            members: result.members || [],
-            slugs: new Map(),
-            extras: [],
-          };
-          placeRun();
-          reselect();
-        })
-        .catch((error) => {
-          console.warn("launch run:", error);
+      const runs = [...group.runs].sort(
+        (a, b) => (a.started || 0) - (b.started || 0),
+      );
+      Promise.allSettled(
+        runs.map((r) => daemon.rpc("launch.run", { run: r.run })),
+      ).then((results) => {
+        if (runSelect.value !== value) return;
+        const read = results
+          .map((result, index) => ({ result, summary: runs[index] }))
+          .filter(({ result }) => result.status === "fulfilled");
+        results
+          .filter((result) => result.status === "rejected")
+          .forEach((result) => console.warn("launch run:", result.reason));
+        if (!read.length) {
           setRun("");
-        });
+          return;
+        }
+        unfollow();
+        run = {
+          name: value,
+          label: group.label,
+          runs: read.map(({ result, summary }) => ({
+            name: summary.run,
+            label: runLabel(summary),
+            members: result.value.members || [],
+          })),
+          slugs: new Map(),
+          extras: [],
+        };
+        placeRun();
+        reselect();
+      });
     }
 
-    // Past runs of the system, newest first; the shown run stays selected while listed.
+    // Past runs of the system by launch, newest first; the shown launch stays
+    // selected while listed.
     function loadRuns() {
       runSelect.hidden = !daemon.offers("launch.runs");
       if (runSelect.hidden) return;
@@ -534,16 +567,10 @@
         .rpc("launch.runs", { system: config.systemId })
         .then(({ runs }) => {
           const current = run?.name || "";
-          runSelect.replaceChildren(
-            ...[["", "Live"], ...runs.map((r) => [r.run, runLabel(r)])].map(
-              ([value, label]) => {
-                const option = element("option", "", label);
-                option.value = value;
-                return option;
-              },
-            ),
-          );
-          if (current && !runs.some((r) => r.run === current)) setRun("");
+          runGroups = launch.runGroups(runs);
+          runSelect.replaceChildren(...launch.runOptions(runGroups, true));
+          if (current && !runGroups.some((g) => g.value === current))
+            setRun("");
           else runSelect.value = current;
         })
         .catch((error) => console.warn("launch runs:", error));

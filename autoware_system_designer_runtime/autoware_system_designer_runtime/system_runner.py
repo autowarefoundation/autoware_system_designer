@@ -134,9 +134,10 @@ def write_run_manifest(
     ecu: Optional[str],
     deploy: Optional[str],
     members: Sequence[str],
+    launch: Optional[str] = None,
 ) -> Path:
-    """Records what a run's log directory holds: the system structure and unit it ran and the member
-    paths whose directories lie beside it."""
+    """Records what a run's log directory holds: the system structure and unit it ran, the launch the
+    run belongs to and the member paths whose directories lie beside it."""
     metadata = data.get("metadata")
     if not isinstance(metadata, Mapping):
         metadata = {}
@@ -145,6 +146,7 @@ def write_run_manifest(
         "mode": metadata.get("mode") or Path(json_path).stem,
         "compute_unit": ecu,
         "deploy": deploy,
+        "launch": launch,
         "system_structure": str(Path(json_path).resolve()),
         "started": time.time(),
         "members": list(members),
@@ -170,6 +172,7 @@ def launch_from_json(
     control: Optional[Path] = None,
     control_policy: str = "guard",
     tracer: bool = True,
+    launch_id: Optional[str] = None,
 ) -> int:
     with open(json_path) as f:
         data = json.load(f)
@@ -224,7 +227,15 @@ def launch_from_json(
         states.install(builder)
         coord = builder.build()
         try:
-            write_run_manifest(out_dir, json_path=json_path, data=data, ecu=ecu, deploy=deploy, members=coord.names())
+            write_run_manifest(
+                out_dir,
+                json_path=json_path,
+                data=data,
+                ecu=ecu,
+                deploy=deploy,
+                members=coord.names(),
+                launch=launch_id,
+            )
         except OSError as exc:
             logger.warning("cannot write %s: %s", out_dir / RUN_MANIFEST, exc)
         console_task = None
@@ -301,6 +312,13 @@ def main() -> None:
         metavar="NAME=VALUE",
         default=None,
         help="Bind one system argument directly; overrides the deploy variant's value. Repeatable.",
+    )
+    parser.add_argument(
+        "--launch-id",
+        metavar="ID",
+        default=None,
+        help="Launch this run belongs to, recorded in run.json. The runs of a system's compute units "
+        "launched together carry one id.",
     )
     parser.add_argument(
         "--log-dir",
@@ -451,5 +469,6 @@ def main() -> None:
             control=args.control,
             control_policy=args.control_policy,
             tracer=not args.no_tracer,
+            launch_id=args.launch_id,
         )
     )

@@ -222,6 +222,8 @@ class ServeDaemon:
         self._register_of_unit("monitor.unfollow", self._monitor_unfollow)
         self._register_of_unit("monitor.sample", self._monitor_sample)
         self.methods.register("rviz.start", self._rviz_start)
+        # Launch id and count of the starts under way, by (system id, mode).
+        self._starting: dict[tuple[str, str], list[Any]] = {}
         self.launch = launch.LaunchManager(
             self.hub,
             self.jobs,
@@ -324,6 +326,19 @@ class ServeDaemon:
                 if link.state != peers.PEER_CONNECTED:
                     message += f", as last reported by its {link.state} daemon; launch.forget drops the session"
                 raise api.ApiError(api.CONFLICT, message)
+
+    def _launch_of(self, system_id: str, mode: str) -> Optional[str]:
+        """The launch of the system's units running ``mode``, a peer's units as last reported."""
+        launch_id = self.launch.launch_of(system_id, mode)
+        if launch_id is not None:
+            return launch_id
+        for link in self.peers.links:
+            for session in link.sessions.values():
+                if not peers.PeerLink.session_active(session) or session.get("system") != system_id:
+                    continue
+                if session.get("mode") == mode and isinstance(session.get("launch"), str):
+                    return session["launch"]
+        return None
 
     # -- methods -----------------------------------------------------------
 
@@ -455,6 +470,26 @@ class ServeDaemon:
         if not isinstance(mode, str) or mode not in system.mode_keys():
             raise api.ApiError(api.INVALID_PARAMS, f"unknown mode {mode!r} of {system.id}")
         self._mode_conflict(system.id, mode)
+        launch_id = _str_param(params, "launch")
+        if launch_id is not None and not launch.valid_launch_id(launch_id):
+            raise api.ApiError(api.INVALID_PARAMS, "launch must be an id of letters, digits, '_', '.' and '-'")
+        # A unit joins the launch of the system's units running or starting the mode; the first opens one.
+        key = (system.id, mode)
+        if launch_id is None:
+            starting = self._starting.get(key)
+            launch_id = starting[0] if starting else self._launch_of(system.id, mode) or launch.new_launch_id()
+        entry = self._starting.setdefault(key, [launch_id, 0])
+        entry[1] += 1
+        try:
+            return await self._start_unit(system, compute_unit, mode, status, {**params, "launch": launch_id})
+        finally:
+            entry[1] -= 1
+            if not entry[1] and self._starting.get(key) is entry:
+                del self._starting[key]
+
+    async def _start_unit(
+        self, system: exports.SystemExport, compute_unit: str, mode: str, status: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
         link = self.peers.link_of(compute_unit)
         if link is not None:
             self.launch.require_mode(system.id, mode)
@@ -478,6 +513,7 @@ class ServeDaemon:
             policy=policy,
             measure=_bool_param(params, "measure"),
             respawn=_bool_param(params, "respawn"),
+            launch_id=params["launch"],
         )
         return session.to_view()
 
