@@ -17,7 +17,6 @@
 
 import asyncio
 import os
-import signal
 import sys
 import time
 
@@ -27,12 +26,16 @@ from autoware_system_designer_runtime._impl.core.config import ActorConfig
 from autoware_system_designer_runtime._impl.core.coordinator import CoordinatorBuilder
 from autoware_system_designer_runtime._impl.core.regular_actor import NodeSpec
 
-# A child that takes no notice of SIGTERM, as a node stuck in its shutdown.
-STUBBORN_CHILD = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('up', flush=True); time.sleep(60)"
+# A child that takes no notice of the stop signal, as a node stuck in its shutdown.
+STUBBORN_CHILD = "import signal, time; signal.signal(signal.SIGINT, signal.SIG_IGN); print('up', flush=True); time.sleep(60)"
 
-# A leader that prints the pid of its child once the child ignores SIGTERM, then runs *then*.
+# A process the stop signal ends by its default action.
+SLEEPER = "import signal, time; signal.signal(signal.SIGINT, signal.SIG_DFL); time.sleep(60)"
+
+# A leader that prints the pid of its child once the child ignores the stop signal, then runs *then*.
 LEADER = (
-    "import subprocess, sys, time\n"
+    "import signal, subprocess, sys, time\n"
+    "signal.signal(signal.SIGINT, signal.SIG_DFL)\n"
     f"p = subprocess.Popen([sys.executable, '-c', {STUBBORN_CHILD!r}], stdout=subprocess.PIPE)\n"
     "p.stdout.readline()\n"
     "print(p.pid, flush=True)\n"
@@ -64,7 +67,7 @@ async def _child_pid(path):
 
 def test_stop_kills_the_children_a_leader_leaves_behind(tmp_path):
     async def scenario():
-        # The leader ends on SIGTERM at once, as a launch service does, with its child still running.
+        # The leader ends on the stop signal at once, as a launch service does, with its child still running.
         proc = await process.spawn_pgrp(_leader("time.sleep(60)"), stdout_path=tmp_path / "out")
         child = await _child_pid(tmp_path / "out")
         started = time.monotonic()
@@ -72,20 +75,20 @@ def test_stop_kills_the_children_a_leader_leaves_behind(tmp_path):
         return proc.pid, child, exit_code, time.monotonic() - started
 
     pgid, child, exit_code, took = asyncio.run(scenario())
-    assert exit_code == -signal.SIGTERM
+    assert exit_code == -process.STOP_SIGNAL
     assert not _running(child) and not process.group_alive(pgid)
     assert 0.5 <= took < 5
 
 
 def test_stop_returns_once_the_group_is_gone(tmp_path):
     async def scenario():
-        proc = await process.spawn_pgrp([sys.executable, "-c", "import time; time.sleep(60)"])
+        proc = await process.spawn_pgrp([sys.executable, "-c", SLEEPER])
         started = time.monotonic()
         exit_code = await process.graceful_kill(proc, name="member", timeout=5.0)
         return proc.pid, exit_code, time.monotonic() - started
 
     pgid, exit_code, took = asyncio.run(scenario())
-    assert exit_code == -signal.SIGTERM and not process.group_alive(pgid)
+    assert exit_code == -process.STOP_SIGNAL and not process.group_alive(pgid)
     assert took < 2
 
 

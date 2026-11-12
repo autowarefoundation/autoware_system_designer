@@ -14,9 +14,11 @@
 
 """Process-group spawn and graceful kill.
 
-Mirrors play_launch ``graceful_kill`` in
-``src/play_launch/src/member_actor/regular_node_actor.rs`` — SIGTERM on the
-process group, wait up to N seconds, then SIGKILL on the process group.
+SIGINT on the process group, wait up to N seconds, then SIGKILL on the process group.
+
+SIGINT is the stop signal of ROS 2 launch: rclcpp and rclpy shut their context down on it and leave
+the ROS graph. SIGTERM is a failure signal to a glog failure handler, which ends the process with
+its DDS participant still announced.
 
 A member is its whole process group: it has ended once the leader has exited and no process of the
 group is left.
@@ -68,6 +70,8 @@ async def spawn_pgrp(
                     pass
 
 
+# Signal that asks a member to stop.
+STOP_SIGNAL = signal.SIGINT
 # Interval at which a group is looked at while it ends.
 GROUP_POLL_S = 0.1
 # Wait for a group to be gone after SIGKILL.
@@ -130,11 +134,11 @@ async def _kill_group(pgid: int, *, name: str) -> bool:
 
 
 async def reap_group(pgid: int, *, name: str, timeout: float = 5.0) -> None:
-    """End the processes a leader that has exited left in its group: SIGTERM, then SIGKILL after *timeout*."""
+    """End the processes a leader that has exited left in its group: SIGINT, then SIGKILL after *timeout*."""
     if not group_alive(pgid):
         return
-    logger.warning("[%s] exited with processes left in pgid=%d, sending SIGTERM", name, pgid)
-    _killpg(pgid, signal.SIGTERM)
+    logger.warning("[%s] exited with processes left in pgid=%d, sending %s", name, pgid, STOP_SIGNAL.name)
+    _killpg(pgid, STOP_SIGNAL)
     if await _group_gone(pgid, timeout):
         return
     logger.warning("[%s] processes left after %.1fs, sending SIGKILL to pgid=%d", name, timeout, pgid)
@@ -147,7 +151,7 @@ async def graceful_kill(
     name: str,
     timeout: float = 5.0,
 ) -> Optional[int]:
-    """Send SIGTERM to the process group, wait up to *timeout* for the whole group, then SIGKILL.
+    """Send SIGINT to the process group, wait up to *timeout* for the whole group, then SIGKILL.
 
     Returns the leader's exit code (or None if it could not be waited for).
     """
@@ -155,8 +159,8 @@ async def graceful_kill(
     if proc.returncode is not None:
         return proc.returncode
 
-    logger.debug("[%s] SIGTERM pgid=%d", name, pid)
-    _killpg(pid, signal.SIGTERM)
+    logger.debug("[%s] %s pgid=%d", name, STOP_SIGNAL.name, pid)
+    _killpg(pid, STOP_SIGNAL)
 
     deadline = time.monotonic() + timeout
     try:

@@ -330,7 +330,7 @@ def main() -> None:
         "--graceful-shutdown-timeout",
         type=float,
         default=5.0,
-        help="Seconds to wait after SIGTERM before escalating to SIGKILL " "(default: 5.0).",
+        help="Seconds to wait after SIGINT before escalating to SIGKILL " "(default: 5.0).",
     )
     parser.add_argument(
         "--interactive",
