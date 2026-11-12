@@ -122,6 +122,15 @@ def test_one_active_job_per_key():
     assert other.state == again.state == jobs.STATE_SUCCEEDED
 
 
+def _running(pid):
+    """Whether the process still runs; a zombie awaiting its parent has ended."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rpartition(")")[2].split()[0] != "Z"
+    except OSError:
+        return False
+
+
 def test_cancel_interrupts_the_process_group():
     async def scenario():
         runner = jobs.JobRunner(_Recorder())
@@ -144,14 +153,10 @@ def test_cancel_interrupts_the_process_group():
     job, grandchild = asyncio.run(scenario())
     assert job.state == jobs.STATE_CANCELLED
     deadline = time.time() + 5
-    while time.time() < deadline:
-        try:
-            os.kill(grandchild, 0)
-        except ProcessLookupError:
-            break
+    while _running(grandchild):
+        if time.time() > deadline:
+            pytest.fail("grandchild survived the cancel")
         time.sleep(0.05)
-    else:
-        pytest.fail("grandchild survived the cancel")
 
 
 def test_cancel_escalates_when_signals_are_ignored(monkeypatch):
