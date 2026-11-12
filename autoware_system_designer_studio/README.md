@@ -327,8 +327,8 @@ also needs the display of that environment (`DISPLAY` or `WAYLAND_DISPLAY`).
 
 ### Peers
 
-One daemon runs per compute unit, inside the unit's environment. A daemon given the others as peers
-serves their units as well, so a client talks to it alone:
+One daemon runs per execution environment and serves the compute units in it. A daemon given the
+others as peers serves their units as well, so a client talks to it alone:
 
 ```bash
 autoware-system-designer-studio serve --port 8781 --compute-unit main_ecu \
@@ -365,18 +365,18 @@ address: it reads the peer's health, systems, sessions and jobs, follows its eve
 reconnects with backoff from 0.5 s up to 10 s. A stream silent for three of the peer's heartbeat
 intervals counts as lost.
 
-| Where          | With peers                                                                                              |
-| -------------- | ------------------------------------------------------------------------------------------------------- |
-| `health`       | `peers`: `[{"units", "url", "state", "error", "version", "mismatch", "ssh", "tunnel"}]`                 |
-| `systems.list` | A peer's unit is `available`, `running` or `unreachable`, with the peer record under `daemon`           |
-| Unit methods   | `launch.*`, `measure.*` and `monitor.*` naming a peer's unit are forwarded                              |
-| Lists          | `launch.status`, `jobs.list` and `launch.runs` include the answering peers' sessions, launch jobs, runs |
-| Ids            | A peer's job and run ids read `<unit>/<id>`; `jobs.get`, `jobs.cancel` and `launch.run*` take them      |
-| Events         | `launch`, `member`, `member.log`, `member.activity`, `monitor`, and `job`/`job.log` of launch jobs      |
-| Follows        | Released on the peer once this daemon's last event stream closes; rate follows return after a reconnect |
-| Modes          | A system runs one mode at a time across all daemons, by each peer's last reported sessions              |
+| Where           | With peers                                                                                               |
+| --------------- | -------------------------------------------------------------------------------------------------------- |
+| `health`        | `peers`: `[{"units", "url", "state", "error", "version", "mismatch", "ssh", "tunnel"}]`                  |
+| `systems.list`  | A peer's unit is `available`, `running` or `unreachable`, with the peer record under `daemon`            |
+| Unit methods    | `launch.*`, `measure.*` and `monitor.*` naming a peer's unit are forwarded                               |
+| Lists           | `launch.status`, `jobs.list` and `launch.runs` include the answering peers' sessions, launch jobs, runs  |
+| Ids             | A peer's job and run ids read `<unit>/<id>`; `jobs.get`, `jobs.cancel` and `launch.run*` take them       |
+| Events          | `launch`, `member`, `member.log`, `member.activity`, `monitor`, and `job`/`job.log` of launch jobs       |
+| Follows         | Released on the peer once this daemon's last event stream closes; rate follows return after a reconnect  |
+| Modes           | A system runs one mode at a time across all daemons, by each peer's last reported sessions               |
 | `launch.forget` | `{"compute_unit"}` of an unanswering peer: drops its last reported sessions, answers them as `forgotten` |
-| `build.start`  | Refused for a peer's unit; a unit is built by its own daemon                                            |
+| `build.start`   | Refused for a peer's unit; a unit is built by its own daemon                                             |
 
 Peer `state` is `connecting`, `connected` or `unreachable`. `mismatch` lists where a connected peer
 differs from this daemon: version, method set, units it serves, and the modes, compute units and
@@ -387,12 +387,12 @@ marked `stale`. Those sessions still hold their system to their mode until the p
 or `launch.forget` drops them, which publishes each as a `launch` event marked `forgotten`; the
 unit itself may still be running. The mode rule holds for launches made through the daemon that
 has the others as peers: a peer knows only its own units, so a client of a peer alone is not held
-to it. `ssh` is the peer's SSH
-destination and `tunnel` the id of its current tunnel job, both null for a peer reached directly.
+to it. `ssh` is the peer's SSH destination and `tunnel` the id of its current tunnel job, both null
+for a peer reached directly.
 
 ### Multi-unit environment
 
-[`demo/docker_multi_unit`](../demo/docker_multi_unit/README.md) runs one daemon per compute unit of the example system `TypeAlpha` in
-Docker containers, as containers of one ECU, as separate ECUs reached over SSH, or as a mix of
-both, the daemon of one unit peered with the others in each, with tests that drive them through
-its API and cut units off.
+[`demo/docker_multi_unit`](../demo/docker_multi_unit/README.md) runs the daemons of the demo system
+`TypeAlpha` in Docker containers, as containers of one ECU, as separate ECUs reached over SSH, or
+as a mix of both, one daemon peered with the others in each, with tests that drive them through its
+API and cut devices off.

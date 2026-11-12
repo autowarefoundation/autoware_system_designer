@@ -1,6 +1,6 @@
 # autoware_system_designer_demo_nodes
 
-Dummy nodes of the example systems. Each node design under `design/node` is built into a node
+Dummy nodes of the demo systems. Each node design under `design/node` is built into a node
 that does what its design declares, with generated messages:
 
 - every subscriber and publisher exists with the design's message type and quality of service;

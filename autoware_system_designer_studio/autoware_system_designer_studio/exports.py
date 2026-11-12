@@ -59,7 +59,7 @@ UNIT_REMOTE_UNSUPPORTED = "remote_unsupported"
 UNIT_UNREACHABLE = "unreachable"
 UNIT_OFFBOARD = "offboard"
 UNIT_UNSUPPORTED = "unsupported"
-# An available unit with a launch of it active on this daemon.
+# An available unit with a launch of it active.
 UNIT_RUNNING = "running"
 
 

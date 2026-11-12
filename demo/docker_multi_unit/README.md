@@ -2,7 +2,7 @@
 
 One studio daemon per execution environment of the compute units, each in its own container,
 standing in for a multi-ECU bench.
-The containers build the system designer packages of this checkout and run the example system
+The containers build the system designer packages of this checkout and run the demo system
 `autoware_system_designer_demo_systems:TypeAlpha`: the nodes of
 [`autoware_system_designer_demo_nodes`](../autoware_system_designer_demo_nodes/README.md) on three onboard
 units, exchanging `std_msgs` messages, every unit subscribing topics published on the other two.
@@ -12,6 +12,8 @@ units, exchanging `std_msgs` messages, every unit subscribing topics published o
 | `sensing_perception` | sensing, perception, robot state publisher | 8781        |
 | `map_localization`   | map, localization, vehicle                 | 8782        |
 | `planning_control`   | planning, control                          | 8783        |
+
+In `shared_environment` one daemon on port 8782 serves `map_localization` and `planning_control`.
 
 This directory holds what every topology shares: the image, its entry point, the compose services
 (`compose.base.yaml`), the runner and the tests. Which units run where, on which devices, ports
@@ -63,16 +65,16 @@ curl -s http://127.0.0.1:8781/api/rpc -H 'Content-Type: application/json' -H 'X-
     -d '{"id": 1, "method": "launch.start", "params": {"system": "autoware_system_designer_demo_systems:TypeAlpha", "compute_unit": "map_localization", "mode": "default", "deploy": "vehicle_x"}}'
 ```
 
-| Variable                 | Default                           | Role                                            |
-| ------------------------ | --------------------------------- | ----------------------------------------------- |
-| `ASD_ROS_DISTRO`         | `humble`                          | ROS distribution of the image                   |
-| `ASD_ROS_DOMAIN_ID`      | `87`                              | DDS domain of the units                         |
-| `ASD_RMW_IMPLEMENTATION` | the distribution's                | RMW implementation, e.g. `rmw_cyclonedds_cpp`   |
-| `ASD_UID`, `ASD_GID`     | the calling user's                | ids of the container user                       |
-| `ASD_STATE_DIR`          | `$XDG_RUNTIME_DIR/asd-multi-unit` | client key, known hosts, SSH control socket     |
-| `ASD_PACKAGES`           | studio, examples                  | packages the `build` service builds up to       |
-| `ASD_SYSTEM`             | `TypeAlpha`                       | system whose topology files are run             |
-| `ASD_ARCHITECTURE_DIR`   | the examples' `ee_architecture`   | directory of `<system>.<topology>.compose.yaml` |
+| Variable                 | Default                             | Role                                            |
+| ------------------------ | ----------------------------------- | ----------------------------------------------- |
+| `ASD_ROS_DISTRO`         | `humble`                            | ROS distribution of the image                   |
+| `ASD_ROS_DOMAIN_ID`      | `87`                                | DDS domain of the units                         |
+| `ASD_RMW_IMPLEMENTATION` | the distribution's                  | RMW implementation, e.g. `rmw_cyclonedds_cpp`   |
+| `ASD_UID`, `ASD_GID`     | the calling user's                  | ids of the container user                       |
+| `ASD_STATE_DIR`          | `$XDG_RUNTIME_DIR/asd-multi-unit`   | client key, known hosts, SSH control socket     |
+| `ASD_PACKAGES`           | studio, demo systems                | packages the `build` service builds up to       |
+| `ASD_SYSTEM`             | `TypeAlpha`                         | system whose topology files are run             |
+| `ASD_ARCHITECTURE_DIR`   | the demo systems' `ee_architecture` | directory of `<system>.<topology>.compose.yaml` |
 
 The variables are the environment's own: `ROS_DISTRO` and `ROS_DOMAIN_ID` of the calling shell are
 not read. Daemon ports and addresses are the topology file's.

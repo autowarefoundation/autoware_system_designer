@@ -2,7 +2,7 @@
 <package format="3">
   <name>autoware_system_designer_demo_systems</name>
   <version>0.40.0</version>
-  <description>The autoware_system_designer_demo_systems package</description>
+  <description>Demo systems of the system designer: TypeAlpha on three onboard compute units and its execution environments</description>
 
   <maintainer email="taekjin.lee@tier4.jp">Taekjin Lee</maintainer>
   <license>Apache License 2.0</license>
