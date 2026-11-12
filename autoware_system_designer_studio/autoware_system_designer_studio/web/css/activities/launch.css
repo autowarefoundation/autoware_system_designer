@@ -45,6 +45,31 @@
   font-size: 12px;
 }
 
+/* Peer daemon serving the unit, coloured by its link state */
+.unit-peer {
+  padding: 1px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.unit-peer.connecting,
+.unit-peer.mismatch {
+  border-color: var(--state-warning);
+  color: var(--state-warning);
+}
+
+.unit-peer.unreachable {
+  border-color: var(--state-failed);
+  color: var(--state-failed);
+}
+
+/* Launch and shutdown of every unit, in the Control head */
+.control-all[hidden] {
+  display: none;
+}
+
 .unit-controls .launch-session,
 .unit-controls .launch-measure,
 .unit-controls .launch-error {

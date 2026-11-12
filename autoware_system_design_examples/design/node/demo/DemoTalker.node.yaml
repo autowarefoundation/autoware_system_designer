@@ -16,6 +16,7 @@ subscribers: []
 publishers:
   - name: chatter
     message_type: std_msgs/msg/String
+    remap_target: chatter
 
 param_files: []
 

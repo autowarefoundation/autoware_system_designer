@@ -320,6 +320,10 @@
   color: var(--state-ok);
 }
 
+.unit-status.unreachable {
+  color: var(--state-failed);
+}
+
 /* Main view frame: head with title and trailing controls, body or empty message */
 .main-view-head {
   display: flex;

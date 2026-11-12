@@ -93,6 +93,7 @@ ACTIVITIES = {
     "launch": {
         "scripts": (
             "js/activities/launch/sessions.js",
+            "js/activities/launch/units.js",
             "js/activities/launch/member_tree.js",
             "js/activities/launch/commands_table.js",
             "js/activities/launch/state_monitor.js",

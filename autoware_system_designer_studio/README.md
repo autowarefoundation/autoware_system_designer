@@ -72,7 +72,11 @@ Launch has three main views, chosen from the list in its side panel. Control is 
 mode, every block coloured by its live member state and marked, before its name, with the state, a
 busy log and, on a node, its restart count. Launch and Shutdown of each compute unit (and the
 measurement window of a session whose runtime preloads the tracer) are in the unit's head bar;
-"Measure from launch" opens the window at launch. Every declared unit has its own
+"Measure from launch" opens the window at launch. A unit served by a peer daemon shows that daemon
+beside them, by its SSH destination or else its address, coloured by the link state and marked when
+the peer differs from this daemon; an `unreachable` unit offers no control until its daemon answers
+again. "Launch all" and "Shutdown all" in the view head act on every unit that can launch or shut
+down. The status bar counts the connected peers and names the units of the others. Every declared unit has its own
 section, a head alone when the mode places no node on it; a launcher of an undeclared unit gets the
 same controls in a row above the map. A bar between the head and the map holds the selected
 entity and the only actions on a launched member: Stop, Restart and Kill of a node outside a

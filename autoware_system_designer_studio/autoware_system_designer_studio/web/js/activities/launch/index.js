@@ -1,6 +1,7 @@
 // Launch activity: three views of the mode, chosen in the side panel. Control
 // is the state map, with launch and shutdown of each compute unit in its
-// section head and the actions on the selected member above it; Logs is the
+// section head, of every unit in the view head, and the actions on the
+// selected member above it; Logs is the
 // member tree beside the selected member's log, read only; Topics is the
 // live rate of every topic against the design. Escape drops a
 // pending confirmation, else the selection, also on the other activities'
@@ -26,6 +27,9 @@
     memberActions,
     sessionLabel,
     topicRates,
+    unitActions,
+    peerLabel,
+    peerTitle,
   } = SD.activities.launch;
 
   // Main views by the store's `view`.
@@ -102,6 +106,8 @@
       if (method !== "xml" && !(method === "native" && hasNative))
         method = hasNative ? "native" : "xml";
       let unitStatus = new Map();
+      // Unit -> record of the peer daemon serving it; no entry for a unit of this daemon.
+      let unitPeers = new Map();
       const { sessions } = SD.activities.launch;
       const ofMode = SD.activities.launch.scope(config.systemId, () =>
         store.get("mode"),
@@ -211,7 +217,15 @@
         item.append(glyph, element("span", "", label));
         legend.appendChild(item);
       });
-      controlView.trailing.appendChild(legend);
+      const launchAll = button("Launch all", "", () =>
+        launchable().forEach(launchUnit),
+      );
+      const shutdownAll = button("Shutdown all", "", () =>
+        stoppable().forEach((unit) => control(unit, "launch.shutdown", {})),
+      );
+      const allControls = element("div", "unit-controls control-all");
+      allControls.append(launchAll, shutdownAll);
+      controlView.trailing.append(allControls, legend);
       const undrawnUnits = element("div", "control-undrawn-units");
       controlView.body.appendChild(undrawnUnits);
       const map = stateMap(controlView.body, config, store, {
@@ -284,45 +298,75 @@
         return holder;
       }
 
-      // Controls of `unit` for its section head on the map: Launch and Shutdown,
-      // always offered with the one that applies coloured, the measurement
-      // window of an armed session, then the session or the unit's reach.
-      // Null for a unit without a launcher of the mode and deploy, or a daemon
-      // that launches nothing.
-      function unitControls(unit) {
-        if (!daemon.offers("launch.start")) return null;
+      // The launcher of `unit` in the shown mode and deploy with what the unit
+      // offers now; null without one.
+      function unitState(unit) {
         const row = launchRows(config, store).find((r) => r.unit === unit);
         if (!row) return null;
         const status = unitStatus.get(unit);
         const session = ofMode.sessions.get(unit) || null;
+        const live = !!session && session.state !== "exited";
+        const holder = live ? null : holderOf(unit);
+        return {
+          row,
+          status,
+          session,
+          holder,
+          ...unitActions({ status, session, holder }),
+        };
+      }
+
+      function unitsWhere(offered) {
+        if (!daemon.offers("launch.start")) return [];
+        return launchRows(config, store)
+          .map((row) => row.unit)
+          .filter((unit) => unitState(unit)?.[offered]);
+      }
+
+      const launchable = () => unitsWhere("canLaunch");
+      const stoppable = () => unitsWhere("canShutdown");
+
+      function launchUnit(unit) {
+        const { row } = unitState(unit);
+        const params = {
+          system: config.systemId,
+          mode: row.mode,
+          compute_unit: unit,
+          measure: measureOption.input.checked,
+          respawn: respawnOption.input.checked,
+        };
+        if (row.deploy) params.deploy = row.deploy;
+        errors.delete(unit);
+        return daemon
+          .rpc("launch.start", params)
+          .catch((error) => errors.set(unit, error.message))
+          .then(render);
+      }
+
+      // Controls of `unit` for its section head on the map: Launch and Shutdown,
+      // always offered with the one that applies coloured, the measurement
+      // window of an armed session, the peer daemon serving the unit, then the
+      // session or the unit's reach.
+      // Null for a unit without a launcher of the mode and deploy, or a daemon
+      // that launches nothing.
+      function unitControls(unit) {
+        if (!daemon.offers("launch.start")) return null;
+        const state = unitState(unit);
+        if (!state) return null;
+        const { status, session, holder, reachable } = state;
+        const { canLaunch, canShutdown, canMeasure } = state;
         const controls = element("div", "unit-controls");
-        const active = !!session && session.state !== "exited";
-        const holder = active ? null : holderOf(unit);
-        const canLaunch = status === "available" && !active && !holder;
-        const launch = button("Launch", canLaunch ? "primary" : "", () => {
-          const params = {
-            system: config.systemId,
-            mode: row.mode,
-            compute_unit: unit,
-            measure: measureOption.input.checked,
-            respawn: respawnOption.input.checked,
-          };
-          if (row.deploy) params.deploy = row.deploy;
-          errors.delete(unit);
-          daemon
-            .rpc("launch.start", params)
-            .catch((error) => errors.set(unit, error.message))
-            .then(render);
-        });
+        const launch = button("Launch", canLaunch ? "primary" : "", () =>
+          launchUnit(unit),
+        );
         launch.disabled = !canLaunch;
-        const canShutdown = active && !session.shutting_down;
         const shutdown = button("Shutdown", canShutdown ? "danger" : "", () =>
           control(unit, "launch.shutdown", {}),
         );
         shutdown.disabled = !canShutdown;
         controls.append(launch, shutdown);
         let measure = null;
-        if (active && session.connected && session.control.measure_armed) {
+        if (canMeasure) {
           measure = measures.get(unit);
           const open = measure && MEASURE_OPEN.includes(measure.state);
           const pending = measuring.get(unit);
@@ -349,15 +393,30 @@
           toggle.disabled = !!pending;
           controls.appendChild(toggle);
         }
-        if (session)
-          controls.appendChild(
-            element(
-              "span",
-              `launch-session ${session.state}`,
-              sessionLabel(session),
-            ),
+        const peer = unitPeers.get(unit);
+        if (peer) {
+          const chip = element(
+            "span",
+            `unit-peer ${peer.state}`,
+            peerLabel(peer),
           );
-        else if (holder)
+          if (peer.mismatch?.length) chip.classList.add("mismatch");
+          chip.title = peerTitle(peer);
+          controls.appendChild(chip);
+        }
+        if (!reachable)
+          controls.appendChild(
+            element("span", `unit-status ${status}`, status),
+          );
+        if (session) {
+          const label = element(
+            "span",
+            reachable ? `launch-session ${session.state}` : "launch-session",
+            sessionLabel(session),
+          );
+          if (!reachable) label.title = "as last reported by the unit's daemon";
+          controls.appendChild(label);
+        } else if (reachable && holder)
           controls.appendChild(
             element(
               "span",
@@ -367,7 +426,7 @@
                 : `${holder.mode} runs on ${holder.compute_unit}`,
             ),
           );
-        else if (status)
+        else if (reachable && status)
           controls.appendChild(
             element("span", `unit-status ${status}`, status.replace(/_/g, " ")),
           );
@@ -400,6 +459,13 @@
           undrawnUnits.appendChild(entry);
         });
         undrawnUnits.hidden = !undrawnUnits.childElementCount;
+        const canLaunch = launchable().length > 0;
+        const canShutdown = stoppable().length > 0;
+        allControls.hidden = !daemon.offers("launch.start") || rows.length < 2;
+        launchAll.disabled = !canLaunch;
+        launchAll.classList.toggle("primary", canLaunch);
+        shutdownAll.disabled = !canShutdown;
+        shutdownAll.classList.toggle("danger", canShutdown);
       }
 
       // RViz is one job per daemon; the button waits while it runs.
@@ -443,8 +509,10 @@
       async function loadUnitStatus() {
         try {
           const system = await daemon.system(config.systemId);
-          unitStatus = new Map(
-            (system?.compute_units || []).map((u) => [u.name, u.status]),
+          const units = system?.compute_units || [];
+          unitStatus = new Map(units.map((u) => [u.name, u.status]));
+          unitPeers = new Map(
+            units.filter((u) => u.daemon).map((u) => [u.name, u.daemon]),
           );
         } catch (error) {
           console.warn("launch:", error);

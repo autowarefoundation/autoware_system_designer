@@ -1,13 +1,37 @@
-// Status bar: the selection of the shown activity, the page's data source and
-// the daemon's running jobs.
+// Status bar: the selection of the shown activity, the page's data source, the
+// daemon's peers and its running jobs.
 (function () {
   const SD = window.SD;
 
-  function item(id, text, className = "") {
+  function item(id, text, className = "", title = "") {
     const node = document.getElementById(id);
     node.textContent = text;
     node.className = `status-item ${className}`.trim();
+    node.title = title;
     node.hidden = !text;
+  }
+
+  // "Peers 2/3 · sub_ecu_2 unreachable": the connected peer daemons among all,
+  // then the units of the others.
+  function peers(health) {
+    const all = health?.peers || [];
+    const down = all.filter((peer) => peer.state !== "connected");
+    const parts = [`Peers ${all.length - down.length}/${all.length}`];
+    down.forEach((peer) =>
+      parts.push(`${peer.units.join(", ")} ${peer.state}`),
+    );
+    item(
+      "status-peers",
+      all.length ? parts.join(" · ") : "",
+      down.length ? "status-warning" : "",
+      all
+        .map((peer) => {
+          const via = peer.ssh ? ` over ssh ${peer.ssh}` : "";
+          const error = peer.error ? `: ${peer.error}` : "";
+          return `${peer.units.join(", ")} · ${peer.url}${via} · ${peer.state}${error}`;
+        })
+        .join("\n"),
+    );
   }
 
   function selection(parts) {
@@ -23,6 +47,7 @@
       );
       item("status-workspace", "");
       item("status-restart", "");
+      peers(null);
       return;
     }
     const version = health.version ? ` ${health.version}` : "";
@@ -38,6 +63,7 @@
         : "",
       "status-warning",
     );
+    peers(health);
   }
 
   function jobs(list) {
