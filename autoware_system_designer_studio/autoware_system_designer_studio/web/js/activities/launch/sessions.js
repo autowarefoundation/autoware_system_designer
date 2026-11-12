@@ -1,7 +1,8 @@
 // Launch: the daemon's launch sessions and their members, kept current from
 // the event stream and resynchronised through launch.status on every hello.
 // The daemon holds the last session of each mode of a system on a compute
-// unit; `scope` gives the records of one mode.
+// unit; `scope` gives the records of one mode. A `stale` session is the one
+// an unanswering peer daemon last reported.
 // Page events: "launch.sessions" (session key -> session), "launch.member"
 // {path, unit, record} and "launch.activity" after the output rates changed.
 // A member's restart counts are the daemon's, on its record. A status answer
@@ -247,6 +248,14 @@
   SD.on("daemon.health", resync);
   SD.on("daemon.launch", (view) => {
     const key = keyOf(view);
+    // A session of an unanswering peer that the daemon dropped.
+    if (view.forgotten) {
+      sessions.delete(key);
+      members.delete(key);
+      setActivity(key, {});
+      emit();
+      return;
+    }
     const previous = sessions.get(key);
     // A new launch of the mode starts without the members of its last.
     const relaunched = !!previous && previous.job !== view.job;

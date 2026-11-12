@@ -1,5 +1,6 @@
 # Services every topology's compose file extends: the workspace build and the daemon of one compute
-# unit. run.sh supplies the image context, the source checkout and the key directory.
+# unit. run.sh supplies the image context, the source checkout, the key directory and, from the
+# bindings of the topology, the peers of the daemon with ASD_MAIN.
 services:
   build:
     image: asd-multi-unit:${ASD_ROS_DISTRO:-humble}
@@ -15,7 +16,7 @@ services:
       - ${ASD_SOURCE_DIR:?source checkout, set by run.sh}:/ws/src/autoware_system_designer:ro
       - ws:/ws/out
 
-  # Daemon of the compute unit ASD_COMPUTE_UNIT on ASD_PORT.
+  # Daemon of the compute units ASD_COMPUTE_UNITS on ASD_PORT.
   unit:
     image: asd-multi-unit:${ASD_ROS_DISTRO:-humble}
     build: *image
@@ -25,6 +26,8 @@ services:
     environment:
       ROS_DOMAIN_ID: ${ASD_ROS_DOMAIN_ID:-87}
       ASD_RMW_IMPLEMENTATION: ${ASD_RMW_IMPLEMENTATION:-}
+      ASD_PEERS: ${ASD_PEERS:-}
+      ASD_PEER_SSH: ${ASD_PEER_SSH:-}
     volumes:
       - ${ASD_SOURCE_DIR:?source checkout, set by run.sh}:/ws/src/autoware_system_designer:ro
       - ws:/ws/out

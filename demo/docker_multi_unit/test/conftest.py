@@ -31,7 +31,6 @@ HERE = Path(__file__).resolve().parent.parent
 RUN = HERE / "run.sh"
 SYSTEM = "autoware_system_designer_demo_systems:TypeAlpha"
 DEPLOY = "vehicle_x"
-UNITS = ("sensing_perception", "map_localization", "planning_control")
 
 
 def _topologies() -> list:
@@ -135,31 +134,50 @@ class Environment:
     def __init__(self, topology: str):
         self.topology = topology
         self.project = ""
+        self.units: list = []
         self.service: Dict[str, str] = {}
         self.address: Dict[str, str] = {}
-        self.main_unit = ""
+        self.device: Dict[str, str] = {}
+        self.netns: Dict[str, str] = {}
+        self.main_units: list = []
         self.main = Daemon(0)
 
     def read(self) -> None:
-        """Project name and, per unit, service, address and role, as the topology binds them."""
+        """Project name and, per unit, service, address, device and role, as the topology binds them."""
         self.project = json.loads(self.compose("config", "--format", "json").stdout)["name"]
         listed = self.run("units", self.topology, timeout=120.0)
         assert listed.returncode == 0, listed.stderr
         for line in listed.stdout.splitlines():
-            unit, service, port, address, role = line.split()
+            unit, service, port, address, device, netns, role = line.split()
+            self.units.append(unit)
             self.service[unit] = service
             self.address[unit] = address
+            self.device[unit] = device
+            self.netns[unit] = netns
             if role == "main":
-                self.main_unit, self.main = unit, Daemon(int(port))
-        assert sorted(self.service) == sorted(UNITS) and self.main_unit
+                self.main_units.append(unit)
+                self.main = Daemon(int(port))
+        assert self.units and self.main_units
 
     def peer(self, unit: str) -> dict:
         """The main daemon's record of the peer serving ``unit``."""
         return next(peer for peer in self.main.rpc("health")["peers"] if unit in peer["units"])
 
     def remote(self, unit: str) -> bool:
-        """Whether ``unit`` is on another device than the main unit, behind an SSH forward."""
-        return unit != self.main_unit and self.peer(unit)["ssh"] is not None
+        """Whether ``unit`` is on another device than the main daemon, behind an SSH forward."""
+        return self.device[unit] != self.device[self.main_units[0]]
+
+    def units_on(self, device: str) -> list:
+        return [unit for unit in self.units if self.device[unit] == device]
+
+    def services_on(self, device: str) -> list:
+        """Services of a device, the one holding its network namespace first."""
+        services = {self.service[unit]: self.netns[unit] for unit in self.units_on(device)}
+        return sorted(services, key=lambda service: service != services[service])
+
+    def shares_service(self, unit: str, others: list) -> bool:
+        """Whether one of ``others`` runs in the service of ``unit``, under the same daemon."""
+        return any(self.service[other] == self.service[unit] for other in others if other != unit)
 
     def docker(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=60.0, check=False)
@@ -176,7 +194,7 @@ class Environment:
         return [line for line in result.stdout.splitlines() if "pgrep" not in line]
 
     def all_running(self) -> bool:
-        for unit in UNITS:
+        for unit in self.units:
             session = self.main.session(unit)
             if session is None or session["state"] != "running" or not session["launch_ready"]:
                 return False
@@ -203,7 +221,7 @@ def environment(request: pytest.FixtureRequest) -> Iterator[Environment]:
 @pytest.fixture(scope="module")
 def launched(environment: Environment) -> Environment:
     """The environment with every unit launched and all members running."""
-    for unit in UNITS:
+    for unit in environment.units:
         environment.main.launch(unit)
     wait_for(environment.all_running, 60, "every member running")
     return environment

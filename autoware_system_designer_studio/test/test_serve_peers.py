@@ -455,8 +455,11 @@ def test_a_peer_that_goes_away_is_unreachable_until_it_answers_again(units):
     assert main.error("launch.shutdown", compute_unit="sub_ecu") == api.UNAVAILABLE
     assert main.error("launch.status", compute_unit="sub_ecu") == api.UNAVAILABLE
     assert main.error("jobs.get", job="sub_ecu/launch-1") == api.UNAVAILABLE
-    # Lists leave the peer out.
-    assert main.call("launch.status")["sessions"] == []
+    # Lists leave the peer out, but for the session it last reported: the launch it ended while closing.
+    stale = main.call("launch.status")["sessions"]
+    assert [(s["compute_unit"], s["state"], s["stale"], s["members"]) for s in stale] == [
+        ("sub_ecu", "exited", True, [])
+    ]
     assert main.call("jobs.list")["jobs"] == []
     assert main.call("launch.runs")["runs"] == []
 
@@ -521,8 +524,42 @@ def test_a_peer_whose_stream_falls_silent_is_dropped_and_found_again(tmp_path, r
         # The mode it last reported still holds the system.
         start = {"system": SYSTEM_ID, "compute_unit": "main_ecu", "mode": "Simulation"}
         assert running.main.error("launch.start", **start) == api.CONFLICT
+        assert running.main.error("launch.forget", compute_unit="main_ecu") == api.INVALID_PARAMS
         running.wait_peer(peers.PEER_CONNECTED)
         assert running.main.unit("sub_ecu")["status"] == "running"
         running.main.call("launch.shutdown", compute_unit="sub_ecu")
+    finally:
+        running.close()
+
+
+def test_the_last_reported_session_of_an_unanswering_peer_is_forgotten(tmp_path, run_dir, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(peers, "STREAM_IDLE_MIN_S", 0.3)
+    running = _Units(tmp_path, sub_heartbeat_s=0.05)
+    main = running.main
+    nosocket = {"behaviour": "nosocket"}
+    try:
+        running.launch_sub(mode="Runtime", args=nosocket)
+        assert main.error("launch.forget", compute_unit="sub_ecu") == api.CONFLICT
+        running.sub.loop.call_soon_threadsafe(time.sleep, 3.0)
+        running.wait_peer(peers.PEER_UNREACHABLE)
+        start = {"system": SYSTEM_ID, "compute_unit": "main_ecu", "mode": "Simulation", "args": nosocket}
+        assert main.error("launch.start", **start) == api.CONFLICT
+        stale = main.call("launch.status")["sessions"]
+        assert [(s["compute_unit"], s["mode"], s["stale"], s["members"]) for s in stale] == [
+            ("sub_ecu", "Runtime", True, [])
+        ]
+
+        forgotten = main.call("launch.forget", compute_unit="sub_ecu")["forgotten"]
+        assert [(s["compute_unit"], s["mode"], s["stale"]) for s in forgotten] == [("sub_ecu", "Runtime", True)]
+        dropped = main.events.of(launch.TOPIC_LAUNCH)[-1]
+        assert dropped["forgotten"] and dropped["compute_unit"] == "sub_ecu" and "members" not in dropped
+        assert main.call("launch.status")["sessions"] == []
+        assert main.call("launch.forget", compute_unit="sub_ecu") == {"forgotten": []}
+        main.call("launch.start", **start)
+        main.call("launch.shutdown", compute_unit="main_ecu")
+        # The peer answering again reports the session it still has.
+        running.wait_peer(peers.PEER_CONNECTED)
+        assert main.unit("sub_ecu")["status"] == "running"
+        main.call("launch.shutdown", compute_unit="sub_ecu")
     finally:
         running.close()

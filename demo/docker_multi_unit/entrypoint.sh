@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Container entry of the multi-unit environment.
 #   build   colcon build of ASD_PACKAGES and their dependencies from /ws/src into /ws/out
-#   serve   studio daemon of ASD_COMPUTE_UNIT on ASD_PORT, with sshd when ASD_SSHD_PORT is set;
-#           ASD_PEERS lists the daemons of other units as <unit>=<url>, separated by spaces;
-#           ASD_PEER_SSH lists the SSH destinations they are forwarded from as <unit>=<destination>;
+#   serve   studio daemon of the units ASD_COMPUTE_UNITS on ASD_PORT, with sshd when ASD_SSHD_PORT
+#           is set; with ASD_MAIN=true it has the daemons of the other units as peers:
+#           ASD_PEERS lists them as <unit>=<url>, separated by spaces, and ASD_PEER_SSH the SSH
+#           destinations they are forwarded from as <unit>=<destination>;
 #           ASD_RMW_IMPLEMENTATION selects the RMW implementation
 set -eo pipefail
 
@@ -63,7 +64,7 @@ CONFIG
 }
 
 serve() {
-  : "${ASD_COMPUTE_UNIT:?compute unit this daemon serves}"
+  : "${ASD_COMPUTE_UNITS:?compute units this daemon serves}"
   if [[ ! -f "${OUT}/install/setup.bash" ]]; then
     echo "no workspace in ${OUT}; run the build service first" >&2
     exit 1
@@ -76,20 +77,25 @@ serve() {
   if [[ -n "${ASD_SSHD_PORT:-}" ]]; then
     start_sshd
   fi
-  local peer peers=()
-  for peer in ${ASD_PEERS:-}; do
-    peers+=(--peer "${peer}")
+  local unit units=() peer peers=()
+  for unit in ${ASD_COMPUTE_UNITS}; do
+    units+=(--compute-unit "${unit}")
   done
-  if [[ -n "${ASD_PEER_SSH:-}" ]]; then
-    write_ssh_config
-    for peer in ${ASD_PEER_SSH}; do
-      peers+=(--peer-ssh "${peer}")
+  if [[ "${ASD_MAIN:-}" == true ]]; then
+    for peer in ${ASD_PEERS:-}; do
+      peers+=(--peer "${peer}")
     done
+    if [[ -n "${ASD_PEER_SSH// /}" ]]; then
+      write_ssh_config
+      for peer in ${ASD_PEER_SSH}; do
+        peers+=(--peer-ssh "${peer}")
+      done
+    fi
   fi
   exec autoware-system-designer-studio serve \
     --install-root "${OUT}/install" \
     --port "${ASD_PORT:-8780}" \
-    --compute-unit "${ASD_COMPUTE_UNIT}" \
+    "${units[@]}" \
     "${peers[@]}"
 }
 

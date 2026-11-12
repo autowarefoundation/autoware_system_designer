@@ -1,8 +1,8 @@
 # TypeAlpha on two ECUs: sensing_perception and map_localization as two containers of one ECU,
-# sharing its network and IPC namespace, and planning_control on an ECU of its own. The services and
-# their image are in demo/docker_multi_unit/compose.base.yaml; this file holds the binding of each
-# compute unit: its address, its daemon port and, for the unit whose daemon serves the others, their
-# daemons as peers and the address the one on the other ECU is forwarded from.
+# sharing its network and IPC namespace, and planning_control on an ECU of its own.
+# The services and their image are in demo/docker_multi_unit/compose.base.yaml; this file states
+# where each compute unit runs: its service, device (hostname), address and daemon port, and the
+# daemon that has the others as peers (ASD_MAIN).
 name: asd-multi-unit-two-ecus
 
 x-unit: &unit
@@ -27,14 +27,10 @@ services:
       build:
         condition: service_completed_successfully
     environment:
-      ASD_COMPUTE_UNIT: sensing_perception
+      ASD_COMPUTE_UNITS: sensing_perception
       ASD_PORT: 8781
       ASD_SSHD_PORT: "2222"
-      ASD_PEERS: >-
-        map_localization=http://127.0.0.1:8782
-        planning_control=http://127.0.0.1:8783
-      ASD_PEER_SSH: >-
-        planning_control=172.30.87.13
+      ASD_MAIN: "true"
     networks:
       vehicle:
         ipv4_address: 172.30.87.11
@@ -49,7 +45,7 @@ services:
       sensing_perception:
         condition: service_started
     environment:
-      ASD_COMPUTE_UNIT: map_localization
+      ASD_COMPUTE_UNITS: map_localization
       ASD_PORT: 8782
 
   planning_control:
@@ -59,7 +55,7 @@ services:
       build:
         condition: service_completed_successfully
     environment:
-      ASD_COMPUTE_UNIT: planning_control
+      ASD_COMPUTE_UNITS: planning_control
       ASD_PORT: 8783
       ASD_SSHD_PORT: "2222"
     networks:

@@ -212,6 +212,7 @@ class ServeDaemon:
         ):
             self.methods.register(name, self._of_run(name, handler))
         self._register_of_unit("launch.shutdown", self._launch_shutdown)
+        self.methods.register("launch.forget", self._launch_forget)
         for verb in launch.MEASURE_VERBS:
             self._register_of_unit(f"measure.{verb}", self._measure(verb))
         self._register_of_unit("monitor.follow", self._monitor_follow)
@@ -307,14 +308,17 @@ class ServeDaemon:
 
     def _mode_conflict(self, system_id: str, mode: str) -> None:
         """Refuses a launch while a peer's unit runs another mode of the system, as last reported."""
-        for session in self.peers.sessions():
-            if not peers.PeerLink.session_active(session) or session.get("system") != system_id:
-                continue
-            if session.get("mode") != mode:
-                raise api.ApiError(
-                    api.CONFLICT,
-                    f"{system_id} runs mode {session.get('mode')!r} on compute unit {session.get('compute_unit')!r}",
-                )
+        for link in self.peers.links:
+            for session in link.sessions.values():
+                if not peers.PeerLink.session_active(session) or session.get("system") != system_id:
+                    continue
+                if session.get("mode") == mode:
+                    continue
+                unit = session.get("compute_unit")
+                message = f"{system_id} runs mode {session.get('mode')!r} on compute unit {unit!r}"
+                if link.state != peers.PEER_CONNECTED:
+                    message += f", as last reported by its {link.state} daemon; launch.forget drops the session"
+                raise api.ApiError(api.CONFLICT, message)
 
     # -- methods -----------------------------------------------------------
 
@@ -481,6 +485,14 @@ class ServeDaemon:
         if compute_unit is None:
             sessions += await self.peers.gather(lambda link: link.status_views())
         return {"sessions": sessions}
+
+    async def _launch_forget(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Drops the sessions last reported for a unit whose peer does not answer."""
+        compute_unit = _str_param(params, "compute_unit", required=True)
+        link = self.peers.link_of(compute_unit)
+        if link is None:
+            raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is not served by a peer")
+        return {"forgotten": link.forget(compute_unit)}
 
     def _member_action(self, action: str) -> api.Handler:
         async def handler(params: dict[str, Any]) -> Any:

@@ -30,6 +30,9 @@ Requests naming a peer's unit are forwarded to it. Log and rate follows made thr
 are released on the peer once this daemon's last event stream closes; rate follows are made again
 after a reconnect.
 
+The sessions a peer last reported hold their system to their mode while it does not answer, and
+are listed ``stale``; ``launch.forget`` drops those of a unit.
+
 A peer on another device is reached through an SSH forward: a binding with an SSH destination
 (``--peer-ssh <unit>=<destination>`` or ``ssh`` in the site file) makes the daemon keep
 ``ssh -N -L 127.0.0.1:<port>:127.0.0.1:<port> <destination>`` running as a job of kind ``tunnel``,
@@ -401,7 +404,7 @@ class PeerLink:
     """The connection to one peer daemon and what this daemon knows of its units.
 
     ``sessions`` holds the peer's session views (without members) as last reported, kept while the
-    peer is unreachable.
+    peer is unreachable until they are forgotten.
     """
 
     def __init__(
@@ -685,8 +688,28 @@ class PeerLink:
         return [self._session_view(session) for session in sessions]
 
     async def status_views(self) -> list[dict[str, Any]]:
-        """Sessions of the link's units with their members; none while the peer does not answer."""
+        """Sessions of the link's units with their members; the last reported, ``stale``, of an unanswering peer."""
+        if self.state != PEER_CONNECTED:
+            return self.stale_views()
         return self._status_views(await self._aggregate("launch.status", {}))
+
+    def stale_views(self, unit: Optional[str] = None) -> list[dict[str, Any]]:
+        """The last reported sessions of an unanswering peer, of ``unit`` or of every unit of the link."""
+        sessions = self.sessions.values() if unit is None else self.sessions_of(unit)
+        return [{**session, "members": [], "stale": True} for session in sessions]
+
+    def forget(self, unit: str) -> list[dict[str, Any]]:
+        """Drops the last reported sessions of ``unit`` of an unanswering peer; they no longer hold their system."""
+        if self.state == PEER_CONNECTED:
+            raise api.ApiError(api.CONFLICT, f"the daemon at {self.url} answers; its sessions are current")
+        forgotten = self.stale_views(unit)
+        for view in forgotten:
+            del self.sessions[_session_key(view)]
+            del view["members"]
+            self._hub.publish(launch.TOPIC_LAUNCH, {**view, "forgotten": True})
+        if forgotten:
+            logger.info("peer %s: forgot the last reported sessions of %s", self.url, unit)
+        return forgotten
 
     async def job_views(self) -> list[dict[str, Any]]:
         """Launch jobs of the link's units; none while the peer does not answer."""
@@ -821,10 +844,6 @@ class PeerRegistry:
 
     def views(self) -> list[dict[str, Any]]:
         return [link.view() for link in self.links]
-
-    def sessions(self) -> list[dict[str, Any]]:
-        """Every peer session as last reported."""
-        return [session for link in self.links for session in link.sessions.values()]
 
     async def gather(self, call: Callable[[PeerLink], Awaitable[list[dict[str, Any]]]]) -> list[dict[str, Any]]:
         """The lists every link answers ``call`` with, joined."""

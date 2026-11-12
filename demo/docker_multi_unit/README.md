@@ -1,6 +1,7 @@
 # Multi-unit environment on Docker
 
-One studio daemon per compute unit, each in its own container, standing in for a multi-ECU bench.
+One studio daemon per execution environment of the compute units, each in its own container,
+standing in for a multi-ECU bench.
 The containers build the system designer packages of this checkout and run the example system
 `autoware_system_designer_demo_systems:TypeAlpha`: the nodes of
 [`autoware_system_designer_demo_nodes`](../autoware_system_designer_demo_nodes/README.md) on three onboard
@@ -13,8 +14,8 @@ units, exchanging `std_msgs` messages, every unit subscribing topics published o
 | `planning_control`   | planning, control                          | 8783        |
 
 This directory holds what every topology shares: the image, its entry point, the compose services
-(`compose.base.yaml`), the runner and the tests. Which units run where, on which ports and
-addresses, and which daemon serves the others is the content of one compose file per topology, kept
+(`compose.base.yaml`), the runner and the tests. Which units run where, on which devices, ports
+and addresses, and which daemon serves the others is the content of one compose file per topology, kept
 with the system in
 [`autoware_system_designer_demo_systems/ee_architecture`](../autoware_system_designer_demo_systems/ee_architecture/README.md).
 A file added there is a new topology; `ASD_SYSTEM` and `ASD_ARCHITECTURE_DIR` select the files of
@@ -22,15 +23,18 @@ another system.
 
 ## Topologies
 
-| Topology   | Stands for                                 | Network                                              | `sensing_perception` reaches its peers by |
-| ---------- | ------------------------------------------ | ---------------------------------------------------- | ----------------------------------------- |
-| `host`     | containers of one ECU                      | host network and IPC, DDS on loopback                | the shared loopback                       |
-| `bridge`   | separate ECUs                              | bridge network `172.30.87.0/24`, fixed addresses     | SSH forwards it keeps as tunnel jobs      |
-| `two_ecus` | two containers of one ECU and a second ECU | the same network, two units in one network namespace | the shared loopback, an SSH forward       |
+| Topology             | Stands for                                      | Network                                              | `sensing_perception` reaches its peers by |
+| -------------------- | ----------------------------------------------- | ---------------------------------------------------- | ----------------------------------------- |
+| `host`               | containers of one ECU                           | host network and IPC, DDS on loopback                | the shared loopback                       |
+| `bridge`             | separate ECUs                                   | bridge network `172.30.87.0/24`, fixed addresses     | SSH forwards it keeps as tunnel jobs      |
+| `two_ecus`           | two containers of the main ECU and a second ECU | the same network, two units in one network namespace | the shared loopback, an SSH forward       |
+| `remote_pair`        | the main ECU and two containers of a second ECU | the same network, two peers behind one address       | two SSH forwards from one destination     |
+| `shared_environment` | the main ECU and one environment of two units   | the same network, one daemon serving two units       | one SSH forward, one link for both units  |
 
 In every topology the daemon of `sensing_perception` has the other two as
 [peers](../../autoware_system_designer_studio/README.md#peers): its workbench and API on port 8781
-launch, observe and shut down every unit.
+launch, observe and shut down every unit. `run.sh` derives the peers from the bindings of the
+topology file and hands them to the service marked `ASD_MAIN`.
 
 Every daemon binds the loopback of its network namespace. A container standing for a device runs
 an `sshd` on port 2222 as the unprivileged user `asd`. `run.sh` makes two keys per `up`: the
@@ -41,10 +45,10 @@ to the other devices with. DDS crosses the bridge network without shared memory.
 ## Use
 
 ```bash
-./run.sh topologies              # host, bridge, two_ecus
+./run.sh topologies              # bridge, host, remote_pair, shared_environment, two_ecus
 ./run.sh up bridge               # build, start, wait until every daemon is healthy
 ./run.sh url bridge              # http://127.0.0.1:8781/ the main daemon's workbench
-./run.sh units bridge            # unit, service, daemon port, address, role
+./run.sh units bridge            # unit, service, daemon port, address, device, network namespace, role
 ./run.sh compose bridge logs -f sensing_perception
 ./run.sh ssh bridge map_localization    # shell in a service with an sshd
 ./run.sh down bridge             # --volumes also drops the built workspace
@@ -75,8 +79,9 @@ not read. Daemon ports and addresses are the topology file's.
 
 ## Faults
 
-A unit on a device of its own can be cut off the way an ECU fails. The main daemon reports it
-`unreachable` within about 15 s and reads it anew once it answers again:
+A device other than the main daemon's can be cut off the way an ECU fails, with every unit on it.
+The main daemon reports them `unreachable` within about 15 s and reads them anew once their daemons
+answer again:
 
 ```bash
 ./run.sh compose bridge pause planning_control                           # frozen ECU
@@ -98,10 +103,12 @@ The tests carry the marker `docker` and are skipped without a Docker daemon. The
 topology in turn and drive every unit through its main daemon alone: the peers connect without
 mismatch, a peer on another device through an SSH forward, every unit launches, each
 unit receives a topic of another unit, member output is readable, a shutdown ends one unit's
-processes and leaves the others running, and the past runs of all three are listed and read. A unit
-on a device of its own also stays reachable over a slow, lossy link, and is reported `unreachable`
-and then read anew when it is paused, taken off the network, or killed and started again. They are
-not part of `colcon test`.
+processes and leaves the others running, and the past runs of all three are listed and read. The
+units of a device other than the main daemon's also stay reachable over a slow, lossy link, and are
+reported `unreachable` and then read anew when the device is paused, taken off the network, or
+killed and started again. The units, their services and devices are read from `run.sh units`; the
+system, its deploy and the topics listened to are the tests' own. They are not part of
+`colcon test`.
 
 ## Limits
 

@@ -9,8 +9,10 @@
 
   // `status` is the unit's reach in systems.list, `session` its session of the
   // shown mode, `holder` the live session a launch would wait for. A session of
-  // an unreachable unit is the one its daemon last reported.
-  function unitActions({ status, session, holder }) {
+  // an unreachable unit is the one its daemon last reported; `reported` says
+  // the unit has such a live session of any mode, which holds its system to
+  // that mode until it is forgotten.
+  function unitActions({ status, session, holder, reported }) {
     const active = !!session && session.state !== "exited";
     const reachable = status !== UNREACHABLE;
     return {
@@ -18,6 +20,7 @@
       reachable,
       canLaunch: status === "available" && !active && !holder,
       canShutdown: active && reachable && !session.shutting_down,
+      canForget: !reachable && (active || !!reported),
       canMeasure:
         active &&
         reachable &&

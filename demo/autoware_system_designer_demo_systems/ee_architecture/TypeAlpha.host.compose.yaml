@@ -1,7 +1,7 @@
 # TypeAlpha with its compute units as containers of one ECU: host network and IPC, DDS on loopback.
-# The services and their image are in demo/docker_multi_unit/compose.base.yaml; this file holds the
-# binding of each compute unit: its daemon port and, for the unit whose daemon serves the others,
-# their daemons as peers.
+# The services and their image are in demo/docker_multi_unit/compose.base.yaml; this file states
+# where each compute unit runs: its service, device (hostname), address and daemon port, and the
+# daemon that has the others as peers (ASD_MAIN).
 name: asd-multi-unit-host
 
 x-unit: &unit
@@ -27,24 +27,22 @@ services:
     <<: *unit
     environment:
       <<: *variables
-      ASD_COMPUTE_UNIT: sensing_perception
+      ASD_COMPUTE_UNITS: sensing_perception
       ASD_PORT: 8781
-      ASD_PEERS: >-
-        map_localization=http://127.0.0.1:8782
-        planning_control=http://127.0.0.1:8783
+      ASD_MAIN: "true"
 
   map_localization:
     <<: *unit
     environment:
       <<: *variables
-      ASD_COMPUTE_UNIT: map_localization
+      ASD_COMPUTE_UNITS: map_localization
       ASD_PORT: 8782
 
   planning_control:
     <<: *unit
     environment:
       <<: *variables
-      ASD_COMPUTE_UNIT: planning_control
+      ASD_COMPUTE_UNITS: planning_control
       ASD_PORT: 8783
 
 volumes:

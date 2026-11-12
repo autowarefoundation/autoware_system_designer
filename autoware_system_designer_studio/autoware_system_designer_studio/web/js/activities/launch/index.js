@@ -106,6 +106,8 @@
       if (method !== "xml" && !(method === "native" && hasNative))
         method = hasNative ? "native" : "xml";
       let unitStatus = new Map();
+      // Units with a launch request the daemon has not answered yet.
+      const starting = new Set();
       // Unit -> record of the peer daemon serving it; no entry for a unit of this daemon.
       let unitPeers = new Map();
       const { sessions } = SD.activities.launch;
@@ -307,13 +309,14 @@
         const session = ofMode.sessions.get(unit) || null;
         const live = !!session && session.state !== "exited";
         const holder = live ? null : holderOf(unit);
-        return {
-          row,
-          status,
-          session,
-          holder,
-          ...unitActions({ status, session, holder }),
-        };
+        let reported = false;
+        sessions.forEach((other) => {
+          if (other.compute_unit === unit && other.state !== "exited")
+            reported = true;
+        });
+        const actions = unitActions({ status, session, holder, reported });
+        if (starting.has(unit)) actions.canLaunch = false;
+        return { row, status, session, holder, ...actions };
       }
 
       function unitsWhere(offered) {
@@ -337,16 +340,22 @@
         };
         if (row.deploy) params.deploy = row.deploy;
         errors.delete(unit);
+        starting.add(unit);
+        render();
         return daemon
           .rpc("launch.start", params)
           .catch((error) => errors.set(unit, error.message))
-          .then(render);
+          .then(() => {
+            starting.delete(unit);
+            render();
+          });
       }
 
       // Controls of `unit` for its section head on the map: Launch and Shutdown,
       // always offered with the one that applies coloured, the measurement
       // window of an armed session, the peer daemon serving the unit, then the
-      // session or the unit's reach.
+      // session or the unit's reach, with Forget on the last reported session
+      // of an unreachable unit.
       // Null for a unit without a launcher of the mode and deploy, or a daemon
       // that launches nothing.
       function unitControls(unit) {
@@ -354,7 +363,7 @@
         const state = unitState(unit);
         if (!state) return null;
         const { status, session, holder, reachable } = state;
-        const { canLaunch, canShutdown, canMeasure } = state;
+        const { canLaunch, canShutdown, canMeasure, canForget } = state;
         const controls = element("div", "unit-controls");
         const launch = button("Launch", canLaunch ? "primary" : "", () =>
           launchUnit(unit),
@@ -416,7 +425,7 @@
           );
           if (!reachable) label.title = "as last reported by the unit's daemon";
           controls.appendChild(label);
-        } else if (reachable && holder)
+        } else if (holder && (reachable || holder.compute_unit === unit))
           controls.appendChild(
             element(
               "span",
@@ -430,6 +439,14 @@
           controls.appendChild(
             element("span", `unit-status ${status}`, status.replace(/_/g, " ")),
           );
+        if (canForget) {
+          const forget = button("Forget", "", () =>
+            control(unit, "launch.forget", {}),
+          );
+          forget.title =
+            "Drop the sessions the unit's daemon last reported, so the system can run another mode. The unit may still be running.";
+          controls.appendChild(forget);
+        }
         if (measure)
           controls.appendChild(
             element("span", "launch-measure", `measure: ${measure.message}`),

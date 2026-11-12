@@ -75,7 +75,8 @@ measurement window of a session whose runtime preloads the tracer) are in the un
 "Measure from launch" opens the window at launch. A unit served by a peer daemon shows that daemon
 beside them, by its SSH destination or else its address, coloured by the link state and marked when
 the peer differs from this daemon; an `unreachable` unit offers no control until its daemon answers
-again. "Launch all" and "Shutdown all" in the view head act on every unit that can launch or shut
+again, except Forget, which drops the session that daemon last reported so the system can run another
+mode. "Launch all" and "Shutdown all" in the view head act on every unit that can launch or shut
 down. The status bar counts the connected peers and names the units of the others. Every declared unit has its own
 section, a head alone when the mode places no node on it; a launcher of an undeclared unit gets the
 same controls in a row above the map. A bar between the head and the map holds the selected
@@ -374,18 +375,24 @@ intervals counts as lost.
 | Events         | `launch`, `member`, `member.log`, `member.activity`, `monitor`, and `job`/`job.log` of launch jobs      |
 | Follows        | Released on the peer once this daemon's last event stream closes; rate follows return after a reconnect |
 | Modes          | A system runs one mode at a time across all daemons, by each peer's last reported sessions              |
+| `launch.forget` | `{"compute_unit"}` of an unanswering peer: drops its last reported sessions, answers them as `forgotten` |
 | `build.start`  | Refused for a peer's unit; a unit is built by its own daemon                                            |
 
 Peer `state` is `connecting`, `connected` or `unreachable`. `mismatch` lists where a connected peer
 differs from this daemon: version, method set, units it serves, and the modes, compute units and
 deploy variants of the exported systems that have a unit on it. A mismatch is shown, not enforced.
-While a peer is unreachable, requests for its units answer `unavailable`, lists leave it out, and
-its last reported sessions still hold their system to their mode. `ssh` is the peer's SSH
+While a peer is unreachable, requests for its units answer `unavailable`, `jobs.list` and
+`launch.runs` leave it out, and `launch.status` lists its last reported sessions without members,
+marked `stale`. Those sessions still hold their system to their mode until the peer answers again
+or `launch.forget` drops them, which publishes each as a `launch` event marked `forgotten`; the
+unit itself may still be running. The mode rule holds for launches made through the daemon that
+has the others as peers: a peer knows only its own units, so a client of a peer alone is not held
+to it. `ssh` is the peer's SSH
 destination and `tunnel` the id of its current tunnel job, both null for a peer reached directly.
 
 ### Multi-unit environment
 
 [`demo/docker_multi_unit`](../demo/docker_multi_unit/README.md) runs one daemon per compute unit of the example system `TypeAlpha` in
 Docker containers, as containers of one ECU, as separate ECUs reached over SSH, or as a mix of
-both, the daemon of `main_ecu` peered with the others in each, with tests that drive them through
+both, the daemon of one unit peered with the others in each, with tests that drive them through
 its API and cut units off.

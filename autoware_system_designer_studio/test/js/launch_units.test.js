@@ -35,6 +35,28 @@ test("an available unit without a session launches", () => {
   assert.equal(actions.canMeasure, false);
 });
 
+test("the last reported session of an unreachable unit can only be forgotten", () => {
+  const actions = unitActions({ status: "unreachable", session: RUNNING });
+  assert.equal(actions.canForget, true);
+  assert.equal(actions.canShutdown, false);
+  assert.equal(actions.canLaunch, false);
+  const exited = { state: "exited" };
+  assert.equal(
+    unitActions({ status: "unreachable", session: exited }).canForget,
+    false,
+  );
+  assert.equal(
+    unitActions({ status: "running", session: RUNNING }).canForget,
+    false,
+  );
+  // A live session of another mode, last reported for the unit.
+  assert.equal(
+    unitActions({ status: "unreachable", session: null, reported: true })
+      .canForget,
+    true,
+  );
+});
+
 test("a unit held by another session does not launch", () => {
   const holder = { mode: "other", compute_unit: "sub_ecu_1" };
   const actions = unitActions({ status: "available", session: null, holder });
@@ -61,7 +83,7 @@ test("a session shutting down takes no second shutdown", () => {
   assert.equal(actions.canShutdown, false);
 });
 
-test("an unreachable unit offers nothing, with or without a session", () => {
+test("an unreachable unit launches, shuts down and measures nothing", () => {
   [null, RUNNING].forEach((session) => {
     const actions = unitActions({ status: "unreachable", session });
     assert.equal(actions.reachable, false);

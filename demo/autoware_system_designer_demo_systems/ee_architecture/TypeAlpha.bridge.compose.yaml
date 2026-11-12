@@ -1,7 +1,8 @@
 # TypeAlpha with its compute units as separate ECUs: a container per ECU on a bridge network, each
-# with an sshd. The services and their image are in demo/docker_multi_unit/compose.base.yaml; this
-# file holds the binding of each compute unit: its address, its daemon port and, for the unit whose
-# daemon serves the others, their daemons as peers and the addresses they are forwarded from.
+# with an sshd.
+# The services and their image are in demo/docker_multi_unit/compose.base.yaml; this file states
+# where each compute unit runs: its service, device (hostname), address and daemon port, and the
+# daemon that has the others as peers (ASD_MAIN).
 name: asd-multi-unit-bridge
 
 x-unit: &unit
@@ -10,12 +11,6 @@ x-unit: &unit
     service: unit
   cap_add:
     - NET_ADMIN # tc netem on the ECU's interface
-  depends_on:
-    build:
-      condition: service_completed_successfully
-
-x-variables: &variables
-  ASD_SSHD_PORT: "2222"
 
 services:
   build:
@@ -26,39 +21,43 @@ services:
 
   sensing_perception:
     <<: *unit
-    hostname: main-ecu
+    hostname: ecu-a
+    depends_on:
+      build:
+        condition: service_completed_successfully
     environment:
-      <<: *variables
-      ASD_COMPUTE_UNIT: sensing_perception
+      ASD_COMPUTE_UNITS: sensing_perception
       ASD_PORT: 8781
-      ASD_PEERS: >-
-        map_localization=http://127.0.0.1:8782
-        planning_control=http://127.0.0.1:8783
-      ASD_PEER_SSH: >-
-        map_localization=172.30.87.12
-        planning_control=172.30.87.13
+      ASD_SSHD_PORT: "2222"
+      ASD_MAIN: "true"
     networks:
       vehicle:
         ipv4_address: 172.30.87.11
 
   map_localization:
     <<: *unit
-    hostname: sub-ecu-1
+    hostname: ecu-b
+    depends_on:
+      build:
+        condition: service_completed_successfully
     environment:
-      <<: *variables
-      ASD_COMPUTE_UNIT: map_localization
+      ASD_COMPUTE_UNITS: map_localization
       ASD_PORT: 8782
+      ASD_SSHD_PORT: "2222"
     networks:
       vehicle:
         ipv4_address: 172.30.87.12
 
   planning_control:
     <<: *unit
-    hostname: sub-ecu-2
+    hostname: ecu-c
+    depends_on:
+      build:
+        condition: service_completed_successfully
     environment:
-      <<: *variables
-      ASD_COMPUTE_UNIT: planning_control
+      ASD_COMPUTE_UNITS: planning_control
       ASD_PORT: 8783
+      ASD_SSHD_PORT: "2222"
     networks:
       vehicle:
         ipv4_address: 172.30.87.13
