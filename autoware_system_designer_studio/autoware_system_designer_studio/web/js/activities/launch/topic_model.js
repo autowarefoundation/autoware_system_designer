@@ -663,6 +663,36 @@
     return `${d}V${height}Z`;
   }
 
+  // One timeline over the rates records of a launch's runs, `records` as
+  // [{ times, density }]: the samples of every record, with the density at each
+  // the sum of the records whose run spans it.
+  function launchTimeline(records) {
+    const times = [...new Set(records.flatMap((r) => r.times))].sort(
+      (a, b) => a - b,
+    );
+    const density = times.map((t) =>
+      records.reduce((total, { times: own, density: rates = [] }) => {
+        if (!(own.length > 1 && own[0] < t && t <= own[own.length - 1]))
+          return total;
+        return total + (rates[own.findIndex((time) => time >= t)] || 0);
+      }, 0),
+    );
+    return { times, density };
+  }
+
+  // Sample numbers { start, sample } of a record's span covering the times
+  // `from_ns` to `to_ns`; null for a record outside them.
+  function recordSpan(times, from_ns, to_ns) {
+    const last = times.length - 1;
+    if (last < 1 || times[0] >= to_ns || times[last] <= from_ns) return null;
+    let start = 0;
+    times.forEach((time, index) => {
+      if (time <= from_ns) start = index;
+    });
+    const end = times.findIndex((time) => time >= to_ns);
+    return { start, sample: end < 0 ? last : end };
+  }
+
   launch.topicModel = {
     STATUS,
     QUIET,
@@ -692,6 +722,8 @@
     timeShare,
     sampleAtShare,
     densityPath,
+    launchTimeline,
+    recordSpan,
   };
   launch.TOPIC_STATUS = STATUS;
 })();

@@ -568,3 +568,23 @@ test("the span brush maps samples to shares of the run and outlines its density"
   );
   assert.equal(launch.densityPath(times, [0, 0, 0, 0], 1000, 100), "");
 });
+
+test("a launch's records share one timeline, the density summed where runs overlap", () => {
+  const main = { times: [0, 10, 20], density: [0, 4, 6] };
+  const sub = { times: [5, 15, 25], density: [0, 1, 2] };
+  assert.deepEqual(launch.launchTimeline([main, sub]), {
+    times: [0, 5, 10, 15, 20, 25],
+    density: [0, 4, 5, 7, 8, 2],
+  });
+});
+
+test("a record's span covers the times asked, null outside them", () => {
+  const times = [5, 15, 25];
+  assert.deepEqual(launch.recordSpan(times, 0, 30), { start: 0, sample: 2 });
+  assert.deepEqual(launch.recordSpan(times, 10, 20), { start: 0, sample: 2 });
+  assert.deepEqual(launch.recordSpan(times, 15, 25), { start: 1, sample: 2 });
+  assert.deepEqual(launch.recordSpan(times, 0, 15), { start: 0, sample: 1 });
+  assert.equal(launch.recordSpan(times, 0, 5), null);
+  assert.equal(launch.recordSpan(times, 25, 30), null);
+  assert.equal(launch.recordSpan([5], 0, 30), null);
+});
