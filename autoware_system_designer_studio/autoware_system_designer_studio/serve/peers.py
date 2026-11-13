@@ -57,13 +57,14 @@ import shutil
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Iterable, Mapping, Optional
+from typing import Any, Awaitable, Callable, Iterable, Iterator, Mapping, Optional
 from urllib.parse import urlsplit
 
 from .. import exports
 from . import api, jobs, launch
 from .events import TOPIC_DAEMON, TOPIC_HELLO, TOPIC_SYSTEMS_CHANGED, EventHub
 from .http import CLIENT_HEADER, LOOPBACK_HOST_NAMES
+from .tasks import TaskSet
 
 logger = logging.getLogger(__name__)
 
@@ -327,12 +328,7 @@ class PeerClient:
             raise PeerUnreachable(f"{self.url} did not answer {method} within {timeout:g} s") from exc
         if not isinstance(reply, dict):
             raise PeerUnreachable(f"malformed answer to {method} from {self.url}")
-        if reply.get("ok"):
-            return reply.get("result")
-        error = reply.get("error") if isinstance(reply.get("error"), dict) else {}
-        raise api.ApiError(
-            str(error.get("code") or api.INTERNAL), str(error.get("message") or "peer error"), error.get("data")
-        )
+        return api.result_of(reply, "peer error")
 
     async def _rpc(self, method: str, params: dict[str, Any]) -> Any:
         body = json.dumps({"id": 1, "method": method, "params": params}, separators=(",", ":")).encode()
@@ -442,7 +438,7 @@ class PeerLink:
         self._follows: set[str] = set()
         self._monitors: dict[str, set[str]] = {}
         self._stream: Optional[asyncio.StreamWriter] = None
-        self._tasks: set[asyncio.Task] = set()
+        self._tasks = TaskSet()
         self._closed = False
 
     def view(self) -> dict[str, Any]:
@@ -574,10 +570,7 @@ class PeerLink:
         self._closed = True
         if self._stream is not None:
             self._stream.close()
-        for task in list(self._tasks):
-            task.cancel()
-        if self._tasks:
-            await asyncio.wait(set(self._tasks), timeout=1.0)
+        await self._tasks.cancel()
 
     # -- events ------------------------------------------------------------
 
@@ -780,10 +773,7 @@ class PeerLink:
         self._spawn(self.client.rpc(method, params, timeout=FORWARD_TIMEOUT_S))
 
     def _spawn(self, coroutine: Awaitable[Any]) -> None:
-        task = asyncio.ensure_future(coroutine)
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
-        task.add_done_callback(_log_failure)
+        self._tasks.spawn(coroutine, failure="peer request")
 
 
 _COMPARED_FIELDS = (
@@ -807,14 +797,6 @@ def _comparable(system: Mapping[str, Any], field: str) -> Any:
 def _dict_items(result: Any, key: str) -> list[dict[str, Any]]:
     items = result.get(key) if isinstance(result, dict) else None
     return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
-
-
-def _log_failure(task: asyncio.Task) -> None:
-    if task.cancelled():
-        return
-    exc = task.exception()
-    if exc is not None:
-        logger.warning("peer request failed: %s", exc)
 
 
 class PeerRegistry:
@@ -869,6 +851,13 @@ class PeerRegistry:
 
     def views(self) -> list[dict[str, Any]]:
         return [link.view() for link in self.links]
+
+    def active_sessions(self, system_id: str) -> Iterator[tuple[PeerLink, dict[str, Any]]]:
+        """(link, session) of the sessions of a system not exited, as the peers last reported them."""
+        for link in self.links:
+            for session in link.sessions.values():
+                if PeerLink.session_active(session) and session.get("system") == system_id:
+                    yield link, session
 
     async def gather(self, call: Callable[[PeerLink], Awaitable[list[dict[str, Any]]]]) -> list[dict[str, Any]]:
         """The lists every link answers ``call`` with, joined."""

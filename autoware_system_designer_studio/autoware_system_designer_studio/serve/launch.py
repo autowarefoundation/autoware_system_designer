@@ -55,13 +55,15 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
-from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord
+from autoware_system_designer_runtime.run_log import member_dir_name
 
 from ..exports import SystemExport
 from . import api, jobs
 from .events import EventHub
+from .runs import RunArchive, member_tails
+from .tasks import TaskSet
 
 logger = logging.getLogger(__name__)
 
@@ -93,15 +95,8 @@ REQUEST_TIMEOUT_S = 30.0
 MONITOR_SAMPLE_MAX_S = 20.0
 # Longest line read from a runtime; a ``monitor`` snapshot of a large unit is hundreds of KB.
 MAX_LINE = 8 << 20
-# Tail of a member file read from the log directory: at most this many lines from its last bytes.
-TAIL_LINES = 200
-TAIL_BYTES = 64 * 1024
-# Past runs: the runtime's default log base holds one directory per run, with its run.json manifest.
-LOG_BASE = Path("/tmp/autoware_system_designer_logs")
-RUN_MANIFEST = "run.json"
 # A launch id is a launcher argument and a grouping key of runs.
 LAUNCH_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
-MAX_RUNS = 100
 SOCKET_DIR = "asd-studio"
 _ARG_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -220,10 +215,7 @@ class ControlClient:
         except (ConnectionError, asyncio.CancelledError):
             self._pending.pop(request_id, None)
             raise api.ApiError(api.UNAVAILABLE, "control channel closed while waiting for the runtime")
-        if reply.get("ok"):
-            return reply.get("result")
-        error = reply.get("error") if isinstance(reply.get("error"), dict) else {}
-        raise api.ApiError(str(error.get("code") or api.INTERNAL), str(error.get("message") or "runtime error"))
+        return api.result_of(reply, "runtime error")
 
     def close(self) -> None:
         for future in self._pending.values():
@@ -286,6 +278,11 @@ class LaunchSession:
         return self.job is not None and self.job.active
 
     @property
+    def scope(self) -> dict[str, str]:
+        """What an event of the session is keyed by."""
+        return {"compute_unit": self.compute_unit, "system": self.system.id, "mode": self.mode}
+
+    @property
     def state(self) -> str:
         if not self.active:
             return SESSION_EXITED
@@ -336,7 +333,6 @@ class LaunchManager:
         log_base: Optional[Path] = None,
     ) -> None:
         self._hub = hub
-        self.log_base = log_base or LOG_BASE
         self._jobs = runner
         self._cwd = cwd
         self.env = dict(os.environ if env is None else env)
@@ -345,9 +341,8 @@ class LaunchManager:
         self.rviz_config = rviz_config or find_rviz_config(self.env)
         # (compute unit, system id, mode) -> the last session of that mode on the unit.
         self.sessions: dict[tuple[str, str, str], LaunchSession] = {}
-        self._tasks: set[asyncio.Task] = set()
-        # The rates record read last, with the path, change time and size of its file.
-        self._rates_record: Optional[tuple[tuple[Path, int, int], RatesRecord]] = None
+        self._tasks = TaskSet()
+        self.archive = RunArchive(log_base, self._log_dirs)
 
     def info(self) -> dict[str, Any]:
         rviz = shutil.which(RVIZ, path=self.env.get("PATH"))
@@ -394,7 +389,7 @@ class LaunchManager:
     def active_session(self, compute_unit: str) -> LaunchSession:
         session = self.session(compute_unit)
         if not session.active:
-            raise api.ApiError(api.NOT_FOUND, f"the launch of compute unit {compute_unit!r} has exited")
+            raise _exited(compute_unit)
         return session
 
     async def start(
@@ -466,9 +461,7 @@ class LaunchManager:
         session.job = await self._jobs.start(spec)
         self.sessions[(compute_unit, system.id, mode)] = session
         self._publish(session)
-        task = asyncio.ensure_future(self._attach(session))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        self._tasks.spawn(self._attach(session))
         return session
 
     def launch_of(self, system_id: str, mode: str) -> Optional[str]:
@@ -507,11 +500,14 @@ class LaunchManager:
         )
         return await self._jobs.start(spec)
 
-    async def call(self, compute_unit: str, method: str, params: dict[str, Any]) -> Any:
+    def connected_session(self, compute_unit: str) -> LaunchSession:
         session = self.active_session(compute_unit)
         if session.client is None:
-            raise api.ApiError(api.UNAVAILABLE, f"the control channel of {compute_unit!r} is not connected yet")
-        return await session.client.call(method, params)
+            raise _not_connected(compute_unit)
+        return session
+
+    async def call(self, compute_unit: str, method: str, params: dict[str, Any]) -> Any:
+        return await self.connected_session(compute_unit).client.call(method, params)
 
     async def follow(
         self, compute_unit: str, path: str, *, system_id: Optional[str] = None, mode: Optional[str] = None
@@ -525,12 +521,11 @@ class LaunchManager:
             return result
         if session.log_dir is None:
             if not session.active:
-                raise api.ApiError(api.NOT_FOUND, f"the launch of compute unit {compute_unit!r} has exited")
-            raise api.ApiError(api.UNAVAILABLE, f"the control channel of {compute_unit!r} is not connected yet")
+                raise _exited(compute_unit)
+            raise _not_connected(compute_unit)
         if path not in session.members:
             raise api.ApiError(api.NOT_FOUND, f"no member {path!r}")
-        member_dir = session.log_dir / member_slug(path)
-        return {"path": path, "out": tail_lines(member_dir / "out"), "err": tail_lines(member_dir / "err")}
+        return {"path": path, **member_tails(session.log_dir / member_dir_name(path))}
 
     async def unfollow(
         self, compute_unit: str, path: Optional[str], *, system_id: Optional[str] = None, mode: Optional[str] = None
@@ -550,9 +545,7 @@ class LaunchManager:
 
     async def monitor_follow(self, compute_unit: str, client: str = "") -> dict[str, Any]:
         """Makes ``client`` a follower of the unit's topic rates; following twice is following once."""
-        session = self.active_session(compute_unit)
-        if session.client is None:
-            raise api.ApiError(api.UNAVAILABLE, f"the control channel of {compute_unit!r} is not connected yet")
+        session = self.connected_session(compute_unit)
         known = client in session.monitors
         session.monitors.add(client)
         try:
@@ -570,117 +563,8 @@ class LaunchManager:
             return {"released": False}
         return await session.client.call("monitor.unfollow", {})
 
-    # -- past runs: the runtime's log directories -----------------------------------
-
-    def log_bases(self) -> list[Path]:
-        """Directories holding run directories: the runtime's default base and the parents of the
-        sessions' log directories."""
-        bases = [self.log_base]
-        for session in self.sessions.values():
-            if session.log_dir is not None and session.log_dir.parent not in bases:
-                bases.append(session.log_dir.parent)
-        return bases
-
-    def runs(self, system: Optional[SystemExport] = None, *, exclude_units: Iterable[str] = ()) -> list[dict[str, Any]]:
-        """Past runs, newest first: the directories holding a run manifest, less those an active session
-        writes, its session serving them. Runs of ``exclude_units`` are left out, as are those of other
-        systems with ``system``."""
-        excluded = set(exclude_units)
-        active = {session.log_dir for session in self.sessions.values() if session.active and session.log_dir}
-        runs = []
-        for base in self.log_bases():
-            try:
-                entries = [entry for entry in base.iterdir() if entry.is_dir()]
-            except OSError:
-                continue
-            for run_dir in entries:
-                manifest = _read_manifest(run_dir)
-                if manifest is None or run_dir in active:
-                    continue
-                if system is not None and not _run_of_system(manifest, system):
-                    continue
-                summary = _run_summary(run_dir, manifest)
-                if summary["compute_unit"] not in excluded:
-                    runs.append(summary)
-        runs.sort(key=lambda run: run["started"], reverse=True)
-        return runs[:MAX_RUNS]
-
-    def run(self, name: str) -> tuple[Path, dict[str, Any]]:
-        """The log directory and manifest of a past run, by directory name under one of the log bases."""
-        if not _plain_name(name):
-            raise api.ApiError(api.INVALID_PARAMS, "run must be a directory name")
-        for base in self.log_bases():
-            run_dir = base / name
-            manifest = _read_manifest(run_dir) if run_dir.is_dir() else None
-            if manifest is not None:
-                return run_dir, manifest
-        raise api.ApiError(api.NOT_FOUND, f"no run {name!r}")
-
-    def run_members(self, name: str) -> dict[str, Any]:
-        """A past run with its members: the manifest's member paths that have a directory, each with its
-        directory name."""
-        run_dir, manifest = self.run(name)
-        listed = manifest.get("members")
-        paths = [path for path in listed if isinstance(path, str)] if isinstance(listed, list) else []
-        members = [
-            {"path": path, "slug": member_slug(path)} for path in paths if (run_dir / member_slug(path)).is_dir()
-        ]
-        return {**_run_summary(run_dir, manifest), "members": members}
-
-    async def run_rates(
-        self,
-        name: str,
-        *,
-        sample: Optional[int] = None,
-        start: Optional[int] = None,
-        span_s: Optional[float] = None,
-    ) -> dict[str, Any]:
-        """Topic rates of a past run from its rates record: from sample number ``start``, else from
-        ``span_s`` seconds earlier, up to sample number ``sample``, the whole run by default. ``times``
-        lists the record's samples, ``density`` the counted events per second over the interval ending
-        at each, and ``start`` and ``sample`` are the numbers of the span's first and end samples. The
-        record is read on a worker thread."""
-        run_dir, manifest = self.run(name)
-        path = run_dir / RATES_FILE
-        if not path.is_file():
-            raise api.ApiError(api.NOT_FOUND, f"run {name!r} recorded no topic rates")
-        try:
-            rates = await asyncio.get_running_loop().run_in_executor(
-                None, self._read_rates, path, sample, start, span_s
-            )
-        except (OSError, ValueError) as exc:
-            raise api.ApiError(api.NOT_FOUND, f"rates of run {name!r} are not readable: {exc}") from exc
-        return {**_run_summary(run_dir, manifest), **rates}
-
-    def _read_rates(
-        self, path: Path, sample: Optional[int], start: Optional[int], span_s: Optional[float]
-    ) -> dict[str, Any]:
-        """Rates of the record at ``path``, which stays loaded while its file is unchanged."""
-        stat = path.stat()
-        version = (path, stat.st_mtime_ns, stat.st_size)
-        held = self._rates_record
-        if held is None or held[0] != version:
-            held = self._rates_record = (version, RatesRecord.load(path))
-        record = held[1]
-        return {
-            "times": record.times,
-            "density": record.density(),
-            **record.rates(sample=sample, start=start, span_s=span_s),
-        }
-
-    def run_tail(self, name: str, member: str) -> dict[str, Any]:
-        """Tails of a member's ``out`` and ``err`` files in a past run; ``member`` is its directory name."""
-        if not _plain_name(member):
-            raise api.ApiError(api.INVALID_PARAMS, "member must be a directory name")
-        member_dir = self.run(name)[0] / member
-        if not member_dir.is_dir():
-            raise api.ApiError(api.NOT_FOUND, f"no member {member!r} in run {name!r}")
-        return {
-            "run": name,
-            "member": member,
-            "out": tail_lines(member_dir / "out"),
-            "err": tail_lines(member_dir / "err"),
-        }
+    def _log_dirs(self) -> list[tuple[Path, bool]]:
+        return [(session.log_dir, session.active) for session in self.sessions.values() if session.log_dir]
 
     def release_follows(self) -> None:
         """Drops every follow of every connected runtime; called once no event stream is left to read them."""
@@ -696,10 +580,7 @@ class LaunchManager:
 
     def _request(self, session: LaunchSession, method: str) -> None:
         """Sends a request whose answer nobody waits for; a failure is logged."""
-        task = asyncio.ensure_future(session.client.call(method, {}))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
-        task.add_done_callback(_log_failure)
+        self._tasks.spawn(session.client.call(method, {}), failure="control request")
 
     async def shutdown(self, compute_unit: str) -> dict[str, Any]:
         """Shutdown through the runtime; a launch without a channel yet is cancelled as a job."""
@@ -717,10 +598,7 @@ class LaunchManager:
         for session in self.sessions.values():
             if session.client is not None:
                 session.client.close()
-        for task in list(self._tasks):
-            task.cancel()
-        if self._tasks:
-            await asyncio.wait(set(self._tasks), timeout=1.0)
+        await self._tasks.cancel()
 
     # -- internals ---------------------------------------------------------
 
@@ -774,15 +652,7 @@ class LaunchManager:
         elif kind == "member" and isinstance(obj.get("path"), str):
             record = session.count({k: v for k, v in obj.items() if k != "event"})
             session.members[record["path"]] = record
-            self._hub.publish(
-                TOPIC_MEMBER,
-                {
-                    "compute_unit": session.compute_unit,
-                    "system": session.system.id,
-                    "mode": session.mode,
-                    **record,
-                },
-            )
+            self._hub.publish(TOPIC_MEMBER, {**session.scope, **record})
         elif kind == "member.log" and isinstance(obj.get("path"), str):
             self._hub.publish(
                 TOPIC_MEMBER_LOG,
@@ -795,26 +665,10 @@ class LaunchManager:
             )
         elif kind == "member.activity" and isinstance(obj.get("rates"), dict):
             self._hub.publish(
-                TOPIC_MEMBER_ACTIVITY,
-                {
-                    "compute_unit": session.compute_unit,
-                    "system": session.system.id,
-                    "mode": session.mode,
-                    "window": obj.get("window"),
-                    "rates": obj["rates"],
-                },
+                TOPIC_MEMBER_ACTIVITY, {**session.scope, "window": obj.get("window"), "rates": obj["rates"]}
             )
-
         elif kind == "monitor" and isinstance(obj.get("nodes"), list):
-            self._hub.publish(
-                TOPIC_MONITOR,
-                {
-                    "compute_unit": session.compute_unit,
-                    "system": session.system.id,
-                    "mode": session.mode,
-                    **{k: v for k, v in obj.items() if k != "event"},
-                },
-            )
+            self._hub.publish(TOPIC_MONITOR, {**session.scope, **{k: v for k, v in obj.items() if k != "event"}})
 
     def _on_exit(self, session: LaunchSession) -> None:
         if session.client is not None:
@@ -828,6 +682,14 @@ class LaunchManager:
         self._hub.publish(TOPIC_LAUNCH, session.to_view())
 
 
+def _exited(compute_unit: str) -> api.ApiError:
+    return api.ApiError(api.NOT_FOUND, f"the launch of compute unit {compute_unit!r} has exited")
+
+
+def _not_connected(compute_unit: str) -> api.ApiError:
+    return api.ApiError(api.UNAVAILABLE, f"the control channel of {compute_unit!r} is not connected yet")
+
+
 def new_launch_id() -> str:
     """An id for a launch: its start time, and a suffix keeping launches of one second apart."""
     return f"{time.strftime('%Y%m%d_%H%M%S')}-{secrets.token_hex(2)}"
@@ -837,81 +699,6 @@ def valid_launch_id(launch_id: str) -> bool:
     return LAUNCH_ID.fullmatch(launch_id) is not None
 
 
-def member_slug(path: str) -> str:
-    """Name of a member's directory under the runtime's log directory: the member path with every
-    character outside letters, digits, ``_``, ``-`` and ``.`` replaced by ``_``, leading ``_`` dropped."""
-    safe = "".join(ch if ch.isalnum() or ch in "_-." else "_" for ch in path).lstrip("_")
-    return safe or "_unnamed_"
-
-
-def _plain_name(name: Optional[str]) -> bool:
-    """A single directory name: no separators, no traversal."""
-    return bool(name) and "/" not in name and "\\" not in name and "\x00" not in name and name not in (".", "..")
-
-
-def _read_manifest(run_dir: Path) -> Optional[dict[str, Any]]:
-    """The run manifest of a log directory; None where there is none, so the directory is not a run."""
-    try:
-        manifest = json.loads((run_dir / RUN_MANIFEST).read_text())
-    except (OSError, ValueError):
-        return None
-    return manifest if isinstance(manifest, dict) else None
-
-
-def _run_of_system(manifest: Mapping[str, Any], system: SystemExport) -> bool:
-    """Whether a run's manifest names ``system``, by system name or by a structure path under its
-    export directory."""
-    if manifest.get("system") == system.name:
-        return True
-    structure = manifest.get("system_structure")
-    if not isinstance(structure, str):
-        return False
-    try:
-        Path(structure).resolve().relative_to(system.export_dir.resolve())
-    except (ValueError, OSError):
-        return False
-    return True
-
-
-def _run_summary(run_dir: Path, manifest: Mapping[str, Any]) -> dict[str, Any]:
-    started = manifest.get("started")
-    members = manifest.get("members")
-
-    def text(key: str) -> Optional[str]:
-        value = manifest.get(key)
-        return value if isinstance(value, str) else None
-
-    return {
-        "run": run_dir.name,
-        "dir": str(run_dir),
-        "started": float(started) if isinstance(started, (int, float)) and not isinstance(started, bool) else 0.0,
-        "mode": text("mode"),
-        "compute_unit": text("compute_unit"),
-        "deploy": text("deploy"),
-        "launch": text("launch"),
-        "member_count": len(members) if isinstance(members, list) else 0,
-        "rates": (run_dir / RATES_FILE).is_file(),
-    }
-
-
-def tail_lines(path: Path) -> list[str]:
-    """The last lines of a file, at most ``TAIL_LINES`` from its final ``TAIL_BYTES``."""
-    try:
-        size = path.stat().st_size
-        start = max(0, size - TAIL_BYTES)
-        with open(path, "rb") as handle:
-            handle.seek(start)
-            data = handle.read(size - start)
-    except OSError:
-        return []
-    chunks = data.split(b"\n")
-    if not chunks[-1]:
-        chunks.pop()
-    if start > 0 and chunks:
-        chunks.pop(0)  # a line cut by the window start
-    return [chunk.decode("utf-8", "replace") for chunk in chunks[-TAIL_LINES:]]
-
-
 def _unlink(path: Path) -> None:
     try:
         path.unlink()
@@ -919,14 +706,6 @@ def _unlink(path: Path) -> None:
         pass
     except OSError as exc:
         logger.warning("cannot remove %s: %s", path, exc)
-
-
-def _log_failure(task: asyncio.Task) -> None:
-    if task.cancelled():
-        return
-    exc = task.exception()
-    if exc is not None:
-        logger.warning("control request failed: %s", exc)
 
 
 def parse_args_param(value: Any) -> dict[str, str]:

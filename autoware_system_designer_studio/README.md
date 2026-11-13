@@ -11,8 +11,8 @@ from a loopback daemon or packed to a directory on demand.
 | `autoware_system_designer_runtime` | runs exports, writes measurement records                 |
 | `autoware_system_designer_studio`  | views, build and launch control over exports and records |
 
-The studio reads exports by file contract through `autoware_system_designer_runtime.export_tree` and
-`autoware_system_designer_runtime.records`; it imports nothing from the designer.
+The studio reads exports, records and run logs by file contract through the runtime's `export_tree`,
+`records`, `rates_record` and `run_log` modules; it imports nothing from the designer.
 
 ## Pack
 

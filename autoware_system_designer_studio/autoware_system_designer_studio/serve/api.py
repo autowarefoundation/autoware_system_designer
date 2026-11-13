@@ -102,6 +102,14 @@ def error_body(error: ApiError, request_id: Any = _NO_ID) -> dict[str, Any]:
     return body
 
 
+def result_of(reply: dict[str, Any], fallback: str) -> Any:
+    """Result of a response envelope; its error is raised, with ``fallback`` as the message it lacks."""
+    if reply.get("ok"):
+        return reply.get("result")
+    error = reply.get("error") if isinstance(reply.get("error"), dict) else {}
+    raise ApiError(str(error.get("code") or INTERNAL), str(error.get("message") or fallback), error.get("data"))
+
+
 def parse_rpc(body: bytes) -> tuple[RequestId, str, dict[str, Any]]:
     """Validated (id, method, params) of one request envelope."""
     try:

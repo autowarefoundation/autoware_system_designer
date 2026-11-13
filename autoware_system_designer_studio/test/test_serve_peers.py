@@ -23,7 +23,7 @@ import time
 import pytest
 
 from autoware_system_designer_studio import cli
-from autoware_system_designer_studio.serve import api, jobs, launch, peers
+from autoware_system_designer_studio.serve import api, jobs, launch, peers, runs
 from autoware_system_designer_studio.serve.server import ServeDaemon
 
 from .test_serve import PKG, SYSTEM, UNITS, _await_job_output, _install_tree, _Running
@@ -486,7 +486,7 @@ def test_a_mode_is_refused_while_another_mode_of_the_system_starts(units):
 
 
 def test_the_runs_of_peer_units_do_not_crowd_out_local_runs(units, monkeypatch):
-    monkeypatch.setattr(launch, "MAX_RUNS", 1)
+    monkeypatch.setattr(runs, "MAX_RUNS", 1)
     base = units.tmp_path / "logs_main"
     _run_tree(base, "20260101_000000", {"system": SYSTEM, "compute_unit": "main_ecu", "started": 1.0})
     _run_tree(base, "20260102_000000", {"system": SYSTEM, "compute_unit": "sub_ecu", "started": 2.0})
