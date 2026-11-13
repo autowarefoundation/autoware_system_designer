@@ -25,7 +25,7 @@ from autoware_system_designer_runtime._impl.core.config import ActorConfig
 from autoware_system_designer_runtime._impl.core.coordinator import CoordinatorBuilder
 from autoware_system_designer_runtime._impl.core.regular_actor import NodeSpec
 
-pytestmark = pytest.mark.usefixtures("fake_process_groups")
+pytestmark = [pytest.mark.usefixtures("fake_process_groups"), pytest.mark.timing]
 
 
 def _run_exiting_node(monkeypatch, tmp_path, exit_code):

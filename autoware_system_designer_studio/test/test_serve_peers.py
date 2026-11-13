@@ -356,6 +356,7 @@ def test_a_peer_differing_from_this_daemon_is_flagged(tmp_path, run_dir):  # noq
 # -- routing ---------------------------------------------------------------------
 
 
+@pytest.mark.timing
 def test_a_peer_unit_is_launched_followed_and_shut_down_through_this_daemon(units):
     main, sub = units.main, units.sub
     session = units.launch_sub(mode="Runtime", deploy="car_a", measure=True)
@@ -517,6 +518,7 @@ def test_the_units_of_a_system_share_a_launch_until_all_ended(units):
 # -- faults ----------------------------------------------------------------------
 
 
+@pytest.mark.timing
 def test_a_peer_that_goes_away_is_unreachable_until_it_answers_again(units):
     main = units.main
     units.launch_sub(args={"behaviour": "nosocket"})
@@ -603,6 +605,7 @@ def test_a_reconnected_peer_keeps_its_launch_and_the_rate_followers(units, monke
     _until(lambda: main.unit("sub_ecu")["status"] == "available", "exit of the peer's launch")
 
 
+@pytest.mark.timing
 def test_a_silent_peer_is_unreachable(tmp_path, monkeypatch):
     monkeypatch.setattr(peers, "AGGREGATE_TIMEOUT_S", 0.2)
     listener = socket.socket()
@@ -621,6 +624,7 @@ def test_a_silent_peer_is_unreachable(tmp_path, monkeypatch):
         listener.close()
 
 
+@pytest.mark.timing
 def test_a_peer_whose_stream_falls_silent_is_dropped_and_found_again(tmp_path, run_dir, monkeypatch):  # noqa: F811
     monkeypatch.setattr(peers, "STREAM_IDLE_MIN_S", 1.0)
     running = _Units(tmp_path, sub_heartbeat_s=0.05)

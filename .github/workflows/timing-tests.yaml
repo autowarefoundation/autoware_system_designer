@@ -1,0 +1,47 @@
+name: timing-tests
+
+on:
+  pull_request:
+  schedule:
+    - cron: 0 0 * * *
+  workflow_dispatch:
+
+jobs:
+  timing-tests:
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.container }}
+    # The tests marked `timing` depend on the timing of the runner; their result does not gate a merge.
+    continue-on-error: true
+    env:
+      AUTOWARE_SYSTEM_DESIGNER_TIMING_TESTS: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        rosdistro:
+          - humble
+          - jazzy
+        include:
+          - rosdistro: humble
+            container: ros:humble
+          - rosdistro: jazzy
+            container: ros:jazzy
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Remove exec_depend
+        uses: autowarefoundation/autoware-github-actions/remove-exec-depend@v1
+
+      - name: Build
+        uses: autowarefoundation/autoware-github-actions/colcon-build@v1
+        with:
+          rosdistro: ${{ matrix.rosdistro }}
+          target-packages: autoware_system_designer_runtime autoware_system_designer_studio
+
+      - name: Test
+        uses: autowarefoundation/autoware-github-actions/colcon-test@v1
+        with:
+          rosdistro: ${{ matrix.rosdistro }}
+          target-packages: autoware_system_designer_runtime autoware_system_designer_studio

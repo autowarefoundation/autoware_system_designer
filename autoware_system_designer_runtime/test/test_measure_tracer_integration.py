@@ -51,10 +51,13 @@ def _tracer():
         return None
 
 
-pytestmark = pytest.mark.skipif(
-    _tracer() is None or _demo("talker") is None or _demo("listener") is None,
-    reason="tracer library or demo_nodes_cpp not installed",
-)
+pytestmark = [
+    pytest.mark.timing,
+    pytest.mark.skipif(
+        _tracer() is None or _demo("talker") is None or _demo("listener") is None,
+        reason="tracer library or demo_nodes_cpp not installed",
+    ),
+]
 
 
 def _terminate(procs):

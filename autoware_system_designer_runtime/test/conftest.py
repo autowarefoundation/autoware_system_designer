@@ -29,6 +29,24 @@ import pytest  # noqa: E402
 TEST_DOMAINS = range(150, 231)
 DOMAIN_LOCK_DIR = Path(tempfile.gettempdir()) / "autoware_system_designer_test_domains"
 
+# Set to run the tests marked ``timing``, whose outcome depends on the timing of the host.
+TIMING_TESTS_ENV = "AUTOWARE_SYSTEM_DESIGNER_TIMING_TESTS"
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", f"timing: the outcome depends on the timing of the host; run with {TIMING_TESTS_ENV}=1"
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if os.environ.get(TIMING_TESTS_ENV):
+        return
+    skip = pytest.mark.skip(reason=f"depends on the timing of the host; {TIMING_TESTS_ENV}=1 runs it")
+    for item in items:
+        if "timing" in item.keywords:
+            item.add_marker(skip)
+
 
 @pytest.fixture
 def ros_domain_id():

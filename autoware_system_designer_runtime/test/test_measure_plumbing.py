@@ -423,6 +423,7 @@ def test_timed_window_closes_then_shuts_down_then_analyzes(tmp_path, monkeypatch
     assert any(m.startswith("measure: analysis done in ") for m in messages)
 
 
+@pytest.mark.timing
 def test_open_window_closes_at_shutdown_and_analyzes_in_the_hook(tmp_path, monkeypatch):
     session, worker = _session(tmp_path, monkeypatch, settle=0.0, heartbeat=0.02)
     coord = _StubCoord()
@@ -536,6 +537,7 @@ def test_analysis_reads_a_snapshot_of_the_exits(tmp_path, monkeypatch):
     assert seen["exits"] is not session._exits
 
 
+@pytest.mark.timing
 def test_coordinator_run_ends_as_soon_as_the_last_task_finishes_after_shutdown(monkeypatch, tmp_path):
     async def fake_spawn(cmd, *, env=None, stdout_path=None, stderr_path=None, cwd=None):
         return _FakeProc()

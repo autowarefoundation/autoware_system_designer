@@ -18,8 +18,11 @@
 import asyncio
 import os
 import signal
+import subprocess
 import sys
 import time
+
+import pytest
 
 from autoware_system_designer_runtime._impl.core import events as ev
 from autoware_system_designer_runtime._impl.core import process
@@ -68,6 +71,7 @@ async def _child_pid(path):
     raise AssertionError("the leader did not report its child")
 
 
+@pytest.mark.timing
 def test_stop_kills_the_children_a_leader_leaves_behind(tmp_path):
     async def scenario():
         # The leader ends on the stop signal at once, as a launch service does, with its child still running.
@@ -83,6 +87,7 @@ def test_stop_kills_the_children_a_leader_leaves_behind(tmp_path):
     assert 0.5 <= took < 5
 
 
+@pytest.mark.timing
 def test_stop_returns_once_the_group_is_gone(tmp_path):
     async def scenario():
         proc = await process.spawn_pgrp([sys.executable, "-c", SLEEPER])
@@ -131,6 +136,7 @@ def test_stop_of_a_leader_that_has_exited_ends_what_it_left(tmp_path):
     assert exit_code == 3 and not _running(child)
 
 
+@pytest.mark.timing
 def test_a_kill_signal_reaches_the_group_an_exited_leader_left(tmp_path):
     config = ActorConfig(output_dir=tmp_path, graceful_shutdown_timeout=30.0)
 
@@ -178,6 +184,7 @@ def test_groups_ending_together_share_their_scans(monkeypatch):
     assert scanned < 20
 
 
+@pytest.mark.timing
 def test_a_member_ends_on_the_stop_signal_under_a_runtime_started_with_it_ignored(tmp_path):
     config = ActorConfig(output_dir=tmp_path, graceful_shutdown_timeout=30.0)
     builder = CoordinatorBuilder(default_config=config)
@@ -207,15 +214,13 @@ def test_a_member_ends_on_the_stop_signal_under_a_runtime_started_with_it_ignore
 
 
 def test_a_zombie_does_not_keep_a_group_alive():
-    # The child is a zombie of this process until it is waited for.
-    pid = os.fork()
-    if pid == 0:
-        os.setsid()
-        os._exit(0)
+    # The child leads its own group and is a zombie of this process until it is waited for.
+    child = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
+    pid = child.pid
     deadline = time.monotonic() + 5
     while _running(pid) and time.monotonic() < deadline:
         time.sleep(0.01)
     try:
         assert os.path.exists(f"/proc/{pid}") and not process.group_alive(pid)
     finally:
-        os.waitpid(pid, 0)
+        child.wait()

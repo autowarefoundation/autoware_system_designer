@@ -26,6 +26,7 @@ rclpy = pytest.importorskip("rclpy")
 from autoware_system_designer_runtime._impl.ros2.launchers.container import make_executor  # noqa: E402
 
 
+@pytest.mark.timing
 def test_executor_passes_message_info_of_a_latched_sample_to_two_argument_callbacks(ros_domain_id):
     from builtin_interfaces.msg import Time
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
