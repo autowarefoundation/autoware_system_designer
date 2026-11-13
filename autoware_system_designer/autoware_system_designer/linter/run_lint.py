@@ -25,7 +25,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 if (PACKAGE_ROOT / "autoware_system_designer" / "__init__.py").is_file():
     sys.path.insert(0, str(PACKAGE_ROOT))
 
-from autoware_system_designer.linter import LintResult, lint_files  # noqa: E402
+from autoware_system_designer.linter import lint_files  # noqa: E402
 
 
 def find_yaml_files(paths: List[str]) -> List[Path]:

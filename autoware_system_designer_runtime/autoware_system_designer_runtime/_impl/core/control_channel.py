@@ -34,7 +34,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Coroutine, Optional
 
 from ...control_protocol import DEFAULT_POLICY, MEASURE_VERBS, MEMBER_ACTIONS
 from ...run_log import STREAMS, member_dir_name, tail_lines
@@ -189,13 +189,18 @@ class ControlChannel:
         except OSError:
             pass
 
+    def _spawn(self, coroutine: Coroutine[Any, Any, None]) -> None:
+        """Runs ``coroutine`` as a task held until it ends; ``close`` cancels the ones still running."""
+        task = asyncio.ensure_future(coroutine)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
     # ---- connections -------------------------------------------------------
 
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         client = _Client(writer)
         self._clients.add(client)
-        sender = asyncio.ensure_future(client.run())
-        self._tasks.add(sender)
+        self._spawn(client.run())
         try:
             client.send(self._hello())
             while not client.dropped:
@@ -216,7 +221,6 @@ class ControlChannel:
         finally:
             self._clients.discard(client)
             client.close()
-            self._tasks.discard(sender)
             self._prune_follows()
 
     def _hello(self) -> dict[str, Any]:
@@ -260,9 +264,7 @@ class ControlChannel:
         if not isinstance(params, dict):
             return _error(request_id, "invalid_params", "params must be an object")
         if method in DETACHED_METHODS:
-            task = asyncio.ensure_future(self._answer_detached(client, request_id, method, params))
-            self._tasks.add(task)
-            task.add_done_callback(self._tasks.discard)
+            self._spawn(self._answer_detached(client, request_id, method, params))
             return None
         return await self._answer(client, request_id, method, params)
 

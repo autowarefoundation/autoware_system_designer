@@ -76,10 +76,15 @@
       extraList,
       legend,
     );
-    // Live sessions, or a past run whose log directory the daemon reads.
-    const runSelect = element("select", "monitor-run-select");
+    // Live sessions, or a past launch whose log directories the daemon reads.
+    const runs = launch.runSelector({
+      systemId: config.systemId,
+      unitsOf: launch.modeUnits(config.launchCommands),
+      offered: "launch.runs",
+      onChange: (value) => setRun(value),
+    });
+    const runSelect = runs.element;
     runSelect.setAttribute("aria-label", "Run");
-    runSelect.addEventListener("change", () => setRun(runSelect.value));
 
     const EMPTY_LOG = "Select a node to follow its log.";
     const view = mainView({ empty: EMPTY_LOG });
@@ -121,8 +126,6 @@
     // the member's logs [{ run, slug, label }] for the members of the tree, and
     // { path, logs } of its members outside the tree.
     let run = null;
-    // Past runs by launch, as the selector lists them.
-    let runGroups = [];
     let runSeq = 0;
     let selectedExtra = null;
 
@@ -513,66 +516,40 @@
     // Shows the live sessions (an empty value) or a past launch: the runs of
     // its units, a unit started again within it holding several.
     function setRun(value) {
-      runSelect.value = value;
-      const group = runGroups.find((g) => g.value === value);
+      const group = runs.pick(value);
       if (!group) {
-        runSelect.value = "";
         run = null;
         runSeq += 1;
         selectedExtra = null;
         reselect();
         return;
       }
-      const runs = [...group.runs].sort(
+      const ordered = [...group.runs].sort(
         (a, b) => (a.started || 0) - (b.started || 0),
       );
-      Promise.allSettled(
-        runs.map((r) => daemon.rpc("launch.run", { run: r.run })),
-      ).then((results) => {
-        if (runSelect.value !== value) return;
-        const read = results
-          .map((result, index) => ({ result, summary: runs[index] }))
-          .filter(({ result }) => result.status === "fulfilled");
-        results
-          .filter((result) => result.status === "rejected")
-          .forEach((result) => console.warn("launch run:", result.reason));
-        if (!read.length) {
-          setRun("");
-          return;
-        }
-        unfollow();
-        run = {
-          name: value,
-          label: group.label,
-          runs: read.map(({ result, summary }) => ({
-            name: summary.run,
-            label: runLabel(summary),
-            members: result.value.members || [],
-          })),
-          slugs: new Map(),
-          extras: [],
-        };
-        placeRun();
-        reselect();
-      });
-    }
-
-    // Past runs of the system by launch, newest first; the shown launch stays
-    // selected while listed.
-    function loadRuns() {
-      runSelect.hidden = !daemon.offers("launch.runs");
-      if (runSelect.hidden) return;
-      daemon
-        .rpc("launch.runs", { system: config.systemId })
-        .then(({ runs }) => {
-          const current = run?.name || "";
-          runGroups = launch.runGroups(runs);
-          runSelect.replaceChildren(...launch.runOptions(runGroups, true));
-          if (current && !runGroups.some((g) => g.value === current))
+      launch
+        .readRuns(ordered, "launch.run", (r) => ({ run: r.run }))
+        .then(({ read }) => {
+          if (runSelect.value !== value) return;
+          if (!read.length) {
             setRun("");
-          else runSelect.value = current;
-        })
-        .catch((error) => console.warn("launch runs:", error));
+            return;
+          }
+          unfollow();
+          run = {
+            name: value,
+            label: group.label,
+            runs: read.map(({ run: summary, result }) => ({
+              name: summary.run,
+              label: runLabel(summary),
+              members: result.members || [],
+            })),
+            slugs: new Map(),
+            extras: [],
+          };
+          placeRun();
+          reselect();
+        });
     }
 
     // Selects the entry keyed `key` and unfolds the tree down to it; an unknown
@@ -697,7 +674,7 @@
       renderFailures();
     });
     SD.on("launch.sessions", () => {
-      loadRuns();
+      runs.load();
       if (run) return;
       renderTree();
       showState();
@@ -730,13 +707,13 @@
     reload();
     showState();
     renderLaunchers();
-    loadRuns();
+    runs.load();
 
     return {
       runSelector: runSelect,
       show() {
         hidden = false;
-        loadRuns();
+        runs.load();
         if (!run && selected?.entity_type === "node")
           follow(logHolder(selected));
         if (!stale) return;

@@ -1,8 +1,8 @@
-autoware_system_design_format: 0.4.0
+autoware_system_design_format: 0.4.1
 
 name: Tracker.node
 
-description: Dummy multi-object tracker that fuses detected objects from multiple detectors into tracked objects.
+description: Dummy multi-object tracker that periodically fuses queued detected objects from multiple detectors into tracked objects.
 
 package:
   name: autoware_system_designer_demo_nodes
@@ -48,18 +48,32 @@ param_values: []
 
 # processes
 processes:
+  - name: queue_objects1
+    trigger_conditions:
+      - on_input: objects1
+    outcomes:
+      - to_queue: objects1
+  - name: queue_objects2
+    trigger_conditions:
+      - on_input: objects2
+    outcomes:
+      - to_queue: objects2
+  - name: queue_objects3
+    trigger_conditions:
+      - on_input: objects3
+    outcomes:
+      - to_queue: objects3
   - name: update
     trigger_conditions:
-      - and:
-          - on_input: objects1
-          - or:
-              - on_input: objects2
-              - on_input: objects3
+      - periodic: 10.0 # Hz
+    reads:
+      - from_queue: objects1
+      - from_queue: objects2
+      - from_queue: objects3
     outcomes:
       - to_trigger: predict
   - name: predict
     trigger_conditions:
       - on_trigger: update
-      - periodic: 10.0 # Hz
     outcomes:
       - to_output: objects
