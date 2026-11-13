@@ -34,11 +34,16 @@ jobs:
       - name: Remove exec_depend
         uses: autowarefoundation/autoware-github-actions/remove-exec-depend@v1
 
+      - name: Get self packages
+        id: get-self-packages
+        uses: autowarefoundation/autoware-github-actions/get-self-packages@v1
+
+      # Every package is built, as in build-and-test: the dependencies of all of them are installed.
       - name: Build
         uses: autowarefoundation/autoware-github-actions/colcon-build@v1
         with:
           rosdistro: ${{ matrix.rosdistro }}
-          target-packages: autoware_system_designer_runtime autoware_system_designer_studio
+          target-packages: ${{ steps.get-self-packages.outputs.self-packages }}
 
       - name: Test
         uses: autowarefoundation/autoware-github-actions/colcon-test@v1
