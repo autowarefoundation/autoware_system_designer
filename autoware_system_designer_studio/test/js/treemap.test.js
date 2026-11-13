@@ -24,6 +24,7 @@ global.window = {
     },
   },
 };
+require(path.join(JS_DIR, "diagrams", "treemap_layout.js"));
 require(path.join(JS_DIR, "diagrams", "treemap.js"));
 const Treemap = registry.get("treemap");
 const {

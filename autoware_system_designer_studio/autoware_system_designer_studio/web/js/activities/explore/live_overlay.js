@@ -54,8 +54,7 @@
 
     async function loadEntities() {
       const mode = store.get("mode");
-      const data = await SD.NamespaceTree.loadStructure(config.dataBase, mode);
-      entities = launch.nestComposables(SD.NamespaceTree.entities(data));
+      entities = await launch.modeEntities(config.dataBase, mode);
       entitiesMode = mode;
     }
 

@@ -1,22 +1,5 @@
 /* Node diagram. */
 
-/* Node diagram styles */
-.node-diagram-container {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  cursor: grab;
-}
-
-.node-diagram-container:active {
-  cursor: grabbing;
-}
-
-.node-diagram-container svg {
-  width: 100%;
-  height: 100%;
-}
-
 .node-rect {
   /* stroke-width set per-depth by JS via SVG attribute (getLayerStyle().borderW) */
   transition: all 0.2s;
@@ -70,10 +53,6 @@
   transition: all 0.2s;
 }
 
-.edge-arrow {
-  fill: var(--text-secondary);
-}
-
 /* Node group highlighting - similar to module-highlighted */
 .node-group.highlighted {
   stroke: none !important;
@@ -89,16 +68,8 @@
   /* stroke color and width set by JS inline style (_applyEdgeHighlight) */
 }
 
-.node-group.highlighted > g > .edge-arrow {
-  fill: var(--highlight) !important;
-}
-
 .edge-path.highlighted {
   /* stroke color and width set by JS inline style (_applyEdgeHighlight / highlightModule) */
-}
-
-.highlighted .edge-arrow {
-  fill: var(--highlight) !important;
 }
 
 /* Module highlighting - only direct children, not descendants */
@@ -110,10 +81,6 @@
 .module-highlighted > .edge-path {
   stroke: var(--highlight) !important;
   /* stroke-width set by JS inline style via highlightModule() */
-}
-
-.module-highlighted > g > .edge-arrow {
-  fill: var(--highlight) !important;
 }
 
 /* Child highlighting - only the boundary, not edges */
