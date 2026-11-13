@@ -36,8 +36,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from ...run_log import STREAMS, member_dir_name, tail_lines
 from .commands import CommandError, MemberRecord, MemberStates, RuntimeCommands
-from .regular_actor import _slug
 
 logger = logging.getLogger(__name__)
 
@@ -58,15 +58,11 @@ METHODS = (
 )
 # Methods that wait: answered from a task of their own, so the requests behind them are not held up.
 DETACHED_METHODS = ("monitor.sample",)
-STREAMS = ("out", "err")
 MAX_LINE = 64 * 1024
 LOG_POLL_S = 0.2
 LOG_READ_MAX = 1 << 20
 # Window of the output growth scan behind ``member.activity``.
 ACTIVITY_POLL_S = 2.0
-# Tail of a file reported by ``log.follow``: at most this many lines from the last bytes of it.
-BACKFILL_LINES = 200
-BACKFILL_BYTES = 64 * 1024
 # Outgoing bytes a client may have queued before it counts as stalled.
 QUEUE_BYTES = 8 << 20
 # Interval of the ``monitor`` rates sent to following clients.
@@ -340,13 +336,13 @@ class ControlChannel:
             file = self._log_path(key)
             if key in self._offsets:
                 self._tail_file(key)  # pending lines reach the current followers before the tail is cut
-                result[stream], _ = _tail_lines(file, self._offsets[key])
+                result[stream], _ = tail_lines(file, self._offsets[key])
             else:
                 try:
                     self._offsets[key] = file.stat().st_size
                 except OSError:
                     self._offsets[key] = 0
-                result[stream], rest = _tail_lines(file, self._offsets[key])
+                result[stream], rest = tail_lines(file, self._offsets[key])
                 if rest:
                     self._partial[key] = rest
         client.follows.add(path)
@@ -380,7 +376,7 @@ class ControlChannel:
     def _log_path(self, key: tuple[str, str]) -> Path:
         path = self._paths.get(key)
         if path is None:
-            path = self._paths[key] = self._log_dir / _slug(key[0]) / key[1]
+            path = self._paths[key] = self._log_dir / member_dir_name(key[0]) / key[1]
         return path
 
     async def _tail_logs(self) -> None:
@@ -492,22 +488,3 @@ class ControlChannel:
                 previous = reading
             except Exception:  # noqa: BLE001
                 logger.exception("reading the tracer counters failed")
-
-
-def _tail_lines(path: Path, size: int) -> tuple[list[str], bytes]:
-    """The last complete lines of a file's first ``size`` bytes, from at most its final
-    ``BACKFILL_BYTES``, and the unterminated bytes after them."""
-    if size == 0:
-        return [], b""
-    start = max(0, size - BACKFILL_BYTES)
-    try:
-        with open(path, "rb") as handle:
-            handle.seek(start)
-            data = handle.read(size - start)
-    except OSError:
-        return [], b""
-    chunks = data.split(b"\n")
-    rest = chunks.pop()
-    if start > 0 and chunks:
-        chunks.pop(0)  # a line cut by the window start
-    return [chunk.decode("utf-8", "replace") for chunk in chunks[-BACKFILL_LINES:]], rest

@@ -57,10 +57,6 @@ class OperationModeGuard:
         self._subscription = None
         self._replay_logged = False
 
-    @property
-    def active(self) -> bool:
-        return self._subscription is not None
-
     async def install(self) -> bool:
         def _create() -> None:
             from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy

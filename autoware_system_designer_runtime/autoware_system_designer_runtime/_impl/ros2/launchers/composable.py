@@ -27,7 +27,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional, Sequence
 
 import yaml
 
@@ -42,6 +42,9 @@ from ...core.state import (
 )
 from ..common.namespace import join_fqn, parent_namespace, unique_node_name
 from ..common.params import ParameterLayer, parameter_layers, remap_pairs
+
+if TYPE_CHECKING:
+    from .container import RosWorker
 
 logger = logging.getLogger(__name__)
 

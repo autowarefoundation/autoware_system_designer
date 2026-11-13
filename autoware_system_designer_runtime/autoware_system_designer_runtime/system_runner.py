@@ -14,11 +14,8 @@
 
 """CLI entry: launch a system_structure JSON via the actor runtime.
 
-The XML LaunchService backend and ``build_launch_description`` have been
-replaced by the actor coordinator in
-:mod:`autoware_system_designer_runtime`. Each member of the system runs
-as its own supervised subprocess, with composable nodes loaded directly
-via the ``composition_interfaces/srv/LoadNode`` service.
+Each member of the system runs as its own supervised subprocess, with composable nodes loaded
+directly via the ``composition_interfaces/srv/LoadNode`` service.
 """
 
 from __future__ import annotations
@@ -29,7 +26,6 @@ import json
 import logging
 import re
 import sys
-import time
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
@@ -48,6 +44,7 @@ from ._impl.ros2.common.substitutions import bind_variables, resolve_argument_va
 from ._impl.ros2.operation_mode import POLICIES, OperationModeGuard
 from .export_tree import manifest_path, read_manifest, resolve_structure_paths
 from .rates_record import RATES_FILE
+from .run_log import LOG_BASE, RUN_MANIFEST, write_run_manifest
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -121,39 +118,6 @@ class _ShortNameFilter(logging.Filter):
         else:
             record.short_name = "Autoware Runtime"
         return True
-
-
-RUN_MANIFEST = "run.json"
-
-
-def write_run_manifest(
-    out_dir: Path,
-    *,
-    json_path: str,
-    data: Mapping[str, Any],
-    ecu: Optional[str],
-    deploy: Optional[str],
-    members: Sequence[str],
-    launch: Optional[str] = None,
-) -> Path:
-    """Records what a run's log directory holds: the system structure and unit it ran, the launch the
-    run belongs to and the member paths whose directories lie beside it."""
-    metadata = data.get("metadata")
-    if not isinstance(metadata, Mapping):
-        metadata = {}
-    manifest = {
-        "system": metadata.get("system_name"),
-        "mode": metadata.get("mode") or Path(json_path).stem,
-        "compute_unit": ecu,
-        "deploy": deploy,
-        "launch": launch,
-        "system_structure": str(Path(json_path).resolve()),
-        "started": time.time(),
-        "members": list(members),
-    }
-    path = out_dir / RUN_MANIFEST
-    path.write_text(json.dumps(manifest, indent=2) + "\n")
-    return path
 
 
 def launch_from_json(
@@ -286,7 +250,7 @@ def launch_from_json(
         return 130
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Launch an Autoware system from a system_structure JSON file " "under per-process supervision."
     )
@@ -324,8 +288,7 @@ def main() -> None:
         "--log-dir",
         type=Path,
         default=None,
-        help="Base directory for per-node log output. Default: a fresh "
-        "timestamped folder under /tmp/autoware_system_designer_logs.",
+        help="Base directory for per-node log output. Default: a fresh " f"timestamped folder under {LOG_BASE}.",
     )
     parser.add_argument(
         "--respawn",
@@ -433,7 +396,19 @@ def main() -> None:
         "under the record root ($AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR, else $ROS_HOME/autoware_system_designer/records), "
         "else <log-dir>/latency/<Mode>_latency.json.",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def _setup_logging(level: str) -> None:
+    handler = logging.StreamHandler()
+    handler.addFilter(_ShortNameFilter())
+    handler.setFormatter(logging.Formatter("[%(asctime)s] %(short_name)s - %(message)s", datefmt="%H:%M:%S"))
+    logging.root.setLevel(getattr(logging, level))
+    logging.root.addHandler(handler)
+
+
+def main() -> None:
+    args = _build_parser().parse_args()
 
     measure: Optional[MeasureOptions] = None
     if args.measure or args.measure_duration is not None:
@@ -446,12 +421,7 @@ def main() -> None:
             clock=args.measure_clock,
         )
 
-    short_name_filter = _ShortNameFilter()
-    handler = logging.StreamHandler()
-    handler.addFilter(short_name_filter)
-    handler.setFormatter(logging.Formatter("[%(asctime)s] %(short_name)s - %(message)s", datefmt="%H:%M:%S"))
-    logging.root.setLevel(getattr(logging, args.log_level))
-    logging.root.addHandler(handler)
+    _setup_logging(args.log_level)
 
     sys.exit(
         launch_from_json(

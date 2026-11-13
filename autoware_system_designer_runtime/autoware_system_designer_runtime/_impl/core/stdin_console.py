@@ -40,7 +40,6 @@ import asyncio
 import logging
 import readline  # noqa: F401 — activates readline line editing for input()
 import shlex
-import signal
 import sys
 import threading
 from typing import Optional

@@ -208,10 +208,6 @@ class RosWorker:
 
         return await self.run_on_ros_thread(_destroy)
 
-    @property
-    def probe_count(self) -> int:
-        return len(self._probes)
-
     # ------------------------------------------------------------------
     # LoadNode dispatch
     # ------------------------------------------------------------------

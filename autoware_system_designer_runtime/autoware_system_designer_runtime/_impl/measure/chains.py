@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from dataclasses import dataclass, field
-from typing import Optional
 
 from .node_stats import NS_PER_MS, Analysis, NodeObs, PubEvent, Summary, TakeEvent, TimerEvent, summarize
 

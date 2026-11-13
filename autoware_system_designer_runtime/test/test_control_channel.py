@@ -31,10 +31,10 @@ from autoware_system_designer_runtime._impl.core import control_channel as cc
 from autoware_system_designer_runtime._impl.core import events as ev
 from autoware_system_designer_runtime._impl.core.commands import CommandError, MemberStates, RuntimeCommands
 from autoware_system_designer_runtime._impl.core.control_channel import METHODS, ControlChannel
-from autoware_system_designer_runtime._impl.core.regular_actor import _slug
 from autoware_system_designer_runtime._impl.core.stdin_console import _dispatch
 from autoware_system_designer_runtime._impl.ros2.launchers.container import takes_message_info
 from autoware_system_designer_runtime._impl.ros2.operation_mode import MODE_AUTONOMOUS, OperationModeGuard, is_replayed
+from autoware_system_designer_runtime.run_log import TAIL_LINES, member_dir_name
 
 
 class _Handle:
@@ -457,11 +457,11 @@ def test_channel_answers_errors_in_the_envelope(tmp_path):
 def test_channel_tails_the_output_files_of_followed_members_only(tmp_path):
     async def scenario():
         coord, commands = _commands(["/sensing/lidar/driver", "/perception/detector"])
-        node_dir = tmp_path / _slug("/sensing/lidar/driver")
+        node_dir = tmp_path / member_dir_name("/sensing/lidar/driver")
         node_dir.mkdir()
         out = node_dir / "out"
         out.write_bytes(b"first line\nsecond line\npartial")
-        other = tmp_path / _slug("/perception/detector")
+        other = tmp_path / member_dir_name("/perception/detector")
         other.mkdir()
         async with _Channel(commands, commands._states, tmp_path) as c:
             await c.event()
@@ -507,14 +507,14 @@ def test_channel_tails_the_output_files_of_followed_members_only(tmp_path):
 def test_follow_reports_the_tail_of_a_long_file_and_a_second_follower_joins_mid_stream(tmp_path):
     async def scenario():
         coord, commands = _commands(["/n"])
-        node_dir = tmp_path / _slug("/n")
+        node_dir = tmp_path / member_dir_name("/n")
         node_dir.mkdir()
         out = node_dir / "out"
         out.write_bytes(b"".join(b"line %05d\n" % i for i in range(20000)))
         async with _Channel(commands, commands._states, tmp_path) as c:
             await c.event()
             tail = (await c.call("log.follow", {"path": "/n"}))["result"]["out"]
-            assert len(tail) == cc.BACKFILL_LINES and tail[-1] == "line 19999" and tail[0] == "line 19800"
+            assert len(tail) == TAIL_LINES and tail[-1] == "line 19999" and tail[0] == "line 19800"
             with open(out, "ab") as f:
                 f.write(b"more\n")
             assert (await c.event())["lines"] == ["more"]
@@ -552,14 +552,14 @@ def test_channel_reports_output_growth_per_window_while_a_client_is_connected(tm
     async def scenario():
         coord, commands = _commands(["/a", "/b"])
         for name in ("/a", "/b"):
-            (tmp_path / _slug(name)).mkdir()
-        out = tmp_path / _slug("/a") / "out"
+            (tmp_path / member_dir_name(name)).mkdir()
+        out = tmp_path / member_dir_name("/a") / "out"
         async with _Channel(commands, commands._states, tmp_path) as c:
             await c.event()
             # The first scan is the baseline; growth after it is reported, members without any are left out.
             await asyncio.sleep(cc.ACTIVITY_POLL_S * 1.5)
             out.write_bytes(b"x" * 1000)
-            (tmp_path / _slug("/a") / "err").write_bytes(b"y" * 24)
+            (tmp_path / member_dir_name("/a") / "err").write_bytes(b"y" * 24)
             event = await c.event()
             assert event["event"] == "member.activity"
             assert list(event["rates"]) == ["/a"] and event["rates"]["/a"] >= 1

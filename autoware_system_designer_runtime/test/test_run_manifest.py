@@ -14,7 +14,7 @@
 
 import json
 
-from autoware_system_designer_runtime.system_runner import RUN_MANIFEST, write_run_manifest
+from autoware_system_designer_runtime.run_log import RUN_MANIFEST, member_dir_name, write_run_manifest
 
 
 def test_run_manifest_names_what_the_log_directory_holds(tmp_path):
@@ -56,3 +56,9 @@ def test_runs_starting_in_one_second_get_their_own_log_directory(tmp_path):
     dirs = [ensure_output_dir(tmp_path) for _ in range(3)]
     assert len(set(dirs)) == 3
     assert all(d.is_dir() and d.parent == tmp_path for d in dirs)
+
+
+def test_member_dir_name_is_a_safe_path_segment():
+    assert member_dir_name("/sensing/lidar/front_upper/lidar") == "sensing_lidar_front_upper_lidar"
+    assert member_dir_name("/a-b.c_d/e f") == "a-b.c_d_e_f"
+    assert member_dir_name("//") == "_unnamed_"

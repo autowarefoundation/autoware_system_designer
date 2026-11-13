@@ -29,6 +29,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Sequence
 
+from ...run_log import member_dir_name
 from . import events as ev
 from .config import ActorConfig
 from .process import graceful_kill, reap_group, spawn_pgrp
@@ -130,7 +131,7 @@ class RegularNodeActor:
                 return
             # All other commands (Restart, KillSignal, …) are irrelevant before spawn.
 
-        node_dir = self._config.output_dir / _slug(self.name)
+        node_dir = self._config.output_dir / member_dir_name(self.name)
         node_dir.mkdir(parents=True, exist_ok=True)
         (node_dir / "cmdline").write_text(" ".join(self._spec.cmd) + "\n")
 
@@ -378,15 +379,3 @@ class RegularNodeActor:
 
     async def _emit(self, event) -> None:
         await ev.emit_event(self._state_tx, self.name, event)
-
-
-def _slug(name: str) -> str:
-    """Sanitize a member name into a filesystem-safe path segment."""
-    safe = []
-    for ch in name:
-        if ch.isalnum() or ch in ("_", "-", "."):
-            safe.append(ch)
-        else:
-            safe.append("_")
-    out = "".join(safe).lstrip("_")
-    return out or "_unnamed_"

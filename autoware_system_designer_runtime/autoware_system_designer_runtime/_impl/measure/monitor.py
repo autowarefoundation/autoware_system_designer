@@ -217,10 +217,6 @@ class RatesRecorder:
         self._interval_s = interval_s
         self._writer = RatesWriter(path, interval_s=interval_s)
 
-    @property
-    def path(self) -> Path:
-        return self._writer.path
-
     async def run(self) -> None:
         while True:
             self.sample()

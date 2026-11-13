@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from .coordinator import Coordinator, CoordinatorBuilder
 
 MEMBER_ACTIONS = ("stop", "restart", "kill")
-MEASURE_VERBS = ("start", "stop", "status")
 
 
 class CommandError(Exception):
