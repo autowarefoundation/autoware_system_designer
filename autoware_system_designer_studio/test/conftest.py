@@ -14,9 +14,25 @@
 
 """Bind the studio and the runtime it reads exports with to this source tree, ahead of any installed copy."""
 
+import signal
 import sys
 from pathlib import Path
+
+import pytest
 
 _REPO = Path(__file__).resolve().parents[2]
 for _package_dir in (_REPO / "autoware_system_designer_runtime", _REPO / "autoware_system_designer_studio"):
     sys.path.insert(0, str(_package_dir))
+
+
+@pytest.fixture(autouse=True, scope="session")
+def handled_interrupt():
+    """The session handles SIGINT as the serve daemon does, so a job's process starts with its default action.
+
+    A session started with the signal ignored hands the ignore down to every process a job starts.
+    """
+    previous = signal.getsignal(signal.SIGINT)
+    if previous == signal.SIG_IGN:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    yield
+    signal.signal(signal.SIGINT, previous)

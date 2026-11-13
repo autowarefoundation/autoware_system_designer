@@ -90,6 +90,13 @@ def _until(condition, what, timeout=10.0):
     pytest.fail(f"{what} did not come")
 
 
+def _freeze(running):
+    """Blocks the daemon's loop, as a frozen process; setting the returned event lets it run again."""
+    release = threading.Event()
+    running.loop.call_soon_threadsafe(release.wait, 60)
+    return release
+
+
 @pytest.fixture(autouse=True)
 def quick_reconnects(monkeypatch):
     monkeypatch.setattr(peers, "RECONNECT_MIN_S", 0.05)
@@ -615,34 +622,38 @@ def test_a_silent_peer_is_unreachable(tmp_path, monkeypatch):
 
 
 def test_a_peer_whose_stream_falls_silent_is_dropped_and_found_again(tmp_path, run_dir, monkeypatch):  # noqa: F811
-    monkeypatch.setattr(peers, "STREAM_IDLE_MIN_S", 0.3)
+    monkeypatch.setattr(peers, "STREAM_IDLE_MIN_S", 1.0)
     running = _Units(tmp_path, sub_heartbeat_s=0.05)
+    thawed = threading.Event()
     try:
         running.launch_sub(mode="Runtime", args={"behaviour": "nosocket"})
-        # A frozen peer: its loop sends nothing for longer than three heartbeats.
-        running.sub.loop.call_soon_threadsafe(time.sleep, 1.5)
+        # A frozen peer: its loop sends nothing for longer than the idle limit.
+        thawed = _freeze(running.sub)
         view = running.wait_peer(peers.PEER_UNREACHABLE)
         assert "silent" in view["error"]
         # The mode it last reported still holds the system.
         start = {"system": SYSTEM_ID, "compute_unit": "main_ecu", "mode": "Simulation"}
         assert running.main.error("launch.start", **start) == api.CONFLICT
         assert running.main.error("launch.forget", compute_unit="main_ecu") == api.INVALID_PARAMS
+        thawed.set()
         running.wait_peer(peers.PEER_CONNECTED)
         assert running.main.unit("sub_ecu")["status"] == "running"
         running.main.call("launch.shutdown", compute_unit="sub_ecu")
     finally:
+        thawed.set()
         running.close()
 
 
 def test_the_last_reported_session_of_an_unanswering_peer_is_forgotten(tmp_path, run_dir, monkeypatch):  # noqa: F811
-    monkeypatch.setattr(peers, "STREAM_IDLE_MIN_S", 0.3)
+    monkeypatch.setattr(peers, "STREAM_IDLE_MIN_S", 1.0)
     running = _Units(tmp_path, sub_heartbeat_s=0.05)
     main = running.main
     nosocket = {"behaviour": "nosocket"}
+    thawed = threading.Event()
     try:
         running.launch_sub(mode="Runtime", args=nosocket)
         assert main.error("launch.forget", compute_unit="sub_ecu") == api.CONFLICT
-        running.sub.loop.call_soon_threadsafe(time.sleep, 3.0)
+        thawed = _freeze(running.sub)
         running.wait_peer(peers.PEER_UNREACHABLE)
         start = {"system": SYSTEM_ID, "compute_unit": "main_ecu", "mode": "Simulation", "args": nosocket}
         assert main.error("launch.start", **start) == api.CONFLICT
@@ -660,8 +671,10 @@ def test_the_last_reported_session_of_an_unanswering_peer_is_forgotten(tmp_path,
         main.launch(compute_unit="main_ecu", mode="Simulation", args=nosocket)
         main.call("launch.shutdown", compute_unit="main_ecu")
         # The peer answering again reports the session it still has.
+        thawed.set()
         running.wait_peer(peers.PEER_CONNECTED)
         assert main.unit("sub_ecu")["status"] == "running"
         main.call("launch.shutdown", compute_unit="sub_ecu")
     finally:
+        thawed.set()
         running.close()
