@@ -168,8 +168,6 @@
     // span by unit and `units` their units. `start` and `sample` are the numbers of the span's
     // first and end samples on the timeline, null for the first and the last of the launch.
     let run = null;
-    // Launch groups of the past runs listed in the selector.
-    let runGroups = [];
     let runSeq = 0;
     // Units whose monitor this view follows.
     const followed = new Set();
@@ -221,9 +219,16 @@
       undeclaredToggle.element,
     );
     // -- past runs: the selector beside the title, and the span brushed over the run's density
-    const runSelect = element("select", "monitor-run-select");
+    const unitsOf = launch.modeUnits(config.launchCommands);
+    const runs = launch.runSelector({
+      systemId: config.systemId,
+      unitsOf,
+      offered: "launch.run_rates",
+      filter: (r) => r.rates && (!r.mode || r.mode === store.get("mode")),
+      onChange: (value) => setRun(value),
+    });
+    const runSelect = runs.element;
     runSelect.title = "Live sessions, or the rates records of a past launch";
-    runSelect.addEventListener("change", () => setRun(runSelect.value));
     const runBar = element("div", "topic-run-bar");
     const spanLabel = element("span", "topic-toolbar-label", "Span");
     spanLabel.title =
@@ -452,9 +457,8 @@
 
     // Shows the live sessions (an empty value) or a past launch.
     function setRun(value) {
-      runSelect.value = value;
       runSeq += 1;
-      const group = value ? runGroups.find((g) => g.value === value) : null;
+      const group = runs.pick(value);
       run = group
         ? {
             name: value,
@@ -468,7 +472,6 @@
             error: "",
           }
         : null;
-      if (!run) runSelect.value = "";
       runBar.hidden = !run;
       picked = null;
       range.style.width = "0";
@@ -501,89 +504,62 @@
         }
         asked.push({ summary, params });
       });
-      Promise.allSettled(
-        asked.map(({ params }) => daemon.rpc("launch.run_rates", params)),
-      ).then((results) => {
-        if (seq !== runSeq) return;
-        const read = [];
-        let error = "";
-        results.forEach((outcome, index) => {
-          if (outcome.status === "fulfilled")
-            read.push({ ...asked[index], rates: outcome.value });
-          else {
-            error ||= outcome.reason?.message || String(outcome.reason);
-            console.warn("topic run rates:", outcome.reason);
+      launch
+        .readRuns(asked, "launch.run_rates", ({ params }) => params)
+        .then((answers) => {
+          if (seq !== runSeq) return;
+          const { error } = answers;
+          const read = answers.read.map(({ run: { summary }, result }) => ({
+            summary,
+            rates: result,
+          }));
+          if (!run.result) {
+            if (!read.length) {
+              run.error = error || "The launch recorded no topic rates.";
+              render();
+              return;
+            }
+            read.forEach(({ summary, rates }) =>
+              records.set(summary.run, {
+                times: rates.times,
+                density: rates.density || [],
+              }),
+            );
+            const timeline = launchTimeline([...records.values()]);
+            run.result = {
+              ...timeline,
+              start: 0,
+              sample: timeline.times.length - 1,
+            };
+            densityArea.setAttribute(
+              "d",
+              densityPath(
+                timeline.times,
+                timeline.density,
+                DENSITY_WIDTH,
+                DENSITY_HEIGHT,
+              ),
+            );
           }
+          const last = run.result.times.length - 1;
+          run.result.start = run.start ?? 0;
+          run.result.sample = run.sample ?? last;
+          run.error = read.length
+            ? ""
+            : error || "No run recorded rates over this span.";
+          run.shown = new Map();
+          run.units = new Set();
+          read.forEach(({ summary, rates }) => {
+            const unit = rates.compute_unit || summary.compute_unit || "run";
+            let key = unit;
+            for (let n = 2; run.shown.has(key); n++) key = `${unit} (${n})`;
+            run.shown.set(key, rates);
+            run.units.add(unit);
+          });
+          if (!brushDrag && !pickTimer) picked = null;
+          drawSpan();
+          render();
         });
-        if (!run.result) {
-          if (!read.length) {
-            run.error = error || "The launch recorded no topic rates.";
-            render();
-            return;
-          }
-          read.forEach(({ summary, rates }) =>
-            records.set(summary.run, {
-              times: rates.times,
-              density: rates.density || [],
-            }),
-          );
-          const timeline = launchTimeline([...records.values()]);
-          run.result = {
-            ...timeline,
-            start: 0,
-            sample: timeline.times.length - 1,
-          };
-          densityArea.setAttribute(
-            "d",
-            densityPath(
-              timeline.times,
-              timeline.density,
-              DENSITY_WIDTH,
-              DENSITY_HEIGHT,
-            ),
-          );
-        }
-        const last = run.result.times.length - 1;
-        run.result.start = run.start ?? 0;
-        run.result.sample = run.sample ?? last;
-        run.error = read.length
-          ? ""
-          : error || "No run recorded rates over this span.";
-        run.shown = new Map();
-        run.units = new Set();
-        read.forEach(({ summary, rates }) => {
-          const unit = rates.compute_unit || summary.compute_unit || "run";
-          let key = unit;
-          for (let n = 2; run.shown.has(key); n++) key = `${unit} (${n})`;
-          run.shown.set(key, rates);
-          run.units.add(unit);
-        });
-        if (!brushDrag && !pickTimer) picked = null;
-        drawSpan();
-        render();
-      });
-    }
-
-    // Past launches of the shown mode with a rates record, newest first; the shown launch stays
-    // selected while listed.
-    function loadRuns() {
-      runSelect.hidden = !daemon.offers("launch.run_rates");
-      if (runSelect.hidden) return;
-      daemon
-        .rpc("launch.runs", { system: config.systemId })
-        .then(({ runs }) => {
-          const mode = store.get("mode");
-          const listed = runs.filter(
-            (r) => r.rates && (!r.mode || r.mode === mode),
-          );
-          const current = run?.name || "";
-          runGroups = launch.runGroups(listed);
-          runSelect.replaceChildren(...launch.runOptions(runGroups, true));
-          if (current && !runGroups.some((g) => g.value === current))
-            setRun("");
-          else runSelect.value = current;
-        })
-        .catch((error) => console.warn("topic runs:", error));
     }
 
     async function loadDesign() {
@@ -906,7 +882,7 @@
         return {
           shown: run.shown,
           units: run.units,
-          heading: `${[...run.units].sort().join(", ")} · ${Math.round((to - from) / 1e9)} s from ${clock(from)} to ${clock(to)}`,
+          heading: `${launch.unitsLabel(run.units, unitsOf(run.runs[0].mode, run.runs[0].deploy))} · ${Math.round((to - from) / 1e9)} s from ${clock(from)} to ${clock(to)}`,
           note: run.error,
         };
       }
@@ -1261,7 +1237,7 @@
     SD.on("launch.sessions", () => {
       if (!shown) return;
       syncFollows();
-      loadRuns();
+      runs.load();
     });
     // The daemon drops every follow with the last event stream; a reconnected page follows anew.
     SD.on("daemon.connection", ({ connected }) => {
@@ -1309,7 +1285,7 @@
       if (shown) {
         loadDesign().catch((error) => console.error("topic rates:", error));
         syncFollows();
-        loadRuns();
+        runs.load();
       }
     });
 
@@ -1322,7 +1298,7 @@
         openSelection();
         loadDesign().catch((error) => console.error("topic rates:", error));
         syncFollows();
-        loadRuns();
+        runs.load();
         render();
       },
       hide() {
