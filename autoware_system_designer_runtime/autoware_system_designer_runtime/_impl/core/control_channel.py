@@ -36,7 +36,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from ...control_protocol import MEMBER_ACTIONS
+from ...control_protocol import DEFAULT_POLICY, MEASURE_VERBS, MEMBER_ACTIONS
 from ...run_log import STREAMS, member_dir_name, tail_lines
 from .aio import cancel_and_wait
 from .commands import CommandError, MemberRecord, MemberStates, RuntimeCommands
@@ -45,14 +45,10 @@ logger = logging.getLogger(__name__)
 
 METHODS = (
     "status",
-    "stop",
-    "restart",
-    "kill",
+    *MEMBER_ACTIONS,
     "log.follow",
     "log.unfollow",
-    "measure.start",
-    "measure.stop",
-    "measure.status",
+    *(f"measure.{verb}" for verb in MEASURE_VERBS),
     "monitor.sample",
     "monitor.follow",
     "monitor.unfollow",
@@ -133,7 +129,7 @@ class ControlChannel:
         *,
         socket_path: Path,
         log_dir: Path,
-        policy: str = "guard",
+        policy: str = DEFAULT_POLICY,
     ) -> None:
         self._commands = commands
         self._states = states

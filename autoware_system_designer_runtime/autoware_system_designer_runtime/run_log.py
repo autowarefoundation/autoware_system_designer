@@ -47,7 +47,8 @@ def member_dir_name(path: str) -> str:
 
 def tail_lines(path: Path, size: Optional[int] = None) -> tuple[list[str], bytes]:
     """The last complete lines of a file's first ``size`` bytes (the whole file by default), at most
-    ``TAIL_LINES`` from its final ``TAIL_BYTES``, and the unterminated bytes after them."""
+    ``TAIL_LINES`` from its final ``TAIL_BYTES``, and the unterminated bytes after them, none where the
+    window start cuts them."""
     try:
         if size is None:
             size = path.stat().st_size
@@ -61,8 +62,12 @@ def tail_lines(path: Path, size: Optional[int] = None) -> tuple[list[str], bytes
         return [], b""
     chunks = data.split(b"\n")
     rest = chunks.pop()
-    if start > 0 and chunks:
-        chunks.pop(0)  # a line cut by the window start
+    if start > 0:
+        # a line cut by the window start
+        if chunks:
+            chunks.pop(0)
+        else:
+            rest = b""
     return [chunk.decode("utf-8", "replace") for chunk in chunks[-TAIL_LINES:]], rest
 
 

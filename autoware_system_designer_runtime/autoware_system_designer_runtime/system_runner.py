@@ -44,7 +44,7 @@ from ._impl.measure.tracer import TracerArming, locate_tracer
 from ._impl.ros2.builder import populate_builder
 from ._impl.ros2.common.substitutions import bind_variables, resolve_argument_values, unresolved_var_names
 from ._impl.ros2.operation_mode import OperationModeGuard
-from .control_protocol import POLICIES
+from .control_protocol import DEFAULT_POLICY, GUARD_POLICY, POLICIES
 from .export_tree import manifest_path, read_manifest, resolve_structure_paths
 from .rates_record import RATES_FILE
 from .run_log import LOG_BASE, RUN_MANIFEST, write_run_manifest
@@ -137,7 +137,7 @@ def launch_from_json(
     interactive: bool = False,
     measure: Optional[MeasureOptions] = None,
     control: Optional[Path] = None,
-    control_policy: str = POLICIES[0],
+    control_policy: str = DEFAULT_POLICY,
     tracer: bool = True,
     launch_id: Optional[str] = None,
 ) -> int:
@@ -215,7 +215,7 @@ def launch_from_json(
                 recorder_task = asyncio.ensure_future(recorder.run())
             await worker.start()
             guard = None
-            if (interactive or control is not None) and control_policy == "guard":
+            if (interactive or control is not None) and control_policy == GUARD_POLICY:
                 guard = OperationModeGuard(worker)
                 await guard.install()
             commands = RuntimeCommands(coord, states, measure=session, monitor=monitor, guard=guard)
@@ -328,7 +328,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--control-policy",
-        default=POLICIES[0],
+        default=DEFAULT_POLICY,
         choices=POLICIES,
         help="guard refuses stop, restart, kill and shutdown while the operation mode is autonomous "
         "(default); open does not interlock.",

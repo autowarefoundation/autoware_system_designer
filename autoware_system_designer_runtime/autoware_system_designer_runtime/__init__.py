@@ -29,6 +29,13 @@ Public surface:
 """
 
 import importlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ._impl.core.config import ActorConfig
+    from ._impl.core.coordinator import Coordinator, CoordinatorBuilder, MemberHandle, ensure_output_dir
+    from ._impl.ros2.builder import populate_builder
+    from ._impl.ros2.launchers.container import RosWorker
 
 # Public name -> implementing module, imported on first use: the file-contract modules
 # (``export_tree``, ``records``, ``rates_record``, ``run_log``) load without the actor runtime.
@@ -42,7 +49,15 @@ _EXPORTS = {
     "ensure_output_dir": "._impl.core.coordinator",
 }
 
-__all__ = list(_EXPORTS)
+__all__ = [
+    "populate_builder",
+    "ActorConfig",
+    "RosWorker",
+    "Coordinator",
+    "CoordinatorBuilder",
+    "MemberHandle",
+    "ensure_output_dir",
+]
 
 
 def __getattr__(name: str):
@@ -52,3 +67,7 @@ def __getattr__(name: str):
     value = getattr(importlib.import_module(module, __name__), name)
     globals()[name] = value
     return value
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *__all__})

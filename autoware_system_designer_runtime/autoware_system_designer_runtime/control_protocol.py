@@ -23,5 +23,8 @@ from __future__ import annotations
 MEMBER_ACTIONS = ("stop", "restart", "kill")
 # Verbs of the latency measurement window.
 MEASURE_VERBS = ("start", "stop", "status")
-# Safe-state interlock of the actions that end a process; the first is the default.
-POLICIES = ("guard", "open")
+# Safe-state interlock of the actions that end a process: "guard" installs it, "open" leaves the
+# actions unguarded.
+GUARD_POLICY = "guard"
+POLICIES = (GUARD_POLICY, "open")
+DEFAULT_POLICY = GUARD_POLICY

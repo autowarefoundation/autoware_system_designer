@@ -239,7 +239,7 @@ def test_nodes_are_keyed_by_design_path_and_ended_processes_keep_their_counts(tm
 
 def test_a_process_that_started_and_ended_between_readings_is_counted(tmp_path):
     monitor = _monitor(tmp_path, alive=lambda pid: pid != 400)
-    before = monitor.read()
+    monitor.read()
     short = _Proc(tmp_path, 400)
     short.set(short.endpoint("pub", 0x20, "/once", "/x"), count=6)
     assert monitor.read().totals[("/once", "out", "/x")][0] == 6

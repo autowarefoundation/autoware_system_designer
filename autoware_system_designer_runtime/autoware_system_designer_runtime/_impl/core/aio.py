@@ -42,13 +42,11 @@ async def first_completed(*tasks: asyncio.Future) -> set[asyncio.Future]:
 
 
 async def cancel_and_wait(*tasks: Optional[asyncio.Future]) -> None:
-    """Cancels the tasks and waits for each to end; what a task ends with is dropped."""
+    """Cancels the tasks and waits for each to end; what a task ends with is dropped, a cancellation
+    of the caller is raised."""
     live = [task for task in tasks if task is not None]
     for task in live:
         if not task.done():
             task.cancel()
-    for task in live:
-        try:
-            await task
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
+    if live:
+        await asyncio.gather(*live, return_exceptions=True)

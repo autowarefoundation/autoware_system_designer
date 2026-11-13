@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
 
-from ...control_protocol import MEMBER_ACTIONS
+from ...control_protocol import MEASURE_VERBS, MEMBER_ACTIONS
 from . import events as ev
 
 if TYPE_CHECKING:
@@ -218,7 +218,7 @@ class RuntimeCommands:
         elif verb == "status":
             message = self._measure.status()
         else:
-            raise CommandError("invalid_params", f"measure needs start, stop or status, not {verb!r}")
+            raise CommandError("invalid_params", f"measure needs one of {', '.join(MEASURE_VERBS)}, not {verb!r}")
         return {"state": self._measure.state, "message": message}
 
     async def rates(self, interval: float = 1.0) -> dict[str, Any]:
