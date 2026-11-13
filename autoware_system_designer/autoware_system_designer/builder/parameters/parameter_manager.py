@@ -15,7 +15,6 @@
 import logging
 import os
 import re
-import shutil
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from autoware_system_designer.common.exceptions import ParameterConfigurationError, ValidationError
@@ -31,8 +30,6 @@ from autoware_system_designer.model.namespace import (
     resolve_common_namespace_from_paths,
 )
 from autoware_system_designer.model.parameters import (
-    Parameter,
-    ParameterFile,
     ParameterFileList,
     ParameterList,
     ParameterType,
@@ -540,7 +537,7 @@ class ParameterManager:
             file_parameter_type: ParameterType for parameters loaded from files
             direct_parameter_type: ParameterType for directly specified parameters
         """
-        logger.info(f"Applying parameters to all nodes (global scope)")
+        logger.info("Applying parameters to all nodes (global scope)")
 
         # Start from the root deployment instance
         root_instance = self.instance

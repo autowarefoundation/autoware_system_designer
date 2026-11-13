@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple
+from abc import ABC
+from typing import Any, Dict, Tuple
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.model.config import ConfigType
