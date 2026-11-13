@@ -15,7 +15,7 @@ You cannot tell which node crashed, kill one without killing all, or restart a s
 - per-member control queue (`Stop`, `Restart`, `Kill`, `ToggleRespawn`)
 - per-member state-event stream (`Started`, `Exited`, `Failed`, …)
 - a dedicated log directory (`out`, `err`, `pid`, `cmdline`)
-- graceful shutdown: `SIGTERM` to the process group, 5s grace, then `SIGKILL`
+- graceful shutdown: `SIGINT` to the process group, 5s grace, then `SIGKILL`
 
 ---
 
@@ -25,7 +25,7 @@ You cannot tell which node crashed, kill one without killing all, or restart a s
 
 ```bash
 cd ~/workspace/awf/autoware
-colcon build --packages-up-to autoware_system_designer autoware_system_design_examples autoware_sample_designs
+colcon build --packages-up-to autoware_system_designer autoware_system_designer_demo_systems autoware_sample_designs
 source install/setup.bash
 ```
 
@@ -48,7 +48,12 @@ Each command of this package is installed twice: as a console script under
 not sourced the workspace (the launcher still needs ROS 2 sourced for `rclpy`).
 
 `Ctrl+C` triggers graceful shutdown: the coordinator broadcasts `Stop` to every
-member, each actor `SIGTERM`s its process group, waits 5s, then `SIGKILL`s.
+member, each actor `SIGINT`s its process group, waits 5s, then `SIGKILL`s.
+rclcpp and rclpy leave the ROS graph on `SIGINT`; a glog failure handler takes `SIGTERM` as a crash.
+A member is its whole process group: it has stopped once its leader has exited and
+no process of the group is left, so the children of a launch file that ends before
+them are waited for and killed the same way. A member whose leader exits by itself
+takes what is left of its group with it.
 
 ### 3. Useful flags
 
@@ -61,7 +66,7 @@ autoware-system-designer-launch SYSTEM.json \
     --respawn \                         # restart any node that exits abnormally (non-zero)
     --respawn-delay 1.0 \
     --max-respawn-attempts 5 \
-    --graceful-shutdown-timeout 10 \    # seconds SIGTERM→SIGKILL grace
+    --graceful-shutdown-timeout 10 \    # seconds SIGINT→SIGKILL grace
     --interactive \                     # enable stdin REPL (see below)
     --control /run/user/1000/asd.sock \ # control channel on a Unix socket (see below)
     --control-policy guard \            # guard (default) | open: interlock on the operation mode
@@ -153,7 +158,7 @@ Each member gets its own directory under `--log-dir`:
 
 ```text
 /tmp/autoware_system_designer_logs/20260521_153012/
-├── run.json           the run: system, mode, compute unit, deploy, structure path, start time, member paths
+├── run.json           the run: system, mode, compute unit, deploy, launch, structure path, start time, member paths
 └── <member-slug>/
     ├── cmdline        full argv used to spawn the process
     ├── pid            the process group leader's PID
@@ -163,7 +168,9 @@ Each member gets its own directory under `--log-dir`:
 
 The default base path is `/tmp/autoware_system_designer_logs/`; a timestamped
 subdirectory is created per run unless `--log-dir` overrides it. `run.json` names what the
-directory holds, so a reader can map a member directory back to its member path.
+directory holds, so a reader can map a member directory back to its member path. `--launch-id`
+sets its `launch`: the runs of a system's compute units launched together carry one id, each in its
+own directory on its own unit. A restarted or respawned member appends to its `out` and `err`.
 
 ---
 
@@ -293,7 +300,7 @@ The two systems share the design pattern but not code. When play_launch's parser
   Slow containers will need a higher timeout (configurable in `ComposableNodeActor.__init__`).
 - **`ros2_launch_file` entities** are wrapped as a single Python subprocess that runs `LaunchService` directly (not the `ros2 launch` CLI). Global parameters (`vehicle_info.param.yaml`) are injected as `SetParameter` actions before the include so all nodes in the subtree receive them — even though each wrapper runs in a separate process from the `global_parameter_loader`. You lose per-leaf-node visibility _inside_ the include — by design.
 - **Empty / placeholder nodes** (single_node entries whose `executable` is empty) are silently skipped during build; check the log at startup.
-- **Direct binary spawn**: `build_cmd` resolves the executable path via `ros2run.api.get_executable_path` to deliver `SIGTERM` directly to rclcpp rather than through a Python wrapper. Falls back to `ros2 run <pkg> <exe>` with a warning if resolution fails.
+- **Direct binary spawn**: `build_cmd` resolves the executable path via `ros2run.api.get_executable_path` to deliver `SIGINT` directly to rclcpp rather than through a Python wrapper. Falls back to `ros2 run <pkg> <exe>` with a warning if resolution fails.
 - **`$(command '...')` values** run the command as an argument list without a shell, as ROS 2 launch's `Command` substitution does; pipes, redirections, globs and `$VAR` expansion are not interpreted.
 - **Namespace data convention**: system_structure stores `namespace` as the full path of the entity (including its own name as the last segment when the entity sits under a same-named module). The builder strips that last segment if it equals `name`. See `common/namespace.py::parent_namespace`.
 

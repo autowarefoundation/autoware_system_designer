@@ -26,13 +26,14 @@ rclpy = pytest.importorskip("rclpy")
 from autoware_system_designer_runtime._impl.ros2.launchers.container import make_executor  # noqa: E402
 
 
-def test_executor_passes_message_info_of_a_latched_sample_to_two_argument_callbacks():
+@pytest.mark.timing
+def test_executor_passes_message_info_of_a_latched_sample_to_two_argument_callbacks(ros_domain_id):
     from builtin_interfaces.msg import Time
     from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
     from rclpy.signals import SignalHandlerOptions
 
     context = rclpy.context.Context()
-    rclpy.init(context=context, domain_id=200 + os.getpid() % 30, signal_handler_options=SignalHandlerOptions.NO)
+    rclpy.init(context=context, domain_id=ros_domain_id, signal_handler_options=SignalHandlerOptions.NO)
     try:
         node = rclpy.create_node("asd_test_executor", context=context)
         executor = make_executor(context)

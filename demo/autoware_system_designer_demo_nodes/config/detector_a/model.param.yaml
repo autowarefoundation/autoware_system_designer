@@ -1,0 +1,4 @@
+/**:
+  ros__parameters:
+    score_threshold: 0.35
+    voxel_size: [0.32, 0.32, 8.0]

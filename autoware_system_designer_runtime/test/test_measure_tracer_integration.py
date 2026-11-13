@@ -15,7 +15,6 @@
 """The preloaded tracer records a talker/listener pair; skipped without the library or the demo nodes."""
 
 import os
-import random
 import signal
 import subprocess
 import sys
@@ -52,10 +51,13 @@ def _tracer():
         return None
 
 
-pytestmark = pytest.mark.skipif(
-    _tracer() is None or _demo("talker") is None or _demo("listener") is None,
-    reason="tracer library or demo_nodes_cpp not installed",
-)
+pytestmark = [
+    pytest.mark.timing,
+    pytest.mark.skipif(
+        _tracer() is None or _demo("talker") is None or _demo("listener") is None,
+        reason="tracer library or demo_nodes_cpp not installed",
+    ),
+]
 
 
 def _terminate(procs):
@@ -68,8 +70,19 @@ def _terminate(procs):
             os.killpg(proc.pid, signal.SIGKILL)
 
 
+# Longest wait for traced processes to start up and record what a test reads.
+RECORD_TIMEOUT_S = 60.0
+
+
+def _wait_until(recorded, timeout=RECORD_TIMEOUT_S):
+    """Polls until ``recorded()`` holds; the test's assertions report what is missing past the timeout."""
+    deadline = time.monotonic() + timeout
+    while not recorded() and time.monotonic() < deadline:
+        time.sleep(0.1)
+
+
 # Publishes /clock at 50 Hz with ROS time running at half wall speed, frozen (as a
-# paused bag keeps publishing) between 1.0 s and 2.5 s; untraced.
+# paused bag keeps publishing) between 1.0 s and 2.5 s after its first subscriber matched; untraced.
 CLOCK_PUBLISHER = """
 import time, rclpy
 from rclpy.node import Node
@@ -77,6 +90,8 @@ from rosgraph_msgs.msg import Clock
 rclpy.init()
 node = Node("fake_clock")
 pub = node.create_publisher(Clock, "/clock", 10)
+while rclpy.ok() and pub.get_subscription_count() == 0:
+    time.sleep(0.02)
 t0 = time.time_ns()
 pause_from, pause_to = t0 + 1_000_000_000, t0 + 2_500_000_000
 while rclpy.ok():
@@ -90,26 +105,17 @@ while rclpy.ok():
 """
 
 
-def test_talker_listener_are_traced_and_linked(tmp_path):
+def test_talker_listener_are_traced_and_linked(tmp_path, ros_domain_id):
     trace_dir = tmp_path / "trace"
     trace_dir.mkdir()
     env = tracer_env(_tracer(), trace_dir)
-    env["ROS_DOMAIN_ID"] = str(random.randint(150, 230))
+    env["ROS_DOMAIN_ID"] = str(ros_domain_id)
     procs = [
         subprocess.Popen(
             [str(_demo(name))], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
         )
         for name in ("talker", "listener")
     ]
-    t_start = time.time_ns()
-    try:
-        time.sleep(4.0)
-    finally:
-        _terminate(procs)
-    t_end = time.time_ns()
-
-    trace_set = read_trace_dir(trace_dir)
-    assert len(trace_set.processes) == 2
     design = system(
         [
             node(
@@ -125,6 +131,21 @@ def test_talker_listener_are_traced_and_linked(tmp_path):
         ]
     )
     graph = NodeGraph.from_system_structure(design)
+    link = ("/chatter", "/talker", "/listener")
+
+    def linked_twice():
+        live = analyze(read_trace_dir(trace_dir), graph, t_start, time.time_ns())
+        return "/talker" in live.nodes and len(live.links.get(link, ())) >= 2
+
+    t_start = time.time_ns()
+    try:
+        _wait_until(linked_twice)
+    finally:
+        _terminate(procs)
+    t_end = time.time_ns()
+
+    trace_set = read_trace_dir(trace_dir)
+    assert len(trace_set.processes) == 2
     analysis = analyze(trace_set, graph, t_start, t_end)
 
     talker = analysis.nodes["/talker"]
@@ -133,16 +154,16 @@ def test_talker_listener_are_traced_and_linked(tmp_path):
     assert {p.trigger.kind for p in pubs} == {"timer"}
     assert all(p.exec_ns is not None and 0 < p.exec_ns < 100_000_000 for p in pubs)
 
-    comm = analysis.links[("/chatter", "/talker", "/listener")]
+    comm = analysis.links[link]
     assert len(comm) >= 2
     assert all(0 < v < 1_000_000_000 for v in comm)
 
 
-def test_a_node_on_sim_time_records_the_clock_overrides(tmp_path):
+def test_a_node_on_sim_time_records_the_clock_overrides(tmp_path, ros_domain_id):
     trace_dir = tmp_path / "trace"
     trace_dir.mkdir()
     env = tracer_env(_tracer(), trace_dir)
-    env["ROS_DOMAIN_ID"] = str(random.randint(150, 230))
+    env["ROS_DOMAIN_ID"] = str(ros_domain_id)
     plain_env = {k: v for k, v in env.items() if k not in ("LD_PRELOAD", "ASD_TRACE_DIR")}
     procs = [
         subprocess.Popen(
@@ -160,8 +181,14 @@ def test_a_node_on_sim_time_records_the_clock_overrides(tmp_path):
             start_new_session=True,
         ),
     ]
+
+    def resumed_after_the_pause():
+        samples = read_trace_dir(trace_dir).clock_samples()
+        held = [s.t for s in samples if s.flags & FLAG_CLOCK_LAST]
+        return bool(held) and max(s.t for s in samples) > held[0] + 1_000_000_000
+
     try:
-        time.sleep(4.0)
+        _wait_until(resumed_after_the_pause)
     finally:
         _terminate(procs)
 
@@ -193,11 +220,11 @@ rclpy.spin(node)
 """
 
 
-def test_an_rclpy_timer_is_recorded_once_per_fire(tmp_path):
+def test_an_rclpy_timer_is_recorded_once_per_fire(tmp_path, ros_domain_id):
     trace_dir = tmp_path / "trace"
     trace_dir.mkdir()
     env = tracer_env(_tracer(), trace_dir)
-    env["ROS_DOMAIN_ID"] = str(random.randint(150, 230))
+    env["ROS_DOMAIN_ID"] = str(ros_domain_id)
     proc = subprocess.Popen(
         [sys.executable, "-c", RCLPY_TIMER],
         env=env,
@@ -206,7 +233,7 @@ def test_an_rclpy_timer_is_recorded_once_per_fire(tmp_path):
         start_new_session=True,
     )
     try:
-        time.sleep(3.0)
+        _wait_until(lambda: any(len(p.timers) > 10 for p in read_trace_dir(trace_dir).processes.values()))
     finally:
         _terminate([proc])
 
@@ -226,12 +253,12 @@ def _rows(snapshot, node, direction):
     return []
 
 
-def test_counters_give_live_rates_and_events_follow_the_control_file(tmp_path):
+def test_counters_give_live_rates_and_events_follow_the_control_file(tmp_path, ros_domain_id):
     trace_dir = tmp_path / "trace"
     control = TraceControl(trace_dir)
     control.create(events=False)
     env = tracer_env(_tracer(), trace_dir)
-    env["ROS_DOMAIN_ID"] = str(random.randint(150, 230))
+    env["ROS_DOMAIN_ID"] = str(ros_domain_id)
     procs = [
         subprocess.Popen(
             [str(_demo(name))], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
@@ -240,14 +267,17 @@ def test_counters_give_live_rates_and_events_follow_the_control_file(tmp_path):
     ]
     monitor = RateMonitor(trace_dir)
     try:
-        time.sleep(2.0)
+        started = monitor.read()
+        _wait_until(
+            lambda: any(row["hz"] > 0 for row in _rows(monitor.rates(started, monitor.read()), "/listener", "inputs"))
+        )
         before = monitor.read()
         time.sleep(3.0)
         snapshot = monitor.rates(before, monitor.read())
         # Counters alone: no event file while recording is off.
         assert not list(trace_dir.glob("*.trace"))
         control.set_events(True)
-        time.sleep(2.5)
+        _wait_until(lambda: any(p.publishes for p in read_trace_dir(trace_dir).processes.values()))
     finally:
         _terminate(procs)
         monitor.close()

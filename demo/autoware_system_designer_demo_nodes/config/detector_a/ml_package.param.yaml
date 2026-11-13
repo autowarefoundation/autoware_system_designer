@@ -1,0 +1,4 @@
+/**:
+  ros__parameters:
+    precision: fp16
+    max_batch_size: 1

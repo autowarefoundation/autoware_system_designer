@@ -186,7 +186,7 @@ def _ros_args(
 def _ros2_executable_path(package: str, executable: str) -> Optional[str]:
     """Return the direct binary path for a ROS 2 executable, or None to fall back to ros2 run.
 
-    Direct spawn delivers SIGTERM to rclcpp, not to an intermediate Python wrapper.
+    Direct spawn delivers the stop signal to rclcpp, not to an intermediate Python wrapper.
     """
     try:
         from ros2run.api import get_executable_path

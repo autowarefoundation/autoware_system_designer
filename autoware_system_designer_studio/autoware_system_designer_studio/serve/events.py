@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 TOPIC_HELLO = "hello"
 TOPIC_HEARTBEAT = "heartbeat"
+TOPIC_DAEMON = "daemon"
+TOPIC_SYSTEMS_CHANGED = "systems.changed"
 
 SUBSCRIBER_QUEUE_SIZE = 256
 RECONNECT_DELAY_MS = 3000

@@ -16,6 +16,7 @@
 """Respawn policy of the regular node actor."""
 
 import asyncio
+import time
 
 import pytest
 
@@ -25,9 +26,12 @@ from autoware_system_designer_runtime._impl.core.config import ActorConfig
 from autoware_system_designer_runtime._impl.core.coordinator import CoordinatorBuilder
 from autoware_system_designer_runtime._impl.core.regular_actor import NodeSpec
 
+pytestmark = [pytest.mark.usefixtures("fake_process_groups"), pytest.mark.timing]
 
-def _run_exiting_node(monkeypatch, tmp_path, exit_code):
-    """Run one armed node whose process exits at once; return the event type names seen."""
+
+def _run_exiting_node(monkeypatch, tmp_path, exit_code, until):
+    """Run one armed node whose process exits at once, until ``until`` holds of the event type names seen
+    and a few respawn delays have passed; return the names."""
 
     class _ExitingProc:
         pid = 4242
@@ -48,7 +52,11 @@ def _run_exiting_node(monkeypatch, tmp_path, exit_code):
     async def run():
         coord = builder.build()
         run_task = asyncio.ensure_future(coord.run())
-        await asyncio.sleep(0.2)
+        deadline = time.monotonic() + 10
+        while not until(seen):
+            assert time.monotonic() < deadline, f"events seen: {seen}"
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)
         coord.request_shutdown()
         await asyncio.wait_for(run_task, timeout=10)
 
@@ -58,13 +66,13 @@ def _run_exiting_node(monkeypatch, tmp_path, exit_code):
 
 
 def test_clean_exit_is_not_respawned(monkeypatch, tmp_path):
-    seen = _run_exiting_node(monkeypatch, tmp_path, 0)
+    seen = _run_exiting_node(monkeypatch, tmp_path, 0, lambda seen: ev.Exited.__name__ in seen)
     assert seen.count(ev.Started.__name__) == 1
     assert ev.Respawning.__name__ not in seen
 
 
 @pytest.mark.parametrize("exit_code", [1, -6])
 def test_abnormal_exit_is_respawned(monkeypatch, tmp_path, exit_code):
-    seen = _run_exiting_node(monkeypatch, tmp_path, exit_code)
+    seen = _run_exiting_node(monkeypatch, tmp_path, exit_code, lambda seen: seen.count(ev.Started.__name__) > 1)
     assert seen.count(ev.Started.__name__) > 1
     assert ev.Respawning.__name__ in seen

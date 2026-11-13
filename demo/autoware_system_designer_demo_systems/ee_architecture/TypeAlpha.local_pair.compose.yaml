@@ -1,0 +1,74 @@
+# TypeAlpha on two ECUs: sensing_perception and map_localization as two containers of one ECU,
+# sharing its network and IPC namespace, and planning_control on an ECU of its own.
+# The services and their image are in demo/docker_multi_unit/compose.base.yaml; this file states
+# where each compute unit runs: its service, device (hostname), address and daemon port, and the
+# daemon that has the others as peers (ASD_MAIN).
+name: asd-multi-unit-local-pair
+
+x-unit: &unit
+  extends:
+    file: ${ASD_DOCKER_DIR}/compose.base.yaml
+    service: unit
+  cap_add:
+    - NET_ADMIN # tc netem on the ECU's interface
+
+services:
+  build:
+    extends:
+      file: ${ASD_DOCKER_DIR}/compose.base.yaml
+      service: build
+    network_mode: none
+
+  sensing_perception:
+    <<: *unit
+    hostname: ecu-a
+    ipc: shareable
+    depends_on:
+      build:
+        condition: service_completed_successfully
+    environment:
+      ASD_COMPUTE_UNITS: sensing_perception
+      ASD_PORT: 8781
+      ASD_SSHD_PORT: "2222"
+      ASD_MAIN: "true"
+    networks:
+      vehicle:
+        ipv4_address: 172.30.87.11
+
+  map_localization:
+    <<: *unit
+    network_mode: service:sensing_perception
+    ipc: service:sensing_perception
+    depends_on:
+      build:
+        condition: service_completed_successfully
+      sensing_perception:
+        condition: service_started
+    environment:
+      ASD_COMPUTE_UNITS: map_localization
+      ASD_PORT: 8782
+
+  planning_control:
+    <<: *unit
+    hostname: ecu-b
+    depends_on:
+      build:
+        condition: service_completed_successfully
+    environment:
+      ASD_COMPUTE_UNITS: planning_control
+      ASD_PORT: 8783
+      ASD_SSHD_PORT: "2222"
+    networks:
+      vehicle:
+        ipv4_address: 172.30.87.13
+
+networks:
+  vehicle:
+    ipam:
+      config:
+        - subnet: 172.30.87.0/24
+
+volumes:
+  # Built workspace, shared by every topology and kept per ROS distribution.
+  ws:
+    name: asd-multi-unit-ws-${ASD_ROS_DISTRO:-humble}

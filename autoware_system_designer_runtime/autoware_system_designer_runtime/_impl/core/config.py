@@ -32,4 +32,4 @@ class ActorConfig:
     respawn_delay: float = 1.0
     max_respawn_attempts: Optional[int] = None  # None = infinite
     output_dir: Path = field(default_factory=lambda: Path("/tmp/autoware_system_designer_logs"))
-    graceful_shutdown_timeout: float = 5.0  # seconds — SIGTERM grace before SIGKILL
+    graceful_shutdown_timeout: float = 5.0  # seconds — SIGINT grace before SIGKILL

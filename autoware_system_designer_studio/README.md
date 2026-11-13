@@ -72,7 +72,12 @@ Launch has three main views, chosen from the list in its side panel. Control is 
 mode, every block coloured by its live member state and marked, before its name, with the state, a
 busy log and, on a node, its restart count. Launch and Shutdown of each compute unit (and the
 measurement window of a session whose runtime preloads the tracer) are in the unit's head bar;
-"Measure from launch" opens the window at launch. Every declared unit has its own
+"Measure from launch" opens the window at launch. A unit served by a peer daemon shows that daemon
+beside them, by its SSH destination or else its address, coloured by the link state and marked when
+the peer differs from this daemon; an `unreachable` unit offers no control until its daemon answers
+again, except Forget, which drops the session that daemon last reported so the system can run another
+mode. "Launch all" and "Shutdown all" in the view head act on every unit that can launch or shut
+down. The status bar counts the connected peers and names the units of the others. Every declared unit has its own
 section, a head alone when the mode places no node on it; a launcher of an undeclared unit gets the
 same controls in a row above the map. A bar between the head and the map holds the selected
 entity and the only actions on a launched member: Stop, Restart and Kill of a node outside a
@@ -127,6 +132,9 @@ autoware-system-designer-studio serve \
     --port 8780 \                  # 0 picks a free port
     --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
     --compute-unit main_ecu \      # units local to this daemon (repeatable; default: every onboard unit)
+    --peer sub_ecu=http://127.0.0.1:8782 \  # daemon serving another unit (repeatable), see Peers
+    --peer-ssh sub_ecu=sub-ecu \   # SSH destination a peer on another device is forwarded from
+    --site-file bench.site.yaml \  # peer bindings of a site (default: $AUTOWARE_SYSTEM_DESIGNER_SITE_FILE)
     --env-script install/setup.bash \  # sourced once into the environment launch jobs run in
     --rviz-config autoware.rviz    # opened by rviz.start (default: autoware_launch's autoware.rviz)
 ```
@@ -140,35 +148,35 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `GET /`            | Systems index                                                                                                |
 | `GET /<site path>` | Page or data script of the [site layout](#site-layout)                                                       |
 | `GET /assets/<f>`  | Web bundle shipped with this package (`css/`, `js/`)                                                         |
-| `GET /api/health`  | Daemon status, including `workspace`, `record_root` and `restart_required`                                   |
+| `GET /api/health`  | Daemon status, including `workspace`, `record_root`, `restart_required`, `heartbeat_s` and `peers`           |
 | `GET /api/systems` | Exported systems: modes, compute units with their status, build scripts per mode, deploy variants, page URLs |
 | `GET /api/jobs`    | Jobs, newest first                                                                                           |
 | `GET /api/launch`  | Launch sessions with their members                                                                           |
 | `GET /api/events`  | Server-Sent Events with daemon-wide sequence numbers as event ids (topics below)                             |
 | `POST /api/rpc`    | Request envelope `{"id", "method", "params"}` for any method below                                           |
 
-| Method                                            | Params                                                                             | Result                                                  |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `health`                                          | -                                                                                  | Daemon status                                           |
-| `systems.list`                                    | -                                                                                  | Exported systems                                        |
-| `jobs.list`                                       | -                                                                                  | `{"jobs": [job]}`                                       |
-| `jobs.get`                                        | `job`, `since` (log seq, default 0), `limit`                                       | `{"job", "log": {"first_seq", "lines"}}`                |
-| `jobs.cancel`                                     | `job`                                                                              | job                                                     |
-| `build.start`                                     | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit`                        | job                                                     |
-| `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn` | session                                                 |
-| `launch.status`                                   | `compute_unit` (optional)                                                          | `{"sessions": [session]}`, members included             |
-| `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`, `exact` (optional: the member named `pattern` only)     | `{"members": [path]}` acted on                          |
-| `launch.follow`                                   | `compute_unit`, `path`, `system` and `mode` (optional: the session of that mode)   | `{"path", "out": [lines], "err": [lines]}`              |
-| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow), `system` and `mode` (optional)    | `{"released": [path]}`                                  |
-| `launch.runs`                                     | `system` (optional)                                                                | `{"runs": [run]}`, newest first                         |
-| `launch.run`                                      | `run`                                                                              | run with `members: [{"path", "slug"}]`                  |
-| `launch.run_tail`                                 | `run`, `member` (its directory name)                                               | `{"run", "member", "out", "err"}`                       |
-| `launch.run_rates`                                | `run`, `start`, `sample`, `span_s` (optional: the span between two sample numbers) | run with `times`, `density` and the rates over the span |
-| `launch.shutdown`                                 | `compute_unit`                                                                     | `{"shutting_down": true}`                               |
-| `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                     | `{"state", "message"}` of the window                    |
-| `monitor.follow`, `monitor.unfollow`              | `compute_unit`, `client` (optional: the caller's name)                             | `{"interval_s"}`, `{"released"}`                        |
-| `monitor.sample`                                  | `compute_unit`, `interval` (seconds, default 1, at most 20)                        | rates over the interval                                 |
-| `rviz.start`                                      | -                                                                                  | job                                                     |
+| Method                                            | Params                                                                                       | Result                                                  |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `health`                                          | -                                                                                            | Daemon status                                           |
+| `systems.list`                                    | -                                                                                            | Exported systems                                        |
+| `jobs.list`                                       | -                                                                                            | `{"jobs": [job]}`                                       |
+| `jobs.get`                                        | `job`, `since` (log seq, default 0), `limit`                                                 | `{"job", "log": {"first_seq", "lines"}}`                |
+| `jobs.cancel`                                     | `job`                                                                                        | job                                                     |
+| `build.start`                                     | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit`                                  | job                                                     |
+| `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn`, `launch` | session                                                 |
+| `launch.status`                                   | `compute_unit` (optional)                                                                    | `{"sessions": [session]}`, members included             |
+| `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`, `exact` (optional: the member named `pattern` only)               | `{"members": [path]}` acted on                          |
+| `launch.follow`                                   | `compute_unit`, `path`, `system` and `mode` (optional: the session of that mode)             | `{"path", "out": [lines], "err": [lines]}`              |
+| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow), `system` and `mode` (optional)              | `{"released": [path]}`                                  |
+| `launch.runs`                                     | `system` (optional)                                                                          | `{"runs": [run]}`, newest first                         |
+| `launch.run`                                      | `run`                                                                                        | run with `members: [{"path", "slug"}]`                  |
+| `launch.run_tail`                                 | `run`, `member` (its directory name)                                                         | `{"run", "member", "out", "err"}`                       |
+| `launch.run_rates`                                | `run`, `start`, `sample`, `span_s` (optional: the span between two sample numbers)           | run with `times`, `density` and the rates over the span |
+| `launch.shutdown`                                 | `compute_unit`                                                                               | `{"shutting_down": true}`                               |
+| `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                               | `{"state", "message"}` of the window                    |
+| `monitor.follow`, `monitor.unfollow`              | `compute_unit`, `client` (optional: the caller's name)                                       | `{"interval_s"}`, `{"released"}`                        |
+| `monitor.sample`                                  | `compute_unit`, `interval` (seconds, default 1, at most 20)                                  | rates over the interval                                 |
+| `rviz.start`                                      | -                                                                                            | job                                                     |
 
 | Event topic       | Data                                                                                                   |
 | ----------------- | ------------------------------------------------------------------------------------------------------ |
@@ -176,8 +184,8 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `heartbeat`       | `{"time"}`                                                                                             |
 | `job`             | Job record on every state change                                                                       |
 | `job.log`         | `{"job", "first_seq", "lines"}`, contiguous log lines                                                  |
-| `systems.changed` | A build rebuilt an export package; re-read `systems.list`                                              |
-| `daemon`          | `{"restart_required": true}`                                                                           |
+| `systems.changed` | A build rebuilt an export package, or a peer changed; re-read `systems.list`                           |
+| `daemon`          | `{"restart_required": true}`, or `{"peer": peer}` on a change of a peer                                |
 | `launch`          | Session view (without members) on every change of a launch                                             |
 | `member`          | `{"compute_unit", "system", "mode", "path", "state", "detail", "time", "restarts", "respawns"}`        |
 | `member.log`      | `{"compute_unit", "path", "stream", "lines"}`, new lines of a followed member                          |
@@ -190,8 +198,10 @@ Responses use one envelope: `{"ok": true, "result": ...}` or
 stable strings (`bad_request`, `forbidden`, `not_found`, `method_not_allowed`,
 `unsupported_media_type`, `payload_too_large`, `unknown_method`, `invalid_params`, `conflict`,
 `refused`, `unavailable`, `internal`), each mapped to one HTTP status. Compute unit `status` is
-open-ended; current values are `available`, `running` (an available unit launched by this daemon),
-`remote_unsupported` (an onboard unit served by another daemon), `offboard` and `unsupported`.
+open-ended; current values are `available`, `running` (an available unit with a launch active),
+`remote_unsupported` (an onboard unit of another daemon that is not bound as a peer, or that the
+bound peer does not serve), `unreachable` (the unit's peer does not answer), `offboard` and
+`unsupported`.
 
 Access rules: the listener binds `127.0.0.1` only; the `Host` header must name it (`127.0.0.1:<port>`
 or `localhost:<port>`); API requests the browser marks cross-site are refused; `POST /api/rpc` needs
@@ -257,12 +267,20 @@ followed again.
 The Logs view follows the selected node (a composable node through its container) while
 it is shown, keeps the followed log once the launcher ended and marks where it ended.
 
-A selector beside the Logs title shows a past run instead of the live sessions. A run is
+A selector beside the Logs title shows a past launch instead of the live sessions. A run is
 a directory under the runtime's log base (`/tmp/autoware_system_designer_logs`, and the parents of
 the sessions' log directories) holding a `run.json`; a directory without one is not a run. The
 daemon lists the runs of the system that no active session is writing, newest first, labelled by
 start time, mode, deploy variant and compute unit from the manifest. A run is one runtime, so one
-compute unit: members of the other units are dimmed like members without a log. `launch.run` gives
+compute unit. A session and its
+run name their launch (`launch`): a unit started while another unit of the system runs or starts the
+mode joins that unit's launch, a peer's units as last reported, and the first unit opens a new one;
+`launch.start` takes `launch` to name it. The Logs selector lists one entry per launch, labelled by
+its first start, mode, deploy variant and compute units, and shows the members of all its runs on
+one tree; the log files stay per run on their unit and are read from there. A member with a
+directory in several runs of the launch, its unit started again within it, shows their tails in
+start order, each under its run's label. A run naming no launch is an entry of its own. The Topics
+selector lists the runs, grouped by launch. `launch.run` gives
 a run's members, the manifest's member paths that have a directory, each with its directory name;
 `launch.run_tail` the tails of one directory's `out` and `err` files. The tree keeps the mode's
 structure: members the run holds no log for are dimmed, its members outside the mode are listed
@@ -314,3 +332,76 @@ Launch jobs need the ROS environment the daemon itself does without: start `serv
 shell, or pass `--env-script` with a setup script, sourced once at start into the job environment.
 Without `ROS_DISTRO` in that environment `launch.start` and `rviz.start` answer `unavailable`. RViz
 also needs the display of that environment (`DISPLAY` or `WAYLAND_DISPLAY`).
+
+### Peers
+
+One daemon runs per execution environment and serves the compute units in it. A daemon given the
+others as peers serves their units as well, so a client talks to it alone:
+
+```bash
+autoware-system-designer-studio serve --port 8781 --compute-unit main_ecu \
+    --peer sub_ecu_1=http://127.0.0.1:8782 --peer sub_ecu_2=http://127.0.0.1:8783
+```
+
+A binding names a compute unit and the `http://127.0.0.1:<port>` its daemon answers on; a peer checks
+`Host` like any daemon, so the address is the peer's own loopback port or a forward that keeps the
+port, and never the port of the daemon given the binding. Bindings also come from a site file,
+which a `--peer` of the same unit replaces:
+
+```yaml
+peers:
+  sub_ecu_1: http://127.0.0.1:8782
+  sub_ecu_2: { url: "http://127.0.0.1:8783", ssh: sub-ecu-2 }
+```
+
+A peer on another device is reached through an SSH forward the daemon keeps itself. A binding with
+an SSH destination (`ssh` in the site file, or `--peer-ssh <unit>=<destination>`) has a loopback
+URL, and the daemon runs
+
+```bash
+ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=5 -o ServerAliveCountMax=3 \
+    -L 127.0.0.1:8783:127.0.0.1:8783 -- sub-ecu-2
+```
+
+as a job of kind `tunnel`, one per peer address, started again 1 s to 15 s after it ends. Only the
+running tunnel job stays in `jobs.list`; its log is the output of `ssh`. The destination is a host
+of the SSH configuration of the daemon's user or `[user@]host`; user, port, keys and host key
+checking come from that configuration, and nothing is ever prompted for. A forward that carries no
+traffic for 15 s ends, so a frozen or disconnected device turns `unreachable` within that time.
+
+A unit is either local (`--compute-unit`) or bound to a peer. The daemon keeps one link per peer
+address: it reads the peer's health, systems, sessions and jobs, follows its event stream, and
+reconnects with backoff from 0.5 s up to 10 s. A stream silent for three of the peer's heartbeat
+intervals counts as lost.
+
+| Where           | With peers                                                                                               |
+| --------------- | -------------------------------------------------------------------------------------------------------- |
+| `health`        | `peers`: `[{"units", "url", "state", "error", "version", "mismatch", "ssh", "tunnel"}]`                  |
+| `systems.list`  | A peer's unit is `available`, `running` or `unreachable`, with the peer record under `daemon`            |
+| Unit methods    | `launch.*`, `measure.*` and `monitor.*` naming a peer's unit are forwarded                               |
+| Lists           | `launch.status`, `jobs.list` and `launch.runs` include the answering peers' sessions, launch jobs, runs  |
+| Ids             | A peer's job and run ids read `<unit>/<id>`; `jobs.get`, `jobs.cancel` and `launch.run*` take them       |
+| Events          | `launch`, `member`, `member.log`, `member.activity`, `monitor`, and `job`/`job.log` of launch jobs       |
+| Follows         | Released on the peer once this daemon's last event stream closes; rate follows return after a reconnect  |
+| Modes           | A system runs one mode at a time across all daemons, by each peer's last reported sessions               |
+| `launch.forget` | `{"compute_unit"}` of an unanswering peer: drops its last reported sessions, answers them as `forgotten` |
+| `build.start`   | Refused for a peer's unit; a unit is built by its own daemon                                             |
+
+Peer `state` is `connecting`, `connected` or `unreachable`. `mismatch` lists where a connected peer
+differs from this daemon: version, method set, units it serves, and the modes, compute units and
+deploy variants of the exported systems that have a unit on it. A mismatch is shown, not enforced.
+While a peer is unreachable, requests for its units answer `unavailable`, `jobs.list` and
+`launch.runs` leave it out, and `launch.status` lists its last reported sessions without members,
+marked `stale`. Those sessions still hold their system to their mode until the peer answers again
+or `launch.forget` drops them, which publishes each as a `launch` event marked `forgotten`; the
+unit itself may still be running. The mode rule holds for launches made through the daemon that
+has the others as peers: a peer knows only its own units, so a client of a peer alone is not held
+to it. `ssh` is the peer's SSH destination and `tunnel` the id of its current tunnel job, both null
+for a peer reached directly.
+
+### Multi-unit environment
+
+[`demo/docker_multi_unit`](../demo/docker_multi_unit/README.md) runs the daemons of the demo system
+`TypeAlpha` in Docker containers, as containers of one ECU, as separate ECUs reached over SSH, or
+as a mix of both, one daemon peered with the others in each, with tests that drive them through its
+API and cut devices off.

@@ -1,0 +1,41 @@
+autoware_system_design_format: 0.4.0
+
+name: RadarDummyDriver.node
+
+description: Dummy radar driver that periodically publishes detected and tracked objects.
+
+package:
+  name: autoware_system_designer_demo_nodes
+  provider: dummy
+
+launch:
+  plugin: autoware::system_designer_demo_nodes::RadarDummyDriver
+  executable: radar_driver_node
+
+# interfaces
+subscribers: []
+
+publishers:
+  - name: tracked_objects
+    message_type: std_msgs/msg/Int64MultiArray
+  - name: detected_objects
+    message_type: std_msgs/msg/Int32MultiArray
+
+param_files: []
+
+param_values:
+  - name: composable_node
+    type: bool
+    default: false
+
+# processes
+processes:
+  - name: radar_tracker
+    trigger_conditions:
+      - periodic: 16.6 # Hz
+        warn_rate: 5 # Hz
+        error_rate: 2 # Hz
+        timeout: 1.0 # s
+    outcomes:
+      - to_output: tracked_objects
+      - to_output: detected_objects

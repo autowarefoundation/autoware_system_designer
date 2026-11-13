@@ -20,6 +20,7 @@ import json
 import socket
 import sys
 import threading
+import time
 
 import pytest
 
@@ -91,6 +92,19 @@ class _Running:
         self.loop.call_soon_threadsafe(self.loop.stop)
         self.thread.join(5)
         self.loop.close()
+
+
+def _await_job_output(running, job_id, timeout=10.0):
+    """Returns once the job's process has written a line or ended.
+
+    A fake process writes its first line once it handles signals; a signal sent earlier may be lost in
+    the start of its interpreter.
+    """
+    job = running.daemon.jobs.get(job_id)
+    deadline = time.time() + timeout
+    while not job.log.last_seq and job.active:
+        assert time.time() < deadline, f"{job_id} wrote nothing"
+        time.sleep(0.02)
 
 
 @pytest.fixture

@@ -157,6 +157,12 @@ class JobRunner:
             raise api.ApiError(api.NOT_FOUND, f"no job {job_id!r}")
         return job
 
+    def forget(self, job_id: str) -> None:
+        """Drops a finished job from the list."""
+        job = self._jobs.get(job_id)
+        if job is not None and not job.active:
+            del self._jobs[job_id]
+
     def active_for(self, key: str) -> Optional[Job]:
         return self._active_by_key.get(key)
 

@@ -28,6 +28,8 @@ from http import HTTPStatus
 from typing import Any, Optional
 from urllib.parse import parse_qs, unquote, urlsplit
 
+LOOPBACK_HOST_NAMES = ("127.0.0.1", "localhost")
+CLIENT_HEADER = "X-System-Designer-Client"
 MAX_HEADER_BYTES = 16 * 1024
 MAX_BODY_BYTES = 64 * 1024
 HEADER_TIMEOUT_S = 10.0

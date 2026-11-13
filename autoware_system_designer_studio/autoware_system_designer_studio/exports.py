@@ -55,9 +55,11 @@ KIND_OFFBOARD = "offboard"
 # Compute unit status as seen by this daemon; clients treat unknown values as opaque.
 UNIT_AVAILABLE = "available"
 UNIT_REMOTE_UNSUPPORTED = "remote_unsupported"
+# A unit bound to a peer daemon that does not answer.
+UNIT_UNREACHABLE = "unreachable"
 UNIT_OFFBOARD = "offboard"
 UNIT_UNSUPPORTED = "unsupported"
-# An available unit with a launch of it active on this daemon.
+# An available unit with a launch of it active.
 UNIT_RUNNING = "running"
 
 

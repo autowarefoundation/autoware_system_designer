@@ -91,7 +91,7 @@ class NamingLinter:
                 if not self._is_snake_case(pkg_name):
                     result.add_error(
                         f"Package name '{pkg_name}' should be in snake_case format "
-                        f"(e.g., 'autoware_system_dummy_modules', 'robot_state_publisher')"
+                        f"(e.g., 'autoware_system_designer_demo_nodes', 'robot_state_publisher')"
                     )
             # provider field can be any type
 

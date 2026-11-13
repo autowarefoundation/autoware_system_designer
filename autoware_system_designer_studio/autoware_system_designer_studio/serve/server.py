@@ -22,6 +22,10 @@ Routes:
   GET  /api/events       -> Server-Sent Events stream
   POST /api/rpc          -> request envelope (see api)
 
+Compute units bound to a peer daemon (see peers) are served through it: requests naming such a unit,
+or a job or run id of it (``<unit>/<id>``), are forwarded, lists are merged with the peers' and the
+peers' events are relayed, so a client talks to this daemon alone.
+
 Access rules: the listener is bound to 127.0.0.1; every request must name this listener in Host
 (DNS rebinding); API requests flagged cross-site by the browser are refused; POST requires
 ``Content-Type: application/json`` and the ``X-System-Designer-Client`` header, which a cross-origin
@@ -44,23 +48,29 @@ from typing import Any, Iterable, Mapping, Optional
 from .. import exports
 from ..pages import assets
 from ..pages.render import INDEX_PAGE, Site, system_pages
-from . import api, build, events, jobs, launch, record_watch
-from .http import MAX_HEADER_BYTES, HttpError, Request, Response, read_request, response_head, write_response
+from . import api, build, events, jobs, launch, peers, record_watch
+from .events import TOPIC_DAEMON, TOPIC_SYSTEMS_CHANGED
+from .http import (
+    CLIENT_HEADER,
+    LOOPBACK_HOST_NAMES,
+    MAX_HEADER_BYTES,
+    HttpError,
+    Request,
+    Response,
+    read_request,
+    response_head,
+    write_response,
+)
 
 logger = logging.getLogger(__name__)
 
 BIND_HOST = "127.0.0.1"
-LOOPBACK_HOST_NAMES = ("127.0.0.1", "localhost")
-CLIENT_HEADER = "X-System-Designer-Client"
 RPC_PATH = "/api/rpc"
 EVENTS_PATH = "/api/events"
 API_PREFIX = "/api/"
 BUNDLE_PREFIX = f"/{assets.BUNDLE_DIR}/"
 # Packages whose code this daemon runs; rebuilding one inside the served install needs a restart.
 OWN_PACKAGES = ("autoware_system_designer_studio", "autoware_system_designer_runtime")
-
-TOPIC_DAEMON = "daemon"
-TOPIC_SYSTEMS_CHANGED = "systems.changed"
 
 # Seconds a status page waits before reloading while an export may be mid-rewrite.
 RETRY_RELOAD_S = 2
@@ -167,6 +177,7 @@ class ServeDaemon:
         env_script: Optional[Path] = None,
         rviz_config: Optional[Path] = None,
         log_base: Optional[Path] = None,
+        peer_specs: Iterable[peers.PeerSpec] = (),
         heartbeat_s: float = HEARTBEAT_INTERVAL_S,
         max_connections: int = MAX_CONNECTIONS,
         max_event_subscribers: int = MAX_EVENT_SUBSCRIBERS,
@@ -179,32 +190,40 @@ class ServeDaemon:
         self.serves_own_install = exports.module_install_root() == install_root
         self._requested_port = port
         self._max_connections = max_connections
+        self.heartbeat_s = heartbeat_s
         self.hub = events.EventHub(max_event_subscribers, heartbeat_s)
+        self.jobs = jobs.JobRunner(self.hub)
+        self.peers = peers.PeerRegistry(peer_specs, self.hub, self._describe, self.jobs, self.served_units or (), port)
         self.methods = api.MethodRegistry()
         self.methods.register("health", self._health, get_path="health")
         self.methods.register("systems.list", self._systems_list, get_path="systems")
         self.methods.register("jobs.list", self._jobs_list, get_path="jobs")
-        self.methods.register("jobs.get", self._jobs_get)
-        self.methods.register("jobs.cancel", self._jobs_cancel)
+        self.methods.register("jobs.get", self._of_job("jobs.get", self._jobs_get))
+        self.methods.register("jobs.cancel", self._of_job("jobs.cancel", self._jobs_cancel))
         self.methods.register("build.start", self._build_start)
         self.methods.register("launch.start", self._launch_start)
         self.methods.register("launch.status", self._launch_status, get_path="launch")
         for action in launch.MEMBER_ACTIONS:
-            self.methods.register(f"launch.{action}", self._member_action(action))
-        self.methods.register("launch.follow", self._launch_follow)
-        self.methods.register("launch.unfollow", self._launch_unfollow)
+            self._register_of_unit(f"launch.{action}", self._member_action(action))
+        self._register_of_unit("launch.follow", self._launch_follow)
+        self._register_of_unit("launch.unfollow", self._launch_unfollow)
         self.methods.register("launch.runs", self._launch_runs)
-        self.methods.register("launch.run", self._launch_run)
-        self.methods.register("launch.run_tail", self._launch_run_tail)
-        self.methods.register("launch.run_rates", self._launch_run_rates)
-        self.methods.register("launch.shutdown", self._launch_shutdown)
+        for name, handler in (
+            ("launch.run", self._launch_run),
+            ("launch.run_tail", self._launch_run_tail),
+            ("launch.run_rates", self._launch_run_rates),
+        ):
+            self.methods.register(name, self._of_run(name, handler))
+        self._register_of_unit("launch.shutdown", self._launch_shutdown)
+        self.methods.register("launch.forget", self._launch_forget)
         for verb in launch.MEASURE_VERBS:
-            self.methods.register(f"measure.{verb}", self._measure(verb))
-        self.methods.register("monitor.follow", self._monitor_follow)
-        self.methods.register("monitor.unfollow", self._monitor_unfollow)
-        self.methods.register("monitor.sample", self._monitor_sample)
+            self._register_of_unit(f"measure.{verb}", self._measure(verb))
+        self._register_of_unit("monitor.follow", self._monitor_follow)
+        self._register_of_unit("monitor.unfollow", self._monitor_unfollow)
+        self._register_of_unit("monitor.sample", self._monitor_sample)
         self.methods.register("rviz.start", self._rviz_start)
-        self.jobs = jobs.JobRunner(self.hub)
+        # Launch id and count of the starts under way, by (system id, mode).
+        self._starting: dict[tuple[str, str], list[Any]] = {}
         self.launch = launch.LaunchManager(
             self.hub,
             self.jobs,
@@ -233,16 +252,17 @@ class ServeDaemon:
         self.port = self._server.sockets[0].getsockname()[1]
         self._heartbeat = asyncio.ensure_future(self.hub.run_heartbeat())
         self._record_watch = asyncio.ensure_future(self.records.run())
+        self.peers.start()
         self._started_at = time.time()
         return self.port
 
     async def stop(self) -> None:
         if self._server is not None:
             self._server.close()
-            await self._server.wait_closed()
         for task in (self._heartbeat, self._record_watch):
             if task is not None:
                 task.cancel()
+        await self.peers.stop()
         await self.jobs.shutdown()
         await self.launch.close()
         self.hub.close()
@@ -250,10 +270,78 @@ class ServeDaemon:
             _, pending = await asyncio.wait(set(self._connections), timeout=SHUTDOWN_GRACE_S)
             for task in pending:
                 task.cancel()
+        # From Python 3.12 on, wait_closed waits for the open connections.
+        if self._server is not None:
+            await self._server.wait_closed()
 
     @property
     def allowed_hosts(self) -> frozenset[str]:
         return frozenset(f"{name}:{self.port}" for name in LOOPBACK_HOST_NAMES)
+
+    # -- peers -------------------------------------------------------------
+
+    def _register_of_unit(self, name: str, handler: api.Handler) -> None:
+        """Registers a method scoped by ``compute_unit``: forwarded when a peer serves the unit."""
+
+        async def routed(params: dict[str, Any]) -> Any:
+            link = self.peers.link_of(params.get("compute_unit"))
+            return await handler(params) if link is None else await link.forward(name, params)
+
+        self.methods.register(name, routed)
+
+    def _of_job(self, name: str, handler: api.Handler) -> api.Handler:
+        """A method scoped by ``job``: forwarded when the id is a peer's."""
+
+        async def routed(params: dict[str, Any]) -> Any:
+            target = self.peers.link_of_id(params.get("job"))
+            return await handler(params) if target is None else await target[0].job_call(name, target[1], params)
+
+        return routed
+
+    def _of_run(self, name: str, handler: api.Handler) -> api.Handler:
+        """A method scoped by ``run``: forwarded when the id is a peer's."""
+
+        async def routed(params: dict[str, Any]) -> Any:
+            target = self.peers.link_of_id(params.get("run"))
+            return await handler(params) if target is None else await target[0].run_call(name, target[1], params)
+
+        return routed
+
+    async def _describe(self) -> dict[str, Any]:
+        """What a peer is compared with: this daemon's version, methods and exported systems."""
+        systems, _ = await asyncio.to_thread(exports.discover_systems, self.install_root)
+        views = await asyncio.to_thread(lambda: [system.to_view(self.served_units, {}) for system in systems])
+        return {"version": _package_version(), "methods": self.methods.names(), "systems": views}
+
+    def _mode_conflict(self, system_id: str, mode: str) -> None:
+        """Refuses a launch while another mode of the system starts, or runs on a peer's unit as last reported."""
+        for starting_id, starting_mode in self._starting:
+            if starting_id == system_id and starting_mode != mode:
+                raise api.ApiError(api.CONFLICT, f"{system_id} is starting mode {starting_mode!r}")
+        for link in self.peers.links:
+            for session in link.sessions.values():
+                if not peers.PeerLink.session_active(session) or session.get("system") != system_id:
+                    continue
+                if session.get("mode") == mode:
+                    continue
+                unit = session.get("compute_unit")
+                message = f"{system_id} runs mode {session.get('mode')!r} on compute unit {unit!r}"
+                if link.state != peers.PEER_CONNECTED:
+                    message += f", as last reported by its {link.state} daemon; launch.forget drops the session"
+                raise api.ApiError(api.CONFLICT, message)
+
+    def _launch_of(self, system_id: str, mode: str) -> Optional[str]:
+        """The launch of the system's units running ``mode``, a peer's units as last reported."""
+        launch_id = self.launch.launch_of(system_id, mode)
+        if launch_id is not None:
+            return launch_id
+        for link in self.peers.links:
+            for session in link.sessions.values():
+                if not peers.PeerLink.session_active(session) or session.get("system") != system_id:
+                    continue
+                if session.get("mode") == mode and isinstance(session.get("launch"), str):
+                    return session["launch"]
+        return None
 
     # -- methods -----------------------------------------------------------
 
@@ -268,6 +356,8 @@ class ServeDaemon:
             "workspace": None if self.workspace is None else str(self.workspace),
             "record_root": str(self.records.record_root),
             "restart_required": self.restart_required,
+            "heartbeat_s": self.heartbeat_s,
+            "peers": self.peers.views(),
             "launch": self.launch.info(),
             "event_subscribers": self.hub.subscriber_count,
             "methods": self.methods.names(),
@@ -281,7 +371,11 @@ class ServeDaemon:
         for view in views:
             running = self.launch.running_units(view["id"])
             for unit in view["compute_units"]:
-                if unit["name"] in running:
+                link = self.peers.link_of(unit["name"])
+                if link is not None and unit["kind"] == exports.KIND_ONBOARD:
+                    unit["status"] = link.unit_status(view["id"], unit["name"])
+                    unit["daemon"] = link.view()
+                elif unit["name"] in running:
                     unit["status"] = exports.UNIT_RUNNING
         return {
             "install_root": str(self.install_root),
@@ -301,7 +395,10 @@ class ServeDaemon:
         raise api.ApiError(api.NOT_FOUND, f"no exported system {system_id!r}")
 
     async def _jobs_list(self, params: dict[str, Any]) -> dict[str, Any]:
-        return {"jobs": [job.to_view() for job in self.jobs.list()]}
+        views = [job.to_view() for job in self.jobs.list()]
+        views += await self.peers.gather(lambda link: link.job_views())
+        views.sort(key=lambda job: job.get("created_at") or 0, reverse=True)
+        return {"jobs": views}
 
     async def _jobs_get(self, params: dict[str, Any]) -> dict[str, Any]:
         since = _int_param(params, "since", 0, 0, 2**53)
@@ -319,6 +416,8 @@ class ServeDaemon:
         system = await self._find_system(_str_param(params, "system", required=True))
         target = _str_param(params, "target", required=True)
         compute_unit = _str_param(params, "compute_unit")
+        if self.peers.link_of(compute_unit) is not None:
+            raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is built by its own daemon")
         if compute_unit is not None:
             view = system.to_view(self.served_units, {})
             status = next((u["status"] for u in view["compute_units"] if u["name"] == compute_unit), None)
@@ -370,11 +469,36 @@ class ServeDaemon:
         status = self._unit_status(system, compute_unit)
         if status is None:
             raise api.ApiError(api.INVALID_PARAMS, f"unknown compute unit {compute_unit!r} of {system.id}")
-        if status != exports.UNIT_AVAILABLE:
-            raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is {status} on this daemon")
         mode = _str_param(params, "mode") or system.manifest.get("default_mode")
         if not isinstance(mode, str) or mode not in system.mode_keys():
             raise api.ApiError(api.INVALID_PARAMS, f"unknown mode {mode!r} of {system.id}")
+        self._mode_conflict(system.id, mode)
+        launch_id = _str_param(params, "launch")
+        if launch_id is not None and not launch.valid_launch_id(launch_id):
+            raise api.ApiError(api.INVALID_PARAMS, "launch must be an id of letters, digits, '_', '.' and '-'")
+        # A unit joins the launch of the system's units running or starting the mode; the first opens one.
+        key = (system.id, mode)
+        if launch_id is None:
+            starting = self._starting.get(key)
+            launch_id = starting[0] if starting else self._launch_of(system.id, mode) or launch.new_launch_id()
+        entry = self._starting.setdefault(key, [launch_id, 0])
+        entry[1] += 1
+        try:
+            return await self._start_unit(system, compute_unit, mode, status, {**params, "launch": launch_id})
+        finally:
+            entry[1] -= 1
+            if not entry[1] and self._starting.get(key) is entry:
+                del self._starting[key]
+
+    async def _start_unit(
+        self, system: exports.SystemExport, compute_unit: str, mode: str, status: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        link = self.peers.link_of(compute_unit)
+        if link is not None:
+            self.launch.require_mode(system.id, mode)
+            return await link.forward("launch.start", {**params, "mode": mode})
+        if status != exports.UNIT_AVAILABLE:
+            raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is {status} on this daemon")
         if not system.structure_path(mode).is_file():
             raise api.ApiError(api.INVALID_PARAMS, f"mode {mode!r} of {system.id} has no system structure")
         deploy = _str_param(params, "deploy")
@@ -392,11 +516,27 @@ class ServeDaemon:
             policy=policy,
             measure=_bool_param(params, "measure"),
             respawn=_bool_param(params, "respawn"),
+            launch_id=params["launch"],
         )
         return session.to_view()
 
     async def _launch_status(self, params: dict[str, Any]) -> dict[str, Any]:
-        return {"sessions": self.launch.views(_str_param(params, "compute_unit"))}
+        compute_unit = _str_param(params, "compute_unit")
+        link = self.peers.link_of(compute_unit)
+        if link is not None:
+            return {"sessions": await link.status_views(compute_unit)}
+        sessions = self.launch.views(compute_unit)
+        if compute_unit is None:
+            sessions += await self.peers.gather(lambda link: link.status_views())
+        return {"sessions": sessions}
+
+    async def _launch_forget(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Drops the sessions last reported for a unit whose peer does not answer."""
+        compute_unit = _str_param(params, "compute_unit", required=True)
+        link = self.peers.link_of(compute_unit)
+        if link is None:
+            raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is not served by a peer")
+        return {"forgotten": link.forget(compute_unit)}
 
     def _member_action(self, action: str) -> api.Handler:
         async def handler(params: dict[str, Any]) -> Any:
@@ -428,7 +568,11 @@ class ServeDaemon:
     async def _launch_runs(self, params: dict[str, Any]) -> dict[str, Any]:
         system_id = _str_param(params, "system")
         system = None if system_id is None else await self._find_system(system_id)
-        return {"runs": self.launch.runs(system)}
+        # A log base shared with a peer holds the runs of its units too; the peer lists those.
+        runs = self.launch.runs(system, exclude_units=self.peers.units)
+        runs += await self.peers.gather(lambda link: link.run_views(params))
+        runs.sort(key=lambda run: run.get("started") or 0, reverse=True)
+        return {"runs": runs[: launch.MAX_RUNS]}
 
     async def _launch_run(self, params: dict[str, Any]) -> dict[str, Any]:
         return self.launch.run_members(_str_param(params, "run", required=True))
@@ -668,3 +812,4 @@ class ServeDaemon:
             self.hub.unsubscribe(subscriber)
             if self.hub.subscriber_count == 0:
                 self.launch.release_follows()
+                self.peers.release_follows()

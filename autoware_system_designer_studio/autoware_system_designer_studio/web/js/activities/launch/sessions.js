@@ -1,7 +1,8 @@
 // Launch: the daemon's launch sessions and their members, kept current from
 // the event stream and resynchronised through launch.status on every hello.
 // The daemon holds the last session of each mode of a system on a compute
-// unit; `scope` gives the records of one mode.
+// unit; `scope` gives the records of one mode. A `stale` session is the one
+// an unanswering peer daemon last reported.
 // Page events: "launch.sessions" (session key -> session), "launch.member"
 // {path, unit, record} and "launch.activity" after the output rates changed.
 // A member's restart counts are the daemon's, on its record. A status answer
@@ -96,6 +97,62 @@
       if (run[key]) parts.push(run[key]);
     });
     return parts.join(" · ");
+  }
+
+  // Runs in listing order, those of one launch gathered where its first run
+  // stands: [{ launch, value, label, runs }], `launch` null for a run naming
+  // none. `value` keys the group in a selector. A launch is labelled by its
+  // first start, mode, deploy variant and compute units.
+  function runGroups(runs) {
+    const groups = [];
+    const byLaunch = new Map();
+    runs.forEach((run) => {
+      let group = run.launch ? byLaunch.get(run.launch) : null;
+      if (!group) {
+        group = {
+          launch: run.launch || null,
+          value: run.launch ? `launch:${run.launch}` : run.run,
+          label: "",
+          runs: [],
+        };
+        if (run.launch) byLaunch.set(run.launch, group);
+        groups.push(group);
+      }
+      group.runs.push(run);
+    });
+    groups.forEach((group) => {
+      const first = group.runs.reduce((a, b) =>
+        (b.started || 0) < (a.started || 0) ? b : a,
+      );
+      const units = [
+        ...new Set(group.runs.map((run) => run.compute_unit).filter(Boolean)),
+      ].sort();
+      group.label = runLabel({ ...first, compute_unit: units.join(", ") });
+    });
+    return groups;
+  }
+
+  // The options of a run selector over `groups`: "Live", then one option per
+  // launch (`whole`), or a launch as a group of its units' runs.
+  function runOptions(groups, whole) {
+    const { element } = SD.widgets;
+    const option = (value, label) => {
+      const item = element("option", "", label);
+      item.value = value;
+      return item;
+    };
+    return [
+      option("", "Live"),
+      ...groups.map((group) => {
+        if (whole || !group.launch) return option(group.value, group.label);
+        const items = element("optgroup");
+        items.label = group.label;
+        items.append(
+          ...group.runs.map((run) => option(run.run, runLabel(run))),
+        );
+        return items;
+      }),
+    ];
   }
 
   function sessionLabel(session) {
@@ -247,6 +304,14 @@
   SD.on("daemon.health", resync);
   SD.on("daemon.launch", (view) => {
     const key = keyOf(view);
+    // A session of an unanswering peer that the daemon dropped.
+    if (view.forgotten) {
+      sessions.delete(key);
+      members.delete(key);
+      setActivity(key, {});
+      emit();
+      return;
+    }
     const previous = sessions.get(key);
     // A new launch of the mode starts without the members of its last.
     const relaunched = !!previous && previous.job !== view.job;
@@ -281,7 +346,9 @@
   launch.stateToken = stateToken;
   launch.stateLabel = stateLabel;
   launch.sessionLabel = sessionLabel;
+  launch.runGroups = runGroups;
   launch.runLabel = runLabel;
+  launch.runOptions = runOptions;
   launch.sessionFailures = sessionFailures;
   launch.sessionToken = sessionToken;
 })();

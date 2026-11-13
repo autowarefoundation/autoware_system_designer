@@ -49,12 +49,13 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord
 
@@ -98,6 +99,8 @@ TAIL_BYTES = 64 * 1024
 # Past runs: the runtime's default log base holds one directory per run, with its run.json manifest.
 LOG_BASE = Path("/tmp/autoware_system_designer_logs")
 RUN_MANIFEST = "run.json"
+# A launch id is a launcher argument and a grouping key of runs.
+LAUNCH_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 MAX_RUNS = 100
 SOCKET_DIR = "asd-studio"
 _ARG_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -238,11 +241,21 @@ def _count(value: Any) -> int:
 class LaunchSession:
     """One launch of a compute unit: its job, the control connection and the runtime's member records."""
 
-    def __init__(self, system: SystemExport, compute_unit: str, mode: str, deploy: Optional[str], socket: Path):
+    def __init__(
+        self,
+        system: SystemExport,
+        compute_unit: str,
+        mode: str,
+        deploy: Optional[str],
+        socket: Path,
+        launch_id: Optional[str] = None,
+    ):
         self.system = system
         self.compute_unit = compute_unit
         self.mode = mode
         self.deploy = deploy
+        # The launch the session's run belongs to, shared with the system's other units.
+        self.launch_id = launch_id
         self.socket = socket
         self.job: Optional[jobs.Job] = None
         self.client: Optional[ControlClient] = None
@@ -287,6 +300,7 @@ class LaunchSession:
             "system": self.system.id,
             "mode": self.mode,
             "deploy": self.deploy,
+            "launch": self.launch_id,
             "state": self.state,
             "job": None if job is None else job.id,
             "job_state": None if job is None else job.state,
@@ -394,22 +408,17 @@ class LaunchManager:
         policy: str = POLICIES[0],
         measure: bool = False,
         respawn: bool = False,
+        launch_id: Optional[str] = None,
     ) -> LaunchSession:
         if self.launcher is None:
             raise api.ApiError(api.UNAVAILABLE, f"{LAUNCHER} not found on the launch PATH or under the install tree")
         self._require_ros()
         for running in self.sessions.values():
-            if not running.active:
-                continue
-            if running.compute_unit == compute_unit:
+            if running.active and running.compute_unit == compute_unit:
                 raise api.ApiError(
                     api.CONFLICT, f"compute unit {compute_unit!r} is already launched (job {running.job.id})"
                 )
-            if running.system.id == system.id and running.mode != mode:
-                raise api.ApiError(
-                    api.CONFLICT,
-                    f"{system.id} runs mode {running.mode!r} on compute unit {running.compute_unit!r}",
-                )
+        self.require_mode(system.id, mode)
         socket = socket_dir() / f"{os.getpid()}-{compute_unit}.sock"
         argv = [
             str(self.launcher),
@@ -423,13 +432,15 @@ class LaunchManager:
         ]
         if deploy:
             argv += ["--deploy", deploy]
+        if launch_id:
+            argv += ["--launch-id", launch_id]
         for name, value in (args or {}).items():
             argv += ["--arg", f"{name}={value}"]
         if measure:
             argv.append("--measure")
         if respawn:
             argv.append("--respawn")
-        session = LaunchSession(system, compute_unit, mode, deploy, socket)
+        session = LaunchSession(system, compute_unit, mode, deploy, socket, launch_id)
         _unlink(socket)
         spec = jobs.JobSpec(
             key=f"{LAUNCH_JOB_KIND}:{compute_unit}",
@@ -443,6 +454,7 @@ class LaunchManager:
                 "mode": mode,
                 "compute_unit": compute_unit,
                 "deploy": deploy,
+                "launch": launch_id,
                 "args": dict(args or {}),
                 "policy": policy,
                 "measure": measure,
@@ -458,6 +470,22 @@ class LaunchManager:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
         return session
+
+    def launch_of(self, system_id: str, mode: str) -> Optional[str]:
+        """The launch of this daemon's units running ``mode`` of the system; None while none runs it."""
+        for running in self.sessions.values():
+            if running.active and running.system.id == system_id and running.mode == mode and running.launch_id:
+                return running.launch_id
+        return None
+
+    def require_mode(self, system_id: str, mode: str) -> None:
+        """Refuses ``mode`` while a unit of this daemon runs another mode of the system."""
+        for running in self.sessions.values():
+            if running.active and running.system.id == system_id and running.mode != mode:
+                raise api.ApiError(
+                    api.CONFLICT,
+                    f"{system_id} runs mode {running.mode!r} on compute unit {running.compute_unit!r}",
+                )
 
     async def start_rviz(self) -> jobs.Job:
         """RViz on the daemon's configuration as a job; one RViz per daemon (``conflict`` while it runs)."""
@@ -553,9 +581,11 @@ class LaunchManager:
                 bases.append(session.log_dir.parent)
         return bases
 
-    def runs(self, system: Optional[SystemExport] = None) -> list[dict[str, Any]]:
+    def runs(self, system: Optional[SystemExport] = None, *, exclude_units: Iterable[str] = ()) -> list[dict[str, Any]]:
         """Past runs, newest first: the directories holding a run manifest, less those an active session
-        writes, its session serving them. With ``system``, runs of other systems are left out."""
+        writes, its session serving them. Runs of ``exclude_units`` are left out, as are those of other
+        systems with ``system``."""
+        excluded = set(exclude_units)
         active = {session.log_dir for session in self.sessions.values() if session.active and session.log_dir}
         runs = []
         for base in self.log_bases():
@@ -569,7 +599,9 @@ class LaunchManager:
                     continue
                 if system is not None and not _run_of_system(manifest, system):
                     continue
-                runs.append(_run_summary(run_dir, manifest))
+                summary = _run_summary(run_dir, manifest)
+                if summary["compute_unit"] not in excluded:
+                    runs.append(summary)
         runs.sort(key=lambda run: run["started"], reverse=True)
         return runs[:MAX_RUNS]
 
@@ -796,6 +828,15 @@ class LaunchManager:
         self._hub.publish(TOPIC_LAUNCH, session.to_view())
 
 
+def new_launch_id() -> str:
+    """An id for a launch: its start time, and a suffix keeping launches of one second apart."""
+    return f"{time.strftime('%Y%m%d_%H%M%S')}-{secrets.token_hex(2)}"
+
+
+def valid_launch_id(launch_id: str) -> bool:
+    return LAUNCH_ID.fullmatch(launch_id) is not None
+
+
 def member_slug(path: str) -> str:
     """Name of a member's directory under the runtime's log directory: the member path with every
     character outside letters, digits, ``_``, ``-`` and ``.`` replaced by ``_``, leading ``_`` dropped."""
@@ -847,6 +888,7 @@ def _run_summary(run_dir: Path, manifest: Mapping[str, Any]) -> dict[str, Any]:
         "mode": text("mode"),
         "compute_unit": text("compute_unit"),
         "deploy": text("deploy"),
+        "launch": text("launch"),
         "member_count": len(members) if isinstance(members, list) else 0,
         "rates": (run_dir / RATES_FILE).is_file(),
     }
