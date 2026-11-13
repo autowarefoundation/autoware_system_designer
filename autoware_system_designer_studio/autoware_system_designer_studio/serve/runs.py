@@ -50,23 +50,33 @@ class RunArchive:
         # The rates record read last, with the path, change time and size of its file.
         self._rates_record: Optional[tuple[tuple[Path, int, int], RatesRecord]] = None
 
-    def log_bases(self) -> list[Path]:
+    def log_bases(self, sessions: Optional[Iterable[tuple[Path, bool]]] = None) -> list[Path]:
         """Directories holding run directories: the log base and the parents of the sessions' log
         directories."""
         bases = [self.log_base]
-        for log_dir, _ in self._session_dirs():
+        for log_dir, _ in self._session_dirs() if sessions is None else sessions:
             if log_dir.parent not in bases:
                 bases.append(log_dir.parent)
         return bases
 
-    def runs(self, system: Optional[SystemExport] = None, *, exclude_units: Iterable[str] = ()) -> list[dict[str, Any]]:
+    async def runs(
+        self, system: Optional[SystemExport] = None, *, exclude_units: Iterable[str] = ()
+    ) -> list[dict[str, Any]]:
         """Past runs, newest first: the directories holding a run manifest, less those an active session
         writes, its session serving them. Runs of ``exclude_units`` are left out, as are those of other
-        systems with ``system``."""
-        excluded = set(exclude_units)
-        active = {log_dir for log_dir, running in self._session_dirs() if running}
+        systems with ``system``. The log bases are read on a worker thread."""
+        sessions = list(self._session_dirs())
+        active = {log_dir for log_dir, running in sessions if running}
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self._scan, self.log_bases(sessions), active, system, set(exclude_units)
+        )
+
+    @staticmethod
+    def _scan(
+        bases: Iterable[Path], active: set[Path], system: Optional[SystemExport], excluded: set[str]
+    ) -> list[dict[str, Any]]:
         runs = []
-        for base in self.log_bases():
+        for base in bases:
             try:
                 entries = [entry for entry in base.iterdir() if entry.is_dir()]
             except OSError:

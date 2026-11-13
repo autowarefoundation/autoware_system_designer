@@ -45,7 +45,7 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
-from autoware_system_designer_runtime.control_protocol import MEASURE_VERBS, MEMBER_ACTIONS, POLICIES
+from autoware_system_designer_runtime.control_protocol import DEFAULT_POLICY, MEASURE_VERBS, MEMBER_ACTIONS, POLICIES
 
 from .. import exports
 from ..pages import assets
@@ -499,7 +499,7 @@ class ServeDaemon:
         deploy = _str_param(params, "deploy")
         if deploy is not None and deploy not in {v["name"] for v in system.deploy_variants()}:
             raise api.ApiError(api.INVALID_PARAMS, f"unknown deploy variant {deploy!r} of {system.id}")
-        policy = _str_param(params, "policy") or POLICIES[0]
+        policy = _str_param(params, "policy") or DEFAULT_POLICY
         if policy not in POLICIES:
             raise api.ApiError(api.INVALID_PARAMS, f"policy must be one of {', '.join(POLICIES)}")
         session = await self.launch.start(
@@ -564,7 +564,7 @@ class ServeDaemon:
         system_id = _str_param(params, "system")
         system = None if system_id is None else await self._find_system(system_id)
         # A log base shared with a peer holds the runs of its units too; the peer lists those.
-        listed = self.launch.archive.runs(system, exclude_units=self.peers.units)
+        listed = await self.launch.archive.runs(system, exclude_units=self.peers.units)
         listed += await self.peers.gather(lambda link: link.run_views(params))
         listed.sort(key=lambda run: run.get("started") or 0, reverse=True)
         return {"runs": listed[: runs.MAX_RUNS]}

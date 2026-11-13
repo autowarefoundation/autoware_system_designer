@@ -57,7 +57,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
-from autoware_system_designer_runtime.control_protocol import POLICIES
+from autoware_system_designer_runtime.control_protocol import DEFAULT_POLICY
 from autoware_system_designer_runtime.run_log import member_dir_name
 
 from ..exports import SystemExport
@@ -398,7 +398,7 @@ class LaunchManager:
         mode: str,
         deploy: Optional[str] = None,
         args: Optional[Mapping[str, str]] = None,
-        policy: str = POLICIES[0],
+        policy: str = DEFAULT_POLICY,
         measure: bool = False,
         respawn: bool = False,
         launch_id: Optional[str] = None,

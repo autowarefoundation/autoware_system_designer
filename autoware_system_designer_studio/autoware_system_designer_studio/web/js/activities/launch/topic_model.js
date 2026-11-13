@@ -677,6 +677,7 @@
     segments,
     SERVICES,
     topicGroup,
+    isService,
     nodeGroup,
     compareRows,
     compareNodes,
@@ -692,21 +693,5 @@
     sampleAtShare,
     densityPath,
   };
-  launch.designTopics = designTopics;
-  launch.observedTopics = observedTopics;
-  launch.topicRows = topicRows;
-  launch.groupTree = groupTree;
-  launch.compareRows = compareRows;
-  launch.compareNodes = compareNodes;
-  launch.topicGroup = topicGroup;
-  launch.isService = isService;
-  launch.nodeGroup = nodeGroup;
-  launch.nodeRows = nodeRows;
-  launch.topicEnds = topicEnds;
-  launch.flowMarks = flowMarks;
-  launch.topicNodes = topicNodes;
-  launch.timeShare = timeShare;
-  launch.sampleAtShare = sampleAtShare;
-  launch.densityPath = densityPath;
   launch.TOPIC_STATUS = STATUS;
 })();

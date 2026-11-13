@@ -822,23 +822,22 @@ class PeerRegistry:
             for url, units in units_by_url.items()
         ]
         self._by_unit = {unit: link for link in self.links for unit in link.units}
-        self._tasks: list[asyncio.Task] = []
+        self._tasks = TaskSet()
 
     @property
     def units(self) -> list[str]:
         return sorted(self._by_unit)
 
     def start(self) -> None:
-        self._tasks = [asyncio.ensure_future(link.run()) for link in self.links]
-        self._tasks += [asyncio.ensure_future(link.tunnel.run()) for link in self.links if link.tunnel is not None]
+        for link in self.links:
+            self._tasks.spawn(link.run())
+            if link.tunnel is not None:
+                self._tasks.spawn(link.tunnel.run())
 
     async def stop(self) -> None:
         for link in self.links:
             await link.close()
-        for task in self._tasks:
-            task.cancel()
-        if self._tasks:
-            await asyncio.wait(self._tasks, timeout=1.0)
+        await self._tasks.cancel()
 
     def link_of(self, unit: Any) -> Optional[PeerLink]:
         return self._by_unit.get(unit) if isinstance(unit, str) else None

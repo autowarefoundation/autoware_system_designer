@@ -15,21 +15,13 @@
   const SD = window.SD;
   const SVG_NS = "http://www.w3.org/2000/svg";
   const {
-    CONTAINERS,
-    ROWS,
     UNIT_ID_PREFIX,
     G,
     TOKENS,
     BUSY_BARS,
     restartCount,
-    slotOf,
-    nodeCount,
     unitSections,
-    slotRows,
-    proportional,
-    squarify,
     wrap,
-    sectionHeight,
     layout,
   } = SD.treemapLayout;
 
@@ -573,19 +565,6 @@
       super.destroy();
     }
   }
-
-  TreemapModule.ROWS = ROWS;
-  TreemapModule.CONTAINERS = CONTAINERS;
-  TreemapModule.GEOMETRY = G;
-  TreemapModule.slotOf = slotOf;
-  TreemapModule.nodeCount = nodeCount;
-  TreemapModule.unitSections = unitSections;
-  TreemapModule.slotRows = slotRows;
-  TreemapModule.proportional = proportional;
-  TreemapModule.squarify = squarify;
-  TreemapModule.wrap = wrap;
-  TreemapModule.sectionHeight = sectionHeight;
-  TreemapModule.layout = layout;
 
   SD.diagrams.register("treemap", TreemapModule);
 })();
