@@ -194,6 +194,18 @@ static asd_slot_table_t * table_compact(asd_stats_t * s)
   return table;
 }
 
+// Returns the slot of a live `entry` to the free list. Returns the slot, NULL when the entry holds none.
+static asd_stats_slot_t * entry_release(asd_stats_t * s, asd_slot_entry_t * entry, uint64_t key)
+{
+  if (entry->handle != key || entry->slot == ASD_SLOT_NONE) {
+    return NULL;
+  }
+  asd_stats_slot_t * released = &s->slots[entry->slot];
+  s->free_slots[s->free_count++] = entry->slot;
+  __atomic_store_n(&entry->slot, ASD_SLOT_NONE, __ATOMIC_RELEASE);
+  return released;
+}
+
 int asd_stats_open(asd_stats_t * s, const char * dir, uint32_t pid, uint32_t capacity)
 {
   memset(s, 0, sizeof(*s));
@@ -281,11 +293,7 @@ int64_t asd_stats_register(asd_stats_t * s, uint8_t kind, const void * handle)
     table_put(table, s->mask, key, (uint32_t)slot);
   } else {
     // An address rcl reuses must not resolve to the slot of its previous owner.
-    asd_slot_entry_t * entry = table_entry(table, s->mask, key);
-    if (entry->handle == key && entry->slot != ASD_SLOT_NONE) {
-      s->free_slots[s->free_count++] = entry->slot;
-      __atomic_store_n(&entry->slot, ASD_SLOT_NONE, __ATOMIC_RELEASE);
-    }
+    entry_release(s, table_entry(table, s->mask, key), key);
   }
   pthread_mutex_unlock(&s->lock);
   return slot;
@@ -297,14 +305,8 @@ asd_stats_slot_t * asd_stats_unregister(asd_stats_t * s, const void * handle)
   if (s->header == NULL || key == 0) {
     return NULL;
   }
-  asd_stats_slot_t * released = NULL;
   pthread_mutex_lock(&s->lock);
-  asd_slot_entry_t * entry = table_entry(s->table, s->mask, key);
-  if (entry->handle == key && entry->slot != ASD_SLOT_NONE) {
-    released = &s->slots[entry->slot];
-    s->free_slots[s->free_count++] = entry->slot;
-    __atomic_store_n(&entry->slot, ASD_SLOT_NONE, __ATOMIC_RELEASE);
-  }
+  asd_stats_slot_t * released = entry_release(s, table_entry(s->table, s->mask, key), key);
   pthread_mutex_unlock(&s->lock);
   return released;
 }

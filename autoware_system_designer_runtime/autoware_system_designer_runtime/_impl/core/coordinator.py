@@ -35,7 +35,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
+from ...run_log import LOG_BASE
 from . import events as ev
+from .aio import cancel_and_wait
 from .config import ActorConfig
 from .regular_actor import NodeSpec, RegularNodeActor
 
@@ -97,10 +99,6 @@ class CoordinatorBuilder:
         self._shutdown_hooks: list[Callable[["Coordinator"], Awaitable[None]]] = []
         # State hooks see every actor state event (Started, Exited, ...) as the loop pumps it.
         self._state_hooks: list[Callable[[object], None]] = []
-
-    @property
-    def default_config(self) -> ActorConfig:
-        return self._default_config
 
     def add_node(
         self,
@@ -170,7 +168,6 @@ class Coordinator:
         self._actor_pids: dict[str, int] = {}
         self._had_failure: bool = False
         self._started_count: int = 0
-        self._launch_ready_at: Optional[float] = None
 
     # ---- public control surface ------------------------------------------
 
@@ -184,11 +181,6 @@ class Coordinator:
         """Member specs in registration order; editable until the actors spawn."""
         return [entry.spec for entry in self._entries.values()]
 
-    @property
-    def launch_ready_at(self) -> Optional[float]:
-        """Wall-clock time (``time.time()``) at which :attr:`launch_ready` was set."""
-        return self._launch_ready_at
-
     def request_shutdown(self) -> None:
         self._shutdown.set()
 
@@ -199,9 +191,6 @@ class Coordinator:
         # The run loop re-checks its exit condition only on an event.
         task.add_done_callback(lambda t: self._state_q.put_nowait(ev.TaskFinished(name=t.get_name())))
         return task
-
-    def ready_signal(self, name: str) -> "asyncio.Future[int]":
-        return self._entries[name].ready_signal
 
     @property
     def state_queue(self) -> asyncio.Queue:
@@ -407,23 +396,14 @@ class Coordinator:
             logger.debug("task %s finished", event.name)
 
     def _mark_launch_ready(self) -> None:
-        if not self._launch_ready.is_set():
-            self._launch_ready_at = time.time()
-            self._launch_ready.set()
+        self._launch_ready.set()
 
     async def _teardown(self) -> None:
         # Ensure shutdown is set on any exception path; actors wait on this event.
         self._shutdown.set()
 
         # Cancel auxiliary tasks (composable loaders, console, etc.).
-        for t in self._extra_tasks:
-            if not t.done():
-                t.cancel()
-        for t in self._extra_tasks:
-            try:
-                await t
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+        await cancel_and_wait(*self._extra_tasks)
 
         # Drain actor tasks, bounded so a hung process can't block teardown.
         if self._actor_tasks:
@@ -451,11 +431,11 @@ def _signame(sig: int) -> str:
 
 
 def ensure_output_dir(base: Optional[Path] = None) -> Path:
-    """Create a timestamped log directory under *base* (or /tmp by default).
+    """Create a timestamped log directory under *base* (``LOG_BASE`` by default).
 
     Each call owns its directory: a run starting within the second of another gets a numbered one.
     """
-    base = base or Path("/tmp/autoware_system_designer_logs")
+    base = base or LOG_BASE
     base.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d_%H%M%S")
     for name in itertools.chain([stamp], (f"{stamp}_{n}" for n in itertools.count(2))):

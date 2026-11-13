@@ -36,21 +36,19 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from ...control_protocol import DEFAULT_POLICY, MEASURE_VERBS, MEMBER_ACTIONS
+from ...run_log import STREAMS, member_dir_name, tail_lines
+from .aio import cancel_and_wait
 from .commands import CommandError, MemberRecord, MemberStates, RuntimeCommands
-from .regular_actor import _slug
 
 logger = logging.getLogger(__name__)
 
 METHODS = (
     "status",
-    "stop",
-    "restart",
-    "kill",
+    *MEMBER_ACTIONS,
     "log.follow",
     "log.unfollow",
-    "measure.start",
-    "measure.stop",
-    "measure.status",
+    *(f"measure.{verb}" for verb in MEASURE_VERBS),
     "monitor.sample",
     "monitor.follow",
     "monitor.unfollow",
@@ -58,15 +56,11 @@ METHODS = (
 )
 # Methods that wait: answered from a task of their own, so the requests behind them are not held up.
 DETACHED_METHODS = ("monitor.sample",)
-STREAMS = ("out", "err")
 MAX_LINE = 64 * 1024
 LOG_POLL_S = 0.2
 LOG_READ_MAX = 1 << 20
 # Window of the output growth scan behind ``member.activity``.
 ACTIVITY_POLL_S = 2.0
-# Tail of a file reported by ``log.follow``: at most this many lines from the last bytes of it.
-BACKFILL_LINES = 200
-BACKFILL_BYTES = 64 * 1024
 # Outgoing bytes a client may have queued before it counts as stalled.
 QUEUE_BYTES = 8 << 20
 # Interval of the ``monitor`` rates sent to following clients.
@@ -135,7 +129,7 @@ class ControlChannel:
         *,
         socket_path: Path,
         log_dir: Path,
-        policy: str = "guard",
+        policy: str = DEFAULT_POLICY,
     ) -> None:
         self._commands = commands
         self._states = states
@@ -175,14 +169,7 @@ class ControlChannel:
         logger.info("control channel: %s", self._path)
 
     async def close(self) -> None:
-        for task in (self._tail_task, self._activity_task, self._monitor_task):
-            if task is None:
-                continue
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+        await cancel_and_wait(self._tail_task, self._activity_task, self._monitor_task)
         self._tail_task = self._activity_task = self._monitor_task = None
         if self._unsubscribe is not None:
             self._unsubscribe()
@@ -191,13 +178,7 @@ class ControlChannel:
             self._server.close()
         for client in list(self._clients):
             client.close()
-        for task in list(self._tasks):
-            task.cancel()
-        for task in list(self._tasks):
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+        await cancel_and_wait(*self._tasks)
         self._clients.clear()
         # wait_closed waits for the connections from Python 3.12 on, so they are closed first.
         if self._server is not None:
@@ -301,7 +282,7 @@ class ControlChannel:
     async def _dispatch(self, client: _Client, method: str, params: dict[str, Any]) -> Any:
         if method == "status":
             return self._commands.status()
-        if method in ("stop", "restart", "kill"):
+        if method in MEMBER_ACTIONS:
             exact = params.get("exact", False)
             if not isinstance(exact, bool):
                 raise CommandError("invalid_params", "exact must be a boolean")
@@ -340,13 +321,13 @@ class ControlChannel:
             file = self._log_path(key)
             if key in self._offsets:
                 self._tail_file(key)  # pending lines reach the current followers before the tail is cut
-                result[stream], _ = _tail_lines(file, self._offsets[key])
+                result[stream], _ = tail_lines(file, self._offsets[key])
             else:
                 try:
                     self._offsets[key] = file.stat().st_size
                 except OSError:
                     self._offsets[key] = 0
-                result[stream], rest = _tail_lines(file, self._offsets[key])
+                result[stream], rest = tail_lines(file, self._offsets[key])
                 if rest:
                     self._partial[key] = rest
         client.follows.add(path)
@@ -380,7 +361,7 @@ class ControlChannel:
     def _log_path(self, key: tuple[str, str]) -> Path:
         path = self._paths.get(key)
         if path is None:
-            path = self._paths[key] = self._log_dir / _slug(key[0]) / key[1]
+            path = self._paths[key] = self._log_dir / member_dir_name(key[0]) / key[1]
         return path
 
     async def _tail_logs(self) -> None:
@@ -492,22 +473,3 @@ class ControlChannel:
                 previous = reading
             except Exception:  # noqa: BLE001
                 logger.exception("reading the tracer counters failed")
-
-
-def _tail_lines(path: Path, size: int) -> tuple[list[str], bytes]:
-    """The last complete lines of a file's first ``size`` bytes, from at most its final
-    ``BACKFILL_BYTES``, and the unterminated bytes after them."""
-    if size == 0:
-        return [], b""
-    start = max(0, size - BACKFILL_BYTES)
-    try:
-        with open(path, "rb") as handle:
-            handle.seek(start)
-            data = handle.read(size - start)
-    except OSError:
-        return [], b""
-    chunks = data.split(b"\n")
-    rest = chunks.pop()
-    if start > 0 and chunks:
-        chunks.pop(0)  # a line cut by the window start
-    return [chunk.decode("utf-8", "replace") for chunk in chunks[-BACKFILL_LINES:]], rest

@@ -16,9 +16,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from ...run_log import LOG_BASE
 
 
 @dataclass
@@ -31,5 +33,5 @@ class ActorConfig:
     respawn_enabled: bool = False
     respawn_delay: float = 1.0
     max_respawn_attempts: Optional[int] = None  # None = infinite
-    output_dir: Path = field(default_factory=lambda: Path("/tmp/autoware_system_designer_logs"))
+    output_dir: Path = LOG_BASE
     graceful_shutdown_timeout: float = 5.0  # seconds — SIGINT grace before SIGKILL

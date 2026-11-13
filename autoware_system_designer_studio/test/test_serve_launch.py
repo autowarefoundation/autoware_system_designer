@@ -24,7 +24,8 @@ from pathlib import Path
 
 import pytest
 
-from autoware_system_designer_studio.serve import api, jobs, launch
+from autoware_system_designer_runtime import run_log
+from autoware_system_designer_studio.serve import api, jobs, launch, runs
 
 from .test_serve import PKG, SYSTEM, UNITS, _await_job_output, _install_tree, _Running
 from .test_serve_jobs import _wait_job
@@ -245,20 +246,13 @@ def _wait_session(running, predicate, what="session"):
 # -- environment and launcher ---------------------------------------------------
 
 
-def test_member_slug_matches_the_runtime_log_layout():
-    assert launch.member_slug("/sensing/lidar/front_upper/lidar") == "sensing_lidar_front_upper_lidar"
-    assert launch.member_slug("/a-b.c_d/e f") == "a-b.c_d_e_f"
-    assert launch.member_slug("//") == "_unnamed_"
-
-
-def test_tail_lines_reads_the_end_of_a_file(tmp_path):
-    missing = tmp_path / "none"
-    assert launch.tail_lines(missing) == []
+def test_member_tails_read_the_end_of_each_stream(tmp_path):
+    assert runs.member_tails(tmp_path) == {"out": [], "err": []}
     (tmp_path / "out").write_bytes(b"one\ntwo\nthree")
-    assert launch.tail_lines(tmp_path / "out") == ["one", "two", "three"]
-    (tmp_path / "long").write_bytes(b"".join(b"line %06d\n" % i for i in range(10000)))
-    tail = launch.tail_lines(tmp_path / "long")
-    assert len(tail) == launch.TAIL_LINES and tail[-1] == "line 009999"
+    (tmp_path / "err").write_bytes(b"".join(b"line %06d\n" % i for i in range(10000)))
+    tails = runs.member_tails(tmp_path)
+    assert tails["out"] == ["one", "two", "three"]
+    assert len(tails["err"]) == run_log.TAIL_LINES and tails["err"][-1] == "line 009999"
 
 
 def test_capture_env_sources_the_script_over_this_environment(tmp_path, monkeypatch):
@@ -683,7 +677,7 @@ def _run_tree(base, name, manifest, members=("demo_talker",)):
         (run / member / "out").write_text(f"{member} out\n")
         (run / member / "err").write_text("")
     if manifest is not None:
-        (run / launch.RUN_MANIFEST).write_text(json.dumps(manifest))
+        (run / run_log.RUN_MANIFEST).write_text(json.dumps(manifest))
     return run
 
 

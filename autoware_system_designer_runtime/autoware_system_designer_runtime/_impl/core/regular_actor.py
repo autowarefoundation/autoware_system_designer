@@ -29,7 +29,9 @@ import os
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Sequence
 
+from ...run_log import member_dir_name
 from . import events as ev
+from .aio import first_completed
 from .config import ActorConfig
 from .process import graceful_kill, reap_group, spawn_pgrp
 from .state import (
@@ -130,7 +132,7 @@ class RegularNodeActor:
                 return
             # All other commands (Restart, KillSignal, …) are irrelevant before spawn.
 
-        node_dir = self._config.output_dir / _slug(self.name)
+        node_dir = self._config.output_dir / member_dir_name(self.name)
         node_dir.mkdir(parents=True, exist_ok=True)
         (node_dir / "cmdline").write_text(" ".join(self._spec.cmd) + "\n")
 
@@ -171,15 +173,7 @@ class RegularNodeActor:
         ctrl_task = asyncio.create_task(self._control_rx.get())
         shutdown_task = asyncio.create_task(self._shutdown.wait())
 
-        try:
-            done, _pending = await asyncio.wait(
-                {wait_task, ctrl_task, shutdown_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-        finally:
-            for t in (wait_task, ctrl_task, shutdown_task):
-                if not t.done():
-                    t.cancel()
+        done = await first_completed(wait_task, ctrl_task, shutdown_task)
 
         if wait_task in done:
             exit_code = wait_task.result()
@@ -222,15 +216,7 @@ class RegularNodeActor:
 
         ctrl_task = asyncio.create_task(self._control_rx.get())
         shutdown_task = asyncio.create_task(self._shutdown.wait())
-        try:
-            done, _ = await asyncio.wait(
-                {ctrl_task, shutdown_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-        finally:
-            for t in (ctrl_task, shutdown_task):
-                if not t.done():
-                    t.cancel()
+        done = await first_completed(ctrl_task, shutdown_task)
 
         if shutdown_task in done:
             self._state = NodeDone(exit_code=exit_code)
@@ -254,15 +240,7 @@ class RegularNodeActor:
         delay_task = asyncio.create_task(asyncio.sleep(self._config.respawn_delay))
         ctrl_task = asyncio.create_task(self._control_rx.get())
         shutdown_task = asyncio.create_task(self._shutdown.wait())
-        try:
-            done, _ = await asyncio.wait(
-                {delay_task, ctrl_task, shutdown_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-        finally:
-            for t in (delay_task, ctrl_task, shutdown_task):
-                if not t.done():
-                    t.cancel()
+        done = await first_completed(delay_task, ctrl_task, shutdown_task)
 
         if shutdown_task in done:
             self._transition_stopped(self._state.exit_code)
@@ -378,15 +356,3 @@ class RegularNodeActor:
 
     async def _emit(self, event) -> None:
         await ev.emit_event(self._state_tx, self.name, event)
-
-
-def _slug(name: str) -> str:
-    """Sanitize a member name into a filesystem-safe path segment."""
-    safe = []
-    for ch in name:
-        if ch.isalnum() or ch in ("_", "-", "."):
-            safe.append(ch)
-        else:
-            safe.append("_")
-    out = "".join(safe).lstrip("_")
-    return out or "_unnamed_"

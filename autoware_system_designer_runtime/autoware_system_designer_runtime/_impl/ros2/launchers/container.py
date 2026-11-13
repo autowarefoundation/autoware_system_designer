@@ -27,6 +27,7 @@ import queue
 import threading
 from typing import Callable, Iterable, Mapping, Optional
 
+from ...core.aio import resolve
 from ..common.params import _ros_args, build_cmd
 
 logger = logging.getLogger(__name__)
@@ -155,9 +156,9 @@ class RosWorker:
             try:
                 result = fn()
             except Exception as exc:  # noqa: BLE001
-                self._loop.call_soon_threadsafe(_resolve, future, None, exc)
+                self._loop.call_soon_threadsafe(resolve, future, None, exc)
             else:
-                self._loop.call_soon_threadsafe(_resolve, future, result, None)
+                self._loop.call_soon_threadsafe(resolve, future, result, None)
 
     async def run_on_ros_thread(self, fn: Callable[[], object], timeout: float = 10.0):
         """Run *fn* on the rclpy thread and return its result."""
@@ -207,10 +208,6 @@ class RosWorker:
             return count
 
         return await self.run_on_ros_thread(_destroy)
-
-    @property
-    def probe_count(self) -> int:
-        return len(self._probes)
 
     # ------------------------------------------------------------------
     # LoadNode dispatch
@@ -272,9 +269,9 @@ class RosWorker:
             try:
                 result = f.result()
             except Exception as e:  # noqa: BLE001
-                loop.call_soon_threadsafe(_resolve, aio_future, None, e)
+                loop.call_soon_threadsafe(resolve, aio_future, None, e)
                 return
-            loop.call_soon_threadsafe(_resolve, aio_future, result, None)
+            loop.call_soon_threadsafe(resolve, aio_future, result, None)
 
         rcl_future.add_done_callback(_on_done)
 
@@ -367,12 +364,3 @@ def make_executor(context=None):
 
 def _discard(_msg) -> None:
     return None
-
-
-def _resolve(future: asyncio.Future, result, exc: Optional[BaseException]) -> None:
-    if future.done():
-        return
-    if exc is not None:
-        future.set_exception(exc)
-    else:
-        future.set_result(result)

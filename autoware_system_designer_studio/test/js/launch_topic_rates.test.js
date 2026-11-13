@@ -16,8 +16,8 @@ const JS_DIR = path.join(
 );
 
 global.window = { SD: { activities: {} } };
-require(path.join(JS_DIR, "activities", "launch", "topic_rates.js"));
-const launch = global.window.SD.activities.launch;
+require(path.join(JS_DIR, "activities", "launch", "topic_model.js"));
+const launch = global.window.SD.activities.launch.topicModel;
 
 function port(topic, eventId, triggers = [], rates = {}) {
   return {

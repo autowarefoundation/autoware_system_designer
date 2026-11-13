@@ -102,6 +102,13 @@
     };
   }
 
+  // Entities of a mode of the system at `dataBase`, composables nested under
+  // their container.
+  async function modeEntities(dataBase, mode) {
+    const data = await SD.NamespaceTree.loadStructure(dataBase, mode);
+    return nestComposables(SD.NamespaceTree.entities(data));
+  }
+
   // Live states of the members launched in `mode` of a system, keyed by the
   // node path of the mode's entities (nestComposables output): token, label,
   // `dead` with the reason while the process is down, and the restart counts.
@@ -128,6 +135,7 @@
   }
 
   launch.DEAD_STATES = DEAD_STATES;
+  launch.modeEntities = modeEntities;
   launch.memberState = memberState;
   launch.memberStates = memberStates;
   launch.worstToken = worstToken;

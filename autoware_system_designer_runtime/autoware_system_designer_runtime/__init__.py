@@ -28,10 +28,26 @@ Public surface:
 - :class:`ActorConfig` carries per-actor settings (respawn, output dir).
 """
 
-from ._impl.core.config import ActorConfig
-from ._impl.core.coordinator import Coordinator, CoordinatorBuilder, MemberHandle, ensure_output_dir
-from ._impl.ros2.builder import populate_builder
-from ._impl.ros2.launchers.container import RosWorker
+import importlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ._impl.core.config import ActorConfig
+    from ._impl.core.coordinator import Coordinator, CoordinatorBuilder, MemberHandle, ensure_output_dir
+    from ._impl.ros2.builder import populate_builder
+    from ._impl.ros2.launchers.container import RosWorker
+
+# Public name -> implementing module, imported on first use: the file-contract modules
+# (``export_tree``, ``records``, ``rates_record``, ``run_log``) load without the actor runtime.
+_EXPORTS = {
+    "populate_builder": "._impl.ros2.builder",
+    "ActorConfig": "._impl.core.config",
+    "RosWorker": "._impl.ros2.launchers.container",
+    "Coordinator": "._impl.core.coordinator",
+    "CoordinatorBuilder": "._impl.core.coordinator",
+    "MemberHandle": "._impl.core.coordinator",
+    "ensure_output_dir": "._impl.core.coordinator",
+}
 
 __all__ = [
     "populate_builder",
@@ -42,3 +58,16 @@ __all__ = [
     "MemberHandle",
     "ensure_output_dir",
 ]
+
+
+def __getattr__(name: str):
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(importlib.import_module(module, __name__), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *__all__})

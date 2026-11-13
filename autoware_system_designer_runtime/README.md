@@ -1,4 +1,4 @@
-# `runtime/` — Actor-based system supervisor
+# `autoware_system_designer_runtime` — Actor-based system supervisor
 
 A Python actor runtime that **runs** an Autoware system_structure JSON directly: each node (regular, container, composable, ros2_launch_file include) becomes a supervised subprocess with its own state machine. Inspired by [play_launch](https://github.com/tier4/play_launch), reimplemented in Python with no play_launch import and no external binary.
 
@@ -11,7 +11,7 @@ Each member is a first-class task: you can inspect, stop, and restart nodes indi
 `launch.LaunchService` hides every spawned process behind a single event loop.
 You cannot tell which node crashed, kill one without killing all, or restart a single component. This runtime mirrors play_launch's actor pattern so each member is a first-class task with:
 
-- explicit state (`Pending → Running → Stopped | Failed | Respawning`)
+- explicit state (`Pending → Running → Stopped | Respawning | Failed → Done`)
 - per-member control queue (`Stop`, `Restart`, `Kill`, `ToggleRespawn`)
 - per-member state-event stream (`Started`, `Exited`, `Failed`, …)
 - a dedicated log directory (`out`, `err`, `pid`, `cmdline`)
@@ -47,8 +47,8 @@ Each command of this package is installed twice: as a console script under
 `bin/` copy locates its own Python package, so it also runs by absolute path from a shell that has
 not sourced the workspace (the launcher still needs ROS 2 sourced for `rclpy`).
 
-`Ctrl+C` triggers graceful shutdown: the coordinator broadcasts `Stop` to every
-member, each actor `SIGINT`s its process group, waits 5s, then `SIGKILL`s.
+`Ctrl+C` triggers graceful shutdown: the coordinator sets the shutdown event every
+actor waits on, each actor `SIGINT`s its process group, waits 5s, then `SIGKILL`s.
 rclcpp and rclpy leave the ROS graph on `SIGINT`; a glog failure handler takes `SIGTERM` as a crash.
 A member is its whole process group: it has stopped once its leader has exited and
 no process of the group is left, so the children of a launch file that ends before
@@ -63,6 +63,7 @@ autoware-system-designer-launch SYSTEM.json \
     --deploy my_vehicle \               # deploy variant whose arguments bind $(var ...)
     --arg map_path=/data/map \          # bind/override one system argument (repeatable)
     --log-dir /tmp/run1 \               # per-node logs land in /tmp/run1/<member>/
+    --launch-id 20260521_153012-ab12 \  # launch this run belongs to, recorded in run.json
     --respawn \                         # restart any node that exits abnormally (non-zero)
     --respawn-delay 1.0 \
     --max-respawn-attempts 5 \
@@ -70,6 +71,7 @@ autoware-system-designer-launch SYSTEM.json \
     --interactive \                     # enable stdin REPL (see below)
     --control /run/user/1000/asd.sock \ # control channel on a Unix socket (see below)
     --control-policy guard \            # guard (default) | open: interlock on the operation mode
+    --no-tracer \                       # no rate counters and no measurement (see Live rates)
     --log-level DEBUG
 ```
 
@@ -79,17 +81,22 @@ With `--interactive`, the launcher reads commands from stdin while running:
 
 ```text
 autoware runtime [? for help] > status
-  /perception/object_recognition/detector_a1/node_filter#single_node
-  /perception/object_recognition/node_tracker#single_node
-  /pointcloud_container#node_container
+  /perception/object_recognition/detector_a1/node_filter  running
+  /perception/object_recognition/node_tracker  running
+  /pointcloud_container  running
 autoware runtime [? for help] > stop /perception/object_recognition/detector_a1
-[console] stop -> /perception/object_recognition/detector_a1/node_filter#single_node
+[console] stop -> /perception/object_recognition/detector_a1/node_filter
 autoware runtime [? for help] > restart /pointcloud_container
-[console] restart -> /pointcloud_container#node_container
+[console] restart -> /pointcloud_container
 autoware runtime [? for help] > quit
 ```
 
-Commands: `status`, `stop <name>`, `restart <name>`, `kill <name>`, `quit`, `help` / `?`.
+Commands: `status`, `stop <name>`, `restart <name>`, `kill <name>`, `measure start|stop|status`
+(see [Latency measurement](#latency-measurement)), `rates [name]` (see [Live rates](#live-rates)),
+`quit`, `help` / `?`.
+
+A member is named by its structural path in the design; a node without one is named
+`<fully qualified name>#<launch state>`.
 
 `<name>` matches the member named exactly so, else as a **substring of the member name**, so namespace prefixes are natural targets (`stop /perception` stops everything under that subtree).
 
@@ -101,9 +108,10 @@ requests and gets one response each:
 
 ```text
 → {"event":"hello","pid":4242,"methods":[...],"policy":"guard","measure_armed":true,"monitor":true,
-   "log_dir":"/tmp/autoware_system_designer_logs/20260521_153012","members":[{"path":"/sensing/lidar/driver","state":"pending","detail":{},"time":0}],
+   "log_dir":"/tmp/autoware_system_designer_logs/20260521_153012",
+   "members":[{"path":"/sensing/lidar/driver","state":"pending","detail":{},"time":0,"restarts":0,"respawns":0}],
    "launch_ready":false,"shutting_down":false}
-→ {"event":"member","path":"/sensing/lidar/driver","state":"running","detail":{"pid":4310},"time":1793930000.1}
+→ {"event":"member","path":"/sensing/lidar/driver","state":"running","detail":{"pid":4310},"time":1793930000.1,"restarts":0,"respawns":0}
 → {"event":"member.log","path":"/sensing/lidar/driver","stream":"out","lines":["[INFO] ready"]}
 → {"event":"member.activity","window":2.0,"rates":{"/sensing/lidar/driver":5120}}
 → {"event":"monitor","time_ns":1793930002000000000,"interval_s":2.0,"processes":12,"untracked_endpoints":0,
@@ -128,10 +136,11 @@ requests and gets one response each:
 | `monitor.unfollow`                                | -                   | `{"released": bool}`                                                         |
 | `shutdown`                                        | -                   | `{"shutting_down": true}`                                                    |
 
-A member record is `{"path", "state", "detail", "time"}`; `path` is the member name (the node's
-structural path), `state` one of `pending`, `running`, `stopped`, `respawning`, `failed`, `done`,
-`loading`, `loaded`, and `detail` carries the state's data (`pid`, `exit_code`, `attempt`, `error`,
-`unique_id`). Member output stays in the per-member `out` and `err` files; a client that follows a
+A member record is `{"path", "state", "detail", "time", "restarts", "respawns"}`; `path` is the
+member name (the node's structural path), `state` one of `pending`, `running`, `stopped`,
+`respawning`, `failed`, `done`, `loading`, `loaded`, `detail` carries the state's data (`pid`,
+`exit_code`, `attempt`, `error`, `unique_id`), `restarts` counts the starts after the first within
+the run and `respawns` the respawns among them. Member output stays in the per-member `out` and `err` files; a client that follows a
 member (`log.follow`) gets the files' current tails in the reply and new lines as `member.log`
 events until it unfollows or disconnects. Unfollowed members cost the channel nothing. While a
 client is connected, `member.activity` reports once per window (2 s) the bytes per second each
@@ -159,7 +168,9 @@ Each member gets its own directory under `--log-dir`:
 ```text
 /tmp/autoware_system_designer_logs/20260521_153012/
 ├── run.json           the run: system, mode, compute unit, deploy, launch, structure path, start time, member paths
-└── <member-slug>/
+├── rates.jsonl        counters per node and topic over the run (see Live rates)
+├── trace/             tracer files of the run's processes
+└── <member>/          the member name with every character outside letters, digits, _ - . as _
     ├── cmdline        full argv used to spawn the process
     ├── pid            the process group leader's PID
     ├── out            stdout
@@ -171,6 +182,8 @@ subdirectory is created per run unless `--log-dir` overrides it. `run.json` name
 directory holds, so a reader can map a member directory back to its member path. `--launch-id`
 sets its `launch`: the runs of a system's compute units launched together carry one id, each in its
 own directory on its own unit. A restarted or respawned member appends to its `out` and `err`.
+`autoware_system_designer_runtime.run_log` (no ROS import) holds this layout for other tools: the
+log base, the manifest, the member directory name and the tail of a member file.
 
 ---
 
@@ -179,7 +192,7 @@ own directory on its own unit. A restarted or respawned member appends to its `o
 ```text
                       ┌────────────────────────────────────────┐
                       │  Coordinator (asyncio main loop)       │
-                      │   - signal handlers (SIGINT → Stop)    │
+                      │   - signal handlers (SIGINT → shutdown)│
                       │   - state_queue (fan-in)               │
                       │   - shutdown_event / launch_ready      │
                       └───────────┬────────────────────────────┘
@@ -201,33 +214,53 @@ own directory on its own unit. A restarted or respawned member appends to its `o
                                                                            worker thread)
 ```
 
-| File                                  | Role                                                                                                                                  |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `__init__.py`                         | Public re-exports (`populate_builder`, `ActorConfig`, `Coordinator`, …)                                                               |
-| `system_runner.py`                    | CLI entry point (`autoware-system-designer-launch`)                                                                                   |
-| `_impl/core/config.py`                | `ActorConfig` (respawn, output dir, shutdown timeout)                                                                                 |
-| `_impl/core/events.py`                | `ControlEvent` / `StateEvent` dataclasses                                                                                             |
-| `_impl/core/state.py`                 | State dataclasses: `NodePending/Running/Respawning/Stopped/Failed`, `ComposableBlocked/Unloaded/Loading/Loaded/Failed`, `BlockReason` |
-| `_impl/core/process.py`               | `spawn_pgrp()` + `graceful_kill()` (pgid-aware)                                                                                       |
-| `_impl/core/regular_actor.py`         | One asyncio task per regular node / container / launch-file include                                                                   |
-| `_impl/core/coordinator.py`           | `CoordinatorBuilder`, `Coordinator`, `MemberHandle`                                                                                   |
-| `_impl/core/stdin_console.py`         | Optional stdin REPL                                                                                                                   |
-| `_impl/core/commands.py`              | Command surface shared by the REPL and the control channel; member run states from the state hook                                     |
-| `_impl/core/control_channel.py`       | Unix socket serving member states, logs and the command set as JSON lines                                                             |
-| `_impl/ros2/operation_mode.py`        | Interlock on the ADAPI operation mode                                                                                                 |
-| `_impl/ros2/builder.py`               | system_structure JSON → populated `CoordinatorBuilder` (ROS 2)                                                                        |
-| `_impl/ros2/launchers/single_node.py` | Cmdline builder for `single_node` launch type (`node_cmdline`)                                                                        |
-| `_impl/ros2/launchers/container.py`   | Cmdline builder for `node_container` (`container_cmdline`) + `RosWorker`                                                              |
-| `_impl/ros2/launchers/composable.py`  | `ComposableSpec`, `ComposableNodeActor`; YAML param flattening for `LoadNode`                                                         |
-| `_impl/ros2/launchers/launch_file.py` | Cmdline builder + subprocess runner for `ros2_launch_file` includes                                                                   |
-| `_impl/ros2/common/params.py`         | `resolve_value`, `build_cmd`, `_ros_args`, `parameter_files`, `remap_pairs`                                                           |
-| `_impl/ros2/common/namespace.py`      | `parent_namespace`, `node_fqn`, `join_fqn`, `unique_node_name`                                                                        |
+| File                                  | Role                                                                                                  |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `__init__.py`                         | Public names (`populate_builder`, `ActorConfig`, `Coordinator`, …), loaded on first use               |
+| `system_runner.py`                    | CLI entry point (`autoware-system-designer-launch`)                                                   |
+| `measure_analyze.py`                  | CLI entry point (`autoware-system-designer-measure-analyze`)                                          |
+| `export_tree.py`                      | Layout of an export tree: manifest, system structure paths (no ROS import)                            |
+| `records.py`                          | Layout of the measurement records (no ROS import)                                                     |
+| `rates_record.py`                     | Rates record of a run: writer, reader, rates between two samples (no ROS import)                      |
+| `run_log.py`                          | Layout of a run's log directory: log base, manifest, member directory, file tail (no ROS import)      |
+| `control_protocol.py`                 | Member actions, measure verbs and interlock policies of the control surfaces (no ROS import)          |
+| `_impl/core/config.py`                | `ActorConfig` (respawn, output dir, shutdown timeout)                                                 |
+| `_impl/core/events.py`                | Control commands (`Stop`, `Restart`, `KillSignal`, `ToggleRespawn`) and state events of the actors    |
+| `_impl/core/state.py`                 | State dataclasses: `NodePending/Running/Respawning/Stopped/Done/Failed`, `Composable*`, `BlockReason` |
+| `_impl/core/process.py`               | `spawn_pgrp()`, `graceful_kill()` and the end of a process group                                      |
+| `_impl/core/aio.py`                   | asyncio helpers: first of several waits, cancel and wait, future resolved from another thread         |
+| `_impl/core/regular_actor.py`         | One asyncio task per regular node / container / launch-file include                                   |
+| `_impl/core/coordinator.py`           | `CoordinatorBuilder`, `Coordinator`, `MemberHandle`                                                   |
+| `_impl/core/stdin_console.py`         | Optional stdin REPL                                                                                   |
+| `_impl/core/commands.py`              | Command surface shared by the REPL and the control channel; member run states from the state hook     |
+| `_impl/core/control_channel.py`       | Unix socket serving member states, logs and the command set as JSON lines                             |
+| `_impl/ros2/operation_mode.py`        | Interlock on the ADAPI operation mode                                                                 |
+| `_impl/ros2/builder.py`               | system_structure JSON → populated `CoordinatorBuilder` (ROS 2)                                        |
+| `_impl/ros2/launchers/single_node.py` | Cmdline builder for `single_node` launch type (`node_cmdline`)                                        |
+| `_impl/ros2/launchers/container.py`   | Cmdline builder for `node_container` (`container_cmdline`) + `RosWorker`                              |
+| `_impl/ros2/launchers/composable.py`  | `ComposableSpec`, `ComposableNodeActor`; YAML param flattening for `LoadNode`                         |
+| `_impl/ros2/launchers/launch_file.py` | Cmdline builder + subprocess runner for `ros2_launch_file` includes                                   |
+| `_impl/ros2/common/params.py`         | `resolve_value`, `build_cmd`, `parameter_layers`, `remap_pairs`                                       |
+| `_impl/ros2/common/namespace.py`      | `parent_namespace`, `node_fqn`, `join_fqn`, `unique_node_name`                                        |
+| `_impl/ros2/common/substitutions.py`  | Launch-time substitutions and the binding of system arguments                                         |
+| `_impl/measure/tracer.py`             | Arming of the tracer: preload library, trace directory, control word                                  |
+| `_impl/measure/stats_reader.py`       | Reader of the tracer's counters (`<pid>.stats`)                                                       |
+| `_impl/measure/monitor.py`            | Live rates from two reads of the counters; recorder of the rates record                               |
+| `_impl/measure/session.py`            | Measurement window: settle, record, close, analyze                                                    |
+| `_impl/measure/trace_reader.py`       | Reader of the tracer's event records (`<pid>.trace`) and name tables                                  |
+| `_impl/measure/clock.py`              | Mapping of wall time onto ROS time                                                                    |
+| `_impl/measure/node_graph.py`         | Nodes, ports and topic links of the design the analysis matches against                               |
+| `_impl/measure/node_stats.py`         | Per-node rates, process time and response from the records                                            |
+| `_impl/measure/detect.py`             | Trigger detection and the diff against the declared process events                                    |
+| `_impl/measure/chains.py`             | Event chains across nodes                                                                             |
+| `_impl/measure/probe.py`              | Probe subscriptions on intra-process-only topics                                                      |
+| `_impl/measure/writer.py`             | Latency file                                                                                          |
 
 ---
 
 ## Library use
 
-The CLI in `runtime/system_runner.py` is one consumer of `runtime/`.
+The CLI in `system_runner.py` is one consumer of the package.
 For programmatic use:
 
 ```python
@@ -261,7 +294,7 @@ asyncio.run(main())
 ### Sending commands to a member
 
 ```python
-handle = coord.handle("/pointcloud_container#node_container")
+handle = coord.handle("/pointcloud_container")
 await handle.stop()                # graceful shutdown
 await handle.restart()             # stop + respawn
 await handle.kill(signal.SIGKILL)  # immediate kill on pgid
@@ -270,25 +303,25 @@ await handle.set_respawn(False)    # disable auto-respawn for this one
 
 ### Consuming state events
 
-The coordinator drives its own state-event loop, but if you want a sidecar that taps the stream (e.g., to feed a UI), spawn a task that reads from `coord.state_queue` — be aware you'll race the coordinator's reader, so the recommended pattern is to wrap the coordinator instead.
+The coordinator drives its own state-event loop. A sidecar that follows the stream (e.g. to feed a UI) registers a callback with `builder.add_state_hook(hook)` before `build()`; the loop calls it with every actor state event. `coord.state_queue` is the queue the actors write to, read by the coordinator alone.
 
 ---
 
 ## Comparison with `play_launch`
 
-| Concept                   | play_launch (Rust)                                            | this runtime (Python)                                                       |
-| ------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Actor                     | `RegularNodeActor` / `ContainerActor` / `ComposableNodeActor` | same names, asyncio tasks                                                   |
-| Coordinator               | `MemberCoordinator{Builder,Runner,Handle}`                    | `Coordinator{Builder,Handle}`                                               |
-| Process kill              | SIGTERM → 5s → SIGKILL on pgid                                | `process.py::graceful_kill` (identical)                                     |
-| Composable load           | direct LoadNode service call                                  | identical, via `composition_interfaces/srv/LoadNode`                        |
-| YAML param inlining       | `LoadNodeRecord` builder strips params_files                  | `composable.py::flatten_for_fqn`                                            |
-| Launch file include       | `ros2 launch` CLI subprocess                                  | `launch_file.py` runner (direct LaunchService, with global param injection) |
-| Input format              | `record.json`                                                 | `system_structure.json` (Autoware-native)                                   |
-| Web UI / SSE / REST       | yes                                                           | **no** (explicitly out of scope)                                            |
-| Resource monitoring       | yes (CSV per-node)                                            | **no**                                                                      |
-| LD_PRELOAD interception   | yes                                                           | **no**                                                                      |
-| Container isolation modes | yes (`stock`/`observable`/`isolated`)                         | **no** (uses whatever container is in the JSON)                             |
+| Concept                   | play_launch (Rust)                                            | this runtime (Python)                                                           |
+| ------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Actor                     | `RegularNodeActor` / `ContainerActor` / `ComposableNodeActor` | `RegularNodeActor` (also for containers) / `ComposableNodeActor`, asyncio tasks |
+| Coordinator               | `MemberCoordinator{Builder,Runner,Handle}`                    | `Coordinator{Builder,Handle}`                                                   |
+| Process kill              | SIGTERM → 5s → SIGKILL on pgid                                | `process.py::graceful_kill`: SIGINT → 5s → SIGKILL on pgid                      |
+| Composable load           | direct LoadNode service call                                  | identical, via `composition_interfaces/srv/LoadNode`                            |
+| YAML param inlining       | `LoadNodeRecord` builder strips params_files                  | `composable.py::flatten_for_fqn`                                                |
+| Launch file include       | `ros2 launch` CLI subprocess                                  | `launch_file.py` runner (direct LaunchService, with global param injection)     |
+| Input format              | `record.json`                                                 | `system_structure.json` (Autoware-native)                                       |
+| Web UI / SSE / REST       | yes                                                           | in `autoware_system_designer_studio`, over the control channel                  |
+| Resource monitoring       | yes (CSV per-node)                                            | **no**; topic rates and latency instead (see Live rates)                        |
+| LD_PRELOAD interception   | yes                                                           | `autoware_system_designer_tracer`, for rates and latency                        |
+| Container isolation modes | yes (`stock`/`observable`/`isolated`)                         | **no** (uses whatever container is in the JSON)                                 |
 
 The two systems share the design pattern but not code. When play_launch's parser-side behavior is needed, run that tool directly; this runtime exists to keep autoware_system_designer's runtime layer self-contained.
 
@@ -296,8 +329,8 @@ The two systems share the design pattern but not code. When play_launch's parser
 
 ## Caveats
 
-- **Composable params** are flattened from YAML in the actor; rclpy is on a worker thread and the LoadNode service wait and call are unbounded as in launch_ros, with a warning past 30 s each.
-  Slow containers will need a higher timeout (configurable in `ComposableNodeActor.__init__`).
+- **Composable params** are flattened from YAML in the actor; rclpy is on a worker thread and the LoadNode service wait and call are unbounded as in launch_ros, with a warning past 30 s each
+  (`service_wait_warn_s`, `load_call_warn_s` of `ComposableNodeActor.__init__`).
 - **`ros2_launch_file` entities** are wrapped as a single Python subprocess that runs `LaunchService` directly (not the `ros2 launch` CLI). Global parameters (`vehicle_info.param.yaml`) are injected as `SetParameter` actions before the include so all nodes in the subtree receive them — even though each wrapper runs in a separate process from the `global_parameter_loader`. You lose per-leaf-node visibility _inside_ the include — by design.
 - **Empty / placeholder nodes** (single_node entries whose `executable` is empty) are silently skipped during build; check the log at startup.
 - **Direct binary spawn**: `build_cmd` resolves the executable path via `ros2run.api.get_executable_path` to deliver `SIGINT` directly to rclcpp rather than through a Python wrapper. Falls back to `ros2 run <pkg> <exe>` with a warning if resolution fails.

@@ -62,12 +62,6 @@ body {
   font-family: var(--mono-font);
 }
 
-.package-source-link {
-  display: block;
-  font-size: 12px;
-  margin-top: 2px;
-}
-
 .diagram-error {
   display: flex;
   justify-content: center;

@@ -78,12 +78,9 @@
       host.replaceChildren(canvas);
       try {
         const mode = store.get("mode");
-        const data = await SD.NamespaceTree.loadStructure(
-          config.dataBase,
-          mode,
-        );
+        const loaded = await launch.modeEntities(config.dataBase, mode);
         if (seq !== loadSeq) return;
-        entities = launch.nestComposables(SD.NamespaceTree.entities(data));
+        entities = loaded;
         entitiesMode = mode;
         const created = new (SD.diagrams.get("treemap"))(canvas, {
           mode,

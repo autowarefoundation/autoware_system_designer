@@ -34,6 +34,7 @@ from typing import Any, Callable, Optional
 
 from . import api
 from .events import EventHub
+from .tasks import TaskSet
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,7 @@ class JobRunner:
         self._jobs: dict[str, Job] = {}
         self._active_by_key: dict[str, Job] = {}
         self._counter = 0
-        self._tasks: set[asyncio.Task] = set()
+        self._tasks = TaskSet()
 
     def list(self) -> list[Job]:
         return sorted(self._jobs.values(), key=lambda job: job.created_at, reverse=True)
@@ -190,9 +191,7 @@ class JobRunner:
         self._active_by_key[spec.key] = job
         self._evict_finished()
         self._publish_state(job)
-        task = asyncio.ensure_future(self._supervise(job))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        self._tasks.spawn(self._supervise(job))
         return job
 
     def cancel(self, job_id: str) -> Job:
@@ -202,9 +201,7 @@ class JobRunner:
         job.cancel_requested = True
         self._signal(job, signal.SIGINT)
         self._publish_state(job)
-        task = asyncio.ensure_future(self._escalate(job))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        self._tasks.spawn(self._escalate(job))
         return job
 
     async def shutdown(self, wait_s: float = SHUTDOWN_WAIT_S) -> None:
@@ -217,8 +214,7 @@ class JobRunner:
         for job in active:
             if job.active:
                 self._signal(job, signal.SIGKILL)
-        if self._tasks:
-            await asyncio.wait(set(self._tasks), timeout=wait_s)
+        await self._tasks.wait(wait_s)
 
     # -- internals ---------------------------------------------------------
 

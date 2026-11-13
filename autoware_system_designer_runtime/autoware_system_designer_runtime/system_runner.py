@@ -14,11 +14,8 @@
 
 """CLI entry: launch a system_structure JSON via the actor runtime.
 
-The XML LaunchService backend and ``build_launch_description`` have been
-replaced by the actor coordinator in
-:mod:`autoware_system_designer_runtime`. Each member of the system runs
-as its own supervised subprocess, with composable nodes loaded directly
-via the ``composition_interfaces/srv/LoadNode`` service.
+Each member of the system runs as its own supervised subprocess, with composable nodes loaded
+directly via the ``composition_interfaces/srv/LoadNode`` service.
 """
 
 from __future__ import annotations
@@ -29,14 +26,15 @@ import json
 import logging
 import re
 import sys
-import time
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from ._impl.core.aio import cancel_and_wait
 from ._impl.core.commands import MemberStates, RuntimeCommands
 from ._impl.core.config import ActorConfig
 from ._impl.core.control_channel import ControlChannel
 from ._impl.core.coordinator import ensure_output_dir
+from ._impl.core.stdin_console import COMMANDS as CONSOLE_COMMANDS
 from ._impl.core.stdin_console import run_console
 from ._impl.measure.clock import CLOCK_AUTO, CLOCK_CHOICES
 from ._impl.measure.monitor import RateMonitor, RatesRecorder
@@ -45,9 +43,11 @@ from ._impl.measure.session import TRACE_SUBDIR, MeasureOptions, MeasureSession,
 from ._impl.measure.tracer import TracerArming, locate_tracer
 from ._impl.ros2.builder import populate_builder
 from ._impl.ros2.common.substitutions import bind_variables, resolve_argument_values, unresolved_var_names
-from ._impl.ros2.operation_mode import POLICIES, OperationModeGuard
+from ._impl.ros2.operation_mode import OperationModeGuard
+from .control_protocol import DEFAULT_POLICY, GUARD_POLICY, POLICIES
 from .export_tree import manifest_path, read_manifest, resolve_structure_paths
 from .rates_record import RATES_FILE
+from .run_log import LOG_BASE, RUN_MANIFEST, write_run_manifest
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -123,39 +123,6 @@ class _ShortNameFilter(logging.Filter):
         return True
 
 
-RUN_MANIFEST = "run.json"
-
-
-def write_run_manifest(
-    out_dir: Path,
-    *,
-    json_path: str,
-    data: Mapping[str, Any],
-    ecu: Optional[str],
-    deploy: Optional[str],
-    members: Sequence[str],
-    launch: Optional[str] = None,
-) -> Path:
-    """Records what a run's log directory holds: the system structure and unit it ran, the launch the
-    run belongs to and the member paths whose directories lie beside it."""
-    metadata = data.get("metadata")
-    if not isinstance(metadata, Mapping):
-        metadata = {}
-    manifest = {
-        "system": metadata.get("system_name"),
-        "mode": metadata.get("mode") or Path(json_path).stem,
-        "compute_unit": ecu,
-        "deploy": deploy,
-        "launch": launch,
-        "system_structure": str(Path(json_path).resolve()),
-        "started": time.time(),
-        "members": list(members),
-    }
-    path = out_dir / RUN_MANIFEST
-    path.write_text(json.dumps(manifest, indent=2) + "\n")
-    return path
-
-
 def launch_from_json(
     json_path: str,
     *,
@@ -170,7 +137,7 @@ def launch_from_json(
     interactive: bool = False,
     measure: Optional[MeasureOptions] = None,
     control: Optional[Path] = None,
-    control_policy: str = "guard",
+    control_policy: str = DEFAULT_POLICY,
     tracer: bool = True,
     launch_id: Optional[str] = None,
 ) -> int:
@@ -248,7 +215,7 @@ def launch_from_json(
                 recorder_task = asyncio.ensure_future(recorder.run())
             await worker.start()
             guard = None
-            if (interactive or control is not None) and control_policy == "guard":
+            if (interactive or control is not None) and control_policy == GUARD_POLICY:
                 guard = OperationModeGuard(worker)
                 await guard.install()
             commands = RuntimeCommands(coord, states, measure=session, monitor=monitor, guard=guard)
@@ -267,12 +234,7 @@ def launch_from_json(
                     pass
             if channel is not None:
                 await channel.close()
-            if recorder_task is not None:
-                recorder_task.cancel()
-                try:
-                    await recorder_task
-                except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                    pass
+            await cancel_and_wait(recorder_task)
             if recorder is not None:
                 recorder.close()
             if monitor is not None:
@@ -286,7 +248,7 @@ def launch_from_json(
         return 130
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Launch an Autoware system from a system_structure JSON file " "under per-process supervision."
     )
@@ -324,8 +286,7 @@ def main() -> None:
         "--log-dir",
         type=Path,
         default=None,
-        help="Base directory for per-node log output. Default: a fresh "
-        "timestamped folder under /tmp/autoware_system_designer_logs.",
+        help="Base directory for per-node log output. Default: a fresh " f"timestamped folder under {LOG_BASE}.",
     )
     parser.add_argument(
         "--respawn",
@@ -353,7 +314,9 @@ def main() -> None:
     parser.add_argument(
         "--interactive",
         action="store_true",
-        help="Read commands from stdin while running: status, stop <name>, " "restart <name>, kill <name>, quit.",
+        help="Read commands from stdin while running: "
+        + ", ".join(" ".join(usage.split()) for usage, _ in CONSOLE_COMMANDS if not usage.startswith("help"))
+        + ".",
     )
     parser.add_argument(
         "--control",
@@ -365,7 +328,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--control-policy",
-        default="guard",
+        default=DEFAULT_POLICY,
         choices=POLICIES,
         help="guard refuses stop, restart, kill and shutdown while the operation mode is autonomous "
         "(default); open does not interlock.",
@@ -433,7 +396,19 @@ def main() -> None:
         "under the record root ($AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR, else $ROS_HOME/autoware_system_designer/records), "
         "else <log-dir>/latency/<Mode>_latency.json.",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def _setup_logging(level: str) -> None:
+    handler = logging.StreamHandler()
+    handler.addFilter(_ShortNameFilter())
+    handler.setFormatter(logging.Formatter("[%(asctime)s] %(short_name)s - %(message)s", datefmt="%H:%M:%S"))
+    logging.root.setLevel(getattr(logging, level))
+    logging.root.addHandler(handler)
+
+
+def main() -> None:
+    args = _build_parser().parse_args()
 
     measure: Optional[MeasureOptions] = None
     if args.measure or args.measure_duration is not None:
@@ -446,12 +421,7 @@ def main() -> None:
             clock=args.measure_clock,
         )
 
-    short_name_filter = _ShortNameFilter()
-    handler = logging.StreamHandler()
-    handler.addFilter(short_name_filter)
-    handler.setFormatter(logging.Formatter("[%(asctime)s] %(short_name)s - %(message)s", datefmt="%H:%M:%S"))
-    logging.root.setLevel(getattr(logging, args.log_level))
-    logging.root.addHandler(handler)
+    _setup_logging(args.log_level)
 
     sys.exit(
         launch_from_json(

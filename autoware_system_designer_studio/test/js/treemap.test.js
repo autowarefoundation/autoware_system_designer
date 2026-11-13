@@ -24,8 +24,8 @@ global.window = {
     },
   },
 };
+require(path.join(JS_DIR, "diagrams", "treemap_layout.js"));
 require(path.join(JS_DIR, "diagrams", "treemap.js"));
-const Treemap = registry.get("treemap");
 const {
   slotOf,
   nodeCount,
@@ -36,9 +36,9 @@ const {
   sectionHeight,
   wrap,
   layout,
-  GEOMETRY,
+  G: GEOMETRY,
   CONTAINERS,
-} = Treemap;
+} = global.window.SD.treemapLayout;
 
 let nextId = 1;
 function node(name, namespace, unit, launchState = "single_node") {

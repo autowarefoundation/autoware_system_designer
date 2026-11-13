@@ -45,10 +45,12 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
+from autoware_system_designer_runtime.control_protocol import DEFAULT_POLICY, MEASURE_VERBS, MEMBER_ACTIONS, POLICIES
+
 from .. import exports
 from ..pages import assets
 from ..pages.render import INDEX_PAGE, Site, system_pages
-from . import api, build, events, jobs, launch, peers, record_watch
+from . import api, build, events, jobs, launch, peers, record_watch, runs
 from .events import TOPIC_DAEMON, TOPIC_SYSTEMS_CHANGED
 from .http import (
     CLIENT_HEADER,
@@ -203,7 +205,7 @@ class ServeDaemon:
         self.methods.register("build.start", self._build_start)
         self.methods.register("launch.start", self._launch_start)
         self.methods.register("launch.status", self._launch_status, get_path="launch")
-        for action in launch.MEMBER_ACTIONS:
+        for action in MEMBER_ACTIONS:
             self._register_of_unit(f"launch.{action}", self._member_action(action))
         self._register_of_unit("launch.follow", self._launch_follow)
         self._register_of_unit("launch.unfollow", self._launch_unfollow)
@@ -216,7 +218,7 @@ class ServeDaemon:
             self.methods.register(name, self._of_run(name, handler))
         self._register_of_unit("launch.shutdown", self._launch_shutdown)
         self.methods.register("launch.forget", self._launch_forget)
-        for verb in launch.MEASURE_VERBS:
+        for verb in MEASURE_VERBS:
             self._register_of_unit(f"measure.{verb}", self._measure(verb))
         self._register_of_unit("monitor.follow", self._monitor_follow)
         self._register_of_unit("monitor.unfollow", self._monitor_unfollow)
@@ -318,29 +320,23 @@ class ServeDaemon:
         for starting_id, starting_mode in self._starting:
             if starting_id == system_id and starting_mode != mode:
                 raise api.ApiError(api.CONFLICT, f"{system_id} is starting mode {starting_mode!r}")
-        for link in self.peers.links:
-            for session in link.sessions.values():
-                if not peers.PeerLink.session_active(session) or session.get("system") != system_id:
-                    continue
-                if session.get("mode") == mode:
-                    continue
-                unit = session.get("compute_unit")
-                message = f"{system_id} runs mode {session.get('mode')!r} on compute unit {unit!r}"
-                if link.state != peers.PEER_CONNECTED:
-                    message += f", as last reported by its {link.state} daemon; launch.forget drops the session"
-                raise api.ApiError(api.CONFLICT, message)
+        for link, session in self.peers.active_sessions(system_id):
+            if session.get("mode") == mode:
+                continue
+            unit = session.get("compute_unit")
+            message = f"{system_id} runs mode {session.get('mode')!r} on compute unit {unit!r}"
+            if link.state != peers.PEER_CONNECTED:
+                message += f", as last reported by its {link.state} daemon; launch.forget drops the session"
+            raise api.ApiError(api.CONFLICT, message)
 
     def _launch_of(self, system_id: str, mode: str) -> Optional[str]:
         """The launch of the system's units running ``mode``, a peer's units as last reported."""
         launch_id = self.launch.launch_of(system_id, mode)
         if launch_id is not None:
             return launch_id
-        for link in self.peers.links:
-            for session in link.sessions.values():
-                if not peers.PeerLink.session_active(session) or session.get("system") != system_id:
-                    continue
-                if session.get("mode") == mode and isinstance(session.get("launch"), str):
-                    return session["launch"]
+        for _, session in self.peers.active_sessions(system_id):
+            if session.get("mode") == mode and isinstance(session.get("launch"), str):
+                return session["launch"]
         return None
 
     # -- methods -----------------------------------------------------------
@@ -419,8 +415,7 @@ class ServeDaemon:
         if self.peers.link_of(compute_unit) is not None:
             raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is built by its own daemon")
         if compute_unit is not None:
-            view = system.to_view(self.served_units, {})
-            status = next((u["status"] for u in view["compute_units"] if u["name"] == compute_unit), None)
+            status = self._unit_status(system, compute_unit)
             if status not in (None, exports.UNIT_AVAILABLE):
                 raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is {status} on this daemon")
         plan = await asyncio.to_thread(
@@ -504,9 +499,9 @@ class ServeDaemon:
         deploy = _str_param(params, "deploy")
         if deploy is not None and deploy not in {v["name"] for v in system.deploy_variants()}:
             raise api.ApiError(api.INVALID_PARAMS, f"unknown deploy variant {deploy!r} of {system.id}")
-        policy = _str_param(params, "policy") or launch.POLICIES[0]
-        if policy not in launch.POLICIES:
-            raise api.ApiError(api.INVALID_PARAMS, f"policy must be one of {', '.join(launch.POLICIES)}")
+        policy = _str_param(params, "policy") or DEFAULT_POLICY
+        if policy not in POLICIES:
+            raise api.ApiError(api.INVALID_PARAMS, f"policy must be one of {', '.join(POLICIES)}")
         session = await self.launch.start(
             system,
             compute_unit=compute_unit,
@@ -569,17 +564,17 @@ class ServeDaemon:
         system_id = _str_param(params, "system")
         system = None if system_id is None else await self._find_system(system_id)
         # A log base shared with a peer holds the runs of its units too; the peer lists those.
-        runs = self.launch.runs(system, exclude_units=self.peers.units)
-        runs += await self.peers.gather(lambda link: link.run_views(params))
-        runs.sort(key=lambda run: run.get("started") or 0, reverse=True)
-        return {"runs": runs[: launch.MAX_RUNS]}
+        listed = await self.launch.archive.runs(system, exclude_units=self.peers.units)
+        listed += await self.peers.gather(lambda link: link.run_views(params))
+        listed.sort(key=lambda run: run.get("started") or 0, reverse=True)
+        return {"runs": listed[: runs.MAX_RUNS]}
 
     async def _launch_run(self, params: dict[str, Any]) -> dict[str, Any]:
-        return self.launch.run_members(_str_param(params, "run", required=True))
+        return self.launch.archive.run_members(_str_param(params, "run", required=True))
 
     async def _launch_run_tail(self, params: dict[str, Any]) -> dict[str, Any]:
         run = _str_param(params, "run", required=True)
-        return self.launch.run_tail(run, _str_param(params, "member", required=True))
+        return self.launch.archive.run_tail(run, _str_param(params, "member", required=True))
 
     async def _launch_run_rates(self, params: dict[str, Any]) -> dict[str, Any]:
         sample = params.get("sample")
@@ -591,7 +586,7 @@ class ServeDaemon:
         if span_s is not None and (not isinstance(span_s, (int, float)) or isinstance(span_s, bool) or span_s <= 0):
             raise api.ApiError(api.INVALID_PARAMS, "span_s must be a positive number of seconds")
         run = _str_param(params, "run", required=True)
-        return await self.launch.run_rates(run, sample=sample, start=start, span_s=span_s)
+        return await self.launch.archive.run_rates(run, sample=sample, start=start, span_s=span_s)
 
     async def _launch_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
         return await self.launch.shutdown(_str_param(params, "compute_unit", required=True))

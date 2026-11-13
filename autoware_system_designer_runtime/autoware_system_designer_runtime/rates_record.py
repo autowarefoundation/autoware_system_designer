@@ -268,3 +268,31 @@ class RatesRecord:
             start, end = (end - 1, end) if end > 0 else (0, 1)
         before, after = self.samples(start, end)
         return {**rates_between(before, after), "start": start, "sample": end}
+
+
+def format_rates(snapshot: dict[str, Any], pattern: Optional[str] = None) -> list[str]:
+    """Plain-text table of a rates snapshot, nodes whose key contains *pattern* only."""
+    lines = [f"rates over {snapshot['interval_s']:g} s, {snapshot['processes']} traced processes"]
+    for node in snapshot["nodes"]:
+        if pattern and pattern not in node["node"]:
+            continue
+        lines.append(node["node"])
+        for direction, arrow in (("inputs", "<-"), ("outputs", "->")):
+            for row in node[direction]:
+                extra = ""
+                if "comm_ms" in row:
+                    extra = f"  comm {row['comm_ms']:.3f} ms"
+                elif "callback_ms" in row:
+                    extra = f"  callback {row['callback_ms']:.3f} ms"
+                if "silent_s" in row:
+                    extra += f"  silent {row['silent_s']:g} s"
+                lines.append(f"  {arrow} {row['topic']:<60} {_hz(row['hz'])}{extra}")
+        for row in node["timers"]:
+            lines.append(f"  timer {row['period_ms']:g} ms{'':<47} {_hz(row['hz'])}")
+    if snapshot.get("untracked_endpoints"):
+        lines.append(f"{snapshot['untracked_endpoints']} endpoints past the counter capacity are not counted")
+    return lines
+
+
+def _hz(value: float) -> str:
+    return f"{value:8.2f} Hz"

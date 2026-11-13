@@ -20,6 +20,8 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Optional
 
+from ...control_protocol import MEMBER_ACTIONS
+
 if TYPE_CHECKING:
     from .launchers.container import RosWorker
 
@@ -28,8 +30,7 @@ logger = logging.getLogger(__name__)
 TOPIC = "/api/operation_mode/state"
 MSG_TYPE = "autoware_adapi_v1_msgs/msg/OperationModeState"
 MODE_AUTONOMOUS = 2
-GUARDED_ACTIONS = ("stop", "restart", "kill", "shutdown")
-POLICIES = ("guard", "open")
+GUARDED_ACTIONS = (*MEMBER_ACTIONS, "shutdown")
 STAMP_TOLERANCE_NS = 10 * 1_000_000_000
 
 
@@ -56,10 +57,6 @@ class OperationModeGuard:
         self._in_transition = False
         self._subscription = None
         self._replay_logged = False
-
-    @property
-    def active(self) -> bool:
-        return self._subscription is not None
 
     async def install(self) -> bool:
         def _create() -> None:

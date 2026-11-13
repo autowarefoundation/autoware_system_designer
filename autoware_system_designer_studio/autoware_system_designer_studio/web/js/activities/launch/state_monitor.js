@@ -42,7 +42,6 @@
       busyLog,
       rateLabel,
       BUSY_LOG_BPS,
-      nestComposables,
       worstToken,
       tokenSummary,
       runLabel,
@@ -662,12 +661,8 @@
     }
 
     async function loadMode() {
-      const data = await SD.NamespaceTree.loadStructure(
-        config.dataBase,
-        store.get("mode"),
-      );
       root = SD.NamespaceTree.build(
-        nestComposables(SD.NamespaceTree.entities(data)),
+        await launch.modeEntities(config.dataBase, store.get("mode")),
       );
       byKey = new Map();
       byMember = new Map();

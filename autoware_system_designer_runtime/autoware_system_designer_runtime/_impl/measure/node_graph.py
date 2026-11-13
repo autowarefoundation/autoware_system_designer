@@ -114,10 +114,6 @@ class NodeInfo:
     def input_events(self) -> dict[str, PortInfo]:
         return {p.event_id: p for p in self.inputs.values() if p.event_id}
 
-    @property
-    def output_events(self) -> dict[str, PortInfo]:
-        return {p.event_id: p for p in self.outputs.values() if p.event_id}
-
 
 @dataclass
 class LinkInfo:

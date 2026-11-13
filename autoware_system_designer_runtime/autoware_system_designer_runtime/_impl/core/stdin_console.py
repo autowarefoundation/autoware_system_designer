@@ -14,19 +14,8 @@
 
 """Minimal stdin REPL for live actor control.
 
-Supported commands (one per line)::
-
-    help / ?                 show command reference
-    status                   list every member and its current state
-    stop    <name>    send Stop to matching members
-    restart <name>    send Restart to matching members
-    kill    <name>    send SIGKILL to matching members
-    measure start|stop|status  control the latency measurement window
-    rates   [name]    topic and timer rates per node over one second
-    quit                     request shutdown
-
-Names are matched as substrings, so ``stop /perception`` stops everything
-under that namespace.
+One command per line, listed by ``HELP``. Names are matched as substrings, so
+``stop /perception`` stops everything under that namespace.
 
 Output while the user is typing is handled by ``_StickyHandler``: each log
 record erases the current prompt line (``\\r\\033[K``), prints the message,
@@ -40,18 +29,34 @@ import asyncio
 import logging
 import readline  # noqa: F401 — activates readline line editing for input()
 import shlex
-import signal
 import sys
 import threading
 from typing import Optional
 
-from ..measure.monitor import format_rates
+from ...control_protocol import MEMBER_ACTIONS
+from ...rates_record import format_rates
+from .aio import first_completed, resolve
 from .commands import CommandError, RuntimeCommands
 from .coordinator import Coordinator
 
 logger = logging.getLogger(__name__)
 
 _PROMPT = "autoware runtime [? for help] > "
+# One line per command; the launcher's --interactive help names the same commands.
+COMMANDS = (
+    ("status", "list all members and their current state"),
+    ("stop    <name>", "send Stop to matching members"),
+    ("restart <name>", "send Restart to matching members"),
+    ("kill    <name>", "send SIGKILL to matching members"),
+    ("measure start|stop|status", "control the latency measurement window"),
+    ("rates   [name]", "topic and timer rates per node over one second"),
+    ("quit", "request graceful shutdown"),
+    ("help / ?", "show this message"),
+)
+HELP = "\n".join(
+    [f"  {usage:<26}— {meaning}" for usage, meaning in COMMANDS]
+    + ["  Names are matched as substrings, e.g. 'stop /perception'."]
+)
 _output_lock = threading.Lock()
 
 
@@ -138,42 +143,20 @@ async def _input_or_shutdown(coord: Coordinator) -> Optional[str]:
         try:
             result = input(_PROMPT)
         except EOFError:
-            loop.call_soon_threadsafe(_fut_resolve, fut, None, EOFError())
+            loop.call_soon_threadsafe(resolve, fut, None, EOFError())
             return
         except BaseException as exc:
-            loop.call_soon_threadsafe(_fut_resolve, fut, None, exc)
+            loop.call_soon_threadsafe(resolve, fut, None, exc)
             return
-        loop.call_soon_threadsafe(_fut_resolve, fut, result, None)
+        loop.call_soon_threadsafe(resolve, fut, result)
 
     threading.Thread(target=_read, daemon=True, name="stdin-input").start()
 
     shutdown_task = asyncio.ensure_future(coord.shutdown_event.wait())
-    try:
-        done, _ = await asyncio.wait(
-            {fut, shutdown_task},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        shutdown_task.cancel()
-        if shutdown_task in done:
-            return None
-        return fut.result()  # re-raises EOFError / KeyboardInterrupt
-    except asyncio.CancelledError:
-        shutdown_task.cancel()
-        raise
-
-
-def _fut_resolve(
-    fut: "asyncio.Future[str]",
-    result: Optional[str],
-    exc: Optional[BaseException],
-) -> None:
-    """Set *fut*'s result or exception; no-op if already done."""
-    if fut.done():
-        return
-    if exc is not None:
-        fut.set_exception(exc)
-    else:
-        fut.set_result(result)
+    done = await first_completed(fut, shutdown_task)
+    if shutdown_task in done:
+        return None
+    return fut.result()  # re-raises EOFError / KeyboardInterrupt
 
 
 async def _dispatch(commands: RuntimeCommands, line: str) -> None:
@@ -189,17 +172,7 @@ async def _dispatch(commands: RuntimeCommands, line: str) -> None:
     arg = parts[1] if len(parts) > 1 else None
 
     if op in ("help", "?"):
-        print(
-            "  status              — list all members and their current state\n"
-            "  stop    <name>      — send Stop to matching members\n"
-            "  restart <name>      — send Restart to matching members\n"
-            "  kill    <name>      — send SIGKILL to matching members\n"
-            "  measure start|stop|status — control the latency measurement window\n"
-            "  rates   [name]      — topic and timer rates per node over one second\n"
-            "  quit                — request graceful shutdown\n"
-            "  help / ?            — show this message\n"
-            "  Names are matched as substrings, e.g. 'stop /perception'."
-        )
+        print(HELP)
         return
 
     try:
@@ -212,7 +185,7 @@ async def _dispatch(commands: RuntimeCommands, line: str) -> None:
             print(f"[console] {(await commands.measure((arg or 'status').lower()))['message']}")
         elif op == "rates":
             print("\n".join(format_rates(await commands.rates(), arg)))
-        elif op in ("stop", "restart", "kill"):
+        elif op in MEMBER_ACTIONS:
             if not arg:
                 print(f"[console] {op} needs a name or prefix")
                 return
