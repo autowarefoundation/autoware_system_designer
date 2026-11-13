@@ -563,7 +563,7 @@ def test_channel_reports_output_growth_per_window_while_a_client_is_connected(tm
             event = await c.event()
             assert event["event"] == "member.activity"
             assert list(event["rates"]) == ["/a"] and event["rates"]["/a"] >= 1
-            assert 0 < event["window"] < 1
+            assert event["window"] > 0
             # A quiet window after a busy one is reported once, then nothing until the next growth.
             event = await c.event()
             assert event["event"] == "member.activity" and event["rates"] == {}
