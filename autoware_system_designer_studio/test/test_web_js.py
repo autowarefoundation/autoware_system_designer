@@ -23,7 +23,23 @@ import pytest
 JS_TEST_DIR = Path(__file__).resolve().parent / "js"
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+# First major release of Node.js with the built-in test runner.
+NODE_TEST_RUNNER_MAJOR = 18
+
+
+def _node_major():
+    """Major version of the installed node; None without one."""
+    if shutil.which("node") is None:
+        return None
+    version = subprocess.run(["node", "--version"], capture_output=True, text=True, check=False).stdout
+    digits = version.strip().lstrip("v").partition(".")[0]
+    return int(digits) if digits.isdigit() else None
+
+
+@pytest.mark.skipif(
+    (_node_major() or 0) < NODE_TEST_RUNNER_MAJOR,
+    reason=f"node {NODE_TEST_RUNNER_MAJOR} or later is not installed",
+)
 def test_visualizer_js_suite():
     suites = sorted(str(path) for path in JS_TEST_DIR.glob("*.test.js"))
     result = subprocess.run(
