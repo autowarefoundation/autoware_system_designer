@@ -45,6 +45,8 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
+from autoware_system_designer_runtime.control_protocol import MEASURE_VERBS, MEMBER_ACTIONS, POLICIES
+
 from .. import exports
 from ..pages import assets
 from ..pages.render import INDEX_PAGE, Site, system_pages
@@ -203,7 +205,7 @@ class ServeDaemon:
         self.methods.register("build.start", self._build_start)
         self.methods.register("launch.start", self._launch_start)
         self.methods.register("launch.status", self._launch_status, get_path="launch")
-        for action in launch.MEMBER_ACTIONS:
+        for action in MEMBER_ACTIONS:
             self._register_of_unit(f"launch.{action}", self._member_action(action))
         self._register_of_unit("launch.follow", self._launch_follow)
         self._register_of_unit("launch.unfollow", self._launch_unfollow)
@@ -216,7 +218,7 @@ class ServeDaemon:
             self.methods.register(name, self._of_run(name, handler))
         self._register_of_unit("launch.shutdown", self._launch_shutdown)
         self.methods.register("launch.forget", self._launch_forget)
-        for verb in launch.MEASURE_VERBS:
+        for verb in MEASURE_VERBS:
             self._register_of_unit(f"measure.{verb}", self._measure(verb))
         self._register_of_unit("monitor.follow", self._monitor_follow)
         self._register_of_unit("monitor.unfollow", self._monitor_unfollow)
@@ -497,9 +499,9 @@ class ServeDaemon:
         deploy = _str_param(params, "deploy")
         if deploy is not None and deploy not in {v["name"] for v in system.deploy_variants()}:
             raise api.ApiError(api.INVALID_PARAMS, f"unknown deploy variant {deploy!r} of {system.id}")
-        policy = _str_param(params, "policy") or launch.POLICIES[0]
-        if policy not in launch.POLICIES:
-            raise api.ApiError(api.INVALID_PARAMS, f"policy must be one of {', '.join(launch.POLICIES)}")
+        policy = _str_param(params, "policy") or POLICIES[0]
+        if policy not in POLICIES:
+            raise api.ApiError(api.INVALID_PARAMS, f"policy must be one of {', '.join(POLICIES)}")
         session = await self.launch.start(
             system,
             compute_unit=compute_unit,

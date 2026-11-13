@@ -37,6 +37,7 @@ from typing import Awaitable, Callable, Optional
 
 from ...run_log import LOG_BASE
 from . import events as ev
+from .aio import cancel_and_wait
 from .config import ActorConfig
 from .regular_actor import NodeSpec, RegularNodeActor
 
@@ -402,14 +403,7 @@ class Coordinator:
         self._shutdown.set()
 
         # Cancel auxiliary tasks (composable loaders, console, etc.).
-        for t in self._extra_tasks:
-            if not t.done():
-                t.cancel()
-        for t in self._extra_tasks:
-            try:
-                await t
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+        await cancel_and_wait(*self._extra_tasks)
 
         # Drain actor tasks, bounded so a hung process can't block teardown.
         if self._actor_tasks:

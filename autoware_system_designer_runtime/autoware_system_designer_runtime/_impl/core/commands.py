@@ -22,14 +22,13 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
 
+from ...control_protocol import MEMBER_ACTIONS
 from . import events as ev
 
 if TYPE_CHECKING:
     from ..measure.monitor import RateMonitor
     from ..measure.session import MeasureSession
     from .coordinator import Coordinator, CoordinatorBuilder
-
-MEMBER_ACTIONS = ("stop", "restart", "kill")
 
 
 class CommandError(Exception):

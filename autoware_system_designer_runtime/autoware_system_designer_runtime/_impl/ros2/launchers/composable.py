@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional, Sequence
 import yaml
 
 from ...core import events as ev
+from ...core.aio import cancel_and_wait, first_completed
 from ...core.state import (
     BlockReason,
     ComposableBlocked,
@@ -277,21 +278,10 @@ class ComposableNodeActor:
 
             load_task = asyncio.ensure_future(self._load())
             shutdown_task = asyncio.create_task(self._shutdown.wait())
-            try:
-                await asyncio.wait(
-                    {load_task, shutdown_task},
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-            finally:
-                if not shutdown_task.done():
-                    shutdown_task.cancel()
+            done = await first_completed(load_task, shutdown_task)
 
-            if not load_task.done():
-                load_task.cancel()
-                try:
-                    await load_task
-                except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                    pass
+            if load_task not in done:
+                await cancel_and_wait(load_task)
                 self._state = ComposableBlocked(reason=BlockReason.SHUTDOWN)
                 return
 

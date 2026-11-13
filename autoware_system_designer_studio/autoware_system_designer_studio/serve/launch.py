@@ -57,6 +57,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
+from autoware_system_designer_runtime.control_protocol import POLICIES
 from autoware_system_designer_runtime.run_log import member_dir_name
 
 from ..exports import SystemExport
@@ -80,9 +81,6 @@ RVIZ_JOB_KIND = "rviz"
 RVIZ = "rviz2"
 # Default RViz configuration, looked up under the launch environment's ament prefixes.
 RVIZ_CONFIG_SHARE = Path("share/autoware_launch/rviz/autoware.rviz")
-POLICIES = ("guard", "open")
-MEMBER_ACTIONS = ("stop", "restart", "kill")
-MEASURE_VERBS = ("start", "stop", "status")
 
 SESSION_STARTING = "starting"
 SESSION_RUNNING = "running"

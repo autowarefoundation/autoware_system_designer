@@ -17,12 +17,12 @@
 import struct
 from pathlib import Path
 
-from autoware_system_designer_runtime._impl.measure.monitor import RateMonitor, RatesRecorder, format_rates
+from autoware_system_designer_runtime._impl.measure.monitor import RateMonitor, RatesRecorder
 from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
 from autoware_system_designer_runtime._impl.measure.stats_reader import SLOT_PUB, SLOT_SUB, SLOT_TIMER
 from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir
 from autoware_system_designer_runtime._impl.measure.tracer import TraceControl
-from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord, RatesWriter, Sample
+from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord, RatesWriter, Sample, format_rates
 
 from .measure_fixtures import node, out_port, system
 

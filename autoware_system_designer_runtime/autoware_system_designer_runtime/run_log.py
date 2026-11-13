@@ -25,6 +25,7 @@ Plain Python with no ROS import: the studio reads runs without a sourced workspa
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
@@ -91,7 +92,9 @@ def write_run_manifest(
         "members": list(members),
     }
     path = out_dir / RUN_MANIFEST
-    path.write_text(json.dumps(manifest, indent=2) + "\n")
+    partial = path.with_name(path.name + ".tmp")
+    partial.write_text(json.dumps(manifest, indent=2) + "\n")
+    os.replace(partial, path)
     return path
 
 

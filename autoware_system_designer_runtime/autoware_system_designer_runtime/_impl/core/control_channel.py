@@ -36,7 +36,9 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from ...control_protocol import MEMBER_ACTIONS
 from ...run_log import STREAMS, member_dir_name, tail_lines
+from .aio import cancel_and_wait
 from .commands import CommandError, MemberRecord, MemberStates, RuntimeCommands
 
 logger = logging.getLogger(__name__)
@@ -171,14 +173,7 @@ class ControlChannel:
         logger.info("control channel: %s", self._path)
 
     async def close(self) -> None:
-        for task in (self._tail_task, self._activity_task, self._monitor_task):
-            if task is None:
-                continue
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+        await cancel_and_wait(self._tail_task, self._activity_task, self._monitor_task)
         self._tail_task = self._activity_task = self._monitor_task = None
         if self._unsubscribe is not None:
             self._unsubscribe()
@@ -187,13 +182,7 @@ class ControlChannel:
             self._server.close()
         for client in list(self._clients):
             client.close()
-        for task in list(self._tasks):
-            task.cancel()
-        for task in list(self._tasks):
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+        await cancel_and_wait(*self._tasks)
         self._clients.clear()
         # wait_closed waits for the connections from Python 3.12 on, so they are closed first.
         if self._server is not None:
@@ -297,7 +286,7 @@ class ControlChannel:
     async def _dispatch(self, client: _Client, method: str, params: dict[str, Any]) -> Any:
         if method == "status":
             return self._commands.status()
-        if method in ("stop", "restart", "kill"):
+        if method in MEMBER_ACTIONS:
             exact = params.get("exact", False)
             if not isinstance(exact, bool):
                 raise CommandError("invalid_params", "exact must be a boolean")
