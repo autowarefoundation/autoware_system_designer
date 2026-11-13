@@ -77,6 +77,9 @@
         const workspaceTarget = target.value === "workspace";
         const unit = store.get("unit");
         unitField.hidden = !workspaceTarget;
+        const unitStatus = systemView?.compute_units.find(
+          (u) => u.name === unit,
+        )?.status;
         let blocker = "";
         if (systemView === undefined)
           blocker = "Loading the daemon's view of this system…";
@@ -86,8 +89,12 @@
           blocker =
             "The daemon has no build workspace (start it with --workspace).";
         else if (workspaceTarget && !unit) blocker = "Select a compute unit.";
+        else if (workspaceTarget && unitStatus === "running")
+          blocker = `${unit} is running; shut it down to build it.`;
+        else if (workspaceTarget && unitStatus !== "available")
+          blocker = `${unit} is not on this daemon's machine; build it from the daemon running there.`;
         else if (workspaceTarget && !buildableUnits().includes(unit))
-          blocker = `No build script for ${unit} in mode ${store.get("mode")} on this daemon.`;
+          blocker = `Nothing to build: ${unit} runs no packages in mode ${store.get("mode")}.`;
         else if (buildRunning())
           blocker = "A build is running; one runs at a time.";
         hint.textContent =
