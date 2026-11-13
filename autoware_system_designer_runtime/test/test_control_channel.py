@@ -34,6 +34,7 @@ from autoware_system_designer_runtime._impl.core.control_channel import METHODS,
 from autoware_system_designer_runtime._impl.core.stdin_console import _dispatch
 from autoware_system_designer_runtime._impl.ros2.launchers.container import takes_message_info
 from autoware_system_designer_runtime._impl.ros2.operation_mode import MODE_AUTONOMOUS, OperationModeGuard, is_replayed
+from autoware_system_designer_runtime.control_protocol import MEASURE_VERBS, MEMBER_ACTIONS
 from autoware_system_designer_runtime.run_log import TAIL_LINES, member_dir_name
 
 
@@ -257,6 +258,13 @@ def test_measure_verbs_drive_the_session_and_need_an_armed_one():
     with pytest.raises(CommandError) as bad:
         _run(commands.measure("pause"))
     assert bad.value.code == "invalid_params"
+
+
+def test_every_member_action_and_measure_verb_has_a_handler():
+    for action in MEMBER_ACTIONS:
+        assert callable(getattr(RuntimeCommands, f"_member_{action}", None)), action
+    for verb in MEASURE_VERBS:
+        assert callable(getattr(RuntimeCommands, f"_measure_{verb}", None)), verb
 
 
 def test_console_prints_results_and_refusals(capsys):
