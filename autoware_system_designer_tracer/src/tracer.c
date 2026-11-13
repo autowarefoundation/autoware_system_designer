@@ -235,6 +235,20 @@ static void write_clock_record(const rcl_clock_t * clock, uint64_t t_ns, int64_t
 
 // ---- observers ----------------------------------------------------------------------
 
+// Counts a take or timer fire on its slot and makes it this thread's trigger. Returns the time.
+static uint64_t observe_trigger(const void * handle, asd_stats_slot_t ** slot_out)
+{
+  uint64_t t_ns = asd_now_realtime_ns();
+  asd_stats_slot_t * slot = asd_stats_find(&g.stats, handle);
+  tls_trigger_ns = t_ns;
+  tls_trigger_slot = slot;
+  if (slot != NULL) {
+    asd_stats_count(slot, t_ns);
+  }
+  *slot_out = slot;
+  return t_ns;
+}
+
 static void observe_publish(const void * publisher, uint64_t t_in, uint8_t flags)
 {
   asd_stats_slot_t * slot = asd_stats_find(&g.stats, publisher);
@@ -257,15 +271,10 @@ static void observe_publish(const void * publisher, uint64_t t_in, uint8_t flags
 
 static void observe_take(const void * subscription, const rmw_message_info_t * info, uint8_t flags)
 {
-  uint64_t t_ns = asd_now_realtime_ns();
-  asd_stats_slot_t * slot = asd_stats_find(&g.stats, subscription);
-  tls_trigger_ns = t_ns;
-  tls_trigger_slot = slot;
-  if (slot != NULL) {
-    asd_stats_count(slot, t_ns);
-    if (info->source_timestamp > 0) {
-      asd_stats_latency(slot, (int64_t)t_ns - (int64_t)info->source_timestamp);
-    }
+  asd_stats_slot_t * slot;
+  uint64_t t_ns = observe_trigger(subscription, &slot);
+  if (slot != NULL && info->source_timestamp > 0) {
+    asd_stats_latency(slot, (int64_t)t_ns - (int64_t)info->source_timestamp);
   }
   if (!recording()) {
     return;
@@ -285,13 +294,8 @@ static void observe_take(const void * subscription, const rmw_message_info_t * i
 
 static void observe_timer(const void * timer)
 {
-  uint64_t t_ns = asd_now_realtime_ns();
-  asd_stats_slot_t * slot = asd_stats_find(&g.stats, timer);
-  tls_trigger_ns = t_ns;
-  tls_trigger_slot = slot;
-  if (slot != NULL) {
-    asd_stats_count(slot, t_ns);
-  }
+  asd_stats_slot_t * slot;
+  uint64_t t_ns = observe_trigger(timer, &slot);
   if (recording()) {
     asd_trace_record_t * r = claim_record((uint64_t)(uintptr_t)timer, t_ns, 0, 0);
     if (r != NULL) {
