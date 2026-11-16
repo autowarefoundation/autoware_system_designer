@@ -20,7 +20,7 @@ import pytest
 
 from autoware_system_designer_studio import exports
 from autoware_system_designer_studio.pack import MARKER, PackError, pack
-from autoware_system_designer_studio.pages import assets
+from autoware_system_designer_studio.pages import assets, system_icon
 from autoware_system_designer_studio.pages.render import Site, data_script_text
 
 from .test_serve import PKG, SYSTEM, UNITS, _install_tree
@@ -49,6 +49,7 @@ def test_site_lists_pages_and_the_data_of_modes_with_a_structure(tmp_path):
         "index.html",
         f"{SITE}/index.html",
         f"{SITE}/config.js",
+        f"{SITE}/icon.svg",
         f"{SITE}/data/Runtime.js",
     ]
 
@@ -107,6 +108,8 @@ def test_config_quotes_strings_as_json(tmp_path):
     assert diagrams[0] == {
         "type": "node_diagram",
         "label": "Node Diagram",
+        "short": "Nodes",
+        "icon": assets.DIAGRAMS["node_diagram"]["icon"],
         "script": "../../../assets/js/diagrams/node_diagram.js",
         "searchable": True,
         "layered": True,
@@ -162,13 +165,51 @@ def test_pages_link_the_bundle_relative_to_the_site_root(tmp_path):
     site = Site([system])
     assert 'href="assets/css/tokens.css"' in site.render("index.html")
     index = site.render("index.html")
-    assert f'href="{SITE}/index.html?activity=explore"' in index
-    assert f'href="{SITE}/index.html?activity=launch"' in index
+    assert f'href="{SITE}/index.html"' in index
+    assert f'src="{SITE}/icon.svg"' in index
     assert '<link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">' in index
     workbench = site.render(f"{SITE}/index.html")
     assert '<link rel="icon" type="image/svg+xml" href="../../../assets/img/favicon.svg" />' in workbench
     assert 'src="../../../assets/js/core/sd.js"' in workbench
     assert 'src="../../../assets/js/pages/workbench_page.js"' in workbench
+
+
+def test_config_lists_the_systems_of_the_site_for_the_selector(tmp_path):
+    _, system = _system(tmp_path)
+    text = Site([system]).render(f"{SITE}/config.js")
+    systems = json.loads(text.partition("systems: ")[2].partition(",\n")[0])
+    assert systems == [
+        {
+            "id": system.id,
+            "name": SYSTEM,
+            "package": PKG,
+            "page": f"{SITE}/index.html",
+            "icon": f"{SITE}/icon.svg",
+        }
+    ]
+
+
+def test_system_icon_is_its_own_file_else_a_default_per_system(tmp_path):
+    _, system = _system(tmp_path)
+    site = Site([system])
+    default = site.render(f"{SITE}/icon.svg")
+    assert default.startswith("<svg ") and f">{system_icon.monogram(SYSTEM)}</text>" in default
+    assert default == system_icon.default_icon(system.id, SYSTEM)
+    assert default != system_icon.default_icon("other:System", SYSTEM)
+
+    design = tmp_path / "design"
+    design.mkdir()
+    system.manifest["system_file"] = str(design / f"{SYSTEM}.system.yaml")
+    (design / f"{SYSTEM}.icon.svg").write_text("<svg id='own'/>")
+    assert site.render(f"{SITE}/icon.svg") == "<svg id='own'/>"
+
+
+@pytest.mark.parametrize(
+    ("name", "letters"),
+    [("PilotAutoX2Gen2", "PA"), ("AutowareSample", "AS"), ("demo_system", "DS"), ("Solo", "S"), ("", "?")],
+)
+def test_default_icon_monogram_takes_the_first_two_words(name, letters):
+    assert system_icon.monogram(name) == letters
 
 
 def _launch_commands(site):

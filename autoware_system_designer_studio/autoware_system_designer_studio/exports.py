@@ -45,6 +45,9 @@ BUILD_SCRIPTS_SUBDIR = "build_scripts"
 DEPLOYMENTS_SUBDIR = "deployments"
 LATENCY_SUBDIR = "latency"
 LAUNCH_FILE_SUFFIX = ".launch.xml"
+# A system's icon sits beside its design file: ``<System>.icon.svg``.
+ICON_FILE_SUFFIX = ".icon.svg"
+ICON_MAX_BYTES = 256 * 1024
 
 # Reference latency shapes the designer exports, in preference order.
 REFERENCE_LATENCY_SUFFIXES = (".json", ".js")
@@ -104,6 +107,18 @@ class SystemExport:
             return ""
         root = derive_workspace_root(self.export_dir / STRUCTURE_SUBDIR / MANIFEST_FILENAME)
         return expand_workspace_paths(path, root) if root else path
+
+    def icon_file(self) -> Optional[Path]:
+        """The system's own icon; None without one beside the design file, or when it is oversized."""
+        if not self.system_file:
+            return None
+        candidate = Path(self.system_file).with_name(f"{self.name}{ICON_FILE_SUFFIX}")
+        try:
+            if candidate.is_file() and candidate.stat().st_size <= ICON_MAX_BYTES:
+                return candidate
+        except OSError:
+            pass
+        return None
 
     def structure_path(self, mode: str) -> Path:
         return self.export_dir / STRUCTURE_SUBDIR / f"{mode}.json"

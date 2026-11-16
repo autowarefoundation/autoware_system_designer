@@ -33,6 +33,9 @@
     },
   };
 
+  // Preference naming the system shown last, by id; the site opens on it.
+  SD.LAST_SYSTEM_KEY = "workbench.lastSystem";
+
   // Theme shared by every page through one stored preference; the system
   // preference applies until the viewer picks one.
   const THEME_KEY = "theme";

@@ -24,38 +24,66 @@ body.resizing-panel {
 
 #system-identity {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
+  flex-shrink: 0;
   white-space: nowrap;
-  overflow: hidden;
 }
 
-.topbar-home {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--highlight);
-  text-decoration: none;
+/* System selector: the shown system's icon and name, opening the system menu */
+.system-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 8px 3px 4px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
 
-.topbar-home:hover {
-  text-decoration: underline;
+.system-button:hover,
+.system-button[aria-expanded="true"] {
+  background: var(--bg-sidebar);
+  border-color: var(--border-color);
 }
 
-.topbar-sep {
-  color: var(--text-muted);
+.system-button .caret path {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.system-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+.system-button-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  line-height: 1.15;
 }
 
 .topbar-system {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .topbar-package {
-  font-size: 12px;
+  font-size: 10px;
   color: var(--text-muted);
 }
 
@@ -67,6 +95,75 @@ body.resizing-panel {
   display: flex;
   align-items: center;
   gap: 14px;
+  flex-shrink: 0;
+}
+
+.topbar-selectors select {
+  max-width: 150px;
+}
+
+/* Parts of the top bar the activities own, after the selectors */
+#topbar-activity-bar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* Popovers below the top bar */
+.topbar-popover {
+  position: fixed;
+  top: 44px;
+  z-index: 150;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-color);
+  border-top: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  overflow: auto;
+}
+
+.topbar-popover[hidden] {
+  display: none;
+}
+
+#system-menu {
+  left: 8px;
+  min-width: 280px;
+  max-width: 480px;
+  max-height: 70vh;
+  padding: 6px 0;
+  border-radius: 0 0 8px 8px;
+}
+
+.system-menu-package {
+  padding: 8px 14px 4px;
+  font-family: var(--mono-font);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.system-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.system-menu-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.system-menu-item.current {
+  background: var(--highlight-bg);
+}
+
+#topbar-drawer {
+  left: 0;
+  right: 0;
+  max-height: 60vh;
 }
 
 .topbar-field {
@@ -86,6 +183,7 @@ body.resizing-panel {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
   margin-left: auto;
 }
 
@@ -108,6 +206,8 @@ body.resizing-panel {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 #settings-btn svg path {
@@ -116,7 +216,8 @@ body.resizing-panel {
 }
 
 .topbar-icon-btn:hover,
-.topbar-icon-btn[aria-pressed="true"] {
+.topbar-icon-btn[aria-pressed="true"],
+.topbar-icon-btn[aria-expanded="true"] {
   color: var(--text-primary);
   background: var(--border-color);
 }
@@ -152,12 +253,14 @@ body.resizing-panel {
   min-height: 0;
 }
 
-/* Rail */
+/* Rail: every view of every activity, in captioned groups */
 #rail {
   display: flex;
   flex-direction: column;
-  width: 56px;
+  width: 64px;
   flex-shrink: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
   background: var(--bg-sidebar-header);
   border-right: 1px solid var(--border-color);
   z-index: 2;
@@ -173,8 +276,18 @@ body.resizing-panel {
   display: none;
 }
 
-.rail-daemon-group {
+.rail-group + .rail-group {
   border-top: 1px solid var(--border-color);
+}
+
+.rail-caption {
+  padding: 2px 0 4px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--text-muted);
 }
 
 .rail-item {
@@ -241,6 +354,8 @@ body.resizing-panel {
   z-index: 1;
 }
 
+body.no-side-panel #side-panel,
+body.no-side-panel #side-panel-resizer,
 body.side-panel-collapsed #side-panel,
 body.side-panel-collapsed #side-panel-resizer {
   display: none;

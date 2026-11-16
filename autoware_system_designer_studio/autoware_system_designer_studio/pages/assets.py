@@ -32,24 +32,31 @@ FAVICON = "img/favicon.svg"
 # Window variable a mode's data script fills: the exported system structure, keyed by mode.
 DATA_GLOBAL = "systemStructureData"
 
-# Diagrams of the Explore activity, in menu order: the module script loaded when the diagram is
-# first shown, whether the module locates entities (``focusEntity``), which Explore search needs,
-# and whether it draws the design hierarchy cut at a chosen depth (the ``depth`` option).
+# Diagrams of the Explore activity, in rail order: the rail label and icon (SVG path data), the
+# module script loaded when the diagram is first shown, whether the module locates entities
+# (``focusEntity``), which Explore search needs, and whether it draws the design hierarchy cut at
+# a chosen depth (the ``depth`` option).
 DIAGRAMS = {
     "node_diagram": {
         "label": "Node Diagram",
+        "short": "Nodes",
+        "icon": "M3 4h6v4H3zM11 12h6v4h-6zM6 8v6h5",
         "script": "js/diagrams/node_diagram.js",
         "searchable": True,
         "layered": True,
     },
     "logic_diagram": {
         "label": "Logic Diagram",
+        "short": "Logic",
+        "icon": "M2 8h5v4H2zM13 3h5v4h-5zM13 13h5v4h-5zM7 10h3M10 5v10M10 5h3M10 15h3",
         "script": "js/diagrams/logic_diagram.js",
         "searchable": True,
         "layered": False,
     },
     "sequence_diagram": {
         "label": "Sequence Diagram",
+        "short": "Sequence",
+        "icon": "M5 3v14M15 3v14M5 7h9M12 5l2 2-2 2M15 13H6M8 11l-2 2 2 2",
         "script": "js/diagrams/sequence_diagram.js",
         "searchable": False,
         "layered": False,
@@ -68,6 +75,8 @@ CORE_SCRIPTS = (
 SHELL_SCRIPTS = (
     "js/shell/layout.js",
     "js/shell/statusbar.js",
+    "js/shell/popover.js",
+    "js/shell/system_menu.js",
     "js/shell/shell.js",
     "js/widgets/controls.js",
     "js/widgets/terminal.js",
@@ -95,7 +104,8 @@ ACTIVITIES = {
             "js/activities/launch/sessions.js",
             "js/activities/launch/units.js",
             "js/activities/launch/member_tree.js",
-            "js/activities/launch/commands_table.js",
+            "js/activities/launch/launch_control.js",
+            "js/activities/launch/launch_bar.js",
             "js/activities/launch/state_monitor.js",
             "js/diagrams/treemap_layout.js",
             "js/diagrams/treemap.js",

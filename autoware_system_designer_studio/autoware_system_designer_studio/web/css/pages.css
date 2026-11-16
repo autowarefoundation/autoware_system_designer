@@ -57,44 +57,13 @@ body.simple-page .dark-mode-toggle {
   color: var(--text-secondary);
 }
 
-/* Systems index: the workbench's top bar, then systems grouped by package */
+/* Site entry: the systems of the site, shown while it opens one */
 body.index-page {
-  padding: 0;
+  padding: 40px 20px;
 }
 
-.page-topbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  height: 44px;
-  padding: 0 16px;
-  margin-bottom: 24px;
-  background: var(--bg-sidebar-header);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.page-topbar-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.page-topbar-status {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-right: auto;
-}
-
-.package-group + .package-group {
-  margin-top: 24px;
-}
-
-.package-name {
-  margin: 0 0 8px;
-  font-family: var(--mono-font);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-muted);
+body.index-page .page-container {
+  max-width: 560px;
 }
 
 .system-list {
@@ -105,55 +74,37 @@ body.index-page {
   border-radius: 6px;
 }
 
-.system-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 14px;
-}
-
 .system-row + .system-row {
   border-top: 1px solid var(--border-color);
 }
 
-.system-row:hover {
+.system-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  text-decoration: none;
+}
+
+.system-entry:hover {
   background: var(--bg-tertiary);
+}
+
+.system-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 6px;
 }
 
 .system-name {
   font-weight: 600;
-  color: var(--highlight);
-  text-decoration: none;
-  word-break: break-word;
+  color: var(--text-primary);
 }
 
-.system-name:hover {
-  text-decoration: underline;
-}
-
-.system-links {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.item-link {
-  padding: 4px 10px;
+.system-package {
+  margin-left: auto;
+  font-family: var(--mono-font);
   font-size: 12px;
-  font-weight: 500;
-  color: var(--highlight);
-  text-decoration: none;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-}
-
-.item-link:hover {
-  border-color: var(--border-hover);
-  background: var(--bg-tertiary);
-}
-
-.item-link[hidden] {
-  display: none;
+  color: var(--text-muted);
 }

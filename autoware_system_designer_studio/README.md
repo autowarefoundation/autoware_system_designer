@@ -29,15 +29,19 @@ directory it wrote itself (marked by `.autoware_system_designer_studio`) or an e
 ## Site layout
 
 ```text
-index.html                                         systems index
+index.html                                         opens the system shown last, else the first one
 assets/{css,js}/...                                web bundle
 systems/<package>/<system>/index.html              workbench; ?activity=explore|launch|build opens that activity
 systems/<package>/<system>/config.js               workbench config
+systems/<package>/<system>/icon.svg                the system's icon
 systems/<package>/<system>/data/<mode>.js          system_structure/<mode>.json with vis guides attached
 systems/<package>/<system>/data/<mode>_latency.js  newest latency record of the mode, else the exported reference
 ```
 
 Links are relative, so `serve` and `pack` produce the same pages.
+
+A system's icon is `<System>.icon.svg` beside its `<System>.system.yaml`; a system without one gets
+a default tile with its monogram, coloured by its id.
 
 ## Web bundle
 
@@ -49,7 +53,7 @@ stylesheet per area; `pages/assets.py` declares the load order of each page.
 | `js/core/`                         | `SD` namespace, page events, theme, editor links, selection store, daemon client       |
 | `js/diagrams/`                     | `DiagramBase`, the three diagram modules (registered on `SD.diagrams`)                 |
 | `js/inspector/`                    | info panel of the selected element                                                     |
-| `js/shell/`                        | workbench frame: activity registry and rail, panel layout, status bar                  |
+| `js/shell/`                        | workbench frame: activity registry and rail, system menu, panel layout, status bar     |
 | `js/widgets/`                      | building blocks activities share: controls, main view, terminal, namespace tree, marks |
 | `js/activities/<id>/`              | one directory per rail activity: its parts, then `index.js` registering it             |
 | `js/pages/`                        | page drivers                                                                           |
@@ -57,18 +61,26 @@ stylesheet per area; `pages/assets.py` declares the load order of each page.
 | `css/shell.css`, `css/widgets.css` | the frame and the shared widgets                                                       |
 | `css/activities/<id>.css`          | the activity's own styles                                                              |
 
-Each rail item of the workbench is an activity owning one view per slot, shown and hidden together:
-its options in the side panel, its content in the main area and, when it selects elements, the
-inspector. The top bar holds the system and the mode, which every activity reads; other selections
-live in the activity that uses them, as store keys mirrored in the URL.
+An activity of the workbench owns one view per slot, shown and hidden together: its options in the
+side panel, its content in the main area and, when it selects elements, the inspector. The rail
+lists the main views of every activity in captioned groups, Launch first. The top bar holds the system
+selector, the mode and the deploy, which every activity reads, and the launch bar; other selections
+live in the activity that uses them, as store keys mirrored in the URL. The system selector lists
+the systems of the site by package, each with its icon.
 
-| Activity | Side panel                                                      | Main area                                            |
-| -------- | --------------------------------------------------------------- | ---------------------------------------------------- |
-| Explore  | diagram list; entity search; live state of the launched members | diagram canvas; inspector shows the selected element |
-| Launch   | view list, deploy, launch options, launch commands popup, RViz  | Control, Logs or Topics view of the mode (`?view=`)  |
-| Build    | target, compute unit, start; job list (daemon)                  | log of the selected job (`?job=`)                    |
+| Activity | Rail items                                        | Side panel                                        | Main area                                            |
+| -------- | ------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
+| Explore  | Diagrams: Nodes, Logic, Sequence (`?diagram=`)    | entity search; live state of the launched members | diagram canvas; inspector shows the selected element |
+| Launch   | Launch: Control; Monitor: Logs, Topics (`?view=`) | none                                              | the view of the mode                                 |
+| Build    | Build                                             | target, compute unit, start; job list (daemon)    | log of the selected job (`?job=`)                    |
 
-Launch has three main views, chosen from the list in its side panel. Control is the treemap of the
+The launch bar is the Launch activity's part of the top bar, shown on every activity: its drawer
+toggle, the run state of the mode and deploy, and, with a daemon, launch and shutdown of every unit
+that can launch or shut down. The drawer holds the launch options, the RViz start, and one row per
+compute unit with the unit's controls. "Launch commands" in the drawer opens a popup with the
+command of each unit, by launch method (designer runtime or XML launcher).
+
+Launch has three main views. Control is the treemap of the
 mode, every block coloured by its live member state and marked, before its name, with the state, a
 busy log and, on a node, its restart count. Launch and Shutdown of each compute unit (and the
 measurement window of a session whose runtime preloads the tracer) are in the unit's head bar;
@@ -76,8 +88,7 @@ measurement window of a session whose runtime preloads the tracer) are in the un
 beside them, by its SSH destination or else its address, coloured by the link state and marked when
 the peer differs from this daemon; an `unreachable` unit offers no control until its daemon answers
 again, except Forget, which drops the session that daemon last reported so the system can run another
-mode. "Launch all" and "Shutdown all" in the view head act on every unit that can launch or shut
-down. The status bar counts the connected peers and names the units of the others. Every declared unit has its own
+mode. The status bar counts the connected peers and names the units of the others. Every declared unit has its own
 section, a head alone when the mode places no node on it; a launcher of an undeclared unit gets the
 same controls in a row above the map. A bar between the head and the map holds the selected
 entity and the only actions on a launched member: Stop, Restart and Kill of a node outside a
@@ -113,8 +124,10 @@ select the store's `entity`, and a double click on a node of the map opens it in
 
 An activity is one `SD.workbench.registerActivity(def)` call from its `index.js`, with its parts
 attached to `SD.activities.<id>` by the scripts before it. `def` names the activity (`id`, `title`,
-`icon`, `order`), its daemon needs (`daemon`, `requires`), whether it owns an inspector view
-(`inspector`), what it adds to the status bar (`status(store)`), and `mount(slots, ctx)`, called on
+`icon`, `order`), its rail group (`group`) and main views (`views(config)`, each a rail item under
+one store key), its daemon needs (`daemon`, `requires`), whether it owns side-panel options (`side`)
+and an inspector view (`inspector`), what it adds to the status bar (`status(store)`), its part of
+the top bar (`bar(slots, ctx)`, filled at startup), and `mount(slots, ctx)`, called on
 first show with `{ side, main, inspector? }` and `{ config, store, daemon }`. `mount` may return
 `{ show(), hide() }`: `show` runs on every later show, `hide` when another activity takes over. Adding
 an activity is that directory, its stylesheet and one entry in `pages/assets.py` `ACTIVITIES`.
@@ -145,7 +158,7 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 
 | Route              | Content                                                                                                      |
 | ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `GET /`            | Systems index                                                                                                |
+| `GET /`            | Site entry, opening the system shown last                                                                    |
 | `GET /<site path>` | Page or data script of the [site layout](#site-layout)                                                       |
 | `GET /assets/<f>`  | Web bundle shipped with this package (`css/`, `js/`)                                                         |
 | `GET /api/health`  | Daemon status, including `workspace`, `record_root`, `restart_required`, `heartbeat_s` and `peers`           |
@@ -326,7 +339,7 @@ reaches the sequence diagram without a page reload; `health` reports the `record
 `rviz.start` runs `rviz2` from the launch environment as a job of its own, one per daemon
 (`conflict` while it runs), on the `--rviz-config` file, else on `autoware_launch`'s `autoware.rviz`
 under the environment's ament prefixes, else on no configuration. The workbench offers it as
-"Launch RViz" under the Launch activity's commands.
+"Launch RViz" in the launch bar's drawer.
 
 Launch jobs need the ROS environment the daemon itself does without: start `serve` from a sourced
 shell, or pass `--env-script` with a setup script, sourced once at start into the job environment.
