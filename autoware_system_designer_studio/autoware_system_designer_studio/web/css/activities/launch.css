@@ -84,10 +84,13 @@
   flex-shrink: 0;
 }
 
-/* Last control errors of the units, one per line, wrapped over the bar's free width */
+/* Last control errors of the units, one per line, wrapped over the bar's free width;
+   two lines fit the bar's minimum height, the rest scrolls */
 .launch-bar-error {
   flex: 1;
   min-width: 0;
+  max-height: 2.6em;
+  overflow-y: auto;
   white-space: pre-line;
   overflow-wrap: anywhere;
   line-height: 1.3;
