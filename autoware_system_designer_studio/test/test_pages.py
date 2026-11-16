@@ -204,6 +204,18 @@ def test_system_icon_is_its_own_file_else_a_default_per_system(tmp_path):
     assert site.render(f"{SITE}/icon.svg") == "<svg id='own'/>"
 
 
+def test_oversized_system_icon_falls_back_to_the_default_with_a_warning(tmp_path, monkeypatch):
+    warnings = []
+    monkeypatch.setattr(exports.logger, "warning", lambda *args: warnings.append(args[0] % args[1:]))
+    _, system = _system(tmp_path)
+    design = tmp_path / "design"
+    design.mkdir()
+    system.manifest["system_file"] = str(design / f"{SYSTEM}.system.yaml")
+    (design / f"{SYSTEM}.icon.svg").write_text("<svg>" + " " * exports.ICON_MAX_BYTES + "</svg>")
+    assert Site([system]).render(f"{SITE}/icon.svg") == system_icon.default_icon(system.id, SYSTEM)
+    assert len(warnings) == 1 and "system icon ignored" in warnings[0]
+
+
 @pytest.mark.parametrize(
     ("name", "letters"),
     [("PilotAutoX2Gen2", "PA"), ("AutowareSample", "AS"), ("demo_system", "DS"), ("Solo", "S"), ("", "?")],

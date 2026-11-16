@@ -20,7 +20,7 @@
     inspector: "inspector-section",
   };
 
-  // id -> { def, views, groups, buttons, slots: { side, main, inspector? }, handle }
+  // id -> { def, views, buttons, slots: { side, main, inspector? }, handle }
   const activities = new Map();
   let config = null;
   let daemonHealth = null;
@@ -56,7 +56,6 @@
     activities.set(def.id, {
       def,
       views: null,
-      groups: [],
       buttons: [],
       slots: null,
       handle: null,
@@ -159,17 +158,24 @@
     return group;
   }
 
-  // Neighbouring items of one activity and caption share a group.
+  // Neighbouring items of one caption share a group, those without a
+  // caption only within one activity. A group hides with all its items.
+  const railGroups = [];
+
   function buildRail() {
     const rail = el("rail");
     let last = null;
     let group = null;
     railEntries().forEach((entry) => {
       const { activity, item, caption } = entry;
-      if (!last || last.activity !== activity || last.caption !== caption) {
+      const joins =
+        last &&
+        last.caption === caption &&
+        (caption || last.activity === activity);
+      if (!joins) {
         group = railGroup(caption);
         rail.appendChild(group);
-        activity.groups.push(group);
+        railGroups.push(group);
       }
       last = entry;
       const button = railItem(activity, item);
@@ -208,13 +214,16 @@
   function refreshRail() {
     activities.forEach((activity) => {
       const { visible, enabled, reason } = availability(activity.def);
-      activity.groups.forEach((group) => {
-        group.hidden = !visible;
-      });
       activity.buttons.forEach((button) => {
+        button.hidden = !visible;
         button.disabled = !enabled;
         button.title = reason || button.dataset.title;
       });
+    });
+    railGroups.forEach((group) => {
+      group.hidden = ![...group.querySelectorAll(".rail-item")].some(
+        (button) => !button.hidden,
+      );
     });
     const requested = activities.get(SD.store.get("activity"));
     if (!requested || !availability(requested.def).enabled) {

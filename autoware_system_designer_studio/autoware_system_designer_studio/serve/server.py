@@ -49,7 +49,7 @@ from autoware_system_designer_runtime.control_protocol import DEFAULT_POLICY, ME
 
 from .. import exports
 from ..pages import assets
-from ..pages.render import INDEX_PAGE, Site, system_pages
+from ..pages.render import ICON_FILE, INDEX_PAGE, SYSTEMS_DIR, Site, system_pages
 from . import api, build, events, jobs, launch, peers, record_watch, runs
 from .events import TOPIC_DAEMON, TOPIC_SYSTEMS_CHANGED
 from .http import (
@@ -82,12 +82,16 @@ MAX_EVENT_SUBSCRIBERS = 16
 HEARTBEAT_INTERVAL_S = 15.0
 SHUTDOWN_GRACE_S = 2.0
 
+SVG_CONTENT_TYPE = "image/svg+xml"
+# Policy of a served SVG: its own styles only, no script, a sandboxed origin.
+SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+
 _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".json": "application/json; charset=utf-8",
-    ".svg": "image/svg+xml",
+    ".svg": SVG_CONTENT_TYPE,
 }
 
 
@@ -739,14 +743,24 @@ class ServeDaemon:
                 )
             raise api.ApiError(api.NOT_FOUND, f"nothing served at {request.path}")
         content_type = _content_type(Path(site_path))
-        return Response(HTTPStatus.OK, [("Content-Type", content_type), ("Cache-Control", "no-cache")], text.encode())
+        headers = [("Content-Type", content_type), ("Cache-Control", "no-cache")]
+        if content_type.startswith(SVG_CONTENT_TYPE):
+            # A system's icon is design content; opened on its own it runs no script on the daemon's origin.
+            headers.append(("Content-Security-Policy", SVG_CSP))
+        return Response(HTTPStatus.OK, headers, text.encode())
 
     def _build_running(self) -> bool:
         return any(job.spec.kind == build.BUILD_JOB_KIND and job.active for job in self.jobs.list())
 
     def _render(self, site_path: str) -> Optional[str]:
-        """A site page drawn from the exports as they are now; each request sees the latest build."""
-        systems, _ = exports.discover_systems(self.install_root)
+        """A site page drawn from the exports as they are now; each request sees the latest build.
+        A system icon reads only its own system's export."""
+        parts = site_path.split("/")
+        if len(parts) == 4 and parts[0] == SYSTEMS_DIR and parts[3] == ICON_FILE:
+            export = exports.find_system(self.install_root, parts[1], parts[2])
+            systems = [export] if export is not None else []
+        else:
+            systems, _ = exports.discover_systems(self.install_root)
         return Site(systems, record_root=self.record_root).render(site_path)
 
     async def _file_response(self, request: Request, path: Optional[Path]) -> Response:

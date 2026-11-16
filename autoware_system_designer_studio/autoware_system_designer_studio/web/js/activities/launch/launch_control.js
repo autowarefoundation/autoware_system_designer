@@ -158,29 +158,33 @@
 
     const shutdownUnit = (unit) => request(unit, "launch.shutdown", {});
 
-    // The mode the launch state is of: the one launched on this system, a
-    // system running one mode at a time, else the shown one.
-    function stateMode() {
+    // A live session of this system, a system running one mode and deploy at
+    // a time; null without one.
+    function launchedSession() {
       for (const session of sessions.values()) {
         if (session.system === config.systemId && session.state !== "exited")
-          return session.mode;
+          return session;
       }
-      return store.get("mode");
+      return null;
     }
+
+    // The mode the launch state is of: the one launched, else the shown one.
+    const stateMode = () => launchedSession()?.mode || store.get("mode");
     const ofState = launch.scope(config.systemId, stateMode);
 
-    // Units with a launcher of the state's mode: those of the shown deploy
-    // for the shown mode, else of any deploy.
+    // Units with a launcher of the state's mode: those of the launched deploy
+    // (of any deploy when it names none known), else of the shown deploy.
     function stateUnits() {
-      const mode = stateMode();
-      if (mode === store.get("mode")) return rows().map((row) => row.unit);
-      return [
-        ...new Set(
-          config.launchCommands
-            .filter((record) => record.mode === mode)
-            .map((record) => record.unit),
-        ),
-      ];
+      const launched = launchedSession();
+      if (!launched) return rows().map((row) => row.unit);
+      const ofMode = config.launchCommands.filter(
+        (record) => record.mode === launched.mode,
+      );
+      const ofDeploy = ofMode.filter(
+        (record) => (record.deploy || "") === (launched.deploy || ""),
+      );
+      const records = ofDeploy.length ? ofDeploy : ofMode;
+      return [...new Set(records.map((record) => record.unit))];
     }
 
     // Launch state of the system in one token and line, with its mode once a
@@ -412,6 +416,7 @@
 
     ["mode", "deploy"].forEach((key) => store.onChange(key, changed));
     SD.on("daemon.health", loadUnitStatus);
+    SD.on("daemon.probed", changed);
     SD.on("daemon.systems.changed", loadUnitStatus);
     SD.on("launch.sessions", onSessions);
     if (daemon.health) loadUnitStatus();

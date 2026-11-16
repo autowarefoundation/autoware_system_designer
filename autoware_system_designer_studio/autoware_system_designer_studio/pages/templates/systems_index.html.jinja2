@@ -33,10 +33,14 @@
     </div>
     <script>
         SD.theme.init();
-        // The site opens on the system shown last, else on its first one.
+        // The site opens on the system shown last, else on its first one; the
+        // list stays with ?list and when reached by Back or Forward.
         (function () {
             const entries = Array.from(document.querySelectorAll('.system-entry'));
             if (!entries.length) return;
+            if (new URLSearchParams(location.search).has('list')) return;
+            const navigation = performance.getEntriesByType('navigation')[0];
+            if (navigation && navigation.type === 'back_forward') return;
             const last = SD.storage.get(SD.LAST_SYSTEM_KEY);
             const target = entries.find(function (entry) { return entry.dataset.system === last; }) || entries[0];
             const opening = document.getElementById('opening');

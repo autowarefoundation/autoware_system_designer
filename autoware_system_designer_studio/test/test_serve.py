@@ -149,6 +149,25 @@ def test_site_and_bundle_are_served(served, path, content_type):
     assert payload
 
 
+def test_system_icon_is_served_with_a_policy_that_runs_no_script(served):
+    response, payload = served.request("GET", f"{SITE}/icon.svg")
+    assert response.status == 200
+    assert response.getheader("Content-Type") == "image/svg+xml"
+    policy = response.getheader("Content-Security-Policy")
+    assert "default-src 'none'" in policy and "sandbox" in policy
+    assert payload.startswith(b"<svg ")
+
+
+def test_find_system_reads_one_export_of_either_layout(tmp_path):
+    install = _install_tree(tmp_path, compute_units=UNITS)
+    found = exports.find_system(install, PKG, SYSTEM)
+    assert found is not None and found.id == f"{PKG}:{SYSTEM}"
+    assert found.export_dir == install / PKG / "share" / PKG / "exports" / SYSTEM
+    assert exports.find_system(install, PKG, "Other") is None
+    assert exports.find_system(install, "..", SYSTEM) is None
+    assert exports.find_system(install, PKG, "../x") is None
+
+
 @pytest.mark.parametrize(
     "path",
     [

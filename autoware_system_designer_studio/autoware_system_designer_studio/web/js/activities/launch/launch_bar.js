@@ -164,9 +164,11 @@
       slots.drawer.style.left = `${box.left}px`;
       slots.drawer.style.width = `${box.width}px`;
     }
-    window.addEventListener("resize", () => {
+    const replace = () => {
       if (popover.isOpen()) placeDrawer();
-    });
+    };
+    window.addEventListener("resize", replace);
+    new ResizeObserver(replace).observe(root);
 
     function emptyNote(rows) {
       if (rows.length) return "";
@@ -174,10 +176,27 @@
       return `No launchers for mode ${store.get("mode")}${deploy ? ` and deploy ${deploy}` : ""}.`;
     }
 
+    // What the bar says while launch is not offered: the probe awaited, a
+    // daemon without launch, or none.
+    function unofferedNote() {
+      if (!daemon.probed)
+        return ["Checking for daemon…", "Waiting for the daemon probe."];
+      if (daemon.health)
+        return [
+          "Launch not offered",
+          "This daemon does not offer launch; the drawer lists the launch commands.",
+        ];
+      return [
+        "Static export",
+        "No daemon launches from this page; the drawer lists the launch commands.",
+      ];
+    }
+
     function renderBar() {
       const rows = control.rows();
       const offered = control.offered();
       const { mode, token, label } = control.summary();
+      const [note, noteTitle] = offered ? ["", ""] : unofferedNote();
       const line = element("div", "launch-bar-line");
       line.appendChild(SD.RunState.mark(token));
       if (offered && mode)
@@ -186,13 +205,11 @@
         element(
           "span",
           "launch-bar-summary",
-          offered || !rows.length ? label : "Static export",
+          offered || !rows.length ? label : note,
         ),
       );
       state.replaceChildren(line);
-      state.title = offered
-        ? ""
-        : "No daemon launches from this page; the drawer lists the launch commands.";
+      state.title = noteTitle;
       const summaries = offered ? control.unitSummaries() : [];
       if (summaries.length > 1) {
         const marks = element("div", "launch-bar-units");

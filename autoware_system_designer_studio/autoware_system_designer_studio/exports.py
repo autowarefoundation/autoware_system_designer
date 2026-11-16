@@ -114,11 +114,16 @@ class SystemExport:
             return None
         candidate = Path(self.system_file).with_name(f"{self.name}{ICON_FILE_SUFFIX}")
         try:
-            if candidate.is_file() and candidate.stat().st_size <= ICON_MAX_BYTES:
-                return candidate
-        except OSError:
-            pass
-        return None
+            if not candidate.is_file():
+                return None
+            size = candidate.stat().st_size
+        except OSError as exc:
+            logger.warning("system icon ignored: %s (%s)", candidate, exc)
+            return None
+        if size > ICON_MAX_BYTES:
+            logger.warning("system icon ignored: %s is %d bytes, over %d", candidate, size, ICON_MAX_BYTES)
+            return None
+        return candidate
 
     def structure_path(self, mode: str) -> Path:
         return self.export_dir / STRUCTURE_SUBDIR / f"{mode}.json"
@@ -247,6 +252,21 @@ def _unit_status(unit: dict[str, str], served: Optional[set[str]]) -> str:
 class DiscoveryError:
     path: str
     message: str
+
+
+def find_system(install_root: Path, package: str, name: str) -> Optional[SystemExport]:
+    """The export of one system under the install root, merged or isolated layout; None without a readable one."""
+    if not package or not name or "/" in package or "/" in name or package.startswith(".") or name.startswith("."):
+        return None
+    relative = Path("share", package, "exports", name, MANIFEST_FILENAME)
+    for manifest_path in (install_root / relative, install_root / package / relative):
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(manifest, dict):
+            return SystemExport(package, name, manifest_path.parent, manifest)
+    return None
 
 
 def discover_systems(install_root: Path) -> tuple[list[SystemExport], list[DiscoveryError]]:

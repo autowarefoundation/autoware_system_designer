@@ -57,7 +57,7 @@
       const search = entitySearch(config, store, (id) => host.focus(id));
       const depth = depthSelector(config, store);
       const live = liveOverlay(config, store, host, () => main.hidden);
-      side.append(depth, search);
+      side.append(depth, search, live.element);
 
       function showDiagramOptions() {
         const current = store.get("diagram");
