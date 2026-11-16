@@ -20,7 +20,7 @@ through ``rosbag2_py``, imported on first use.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional, Sequence
 
@@ -40,6 +40,12 @@ class BagTopic:
     count: int
     # Durability the recorded publishers offered, as rmw enum values.
     durabilities: list[int] = field(default_factory=list)
+    # Name the bag recorded it under, when a remap gave it another one.
+    recorded_name: str = ""
+
+    @property
+    def source(self) -> str:
+        return self.recorded_name or self.name
 
     @property
     def transient_local(self) -> bool:
@@ -55,6 +61,8 @@ class BagInfo:
     topics: dict[str, BagTopic]
     # Text the reference key hashes: the bag's metadata.
     fingerprint: str = ""
+    # Recorded topics a remap took the name of; they are not fed.
+    shadowed: list[str] = field(default_factory=list)
 
     @property
     def end_ns(self) -> int:
@@ -110,6 +118,34 @@ def info_from_metadata(payload: Mapping[str, Any], path: Path, fingerprint: str 
     )
 
 
+def remap_topics(info: BagInfo, remap: Mapping[str, str]) -> BagInfo:
+    """The bag with its topics renamed by *remap* (recorded name to replayed name). A recorded topic
+    whose name a remap takes is shadowed."""
+    remap = {source: target for source, target in remap.items() if source != target}
+    if not remap:
+        return info
+    missing = sorted(source for source in remap if source not in info.topics)
+    if missing:
+        raise BagError(f"remap of {', '.join(missing)}: not in the bag")
+    targets: dict[str, str] = {}
+    for source, target in remap.items():
+        if not target.startswith("/"):
+            raise BagError(f"remap of {source} to {target!r}: not an absolute topic name")
+        if target in targets:
+            raise BagError(f"remap of {targets[target]} and {source}: both to {target}")
+        targets[target] = source
+    topics: dict[str, BagTopic] = {}
+    shadowed: list[str] = []
+    for name, topic in info.topics.items():
+        if name in remap:
+            topics[remap[name]] = replace(topic, name=remap[name], recorded_name=name)
+        elif name in targets:
+            shadowed.append(name)
+        else:
+            topics[name] = topic
+    return replace(info, topics=topics, shadowed=sorted(shadowed))
+
+
 def read_bag_info(path: Path) -> BagInfo:
     """Topics, types and time span of the bag at *path* (its directory or one of its files)."""
     path = Path(path)
@@ -160,7 +196,8 @@ def _info_from_storage(path: Path) -> BagInfo:
 
 
 class BagMessages:
-    """Messages of the chosen topics in recorded order, one ahead: ``peek`` shows the next, ``pop`` takes it."""
+    """Messages of the chosen topics in recorded order, one ahead: ``peek`` shows the next, ``pop`` takes it.
+    Topics are chosen and given by their replayed names."""
 
     def __init__(self, info: BagInfo, topics: Sequence[str]) -> None:
         import rosbag2_py
@@ -170,14 +207,15 @@ class BagMessages:
             rosbag2_py.StorageOptions(uri=str(info.path), storage_id=info.storage_id),
             rosbag2_py.ConverterOptions(input_serialization_format="", output_serialization_format=""),
         )
-        self._reader.set_filter(rosbag2_py.StorageFilter(topics=list(topics)))
+        self._names = {info.topics[name].source if name in info.topics else name: name for name in topics}
+        self._reader.set_filter(rosbag2_py.StorageFilter(topics=list(self._names)))
         self._next: Optional[tuple[int, str, bytes]] = None
         self._advance()
 
     def _advance(self) -> None:
         if self._reader.has_next():
             topic, data, stamp = self._reader.read_next()
-            self._next = (int(stamp), topic, data)
+            self._next = (int(stamp), self._names.get(topic, topic), data)
         else:
             self._next = None
 

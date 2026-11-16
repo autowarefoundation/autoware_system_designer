@@ -31,7 +31,7 @@ directory it wrote itself (marked by `.autoware_system_designer_studio`) or an e
 ```text
 index.html                                         opens the system shown last, else the first one
 assets/{css,js}/...                                web bundle
-systems/<package>/<system>/index.html              workbench; ?activity=explore|launch|build opens that activity
+systems/<package>/<system>/index.html              workbench; ?activity=explore|launch|replay|build opens that activity
 systems/<package>/<system>/config.js               workbench config
 systems/<package>/<system>/icon.svg                the system's icon
 systems/<package>/<system>/data/<mode>.js          system_structure/<mode>.json with vis guides attached
@@ -72,6 +72,7 @@ the systems of the site by package, each with its icon.
 | -------- | ------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
 | Explore  | Diagrams: Nodes, Logic, Sequence (`?diagram=`)    | entity search                                  | diagram canvas; inspector shows the selected element |
 | Launch   | Launch: Control; Monitor: Logs, Topics (`?view=`) | none                                           | the view of the mode                                 |
+| Replay   | Replay                                            | scope tree (`?scope=`)                         | boundary of the scope, bag match, configuration      |
 | Build    | Build                                             | target, compute unit, start; job list (daemon) | log of the selected job (`?job=`)                    |
 
 The launch bar is the Launch activity's part of the top bar, shown on every activity: its drawer
@@ -244,6 +245,30 @@ available on this daemon. Job `detail` holds `packages` (selection) and `built_p
 colcon's `Starting >>>` lines). When a build rebuilds `autoware_system_designer_studio` or
 `autoware_system_designer_runtime` inside the install tree this daemon runs from, the daemon keeps
 running its loaded code and reports `restart_required`.
+
+### Replay
+
+The Replay activity prepares a deterministic replay of the runtime (`autoware-system-designer-replay`,
+see the runtime README) and needs no daemon. Its side panel is the namespace tree of the mode with a
+checkbox per entry: a checked entry selects every launched node at or under its path, and the
+selection is kept as the fewest such paths (`?scope=`, comma separated), the runtime's `--scope`.
+Containers of the selected composable nodes join the scope.
+
+The main area shows the boundary of the scope, computed from the export as the runtime computes it:
+
+- **Boundary inputs**: topics a node outside the scope publishes, with their publishers and
+  subscribers. "Load metadata.yaml" reads the topics of a bag from its metadata file; each input then
+  shows whether the bag holds it with the design's type, and a selector of the bag topics of that
+  type. Choosing one recorded under another name remaps it onto the input; an input the bag lacks
+  can be accepted unfed.
+- **Outputs**: the boundary outputs, which a replay records, then the topics internal to the scope,
+  each recorded once checked.
+- **Services leaving the scope**: service ports whose other side is outside, each accepted once
+  checked.
+
+Below them are the replay configuration these choices give (`scope`, `remap`, `accept`, `outputs`),
+to copy or download as `replay.yaml`, and the pre-flight and replay commands on the mode's structure
+file with the bag path typed in the Bag field and the deploy of the top bar.
 
 ### Launch
 

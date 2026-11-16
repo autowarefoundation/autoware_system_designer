@@ -54,12 +54,25 @@ def fed_topics(boundary: Boundary, bag: BagInfo, extra_inputs: Sequence[str]) ->
     return {topic: bag.topics[topic].msg_type for topic in wanted if topic in bag.topics}
 
 
+def remap_candidates(bag: BagInfo, msg_type: str, taken: Iterable[str] = ()) -> list[str]:
+    """Bag topics of *msg_type* that no input in *taken* is fed from."""
+    taken = set(taken)
+    if not msg_type:
+        return []
+    return sorted(name for name, topic in bag.topics.items() if topic.msg_type == msg_type and name not in taken)
+
+
 def check_bag(
     boundary: Boundary, bag: BagInfo, *, extra_inputs: Sequence[str] = (), accept: Sequence[str] = ()
 ) -> list[Problem]:
     """The bag against the boundary: every input present with the design's type, every way out declared."""
     accepted = set(accept)
-    problems: list[Problem] = []
+    taken = set(boundary.input_topics()) | set(extra_inputs)
+    problems: list[Problem] = [
+        Problem(WARNING, "input_shadowed", f"{topic} of the bag is not fed: a remap takes its name")
+        for topic in bag.shadowed
+        if topic in taken
+    ]
     for entry in boundary.inputs:
         recorded = bag.topics.get(entry.topic)
         if recorded is None:
@@ -75,12 +88,14 @@ def check_bag(
                     )
                 )
             else:
+                candidates = remap_candidates(bag, entry.msg_type, taken)
                 problems.append(
                     Problem(
                         ERROR,
                         "input_missing",
                         f"boundary input {entry.topic} ({entry.msg_type}) is not in the bag; "
-                        f"subscribed by {', '.join(entry.subscribers)}",
+                        f"subscribed by {', '.join(entry.subscribers)}"
+                        + (f"; bag topics of that type to remap: {', '.join(candidates)}" if candidates else ""),
                     )
                 )
             continue

@@ -18,6 +18,8 @@
 
     scope: [/perception/object_recognition]   # node or module paths, beside --scope
     inputs: [/tf, /tf_static]                 # bag topics fed beside the boundary inputs
+    remap:                                    # recorded topic: topic it is fed as
+      /sensing/lidar/top/pointcloud: /perception/input/pointcloud
     accept: [/map/vector_map]                 # inputs, services or subscriptions that stay unfed
     outputs: [/perception/internal/objects]   # internal topics recorded beside the boundary outputs
     compare:
@@ -89,6 +91,8 @@ class ReplayConfig:
     inputs: list[str] = field(default_factory=list)
     accept: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=list)
+    # Recorded bag topic to the topic it is fed as.
+    remap: dict[str, str] = field(default_factory=dict)
     default_rule: CompareRule = field(default_factory=CompareRule)
     topic_rules: dict[str, CompareRule] = field(default_factory=dict)
 
@@ -101,7 +105,7 @@ class ReplayConfig:
             return cls()
         if not isinstance(payload, Mapping):
             raise ConfigError("replay configuration: expected a mapping")
-        unknown = set(payload) - {"scope", "inputs", "accept", "outputs", "compare"}
+        unknown = set(payload) - {"scope", "inputs", "accept", "outputs", "remap", "compare"}
         if unknown:
             raise ConfigError(f"replay configuration: unknown key(s) {sorted(unknown)}")
         config = cls(
@@ -110,6 +114,12 @@ class ReplayConfig:
             accept=_names(payload, "accept"),
             outputs=_names(payload, "outputs"),
         )
+        remap = payload.get("remap") or {}
+        if not isinstance(remap, Mapping) or not all(
+            isinstance(source, str) and isinstance(target, str) for source, target in remap.items()
+        ):
+            raise ConfigError("remap: expected a mapping of recorded topic to replayed topic")
+        config.remap = dict(remap)
         compare = payload.get("compare") or {}
         if not isinstance(compare, Mapping):
             raise ConfigError("compare: expected a mapping")

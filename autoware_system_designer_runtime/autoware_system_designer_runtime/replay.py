@@ -46,7 +46,7 @@ from ._impl.measure.node_graph import NodeGraph
 from ._impl.measure.session import TRACE_SUBDIR
 from ._impl.measure.tracer import TracerArming, locate_tracer
 from ._impl.replay import reference as ref
-from ._impl.replay.bag import BagError, BagInfo, BagMessages, BagSink, read_bag_info, read_messages
+from ._impl.replay.bag import BagError, BagInfo, BagMessages, BagSink, read_bag_info, read_messages, remap_topics
 from ._impl.replay.config import ConfigError, ReplayConfig
 from ._impl.replay.driver import DriverOptions, ReplayDriver, ReplayError, ReplayResult
 from ._impl.replay.link import CLOCK_FREE, SOCKET_ENV, START_ENV, TIMER, WALL_TIMERS_ENV, Endpoint, LinkServer
@@ -96,6 +96,8 @@ class ReplayOptions:
     scope: Sequence[str] = ()
     bag: Optional[Path] = None
     config: Optional[Path] = None
+    # Recorded bag topic to the topic it is fed as, over the configuration's remap.
+    remap: Mapping[str, str] = field(default_factory=dict)
     ecu: Optional[str] = None
     deploy: Optional[str] = None
     arguments: Mapping[str, str] = field(default_factory=dict)
@@ -246,12 +248,15 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             logger.error("replay: no bag given")
             return EXIT_FAILED
         try:
-            bag = read_bag_info(options.bag)
+            bag = remap_topics(read_bag_info(options.bag), {**config.remap, **options.remap})
         except BagError as exc:
             logger.error("replay: %s", exc)
             return EXIT_FAILED
         problems = check_bag(boundary, bag, extra_inputs=config.inputs, accept=config.accept)
         fed = fed_topics(boundary, bag, config.inputs)
+        for topic in fed:
+            if bag.topics[topic].recorded_name:
+                logger.info("  remap  %s -> %s", bag.topics[topic].recorded_name, topic)
         from ._impl.replay.ros_io import unknown_types
 
         for topic, reason in unknown_types({**fed, **recorded_types}).items():
@@ -262,6 +267,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             "scope": {"patterns": scope.patterns, "nodes": scope.nodes, "containers": scope.containers},
             **boundary.as_dict(),
             "fed": fed,
+            "remap": {topic: bag.topics[topic].source for topic in fed if bag.topics[topic].recorded_name},
             "recorded": recorded_types,
             "problems": [p.as_dict() for p in problems],
         },
@@ -282,7 +288,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             scope=scope.patterns,
             bag_fingerprint=bag.fingerprint,
             extra={
-                "inputs": sorted(fed),
+                "inputs": {topic: bag.topics[topic].source for topic in sorted(fed)},
                 "outputs": sorted(recorded_types),
                 "duration": options.duration,
                 "seed": options.seed,
@@ -552,6 +558,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Replay configuration (YAML): further scope paths, bag topics fed beside the boundary inputs, "
         "accepted unfed inputs and services, further recorded outputs, comparison rules per topic.",
     )
+    parser.add_argument(
+        "--remap",
+        action="append",
+        default=None,
+        metavar="RECORDED:=TOPIC",
+        help="Feed the bag's topic RECORDED as TOPIC, over the configuration's remap. Repeatable.",
+    )
     parser.add_argument("--compute-unit", default=None, help="Limit the scope to the nodes of this compute unit.")
     parser.add_argument("--deploy", default=None, help="Deploy variant whose arguments bind the system arguments.")
     parser.add_argument(
@@ -631,6 +644,16 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _parse_remaps(items: Optional[Sequence[str]]) -> dict[str, str]:
+    remap: dict[str, str] = {}
+    for item in items or []:
+        source, sep, target = item.partition(":=")
+        if not sep or not source or not target:
+            raise ValueError(f"--remap {item!r}: expected RECORDED:=TOPIC")
+        remap[source] = target
+    return remap
+
+
 def main() -> None:
     from .system_runner import _parse_arg_overrides, _setup_logging
 
@@ -638,6 +661,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.bag is None and not args.check_endpoints:
         parser.error("--bag is required unless --check-endpoints is given")
+    try:
+        remap = _parse_remaps(args.remap)
+    except ValueError as exc:
+        parser.error(str(exc))
     _setup_logging(args.log_level)
     sys.exit(
         replay_from_json(
@@ -646,6 +673,7 @@ def main() -> None:
                 scope=args.scope,
                 bag=args.bag,
                 config=args.config,
+                remap=remap,
                 ecu=args.compute_unit,
                 deploy=args.deploy,
                 arguments=_parse_arg_overrides(args.arg),

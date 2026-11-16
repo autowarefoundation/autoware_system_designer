@@ -451,6 +451,8 @@ The replay configuration (`--config FILE`, YAML) declares what the ports do not 
 ```yaml
 scope: [/perception/object_recognition] # beside --scope
 inputs: [/vehicle/status/velocity_status] # bag topics fed beside the boundary inputs
+remap: # recorded topic: topic it is fed as
+  /sensing/lidar/top/pointcloud: /perception/input/pointcloud
 accept: [/map/vector_map] # inputs, services or subscriptions that stay unfed
 outputs: [/perception/object_recognition/tracking/objects] # internal topics recorded beside the boundary outputs
 compare:
@@ -463,6 +465,15 @@ compare:
       ignore_fields: [header.stamp] # paths without indices, fnmatch patterns
       uuid_order: true # UUIDs compare by order of first appearance
     /diagnostics: { rule: ignore }
+```
+
+### Topic remap
+
+A bag recorded under other topic names feeds the scope through a remap: `remap` of the configuration, and `--remap RECORDED:=TOPIC` (repeatable) over it. The recorded topic is checked, fed and keyed under the name it is fed as, with its recorded type and quality of service. A remap onto a name the bag also holds shadows that recorded topic, with a warning; a remap of a topic the bag does not hold, or of two topics onto one name, stops the run. A missing boundary input names the bag topics of its type that no input takes, and `boundary.json` lists the remaps in use under `remap`.
+
+```bash
+autoware-system-designer-replay SYSTEM.json --scope /perception/object_recognition --bag /data/bags/drive_01 \
+    --remap /sensing/lidar/top/pointcloud:=/sensing/lidar/concatenated/pointcloud
 ```
 
 ### How a run is made deterministic

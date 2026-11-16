@@ -118,6 +118,14 @@ ACTIVITIES = {
         ),
         "styles": ("css/activities/launch.css",),
     },
+    "replay": {
+        "scripts": (
+            "js/activities/replay/scope_model.js",
+            "js/activities/replay/scope_tree.js",
+            "js/activities/replay/index.js",
+        ),
+        "styles": ("css/activities/replay.css",),
+    },
     "build": {
         "scripts": (
             "js/activities/build/job_log.js",

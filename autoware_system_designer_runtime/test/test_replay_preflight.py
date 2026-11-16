@@ -17,7 +17,7 @@
 import pytest
 
 from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
-from autoware_system_designer_runtime._impl.replay.bag import info_from_metadata, read_bag_info
+from autoware_system_designer_runtime._impl.replay.bag import BagError, info_from_metadata, read_bag_info, remap_topics
 from autoware_system_designer_runtime._impl.replay.config import ConfigError, ReplayConfig
 from autoware_system_designer_runtime._impl.replay.preflight import (
     ERROR,
@@ -217,3 +217,55 @@ def test_config_reads_rules_and_rejects_unknown_keys():
         ReplayConfig.from_mapping({"scopes": ["/mod"]})
     with pytest.raises(ConfigError, match="rule"):
         ReplayConfig.from_mapping({"compare": {"topics": {"/out": {"rule": "close"}}}})
+
+
+def _recorded(topics: dict):
+    return info_from_metadata(bag(topics), "bag")
+
+
+def test_remap_feeds_a_recorded_topic_under_the_boundary_name():
+    design = pipeline_design()
+    boundary = boundary_of(design, "/mod")
+    (missing,) = [entry for entry in boundary.inputs if entry.topic == "/in"]
+    recorded = _recorded({"/vehicle/raw": (missing.msg_type, 4, ""), "/other": ("std_msgs/msg/Int32", 1, "")})
+
+    problems = check_bag(boundary, recorded)
+    assert "input_missing" in codes(problems, ERROR)
+    assert any("to remap: /vehicle/raw" in p.message for p in problems)
+
+    remapped = remap_topics(recorded, {"/vehicle/raw": missing.topic})
+    assert "input_missing" not in codes(check_bag(boundary, remapped, accept=["/tf"]), ERROR)
+    assert fed_topics(boundary, remapped, [])[missing.topic] == missing.msg_type
+    assert remapped.topics[missing.topic].source == "/vehicle/raw"
+    assert "/vehicle/raw" not in remapped.topics and remapped.topics["/other"].source == "/other"
+
+
+def test_remap_onto_a_recorded_name_shadows_that_topic():
+    design = pipeline_design()
+    boundary = boundary_of(design, "/mod")
+    (fed,) = [entry for entry in boundary.inputs if entry.topic == "/in"]
+    recorded = _recorded({fed.topic: (fed.msg_type, 4, ""), "/retaken": (fed.msg_type, 2, "")})
+
+    remapped = remap_topics(recorded, {"/retaken": fed.topic})
+
+    assert remapped.shadowed == [fed.topic]
+    assert (remapped.topics[fed.topic].source, remapped.topics[fed.topic].count) == ("/retaken", 2)
+    assert "input_shadowed" in codes(check_bag(boundary, remapped), WARNING)
+
+
+def test_remap_refuses_an_unrecorded_source_and_a_shared_target():
+    recorded = _recorded({"/a": ("std_msgs/msg/String", 1, ""), "/b": ("std_msgs/msg/String", 1, "")})
+
+    with pytest.raises(BagError, match="not in the bag"):
+        remap_topics(recorded, {"/missing": "/x"})
+    with pytest.raises(BagError, match="both to /x"):
+        remap_topics(recorded, {"/a": "/x", "/b": "/x"})
+    with pytest.raises(BagError, match="absolute"):
+        remap_topics(recorded, {"/a": "x"})
+    assert remap_topics(recorded, {"/a": "/a"}) is recorded
+
+
+def test_config_reads_the_remap():
+    assert ReplayConfig.from_mapping({"remap": {"/a": "/b"}}).remap == {"/a": "/b"}
+    with pytest.raises(ConfigError, match="remap"):
+        ReplayConfig.from_mapping({"remap": ["/a"]})
