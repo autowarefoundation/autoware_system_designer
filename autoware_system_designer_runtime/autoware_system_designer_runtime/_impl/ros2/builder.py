@@ -123,7 +123,7 @@ def populate_builder(
     """
     nodes = collect_nodes(system_data, ecu=ecu)
     builder = CoordinatorBuilder(default_config=config or ActorConfig())
-    worker = RosWorker()
+    worker = RosWorker(ecu)
     global_files = _global_param_files(nodes)
 
     composables_by_target: dict[str, list[dict[str, Any]]] = defaultdict(list)
