@@ -148,6 +148,16 @@
   font-weight: 600;
 }
 
+/* System the launch state is of; marked when it is another than the shown one */
+.launch-bar-system {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.launch-bar-system.other {
+  color: var(--state-warning);
+}
+
 /* Mode the launch state is of */
 .launch-bar-mode {
   padding: 0 5px;

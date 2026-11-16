@@ -124,13 +124,19 @@ test("another mode of the system or another launch on the unit holds it", () => 
   const otherMode = sessionOn("sub_ecu_1", { mode: "other" });
   assert.equal(unitHolder([otherMode], SHOWN), otherMode);
   assert.equal(holderLabel(otherMode, "main_ecu"), "other runs on sub_ecu_1");
-  const otherSystem = sessionOn("main_ecu", { system: "else" });
-  assert.equal(unitHolder([otherSystem], SHOWN), otherSystem);
-  assert.equal(holderLabel(otherSystem, "main_ecu"), "in use · main");
-  assert.equal(
-    unitHolder([sessionOn("sub_ecu_1", { system: "else" })], SHOWN),
-    null,
-  );
+  const sameUnit = sessionOn("main_ecu", { mode: "other" });
+  assert.equal(holderLabel(sameUnit, "main_ecu", "sys"), "in use · other");
+});
+
+test("another system running on any unit holds every unit", () => {
+  const onUnit = sessionOn("main_ecu", { system: "else" });
+  const elsewhere = sessionOn("sub_ecu_1", { system: "else" });
+  assert.equal(unitHolder([onUnit], SHOWN), onUnit);
+  assert.equal(unitHolder([elsewhere], SHOWN), elsewhere);
+  assert.equal(unitHolder([{ ...elsewhere, state: "exited" }], SHOWN), null);
+  assert.equal(holderLabel(elsewhere, "main_ecu", "sys"), "else runs");
+  const names = (id) => ({ else: "Else" })[id];
+  assert.equal(holderLabel(onUnit, "main_ecu", "sys", names), "Else runs");
 });
 
 test("a peer is labelled by its SSH destination, else by its address", () => {
