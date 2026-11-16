@@ -32,6 +32,16 @@
 //             rcl_timer_init2 (Jazzy+, also reached from rcl_timer_init)
 //   fini      rcl_publisher_fini, rcl_subscription_fini, rcl_timer_fini
 //   clock     rcl_set_ros_time_override
+// A process linked to a replay driver (ASD_REPLAY_SOCKET, see replay.c) is gated
+// through the same hooks and these:
+//   wait      rcl_wait
+//   node      rcl_node_init
+//   timer     rcl_timer_cancel, rcl_timer_reset
+//   clock     rcl_clock_init, rcl_clock_fini, rcl_ros_clock_fini, rcl_enable_ros_time_override,
+//             rcl_disable_ros_time_override, rcl_clock_add_jump_callback,
+//             rcl_clock_remove_jump_callback
+//   rclcpp    rclcpp::NodeOptions::use_intra_process_comms() const,
+//             rclcpp::Executor::execute_any_executable(rclcpp::AnyExecutable &)
 
 #include <dlfcn.h>
 #include <errno.h>
@@ -51,6 +61,7 @@
 #include <rcl/timer.h>
 #include <rmw/rmw.h>
 
+#include "replay.h"
 #include "writer.h"
 
 // ---- state -------------------------------------------------------------------
@@ -111,6 +122,7 @@ static void on_fork_child(void)
   tls_tid = 0;
   tls_trigger_ns = 0;
   tls_trigger_slot = NULL;
+  asd_replay_at_fork_child();
 }
 
 static uint64_t env_count(const char * name, uint64_t fallback, uint64_t limit)
@@ -407,19 +419,6 @@ static void register_timer(const void * handle, int64_t period)
   asd_names_line(&g.names, line);
 }
 
-// Frees the slot of a finalized endpoint for the next one. Opens nothing: a
-// process whose first hook is a fini has no endpoint to release.
-static void release_endpoint(const void * handle)
-{
-  if (__atomic_load_n(&g.state, __ATOMIC_ACQUIRE) != TRACER_ON) {
-    return;
-  }
-  const asd_stats_slot_t * released = asd_stats_unregister(&g.stats, handle);
-  if (released != NULL && released == tls_trigger_slot) {
-    tls_trigger_slot = NULL;
-  }
-}
-
 // ---- real-function lookup ---------------------------------------------------------
 
 // Binds `real` to the next definition of `name`; the forward type is spelled out per
@@ -442,17 +441,24 @@ typedef rcl_ret_t (*publish_serialized_fn)(
   const rcl_publisher_t *, const rcl_serialized_message_t *, rmw_publisher_allocation_t *);
 typedef rcl_ret_t (*publish_loaned_fn)(const rcl_publisher_t *, void *, rmw_publisher_allocation_t *);
 
+static void after_publish(const rcl_publisher_t * publisher, uint64_t t_in, uint8_t flags)
+{
+  if (tracing()) {
+    observe_publish(publisher, t_in, flags);
+  }
+  if (asd_replay_armed()) {
+    asd_replay_publish(publisher);
+  }
+}
+
 rcl_ret_t rcl_publish(
   const rcl_publisher_t * publisher, const void * ros_message, rmw_publisher_allocation_t * allocation)
 {
   FORWARD(publish_fn, "rcl_publish");
-  if (!tracing()) {
-    return real(publisher, ros_message, allocation);
-  }
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, ros_message, allocation);
   if (ret == RCL_RET_OK) {
-    observe_publish(publisher, t_in, 0);
+    after_publish(publisher, t_in, 0);
   }
   return ret;
 }
@@ -462,13 +468,10 @@ rcl_ret_t rcl_publish_serialized_message(
   rmw_publisher_allocation_t * allocation)
 {
   FORWARD(publish_serialized_fn, "rcl_publish_serialized_message");
-  if (!tracing()) {
-    return real(publisher, serialized_message, allocation);
-  }
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, serialized_message, allocation);
   if (ret == RCL_RET_OK) {
-    observe_publish(publisher, t_in, ASD_FLAG_SERIALIZED);
+    after_publish(publisher, t_in, ASD_FLAG_SERIALIZED);
   }
   return ret;
 }
@@ -477,13 +480,10 @@ rcl_ret_t rcl_publish_loaned_message(
   const rcl_publisher_t * publisher, void * ros_message, rmw_publisher_allocation_t * allocation)
 {
   FORWARD(publish_loaned_fn, "rcl_publish_loaned_message");
-  if (!tracing()) {
-    return real(publisher, ros_message, allocation);
-  }
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, ros_message, allocation);
   if (ret == RCL_RET_OK) {
-    observe_publish(publisher, t_in, ASD_FLAG_LOANED);
+    after_publish(publisher, t_in, ASD_FLAG_LOANED);
   }
   return ret;
 }
@@ -506,18 +506,35 @@ typedef rcl_ret_t (*take_loaned_fn)(
     info = &local;                                                \
   }
 
+// Under replay a take that finds nothing while a message is in flight waits for it.
+#define TAKE(call)                                                                              \
+  rcl_ret_t ret = (call);                                                                        \
+  if (ret == RCL_RET_SUBSCRIPTION_TAKE_FAILED && asd_replay_armed()) {                           \
+    for (unsigned attempt = 0; ret == RCL_RET_SUBSCRIPTION_TAKE_FAILED &&                        \
+         asd_replay_take_retry(subscription, attempt); ++attempt) {                              \
+      ret = (call);                                                                              \
+    }                                                                                            \
+  }
+
+static void after_take(const rcl_subscription_t * subscription, const rmw_message_info_t * info, uint8_t flags)
+{
+  if (tracing()) {
+    observe_take(subscription, info, flags);
+  }
+  if (asd_replay_armed()) {
+    asd_replay_take(subscription);
+  }
+}
+
 rcl_ret_t rcl_take(
   const rcl_subscription_t * subscription, void * ros_message, rmw_message_info_t * message_info,
   rmw_subscription_allocation_t * allocation)
 {
   FORWARD(take_fn, "rcl_take");
-  if (!tracing()) {
-    return real(subscription, ros_message, message_info, allocation);
-  }
   TAKE_INFO(message_info);
-  rcl_ret_t ret = real(subscription, ros_message, info, allocation);
+  TAKE(real(subscription, ros_message, info, allocation));
   if (ret == RCL_RET_OK) {
-    observe_take(subscription, info, 0);
+    after_take(subscription, info, 0);
   }
   return ret;
 }
@@ -527,13 +544,10 @@ rcl_ret_t rcl_take_serialized_message(
   rmw_message_info_t * message_info, rmw_subscription_allocation_t * allocation)
 {
   FORWARD(take_serialized_fn, "rcl_take_serialized_message");
-  if (!tracing()) {
-    return real(subscription, serialized_message, message_info, allocation);
-  }
   TAKE_INFO(message_info);
-  rcl_ret_t ret = real(subscription, serialized_message, info, allocation);
+  TAKE(real(subscription, serialized_message, info, allocation));
   if (ret == RCL_RET_OK) {
-    observe_take(subscription, info, ASD_FLAG_SERIALIZED);
+    after_take(subscription, info, ASD_FLAG_SERIALIZED);
   }
   return ret;
 }
@@ -543,15 +557,23 @@ rcl_ret_t rcl_take_loaned_message(
   rmw_subscription_allocation_t * allocation)
 {
   FORWARD(take_loaned_fn, "rcl_take_loaned_message");
-  if (!tracing()) {
-    return real(subscription, loaned_message, message_info, allocation);
-  }
   TAKE_INFO(message_info);
-  rcl_ret_t ret = real(subscription, loaned_message, info, allocation);
+  TAKE(real(subscription, loaned_message, info, allocation));
   if (ret == RCL_RET_OK) {
-    observe_take(subscription, info, ASD_FLAG_LOANED);
+    after_take(subscription, info, ASD_FLAG_LOANED);
   }
   return ret;
+}
+
+// ---- wait hook -------------------------------------------------------------------------
+
+rcl_ret_t rcl_wait(rcl_wait_set_t * wait_set, int64_t timeout)
+{
+  FORWARD(asd_wait_fn, "rcl_wait");
+  if (!asd_replay_armed()) {
+    return real(wait_set, timeout);
+  }
+  return asd_replay_wait(real, wait_set, timeout);
 }
 
 // ---- timer hooks ----------------------------------------------------------------------
@@ -564,17 +586,35 @@ typedef rcl_ret_t (*timer_init_fn)(
 typedef rcl_ret_t (*timer_init2_fn)(
   rcl_timer_t *, rcl_clock_t *, rcl_context_t *, int64_t, const rcl_timer_callback_t, rcl_allocator_t, bool);
 
+static void after_timer_call(const rcl_timer_t * timer)
+{
+  if (tracing()) {
+    observe_timer(timer);
+  }
+  if (asd_replay_armed()) {
+    asd_replay_timer_called(timer);
+  }
+}
+
+// Under replay a timer of a wall clock is created on the process's driver clock.
+static void after_timer_init(const rcl_timer_t * timer, rcl_clock_t * clock, int64_t period, bool swapped)
+{
+  if (tracing()) {
+    register_timer(timer, period);
+  }
+  if (asd_replay_armed()) {
+    asd_replay_timer(timer, clock, period, swapped);
+  }
+}
+
 rcl_ret_t rcl_timer_call(rcl_timer_t * timer)
 {
   FORWARD(timer_call_fn, "rcl_timer_call");
-  if (!tracing()) {
-    return real(timer);
-  }
   tls_in_timer_hook = true;
   rcl_ret_t ret = real(timer);
   tls_in_timer_hook = false;
   if (ret == RCL_RET_OK) {
-    observe_timer(timer);
+    after_timer_call(timer);
   }
   return ret;
 }
@@ -583,12 +623,9 @@ rcl_ret_t rcl_timer_call(rcl_timer_t * timer)
 rcl_ret_t rcl_timer_call_with_info(rcl_timer_t * timer, struct rcl_timer_call_info_s * call_info)
 {
   FORWARD(timer_call_with_info_fn, "rcl_timer_call_with_info");
-  if (tls_in_timer_hook || !tracing()) {
-    return real(timer, call_info);
-  }
   rcl_ret_t ret = real(timer, call_info);
-  if (ret == RCL_RET_OK) {
-    observe_timer(timer);
+  if (ret == RCL_RET_OK && !tls_in_timer_hook) {
+    after_timer_call(timer);
   }
   return ret;
 }
@@ -598,11 +635,15 @@ rcl_ret_t rcl_timer_init(
   const rcl_timer_callback_t callback, rcl_allocator_t allocator)
 {
   FORWARD(timer_init_fn, "rcl_timer_init");
+  bool swapped = false;
+  if (asd_replay_armed()) {
+    clock = asd_replay_timer_clock(clock, &swapped);
+  }
   tls_in_timer_hook = true;
   rcl_ret_t ret = real(timer, clock, context, period, callback, allocator);
   tls_in_timer_hook = false;
-  if (ret == RCL_RET_OK && tracing()) {
-    register_timer(timer, period);
+  if (ret == RCL_RET_OK) {
+    after_timer_init(timer, clock, period, swapped);
   }
   return ret;
 }
@@ -613,27 +654,217 @@ rcl_ret_t rcl_timer_init2(
   const rcl_timer_callback_t callback, rcl_allocator_t allocator, bool autostart)
 {
   FORWARD(timer_init2_fn, "rcl_timer_init2");
+  bool swapped = false;
+  if (!tls_in_timer_hook && asd_replay_armed()) {
+    clock = asd_replay_timer_clock(clock, &swapped);
+  }
   rcl_ret_t ret = real(timer, clock, context, period, callback, allocator, autostart);
-  if (ret == RCL_RET_OK && !tls_in_timer_hook && tracing()) {
-    register_timer(timer, period);
+  if (ret == RCL_RET_OK && !tls_in_timer_hook) {
+    after_timer_init(timer, clock, period, swapped);
   }
   return ret;
 }
 
-// ---- clock hook -----------------------------------------------------------------------
+typedef rcl_ret_t (*timer_fn)(rcl_timer_t *);
+
+rcl_ret_t rcl_timer_cancel(rcl_timer_t * timer)
+{
+  FORWARD(timer_fn, "rcl_timer_cancel");
+  rcl_ret_t ret = real(timer);
+  if (ret == RCL_RET_OK && asd_replay_armed()) {
+    asd_replay_timer_changed(timer);
+  }
+  return ret;
+}
+
+rcl_ret_t rcl_timer_reset(rcl_timer_t * timer)
+{
+  FORWARD(timer_fn, "rcl_timer_reset");
+  rcl_ret_t ret = real(timer);
+  if (ret == RCL_RET_OK && asd_replay_armed()) {
+    asd_replay_timer_changed(timer);
+  }
+  return ret;
+}
+
+// ---- clock hooks ----------------------------------------------------------------------
 
 typedef rcl_ret_t (*set_ros_time_override_fn)(rcl_clock_t *, rcl_time_point_value_t);
+typedef rcl_ret_t (*clock_fn)(rcl_clock_t *);
+typedef rcl_ret_t (*clock_init_fn)(rcl_clock_type_t, rcl_clock_t *, rcl_allocator_t *);
+typedef rcl_ret_t (*add_jump_callback_fn)(rcl_clock_t *, rcl_jump_threshold_t, rcl_jump_callback_t, void *);
+typedef rcl_ret_t (*remove_jump_callback_fn)(rcl_clock_t *, rcl_jump_callback_t, void *);
 
 // rclcpp's TimeSource sets the override on every /clock message while use_sim_time
-// is on; the records map wall time to ROS time for the analysis.
+// is on; the records map wall time to ROS time for the analysis. Under replay the
+// driver is the only source of ROS time.
 rcl_ret_t rcl_set_ros_time_override(rcl_clock_t * clock, rcl_time_point_value_t time_value)
 {
   FORWARD(set_ros_time_override_fn, "rcl_set_ros_time_override");
+  if (asd_replay_armed() && asd_replay_drops_time_override()) {
+    return RCL_RET_OK;
+  }
   rcl_ret_t ret = real(clock, time_value);
   if (ret == RCL_RET_OK && tracing()) {
     observe_clock(clock, time_value);
   }
   return ret;
+}
+
+// Under replay every ROS clock reads the driver's time from its creation on, whatever
+// use_sim_time says.
+rcl_ret_t rcl_clock_init(rcl_clock_type_t clock_type, rcl_clock_t * clock, rcl_allocator_t * allocator)
+{
+  FORWARD(clock_init_fn, "rcl_clock_init");
+  rcl_ret_t ret = real(clock_type, clock, allocator);
+  if (ret == RCL_RET_OK && clock_type == RCL_ROS_TIME && asd_replay_armed()) {
+    ret = rcl_enable_ros_time_override(clock);
+  }
+  return ret;
+}
+
+rcl_ret_t rcl_enable_ros_time_override(rcl_clock_t * clock)
+{
+  FORWARD(clock_fn, "rcl_enable_ros_time_override");
+  if (!asd_replay_armed()) {
+    return real(clock);
+  }
+  asd_replay_clock_lock();
+  rcl_ret_t ret = real(clock);
+  if (ret == RCL_RET_OK) {
+    asd_replay_clock_enabled(clock);
+  }
+  asd_replay_clock_unlock();
+  return ret;
+}
+
+rcl_ret_t rcl_disable_ros_time_override(rcl_clock_t * clock)
+{
+  FORWARD(clock_fn, "rcl_disable_ros_time_override");
+  if (asd_replay_armed()) {
+    return RCL_RET_OK;
+  }
+  return real(clock);
+}
+
+rcl_ret_t rcl_clock_fini(rcl_clock_t * clock)
+{
+  FORWARD(clock_fn, "rcl_clock_fini");
+  if (!asd_replay_armed()) {
+    return real(clock);
+  }
+  asd_replay_clock_lock();
+  asd_replay_clock_gone(clock);
+  rcl_ret_t ret = real(clock);
+  asd_replay_clock_unlock();
+  return ret;
+}
+
+rcl_ret_t rcl_ros_clock_fini(rcl_clock_t * clock)
+{
+  FORWARD(clock_fn, "rcl_ros_clock_fini");
+  if (!asd_replay_armed()) {
+    return real(clock);
+  }
+  asd_replay_clock_lock();
+  asd_replay_clock_gone(clock);
+  rcl_ret_t ret = real(clock);
+  asd_replay_clock_unlock();
+  return ret;
+}
+
+rcl_ret_t rcl_clock_add_jump_callback(
+  rcl_clock_t * clock, rcl_jump_threshold_t threshold, rcl_jump_callback_t callback, void * user_data)
+{
+  FORWARD(add_jump_callback_fn, "rcl_clock_add_jump_callback");
+  if (!asd_replay_armed()) {
+    return real(clock, threshold, callback, user_data);
+  }
+  asd_replay_clock_lock();
+  rcl_ret_t ret = real(clock, threshold, callback, user_data);
+  asd_replay_clock_unlock();
+  return ret;
+}
+
+rcl_ret_t rcl_clock_remove_jump_callback(rcl_clock_t * clock, rcl_jump_callback_t callback, void * user_data)
+{
+  FORWARD(remove_jump_callback_fn, "rcl_clock_remove_jump_callback");
+  if (!asd_replay_armed()) {
+    return real(clock, callback, user_data);
+  }
+  asd_replay_clock_lock();
+  rcl_ret_t ret = real(clock, callback, user_data);
+  asd_replay_clock_unlock();
+  return ret;
+}
+
+// ---- node hook -------------------------------------------------------------------------
+
+typedef rcl_ret_t (*node_init_fn)(
+  rcl_node_t *, const char *, const char *, rcl_context_t *, const rcl_node_options_t *);
+
+rcl_ret_t rcl_node_init(
+  rcl_node_t * node, const char * name, const char * namespace_, rcl_context_t * context,
+  const rcl_node_options_t * options)
+{
+  FORWARD(node_init_fn, "rcl_node_init");
+  rcl_ret_t ret = real(node, name, namespace_, context, options);
+  if (ret == RCL_RET_OK && asd_replay_armed()) {
+    asd_replay_node(node);
+  }
+  return ret;
+}
+
+// ---- rclcpp hook -----------------------------------------------------------------------
+
+typedef bool (*node_option_fn)(const void *);
+
+// rclcpp::NodeOptions::use_intra_process_comms() const. An intra-process delivery makes no
+// rcl call, so under replay every node is created without it.
+bool _ZNK6rclcpp11NodeOptions23use_intra_process_commsEv(const void * self)
+{
+  static node_option_fn real_slot = NULL;
+  if (asd_replay_armed()) {
+    return false;
+  }
+  node_option_fn real = __atomic_load_n(&real_slot, __ATOMIC_ACQUIRE);
+  if (real == NULL) {
+    real = (node_option_fn)dlsym(RTLD_NEXT, "_ZNK6rclcpp11NodeOptions23use_intra_process_commsEv");
+    if (real == NULL) {
+      return false;
+    }
+    __atomic_store_n(&real_slot, real, __ATOMIC_RELEASE);
+  }
+  return real(self);
+}
+
+typedef void (*execute_fn)(void *, void *);
+
+static void callback_exit(const bool * entered)
+{
+  if (*entered) {
+    asd_replay_callback_exit();
+  }
+}
+
+// rclcpp::Executor::execute_any_executable(rclcpp::AnyExecutable &): its return is the end of
+// one callback, also when the callback throws.
+void _ZN6rclcpp8Executor22execute_any_executableERNS_13AnyExecutableE(void * executor, void * any_executable)
+{
+  static execute_fn real_slot = NULL;
+  execute_fn real = __atomic_load_n(&real_slot, __ATOMIC_ACQUIRE);
+  if (real == NULL) {
+    real = (execute_fn)dlsym(RTLD_NEXT, "_ZN6rclcpp8Executor22execute_any_executableERNS_13AnyExecutableE");
+    if (real == NULL) {
+      return;
+    }
+    __atomic_store_n(&real_slot, real, __ATOMIC_RELEASE);
+  }
+  bool entered __attribute__((cleanup(callback_exit))) = asd_replay_armed();
+  if (entered) {
+    asd_replay_callback_enter();
+  }
+  real(executor, any_executable);
 }
 
 // ---- endpoint init hooks ---------------------------------------------------------------
@@ -661,6 +892,10 @@ rcl_ret_t rcl_publisher_init(
     }
     register_endpoint("pub", ASD_SLOT_PUB, publisher, node, rcl_publisher_get_topic_name(publisher), gid_ptr);
   }
+  if (ret == RCL_RET_OK && asd_replay_armed()) {
+    asd_replay_endpoint(
+      'p', publisher, node, rcl_publisher_get_topic_name(publisher), rcl_publisher_get_actual_qos(publisher));
+  }
   return ret;
 }
 
@@ -675,6 +910,11 @@ rcl_ret_t rcl_subscription_init(
     register_endpoint(
       "sub", ASD_SLOT_SUB, subscription, node, rcl_subscription_get_topic_name(subscription), NULL);
   }
+  if (ret == RCL_RET_OK && asd_replay_armed()) {
+    asd_replay_endpoint(
+      's', subscription, node, rcl_subscription_get_topic_name(subscription),
+      rcl_subscription_get_actual_qos(subscription));
+  }
   return ret;
 }
 
@@ -683,6 +923,21 @@ rcl_ret_t rcl_subscription_init(
 typedef rcl_ret_t (*publisher_fini_fn)(rcl_publisher_t *, rcl_node_t *);
 typedef rcl_ret_t (*subscription_fini_fn)(rcl_subscription_t *, rcl_node_t *);
 typedef rcl_ret_t (*timer_fini_fn)(rcl_timer_t *);
+
+// Frees the slot of a finalized endpoint for the next one. Opens nothing: a
+// process whose first hook is a fini has no endpoint to release.
+static void release_endpoint(const void * handle)
+{
+  if (__atomic_load_n(&g.state, __ATOMIC_ACQUIRE) == TRACER_ON) {
+    const asd_stats_slot_t * released = asd_stats_unregister(&g.stats, handle);
+    if (released != NULL && released == tls_trigger_slot) {
+      tls_trigger_slot = NULL;
+    }
+  }
+  if (asd_replay_armed()) {
+    asd_replay_release(handle);
+  }
+}
 
 rcl_ret_t rcl_publisher_fini(rcl_publisher_t * publisher, rcl_node_t * node)
 {

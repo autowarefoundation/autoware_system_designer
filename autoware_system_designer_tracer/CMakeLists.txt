@@ -6,7 +6,7 @@ find_package(rcl REQUIRED)
 find_package(rmw REQUIRED)
 
 # The interposer: preloaded into every traced ROS process, records only.
-add_library(${PROJECT_NAME} SHARED src/tracer.c src/writer.c)
+add_library(${PROJECT_NAME} SHARED src/tracer.c src/writer.c src/replay.c)
 target_include_directories(${PROJECT_NAME}
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -14,7 +14,8 @@ target_include_directories(${PROJECT_NAME}
 )
 target_link_libraries(${PROJECT_NAME} rcl::rcl rmw::rmw ${CMAKE_DL_LIBS} pthread)
 target_compile_definitions(${PROJECT_NAME} PRIVATE _GNU_SOURCE)
-target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -O2 -fno-strict-aliasing)
+# -fexceptions: a C++ exception of a callback unwinds through the rclcpp hook.
+target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -O2 -fno-strict-aliasing -fexceptions)
 set_target_properties(${PROJECT_NAME} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
 
 install(TARGETS ${PROJECT_NAME} LIBRARY DESTINATION lib)

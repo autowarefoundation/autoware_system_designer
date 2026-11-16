@@ -1,6 +1,6 @@
 # autoware_system_designer_tracer
 
-`LD_PRELOAD` recorder of the `rcl` C API for the runtime's live rates and latency measurement. It interposes `rcl_publish*`, `rcl_take*`, `rcl_timer_call*`, `rcl_set_ros_time_override` and the publisher, subscription and timer init functions through `dlsym(RTLD_NEXT)`, so it reaches rclcpp and rclpy processes alike without a rebuild, on Humble and Jazzy. It records; every analysis lives in `autoware_system_designer_runtime/_impl/measure/`.
+`LD_PRELOAD` recorder of the `rcl` C API for the runtime's live rates and latency measurement. It interposes `rcl_publish*`, `rcl_take*`, `rcl_timer_call*`, `rcl_set_ros_time_override` and the publisher, subscription and timer init functions through `dlsym(RTLD_NEXT)`, so it reaches rclcpp and rclpy processes alike without a rebuild, on Humble and Jazzy. It records; every analysis lives in `autoware_system_designer_runtime/_impl/measure/`. Linked to a replay driver it also gates callbacks and sets ROS time (see [Replay](#replay)).
 
 Two tiers share the hooks:
 
@@ -21,13 +21,27 @@ The layout is `include/autoware_system_designer_tracer/trace_format.h`; the Pyth
 
 ## Environment
 
-| Variable             | Role                                                                                                     |
-| -------------------- | -------------------------------------------------------------------------------------------------------- |
-| `ASD_TRACE_DIR`      | arms the tracer; the directory the files go to                                                           |
-| `ASD_TRACE_CAPACITY` | event records per process file, a ring of the latest ones (default 4194304, at most 16777216)            |
-| `ASD_STATS_SLOTS`    | counter slots per process (default 1024, at most 65536); live endpoints past it are counted, not tracked |
+| Variable                 | Role                                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `ASD_TRACE_DIR`          | arms the tracer; the directory the files go to                                                           |
+| `ASD_TRACE_CAPACITY`     | event records per process file, a ring of the latest ones (default 4194304, at most 16777216)            |
+| `ASD_STATS_SLOTS`        | counter slots per process (default 1024, at most 65536); live endpoints past it are counted, not tracked |
+| `ASD_REPLAY_SOCKET`      | arms the replay gate; the Unix socket of the replay driver                                               |
+| `ASD_REPLAY_START_NS`    | ROS time every clock holds until the driver's first clock step                                           |
+| `ASD_REPLAY_WALL_TIMERS` | `free` leaves timers of a steady or system clock on that clock, ungated                                  |
 
 The runtime sets `LD_PRELOAD` and `ASD_TRACE_DIR` on every process it spawns and locates the library through the ament index or `ASD_TRACER_LIB`.
+
+## Replay
+
+A process started with `ASD_REPLAY_SOCKET` connects to the replay driver of `autoware-system-designer-replay` on its first rcl call and is gated from then on (`src/replay.c`; the lines of the link are listed at its top):
+
+- `rcl_wait` reports the subscriptions and timers that have work, hides them from the executor and returns the one the driver granted. The grant ends when `rclcpp::Executor::execute_any_executable` returns, else at the thread's next `rcl_wait`.
+- Publishes, takes and timer calls are reported with whether their thread holds the grant; a take that finds nothing while a published message is in flight waits for it.
+- ROS time is the driver's: every ROS clock has its override enabled from `rcl_clock_init` on and set by the link's reader thread, `rcl_set_ros_time_override` from elsewhere and `rcl_disable_ros_time_override` do nothing, and `rcl_timer_init` puts a timer of a steady or system clock on a driver-timed clock of the tracer. Each timer's next call time is reported after every call, cancel, reset and clock step.
+- `rclcpp::NodeOptions::use_intra_process_comms()` returns false: an intra-process delivery makes no rcl call.
+
+Without the socket these hooks only forward. When the driver closes the link or sends `free`, the process runs ungated on the clocks as they stand.
 
 ## A new rcl entry point
 

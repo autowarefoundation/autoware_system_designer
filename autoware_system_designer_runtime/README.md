@@ -214,47 +214,58 @@ log base, the manifest, the member directory name and the tail of a member file.
                                                                            worker thread)
 ```
 
-| File                                  | Role                                                                                                  |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `__init__.py`                         | Public names (`populate_builder`, `ActorConfig`, `Coordinator`, …), loaded on first use               |
-| `system_runner.py`                    | CLI entry point (`autoware-system-designer-launch`)                                                   |
-| `measure_analyze.py`                  | CLI entry point (`autoware-system-designer-measure-analyze`)                                          |
-| `export_tree.py`                      | Layout of an export tree: manifest, system structure paths (no ROS import)                            |
-| `records.py`                          | Layout of the measurement records (no ROS import)                                                     |
-| `rates_record.py`                     | Rates record of a run: writer, reader, rates between two samples (no ROS import)                      |
-| `run_log.py`                          | Layout of a run's log directory: log base, manifest, member directory, file tail (no ROS import)      |
-| `control_protocol.py`                 | Member actions, measure verbs and interlock policies of the control surfaces (no ROS import)          |
-| `_impl/core/config.py`                | `ActorConfig` (respawn, output dir, shutdown timeout)                                                 |
-| `_impl/core/events.py`                | Control commands (`Stop`, `Restart`, `KillSignal`, `ToggleRespawn`) and state events of the actors    |
-| `_impl/core/state.py`                 | State dataclasses: `NodePending/Running/Respawning/Stopped/Done/Failed`, `Composable*`, `BlockReason` |
-| `_impl/core/process.py`               | `spawn_pgrp()`, `graceful_kill()` and the end of a process group                                      |
-| `_impl/core/aio.py`                   | asyncio helpers: first of several waits, cancel and wait, future resolved from another thread         |
-| `_impl/core/regular_actor.py`         | One asyncio task per regular node / container / launch-file include                                   |
-| `_impl/core/coordinator.py`           | `CoordinatorBuilder`, `Coordinator`, `MemberHandle`                                                   |
-| `_impl/core/stdin_console.py`         | Optional stdin REPL                                                                                   |
-| `_impl/core/commands.py`              | Command surface shared by the REPL and the control channel; member run states from the state hook     |
-| `_impl/core/control_channel.py`       | Unix socket serving member states, logs and the command set as JSON lines                             |
-| `_impl/ros2/operation_mode.py`        | Interlock on the ADAPI operation mode                                                                 |
-| `_impl/ros2/builder.py`               | system_structure JSON → populated `CoordinatorBuilder` (ROS 2)                                        |
-| `_impl/ros2/launchers/single_node.py` | Cmdline builder for `single_node` launch type (`node_cmdline`)                                        |
-| `_impl/ros2/launchers/container.py`   | Cmdline builder for `node_container` (`container_cmdline`) + `RosWorker`                              |
-| `_impl/ros2/launchers/composable.py`  | `ComposableSpec`, `ComposableNodeActor`; YAML param flattening for `LoadNode`                         |
-| `_impl/ros2/launchers/launch_file.py` | Cmdline builder + subprocess runner for `ros2_launch_file` includes                                   |
-| `_impl/ros2/common/params.py`         | `resolve_value`, `build_cmd`, `parameter_layers`, `remap_pairs`                                       |
-| `_impl/ros2/common/namespace.py`      | `parent_namespace`, `node_fqn`, `join_fqn`, `unique_node_name`                                        |
-| `_impl/ros2/common/substitutions.py`  | Launch-time substitutions and the binding of system arguments                                         |
-| `_impl/measure/tracer.py`             | Arming of the tracer: preload library, trace directory, control word                                  |
-| `_impl/measure/stats_reader.py`       | Reader of the tracer's counters (`<pid>.stats`)                                                       |
-| `_impl/measure/monitor.py`            | Live rates from two reads of the counters; recorder of the rates record                               |
-| `_impl/measure/session.py`            | Measurement window: settle, record, close, analyze                                                    |
-| `_impl/measure/trace_reader.py`       | Reader of the tracer's event records (`<pid>.trace`) and name tables                                  |
-| `_impl/measure/clock.py`              | Mapping of wall time onto ROS time                                                                    |
-| `_impl/measure/node_graph.py`         | Nodes, ports and topic links of the design the analysis matches against                               |
-| `_impl/measure/node_stats.py`         | Per-node rates, process time and response from the records                                            |
-| `_impl/measure/detect.py`             | Trigger detection and the diff against the declared process events                                    |
-| `_impl/measure/chains.py`             | Event chains across nodes                                                                             |
-| `_impl/measure/probe.py`              | Probe subscriptions on intra-process-only topics                                                      |
-| `_impl/measure/writer.py`             | Latency file                                                                                          |
+| File                                  | Role                                                                                                   |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `__init__.py`                         | Public names (`populate_builder`, `ActorConfig`, `Coordinator`, …), loaded on first use                |
+| `system_runner.py`                    | CLI entry point (`autoware-system-designer-launch`)                                                    |
+| `measure_analyze.py`                  | CLI entry point (`autoware-system-designer-measure-analyze`)                                           |
+| `replay.py`                           | CLI entry point (`autoware-system-designer-replay`), see [Deterministic replay](#deterministic-replay) |
+| `export_tree.py`                      | Layout of an export tree: manifest, system structure paths (no ROS import)                             |
+| `records.py`                          | Layout of the measurement records (no ROS import)                                                      |
+| `rates_record.py`                     | Rates record of a run: writer, reader, rates between two samples (no ROS import)                       |
+| `run_log.py`                          | Layout of a run's log directory: log base, manifest, member directory, file tail (no ROS import)       |
+| `control_protocol.py`                 | Member actions, measure verbs and interlock policies of the control surfaces (no ROS import)           |
+| `_impl/core/config.py`                | `ActorConfig` (respawn, output dir, shutdown timeout)                                                  |
+| `_impl/core/events.py`                | Control commands (`Stop`, `Restart`, `KillSignal`, `ToggleRespawn`) and state events of the actors     |
+| `_impl/core/state.py`                 | State dataclasses: `NodePending/Running/Respawning/Stopped/Done/Failed`, `Composable*`, `BlockReason`  |
+| `_impl/core/process.py`               | `spawn_pgrp()`, `graceful_kill()` and the end of a process group                                       |
+| `_impl/core/aio.py`                   | asyncio helpers: first of several waits, cancel and wait, future resolved from another thread          |
+| `_impl/core/regular_actor.py`         | One asyncio task per regular node / container / launch-file include                                    |
+| `_impl/core/coordinator.py`           | `CoordinatorBuilder`, `Coordinator`, `MemberHandle`                                                    |
+| `_impl/core/stdin_console.py`         | Optional stdin REPL                                                                                    |
+| `_impl/core/commands.py`              | Command surface shared by the REPL and the control channel; member run states from the state hook      |
+| `_impl/core/control_channel.py`       | Unix socket serving member states, logs and the command set as JSON lines                              |
+| `_impl/ros2/operation_mode.py`        | Interlock on the ADAPI operation mode                                                                  |
+| `_impl/ros2/builder.py`               | system_structure JSON → populated `CoordinatorBuilder` (ROS 2)                                         |
+| `_impl/ros2/launchers/single_node.py` | Cmdline builder for `single_node` launch type (`node_cmdline`)                                         |
+| `_impl/ros2/launchers/container.py`   | Cmdline builder for `node_container` (`container_cmdline`) + `RosWorker`                               |
+| `_impl/ros2/launchers/composable.py`  | `ComposableSpec`, `ComposableNodeActor`; YAML param flattening for `LoadNode`                          |
+| `_impl/ros2/launchers/launch_file.py` | Cmdline builder + subprocess runner for `ros2_launch_file` includes                                    |
+| `_impl/ros2/common/params.py`         | `resolve_value`, `build_cmd`, `parameter_layers`, `remap_pairs`                                        |
+| `_impl/ros2/common/namespace.py`      | `parent_namespace`, `node_fqn`, `join_fqn`, `unique_node_name`                                         |
+| `_impl/ros2/common/substitutions.py`  | Launch-time substitutions and the binding of system arguments                                          |
+| `_impl/measure/tracer.py`             | Arming of the tracer: preload library, trace directory, control word                                   |
+| `_impl/measure/stats_reader.py`       | Reader of the tracer's counters (`<pid>.stats`)                                                        |
+| `_impl/measure/monitor.py`            | Live rates from two reads of the counters; recorder of the rates record                                |
+| `_impl/measure/session.py`            | Measurement window: settle, record, close, analyze                                                     |
+| `_impl/measure/trace_reader.py`       | Reader of the tracer's event records (`<pid>.trace`) and name tables                                   |
+| `_impl/measure/clock.py`              | Mapping of wall time onto ROS time                                                                     |
+| `_impl/measure/node_graph.py`         | Nodes, ports and topic links of the design the analysis matches against                                |
+| `_impl/measure/node_stats.py`         | Per-node rates, process time and response from the records                                             |
+| `_impl/measure/detect.py`             | Trigger detection and the diff against the declared process events                                     |
+| `_impl/measure/chains.py`             | Event chains across nodes                                                                              |
+| `_impl/measure/probe.py`              | Probe subscriptions on intra-process-only topics                                                       |
+| `_impl/measure/writer.py`             | Latency file                                                                                           |
+| `_impl/replay/scope.py`               | Scope selection by design path, boundary inputs and outputs, the scope's structure                     |
+| `_impl/replay/config.py`              | Replay configuration file                                                                              |
+| `_impl/replay/bag.py`                 | Bag metadata, messages in recorded order, writer of the recorded outputs                               |
+| `_impl/replay/preflight.py`           | Bag against boundary, real endpoints against the design                                                |
+| `_impl/replay/link.py`                | Socket link to the gated processes                                                                     |
+| `_impl/replay/driver.py`              | Replay driver: steps, settling, tie order                                                              |
+| `_impl/replay/recorder.py`            | Recorded outputs in publish order and driver time                                                      |
+| `_impl/replay/ros_io.py`              | The driver's publishers of bag topics and subscriptions to outputs                                     |
+| `_impl/replay/verdict.py`             | Comparison of recorded outputs with a reference                                                        |
+| `_impl/replay/reference.py`           | Reference key and location                                                                             |
 
 ---
 
@@ -403,3 +414,110 @@ The latency file (`autoware_system_designer/latency/2`) is documented in [doc/la
 ```
 
 The record root is `$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR`, else `$ROS_HOME/autoware_system_designer/records` (`~/.ros/...` when `ROS_HOME` is unset): outside the install tree, which every rebuild replaces, and outside the per-run log directories. A JSON outside an export tree writes `<log-dir>/latency/<Mode>_latency.json` instead. The studio shows the newest record of a mode, else the reference measurement the export carries (`latency/<Mode>_latency.json` beside the system definition file, copied into `exports/<system>/latency/` by the build). `autoware_system_designer_runtime.records` holds this layout for other tools.
+
+## Deterministic replay
+
+`autoware-system-designer-replay` runs a part of a system (a _scope_ of nodes or modules) from a rosbag, one callback at a time in a fixed order, so two runs of the same scope, bag and parameters record the same outputs. It serves regression tests, debugging and bisecting of a partial pipeline without the whole system up. The node binaries run as they are: the same preloaded tracer gates them at the `rcl` boundary.
+
+```bash
+autoware-system-designer-replay SYSTEM.json \
+    --scope /perception/object_recognition \   # node or module path of the design (repeatable)
+    --bag /data/bags/drive_01 \                # holds the scope's boundary inputs
+    --deploy my_vehicle \
+    --save-reference                           # first run: keep the outputs as the reference
+autoware-system-designer-replay SYSTEM.json --scope /perception/object_recognition \
+    --bag /data/bags/drive_01 --deploy my_vehicle    # later runs: exit 1 when the outputs differ
+```
+
+| Term                              | Meaning                                                                                |
+| --------------------------------- | -------------------------------------------------------------------------------------- |
+| scope                             | the selected nodes, with the containers of the selected composable nodes               |
+| boundary inputs, boundary outputs | topics a node outside the scope publishes (fed from the bag); topics the scope outputs |
+| replay driver                     | the one owner of time and input, inside the runtime process                            |
+| step                              | one granted callback, one bag message published, or one clock advance                  |
+| reference, verdict                | stored expected outputs; the result of comparing a run with them                       |
+
+### Scope and boundary
+
+`--scope PATH` selects every node at or under a design path. The boundary comes from the export: an input topic of a scope node with a publisher outside the scope is a boundary input, an output topic with a subscriber outside the scope (or none inside) is a boundary output. The scope's members are launched as in `autoware-system-designer-launch`, each with `use_sim_time: true` and without intra-process delivery.
+
+The run starts with two checks:
+
+- **Bag against boundary** (`--check` stops after it): every boundary input is in the bag with the design's message type and a type the workspace can load. An input the design gives no publisher, an input also published inside the scope (the bag then carries the scope's own recorded messages) and a service server without a client in scope are warnings; a service client without a server in scope is an error.
+- **Real endpoints against the design**, once the scope is up (`--check-endpoints` stops after it and needs no bag): the subscriptions, publishers and timers each process created, reported by the tracer, against the declared ports and periodic events. A subscription no port of its process declares is a missing boundary input and fails the run (`--allow-undeclared` runs anyway); an undeclared publisher, a declared port without an endpoint and a declared rate without a timer are warnings.
+
+The replay configuration (`--config FILE`, YAML) declares what the ports do not say:
+
+```yaml
+scope: [/perception/object_recognition] # beside --scope
+inputs: [/vehicle/status/velocity_status] # bag topics fed beside the boundary inputs
+accept: [/map/vector_map] # inputs, services or subscriptions that stay unfed
+outputs: [/perception/object_recognition/tracking/objects] # internal topics recorded beside the boundary outputs
+compare:
+  default: exact # exact | fields | ignore
+  topics:
+    /perception/object_recognition/objects:
+      rule: fields # field by field
+      abs_tolerance: 1.0e-6
+      rel_tolerance: 0.0
+      ignore_fields: [header.stamp] # paths without indices, fnmatch patterns
+      uuid_order: true # UUIDs compare by order of first appearance
+    /diagnostics: { rule: ignore }
+```
+
+### How a run is made deterministic
+
+```text
+   bag ──▶ replay driver ──publish──▶ boundary inputs ──▶ ┌───────────────── scope ─────────────────┐
+              │  ▲                                        │ process: executor ─ rcl_wait ─ [gate]   │
+   time, grant│  │ready, take, publish, done              │ process: executor ─ rcl_wait ─ [gate]   │
+              ▼  │                                        └─────────────────────────────────────────┘
+           Unix socket, one connection per process ◀───────────── tracer (LD_PRELOAD) ──┘
+              │
+              └── subscriptions on the outputs ──▶ replay/outputs (rosbag, driver time)
+```
+
+- **Gate.** In every scope process the tracer's `rcl_wait` reports which subscriptions and timers have work, hides all of them from the executor and hands back the one the driver grants. One callback runs at a time across the whole scope. It ends when rclcpp's `Executor::execute_any_executable` returns, else when its thread calls `rcl_wait` again (rclpy, other executors).
+- **Time.** The driver sets ROS time through the tracer (`rcl_set_ros_time_override` inside each process) and waits for every process to confirm. No `/clock` is published and an override from elsewhere is dropped. Every ROS clock reads driver time from its creation, and a timer created on a wall clock is created on a driver-timed clock instead (`--free-wall-timers` leaves those alone). `now()` does not advance inside a callback.
+- **Steps.** (1) While a callback is ready, grant the first in the tie order. (2) Else, when the earliest timer expiry is not after the next bag message, set the clocks exactly to it. (3) Else set the clocks to the next bag message's recorded time and publish it.
+- **Settling.** Before each step the driver waits until no callback runs, every process holds its time, every message published to a subscription shows as ready work there, every due timer is ready and every recorded publish was heard. All of it is counted from the `rcl` calls the tracer observes; the declared event chains play no part, so a wrong chain cannot break the order.
+- **Tie order.** Callbacks ready together run by the design order of their node, then by creation order of the endpoint. `--tie-break-seed N` draws among them instead, repeatably per seed, to exercise other fan-in orders.
+- **Isolation.** The run sets `ROS_LOCALHOST_ONLY=1` (`--no-isolate` keeps discovery as it is); `--domain-id` gives it a domain of its own.
+
+A publish, take or timer fire by a thread that holds no grant (a worker thread, a service callback) breaks the order. The run counts them per node and endpoint as `violations` in the result; `--strict` turns any into exit code 1.
+
+### Output and verdict
+
+```text
+<log-dir>/replay/
+├── boundary.json   scope, boundary inputs and outputs, services, fed and recorded topics, pre-flight problems
+├── outputs/        rosbag of the recorded outputs, stamped with the driver time of their publish
+├── result.json     counts, violations, anomalies, endpoint problems, digest of the outputs, verdict summary
+├── verdict.json    per topic: rule, counts, first difference (written when a reference exists)
+└── steps.log       every step and every tracer event, with --step-log
+```
+
+A reference is the `outputs/` of a run kept by `--save-reference`. It lives under the record root, keyed by a hash over the scope's structure (deploy arguments and parameter values included), the content of its parameter files, the scope, the bag's metadata and the run options:
+
+```text
+<record root>/<package>/<system>/replay/<Mode>/<key>/{reference.json, outputs/}
+```
+
+`--reference DIR` names the directory directly (required for a JSON outside an export tree). Each topic compares message by message in publish order, driver time included, by its rule; `--warmup S` leaves the first seconds out.
+
+| Exit code | Meaning                                                                                 |
+| --------- | --------------------------------------------------------------------------------------- |
+| 0         | the run completed and matches its reference, or no reference exists yet                 |
+| 1         | the outputs differ from the reference, or `--strict` found violations                   |
+| 2         | the replay did not run to its end: pre-flight, startup, a callback that does not return |
+
+### Limits
+
+- **Blocking calls in a callback.** A callback that waits on ROS time or on another callback (a TF lookup with a timeout, `spin_until_future_complete`, `Rate::sleep`, `wait_for_message`) blocks while the driver holds both. The run fails after `--callback-timeout` and names the callback.
+- **Services and actions** pass the gate unordered; their callbacks count as violations when they publish.
+- **Polled subscriptions** (taken inside another callback, never waited on) are not gated. A take that finds nothing while a published message is still in flight waits for it, so a poll sees what was published before it.
+- **Several messages in flight to one subscription** (a callback that publishes twice on a topic) are waited for by a fixed pause, not by observation; with a keep-last depth below the burst, which messages survive is not checked.
+- **Startup is not gated.** The scope starts freely and is held at the bag's start time; parameter events published during startup are delivered first, in an order that follows the startup. What a node publishes before the first step is not recorded.
+- **Node-level nondeterminism** (unseeded random numbers, wall-clock reads in logic, GPU inference) is the node's own; replay shows it as a differing verdict. A tolerance and `uuid_order` cover part of it in the comparison.
+- **Executors that do not wait through `rcl_wait`** (rclcpp's `EventsExecutor`) are not gated. Nodes of a `ros2_launch_file` member keep the launch file's own `use_sim_time`.
+- The loop is open against the bag: a loop that closes through a node outside the scope replays the recorded messages, not the reaction to the scope's new outputs.

@@ -30,6 +30,7 @@ setup(
             [
                 "scripts/autoware-system-designer-launch",
                 "scripts/autoware-system-designer-measure-analyze",
+                "scripts/autoware-system-designer-replay",
             ],
         ),
     ],
@@ -44,6 +45,7 @@ setup(
         "console_scripts": [
             "autoware-system-designer-launch = autoware_system_designer_runtime.system_runner:main",
             "autoware-system-designer-measure-analyze = autoware_system_designer_runtime.measure_analyze:main",
+            "autoware-system-designer-replay = autoware_system_designer_runtime.replay:main",
         ],
     },
 )
