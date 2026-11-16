@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import queue
+import re
 import threading
 from typing import Callable, Iterable, Mapping, Optional
 
@@ -53,7 +54,9 @@ class RosWorker:
 
     NODE_NAME = "autoware_system_designer_launcher"
 
-    def __init__(self) -> None:
+    def __init__(self, ecu: Optional[str] = None) -> None:
+        # One launcher process runs per compute unit; the unit suffix keeps their node names distinct.
+        self._node_name = self.NODE_NAME if not ecu else f"{self.NODE_NAME}_{re.sub(r'[^A-Za-z0-9_]', '_', ecu)}"
         self._thread: Optional[threading.Thread] = None
         self._ready = threading.Event()
         self._stop = threading.Event()
@@ -117,7 +120,7 @@ class RosWorker:
             if not rclpy.ok():
                 # The coordinator owns SIGINT/SIGTERM; the context lives until the worker stops.
                 rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
-            self._node = rclpy.create_node(self.NODE_NAME)
+            self._node = rclpy.create_node(self._node_name)
             self._executor = make_executor()
             self._executor.add_node(self._node)
             self._ready.set()

@@ -1,11 +1,11 @@
-// Explore activity: the diagram list, entity search and depth switch beside
-// the diagram canvas, with the inspector showing the selected element. Search
+// Explore activity: the diagrams as rail items, entity search and depth switch
+// beside the diagram canvas, with the inspector showing the selected element. Search
 // is offered for diagrams that locate entities, the depth switch for diagrams
 // that draw the hierarchy cut at a level. With a daemon, the live state of the
 // launched members overlays the canvas.
 (function () {
   const SD = window.SD;
-  const { element, section, list } = SD.widgets;
+  const { element } = SD.widgets;
   const { diagramHost, entitySearch, depthSelector, liveOverlay } =
     SD.activities.explore;
 
@@ -35,35 +35,33 @@
   SD.workbench.registerActivity({
     id: "explore",
     title: "Explore",
+    group: "Diagrams",
     order: 10,
     daemon: false,
     inspector: true,
-    icon: "M3 4h6v4H3zM11 12h6v4h-6zM6 8v6h5",
+    views: (config) => ({
+      key: "diagram",
+      fallback: config.defaultDiagram,
+      items: config.diagrams.map((d) => ({
+        value: d.type,
+        label: d.short,
+        title: d.label,
+        icon: d.icon,
+      })),
+    }),
     mount({ side, main, inspector }, { config, store }) {
-      const types = config.diagrams.map((d) => d.type);
-      store.define("diagram", config.defaultDiagram, (v) => types.includes(v));
       store.define("depth", "", (v) => /^[1-9]\d*$/.test(v));
       store.syncUrl();
 
       const host = diagramHost(main, inspectorView(inspector), config, store);
-      const diagrams = list(
-        config.diagrams.map((d) => [d.type, d.label]),
-        (type) => store.set("diagram", type),
-      );
       const search = entitySearch(config, store, (id) => host.focus(id));
       const depth = depthSelector(config, store);
       const live = liveOverlay(config, store, host, () => main.hidden);
-      side.append(
-        section("Diagrams", diagrams.element),
-        depth,
-        search,
-        live.element,
-      );
+      side.append(depth, search, live.element);
 
       function showDiagramOptions() {
         const current = store.get("diagram");
         const diagram = config.diagrams.find((d) => d.type === current);
-        diagrams.mark(current);
         search.hidden = !diagram?.searchable;
         depth.hidden = !diagram?.layered;
       }

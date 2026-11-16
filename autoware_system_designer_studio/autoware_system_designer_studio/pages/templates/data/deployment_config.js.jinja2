@@ -3,7 +3,7 @@ const deploymentConfig = {
     packageName: {{ package_name | tojson }},
     systemId: {{ system_id | tojson }},
     siteRoot: {{ site_root | tojson }},
-    systemsIndexPath: {{ systems_index_path | tojson }},
+    systems: {{ systems | tojson }},
     availableModes: {{ available_modes | tojson }},
     defaultMode: {{ default_mode | tojson }},
     diagrams: {{ diagrams | tojson }},

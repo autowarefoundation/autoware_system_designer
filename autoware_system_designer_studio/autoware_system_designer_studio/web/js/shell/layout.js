@@ -1,6 +1,6 @@
 // Workbench layout: panel widths, the side panel collapse and the inspector
-// visibility, each kept as a viewer preference. The inspector pane exists only
-// beside an activity that owns an inspector view.
+// visibility, each kept as a viewer preference. The side panel and the
+// inspector pane exist only beside an activity that owns a view in them.
 (function () {
   const SD = window.SD;
 
@@ -56,6 +56,10 @@
     document.body.classList.toggle("side-panel-collapsed", collapsed);
   }
 
+  function setSidePanelAvailable(available) {
+    document.body.classList.toggle("no-side-panel", !available);
+  }
+
   function setInspectorHidden(hidden) {
     document.body.classList.toggle("inspector-hidden", hidden);
     el("inspector-toggle").setAttribute("aria-pressed", String(!hidden));
@@ -90,6 +94,7 @@
     init,
     isSidePanelCollapsed,
     setSidePanelCollapsed,
+    setSidePanelAvailable,
     setInspectorHidden,
     setInspectorAvailable,
   };

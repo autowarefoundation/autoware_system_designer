@@ -2,7 +2,8 @@
 // A page opened from file:// or from a plain file server has no daemon; its
 // health probe fails and the workbench stays a static viewer.
 //
-// Page events: "daemon.connection" {connected}, "daemon.health" (health result),
+// Page events: "daemon.probed" (health result, null without a daemon),
+// "daemon.connection" {connected}, "daemon.health" (health result),
 // "daemon.jobs" (job list), and "daemon.<topic>" for every event-stream topic
 // (job, job.log, systems.changed, daemon, launch, member, member.log,
 // member.activity, monitor, records.changed).
@@ -24,6 +25,8 @@
 
   let root = "/";
   let health = null;
+  // Once the health probe answered, with a daemon or none.
+  let probed = false;
   let connected = false;
   let rpcId = 0;
   // Name of this page among the daemon's callers.
@@ -125,6 +128,14 @@
   // Resolves to the health result, or null when no daemon answers under `siteRoot`.
   async function probe(siteRoot) {
     root = siteRoot || "/";
+    const result = await fetchHealth();
+    probed = true;
+    SD.emit("daemon.probed", result);
+    if (result) openStream();
+    return result;
+  }
+
+  async function fetchHealth() {
     if (!/^https?:$/.test(window.location.protocol)) return null;
     try {
       const response = await fetch(apiUrl("health"), { cache: "no-store" });
@@ -135,7 +146,6 @@
     } catch (error) {
       return null;
     }
-    openStream();
     return health;
   }
 
@@ -155,6 +165,9 @@
     jobs: jobList,
     get health() {
       return health;
+    },
+    get probed() {
+      return probed;
     },
     get connected() {
       return connected;

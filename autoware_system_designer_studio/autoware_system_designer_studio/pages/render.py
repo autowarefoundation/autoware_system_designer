@@ -16,10 +16,11 @@
 
 One URL layout serves both the daemon (rendered per request) and ``pack`` (written to disk)::
 
-    index.html                                  systems index
+    index.html                                  opens the last shown system, else the first
     assets/{css,js}/...                         the web bundle
     systems/<package>/<system>/index.html       workbench (explore, launch, build)
     systems/<package>/<system>/config.js        workbench config
+    systems/<package>/<system>/icon.svg         the system's icon, a default without its own
     systems/<package>/<system>/data/<mode>.js   the mode's system structure, vis guides attached
     systems/<package>/<system>/data/<mode>_latency.js   the mode's latency, when there is any
 
@@ -39,7 +40,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from .. import latency
 from ..exports import SystemExport
 from ..vis_guide import inject_vis_guides
-from . import assets
+from . import assets, system_icon
 from .launch_commands import launch_command_records
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ INDEX_PAGE = "index.html"
 SYSTEMS_DIR = "systems"
 WORKBENCH_PAGE = "index.html"
 CONFIG_SCRIPT = "config.js"
+ICON_FILE = "icon.svg"
 DATA_DIR = "data"
 LATENCY_SCRIPT_SUFFIX = "_latency.js"
 EDITOR_SCHEME = "vscode"
@@ -111,7 +113,7 @@ class Site:
         yield INDEX_PAGE
         for export in self.systems.values():
             base = system_dir(export)
-            yield from (f"{base}/{WORKBENCH_PAGE}", f"{base}/{CONFIG_SCRIPT}")
+            yield from (f"{base}/{WORKBENCH_PAGE}", f"{base}/{CONFIG_SCRIPT}", f"{base}/{ICON_FILE}")
             for mode in export.mode_keys():
                 if export.structure_path(mode).is_file():
                     yield f"{base}/{DATA_DIR}/{mode}.js"
@@ -132,18 +134,30 @@ class Site:
             return self._workbench(export)
         if rest == [CONFIG_SCRIPT]:
             return self._config(export)
+        if rest == [ICON_FILE]:
+            return self._icon(export)
         if len(rest) == 2 and rest[0] == DATA_DIR:
             return self._data(export, rest[1])
         return None
 
     # -- pages -------------------------------------------------------------
 
+    def _system_entries(self) -> list[dict[str, str]]:
+        """Every system of the site in selector order, its page and icon relative to the site root."""
+        return [
+            {
+                "id": e.id,
+                "name": e.name,
+                "package": e.package,
+                "page": f"{system_dir(e)}/{WORKBENCH_PAGE}",
+                "icon": f"{system_dir(e)}/{ICON_FILE}",
+            }
+            for e in sorted(self.systems.values(), key=lambda e: (e.package, e.name))
+        ]
+
     def _index(self) -> str:
-        packages: dict[str, list[dict[str, str]]] = {}
-        for e in sorted(self.systems.values(), key=lambda e: (e.package, e.name)):
-            packages.setdefault(e.package, []).append({"name": e.name, **system_pages(e)})
         return self._env.get_template("systems_index.html.jinja2").render(
-            packages=[{"name": name, "systems": systems} for name, systems in packages.items()],
+            systems=self._system_entries(),
             icon=_bundle_links("", (assets.FAVICON,))[0],
             stylesheets=_bundle_links("", assets.PAGE_STYLESHEETS),
             scripts=_bundle_links("", assets.PAGE_SCRIPTS),
@@ -168,13 +182,15 @@ class Site:
             package_name=export.package,
             system_id=export.id,
             site_root=SYSTEM_PAGE_ROOT,
-            systems_index_path=f"{SYSTEM_PAGE_ROOT}{INDEX_PAGE}",
+            systems=self._system_entries(),
             available_modes=modes,
             default_mode=default_mode,
             diagrams=[
                 {
                     "type": name,
                     "label": diagram["label"],
+                    "short": diagram["short"],
+                    "icon": diagram["icon"],
                     "script": f"{SYSTEM_PAGE_ROOT}{assets.BUNDLE_DIR}/{diagram['script']}",
                     "searchable": diagram["searchable"],
                     "layered": diagram["layered"],
@@ -190,6 +206,15 @@ class Site:
             deploy_names=[v["name"] for v in export.deploy_variants()],
             launch_commands=launch_command_records(export),
         )
+
+    def _icon(self, export: SystemExport) -> str:
+        own = export.icon_file()
+        if own is not None:
+            try:
+                return own.read_text(encoding="utf-8")
+            except (OSError, ValueError) as exc:
+                logger.warning("system icon ignored: %s (%s)", own, exc)
+        return system_icon.default_icon(export.id, export.name)
 
     def _data(self, export: SystemExport, filename: str) -> Optional[str]:
         if filename.endswith(LATENCY_SCRIPT_SUFFIX):

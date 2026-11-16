@@ -85,7 +85,7 @@ def _build_commands(
     deploy_variants: list[dict[str, Any]],
     declared_units: Optional[list[str]],
 ) -> list[Command]:
-    """Launch commands ordered by mode > ECU > deploy.
+    """Launch commands ordered by mode > ECU > deploy, the ECUs as declared, else by name.
 
     Without deploy variants the launchers sit directly under launcher/<mode>/<ecu>/; with them
     each variant has its own tree under launcher/deployments/<deploy>/<mode>/<ecu>/. The runtime
@@ -100,6 +100,7 @@ def _build_commands(
         logger.warning("No deployment launchers under %s; no launch commands listed", launcher_root)
         return []
 
+    unit_order = {name: index for index, name in enumerate(declared_units or [])}
     commands: list[Command] = []
     for mode_key in mode_keys:
         mode_entries: list[Command] = []
@@ -122,7 +123,7 @@ def _build_commands(
                         f" --compute-unit {compute_unit}{deploy_arg}"
                     )
                 mode_entries.append(Command(mode_key, compute_unit, deploy_name, f"ros2 launch {xml_path}", native_cmd))
-        mode_entries.sort(key=lambda entry: (entry.ecu, entry.deploy))
+        mode_entries.sort(key=lambda entry: (unit_order.get(entry.ecu, len(unit_order)), entry.ecu, entry.deploy))
         commands.extend(mode_entries)
     return commands
 

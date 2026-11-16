@@ -1,7 +1,9 @@
-// Workbench shell: the top bar, the rail and the activity registry. Each rail
-// item is an activity owning one view per slot: its options in the side panel,
-// its content in the main area and, when it selects elements, the inspector.
-// An activity's slots show and hide together. Daemon activities appear only on
+// Workbench shell: the top bar, the rail and the activity registry. An
+// activity owns one view per slot: its options in the side panel, its content
+// in the main area and, when it selects elements, the inspector; its slots
+// show and hide together. The rail lists every view of every activity in
+// captioned groups. An activity may also own a part of the top bar, mounted
+// at startup and shown whatever activity is. Daemon activities appear only on
 // a page a daemon served, and stay disabled until it offers their methods.
 (function () {
   const SD = window.SD;
@@ -18,7 +20,7 @@
     inspector: "inspector-section",
   };
 
-  // id -> { def, button, slots: { side, main, inspector? }, handle }
+  // id -> { def, views, buttons, slots: { side, main, inspector? }, handle }
   const activities = new Map();
   let config = null;
   let daemonHealth = null;
@@ -33,16 +35,31 @@
   /**
    * Activity definition:
    *   id, title, icon (SVG path data), order
+   *   group         caption of its rail group
+   *   views(config) its main views as rail items: { key, fallback, items:
+   *                 [{ value, label, title, icon, order?, group? }] }, the shown
+   *                 one held by the store key `key`; an item's `order` and
+   *                 `group` place it apart from its activity's. Without views
+   *                 the activity is one rail item
    *   daemon        needs a daemon; `requires` lists the daemon methods it calls
+   *   side          false for an activity without side-panel options
    *   inspector     owns an inspector view beside its main view
    *   status(store) strings shown after the mode in the status bar
+   *   bar(slots, ctx) fills its part of the top bar at startup.
+   *     slots: { bar, drawer }, the drawer a popover below the bar.
    *   mount(slots, ctx) -> optional { show(), hide() }, called on first show.
    *     slots: { side, main, inspector? }; ctx: { config, store, daemon }.
    *     `show` runs on every later show, after the slots are visible; `hide`
    *     runs when another activity takes over.
    */
   function registerActivity(def) {
-    activities.set(def.id, { def, button: null, slots: null, handle: null });
+    activities.set(def.id, {
+      def,
+      views: null,
+      buttons: [],
+      slots: null,
+      handle: null,
+    });
   }
 
   function svgIcon(pathData) {
@@ -92,39 +109,122 @@
     return slot;
   }
 
+  function railItem(activity, item) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "rail-item";
+    button.dataset.value = item.value;
+    button.dataset.title = item.title || item.label;
+    button.setAttribute("aria-label", button.dataset.title);
+    button.appendChild(svgIcon(item.icon));
+    const label = document.createElement("span");
+    label.className = "rail-label";
+    label.textContent = item.label;
+    button.appendChild(label);
+    button.addEventListener("click", () => onRailClick(activity, item.value));
+    return button;
+  }
+
+  // Rail items in rail order, each view at its own order and under its own
+  // group caption when it names one, else at its activity's.
+  function railEntries() {
+    const entries = [];
+    activities.forEach((activity) => {
+      const { def } = activity;
+      const items = activity.views
+        ? activity.views.items
+        : [{ value: "", label: def.title, icon: def.icon }];
+      items.forEach((item) =>
+        entries.push({
+          activity,
+          item,
+          order: item.order ?? def.order,
+          caption: item.group ?? def.group ?? "",
+        }),
+      );
+    });
+    return entries.sort((a, b) => a.order - b.order);
+  }
+
+  function railGroup(caption) {
+    const group = document.createElement("div");
+    group.className = "rail-group";
+    if (caption) {
+      const label = document.createElement("span");
+      label.className = "rail-caption";
+      label.textContent = caption;
+      group.appendChild(label);
+    }
+    return group;
+  }
+
+  // Neighbouring items of one caption share a group, those without a
+  // caption only within one activity. A group hides with all its items.
+  const railGroups = [];
+
   function buildRail() {
     const rail = el("rail");
-    orderedActivities().forEach((activity) => {
-      const { def } = activity;
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "rail-item";
-      button.setAttribute("aria-label", def.title);
-      button.appendChild(svgIcon(def.icon));
-      const label = document.createElement("span");
-      label.className = "rail-label";
-      label.textContent = def.title;
-      button.appendChild(label);
-      button.addEventListener("click", () => onRailClick(def.id));
-      const groupClass = def.daemon ? "rail-daemon-group" : "rail-static-group";
-      rail.querySelector(`.${groupClass}`).appendChild(button);
-      activity.button = button;
-
+    let last = null;
+    let group = null;
+    railEntries().forEach((entry) => {
+      const { activity, item, caption } = entry;
+      const joins =
+        last &&
+        last.caption === caption &&
+        (caption || last.activity === activity);
+      if (!joins) {
+        group = railGroup(caption);
+        rail.appendChild(group);
+        railGroups.push(group);
+      }
+      last = entry;
+      const button = railItem(activity, item);
+      group.appendChild(button);
+      activity.buttons.push(button);
+    });
+    activities.forEach((activity) => {
       activity.slots = { side: slotElement("side"), main: slotElement("main") };
-      if (def.inspector) activity.slots.inspector = slotElement("inspector");
+      if (activity.def.inspector)
+        activity.slots.inspector = slotElement("inspector");
     });
   }
 
+  // The rail item of the activity's shown view.
+  function shownItem(activity) {
+    if (!activity.views) return activity.buttons[0];
+    const value = SD.store.get(activity.views.key);
+    return activity.buttons.find((button) => button.dataset.value === value);
+  }
+
+  function markRail() {
+    const shown = activities.get(shownId);
+    const current = shown && shownItem(shown);
+    activities.forEach((activity) => {
+      activity.buttons.forEach((button) => {
+        const active = button === current;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+    });
+    if (shown)
+      el("side-panel-title").textContent =
+        current?.dataset.title || shown.def.title;
+  }
+
   function refreshRail() {
-    let anyDaemonActivity = false;
     activities.forEach((activity) => {
       const { visible, enabled, reason } = availability(activity.def);
-      activity.button.hidden = !visible;
-      activity.button.disabled = !enabled;
-      activity.button.title = reason || activity.def.title;
-      if (activity.def.daemon && visible) anyDaemonActivity = true;
+      activity.buttons.forEach((button) => {
+        button.hidden = !visible;
+        button.disabled = !enabled;
+        button.title = reason || button.dataset.title;
+      });
     });
-    el("rail").querySelector(".rail-daemon-group").hidden = !anyDaemonActivity;
+    railGroups.forEach((group) => {
+      group.hidden = ![...group.querySelectorAll(".rail-item")].some(
+        (button) => !button.hidden,
+      );
+    });
     const requested = activities.get(SD.store.get("activity"));
     if (!requested || !availability(requested.def).enabled) {
       // The URL may name a daemon activity before the probe answers; fall back once it is known.
@@ -134,13 +234,20 @@
     showActivity(SD.store.get("activity"));
   }
 
-  function onRailClick(id) {
-    if (SD.store.get("activity") === id && !SD.layout.isSidePanelCollapsed()) {
-      SD.layout.setSidePanelCollapsed(true);
+  // A click on the shown view folds its side panel; any other shows that view.
+  function onRailClick(activity, value) {
+    const { def, views } = activity;
+    const shown =
+      SD.store.get("activity") === def.id &&
+      (!views || SD.store.get(views.key) === value);
+    if (shown) {
+      if (def.side !== false)
+        SD.layout.setSidePanelCollapsed(!SD.layout.isSidePanelCollapsed());
       return;
     }
     SD.layout.setSidePanelCollapsed(false);
-    SD.store.set("activity", id);
+    if (views) SD.store.set(views.key, value);
+    SD.store.set("activity", def.id);
   }
 
   function showActivity(id) {
@@ -154,10 +261,9 @@
       Object.values(other.slots).forEach((slot) => {
         slot.hidden = !active;
       });
-      other.button.classList.toggle("active", active);
-      other.button.setAttribute("aria-pressed", String(active));
     });
-    el("side-panel-title").textContent = activity.def.title;
+    markRail();
+    SD.layout.setSidePanelAvailable(activity.def.side !== false);
     SD.layout.setInspectorAvailable(!!activity.def.inspector);
     renderSelectionStatus();
     previous?.handle?.hide?.();
@@ -175,9 +281,15 @@
   // -- top bar ----------------------------------------------------------
 
   function initTopBar() {
-    el("system-name").textContent = config.deploymentName;
-    el("system-package").textContent = config.packageName;
-    el("home-link").href = config.systemsIndexPath;
+    // The top bar grows as its parts wrap; its popovers hang below its height.
+    const topbar = el("topbar");
+    new ResizeObserver(() => {
+      document.documentElement.style.setProperty(
+        "--topbar-height",
+        `${topbar.getBoundingClientRect().height}px`,
+      );
+    }).observe(topbar);
+    SD.systemMenu.init(config);
     if (config.systemDefinitionFile) {
       const link = SD.editor.sourceLink(config.systemDefinitionFile, 1);
       link.classList.add("topbar-source-link");
@@ -192,6 +304,14 @@
     );
     modeSelect.id = "mode-selector";
     el("mode-field").appendChild(modeSelect);
+
+    const slots = {
+      bar: el("topbar-activity-bar"),
+      drawer: el("topbar-drawer"),
+    };
+    orderedActivities().forEach((activity) =>
+      activity.def.bar?.(slots, context()),
+    );
   }
 
   function initSettings() {
@@ -222,11 +342,12 @@
     chip.className = `connection-status ${connected ? "connected" : "disconnected"}`;
   }
 
-  // The mode, then what the shown activity reports.
+  // The mode and deploy, then what the shown activity reports.
   function renderSelectionStatus() {
     const status = activities.get(shownId)?.def.status;
     SD.statusbar.selection([
       SD.store.get("mode"),
+      SD.store.get("deploy"),
       ...(status ? status(SD.store) : []),
     ]);
   }
@@ -247,6 +368,15 @@
     SD.store.define("entity", "");
     // Selected topic, by name, shared by the activities.
     SD.store.define("topic", "");
+    activities.forEach((activity) => {
+      const views = activity.def.views?.(config);
+      if (!views) return;
+      activity.views = views;
+      SD.store.define(views.key, views.fallback, (v) =>
+        views.items.some((item) => item.value === v),
+      );
+      SD.store.onChange(views.key, markRail);
+    });
     SD.store.syncUrl();
 
     document.title = `${config.deploymentName} - Autoware System Designer Studio`;

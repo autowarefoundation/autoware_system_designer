@@ -45,6 +45,9 @@ BUILD_SCRIPTS_SUBDIR = "build_scripts"
 DEPLOYMENTS_SUBDIR = "deployments"
 LATENCY_SUBDIR = "latency"
 LAUNCH_FILE_SUFFIX = ".launch.xml"
+# A system's icon sits beside its design file: ``<System>.icon.svg``.
+ICON_FILE_SUFFIX = ".icon.svg"
+ICON_MAX_BYTES = 256 * 1024
 
 # Reference latency shapes the designer exports, in preference order.
 REFERENCE_LATENCY_SUFFIXES = (".json", ".js")
@@ -104,6 +107,23 @@ class SystemExport:
             return ""
         root = derive_workspace_root(self.export_dir / STRUCTURE_SUBDIR / MANIFEST_FILENAME)
         return expand_workspace_paths(path, root) if root else path
+
+    def icon_file(self) -> Optional[Path]:
+        """The system's own icon; None without one beside the design file, or when it is oversized."""
+        if not self.system_file:
+            return None
+        candidate = Path(self.system_file).with_name(f"{self.name}{ICON_FILE_SUFFIX}")
+        try:
+            if not candidate.is_file():
+                return None
+            size = candidate.stat().st_size
+        except OSError as exc:
+            logger.warning("system icon ignored: %s (%s)", candidate, exc)
+            return None
+        if size > ICON_MAX_BYTES:
+            logger.warning("system icon ignored: %s is %d bytes, over %d", candidate, size, ICON_MAX_BYTES)
+            return None
+        return candidate
 
     def structure_path(self, mode: str) -> Path:
         return self.export_dir / STRUCTURE_SUBDIR / f"{mode}.json"
@@ -232,6 +252,21 @@ def _unit_status(unit: dict[str, str], served: Optional[set[str]]) -> str:
 class DiscoveryError:
     path: str
     message: str
+
+
+def find_system(install_root: Path, package: str, name: str) -> Optional[SystemExport]:
+    """The export of one system under the install root, merged or isolated layout; None without a readable one."""
+    if not package or not name or "/" in package or "/" in name or package.startswith(".") or name.startswith("."):
+        return None
+    relative = Path("share", package, "exports", name, MANIFEST_FILENAME)
+    for manifest_path in (install_root / relative, install_root / package / relative):
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(manifest, dict):
+            return SystemExport(package, name, manifest_path.parent, manifest)
+    return None
 
 
 def discover_systems(install_root: Path) -> tuple[list[SystemExport], list[DiscoveryError]]:

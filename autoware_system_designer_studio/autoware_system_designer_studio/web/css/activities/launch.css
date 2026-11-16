@@ -1,4 +1,4 @@
-/* Launch activity: the unit controls of the state map, the commands popup and the log view. */
+/* Launch activity: its part of the top bar with the drawer and commands popup, the unit controls and the views. */
 
 .launch-unit {
   font-size: 13px;
@@ -65,9 +65,154 @@
   color: var(--state-failed);
 }
 
-/* Launch and shutdown of every unit, in the Control head */
-.control-all[hidden] {
+/* Launch bar: the drawer toggle, launch and shutdown of every unit, then the launch state */
+.launch-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-color);
+}
+
+.launch-bar [hidden] {
   display: none;
+}
+
+.launch-bar .unit-controls {
+  flex-shrink: 0;
+}
+
+/* Launch state: the mode and summary over one mark per compute unit */
+.launch-bar-state {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--text-secondary);
+}
+
+.launch-bar-line {
+  white-space: nowrap;
+}
+
+.launch-bar-line,
+.launch-bar-units {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.launch-bar-units {
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+/* One compute unit: its mark and name */
+.launch-bar-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.launch-bar-units .state-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.launch-bar-state .state-dot {
+  flex-shrink: 0;
+}
+
+.launch-bar-summary {
+  font-weight: 600;
+}
+
+/* Mode the launch state is of */
+.launch-bar-mode {
+  padding: 0 5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+}
+
+.launch-drawer-row .panel-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.launch-drawer-row select {
+  padding: 3px 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+/* Launch drawer: options and tools over one row per compute unit */
+.launch-drawer {
+  display: flex;
+  flex-direction: column;
+}
+
+.launch-drawer [hidden] {
+  display: none;
+}
+
+.launch-drawer-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.launch-drawer-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.launch-drawer-tools .panel-icon-button {
+  align-self: center;
+}
+
+.launch-drawer .launch-table th {
+  background: var(--bg-sidebar);
+}
+
+.launch-drawer .launch-table td {
+  vertical-align: middle;
+}
+
+.launch-drawer .launch-table td:last-child {
+  width: 100%;
+}
+
+/* A unit's state in its row: the mark, then the short line */
+.launch-unit-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.launch-drawer .launch-table tr:last-child td {
+  border-bottom: none;
 }
 
 .unit-controls .launch-session,
@@ -107,11 +252,7 @@
   color: var(--text-muted);
 }
 
-/* Commands table */
-.launch-commands {
-  overflow: auto;
-}
-
+/* Tables of the drawer's units and the commands popup */
 .launch-table {
   width: 100%;
   border-collapse: collapse;
@@ -136,11 +277,6 @@
   padding: 8px 14px;
   vertical-align: top;
   border-bottom: 1px solid var(--border-color);
-}
-
-.launch-table.no-status th:nth-child(2),
-.launch-table.no-status td:nth-child(2) {
-  display: none;
 }
 
 .launch-table td.launch-unit {
