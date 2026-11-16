@@ -220,3 +220,69 @@ test("the configuration and command name the scope, remap and bag", () => {
   );
   assert.match(model.command({ structure }), /--bag <bag>$/);
 });
+
+global.window.SD.widgets = {};
+require(
+  path.join(
+    __dirname,
+    "..",
+    "..",
+    "autoware_system_designer_studio",
+    "web",
+    "js",
+    "activities",
+    "replay",
+    "run_panel.js",
+  ),
+);
+const { outcome, findings } = global.window.SD.activities.replay;
+
+test("a replay job's outcome follows its pre-flight, result and verdict", () => {
+  const job = (state, params, detail) => ({ state, params, detail });
+  const done = { completed: true };
+  const level = (...args) => outcome(job(...args)).level;
+
+  assert.equal(level("running", {}, {}), "running");
+  assert.equal(level("succeeded", { check: true }, { problems: [] }), "ok");
+  assert.equal(
+    level("failed", { check: true }, { problems: [{ level: "error" }] }),
+    "failed",
+  );
+  assert.equal(
+    level("succeeded", {}, { result: done, verdict: { passed: true } }),
+    "ok",
+  );
+  assert.equal(
+    level("failed", {}, { result: done, verdict: { passed: false } }),
+    "failed",
+  );
+  assert.equal(level("succeeded", {}, { result: done }), "warning");
+  assert.equal(
+    level("succeeded", { save_reference: true }, { result: done }),
+    "ok",
+  );
+  assert.match(
+    outcome(job("failed", {}, { result: { error: "scope not up" } })).text,
+    /scope not up/,
+  );
+  assert.equal(level("cancelled", {}, {}), "warning");
+});
+
+test("findings list problems and the topics that differ", () => {
+  const lines = findings({
+    detail: {
+      problems: [{ level: "warning", message: "shadowed" }],
+      verdict: {
+        topics: [
+          { topic: "/a", status: "match" },
+          { topic: "/b", status: "differs", difference: { detail: "count" } },
+        ],
+      },
+    },
+  });
+
+  assert.deepEqual(lines, [
+    { level: "warning", text: "shadowed" },
+    { level: "error", text: "/b: differs, count" },
+  ]);
+});

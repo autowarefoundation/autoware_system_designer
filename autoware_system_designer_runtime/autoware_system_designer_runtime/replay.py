@@ -72,23 +72,24 @@ from ._impl.replay.scope import (
 )
 from ._impl.replay.verdict import Verdict, compare_outputs, digest, group_by_topic, ros_deserialize
 from .export_tree import resolve_structure_paths
+from .replay_record import (
+    BOUNDARY_FILE,
+    EXIT_DIFFERS,
+    EXIT_FAILED,
+    EXIT_OK,
+    REPLAY_SUBDIR,
+    RESULT_FILE,
+    STEP_LOG_FILE,
+    VERDICT_FILE,
+)
 from .run_log import write_run_manifest
 
 logger = logging.getLogger("autoware_system_designer")
 
-REPLAY_SUBDIR = "replay"
-BOUNDARY_FILE = "boundary.json"
-RESULT_FILE = "result.json"
-VERDICT_FILE = "verdict.json"
-STEP_LOG_FILE = "steps.log"
 SOCKET_FILE = "driver.sock"
 RESULT_FORMAT = "autoware_system_designer/replay_result/1"
 
 _VIOLATION_NOUNS = {"publish": "publishes", "take": "takes", "timer": "timer fires"}
-
-EXIT_OK = 0
-EXIT_DIFFERS = 1
-EXIT_FAILED = 2
 
 
 @dataclass

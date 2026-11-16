@@ -191,3 +191,95 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+.replay-run-options,
+.replay-run-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.replay-run-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.replay-run-number {
+  width: 110px;
+}
+
+.replay-run-report {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.replay-run-report select {
+  align-self: flex-start;
+  max-width: 100%;
+  font-size: 12px;
+}
+
+.replay-run-outcome {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--state-idle);
+}
+
+.replay-run-outcome.ok {
+  color: var(--state-ok);
+}
+
+.replay-run-outcome.running {
+  color: var(--state-running);
+}
+
+.replay-run-outcome.warning {
+  color: var(--state-warning);
+}
+
+.replay-run-outcome.failed {
+  color: var(--state-failed);
+}
+
+.replay-run-counts,
+.replay-run-dir {
+  font-size: 12px;
+  font-family: var(--mono-font);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.replay-run-dir {
+  color: var(--text-muted);
+}
+
+.replay-run-findings {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.replay-run-finding.error {
+  color: var(--state-failed);
+}
+
+.replay-run-finding.warning {
+  color: var(--state-warning);
+}
+
+.replay-run-log {
+  display: flex;
+  flex-direction: column;
+  height: 320px;
+  min-height: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}

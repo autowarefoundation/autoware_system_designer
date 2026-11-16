@@ -2,11 +2,12 @@
 // namespace tree, beside its boundary: the inputs a bag feeds, each matched
 // against the bag's topics and remapped where the bag names it otherwise, the
 // outputs recorded, the service ports that leave the scope, and the replay
-// configuration and command they give.
+// configuration and command they give. With a daemon, the bag is read by its
+// path and the replay runs as a job.
 (function () {
   const SD = window.SD;
   const { element, copyButton, mainView } = SD.widgets;
-  const { model, scopeTree } = SD.activities.replay;
+  const { model, scopeTree, runPanel } = SD.activities.replay;
 
   const INPUT_STATUS = {
     fed: "in the bag",
@@ -101,7 +102,7 @@
           : "no scope",
       ];
     },
-    mount({ side, main }, { config, store }) {
+    mount({ side, main }, { config, store, daemon }) {
       store.define("scope", "");
       store.syncUrl();
 
@@ -114,6 +115,8 @@
       const remap = {};
       const accept = new Set();
       const recordedInternals = new Set();
+      // Parameters of a replay of the shown choices, or what it still lacks.
+      let request = { blocker: "Check nodes or modules to replay." };
 
       const patterns = () => model.patternsOf(nodes, selected);
 
@@ -160,9 +163,13 @@
       bagFile.hidden = true;
       const bagLoad = element("button", "panel-button", "Load metadata.yaml");
       bagLoad.type = "button";
+      const bagRead = element("button", "panel-button", "Read bag");
+      bagRead.type = "button";
+      bagRead.title =
+        "Read the topics of the bag at this path through the daemon";
       const bagState = element("span", "replay-bag-state");
       const bagRow = element("div", "replay-bag-row");
-      bagRow.append(bagPath, bagLoad, bagFile, bagState);
+      bagRow.append(bagPath, bagRead, bagLoad, bagFile, bagState);
       bagBlock.element.appendChild(bagRow);
 
       // -- boundary ------------------------------------------------------
@@ -198,12 +205,14 @@
         runCode.element,
       );
 
+      const panel = runPanel(daemon, () => request);
       body.append(
         bagBlock.element,
         inputBlock.element,
         outputBlock.element,
         serviceBlock.element,
         resultBlock.element,
+        panel.element,
       );
 
       function bagControl(input) {
@@ -288,7 +297,13 @@
             ? ""
             : "Check nodes or modules in the scope tree to replay them from a bag.",
         );
-        if (!scope.nodes.length) return;
+        bagRead.hidden = !daemon.health || !daemon.offers("replay.bag");
+        bagRead.disabled = !daemon.connected || !bagPath.value.trim();
+        if (!scope.nodes.length) {
+          request = { blocker: "Check nodes or modules to replay." };
+          panel.refresh();
+          return;
+        }
         view.setTitle(
           `Replay scope: ${scope.nodes.length} node${scope.nodes.length > 1 ? "s" : ""}` +
             (scope.containers.length
@@ -403,6 +418,33 @@
         };
         checkCode.set(model.command({ ...args, check: true }));
         runCode.set(model.command(args));
+        request = args.bag
+          ? {
+              params: {
+                system: config.systemId,
+                mode: store.get("mode"),
+                bag: args.bag,
+                deploy: args.deploy,
+                scope: patterns(),
+                ...kept,
+              },
+            }
+          : { blocker: "Give the path of the bag." };
+        panel.refresh();
+      }
+
+      function setBag(topics, name) {
+        bag = topics;
+        bagName = name;
+        bagState.classList.remove("blocked");
+        render();
+      }
+
+      function bagFailed(name, message) {
+        bag = null;
+        bagState.classList.add("blocked");
+        render();
+        bagState.textContent = `${name}: ${message}`;
       }
 
       async function loadMode() {
@@ -428,17 +470,30 @@
         bagFile.value = "";
         if (!file) return;
         try {
-          bag = model.parseBagMetadata(await file.text());
-          bagName = file.name;
-          bagState.classList.remove("blocked");
+          setBag(model.parseBagMetadata(await file.text()), file.name);
         } catch (error) {
-          bag = null;
-          bagState.classList.add("blocked");
-          bagState.textContent = `${file.name}: ${error.message}`;
-          return;
+          bagFailed(file.name, error.message);
         }
-        render();
       });
+      bagRead.addEventListener("click", () => {
+        const path = bagPath.value.trim();
+        daemon.rpc("replay.bag", { path }).then(
+          (info) =>
+            setBag(
+              new Map(
+                info.topics.map((t) => [
+                  t.name,
+                  { type: t.type, count: t.count },
+                ]),
+              ),
+              info.path,
+            ),
+          (error) => bagFailed(path, error.message),
+        );
+      });
+      ["daemon.health", "daemon.connection"].forEach((topic) =>
+        SD.on(topic, render),
+      );
       bagPath.addEventListener("input", render);
       store.onChange("deploy", render);
       const reload = () =>

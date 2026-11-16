@@ -214,58 +214,59 @@ log base, the manifest, the member directory name and the tail of a member file.
                                                                            worker thread)
 ```
 
-| File                                  | Role                                                                                                   |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `__init__.py`                         | Public names (`populate_builder`, `ActorConfig`, `Coordinator`, …), loaded on first use                |
-| `system_runner.py`                    | CLI entry point (`autoware-system-designer-launch`)                                                    |
-| `measure_analyze.py`                  | CLI entry point (`autoware-system-designer-measure-analyze`)                                           |
-| `replay.py`                           | CLI entry point (`autoware-system-designer-replay`), see [Deterministic replay](#deterministic-replay) |
-| `export_tree.py`                      | Layout of an export tree: manifest, system structure paths (no ROS import)                             |
-| `records.py`                          | Layout of the measurement records (no ROS import)                                                      |
-| `rates_record.py`                     | Rates record of a run: writer, reader, rates between two samples (no ROS import)                       |
-| `run_log.py`                          | Layout of a run's log directory: log base, manifest, member directory, file tail (no ROS import)       |
-| `control_protocol.py`                 | Member actions, measure verbs and interlock policies of the control surfaces (no ROS import)           |
-| `_impl/core/config.py`                | `ActorConfig` (respawn, output dir, shutdown timeout)                                                  |
-| `_impl/core/events.py`                | Control commands (`Stop`, `Restart`, `KillSignal`, `ToggleRespawn`) and state events of the actors     |
-| `_impl/core/state.py`                 | State dataclasses: `NodePending/Running/Respawning/Stopped/Done/Failed`, `Composable*`, `BlockReason`  |
-| `_impl/core/process.py`               | `spawn_pgrp()`, `graceful_kill()` and the end of a process group                                       |
-| `_impl/core/aio.py`                   | asyncio helpers: first of several waits, cancel and wait, future resolved from another thread          |
-| `_impl/core/regular_actor.py`         | One asyncio task per regular node / container / launch-file include                                    |
-| `_impl/core/coordinator.py`           | `CoordinatorBuilder`, `Coordinator`, `MemberHandle`                                                    |
-| `_impl/core/stdin_console.py`         | Optional stdin REPL                                                                                    |
-| `_impl/core/commands.py`              | Command surface shared by the REPL and the control channel; member run states from the state hook      |
-| `_impl/core/control_channel.py`       | Unix socket serving member states, logs and the command set as JSON lines                              |
-| `_impl/ros2/operation_mode.py`        | Interlock on the ADAPI operation mode                                                                  |
-| `_impl/ros2/builder.py`               | system_structure JSON → populated `CoordinatorBuilder` (ROS 2)                                         |
-| `_impl/ros2/launchers/single_node.py` | Cmdline builder for `single_node` launch type (`node_cmdline`)                                         |
-| `_impl/ros2/launchers/container.py`   | Cmdline builder for `node_container` (`container_cmdline`) + `RosWorker`                               |
-| `_impl/ros2/launchers/composable.py`  | `ComposableSpec`, `ComposableNodeActor`; YAML param flattening for `LoadNode`                          |
-| `_impl/ros2/launchers/launch_file.py` | Cmdline builder + subprocess runner for `ros2_launch_file` includes                                    |
-| `_impl/ros2/common/params.py`         | `resolve_value`, `build_cmd`, `parameter_layers`, `remap_pairs`                                        |
-| `_impl/ros2/common/namespace.py`      | `parent_namespace`, `node_fqn`, `join_fqn`, `unique_node_name`                                         |
-| `_impl/ros2/common/substitutions.py`  | Launch-time substitutions and the binding of system arguments                                          |
-| `_impl/measure/tracer.py`             | Arming of the tracer: preload library, trace directory, control word                                   |
-| `_impl/measure/stats_reader.py`       | Reader of the tracer's counters (`<pid>.stats`)                                                        |
-| `_impl/measure/monitor.py`            | Live rates from two reads of the counters; recorder of the rates record                                |
-| `_impl/measure/session.py`            | Measurement window: settle, record, close, analyze                                                     |
-| `_impl/measure/trace_reader.py`       | Reader of the tracer's event records (`<pid>.trace`) and name tables                                   |
-| `_impl/measure/clock.py`              | Mapping of wall time onto ROS time                                                                     |
-| `_impl/measure/node_graph.py`         | Nodes, ports and topic links of the design the analysis matches against                                |
-| `_impl/measure/node_stats.py`         | Per-node rates, process time and response from the records                                             |
-| `_impl/measure/detect.py`             | Trigger detection and the diff against the declared process events                                     |
-| `_impl/measure/chains.py`             | Event chains across nodes                                                                              |
-| `_impl/measure/probe.py`              | Probe subscriptions on intra-process-only topics                                                       |
-| `_impl/measure/writer.py`             | Latency file                                                                                           |
-| `_impl/replay/scope.py`               | Scope selection by design path, boundary inputs and outputs, the scope's structure                     |
-| `_impl/replay/config.py`              | Replay configuration file                                                                              |
-| `_impl/replay/bag.py`                 | Bag metadata, messages in recorded order, writer of the recorded outputs                               |
-| `_impl/replay/preflight.py`           | Bag against boundary, real endpoints against the design                                                |
-| `_impl/replay/link.py`                | Socket link to the gated processes                                                                     |
-| `_impl/replay/driver.py`              | Replay driver: steps, settling, tie order                                                              |
-| `_impl/replay/recorder.py`            | Recorded outputs in publish order and driver time                                                      |
-| `_impl/replay/ros_io.py`              | The driver's publishers of bag topics and subscriptions to outputs                                     |
-| `_impl/replay/verdict.py`             | Comparison of recorded outputs with a reference                                                        |
-| `_impl/replay/reference.py`           | Reference key and location                                                                             |
+| File                                  | Role                                                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `__init__.py`                         | Public names (`populate_builder`, `ActorConfig`, `Coordinator`, …), loaded on first use                 |
+| `system_runner.py`                    | CLI entry point (`autoware-system-designer-launch`)                                                     |
+| `measure_analyze.py`                  | CLI entry point (`autoware-system-designer-measure-analyze`)                                            |
+| `replay.py`                           | CLI entry point (`autoware-system-designer-replay`), see [Deterministic replay](#deterministic-replay)  |
+| `replay_record.py`                    | Files of a replay run and the topics of a bag, for other tools (no ROS import with a bag metadata file) |
+| `export_tree.py`                      | Layout of an export tree: manifest, system structure paths (no ROS import)                              |
+| `records.py`                          | Layout of the measurement records (no ROS import)                                                       |
+| `rates_record.py`                     | Rates record of a run: writer, reader, rates between two samples (no ROS import)                        |
+| `run_log.py`                          | Layout of a run's log directory: log base, manifest, member directory, file tail (no ROS import)        |
+| `control_protocol.py`                 | Member actions, measure verbs and interlock policies of the control surfaces (no ROS import)            |
+| `_impl/core/config.py`                | `ActorConfig` (respawn, output dir, shutdown timeout)                                                   |
+| `_impl/core/events.py`                | Control commands (`Stop`, `Restart`, `KillSignal`, `ToggleRespawn`) and state events of the actors      |
+| `_impl/core/state.py`                 | State dataclasses: `NodePending/Running/Respawning/Stopped/Done/Failed`, `Composable*`, `BlockReason`   |
+| `_impl/core/process.py`               | `spawn_pgrp()`, `graceful_kill()` and the end of a process group                                        |
+| `_impl/core/aio.py`                   | asyncio helpers: first of several waits, cancel and wait, future resolved from another thread           |
+| `_impl/core/regular_actor.py`         | One asyncio task per regular node / container / launch-file include                                     |
+| `_impl/core/coordinator.py`           | `CoordinatorBuilder`, `Coordinator`, `MemberHandle`                                                     |
+| `_impl/core/stdin_console.py`         | Optional stdin REPL                                                                                     |
+| `_impl/core/commands.py`              | Command surface shared by the REPL and the control channel; member run states from the state hook       |
+| `_impl/core/control_channel.py`       | Unix socket serving member states, logs and the command set as JSON lines                               |
+| `_impl/ros2/operation_mode.py`        | Interlock on the ADAPI operation mode                                                                   |
+| `_impl/ros2/builder.py`               | system_structure JSON → populated `CoordinatorBuilder` (ROS 2)                                          |
+| `_impl/ros2/launchers/single_node.py` | Cmdline builder for `single_node` launch type (`node_cmdline`)                                          |
+| `_impl/ros2/launchers/container.py`   | Cmdline builder for `node_container` (`container_cmdline`) + `RosWorker`                                |
+| `_impl/ros2/launchers/composable.py`  | `ComposableSpec`, `ComposableNodeActor`; YAML param flattening for `LoadNode`                           |
+| `_impl/ros2/launchers/launch_file.py` | Cmdline builder + subprocess runner for `ros2_launch_file` includes                                     |
+| `_impl/ros2/common/params.py`         | `resolve_value`, `build_cmd`, `parameter_layers`, `remap_pairs`                                         |
+| `_impl/ros2/common/namespace.py`      | `parent_namespace`, `node_fqn`, `join_fqn`, `unique_node_name`                                          |
+| `_impl/ros2/common/substitutions.py`  | Launch-time substitutions and the binding of system arguments                                           |
+| `_impl/measure/tracer.py`             | Arming of the tracer: preload library, trace directory, control word                                    |
+| `_impl/measure/stats_reader.py`       | Reader of the tracer's counters (`<pid>.stats`)                                                         |
+| `_impl/measure/monitor.py`            | Live rates from two reads of the counters; recorder of the rates record                                 |
+| `_impl/measure/session.py`            | Measurement window: settle, record, close, analyze                                                      |
+| `_impl/measure/trace_reader.py`       | Reader of the tracer's event records (`<pid>.trace`) and name tables                                    |
+| `_impl/measure/clock.py`              | Mapping of wall time onto ROS time                                                                      |
+| `_impl/measure/node_graph.py`         | Nodes, ports and topic links of the design the analysis matches against                                 |
+| `_impl/measure/node_stats.py`         | Per-node rates, process time and response from the records                                              |
+| `_impl/measure/detect.py`             | Trigger detection and the diff against the declared process events                                      |
+| `_impl/measure/chains.py`             | Event chains across nodes                                                                               |
+| `_impl/measure/probe.py`              | Probe subscriptions on intra-process-only topics                                                        |
+| `_impl/measure/writer.py`             | Latency file                                                                                            |
+| `_impl/replay/scope.py`               | Scope selection by design path, boundary inputs and outputs, the scope's structure                      |
+| `_impl/replay/config.py`              | Replay configuration file                                                                               |
+| `_impl/replay/bag.py`                 | Bag metadata, messages in recorded order, writer of the recorded outputs                                |
+| `_impl/replay/preflight.py`           | Bag against boundary, real endpoints against the design                                                 |
+| `_impl/replay/link.py`                | Socket link to the gated processes                                                                      |
+| `_impl/replay/driver.py`              | Replay driver: steps, settling, tie order                                                               |
+| `_impl/replay/recorder.py`            | Recorded outputs in publish order and driver time                                                       |
+| `_impl/replay/ros_io.py`              | The driver's publishers of bag topics and subscriptions to outputs                                      |
+| `_impl/replay/verdict.py`             | Comparison of recorded outputs with a reference                                                         |
+| `_impl/replay/reference.py`           | Reference key and location                                                                              |
 
 ---
 

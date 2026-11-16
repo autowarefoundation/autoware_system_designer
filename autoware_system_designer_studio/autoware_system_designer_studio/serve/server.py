@@ -50,7 +50,7 @@ from autoware_system_designer_runtime.control_protocol import DEFAULT_POLICY, ME
 from .. import exports
 from ..pages import assets
 from ..pages.render import ICON_FILE, INDEX_PAGE, SYSTEMS_DIR, Site, system_pages
-from . import api, build, events, jobs, launch, peers, record_watch, runs
+from . import api, build, events, jobs, launch, peers, record_watch, replay, runs
 from .events import TOPIC_DAEMON, TOPIC_SYSTEMS_CHANGED
 from .http import (
     CLIENT_HEADER,
@@ -228,13 +228,17 @@ class ServeDaemon:
         self._register_of_unit("monitor.unfollow", self._monitor_unfollow)
         self._register_of_unit("monitor.sample", self._monitor_sample)
         self.methods.register("rviz.start", self._rviz_start)
+        self.methods.register("replay.bag", self._replay_bag)
+        self.methods.register("replay.start", self._replay_start)
+        self._log_base = log_base
         # Launch id and count of the starts under way, by (system id, mode).
         self._starting: dict[tuple[str, str], list[Any]] = {}
+        self.launch_cwd = workspace or install_root.parent
         self.launch = launch.LaunchManager(
             self.hub,
             self.jobs,
             install_root=install_root,
-            cwd=workspace or install_root.parent,
+            cwd=self.launch_cwd,
             env=launch_env,
             env_script=env_script,
             rviz_config=rviz_config,
@@ -633,6 +637,62 @@ class ServeDaemon:
 
     async def _rviz_start(self, params: dict[str, Any]) -> dict[str, Any]:
         return (await self.launch.start_rviz()).to_view()
+
+    async def _replay_bag(self, params: dict[str, Any]) -> dict[str, Any]:
+        return await asyncio.to_thread(replay.read_bag, _str_param(params, "path", required=True))
+
+    async def _replay_start(self, params: dict[str, Any]) -> dict[str, Any]:
+        system = await self._find_system(_str_param(params, "system", required=True))
+        mode = _str_param(params, "mode") or system.manifest.get("default_mode")
+        if not isinstance(mode, str) or mode not in system.mode_keys():
+            raise api.ApiError(api.INVALID_PARAMS, f"unknown mode {mode!r} of {system.id}")
+        if not system.structure_path(mode).is_file():
+            raise api.ApiError(api.INVALID_PARAMS, f"mode {mode!r} of {system.id} has no system structure")
+        deploy = _str_param(params, "deploy")
+        if deploy is not None and deploy not in {v["name"] for v in system.deploy_variants()}:
+            raise api.ApiError(api.INVALID_PARAMS, f"unknown deploy variant {deploy!r} of {system.id}")
+        env = self.launch.env
+        if not env.get("ROS_DISTRO"):
+            raise api.ApiError(api.UNAVAILABLE, "the launch environment has no ROS_DISTRO (see --env-script)")
+        command = replay.find_command(self.install_root, env)
+        if command is None:
+            raise api.ApiError(
+                api.UNAVAILABLE, f"{replay.REPLAY_COMMAND} not found on the launch PATH or under the install tree"
+            )
+        plan = replay.plan_replay(
+            system,
+            command,
+            params,
+            mode=mode,
+            bag=_str_param(params, "bag", required=True),
+            deploy=deploy,
+            log_base=self._log_base,
+        )
+        # A launched unit on the replay's domain answers the scope's requests and feeds its topics.
+        launched = sorted(s.compute_unit for s in self.launch.sessions.values() if s.active)
+        if launched and not plan.params["check"] and plan.params["domain_id"] is None:
+            raise api.ApiError(
+                api.CONFLICT,
+                f"compute unit(s) {', '.join(launched)} are launched on this daemon; "
+                "shut them down or give the replay a domain_id of its own",
+            )
+
+        def on_exit(job: jobs.Job) -> None:
+            job.detail.update(replay.summary(plan.run_dir))
+
+        spec = jobs.JobSpec(
+            key=replay.REPLAY_JOB_KIND,
+            kind=replay.REPLAY_JOB_KIND,
+            title=plan.title,
+            argv=list(plan.argv),
+            cwd=self.launch_cwd,
+            env=env,
+            params=plan.params,
+            detail={"run_dir": str(plan.run_dir)},
+            on_exit=on_exit,
+        )
+        await asyncio.to_thread(replay.write_config, plan)
+        return (await self.jobs.start(spec)).to_view()
 
     # -- connection handling -----------------------------------------------
 

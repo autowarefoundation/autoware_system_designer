@@ -72,7 +72,7 @@ the systems of the site by package, each with its icon.
 | -------- | ------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
 | Explore  | Diagrams: Nodes, Logic, Sequence (`?diagram=`)    | entity search                                  | diagram canvas; inspector shows the selected element |
 | Launch   | Launch: Control; Monitor: Logs, Topics (`?view=`) | none                                           | the view of the mode                                 |
-| Replay   | Replay                                            | scope tree (`?scope=`)                         | boundary of the scope, bag match, configuration      |
+| Replay   | Replay                                            | scope tree (`?scope=`)                         | boundary, bag match, configuration, run (daemon)     |
 | Build    | Build                                             | target, compute unit, start; job list (daemon) | log of the selected job (`?job=`)                    |
 
 The launch bar is the Launch activity's part of the top bar, shown on every activity: its drawer
@@ -249,7 +249,7 @@ running its loaded code and reports `restart_required`.
 ### Replay
 
 The Replay activity prepares a deterministic replay of the runtime (`autoware-system-designer-replay`,
-see the runtime README) and needs no daemon. Its side panel is the namespace tree of the mode with a
+see the runtime README) on any page and runs it where a daemon serves the page. Its side panel is the namespace tree of the mode with a
 checkbox per entry: a checked entry selects every launched node at or under its path, and the
 selection is kept as the fewest such paths (`?scope=`, comma separated), the runtime's `--scope`.
 Containers of the selected composable nodes join the scope.
@@ -269,6 +269,24 @@ The main area shows the boundary of the scope, computed from the export as the r
 Below them are the replay configuration these choices give (`scope`, `remap`, `accept`, `outputs`),
 to copy or download as `replay.yaml`, and the pre-flight and replay commands on the mode's structure
 file with the bag path typed in the Bag field and the deploy of the top bar.
+
+With a daemon, "Read bag" reads the topics of the bag at the typed path (`replay.bag`), and the Run
+block starts the replay as a job (`replay.start`): "Pre-flight" checks the bag against the boundary
+and stops, "Run replay" replays the scope, over the first seconds of the bag when a duration is
+given and with the outputs kept as the reference when asked. The block shows the selected replay
+job: its outcome (pre-flight passed or failed, outputs match or differ from the reference, no
+reference yet, saved as the reference), the counts of the run, the pre-flight and endpoint problems,
+the violations of the granted order, the topics that differ, the run directory and the job's log.
+
+`replay.start` takes `system`, `mode`, `bag`, `deploy`, `scope` (design paths), `remap` (recorded
+topic to fed topic), `accept`, `outputs`, `check`, `save_reference`, `duration` and `domain_id`. The
+daemon writes the configuration into a new run directory `<log base>/<stamp>_replay` and runs the
+replay command of the launch environment on it; one replay runs per daemon (`conflict` while one
+runs), and `jobs.cancel` ends it. The job's `detail` names the `run_dir` and, once the job ended,
+carries the pre-flight `problems`, the `fed` and `recorded` topics, the `result` counts and the
+`verdict` from the run's replay files. A replay shares its ROS domain with the units launched on the
+daemon, which would answer the scope's requests and feed its topics: while one is launched, a
+replay without a `domain_id` of its own answers `conflict` (a pre-flight starts no node and runs).
 
 ### Launch
 

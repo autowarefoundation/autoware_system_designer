@@ -122,6 +122,7 @@ ACTIVITIES = {
         "scripts": (
             "js/activities/replay/scope_model.js",
             "js/activities/replay/scope_tree.js",
+            "js/activities/replay/run_panel.js",
             "js/activities/replay/index.js",
         ),
         "styles": ("css/activities/replay.css",),
