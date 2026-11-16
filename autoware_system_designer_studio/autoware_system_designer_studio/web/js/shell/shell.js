@@ -287,16 +287,6 @@
     );
     modeSelect.id = "mode-selector";
     el("mode-field").appendChild(modeSelect);
-    if (config.deployNames.length) {
-      const deployField = el("deploy-field");
-      deployField.appendChild(
-        SD.widgets.boundSelect(
-          "deploy",
-          config.deployNames.map((name) => [name, name]),
-        ),
-      );
-      deployField.hidden = false;
-    }
 
     const slots = {
       bar: el("topbar-activity-bar"),

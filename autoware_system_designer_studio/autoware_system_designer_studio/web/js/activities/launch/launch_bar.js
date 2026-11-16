@@ -1,12 +1,14 @@
 // Launch: the launch part of the top bar, shown on every activity. The bar
-// holds the drawer toggle, the run state of the shown mode and deploy, and
-// launch and shutdown of every unit. Its drawer holds the launch options, the
-// RViz start on the daemon and one row per compute unit with the unit's
-// controls; the launch commands of the units open from it in a popup, by
-// launch method.
+// holds the drawer toggle, launch of every unit of the shown mode and deploy,
+// shutdown of every launched unit, and the launch state of the system with
+// its mode and that of each compute unit. Its drawer holds the deploy, the
+// launch options, the RViz start on the daemon and one row per compute unit
+// with the unit's controls; the launch commands of the units open from it in
+// a popup, by launch method.
 (function () {
   const SD = window.SD;
-  const { element, segmented, copyButton, popup } = SD.widgets;
+  const { element, segmented, copyButton, popup, field, boundSelect } =
+    SD.widgets;
   const launch = (SD.activities.launch ||= {});
 
   const METHOD_NOTES = {
@@ -48,8 +50,8 @@
     return { element: root, body };
   }
 
-  function launchBar(slots, control, { store, daemon }) {
-    // -- bar: the drawer toggle, the state, launch and shutdown of every unit
+  function launchBar(slots, control, { config, store, daemon }) {
+    // -- bar: the drawer toggle, launch and shutdown of every unit, the state
     const root = element("div", "launch-bar");
     const toggle = element("button", "topbar-icon-btn launch-bar-toggle");
     toggle.type = "button";
@@ -63,11 +65,11 @@
       control.launchable().forEach(control.launchUnit),
     );
     const shutdownAll = button("Shutdown", "", () =>
-      control.stoppable().forEach(control.shutdownUnit),
+      control.stoppableLaunched().forEach(control.shutdownUnit),
     );
     const controls = element("div", "unit-controls");
     controls.append(launchAll, shutdownAll);
-    root.append(toggle, state, controls);
+    root.append(toggle, controls, state);
     slots.bar.appendChild(root);
 
     // -- commands popup: the launch method, then one command per unit
@@ -88,7 +90,7 @@
       commandsEmpty,
     );
 
-    // -- drawer: options, the commands popup and RViz, then the units
+    // -- drawer: deploy, options, the commands popup and RViz, then the units
     const drawer = element("div", "launch-drawer");
     const optionRow = element("div", "launch-drawer-row");
     const checks = OPTIONS.map(([name, label, title]) => {
@@ -130,6 +132,16 @@
     commandsButton.prepend(SD.workbench.svgIcon(COMMANDS_ICON));
     const tools = element("div", "launch-drawer-tools");
     tools.append(rvizError, commandsButton, rvizButton);
+    if (config.deployNames.length)
+      optionRow.appendChild(
+        field(
+          "Deploy",
+          boundSelect(
+            "deploy",
+            config.deployNames.map((name) => [name, name]),
+          ),
+        ),
+      );
     optionRow.append(...checks, tools);
     const unitTable = table("launch-table", ["Compute unit", "Control"]);
     const unitsEmpty = element("p", "main-empty");
@@ -146,17 +158,38 @@
     function renderBar() {
       const rows = control.rows();
       const offered = control.offered();
-      const { token, label } = control.summary();
-      state.replaceChildren(
-        SD.RunState.mark(token),
-        element("span", "", offered || !rows.length ? label : "Static export"),
+      const { mode, token, label } = control.summary();
+      state.replaceChildren(SD.RunState.mark(token));
+      if (offered && mode)
+        state.appendChild(element("span", "launch-bar-mode", mode));
+      state.appendChild(
+        element(
+          "span",
+          "launch-bar-summary",
+          offered || !rows.length ? label : "Static export",
+        ),
       );
       state.title = offered
         ? ""
         : "No daemon launches from this page; the drawer lists the launch commands.";
+      const summaries = offered ? control.unitSummaries() : [];
+      const units = summaries.length > 1 ? summaries : [];
+      units.forEach((unit) => {
+        const chip = element("span", "launch-bar-unit");
+        chip.append(
+          SD.RunState.mark(unit.token),
+          element("span", "launch-unit", unit.unit),
+          element("span", "", unit.label),
+        );
+        state.appendChild(chip);
+      });
+      if (units.length)
+        state.title = units
+          .map((unit) => `${unit.unit}: ${unit.label}`)
+          .join("\n");
 
       const canLaunch = control.launchable().length > 0;
-      const canShutdown = control.stoppable().length > 0;
+      const canShutdown = control.stoppableLaunched().length > 0;
       controls.hidden = !offered;
       launchAll.textContent = rows.length > 1 ? "Launch all" : "Launch";
       launchAll.disabled = !canLaunch;

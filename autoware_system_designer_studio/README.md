@@ -64,19 +64,20 @@ stylesheet per area; `pages/assets.py` declares the load order of each page.
 An activity of the workbench owns one view per slot, shown and hidden together: its options in the
 side panel, its content in the main area and, when it selects elements, the inspector. The rail
 lists the main views of every activity in captioned groups, Launch first. The top bar holds the system
-selector, the mode and the deploy, which every activity reads, and the launch bar; other selections
+selector, the mode, which every activity reads, and the launch bar; other selections
 live in the activity that uses them, as store keys mirrored in the URL. The system selector lists
 the systems of the site by package, each with its icon.
 
-| Activity | Rail items                                        | Side panel                                        | Main area                                            |
-| -------- | ------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
-| Explore  | Diagrams: Nodes, Logic, Sequence (`?diagram=`)    | entity search; live state of the launched members | diagram canvas; inspector shows the selected element |
-| Launch   | Launch: Control; Monitor: Logs, Topics (`?view=`) | none                                              | the view of the mode                                 |
-| Build    | Build                                             | target, compute unit, start; job list (daemon)    | log of the selected job (`?job=`)                    |
+| Activity | Rail items                                        | Side panel                                     | Main area                                            |
+| -------- | ------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
+| Explore  | Diagrams: Nodes, Logic, Sequence (`?diagram=`)    | entity search                                  | diagram canvas; inspector shows the selected element |
+| Launch   | Launch: Control; Monitor: Logs, Topics (`?view=`) | none                                           | the view of the mode                                 |
+| Build    | Build                                             | target, compute unit, start; job list (daemon) | log of the selected job (`?job=`)                    |
 
 The launch bar is the Launch activity's part of the top bar, shown on every activity: its drawer
-toggle, the run state of the mode and deploy, and, with a daemon, launch and shutdown of every unit
-that can launch or shut down. The drawer holds the launch options, the RViz start, and one row per
+toggle, with a daemon launch of every unit of the shown mode and deploy and shutdown of every
+launched unit, and the launch state of the system with its mode, followed by that of each compute
+unit. The state is of the mode launched, whatever mode is shown. The drawer holds the deploy, the launch options, the RViz start, and one row per
 compute unit with the unit's controls. "Launch commands" in the drawer opens a popup with the
 command of each unit, by launch method (designer runtime or XML launcher).
 
@@ -326,8 +327,7 @@ run-state marks, a module or compute unit with the severest state among the node
 is the only change to the drawing, and its tooltip names the state and the restarts. The sequence
 diagram treats the process gates of a member that is down as dead, so the
 fold rules carry the outage along the chains: an or gate keeps to its live branches, an and gate
-waiting on a dead one is dead itself. The side panel sums up the system's sessions, carries the
-legend and switches the overlay off. States come from the same `member` events as the Launch
+waiting on a dead one is dead itself. States come from the same `member` events as the Launch
 monitor, with a composable node following its container; a node never launched carries no mark.
 
 The daemon polls the record root while an event stream is open (one directory listing per

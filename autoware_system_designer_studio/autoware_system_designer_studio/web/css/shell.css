@@ -102,10 +102,11 @@ body.resizing-panel {
   max-width: 150px;
 }
 
-/* Parts of the top bar the activities own, after the selectors */
+/* Parts of the top bar the activities own, taking the room between the selectors and the actions */
 #topbar-activity-bar {
   display: flex;
   align-items: center;
+  flex: 1;
   min-width: 0;
 }
 
