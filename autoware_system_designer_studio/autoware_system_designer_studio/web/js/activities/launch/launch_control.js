@@ -257,20 +257,22 @@
       });
     }
 
-    // Controls of `unit` in one row: Launch and Shutdown, always offered with
-    // the one that applies coloured, the measurement window of an armed
-    // session, the peer daemon serving the unit, then the session or the
-    // unit's reach, with Forget on the last reported session of an
-    // unreachable unit.
+    // What `unit` offers as elements: `actions`, Launch and Shutdown, always
+    // offered with the one that applies coloured, the measurement window of
+    // an armed session and Forget on the last reported session of an
+    // unreachable unit; `state`, the session or the unit's reach; `notes`,
+    // the peer daemon serving the unit, the measurement and the last error.
     // Null for a unit without a launcher of the mode and deploy, or a daemon
     // that launches nothing.
-    function unitControls(unit) {
+    function unitParts(unit) {
       if (!offered()) return null;
-      const state = unitState(unit);
-      if (!state) return null;
-      const { status, session, holder, reachable } = state;
-      const { canLaunch, canShutdown, canMeasure, canForget } = state;
-      const controls = element("div", "unit-controls");
+      const unitNow = unitState(unit);
+      if (!unitNow) return null;
+      const { status, session, holder, reachable } = unitNow;
+      const { canLaunch, canShutdown, canMeasure, canForget } = unitNow;
+      const actions = [];
+      const state = [];
+      const notes = [];
       const start = button("Launch", canLaunch ? "primary" : "", () =>
         launchUnit(unit),
       );
@@ -280,7 +282,7 @@
         shutdownUnit(unit),
       );
       shutdown.disabled = !canShutdown;
-      controls.append(start, shutdown);
+      actions.push(start, shutdown);
       let measure = null;
       if (canMeasure) {
         measure = measures.get(unit);
@@ -307,7 +309,15 @@
           },
         );
         toggle.disabled = !!pending;
-        controls.appendChild(toggle);
+        actions.push(toggle);
+      }
+      if (canForget) {
+        const forget = button("Forget", "", () =>
+          request(unit, "launch.forget", {}),
+        );
+        forget.title =
+          "Drop the sessions the unit's daemon last reported, so the system can run another mode. The unit may still be running.";
+        actions.push(forget);
       }
       const peer = unitPeers.get(unit);
       if (peer) {
@@ -318,10 +328,10 @@
         );
         if (peer.mismatch?.length) chip.classList.add("mismatch");
         chip.title = peerTitle(peer);
-        controls.appendChild(chip);
+        notes.push(chip);
       }
       if (!reachable)
-        controls.appendChild(element("span", `unit-status ${status}`, status));
+        state.push(element("span", `unit-status ${status}`, status));
       if (session) {
         const label = element(
           "span",
@@ -329,33 +339,37 @@
           sessionLabel(session),
         );
         if (!reachable) label.title = "as last reported by the unit's daemon";
-        controls.appendChild(label);
+        state.push(label);
       } else if (holder && (reachable || holder.compute_unit === unit))
-        controls.appendChild(
-          element("span", "unit-status", holderLabel(holder, unit)),
-        );
+        state.push(element("span", "unit-status", holderLabel(holder, unit)));
       else if (reachable && status)
-        controls.appendChild(
+        state.push(
           element("span", `unit-status ${status}`, status.replace(/_/g, " ")),
         );
-      if (canForget) {
-        const forget = button("Forget", "", () =>
-          request(unit, "launch.forget", {}),
-        );
-        forget.title =
-          "Drop the sessions the unit's daemon last reported, so the system can run another mode. The unit may still be running.";
-        controls.appendChild(forget);
-      }
       if (measure)
-        controls.appendChild(
+        notes.push(
           element("span", "launch-measure", `measure: ${measure.message}`),
         );
       const error = errors.get(unit);
       if (error) {
         const note = element("span", "launch-error", error);
         note.title = error;
-        controls.appendChild(note);
+        notes.push(note);
       }
+      const token = session
+        ? sessionToken(session)
+        : starting.has(unit)
+          ? "warning"
+          : "idle";
+      return { actions, state, notes, token };
+    }
+
+    // Every part of `unit` in one row, the actions first; null as `unitParts`.
+    function unitControls(unit) {
+      const parts = unitParts(unit);
+      if (!parts) return null;
+      const controls = element("div", "unit-controls");
+      controls.append(...parts.actions, ...parts.state, ...parts.notes);
       return controls;
     }
 
@@ -417,6 +431,7 @@
       stoppableLaunched,
       launchUnit,
       shutdownUnit,
+      unitParts,
       unitControls,
     };
   }

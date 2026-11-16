@@ -65,7 +65,7 @@
   color: var(--state-failed);
 }
 
-/* Launch bar: the drawer toggle, launch and shutdown of every unit, then the run state with one chip per unit */
+/* Launch bar: the drawer toggle, launch and shutdown of every unit, then the launch state */
 .launch-bar {
   display: flex;
   align-items: center;
@@ -84,16 +84,33 @@
   flex-shrink: 0;
 }
 
+/* Launch state: the mode and summary over one mark per compute unit */
 .launch-bar-state {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.launch-bar-line,
+.launch-bar-units {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--text-secondary);
-  white-space: nowrap;
+}
+
+.launch-bar-units {
+  gap: 4px;
+}
+
+.launch-bar-units .state-dot {
+  width: 7px;
+  height: 7px;
 }
 
 .launch-bar-state .state-dot {
@@ -106,7 +123,7 @@
 
 /* Mode the launch state is of */
 .launch-bar-mode {
-  padding: 1px 6px;
+  padding: 0 5px;
   font-weight: 600;
   color: var(--text-primary);
   background: var(--bg-secondary);
@@ -127,20 +144,6 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 4px;
-}
-
-.launch-bar-unit {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: 8px;
-  padding-left: 12px;
-  border-left: 1px solid var(--border-color);
-}
-
-.launch-bar-unit .launch-unit {
-  font-size: 12px;
-  color: var(--text-primary);
 }
 
 /* Launch drawer: options and tools over one row per compute unit */
@@ -183,6 +186,14 @@
 
 .launch-drawer .launch-table td:last-child {
   width: 100%;
+}
+
+/* A unit's state in its row: the mark, then the short line */
+.launch-unit-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .launch-drawer .launch-table tr:last-child td {

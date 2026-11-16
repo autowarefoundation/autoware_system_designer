@@ -1,9 +1,9 @@
 // Launch: the launch part of the top bar, shown on every activity. The bar
 // holds the drawer toggle, launch of every unit of the shown mode and deploy,
 // shutdown of every launched unit, and the launch state of the system with
-// its mode and that of each compute unit. Its drawer holds the deploy, the
+// its mode over one mark per compute unit. Its drawer holds the deploy, the
 // launch options, the RViz start on the daemon and one row per compute unit
-// with the unit's controls; the launch commands of the units open from it in
+// with the unit's state and controls; the launch commands of the units open from it in
 // a popup, by launch method.
 (function () {
   const SD = window.SD;
@@ -143,11 +143,30 @@
         ),
       );
     optionRow.append(...checks, tools);
-    const unitTable = table("launch-table", ["Compute unit", "Control"]);
+    const unitTable = table("launch-table", [
+      "Compute unit",
+      "Status",
+      "Control",
+    ]);
     const unitsEmpty = element("p", "main-empty");
     drawer.append(optionRow, unitTable.element, unitsEmpty);
     slots.drawer.appendChild(drawer);
-    const popover = SD.popover(toggle, slots.drawer, { onOpen: renderDrawer });
+    const popover = SD.popover(toggle, slots.drawer, {
+      onOpen() {
+        placeDrawer();
+        renderDrawer();
+      },
+    });
+
+    // The drawer hangs below the bar, over the bar's width.
+    function placeDrawer() {
+      const box = root.getBoundingClientRect();
+      slots.drawer.style.left = `${box.left}px`;
+      slots.drawer.style.width = `${box.width}px`;
+    }
+    window.addEventListener("resize", () => {
+      if (popover.isOpen()) placeDrawer();
+    });
 
     function emptyNote(rows) {
       if (rows.length) return "";
@@ -159,34 +178,31 @@
       const rows = control.rows();
       const offered = control.offered();
       const { mode, token, label } = control.summary();
-      state.replaceChildren(SD.RunState.mark(token));
+      const line = element("div", "launch-bar-line");
+      line.appendChild(SD.RunState.mark(token));
       if (offered && mode)
-        state.appendChild(element("span", "launch-bar-mode", mode));
-      state.appendChild(
+        line.appendChild(element("span", "launch-bar-mode", mode));
+      line.appendChild(
         element(
           "span",
           "launch-bar-summary",
           offered || !rows.length ? label : "Static export",
         ),
       );
+      state.replaceChildren(line);
       state.title = offered
         ? ""
         : "No daemon launches from this page; the drawer lists the launch commands.";
       const summaries = offered ? control.unitSummaries() : [];
-      const units = summaries.length > 1 ? summaries : [];
-      units.forEach((unit) => {
-        const chip = element("span", "launch-bar-unit");
-        chip.append(
-          SD.RunState.mark(unit.token),
-          element("span", "launch-unit", unit.unit),
-          element("span", "", unit.label),
-        );
-        state.appendChild(chip);
-      });
-      if (units.length)
-        state.title = units
-          .map((unit) => `${unit.unit}: ${unit.label}`)
-          .join("\n");
+      if (summaries.length > 1) {
+        const marks = element("div", "launch-bar-units");
+        summaries.forEach((unit) => {
+          const mark = SD.RunState.mark(unit.token);
+          mark.title = `${unit.unit}: ${unit.label}`;
+          marks.appendChild(mark);
+        });
+        state.appendChild(marks);
+      }
 
       const canLaunch = control.launchable().length > 0;
       const canShutdown = control.stoppableLaunched().length > 0;
@@ -228,10 +244,22 @@
       unitTable.body.replaceChildren(
         ...rows.map((row) => {
           const tr = element("tr");
-          const cell = element("td");
-          const unitControls = control.unitControls(row.unit);
-          if (unitControls) cell.appendChild(unitControls);
-          tr.append(element("td", "launch-unit", row.unit), cell);
+          const statusCell = element("td", "launch-status-cell");
+          const controlCell = element("td");
+          const parts = control.unitParts(row.unit);
+          if (parts) {
+            const status = element("div", "launch-unit-state");
+            status.append(SD.RunState.mark(parts.token), ...parts.state);
+            statusCell.appendChild(status);
+            const controls = element("div", "unit-controls");
+            controls.append(...parts.actions, ...parts.notes);
+            controlCell.appendChild(controls);
+          }
+          tr.append(
+            element("td", "launch-unit", row.unit),
+            statusCell,
+            controlCell,
+          );
           return tr;
         }),
       );
