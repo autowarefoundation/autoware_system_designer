@@ -368,8 +368,12 @@
       return { actions, state, notes, token };
     }
 
-    // The last error of each unit's control, as [unit, message].
-    const unitErrors = () => [...errors];
+    // The last control error of each unit of the shown mode and deploy, as
+    // [unit, message].
+    function unitErrors() {
+      const units = new Set(rows().map((row) => row.unit));
+      return [...errors].filter(([unit]) => units.has(unit));
+    }
 
     // Every part of `unit` in one row, the actions first; null as `unitParts`.
     function unitControls(unit) {
