@@ -257,8 +257,9 @@ runtime's `member`, `member.log` and `member.activity` events and relays `launch
 `measure.*` as requests. A shutdown asked before the channel is up cancels the job. The runtime's own
 output is the job's log.
 
-A compute unit runs one launch at a time, and a system one mode at a time across its units: a start
-on a running unit, or of another mode while a unit of the system runs, answers `conflict`. The daemon
+A compute unit runs one launch at a time, and the daemon one mode of one system at a time across its
+units: a start on a running unit, or of another system or mode while a unit runs, answers `conflict`.
+The daemon
 keeps the last session of each mode of a system on a unit, with its member states, until that mode
 is launched there again; requests by `compute_unit` alone address the unit's running session, else
 its latest.
@@ -396,7 +397,7 @@ intervals counts as lost.
 | Ids             | A peer's job and run ids read `<unit>/<id>`; `jobs.get`, `jobs.cancel` and `launch.run*` take them       |
 | Events          | `launch`, `member`, `member.log`, `member.activity`, `monitor`, and `job`/`job.log` of launch jobs       |
 | Follows         | Released on the peer once this daemon's last event stream closes; rate follows return after a reconnect  |
-| Modes           | A system runs one mode at a time across all daemons, by each peer's last reported sessions               |
+| Modes           | One mode of one system runs at a time across all daemons, by each peer's last reported sessions          |
 | `launch.forget` | `{"compute_unit"}` of an unanswering peer: drops its last reported sessions, answers them as `forgotten` |
 | `build.start`   | Refused for a peer's unit; a unit is built by its own daemon                                             |
 

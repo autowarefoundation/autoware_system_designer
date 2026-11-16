@@ -1,6 +1,6 @@
-// Launch: the launch state of the system and the controls of the shown mode
+// Launch: the launch state of the daemon and the controls of the shown mode
 // and deploy, shared by the top bar and the state map. The state is of the
-// mode launched, whatever mode is shown. Per compute unit: its launcher, its reach
+// system and mode launched, whatever system and mode are shown. Per compute unit: its launcher, its reach
 // on the daemon, its session and what it offers; launch, shutdown, forget and
 // the measurement window through the daemon. The launch method names the
 // command shown; the launch options apply to every launch from here.
@@ -46,6 +46,8 @@
     let method = SD.storage.get(METHOD_KEY);
     if (!methods.some(([value]) => value === method)) method = methods[0][0];
     let unitStatus = new Map();
+    // Unit -> reach, of the units of the system the launch state is of.
+    let stateStatus = unitStatus;
     // Unit -> record of the peer daemon serving it; no entry for a unit of this daemon.
     let unitPeers = new Map();
     // Units with a launch request the daemon has not answered yet.
@@ -96,6 +98,13 @@
           changed();
         });
     }
+
+    // Name of a system of the site by its id, else the id.
+    const systemName = (id) =>
+      (config.systems || []).find((system) => system.id === id)?.name || id;
+
+    const holderText = (holder, unit) =>
+      holderLabel(holder, unit, config.systemId, systemName);
 
     function holderOf(unit) {
       return unitHolder(sessions, {
@@ -158,25 +167,39 @@
 
     const shutdownUnit = (unit) => request(unit, "launch.shutdown", {});
 
-    // A live session of this system, a system running one mode and deploy at
-    // a time; null without one.
+    // A live session of the daemon, running one mode and deploy of one system
+    // at a time; null without one.
     function launchedSession() {
       for (const session of sessions.values()) {
-        if (session.system === config.systemId && session.state !== "exited")
-          return session;
+        if (session.state !== "exited") return session;
       }
       return null;
     }
 
-    // The mode the launch state is of: the one launched, else the shown one.
+    // The system and mode the launch state is of: those launched, else the
+    // shown ones.
+    const stateSystem = () => launchedSession()?.system || config.systemId;
     const stateMode = () => launchedSession()?.mode || store.get("mode");
-    const ofState = launch.scope(config.systemId, stateMode);
+    const ofState = {
+      sessions: {
+        get: (unit) =>
+          launch.scope(stateSystem(), stateMode).sessions.get(unit),
+      },
+    };
 
-    // Units with a launcher of the state's mode: those of the launched deploy
-    // (of any deploy when it names none known), else of the shown deploy.
+    // Units of the state: of another system, those its mode launched; of this
+    // one, those with a launcher of the mode in the launched deploy (in any
+    // deploy when it names none known), else in the shown deploy.
     function stateUnits() {
       const launched = launchedSession();
       if (!launched) return rows().map((row) => row.unit);
+      if (launched.system !== config.systemId) {
+        const units = [];
+        launch
+          .scope(launched.system, () => launched.mode)
+          .sessions.forEach((_session, unit) => units.push(unit));
+        return units;
+      }
       const ofMode = config.launchCommands.filter(
         (record) => record.mode === launched.mode,
       );
@@ -187,31 +210,39 @@
       return [...new Set(records.map((record) => record.unit))];
     }
 
-    // Launch state of the system in one token and line, with its mode once a
-    // session of it is known: the session of a lone unit, else the units
-    // launched among all.
+    // Launch state of the daemon in one token and line, with its system and
+    // mode once a session is known: the session of a lone unit, else the
+    // units launched among all. `system` is { id, name, shown }, `shown` for
+    // the system of this page.
     function summary() {
       const units = stateUnits();
       if (!units.length)
         return {
+          system: null,
           mode: "",
           token: "idle",
           label: `No launchers for ${store.get("mode")}`,
         };
+      const id = stateSystem();
+      const system = {
+        id,
+        name: systemName(id),
+        shown: id === config.systemId,
+      };
       const held = units
         .map((unit) => ofState.sessions.get(unit))
         .filter(Boolean);
       if (!held.length) {
         return starting.size
-          ? { mode: stateMode(), token: "warning", label: "starting" }
-          : { mode: "", token: "idle", label: "idle" };
+          ? { system, mode: stateMode(), token: "warning", label: "starting" }
+          : { system: null, mode: "", token: "idle", label: "idle" };
       }
       const mode = stateMode();
       const token = held
         .map(sessionToken)
         .reduce((a, b) => (SD.RunState.RANK[b] > SD.RunState.RANK[a] ? b : a));
       if (units.length === 1)
-        return { mode, token, label: sessionLabel(held[0]) };
+        return { system, mode, token, label: sessionLabel(held[0]) };
       const live = held.filter((session) => session.state !== "exited");
       const failed = held.reduce(
         (sum, session) => sum + sessionFailures(session).length,
@@ -219,6 +250,7 @@
       );
       const failures = failed ? ` · ${failed} failed` : "";
       return {
+        system,
         mode,
         token,
         label: live.length
@@ -238,7 +270,7 @@
             token: sessionToken(session),
             label: sessionLabel(session),
           };
-        const status = unitStatus.get(unit);
+        const status = stateStatus.get(unit);
         let label = "idle";
         if (starting.has(unit)) label = "starting";
         else if (status && status !== "available")
@@ -256,7 +288,7 @@
       if (!offered()) return [];
       return stateUnits().filter((unit) => {
         const session = ofState.sessions.get(unit) || null;
-        const status = unitStatus.get(unit);
+        const status = stateStatus.get(unit);
         return unitActions({ status, session }).canShutdown;
       });
     }
@@ -265,7 +297,7 @@
     // offered with the one that applies coloured, the measurement window of
     // an armed session and Forget on the last reported session of an
     // unreachable unit; `state`, the session or the unit's reach; `notes`,
-    // the peer daemon serving the unit, the measurement and the last error.
+    // the peer daemon serving the unit, the last error and the measurement.
     // Null for a unit without a launcher of the mode and deploy, or a daemon
     // that launches nothing.
     function unitParts(unit) {
@@ -281,7 +313,7 @@
         launchUnit(unit),
       );
       start.disabled = !canLaunch;
-      if (holder) start.title = `waits for ${holderLabel(holder, unit)}`;
+      if (holder) start.title = `waits for ${holderText(holder, unit)}`;
       const shutdown = button("Shutdown", canShutdown ? "danger" : "", () =>
         shutdownUnit(unit),
       );
@@ -345,14 +377,10 @@
         if (!reachable) label.title = "as last reported by the unit's daemon";
         state.push(label);
       } else if (holder && (reachable || holder.compute_unit === unit))
-        state.push(element("span", "unit-status", holderLabel(holder, unit)));
+        state.push(element("span", "unit-status", holderText(holder, unit)));
       else if (reachable && status)
         state.push(
           element("span", `unit-status ${status}`, status.replace(/_/g, " ")),
-        );
-      if (measure)
-        notes.push(
-          element("span", "launch-measure", `measure: ${measure.message}`),
         );
       const error = errors.get(unit);
       if (error) {
@@ -360,12 +388,26 @@
         note.title = error;
         notes.push(note);
       }
+      if (measure)
+        notes.push(
+          element("span", "launch-measure", `measure: ${measure.message}`),
+        );
       const token = session
         ? sessionToken(session)
         : starting.has(unit)
           ? "warning"
           : "idle";
       return { actions, state, notes, token };
+    }
+
+    // The last control error of each unit of the shown mode and deploy and of
+    // the launch state, as [unit, message].
+    function unitErrors() {
+      const units = new Set([
+        ...rows().map((row) => row.unit),
+        ...stateUnits(),
+      ]);
+      return [...errors].filter(([unit]) => units.has(unit));
     }
 
     // Every part of `unit` in one row, the actions first; null as `unitParts`.
@@ -385,6 +427,14 @@
         unitPeers = new Map(
           units.filter((u) => u.daemon).map((u) => [u.name, u.daemon]),
         );
+        stateStatus = unitStatus;
+        const running = stateSystem();
+        if (running !== config.systemId) {
+          const other = await daemon.system(running);
+          stateStatus = new Map(
+            (other?.compute_units || []).map((u) => [u.name, u.status]),
+          );
+        }
       } catch (error) {
         console.warn("launch:", error);
       }
@@ -438,6 +488,7 @@
       shutdownUnit,
       unitParts,
       unitControls,
+      unitErrors,
     };
   }
 

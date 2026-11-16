@@ -30,16 +30,18 @@
   }
 
   // The live session a launch of `unit` in `mode` of `system` waits for: a unit
-  // runs one launch at a time, a system one mode at a time across its units,
-  // and a mode shutting down on any unit of the system ends on all of them
-  // before it launches again.
+  // runs one launch at a time, the daemon one mode of one system at a time
+  // across its units, and a mode shutting down on any unit ends on all of
+  // them before it launches again.
   function unitHolder(sessions, { system, mode, unit }) {
     let holder = null;
     sessions.forEach((session) => {
       if (session.state === "exited") return;
-      const own = session.system === system;
-      if (own && session.mode === mode && !shuttingDown(session)) return;
-      if (session.compute_unit === unit || own) holder = session;
+      const joined =
+        session.system === system &&
+        session.mode === mode &&
+        !shuttingDown(session);
+      if (!joined) holder = session;
     });
     return holder;
   }
@@ -48,8 +50,11 @@
     return !!session.shutting_down || session.state === "stopping";
   }
 
-  // What holds a launch of `unit`, in words.
-  function holderLabel(holder, unit) {
+  // What holds a launch of `unit` of `system`, in words; `nameOf` names a
+  // system by its id.
+  function holderLabel(holder, unit, system, nameOf = (id) => id) {
+    if (system !== undefined && holder.system !== system)
+      return `${nameOf(holder.system)} runs`;
     if (holder.compute_unit === unit) return `in use · ${holder.mode}`;
     return shuttingDown(holder)
       ? `${holder.compute_unit} shutting down`

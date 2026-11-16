@@ -166,3 +166,59 @@ def test_collector_scans_the_deploying_package_outside_the_source_root(tmp_path,
     package_map = yaml.safe_load((out / "_package_map.yaml").read_text())["package_map"]
     assert set(package_map) == {"pkg_src", "pkg_launcher"}
     assert (out / "pkg_src.yaml").is_file()
+
+
+def _index_package(prefix: Path, name: str) -> None:
+    index_dir = prefix / "share" / "ament_index" / "resource_index" / "packages"
+    index_dir.mkdir(parents=True, exist_ok=True)
+    (index_dir / name).write_text("")
+    (prefix / "share" / name).mkdir(parents=True, exist_ok=True)
+
+
+def test_collector_maps_installed_packages_outside_the_scan_roots(tmp_path, monkeypatch):
+    ws = tmp_path / "ws"
+    install = ws / "install"
+    (ws / "build").mkdir(parents=True)
+    _write_package(ws / "src" / "pkg_src", "pkg_src")
+    deploying = ws / "launcher" / "pkg_launcher"
+    _write_package(deploying, "pkg_launcher")
+    write_system(deploying / "design", "Tiny", "Demo")
+    # Workspace sibling outside src/, and an underlay package; both are only known by their install.
+    _write_package(ws / "launcher" / "vehicle" / "pkg_vehicle", "pkg_vehicle")
+    _index_package(install / "pkg_vehicle", "pkg_vehicle")
+    _index_package(install / "pkg_launcher", "pkg_launcher")
+    underlay = tmp_path / "underlay"
+    _index_package(underlay, "pkg_underlay")
+    _index_package(underlay, "pkg_src")
+    monkeypatch.setenv("AMENT_PREFIX_PATH", str(underlay))
+
+    out = tmp_path / "manifests"
+    monkeypatch.setattr("sys.argv", ["collector", str(deploying), str(out), str(install / "pkg_launcher")])
+    collector.main()
+
+    package_map = yaml.safe_load((out / "_package_map.yaml").read_text())["package_map"]
+    assert package_map["pkg_vehicle"] == str(install / "pkg_vehicle" / "share" / "pkg_vehicle")
+    assert package_map["pkg_underlay"] == str(underlay / "share" / "pkg_underlay")
+    # A workspace package keeps its workspace install over an underlay of the same name.
+    assert package_map["pkg_src"] == str(install / "pkg_src" / "share" / "pkg_src")
+
+
+def test_collector_source_mode_ignores_installed_packages(tmp_path, monkeypatch):
+    ws = tmp_path / "ws"
+    (ws / "build").mkdir(parents=True)
+    (ws / "install").mkdir(parents=True)
+    deploying = ws / "src" / "pkg_launcher"
+    _write_package(deploying, "pkg_launcher")
+    write_system(deploying / "design", "Tiny", "Demo")
+    underlay = tmp_path / "underlay"
+    _index_package(underlay, "pkg_underlay")
+    monkeypatch.setenv("AMENT_PREFIX_PATH", str(underlay))
+
+    out = tmp_path / "manifests"
+    monkeypatch.setattr(
+        "sys.argv", ["collector", str(deploying), str(out), str(ws / "install"), "--package-map-mode", "source"]
+    )
+    collector.main()
+
+    package_map = yaml.safe_load((out / "_package_map.yaml").read_text())["package_map"]
+    assert set(package_map) == {"pkg_launcher"}

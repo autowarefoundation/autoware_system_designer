@@ -50,6 +50,15 @@ logger = logging.getLogger(__name__)
 # ---- Command-line builder ---------------------------------------------------
 
 
+def _launch_arg_str(value: object) -> str:
+    """Launch-argument text of a resolved value; booleans in the lowercase form launch files compare against."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        return json.dumps(value)
+    return str(value)
+
+
 def include_cmdline(spec: Mapping, global_files: Optional[list[str]] = None) -> list[str]:
     """Command to run a ros2_launch_file via this module with global param injection."""
     launcher = spec["launcher"]
@@ -66,8 +75,7 @@ def include_cmdline(spec: Mapping, global_files: Optional[list[str]] = None) -> 
         if v is None or v == "":
             logger.debug("skipping empty launch arg %r for %s", k, launcher["ros2_launch_file"])
             continue
-        v_str = json.dumps(v) if isinstance(v, list) else str(v)
-        cmd += ["--launch-arg", f"{k}:={v_str}"]
+        cmd += ["--launch-arg", f"{k}:={_launch_arg_str(v)}"]
     for f in global_files or []:
         cmd += ["--global-params-file", f]
     return cmd

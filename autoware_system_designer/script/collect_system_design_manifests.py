@@ -55,6 +55,34 @@ def find_packages(root_dir):
     return packages
 
 
+AMENT_PACKAGES_INDEX = os.path.join("share", "ament_index", "resource_index", "packages")
+
+
+def install_prefixes(install_base, is_isolated):
+    """Install prefixes of the workspace: one per package when isolated, the install base when merged."""
+    if not is_isolated:
+        return [install_base]
+    try:
+        entries = sorted(os.listdir(install_base))
+    except OSError:
+        return []
+    return [os.path.join(install_base, entry) for entry in entries]
+
+
+def indexed_packages(prefixes):
+    """Share directories of packages registered in the ament resource index; earlier prefixes win."""
+    packages = {}
+    for prefix in prefixes:
+        index_dir = os.path.join(prefix, AMENT_PACKAGES_INDEX)
+        try:
+            names = sorted(os.listdir(index_dir))
+        except OSError:
+            continue
+        for name in names:
+            packages.setdefault(name, os.path.join(prefix, "share", name))
+    return packages
+
+
 def parse_design_file(filepath):
     try:
         with open(filepath, "r") as file:
@@ -280,6 +308,14 @@ def main():
             # merged: install_prefix/share/pkg_name
             pkg_path = os.path.join(args.install_prefix, "share", pkg_name)
         package_map[pkg_name] = to_manifest_path(pkg_path, anchor)
+
+    # Installed packages outside the scan roots (workspace siblings, underlays) resolve through the
+    # ament index, workspace install first, then AMENT_PREFIX_PATH in overlay order.
+    if not is_source_mode:
+        prefixes = install_prefixes(install_base, is_isolated)
+        prefixes += [p for p in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep) if p]
+        for pkg_name, pkg_path in indexed_packages(prefixes).items():
+            package_map.setdefault(pkg_name, to_manifest_path(pkg_path, anchor))
 
     package_map_path = os.path.join(output_dir, "_package_map.yaml")
     package_map_data = {"package_map": package_map}

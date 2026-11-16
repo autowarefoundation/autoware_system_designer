@@ -470,11 +470,13 @@ class LaunchManager:
         return None
 
     def require_mode(self, system_id: str, mode: str) -> None:
-        """Refuses ``mode`` while a unit of this daemon runs another mode of the system, or shuts ``mode``
-        down."""
+        """Refuses ``mode`` while a unit of this daemon runs another system or another mode of the system,
+        or shuts ``mode`` down."""
         for running in self.sessions.values():
-            if not running.active or running.system.id != system_id:
+            if not running.active:
                 continue
+            if running.system.id != system_id:
+                raise api.ApiError(api.CONFLICT, f"{running.system.id} runs on compute unit {running.compute_unit!r}")
             if running.mode != mode:
                 raise api.ApiError(
                     api.CONFLICT,

@@ -851,11 +851,12 @@ class PeerRegistry:
     def views(self) -> list[dict[str, Any]]:
         return [link.view() for link in self.links]
 
-    def active_sessions(self, system_id: str) -> Iterator[tuple[PeerLink, dict[str, Any]]]:
-        """(link, session) of the sessions of a system not exited, as the peers last reported them."""
+    def active_sessions(self, system_id: Optional[str] = None) -> Iterator[tuple[PeerLink, dict[str, Any]]]:
+        """(link, session) of the sessions not exited, of one system when named, as the peers last
+        reported them."""
         for link in self.links:
             for session in link.sessions.values():
-                if PeerLink.session_active(session) and session.get("system") == system_id:
+                if PeerLink.session_active(session) and system_id in (None, session.get("system")):
                     yield link, session
 
     async def gather(self, call: Callable[[PeerLink], Awaitable[list[dict[str, Any]]]]) -> list[dict[str, Any]]:

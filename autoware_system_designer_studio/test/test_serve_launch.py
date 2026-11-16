@@ -555,6 +555,32 @@ def test_a_system_runs_one_mode_at_a_time_and_keeps_the_last_session_of_each(tmp
         running.close()
 
 
+def test_one_system_runs_at_a_time(tmp_path, run_dir):
+    install = _install_tree(tmp_path, compute_units=UNITS)
+    exports_dir = install / PKG / "share" / PKG / "exports"
+    shutil.copytree(exports_dir / SYSTEM, exports_dir / "Other")
+    running = _Running(
+        install,
+        served_units=["main_ecu", "sub_ecu"],
+        launch_env=_launch_env(_fake_launcher(tmp_path)),
+        heartbeat_s=60,
+    )
+    try:
+        nosocket = {"behaviour": "nosocket"}
+        status, body = _start(running, args=nosocket)
+        assert status == 200, body
+        other = {"system": f"{PKG}:Other", "compute_unit": "sub_ecu", "args": nosocket}
+        status, body = _start(running, **other)
+        assert status == 409 and body["error"]["code"] == api.CONFLICT, body
+        assert f"{PKG}:{SYSTEM} runs on compute unit 'main_ecu'" in body["error"]["message"]
+        _shutdown(running, "main_ecu", "Runtime")
+        status, body = _start(running, **other)
+        assert status == 200, body
+        _shutdown(running, "sub_ecu", "Runtime")
+    finally:
+        running.close()
+
+
 def test_shutdown_of_a_launch_without_a_channel_cancels_its_job(launching):
     status, body = _start(launching, args={"behaviour": "nosocket"})
     assert status == 200, body
