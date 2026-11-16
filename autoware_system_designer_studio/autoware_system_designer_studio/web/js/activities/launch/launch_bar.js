@@ -1,10 +1,10 @@
 // Launch: the launch part of the top bar, shown on every activity. The bar
 // holds the drawer toggle, launch of every unit of the shown mode and deploy,
-// shutdown of every launched unit, and the launch state of the system with
-// its mode over one mark per compute unit. Its drawer holds the deploy, the
-// launch options, the RViz start on the daemon and one row per compute unit
-// with the unit's state and controls; the launch commands of the units open from it in
-// a popup, by launch method.
+// shutdown of every launched unit, the launch state of the system with its
+// mode over one mark per compute unit, and the last control errors. Its
+// drawer holds the deploy, the launch options, the RViz start on the daemon
+// and one row per compute unit with the unit's state and controls; the launch
+// commands of the units open from it in a popup, by launch method.
 (function () {
   const SD = window.SD;
   const { element, segmented, copyButton, popup, field, boundSelect } =
@@ -69,7 +69,8 @@
     );
     const controls = element("div", "unit-controls");
     controls.append(launchAll, shutdownAll);
-    root.append(toggle, controls, state);
+    const error = element("span", "launch-error launch-bar-error");
+    root.append(toggle, controls, state, error);
     slots.bar.appendChild(root);
 
     // -- commands popup: the launch method, then one command per unit
@@ -234,6 +235,17 @@
       shutdownAll.textContent = rows.length > 1 ? "Shutdown all" : "Shutdown";
       shutdownAll.disabled = !canShutdown;
       shutdownAll.classList.toggle("danger", canShutdown);
+
+      // The last control errors, each named by its unit among several.
+      const errors = offered
+        ? control
+            .unitErrors()
+            .map(([unit, message]) =>
+              rows.length > 1 ? `${unit}: ${message}` : message,
+            )
+        : [];
+      error.textContent = errors.join("\n");
+      error.hidden = !errors.length;
     }
 
     // RViz is one job per daemon; the button waits while it runs.

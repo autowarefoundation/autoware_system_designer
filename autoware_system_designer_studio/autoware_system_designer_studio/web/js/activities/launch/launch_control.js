@@ -265,7 +265,7 @@
     // offered with the one that applies coloured, the measurement window of
     // an armed session and Forget on the last reported session of an
     // unreachable unit; `state`, the session or the unit's reach; `notes`,
-    // the peer daemon serving the unit, the measurement and the last error.
+    // the peer daemon serving the unit, the last error and the measurement.
     // Null for a unit without a launcher of the mode and deploy, or a daemon
     // that launches nothing.
     function unitParts(unit) {
@@ -350,16 +350,16 @@
         state.push(
           element("span", `unit-status ${status}`, status.replace(/_/g, " ")),
         );
-      if (measure)
-        notes.push(
-          element("span", "launch-measure", `measure: ${measure.message}`),
-        );
       const error = errors.get(unit);
       if (error) {
         const note = element("span", "launch-error", error);
         note.title = error;
         notes.push(note);
       }
+      if (measure)
+        notes.push(
+          element("span", "launch-measure", `measure: ${measure.message}`),
+        );
       const token = session
         ? sessionToken(session)
         : starting.has(unit)
@@ -367,6 +367,9 @@
           : "idle";
       return { actions, state, notes, token };
     }
+
+    // The last error of each unit's control, as [unit, message].
+    const unitErrors = () => [...errors];
 
     // Every part of `unit` in one row, the actions first; null as `unitParts`.
     function unitControls(unit) {
@@ -438,6 +441,7 @@
       shutdownUnit,
       unitParts,
       unitControls,
+      unitErrors,
     };
   }
 

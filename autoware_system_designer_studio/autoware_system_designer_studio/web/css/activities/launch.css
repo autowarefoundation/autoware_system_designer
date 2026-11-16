@@ -84,6 +84,15 @@
   flex-shrink: 0;
 }
 
+/* Last control errors of the units, one per line, wrapped over the bar's free width */
+.launch-bar-error {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
 /* Launch state: the mode and summary over one mark per compute unit */
 .launch-bar-state {
   display: flex;
