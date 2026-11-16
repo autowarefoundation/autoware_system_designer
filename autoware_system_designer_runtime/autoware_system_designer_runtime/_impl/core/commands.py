@@ -196,30 +196,47 @@ class RuntimeCommands:
             raise CommandError("invalid_params", f"unknown member action {action!r}")
         names = self.match(pattern, exact=exact)
         self._guard_check(action)
+        act = getattr(self, f"_member_{action}")
         for name in names:
-            handle = self._coord.handle(name)
-            if action == "stop":
-                await handle.stop()
-            elif action == "restart":
-                await handle.restart()
-            else:
-                await handle.kill(signal.SIGKILL)
+            await act(self._coord.handle(name))
         return names
+
+    # One ``_member_<action>`` per member action, one ``_measure_<verb>`` per measure verb.
+
+    @staticmethod
+    async def _member_stop(handle: Any) -> None:
+        await handle.stop()
+
+    @staticmethod
+    async def _member_restart(handle: Any) -> None:
+        await handle.restart()
+
+    @staticmethod
+    async def _member_kill(handle: Any) -> None:
+        await handle.kill(signal.SIGKILL)
 
     async def measure(self, verb: str) -> dict[str, Any]:
         if self._measure is None:
             raise CommandError("unavailable", "measurement needs the tracer, which this launch did not preload")
-        if verb == "start":
-            message = await self._measure.start()
-        elif verb == "stop":
-            message = await self._measure.close("control stop")
-            if self._measure.state == "closed":
-                message = f"{message}; {await self._measure.analyze()}"
-        elif verb == "status":
-            message = self._measure.status()
-        else:
+        if verb not in MEASURE_VERBS:
             raise CommandError("invalid_params", f"measure needs one of {', '.join(MEASURE_VERBS)}, not {verb!r}")
+        message = await getattr(self, f"_measure_{verb}")(self._measure)
         return {"state": self._measure.state, "message": message}
+
+    @staticmethod
+    async def _measure_start(session: "MeasureSession") -> str:
+        return await session.start()
+
+    @staticmethod
+    async def _measure_stop(session: "MeasureSession") -> str:
+        message = await session.close("control stop")
+        if session.state == "closed":
+            message = f"{message}; {await session.analyze()}"
+        return message
+
+    @staticmethod
+    async def _measure_status(session: "MeasureSession") -> str:
+        return session.status()
 
     async def rates(self, interval: float = 1.0) -> dict[str, Any]:
         """Per-node rates over *interval* seconds from the tracer's counters."""

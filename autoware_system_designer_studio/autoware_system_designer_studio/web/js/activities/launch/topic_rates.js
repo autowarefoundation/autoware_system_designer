@@ -13,9 +13,10 @@
 // rates flow only while the view is shown: it follows
 // the monitor of each connected session and releases it when hidden; the last
 // rates of a launch stay shown after it ended, until its unit is launched
-// again. A selector beside the title shows a past run instead, from the rates
-// record the runtime leaves in the run's log directory, over the whole run or
-// the span between two samples, brushed over the run's event density. A topic row click selects the topic and
+// again. A selector beside the title shows a past launch instead, from the
+// rates records the runtime leaves in the log directories of its units' runs,
+// over the whole launch or the span between two samples, brushed over the
+// launch's event density. A topic row click selects the topic and
 // its publishing node as the store's `entity`, a node row click the node; the
 // topic rows of the interfaces of the topic's publishers (else subscribers),
 // or of the entity's node, are marked by direction, the selected topic in the
@@ -51,6 +52,8 @@
     timeShare,
     sampleAtShare,
     densityPath,
+    launchTimeline,
+    recordSpan,
   } = launch.topicModel;
 
   const LIST_KEY = "workbench.topicList";
@@ -158,9 +161,12 @@
     let entitiesMode = null;
     // Unit -> { job, data }: the latest snapshot of the unit's launch of the shown mode.
     const snapshots = new Map();
-    // The past run shown instead of the live sessions, or null:
-    // { name, start, sample, result, error }; `start` and `sample` are the numbers of the span's
-    // first and end samples, null for the first and the last of the run.
+    // The past launch shown instead of the live sessions, or null:
+    // { name, runs, records, start, sample, result, shown, units, error }. `runs` are its runs'
+    // summaries, `records` run name -> { times, density } of each read record, `result` the
+    // launch timeline { times, density, start, sample }, `shown` the rates of the runs over the
+    // span by unit and `units` their units. `start` and `sample` are the numbers of the span's
+    // first and end samples on the timeline, null for the first and the last of the launch.
     let run = null;
     let runSeq = 0;
     // Units whose monitor this view follows.
@@ -213,9 +219,16 @@
       undeclaredToggle.element,
     );
     // -- past runs: the selector beside the title, and the span brushed over the run's density
-    const runSelect = element("select", "monitor-run-select");
-    runSelect.title = "Live sessions, or the rates record of a past run";
-    runSelect.addEventListener("change", () => setRun(runSelect.value));
+    const unitsOf = launch.modeUnits(config.launchCommands);
+    const runs = launch.runSelector({
+      systemId: config.systemId,
+      unitsOf,
+      offered: "launch.run_rates",
+      filter: (r) => r.rates && (!r.mode || r.mode === store.get("mode")),
+      onChange: (value) => setRun(value),
+    });
+    const runSelect = runs.element;
+    runSelect.title = "Live sessions, or the rates records of a past launch";
     const runBar = element("div", "topic-run-bar");
     const spanLabel = element("span", "topic-toolbar-label", "Span");
     spanLabel.title =
@@ -442,12 +455,22 @@
       return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }
 
-    // Shows the live sessions (an empty name) or a past run.
-    function setRun(name) {
-      runSelect.value = name;
+    // Shows the live sessions (an empty value) or a past launch.
+    function setRun(value) {
       runSeq += 1;
-      run = name
-        ? { name, start: null, sample: null, result: null, error: "" }
+      const group = runs.pick(value);
+      run = group
+        ? {
+            name: value,
+            runs: group.runs,
+            records: new Map(),
+            start: null,
+            sample: null,
+            result: null,
+            shown: new Map(),
+            units: new Set(),
+            error: "",
+          }
         : null;
       runBar.hidden = !run;
       picked = null;
@@ -459,56 +482,84 @@
       else render();
     }
 
+    // Rates of the launch's runs over the span: the whole runs at first, whose records lay out the
+    // timeline; then each run whose record covers part of the span, over that part.
     function loadRun() {
       const seq = ++runSeq;
-      const params = { run: run.name };
-      if (run.start !== null) params.start = run.start;
-      if (run.sample !== null) params.sample = run.sample;
-      daemon
-        .rpc("launch.run_rates", params)
-        .then((result) => {
-          if (seq !== runSeq) return;
-          run.result = result;
-          run.error = "";
-          if (!brushDrag && !pickTimer) picked = null;
-          densityArea.setAttribute(
-            "d",
-            densityPath(
-              result.times,
-              result.density || [],
-              DENSITY_WIDTH,
-              DENSITY_HEIGHT,
-            ),
+      const { records, result } = run;
+      const asked = [];
+      run.runs.forEach((summary) => {
+        const params = { run: summary.run };
+        if (result) {
+          const record = records.get(summary.run);
+          if (!record) return;
+          const { times } = result;
+          const span = recordSpan(
+            record.times,
+            times[run.start ?? 0],
+            times[run.sample ?? times.length - 1],
           );
+          if (!span) return;
+          Object.assign(params, span);
+        }
+        asked.push({ summary, params });
+      });
+      launch
+        .readRuns(asked, "launch.run_rates", ({ params }) => params)
+        .then((answers) => {
+          if (seq !== runSeq) return;
+          const { error } = answers;
+          const read = answers.read.map(({ run: { summary }, result }) => ({
+            summary,
+            rates: result,
+          }));
+          if (!run.result) {
+            if (!read.length) {
+              run.error = error || "The launch recorded no topic rates.";
+              render();
+              return;
+            }
+            read.forEach(({ summary, rates }) =>
+              records.set(summary.run, {
+                times: rates.times,
+                density: rates.density || [],
+              }),
+            );
+            const timeline = launchTimeline([...records.values()]);
+            run.result = {
+              ...timeline,
+              start: 0,
+              sample: timeline.times.length - 1,
+            };
+            densityArea.setAttribute(
+              "d",
+              densityPath(
+                timeline.times,
+                timeline.density,
+                DENSITY_WIDTH,
+                DENSITY_HEIGHT,
+              ),
+            );
+          }
+          const last = run.result.times.length - 1;
+          run.result.start = run.start ?? 0;
+          run.result.sample = run.sample ?? last;
+          run.error = read.length
+            ? ""
+            : error || "No run recorded rates over this span.";
+          run.shown = new Map();
+          run.units = new Set();
+          read.forEach(({ summary, rates }) => {
+            const unit = rates.compute_unit || summary.compute_unit || "run";
+            let key = unit;
+            for (let n = 2; run.shown.has(key); n++) key = `${unit} (${n})`;
+            run.shown.set(key, rates);
+            run.units.add(unit);
+          });
+          if (!brushDrag && !pickTimer) picked = null;
           drawSpan();
           render();
-        })
-        .catch((error) => {
-          if (seq !== runSeq) return;
-          run.error = error.message;
-          render();
         });
-    }
-
-    // Past runs of the shown mode with a rates record, newest first; the shown run stays selected while listed.
-    function loadRuns() {
-      runSelect.hidden = !daemon.offers("launch.run_rates");
-      if (runSelect.hidden) return;
-      daemon
-        .rpc("launch.runs", { system: config.systemId })
-        .then(({ runs }) => {
-          const mode = store.get("mode");
-          const listed = runs.filter(
-            (r) => r.rates && (!r.mode || r.mode === mode),
-          );
-          const current = run?.name || "";
-          runSelect.replaceChildren(
-            ...launch.runOptions(launch.runGroups(listed)),
-          );
-          if (current && !listed.some((r) => r.run === current)) setRun("");
-          else runSelect.value = current;
-        })
-        .catch((error) => console.warn("topic runs:", error));
     }
 
     async function loadDesign() {
@@ -826,11 +877,12 @@
             heading: "",
             note: run.error || "Loading the run…",
           };
-        const unit = result.compute_unit || "run";
+        const from = result.times[result.start];
+        const to = result.times[result.sample];
         return {
-          shown: new Map([[unit, result]]),
-          units: new Set([unit]),
-          heading: `${unit} · ${result.interval_s} s from ${clock(result.from_ns)} to ${clock(result.time_ns)}`,
+          shown: run.shown,
+          units: run.units,
+          heading: `${launch.unitsLabel(run.units, unitsOf(run.runs[0].mode, run.runs[0].deploy))} · ${Math.round((to - from) / 1e9)} s from ${clock(from)} to ${clock(to)}`,
           note: run.error,
         };
       }
@@ -1185,7 +1237,7 @@
     SD.on("launch.sessions", () => {
       if (!shown) return;
       syncFollows();
-      loadRuns();
+      runs.load();
     });
     // The daemon drops every follow with the last event stream; a reconnected page follows anew.
     SD.on("daemon.connection", ({ connected }) => {
@@ -1233,7 +1285,7 @@
       if (shown) {
         loadDesign().catch((error) => console.error("topic rates:", error));
         syncFollows();
-        loadRuns();
+        runs.load();
       }
     });
 
@@ -1246,7 +1298,7 @@
         openSelection();
         loadDesign().catch((error) => console.error("topic rates:", error));
         syncFollows();
-        loadRuns();
+        runs.load();
         render();
       },
       hide() {

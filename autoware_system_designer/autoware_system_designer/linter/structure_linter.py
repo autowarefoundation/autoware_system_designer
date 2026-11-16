@@ -19,7 +19,6 @@ and reports errors with YAML locations when available.
 """
 
 from pathlib import Path
-from typing import Any, Dict
 
 from autoware_system_designer.common.source_location import SourceLocation, format_source, lookup_source
 from autoware_system_designer.linter.report import LintResult

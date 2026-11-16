@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, TypeVar
+from typing import Any, Callable, Dict, List, Optional
 
 from autoware_system_designer.builder.resolution.connection_resolver import filter_connections_by_removed_entities
 from autoware_system_designer.model.config import ComputeUnit, ModuleConfig, NodeConfig, RemapEntry, SystemConfig
@@ -296,8 +296,6 @@ class ModuleVariantResolver(VariantResolver):
         remove_config = config_yaml.get("remove", {})
         if remove_config:
             self._apply_removals(module_config, remove_config)
-
-        override_config = config_yaml.get("override", {})
 
         merge_specs = [
             {"field": "instances", "key_field": "name"},

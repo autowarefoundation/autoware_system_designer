@@ -21,12 +21,14 @@ rates record beside the manifest when the run kept one.
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional
 
 from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord
 from autoware_system_designer_runtime.run_log import (
     LOG_BASE,
+    RUN_MANIFEST,
     STREAMS,
     TAIL_LINES,
     member_dir_name,
@@ -49,6 +51,8 @@ class RunArchive:
         self._session_dirs = session_dirs
         # The rates record read last, with the path, change time and size of its file.
         self._rates_record: Optional[tuple[tuple[Path, int, int], RatesRecord]] = None
+        # Run directory -> its manifest as read last, with the change time and size of the manifest file.
+        self._manifests: dict[Path, tuple[tuple[int, int], Optional[dict[str, Any]]]] = {}
 
     def log_bases(self, sessions: Optional[Iterable[tuple[Path, bool]]] = None) -> list[Path]:
         """Directories holding run directories: the log base and the parents of the sessions' log
@@ -64,34 +68,45 @@ class RunArchive:
     ) -> list[dict[str, Any]]:
         """Past runs, newest first: the directories holding a run manifest, less those an active session
         writes, its session serving them. Runs of ``exclude_units`` are left out, as are those of other
-        systems with ``system``. The log bases are read on a worker thread."""
+        systems with ``system``. The log bases are read on a worker thread, a manifest once per change of
+        its file."""
         sessions = list(self._session_dirs())
         active = {log_dir for log_dir, running in sessions if running}
         return await asyncio.get_running_loop().run_in_executor(
             None, self._scan, self.log_bases(sessions), active, system, set(exclude_units)
         )
 
-    @staticmethod
     def _scan(
-        bases: Iterable[Path], active: set[Path], system: Optional[SystemExport], excluded: set[str]
+        self, bases: Iterable[Path], active: set[Path], system: Optional[SystemExport], excluded: set[str]
     ) -> list[dict[str, Any]]:
-        runs = []
+        found = []
+        held, seen = self._manifests, {}
         for base in bases:
             try:
-                entries = [entry for entry in base.iterdir() if entry.is_dir()]
+                with os.scandir(base) as listing:
+                    entries = [Path(entry.path) for entry in listing if entry.is_dir()]
             except OSError:
                 continue
             for run_dir in entries:
-                manifest = read_run_manifest(run_dir)
+                try:
+                    stat = (run_dir / RUN_MANIFEST).stat()
+                except OSError:
+                    continue
+                version = (stat.st_mtime_ns, stat.st_size)
+                entry = held.get(run_dir)
+                if entry is None or entry[0] != version:
+                    entry = (version, read_run_manifest(run_dir))
+                seen[run_dir] = entry
+                manifest = entry[1]
                 if manifest is None or run_dir in active:
                     continue
                 if system is not None and not _run_of_system(manifest, system):
                     continue
-                summary = _run_summary(run_dir, manifest)
-                if summary["compute_unit"] not in excluded:
-                    runs.append(summary)
-        runs.sort(key=lambda run: run["started"], reverse=True)
-        return runs[:MAX_RUNS]
+                if manifest.get("compute_unit") not in excluded:
+                    found.append((_started(manifest), run_dir, manifest))
+        self._manifests = seen
+        found.sort(key=lambda run: run[0], reverse=True)
+        return [_run_summary(run_dir, manifest) for _, run_dir, manifest in found[:MAX_RUNS]]
 
     def run(self, name: str) -> tuple[Path, dict[str, Any]]:
         """The log directory and manifest of a past run, by directory name under one of the log bases."""
@@ -188,8 +203,13 @@ def _run_of_system(manifest: Mapping[str, Any], system: SystemExport) -> bool:
     return True
 
 
-def _run_summary(run_dir: Path, manifest: Mapping[str, Any]) -> dict[str, Any]:
+def _started(manifest: Mapping[str, Any]) -> float:
+    """Start time of a run by its manifest; 0 where it gives none."""
     started = manifest.get("started")
+    return float(started) if isinstance(started, (int, float)) and not isinstance(started, bool) else 0.0
+
+
+def _run_summary(run_dir: Path, manifest: Mapping[str, Any]) -> dict[str, Any]:
     members = manifest.get("members")
 
     def text(key: str) -> Optional[str]:
@@ -199,7 +219,7 @@ def _run_summary(run_dir: Path, manifest: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "run": run_dir.name,
         "dir": str(run_dir),
-        "started": float(started) if isinstance(started, (int, float)) and not isinstance(started, bool) else 0.0,
+        "started": _started(manifest),
         "mode": text("mode"),
         "compute_unit": text("compute_unit"),
         "deploy": text("deploy"),

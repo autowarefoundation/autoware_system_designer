@@ -729,6 +729,25 @@ def test_past_runs_are_listed_by_system_newest_first(archived):
     assert [r["run"] for r in body["result"]["runs"]] == ["20260103_000000", "20260102_000000", "20260101_000000"]
 
 
+def test_a_run_manifest_is_read_once_per_change_of_its_file(archived, tmp_path, monkeypatch):
+    read = []
+    reader = runs.read_run_manifest
+    monkeypatch.setattr(runs, "read_run_manifest", lambda run_dir: read.append(run_dir.name) or reader(run_dir))
+
+    def listed():
+        return [(r["run"], r["started"]) for r in archived.rpc({"method": "launch.runs"})[1]["result"]["runs"]]
+
+    names = ["20260101_000000", "20260102_000000", "20260103_000000"]
+    assert [name for name, _ in listed()] == names[::-1] and sorted(read) == names
+    del read[:]
+    assert [name for name, _ in listed()] == names[::-1] and read == []
+
+    base = tmp_path / "logs"
+    _run_tree(base, names[0], {"system": SYSTEM, "started": 5.0}, members=())
+    shutil.rmtree(base / names[2])
+    assert listed() == [(names[0], 5.0), (names[1], 2.0)] and read == [names[0]]
+
+
 def test_a_past_run_lists_its_members_and_tails_them(archived):
     status, body = archived.rpc({"method": "launch.run", "params": {"run": "20260101_000000"}})
     assert status == 200

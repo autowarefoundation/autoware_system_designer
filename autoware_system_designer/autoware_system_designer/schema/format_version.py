@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional
 
 from autoware_system_designer import DESIGN_FORMAT_VERSION
 from autoware_system_designer.common.exceptions import FormatVersionError

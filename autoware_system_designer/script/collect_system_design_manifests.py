@@ -293,12 +293,6 @@ def main():
     for pkg, files in pkg_files.items():
         manifest_path = os.path.join(output_dir, f"{pkg}.yaml")
 
-        if is_isolated:
-            pkg_install_path = os.path.join(install_base, pkg, "share", pkg)
-        else:
-            # Assuming shared install: install_prefix/share/pkg_name
-            pkg_install_path = os.path.join(args.install_prefix, "share", pkg)
-
         data = {"package_name": pkg, "deploy_config_files": []}
 
         for design_file in files:

@@ -21,7 +21,7 @@ from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
 from autoware_system_designer_runtime._impl.measure.node_stats import analyze
 from autoware_system_designer_runtime._impl.measure.trace_reader import FLAG_CLOCK_LAST, ClockSample, read_trace_dir
 
-from .measure_fixtures import MS, T0, S, TraceBuilder, chain_design, write_chain_traces, write_clock_trace
+from .measure_fixtures import MS, T0, S, chain_design, write_chain_traces, write_clock_trace
 
 R0 = 1_600_000_000 * S  # ROS time origin of the samples; zero is the unset value
 

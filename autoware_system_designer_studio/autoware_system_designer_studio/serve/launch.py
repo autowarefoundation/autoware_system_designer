@@ -470,12 +470,20 @@ class LaunchManager:
         return None
 
     def require_mode(self, system_id: str, mode: str) -> None:
-        """Refuses ``mode`` while a unit of this daemon runs another mode of the system."""
+        """Refuses ``mode`` while a unit of this daemon runs another mode of the system, or shuts ``mode``
+        down."""
         for running in self.sessions.values():
-            if running.active and running.system.id == system_id and running.mode != mode:
+            if not running.active or running.system.id != system_id:
+                continue
+            if running.mode != mode:
                 raise api.ApiError(
                     api.CONFLICT,
                     f"{system_id} runs mode {running.mode!r} on compute unit {running.compute_unit!r}",
+                )
+            if running.shutting_down:
+                raise api.ApiError(
+                    api.CONFLICT,
+                    f"{system_id} is shutting down mode {mode!r} on compute unit {running.compute_unit!r}",
                 )
 
     async def start_rviz(self) -> jobs.Job:

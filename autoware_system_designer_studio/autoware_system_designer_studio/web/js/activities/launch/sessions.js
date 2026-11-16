@@ -99,11 +99,30 @@
     return parts.join(" · ");
   }
 
+  // Units of the launch records `commands` ({ mode, unit, deploy }) by mode and
+  // deploy variant: a function of (mode, deploy) giving the units launched.
+  function modeUnits(commands) {
+    return (mode, deploy) =>
+      (commands || [])
+        .filter((c) => c.mode === mode && (c.deploy || "") === (deploy || ""))
+        .map((c) => c.unit);
+  }
+
+  // `units` as a label: "<all units>" when they cover every one of `all`, more
+  // than one, else their names in order.
+  function unitsLabel(units, all = []) {
+    const own = new Set(units);
+    if (all.length > 1 && all.every((unit) => own.has(unit)))
+      return "<all units>";
+    return [...own].sort().join(", ");
+  }
+
   // Runs in listing order, those of one launch gathered where its first run
   // stands: [{ launch, value, label, runs }], `launch` null for a run naming
   // none. `value` keys the group in a selector. A launch is labelled by its
-  // first start, mode, deploy variant and compute units.
-  function runGroups(runs) {
+  // first start, mode, deploy variant and compute units, "<all units>" for every
+  // unit `unitsOf(mode, deploy)` gives.
+  function runGroups(runs, unitsOf = () => []) {
     const groups = [];
     const byLaunch = new Map();
     runs.forEach((run) => {
@@ -124,10 +143,11 @@
       const first = group.runs.reduce((a, b) =>
         (b.started || 0) < (a.started || 0) ? b : a,
       );
-      const units = [
-        ...new Set(group.runs.map((run) => run.compute_unit).filter(Boolean)),
-      ].sort();
-      group.label = runLabel({ ...first, compute_unit: units.join(", ") });
+      const units = group.runs.map((run) => run.compute_unit).filter(Boolean);
+      group.label = runLabel({
+        ...first,
+        compute_unit: unitsLabel(units, unitsOf(first.mode, first.deploy)),
+      });
     });
     return groups;
   }
@@ -153,6 +173,70 @@
         return items;
       }),
     ];
+  }
+
+  // Selector of the past launches of `systemId`: "Live", then one option per
+  // launch of the listed runs `filter` keeps, shown while the daemon offers
+  // `offered`, its labels shortened by `unitsOf` as in `runGroups`.
+  // `onChange(value)` follows a pick, and a shown launch leaving the listing as
+  // "". `pick(value)` shows the launch keyed `value` and returns its group; an
+  // unlisted value shows Live and returns null.
+  function runSelector({
+    systemId,
+    offered,
+    filter = () => true,
+    unitsOf,
+    onChange,
+  }) {
+    const select = SD.widgets.element("select", "monitor-run-select");
+    let groups = [];
+    const groupOf = (value) =>
+      (value && groups.find((group) => group.value === value)) || null;
+    select.addEventListener("change", () => onChange(select.value));
+
+    function load() {
+      const daemon = SD.daemon;
+      select.hidden = !daemon.offers(offered);
+      if (select.hidden) return;
+      daemon
+        .rpc("launch.runs", { system: systemId })
+        .then(({ runs }) => {
+          const current = select.value;
+          groups = runGroups(runs.filter(filter), unitsOf);
+          select.replaceChildren(...runOptions(groups, true));
+          select.value = groupOf(current) ? current : "";
+          if (current && !groupOf(current)) onChange("");
+        })
+        .catch((error) => console.warn("launch runs:", error));
+    }
+
+    function pick(value) {
+      const group = groupOf(value);
+      select.value = group ? value : "";
+      return group;
+    }
+
+    return { element: select, load, pick };
+  }
+
+  // Answers of `method` for each of `runs`, asked with `paramsOf(run)`:
+  // { read: [{ run, result }], error }, `error` the message of the first
+  // failure.
+  async function readRuns(runs, method, paramsOf) {
+    const outcomes = await Promise.allSettled(
+      runs.map((run) => SD.daemon.rpc(method, paramsOf(run))),
+    );
+    const read = [];
+    let error = "";
+    outcomes.forEach((outcome, index) => {
+      if (outcome.status === "fulfilled")
+        read.push({ run: runs[index], result: outcome.value });
+      else {
+        error ||= outcome.reason?.message || String(outcome.reason);
+        console.warn(`${method}:`, outcome.reason);
+      }
+    });
+    return { read, error };
   }
 
   function sessionLabel(session) {
@@ -349,6 +433,10 @@
   launch.runGroups = runGroups;
   launch.runLabel = runLabel;
   launch.runOptions = runOptions;
+  launch.runSelector = runSelector;
+  launch.modeUnits = modeUnits;
+  launch.unitsLabel = unitsLabel;
+  launch.readRuns = readRuns;
   launch.sessionFailures = sessionFailures;
   launch.sessionToken = sessionToken;
 })();

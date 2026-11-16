@@ -391,3 +391,137 @@ test("a status answer older than a received member event keeps the event's recor
   assert.equal(records.find((r) => r.path === "/a/x").state, "running");
   assert.equal(live.restartsOf("/a/x"), null);
 });
+
+test("the runs read answer in order, a failed one leaving its message", async () => {
+  const daemon = global.window.SD.daemon;
+  const rpc = daemon.rpc;
+  const warn = console.warn;
+  console.warn = () => {};
+  daemon.rpc = async (method, { run }) => {
+    if (run === "b") throw new Error("no run 'b'");
+    return { method, run };
+  };
+  try {
+    const answers = await launch.readRuns(
+      [{ run: "a" }, { run: "b" }, { run: "c" }],
+      "launch.run",
+      (r) => ({ run: r.run }),
+    );
+    assert.deepEqual(
+      answers.read.map(({ run, result }) => [run.run, result.run]),
+      [
+        ["a", "a"],
+        ["c", "c"],
+      ],
+    );
+    assert.equal(answers.error, "no run 'b'");
+  } finally {
+    daemon.rpc = rpc;
+    console.warn = warn;
+  }
+});
+
+test("the run selector lists launches and shows Live once the shown one leaves", async () => {
+  const SD = global.window.SD;
+  const rpc = SD.daemon.rpc;
+  const widgets = SD.widgets;
+  SD.widgets = {
+    element: (tag, _className, text) => ({
+      tag,
+      text,
+      value: "",
+      hidden: false,
+      options: [],
+      addEventListener() {},
+      replaceChildren(...children) {
+        this.options = children;
+      },
+    }),
+  };
+  let listed = [
+    {
+      run: "a",
+      started: 2,
+      compute_unit: "main_ecu",
+      launch: "A",
+      rates: true,
+    },
+    {
+      run: "sub/a",
+      started: 3,
+      compute_unit: "sub_ecu",
+      launch: "A",
+      rates: true,
+    },
+    {
+      run: "b",
+      started: 1,
+      compute_unit: "main_ecu",
+      launch: "B",
+      rates: false,
+    },
+  ];
+  SD.daemon.rpc = async () => ({ runs: listed });
+  const changes = [];
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  try {
+    const selector = launch.runSelector({
+      systemId: SYS,
+      offered: "launch.run_rates",
+      filter: (r) => r.rates,
+      onChange: (value) => changes.push(value),
+    });
+    selector.load();
+    await settle();
+    assert.deepEqual(
+      selector.element.options.map((o) => o.value),
+      ["", "launch:A"],
+    );
+    assert.deepEqual(
+      selector.pick("launch:A").runs.map((r) => r.run),
+      ["a", "sub/a"],
+    );
+    assert.equal(selector.pick("launch:B"), null);
+    assert.equal(selector.element.value, "");
+    selector.pick("launch:A");
+    listed = listed.slice(2);
+    selector.load();
+    await settle();
+    assert.deepEqual(changes, [""]);
+    assert.equal(selector.element.value, "");
+  } finally {
+    SD.daemon.rpc = rpc;
+    SD.widgets = widgets;
+  }
+});
+
+test("a launch over every unit of its mode is labelled <all units>", () => {
+  const unitsOf = launch.modeUnits([
+    { mode: "Runtime", unit: "main_ecu", deploy: "" },
+    { mode: "Runtime", unit: "sub_ecu", deploy: "" },
+    { mode: "Runtime", unit: "sub_ecu", deploy: "site_a" },
+    { mode: "Other", unit: "x_ecu", deploy: "" },
+  ]);
+  assert.deepEqual(unitsOf("Runtime", null), ["main_ecu", "sub_ecu"]);
+  assert.deepEqual(unitsOf("Runtime", "site_a"), ["sub_ecu"]);
+  const run = (name, unit, launchId) => ({
+    run: name,
+    started: 1,
+    mode: "Runtime",
+    compute_unit: unit,
+    launch: launchId,
+  });
+  const labels = launch
+    .runGroups(
+      [
+        run("a", "main_ecu", "A"),
+        run("sub/a", "sub_ecu", "A"),
+        run("b", "main_ecu", "B"),
+      ],
+      unitsOf,
+    )
+    .map((g) => g.label.split(" · ").pop());
+  assert.deepEqual(labels, ["<all units>", "main_ecu"]);
+  assert.equal(launch.unitsLabel(["sub_ecu"], ["sub_ecu"]), "sub_ecu");
+  assert.equal(launch.unitsLabel(["b", "a", "a"]), "a, b");
+});

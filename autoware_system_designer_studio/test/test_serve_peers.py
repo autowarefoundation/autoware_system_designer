@@ -473,6 +473,34 @@ def test_a_system_runs_one_mode_at_a_time_across_daemons(units):
     main.call("launch.shutdown", compute_unit="main_ecu")
 
 
+def test_a_mode_shutting_down_on_one_unit_is_not_launched_on_another(units):
+    main = units.main
+    nosocket = {"behaviour": "nosocket"}
+    main.launch(compute_unit="main_ecu", args=nosocket)
+    units.launch_sub(args=nosocket)
+
+    local = main.daemon.launch.session("main_ecu")
+    local.shutting_down = True
+    main.call("launch.shutdown", compute_unit="sub_ecu")
+    _until(lambda: main.unit("sub_ecu")["status"] == "available", "exit of the peer's launch")
+    assert main.error("launch.start", system=SYSTEM_ID, compute_unit="sub_ecu") == api.CONFLICT
+    assert not units.sub.daemon.launch.session("sub_ecu").active
+    local.shutting_down = False
+    units.launch_sub(args=nosocket)
+
+    reported = main.daemon.peers.link_of("sub_ecu").sessions
+    (key,) = (key for key, session in reported.items() if session["state"] != "exited")
+    reported[key] = {**reported[key], "shutting_down": True}
+    main.call("launch.shutdown", compute_unit="main_ecu")
+    _until(lambda: main.unit("main_ecu")["status"] == "available", "exit of the local launch")
+    assert main.error("launch.start", system=SYSTEM_ID, compute_unit="main_ecu") == api.CONFLICT
+    reported[key] = {**reported[key], "shutting_down": False}
+    main.launch(compute_unit="main_ecu", args=nosocket)
+
+    for unit in ("main_ecu", "sub_ecu"):
+        main.call("launch.shutdown", compute_unit=unit)
+
+
 def test_a_mode_is_refused_while_another_mode_of_the_system_starts(units):
     main = units.main
     nosocket = {"behaviour": "nosocket"}

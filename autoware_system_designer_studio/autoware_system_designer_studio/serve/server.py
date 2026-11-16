@@ -316,15 +316,19 @@ class ServeDaemon:
         return {"version": _package_version(), "methods": self.methods.names(), "systems": views}
 
     def _mode_conflict(self, system_id: str, mode: str) -> None:
-        """Refuses a launch while another mode of the system starts, or runs on a peer's unit as last reported."""
+        """Refuses a launch while another mode of the system starts, or while a peer's unit runs another
+        mode or shuts ``mode`` down, as last reported."""
         for starting_id, starting_mode in self._starting:
             if starting_id == system_id and starting_mode != mode:
                 raise api.ApiError(api.CONFLICT, f"{system_id} is starting mode {starting_mode!r}")
         for link, session in self.peers.active_sessions(system_id):
-            if session.get("mode") == mode:
-                continue
             unit = session.get("compute_unit")
-            message = f"{system_id} runs mode {session.get('mode')!r} on compute unit {unit!r}"
+            if session.get("mode") != mode:
+                message = f"{system_id} runs mode {session.get('mode')!r} on compute unit {unit!r}"
+            elif session.get("shutting_down") or session.get("state") == launch.SESSION_STOPPING:
+                message = f"{system_id} is shutting down mode {mode!r} on compute unit {unit!r}"
+            else:
+                continue
             if link.state != peers.PEER_CONNECTED:
                 message += f", as last reported by its {link.state} daemon; launch.forget drops the session"
             raise api.ApiError(api.CONFLICT, message)
