@@ -99,16 +99,24 @@ test("session labels follow the session state", () => {
   assert.equal(launch.sessionLabel(null), "");
   assert.equal(launch.sessionLabel({ state: "starting" }), "starting");
   assert.equal(
-    launch.sessionLabel({ state: "running", member_count: 3 }),
-    "running · 3 members",
+    launch.sessionLabel({
+      state: "running",
+      member_count: 3,
+      members: [
+        { path: "/a", state: "running" },
+        { path: "/b", state: "loaded" },
+        { path: "/c", state: "loading" },
+      ],
+    }),
+    "running 2/3",
   );
   assert.equal(
     launch.sessionLabel({ state: "running", shutting_down: true }),
-    "shutting down",
+    "stopping",
   );
   assert.equal(
     launch.sessionLabel({ state: "exited", job_state: "failed", exit_code: 1 }),
-    "exited · code 1",
+    "exited 1",
   );
   assert.equal(
     launch.sessionLabel({ state: "exited", job_state: "cancelled" }),
@@ -138,11 +146,11 @@ test("session failures, their count and the session token", () => {
     ["/c", "/b"],
   );
   assert.deepEqual(launch.sessionFailures(null), []);
-  assert.equal(launch.sessionLabel(session), "exited · code 1 · 2 failed");
+  assert.equal(launch.sessionLabel(session), "exited 1 · 2 failed");
   assert.equal(launch.sessionToken(session), "failed");
   assert.equal(
     launch.sessionLabel({ ...session, state: "running", member_count: 3 }),
-    "running · 3 members · 2 failed",
+    "running 0/3 · 2 failed",
   );
   assert.equal(launch.sessionToken(null), "idle");
   assert.equal(launch.sessionToken({ state: "running" }), "running");

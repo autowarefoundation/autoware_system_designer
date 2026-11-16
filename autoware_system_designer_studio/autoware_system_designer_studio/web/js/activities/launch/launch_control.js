@@ -200,7 +200,7 @@
       if (!held.length) {
         return starting.size
           ? { mode: stateMode(), token: "warning", label: "starting" }
-          : { mode: "", token: "idle", label: "Not launched" };
+          : { mode: "", token: "idle", label: "idle" };
       }
       const mode = stateMode();
       const token = held
@@ -218,7 +218,7 @@
         mode,
         token,
         label: live.length
-          ? `${live.length}/${units.length} units launched${failures}`
+          ? `units ${live.length}/${units.length}${failures}`
           : `exited${failures}`,
       };
     }
@@ -235,7 +235,7 @@
             label: sessionLabel(session),
           };
         const status = unitStatus.get(unit);
-        let label = "not launched";
+        let label = "idle";
         if (starting.has(unit)) label = "starting";
         else if (status && status !== "available")
           label = status.replace(/_/g, " ");

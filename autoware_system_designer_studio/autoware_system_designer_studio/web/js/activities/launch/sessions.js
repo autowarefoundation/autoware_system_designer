@@ -239,6 +239,8 @@
     return { read, error };
   }
 
+  // The session state in a word and a figure: "running 50/101" counts the
+  // members up among those of the session, "exited 1" gives the exit code.
   function sessionLabel(session) {
     if (!session) return "";
     const failed = sessionFailures(session).length;
@@ -247,12 +249,15 @@
       const code = session.exit_code;
       return session.job_state === "cancelled"
         ? "cancelled"
-        : `exited · code ${code === null ? "?" : code}${failures}`;
+        : `exited ${code === null ? "?" : code}${failures}`;
     }
     if (session.shutting_down || session.state === "stopping")
-      return `shutting down${failures}`;
+      return `stopping${failures}`;
     if (session.state === "starting") return "starting";
-    return `running · ${session.member_count} members${failures}`;
+    const up = (session.members || []).filter(
+      (record) => stateToken(record) === "running",
+    ).length;
+    return `running ${up}/${session.member_count}${failures}`;
   }
 
   // Session key -> session view, members included: the last session of each
