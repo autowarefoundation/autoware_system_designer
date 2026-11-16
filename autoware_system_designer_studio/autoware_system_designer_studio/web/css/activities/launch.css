@@ -94,6 +94,9 @@
   font-size: 12px;
   line-height: 1.2;
   color: var(--text-secondary);
+}
+
+.launch-bar-line {
   white-space: nowrap;
 }
 
@@ -105,7 +108,19 @@
 }
 
 .launch-bar-units {
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+/* One compute unit: its mark and name */
+.launch-bar-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .launch-bar-units .state-dot {

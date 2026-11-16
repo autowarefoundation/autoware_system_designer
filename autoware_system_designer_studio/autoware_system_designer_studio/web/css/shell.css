@@ -14,9 +14,9 @@ body.resizing-panel {
   display: flex;
   align-items: center;
   gap: 20px;
-  height: 44px;
+  min-height: 44px;
   flex-shrink: 0;
-  padding: 0 12px;
+  padding: 4px 12px;
   background: var(--bg-sidebar-header);
   border-bottom: 1px solid var(--border-color);
   z-index: 3;
@@ -113,7 +113,7 @@ body.resizing-panel {
 /* Popovers below the top bar */
 .topbar-popover {
   position: fixed;
-  top: 44px;
+  top: var(--topbar-height, 44px);
   z-index: 150;
   background: var(--bg-sidebar);
   border: 1px solid var(--border-color);

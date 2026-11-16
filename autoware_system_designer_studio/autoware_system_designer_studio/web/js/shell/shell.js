@@ -281,6 +281,14 @@
   // -- top bar ----------------------------------------------------------
 
   function initTopBar() {
+    // The top bar grows as its parts wrap; its popovers hang below its height.
+    const topbar = el("topbar");
+    new ResizeObserver(() => {
+      document.documentElement.style.setProperty(
+        "--topbar-height",
+        `${topbar.getBoundingClientRect().height}px`,
+      );
+    }).observe(topbar);
     SD.systemMenu.init(config);
     if (config.systemDefinitionFile) {
       const link = SD.editor.sourceLink(config.systemDefinitionFile, 1);

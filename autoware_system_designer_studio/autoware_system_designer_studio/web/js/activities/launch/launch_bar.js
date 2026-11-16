@@ -214,9 +214,13 @@
       if (summaries.length > 1) {
         const marks = element("div", "launch-bar-units");
         summaries.forEach((unit) => {
-          const mark = SD.RunState.mark(unit.token);
-          mark.title = `${unit.unit}: ${unit.label}`;
-          marks.appendChild(mark);
+          const item = element("span", "launch-bar-unit");
+          item.title = `${unit.unit}: ${unit.label}`;
+          item.append(
+            SD.RunState.mark(unit.token),
+            element("span", "launch-bar-unit-name", unit.unit),
+          );
+          marks.appendChild(item);
         });
         state.appendChild(marks);
       }
