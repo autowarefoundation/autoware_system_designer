@@ -244,6 +244,19 @@ def test_launch_commands_list_declared_onboard_units_per_deploy(tmp_path):
     assert command["native"].endswith(f"--deploy {hostile}")
 
 
+def test_launch_commands_keep_the_declared_unit_order(tmp_path):
+    _, system = _system(tmp_path)
+    system.manifest["deploy_variants"] = []
+    system.manifest["compute_units"] = [
+        {"name": "sub_ecu", "kind": "onboard"},
+        {"name": "main_ecu", "kind": "onboard"},
+    ]
+    launch = system.export_dir / "launcher" / "Runtime"
+    (launch / "sub_ecu").mkdir()
+    (launch / "sub_ecu" / "sub_ecu.launch.xml").write_text("<launch/>")
+    assert [c["unit"] for c in _launch_commands(Site([system]))] == ["sub_ecu", "main_ecu"]
+
+
 @pytest.mark.parametrize(
     "path",
     ["systems", f"{SITE}", f"{SITE}/other.html", f"{SITE}/launch.html", f"{SITE}/data/x/y.js", "systems/a/b/c.html"],
