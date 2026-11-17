@@ -233,6 +233,17 @@ class BagMessages:
         self._reader = None
 
 
+def topic_metadata(name: str, msg_type: str):
+    """rosbag2 metadata of a CDR topic; distributions from Iron on take a topic id first."""
+    import rosbag2_py
+
+    fields = {"name": name, "type": msg_type, "serialization_format": "cdr"}
+    try:
+        return rosbag2_py.TopicMetadata(id=0, **fields)
+    except TypeError:
+        return rosbag2_py.TopicMetadata(**fields)
+
+
 class BagSink:
     """Writer of the recorded outputs, a rosbag in the storage format of the input bag."""
 
@@ -245,7 +256,7 @@ class BagSink:
             rosbag2_py.ConverterOptions(input_serialization_format="cdr", output_serialization_format="cdr"),
         )
         for name, msg_type in sorted(topics.items()):
-            self._writer.create_topic(rosbag2_py.TopicMetadata(name=name, type=msg_type, serialization_format="cdr"))
+            self._writer.create_topic(topic_metadata(name, msg_type))
 
     def write(self, topic: str, data: bytes, stamp_ns: int) -> None:
         self._writer.write(topic, data, stamp_ns)

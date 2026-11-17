@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from autoware_system_designer_runtime._impl.measure.tracer import locate_tracer
+from autoware_system_designer_runtime._impl.replay.bag import topic_metadata
 
 from .measure_fixtures import in_port, node, out_port, process, system
 
@@ -81,7 +82,7 @@ def _write_bag(path: Path, seconds: float) -> None:
         rosbag2_py.StorageOptions(uri=str(path), storage_id="sqlite3"),
         rosbag2_py.ConverterOptions(input_serialization_format="cdr", output_serialization_format="cdr"),
     )
-    writer.create_topic(rosbag2_py.TopicMetadata(name="/tick", type="std_msgs/msg/String", serialization_format="cdr"))
+    writer.create_topic(topic_metadata("/tick", "std_msgs/msg/String"))
     for step in range(int(seconds * 2) + 1):
         writer.write("/tick", serialize_message(String(data=str(step))), T0 + step * S // 2)
     del writer
