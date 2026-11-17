@@ -18,6 +18,7 @@
   <exec_depend>autoware_system_designer_tracer</exec_depend>
   <exec_depend>ros2run</exec_depend>
   <exec_depend>rosbag2_py</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 
   <test_depend>python3-pytest</test_depend>

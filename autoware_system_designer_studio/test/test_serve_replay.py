@@ -91,7 +91,8 @@ def _call(running, method, params):
 def _finished(running, job_id, timeout=10.0):
     job = running.daemon.jobs.get(job_id)
     deadline = time.time() + timeout
-    while job.active:
+    # Done is set after the exit hook fills the summary; the final state is set before it.
+    while not job.done.is_set():
         assert time.time() < deadline, f"{job_id} did not end"
         time.sleep(0.02)
     return job.to_view()
