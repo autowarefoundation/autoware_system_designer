@@ -903,7 +903,11 @@
 
 .replay-run-phase-fill.indeterminate {
   width: 100%;
-  background: repeating-linear-gradient(-45deg, var(--phase-color) 0 6px, transparent 6px 12px);
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--phase-color) 0 6px,
+    transparent 6px 12px
+  );
   background-size: 17px 100%;
   animation: replay-run-phase-stripes 0.8s linear infinite;
 }
@@ -960,4 +964,54 @@
   border: 1px solid var(--border-color);
   border-radius: 4px;
   overflow: hidden;
+}
+
+/* Saved setups under the scope selector. */
+.replay-setups {
+  margin: 4px 0 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.replay-setups-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.replay-setup-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.replay-setup-select,
+.replay-setup-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.replay-setup-select {
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.replay-setup-note {
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
+.replay-setup-note:empty {
+  display: none;
+}
+
+.replay-setup-note.blocked {
+  color: var(--error-color);
 }

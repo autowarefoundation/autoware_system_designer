@@ -508,7 +508,7 @@ body.inspector-hidden #inspector-resizer {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  width: 300px;
+  width: min(360px, calc(100vw - 32px));
   z-index: 201;
   overflow: hidden;
 }
@@ -565,6 +565,22 @@ body.inspector-hidden #inspector-resizer {
   font-weight: 500;
   color: var(--text-secondary);
   margin: 0;
+}
+
+.settings-row-path {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.settings-path {
+  padding: 5px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: monospace;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .settings-row select {

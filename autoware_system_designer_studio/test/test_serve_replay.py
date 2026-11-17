@@ -219,3 +219,93 @@ def test_replay_is_unavailable_without_a_ros_environment(tmp_path):
         running.close()
 
     assert body["error"]["code"] == "unavailable"
+
+
+def test_replay_runs_under_the_requested_log_directory(served, tmp_path):
+    params = {"system": SYSTEM_ID, "mode": "Runtime", "bag": str(_bag(tmp_path)), "scope": ["/a"], "check": True}
+
+    body = _call(served, "replay.start", {**params, "log_dir": str(tmp_path / "chosen")})
+
+    assert body["ok"], body
+    assert os.path.dirname(body["result"]["detail"]["run_dir"]) == str(tmp_path / "chosen")
+    _finished(served, body["result"]["id"])
+    assert _call(served, "replay.start", {**params, "log_dir": "relative"})["error"]["code"] == "invalid_params"
+
+
+def test_health_names_the_replay_directories(served, tmp_path):
+    replay_dirs = _call(served, "health", {})["result"]["replay"]
+
+    assert replay_dirs["log_dir"] == str(tmp_path / "logs")
+    assert replay_dirs["setup_dir"] == str(served.daemon.replay_setup_dir)
+
+
+SETUP = {
+    "system": SYSTEM_ID,
+    "mode": "Runtime",
+    "deploy": "car_a",
+    "bag": "/bags/run",
+    "config": {"scope": ["/perception"], "remap": {"/raw": "/in"}, "skip_outputs": ["/debug"], "lead_in": 0.5},
+    "run": {"duration": 2.5, "save_reference": False},
+}
+
+
+def test_setups_are_saved_listed_loaded_and_deleted(served, tmp_path):
+    where = {"dir": str(tmp_path / "setups")}
+
+    assert _call(served, "replay.setups", where)["result"] == {"dir": where["dir"], "setups": []}
+    saved = _call(served, "replay.setup.save", {**where, "name": "perception-a", "setup": SETUP})
+    assert saved["ok"], saved
+    assert saved["result"]["path"] == str(tmp_path / "setups" / "perception-a.yaml")
+
+    listed = _call(served, "replay.setups", where)["result"]["setups"]
+    assert [(s["name"], s["mode"], s["scope"]) for s in listed] == [("perception-a", "Runtime", ["/perception"])]
+    loaded = _call(served, "replay.setup.get", {**where, "name": "perception-a"})["result"]["setup"]
+    assert loaded["config"] == {
+        "scope": ["/perception"],
+        "remap": {"/raw": "/in"},
+        "accept": [],
+        "outputs": [],
+        "skip_outputs": ["/debug"],
+        "lead_in": 0.5,
+    }
+    assert loaded["run"] == {"duration": 2.5, "save_reference": False}
+    assert (loaded["bag"], loaded["deploy"]) == ("/bags/run", "car_a")
+
+    assert _call(served, "replay.setup.delete", {**where, "name": "perception-a"})["ok"]
+    assert _call(served, "replay.setup.get", {**where, "name": "perception-a"})["error"]["code"] == "not_found"
+
+
+def test_setups_default_to_the_daemon_directory(served, tmp_path):
+    served.daemon.replay_setup_dir = tmp_path / "default_setups"
+
+    assert _call(served, "replay.setup.save", {"name": "a", "setup": SETUP})["ok"]
+    assert (tmp_path / "default_setups" / "a.yaml").is_file()
+
+
+def test_an_unreadable_setup_is_listed_with_its_error(served, tmp_path):
+    directory = tmp_path / "setups"
+    directory.mkdir()
+    (directory / "broken.yaml").write_text("config: {scope: []}\n")
+
+    listed = _call(served, "replay.setups", {"dir": str(directory)})["result"]["setups"]
+
+    assert [s["name"] for s in listed] == ["broken"] and "scope is required" in listed[0]["error"]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"name": "../escape", "setup": SETUP},
+        {"name": "", "setup": SETUP},
+        {"name": "a", "setup": {**SETUP, "extra": 1}},
+        {"name": "a", "setup": {**SETUP, "config": {"scope": []}}},
+        {"name": "a", "setup": {**SETUP, "config": {"scope": ["/a"], "compare": {}}}},
+        {"name": "a", "setup": {**SETUP, "run": {"duration": 0}}},
+        {"name": "a", "setup": {**SETUP, "run": {"check": True}}},
+        {"name": "a", "setup": SETUP, "dir": "relative"},
+    ],
+)
+def test_setups_refuse_invalid_saves(served, tmp_path, params):
+    params = {"dir": str(tmp_path / "setups"), **params}
+
+    assert _call(served, "replay.setup.save", params)["error"]["code"] == "invalid_params"

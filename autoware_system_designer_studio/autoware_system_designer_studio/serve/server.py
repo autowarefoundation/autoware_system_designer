@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
 from autoware_system_designer_runtime.control_protocol import DEFAULT_POLICY, MEASURE_VERBS, MEMBER_ACTIONS, POLICIES
+from autoware_system_designer_runtime.run_log import LOG_BASE
 
 from .. import exports
 from ..pages import assets
@@ -184,6 +185,7 @@ class ServeDaemon:
         env_script: Optional[Path] = None,
         rviz_config: Optional[Path] = None,
         log_base: Optional[Path] = None,
+        replay_setup_dir: Optional[Path] = None,
         peer_specs: Iterable[peers.PeerSpec] = (),
         heartbeat_s: float = HEARTBEAT_INTERVAL_S,
         max_connections: int = MAX_CONNECTIONS,
@@ -233,7 +235,12 @@ class ServeDaemon:
         self.methods.register("replay.bag", self._replay_bag)
         self.methods.register("replay.find", self._replay_find)
         self.methods.register("replay.start", self._replay_start)
+        self.methods.register("replay.setups", self._replay_setups)
+        self.methods.register("replay.setup.get", self._replay_setup_get)
+        self.methods.register("replay.setup.save", self._replay_setup_save)
+        self.methods.register("replay.setup.delete", self._replay_setup_delete)
         self._log_base = log_base
+        self.replay_setup_dir = replay_setup_dir or replay.default_setup_dir()
         # Launch id and count of the starts under way, by (system id, mode).
         self._starting: dict[tuple[str, str], list[Any]] = {}
         self.launch_cwd = workspace or install_root.parent
@@ -371,6 +378,7 @@ class ServeDaemon:
             "workspace": None if self.workspace is None else str(self.workspace),
             "record_root": str(self.records.record_root),
             "bag_dirs": [str(directory) for directory in self.bag_dirs],
+            "replay": {"log_dir": str(self._log_base or LOG_BASE), "setup_dir": str(self.replay_setup_dir)},
             "restart_required": self.restart_required,
             "heartbeat_s": self.heartbeat_s,
             "peers": self.peers.views(),
@@ -721,6 +729,31 @@ class ServeDaemon:
         )
         await asyncio.to_thread(replay.write_config, plan)
         return (await self.jobs.start(spec)).to_view()
+
+    def _setup_dir(self, params: dict[str, Any]) -> Path:
+        return replay.directory_param(params, "dir") or self.replay_setup_dir
+
+    async def _replay_setups(self, params: dict[str, Any]) -> dict[str, Any]:
+        directory = self._setup_dir(params)
+        return {"dir": str(directory), "setups": await asyncio.to_thread(replay.list_setups, directory)}
+
+    async def _replay_setup_get(self, params: dict[str, Any]) -> dict[str, Any]:
+        directory = self._setup_dir(params)
+        setup = await asyncio.to_thread(replay.read_setup, directory, params.get("name"))
+        return {"name": params["name"], "setup": setup}
+
+    async def _replay_setup_save(self, params: dict[str, Any]) -> dict[str, Any]:
+        directory = self._setup_dir(params)
+        try:
+            path = await asyncio.to_thread(replay.write_setup, directory, params.get("name"), params.get("setup"))
+        except OSError as exc:
+            raise api.ApiError(api.UNAVAILABLE, f"cannot write to {directory}: {exc}") from exc
+        return {"name": params["name"], "path": str(path)}
+
+    async def _replay_setup_delete(self, params: dict[str, Any]) -> dict[str, Any]:
+        directory = self._setup_dir(params)
+        await asyncio.to_thread(replay.delete_setup, directory, params.get("name"))
+        return {"name": params["name"]}
 
     # -- connection handling -----------------------------------------------
 

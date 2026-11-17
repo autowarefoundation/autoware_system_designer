@@ -145,6 +145,7 @@ autoware-system-designer-studio serve \
     --install-root install \       # default: first COLCON_PREFIX_PATH entry
     --record-dir ~/.ros/autoware_system_designer/records \  # measurement records (default shown)
     --bag-dir /data/bags \         # where the bag of a dropped file is searched (repeatable)
+    --replay-setup-dir ~/replay \  # saved replay setups (default: $XDG_CONFIG_HOME/autoware_system_designer/replay)
     --port 8780 \                  # 0 picks a free port
     --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
     --compute-unit main_ecu \      # units local to this daemon (repeatable; default: every onboard unit)
@@ -255,6 +256,14 @@ checkbox per entry: a checked entry selects every launched node at or under its 
 selection is kept as the fewest such paths (`?scope=`, comma separated), the runtime's `--scope`.
 A node placed at a module's own path has an entry of its own below that path, named `<path>/<name>`.
 Containers of the selected composable nodes join the scope: their entries are checked and locked.
+With a daemon, **saved setups** sit under the tree's head: a setup is the shown replay saved by name
+(system, mode, deploy, bag path, configuration and run options) as `<name>.yaml` in the setup
+directory, and loading one shows it again, switching the mode and deploy it names.
+
+The workbench settings hold two replay directories, kept by the browser: the **replay log
+directory** the runs are written under, and the **replay setup directory** the setups are kept in.
+An empty field leaves the daemon's default, shown as its placeholder (`health` names both under
+`replay`).
 
 The top of the main area keeps the scope diagram, at a height set by dragging the divider below it
 (kept across visits). The diagram is drawn from the boundary the runtime computes, by topic:
@@ -326,14 +335,22 @@ typed path and the directories of the bags it read by path before (kept by the b
 the bag at the path found.
 
 `replay.start` takes `system`, `mode`, `bag`, `deploy`, `scope` (design paths), `remap` (recorded
-topic to fed topic), `accept`, `outputs`, `skip_outputs`, `lead_in`, `check`, `save_reference`, `duration` and `domain_id`. The
-daemon writes the configuration into a new run directory `<log base>/<stamp>_replay` and runs the
+topic to fed topic), `accept`, `outputs`, `skip_outputs`, `lead_in`, `check`, `save_reference`, `duration`, `domain_id` and `log_dir`. The
+daemon writes the configuration into a new run directory `<log_dir>/<stamp>_replay` (the log base
+without `log_dir`) and runs the
 replay command of the launch environment on it; one replay runs per daemon (`conflict` while one
 runs), and `jobs.cancel` ends it. The job's `detail` names the `run_dir` and, once the job ended,
 carries the pre-flight `problems`, the `fed` and `recorded` topics, the `result` counts and the
 `verdict` from the run's replay files. A replay shares its ROS domain with the units launched on the
 daemon, which would answer the scope's requests and feed its topics: while one is launched, a
 replay without a `domain_id` of its own answers `conflict` (a pre-flight starts no node and runs).
+
+`replay.setups` lists the setups of a directory: their `name`, `modified` time, `system`, `mode` and
+`scope`, or the `error` of one that does not read. `replay.setup.get`, `replay.setup.save` (with the
+`setup`) and `replay.setup.delete` take its `name` (letters, digits, `_`, `.`, `-`). Each takes `dir`,
+an absolute path, else the daemon's `--replay-setup-dir`. A setup holds `system`, `mode`, `deploy`,
+`bag`, `config` (the replay configuration: `scope`, `remap`, `accept`, `outputs`, `skip_outputs`,
+`lead_in`) and `run` (`duration`, `domain_id`, `save_reference`).
 
 ### Launch
 

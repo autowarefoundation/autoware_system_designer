@@ -11,8 +11,15 @@
 (function () {
   const SD = window.SD;
   const { element, copyButton, mainView, popup } = SD.widgets;
-  const { model, scopeTree, scopeDiagram, bagFile, runPanel, zoneStack } =
-    SD.activities.replay;
+  const {
+    model,
+    scopeTree,
+    scopeDiagram,
+    bagFile,
+    runPanel,
+    zoneStack,
+    setups,
+  } = SD.activities.replay;
 
   const { ACCEPT } = model;
   const INPUT_NOTE = {
@@ -151,6 +158,7 @@
     daemon: false,
     inspector: false,
     icon: "M16 4v12M13 10l-9-6v12z",
+    settings: setups.settings,
     status: (store) => {
       const scope =
         store.get("scope") ??
@@ -218,21 +226,27 @@
         render();
       }
 
-      const tree = scopeTree({
-        nodes: () => nodes,
-        selected: () => selected,
-        locked: () => new Set(model.selectScope(nodes, patterns()).containers),
-        toggle(path, on) {
-          const next = new Set(selected);
-          nodes
-            .filter((node) => model.selects(node, path))
-            .forEach((node) =>
-              on ? next.add(node.path) : next.delete(node.path),
-            );
-          setSelected(next);
+      // Saved setups, under the scope selector's head.
+      const setupSlot = element("div");
+      const tree = scopeTree(
+        {
+          nodes: () => nodes,
+          selected: () => selected,
+          locked: () =>
+            new Set(model.selectScope(nodes, patterns()).containers),
+          toggle(path, on) {
+            const next = new Set(selected);
+            nodes
+              .filter((node) => model.selects(node, path))
+              .forEach((node) =>
+                on ? next.add(node.path) : next.delete(node.path),
+              );
+            setSelected(next);
+          },
+          clear: () => setSelected(new Set()),
         },
-        clear: () => setSelected(new Set()),
-      });
+        setupSlot,
+      );
       side.appendChild(tree.element);
 
       const view = mainView({ title: "Replay scope" });
@@ -251,8 +265,11 @@
         record: setRecorded,
       });
       const stack = zoneStack(ZONES_KEY, ZONES);
-      const { diagram: diagramZone, boundary: boundaryZone, run: runZone } =
-        stack.zones;
+      const {
+        diagram: diagramZone,
+        boundary: boundaryZone,
+        run: runZone,
+      } = stack.zones;
       diagramZone.body.appendChild(diagram.element);
       view.body.appendChild(stack.element);
       // The activity's slots are visible from mount until another activity takes over.
@@ -347,6 +364,8 @@
         "Running a replay from here needs the studio daemon; without it, run the commands of Configuration and command in a shell.",
       );
       runZone.body.append(runNote, panel.element);
+      const setupBar = setups.setupBar(daemon, capture, applySetup);
+      setupSlot.appendChild(setupBar.element);
       // Parts a scope fills.
       const scopeBlocks = [
         selectorBlock.element,
@@ -414,6 +433,7 @@
           request = { blocker: "Check nodes or modules to replay." };
           panel.refresh();
           runNote.hidden = !panel.element.hidden;
+          setupBar.render();
           return;
         }
         const members =
@@ -544,6 +564,73 @@
             };
         panel.refresh();
         runNote.hidden = !panel.element.hidden;
+        setupBar.render();
+      }
+
+      // The shown replay as a saved setup, or what it lacks.
+      function capture() {
+        const scope = model.selectScope(nodes, patterns());
+        if (!scope.nodes.length)
+          return { blocker: "Check nodes or modules to save a setup." };
+        const kept = current(model.boundary(nodes, scope.nodes));
+        const { run, leadIn } = panel.getOptions();
+        const bagValue = bagPath.value.trim();
+        return {
+          setup: {
+            system: config.systemId,
+            mode: store.get("mode"),
+            ...(store.get("deploy") ? { deploy: store.get("deploy") } : {}),
+            ...(bagValue ? { bag: bagValue } : {}),
+            config: {
+              scope: patterns(),
+              ...kept,
+              ...(leadIn === null ? {} : { lead_in: leadIn }),
+            },
+            run,
+          },
+        };
+      }
+
+      // Shows a saved setup; gives the parts this page could not take, or "".
+      function applySetup(setup) {
+        const missed = [];
+        const saved = setup.config;
+        Object.keys(remap).forEach((key) => delete remap[key]);
+        Object.assign(remap, saved.remap || {});
+        [
+          [accept, saved.accept],
+          [recordedInternals, saved.outputs],
+          [skippedOutputs, saved.skip_outputs],
+        ].forEach(([set, items]) => {
+          set.clear();
+          (items || []).forEach((item) => set.add(item));
+        });
+        panel.setOptions(setup.run || {}, saved.lead_in);
+        if (setup.system && setup.system !== config.systemId)
+          missed.push(`saved for ${setup.system}`);
+        if (setup.deploy) {
+          if (config.deployNames.includes(setup.deploy))
+            store.set("deploy", setup.deploy);
+          else missed.push(`no deploy ${setup.deploy}`);
+        }
+        bagPath.value = setup.bag || "";
+        store.set("scope", saved.scope.join(","));
+        const modeChanges =
+          setup.mode &&
+          setup.mode !== store.get("mode") &&
+          config.availableModes.includes(setup.mode);
+        if (setup.mode && !config.availableModes.includes(setup.mode))
+          missed.push(`no mode ${setup.mode}`);
+        if (modeChanges) store.set("mode", setup.mode);
+        else selectScopePaths();
+        if (bagPath.value && daemon.connected && daemon.offers("replay.bag"))
+          readPath();
+        else {
+          bag = null;
+          bagNote = "";
+          render();
+        }
+        return missed.join(", ");
       }
 
       function setBag(topics, name) {
@@ -662,6 +749,12 @@
           store.get("mode"),
         );
         nodes = model.nodes(data);
+        tree.setStructure(data);
+        selectScopePaths();
+      }
+
+      // Selects the nodes the stored scope paths name.
+      function selectScopePaths() {
         const wanted = (store.get("scope") || "").split(",").filter(Boolean);
         selected = new Set(
           nodes
@@ -669,7 +762,7 @@
             .map((node) => node.path),
         );
         store.set("scope", patterns().join(","));
-        tree.setStructure(data);
+        tree.render();
         render();
       }
 

@@ -124,6 +124,12 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         help="directory the bag of a dropped file is searched under, for a replay (repeatable)",
     )
     serve.add_argument(
+        "--replay-setup-dir",
+        type=Path,
+        help="directory of the saved replay setups when the studio names none "
+        "(default: $XDG_CONFIG_HOME/autoware_system_designer/replay)",
+    )
+    serve.add_argument(
         "--heartbeat-interval",
         type=float,
         default=HEARTBEAT_INTERVAL_S,
@@ -192,6 +198,7 @@ def _run_serve(args: argparse.Namespace) -> None:
         workspace=resolve_workspace(install_root, args.workspace),
         record_root=args.record_dir,
         bag_dirs=args.bag_dirs,
+        replay_setup_dir=args.replay_setup_dir,
         launch_env=launch_env,
         env_script=args.env_script,
         rviz_config=args.rviz_config,

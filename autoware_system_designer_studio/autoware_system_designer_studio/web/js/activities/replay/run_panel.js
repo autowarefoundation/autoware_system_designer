@@ -103,7 +103,8 @@
     return phases.map((phase) => {
       const fraction = reached[phase.name] ?? null;
       if (fraction === 1) return { phase, state: "done", width: 1 };
-      if (running && phase.name === current) return { phase, state: "active", width: fraction };
+      if (running && phase.name === current)
+        return { phase, state: "active", width: fraction };
       if (phase.name in reached || phase.name === current)
         return { phase, state: "stopped", width: fraction };
       return { phase, state: "pending", width: 0 };
@@ -146,7 +147,8 @@
       );
       const progress = job?.detail?.progress;
       const phase = PHASES.find((entry) => entry.name === progress?.phase);
-      step.textContent = progress?.step && phase ? `${phase.label}: ${progress.step}` : "";
+      step.textContent =
+        progress?.step && phase ? `${phase.label}: ${progress.step}` : "";
     }
 
     return { element: root, render };
@@ -313,6 +315,7 @@
         if (leadIn.value !== "") extra.lead_in = Number(leadIn.value);
       }
       if (domain.value !== "") extra.domain_id = Number(domain.value);
+      Object.assign(extra, replay.setups.logDirParam());
       check.disabled = run.disabled = true;
       daemon
         .rpc(START, { ...params, ...extra })
@@ -352,7 +355,22 @@
       refresh();
     });
 
-    return { element: root, refresh };
+    // Run options as a setup keeps them: lead-in apart, as the configuration holds it.
+    function getOptions() {
+      const run = { save_reference: saveReference.checked };
+      if (duration.value) run.duration = Number(duration.value);
+      if (domain.value !== "") run.domain_id = Number(domain.value);
+      return { run, leadIn: leadIn.value === "" ? null : Number(leadIn.value) };
+    }
+
+    function setOptions(run, leadInValue) {
+      duration.value = run.duration ?? "";
+      domain.value = run.domain_id ?? "";
+      saveReference.checked = !!run.save_reference;
+      leadIn.value = leadInValue ?? "";
+    }
+
+    return { element: root, refresh, getOptions, setOptions };
   }
 
   replay.outcome = outcome;

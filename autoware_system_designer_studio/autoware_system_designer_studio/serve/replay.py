@@ -15,14 +15,19 @@
 """Deterministic replay of a scope as a job: the runtime's replay command on a mode's system
 structure, with the request's scope, remap, accepted names and outputs as its configuration.
 
-One replay runs per daemon. Its run directory is under the runtime's log base; the job's detail
-names it and, once the job ended, carries the summary of the files the replay wrote there.
+One replay runs per daemon. Its run directory is under the request's log directory, else the
+runtime's log base; the job's detail names it and, once the job ended, carries the summary of the
+files the replay wrote there.
+
+A setup is a replay saved by name as a YAML file in a setup directory: the system, mode, deploy and
+bag it runs on, its configuration (the runtime's configuration file content) and its run options.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import time
 from dataclasses import dataclass
@@ -52,6 +57,12 @@ CONFIG_FILE = "replay_config.json"
 DOMAIN_ID_MAX = 232
 # Pre-flight problems and differing topics kept in a job's summary.
 SUMMARY_ITEMS = 50
+# Name of a saved setup: its file name without the suffix.
+SETUP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+SETUP_SUFFIX = ".yaml"
+SETUP_KEYS = ("system", "mode", "deploy", "bag", "config", "run")
+SETUP_CONFIG_KEYS = ("scope", "remap", "accept", "outputs", "skip_outputs", "lead_in")
+SETUP_RUN_KEYS = ("duration", "domain_id", "save_reference")
 # Levels below a bag directory a file search descends, and the directories it visits at most.
 FIND_DEPTH = 4
 FIND_DIRECTORIES = 20000
@@ -143,6 +154,59 @@ def _remap(params: Mapping[str, Any]) -> dict[str, str]:
     return dict(value)
 
 
+def directory_param(params: Mapping[str, Any], name: str) -> Optional[Path]:
+    """The absolute directory a request names under *name*; None when it names none."""
+    value = params.get(name)
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise api.ApiError(api.INVALID_PARAMS, f"{name} must be a path")
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        raise api.ApiError(api.INVALID_PARAMS, f"{name} must be an absolute path")
+    return path
+
+
+def default_setup_dir() -> Path:
+    """Directory of saved setups when neither the request nor the daemon names one."""
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "autoware_system_designer" / "replay"
+
+
+def _seconds(params: Mapping[str, Any], name: str, *, positive: bool) -> Optional[float]:
+    value = params.get(name)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0 or (positive and value == 0):
+        raise api.ApiError(
+            api.INVALID_PARAMS,
+            f"{name} must be a {'positive number of seconds' if positive else 'number of seconds, zero or more'}",
+        )
+    return value
+
+
+def _domain_id(params: Mapping[str, Any]) -> Optional[int]:
+    value = params.get("domain_id")
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= DOMAIN_ID_MAX):
+        raise api.ApiError(api.INVALID_PARAMS, f"domain_id must be an integer within 0..{DOMAIN_ID_MAX}")
+    return value
+
+
+def replay_config(params: Mapping[str, Any]) -> dict[str, Any]:
+    """The runtime configuration a request or a setup gives."""
+    config = {
+        "scope": _topic_names(params, "scope", required=True),
+        "remap": _remap(params),
+        "accept": _topic_names(params, "accept"),
+        "outputs": _topic_names(params, "outputs"),
+        "skip_outputs": _topic_names(params, "skip_outputs"),
+    }
+    lead_in = _seconds(params, "lead_in", positive=False)
+    if lead_in is not None:
+        config["lead_in"] = lead_in
+    return config
+
+
 def plan_replay(
     system: SystemExport,
     command: Path,
@@ -153,34 +217,19 @@ def plan_replay(
     deploy: Optional[str],
     log_base: Optional[Path] = None,
 ) -> ReplayPlan:
-    """The command of one replay request, in a new run directory under the log base."""
-    config = {
-        "scope": _topic_names(params, "scope", required=True),
-        "remap": _remap(params),
-        "accept": _topic_names(params, "accept"),
-        "outputs": _topic_names(params, "outputs"),
-        "skip_outputs": _topic_names(params, "skip_outputs"),
-    }
+    """The command of one replay request, in a new run directory under the request's log directory,
+    else under the log base."""
+    config = replay_config(params)
     check = params.get("check", False)
     save_reference = params.get("save_reference", False)
     if not isinstance(check, bool) or not isinstance(save_reference, bool):
         raise api.ApiError(api.INVALID_PARAMS, "check and save_reference must be booleans")
-    duration = params.get("duration")
-    if duration is not None and (isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration <= 0):
-        raise api.ApiError(api.INVALID_PARAMS, "duration must be a positive number of seconds")
-    lead_in = params.get("lead_in")
-    if lead_in is not None:
-        if isinstance(lead_in, bool) or not isinstance(lead_in, (int, float)) or lead_in < 0:
-            raise api.ApiError(api.INVALID_PARAMS, "lead_in must be a number of seconds, zero or more")
-        config["lead_in"] = lead_in
-    domain_id = params.get("domain_id")
-    if domain_id is not None and (
-        isinstance(domain_id, bool) or not isinstance(domain_id, int) or not 0 <= domain_id <= DOMAIN_ID_MAX
-    ):
-        raise api.ApiError(api.INVALID_PARAMS, f"domain_id must be an integer within 0..{DOMAIN_ID_MAX}")
+    duration = _seconds(params, "duration", positive=True)
+    domain_id = _domain_id(params)
+    log_dir = directory_param(params, "log_dir") or log_base or LOG_BASE
 
     stamp = time.strftime("%Y%m%d_%H%M%S")
-    run_dir = (log_base or LOG_BASE) / f"{stamp}_replay"
+    run_dir = log_dir / f"{stamp}_replay"
     argv = [
         str(command),
         str(system.structure_path(mode)),
@@ -273,3 +322,95 @@ def summary(run_dir: Path) -> dict[str, Any]:
             "topics": list(verdict.get("topics") or [])[:SUMMARY_ITEMS],
         }
     return found
+
+
+# -- saved setups -------------------------------------------------------------
+
+
+def _setup_file(directory: Path, name: Any) -> Path:
+    if not isinstance(name, str) or not SETUP_NAME.match(name):
+        raise api.ApiError(
+            api.INVALID_PARAMS, "name must start with a letter or digit and hold letters, digits, '_', '.' or '-'"
+        )
+    return directory / f"{name}{SETUP_SUFFIX}"
+
+
+def check_setup(setup: Any) -> dict[str, Any]:
+    """A setup as stored: known keys only, its configuration and run options valid."""
+    if not isinstance(setup, Mapping):
+        raise api.ApiError(api.INVALID_PARAMS, "a setup is a mapping")
+    unknown = set(setup) - set(SETUP_KEYS)
+    if unknown:
+        raise api.ApiError(api.INVALID_PARAMS, f"setup: unknown key(s) {sorted(unknown)}")
+    for key in ("system", "mode", "deploy", "bag"):
+        if setup.get(key) is not None and not isinstance(setup[key], str):
+            raise api.ApiError(api.INVALID_PARAMS, f"setup: {key} must be a string")
+    config = setup.get("config")
+    if not isinstance(config, Mapping):
+        raise api.ApiError(api.INVALID_PARAMS, "setup: config must be a mapping")
+    unknown = set(config) - set(SETUP_CONFIG_KEYS)
+    if unknown:
+        raise api.ApiError(api.INVALID_PARAMS, f"setup: unknown config key(s) {sorted(unknown)}")
+    run = setup.get("run") or {}
+    if not isinstance(run, Mapping) or set(run) - set(SETUP_RUN_KEYS):
+        raise api.ApiError(api.INVALID_PARAMS, f"setup: run takes the keys {', '.join(SETUP_RUN_KEYS)}")
+    _seconds(run, "duration", positive=True)
+    _domain_id(run)
+    if not isinstance(run.get("save_reference", False), bool):
+        raise api.ApiError(api.INVALID_PARAMS, "setup: run.save_reference must be a boolean")
+    checked = {key: setup[key] for key in ("system", "mode", "deploy", "bag") if setup.get(key)}
+    checked["config"] = replay_config(config)
+    checked["run"] = {key: run[key] for key in SETUP_RUN_KEYS if run.get(key) is not None}
+    return checked
+
+
+def list_setups(directory: Path) -> list[dict[str, Any]]:
+    """The setups saved in *directory*, by name; one that does not read names its error."""
+    import yaml
+
+    found = []
+    for path in sorted(directory.glob(f"*{SETUP_SUFFIX}")) if directory.is_dir() else ():
+        name = path.name[: -len(SETUP_SUFFIX)]
+        if not SETUP_NAME.match(name):
+            continue
+        entry: dict[str, Any] = {"name": name, "modified": path.stat().st_mtime}
+        try:
+            setup = check_setup(yaml.safe_load(path.read_text()))
+            entry.update({key: setup.get(key) for key in ("system", "mode")})
+            entry["scope"] = setup["config"]["scope"]
+        except (OSError, yaml.YAMLError, api.ApiError) as exc:
+            entry["error"] = str(exc)
+        found.append(entry)
+    return found
+
+
+def read_setup(directory: Path, name: Any) -> dict[str, Any]:
+    import yaml
+
+    path = _setup_file(directory, name)
+    try:
+        text = path.read_text()
+    except FileNotFoundError as exc:
+        raise api.ApiError(api.NOT_FOUND, f"no setup {name!r} in {directory}") from exc
+    try:
+        return check_setup(yaml.safe_load(text))
+    except yaml.YAMLError as exc:
+        raise api.ApiError(api.INVALID_PARAMS, f"{path}: {exc}") from exc
+
+
+def write_setup(directory: Path, name: Any, setup: Any) -> Path:
+    import yaml
+
+    checked = check_setup(setup)
+    path = _setup_file(directory, name)
+    directory.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(checked, sort_keys=False))
+    return path
+
+
+def delete_setup(directory: Path, name: Any) -> None:
+    path = _setup_file(directory, name)
+    try:
+        path.unlink()
+    except FileNotFoundError as exc:
+        raise api.ApiError(api.NOT_FOUND, f"no setup {name!r} in {directory}") from exc

@@ -333,6 +333,12 @@
     editorSelect.addEventListener("change", (e) =>
       SD.editor.setScheme(e.target.value),
     );
+
+    // Settings an activity adds, below the shared ones.
+    const slot = el("settings-activities");
+    orderedActivities().forEach((activity) =>
+      activity.def.settings?.(slot, context()),
+    );
   }
 
   function renderConnection(connected) {
