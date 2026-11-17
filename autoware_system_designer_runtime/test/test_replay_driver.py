@@ -47,6 +47,8 @@ class FakeProcess:
         # Callbacks that never report their end, by endpoint id.
         self.stuck: set[int] = set()
         self.ungated_publish_on_take: dict[int, int] = {}
+        # Callbacks that end once another subscription of the process ran: waiting id -> awaited id.
+        self.waits_on: dict[int, int] = {}
 
     def _id(self) -> int:
         self._next_id += 1
@@ -131,7 +133,13 @@ class FakeProcess:
                     self._publish(pub)
                 if ident in self.stuck:
                     continue
+                if ident in self.waits_on:
+                    self.send(f"ready\t{self.waits_on[ident]}")
+                    continue
                 self.send(f"done\t{ident}")
+                for waiting, awaited in self.waits_on.items():
+                    if awaited == ident:
+                        self.send(f"done\t{waiting}")
                 if ident in self._subs and self._subs[ident]["queued"] > 0:
                     self.send(f"ready\t{ident}")
             elif kind == "free":
@@ -324,6 +332,29 @@ def test_a_callback_that_does_not_return_fails_the_replay():
     with pytest.raises(ReplayError, match="subscription /in of /a did not return"):
         replay(world, [a], node_order={"/a": 0}, callback_timeout=0.2)
     assert world.freed == {1}
+
+
+def test_a_callback_waiting_for_a_transform_gets_the_listener_callback_beside_it():
+    world = World([(T0 + 10 * MS, "/in", b"1")], recorded=("/out",))
+    a = FakeProcess(1, world).node("/a")
+    cloud = a.sub("/in", publishes=(a.pub("/out"),))
+    listener = a.sub("/tf_static")
+    a.waits_on[cloud] = listener
+
+    result = replay(world, [a], node_order={"/a": 0}, nested_after=0.05, callback_timeout=2.0)
+
+    assert world.granted == [(1, cloud), (1, listener)]
+    assert (result.callbacks, result.nested_callbacks, result.violations) == (1, 1, [])
+
+
+def test_a_callback_waiting_on_another_topic_still_fails_the_replay():
+    world = World([(T0 + 10 * MS, "/in", b"1")])
+    a = FakeProcess(1, world).node("/a")
+    cloud = a.sub("/in")
+    a.waits_on[cloud] = a.sub("/other")
+
+    with pytest.raises(ReplayError, match="subscription /in of /a did not return"):
+        replay(world, [a], node_order={"/a": 0}, nested_after=0.05, callback_timeout=0.3)
 
 
 def test_a_scope_whose_node_never_starts_fails_at_startup():

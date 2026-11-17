@@ -34,7 +34,8 @@
 //     match  id count / matched seq
 //   driver -> process
 //     time   seq ns             set every ROS clock
-//     grant  id                 run one callback of the endpoint
+//     grant  id                 run one callback of the endpoint; a second one of a process
+//                               is granted while the first waits on it
 //     expect id                 a message was published to the subscription
 //     match  seq                report the matched subscriptions of every publisher
 //     free                      stop gating
@@ -43,7 +44,8 @@
 // reports which subscriptions and timers are ready, hides all of them from the
 // executor, and hands back the one the driver grants. The thread that received a
 // grant holds it until its callback is over: the return of rclcpp's
-// Executor::execute_any_executable, else its next rcl_wait.
+// Executor::execute_any_executable, else its next rcl_wait. Each thread holds one
+// grant at most, TOKENS threads at a time.
 
 #include "replay.h"
 
@@ -74,6 +76,8 @@
 // A take with a message in flight tries again every TAKE_RETRY_US, TAKE_RETRIES times at most.
 #define TAKE_RETRY_US 200
 #define TAKE_RETRIES 10000u
+// Threads of a process that hold a grant at once.
+#define TOKENS 4
 
 enum { STATE_UNSET = 0, STATE_OFF = 1, STATE_ON = 2 };
 
@@ -102,10 +106,10 @@ typedef struct replay {
   uint32_t * table;
   uint32_t table_size;
   uint32_t table_used;
-  // The grant the driver issued, and the thread running it.
+  // The grant the driver issued, and the threads running the grants taken.
   uint32_t grant;
-  uint32_t token_id;
-  uint32_t token_tid;
+  uint32_t token_id[TOKENS];
+  uint32_t token_tid[TOKENS];
   uint64_t wake;
   rcl_clock_t ** clocks;
   uint32_t clock_count;
@@ -141,6 +145,23 @@ static uint32_t self_tid(void)
     tls_tid = (uint32_t)syscall(SYS_gettid);
   }
   return tls_tid;
+}
+
+// Slot of the grant `tid` holds, TOKENS when it holds none; tid 0 finds a free slot.
+static int token_slot(uint32_t tid)
+{
+  int slot = 0;
+  while (slot < TOKENS && r.token_tid[slot] != tid) {
+    ++slot;
+  }
+  return slot;
+}
+
+// Id of the endpoint whose grant the calling thread holds, else 0.
+static uint32_t own_token(void)
+{
+  int slot = token_slot(self_tid());
+  return slot < TOKENS ? r.token_id[slot] : 0;
 }
 
 // The condition variable waits on the monotonic clock; the clock lock is taken again by the hooks
@@ -602,8 +623,9 @@ void asd_replay_timer(const void * timer, rcl_clock_t * clock, int64_t period_ns
   pthread_mutex_lock(&r_lock);
   // A timer created inside a callback belongs to that callback's node.
   const char * node = tls_node[0] != '\0' ? tls_node : "?";
-  if (r.token_tid == self_tid() && r.token_id != 0 && r.entries[r.token_id].node != NULL) {
-    node = r.entries[r.token_id].node;
+  uint32_t token = own_token();
+  if (token != 0 && r.entries[token].node != NULL) {
+    node = r.entries[token].node;
   }
   uint32_t id = add_entry(timer, 't', node);
   if (id != 0) {
@@ -674,12 +696,13 @@ static const void ** slot_of(rcl_wait_set_t * wait_set, size_t i)
 // Ends the grant `tid` holds: its callback is over. Called with r_lock held.
 static void release_grant(uint32_t tid)
 {
-  if (r.token_tid != tid) {
+  int slot = token_slot(tid);
+  if (slot == TOKENS) {
     return;
   }
-  send_line("done\t%u", r.token_id);
-  r.token_tid = 0;
-  r.token_id = 0;
+  send_line("done\t%u", r.token_id[slot]);
+  r.token_tid[slot] = 0;
+  r.token_id[slot] = 0;
   ++r.wake;
   pthread_cond_broadcast(&r_cond);
 }
@@ -780,7 +803,7 @@ rcl_ret_t asd_replay_wait(asd_wait_fn real, rcl_wait_set_t * wait_set, int64_t t
   uint64_t wake = r.wake;
   const void * granted = NULL;
   for (bool waiting = hold_ns > 0;; ) {
-    if (r.grant != 0 && r.grant < r.count) {
+    if (r.grant != 0 && r.grant < r.count && token_slot(tid) == TOKENS && token_slot(0) < TOKENS) {
       const void * handle = r.entries[r.grant].handle;
       for (size_t i = 0; i < slots && handle != NULL; ++i) {
         if (tls_gated[i] && tls_snapshot[i] == handle && *slot_of(wait_set, i) != NULL) {
@@ -803,10 +826,11 @@ rcl_ret_t asd_replay_wait(asd_wait_fn real, rcl_wait_set_t * wait_set, int64_t t
     }
   }
   if (granted != NULL) {
-    r.token_id = r.grant;
-    r.token_tid = tid;
+    int slot = token_slot(0);
+    r.token_id[slot] = r.grant;
+    r.token_tid[slot] = tid;
+    r.entries[r.grant].ready = false;
     r.grant = 0;
-    r.entries[r.token_id].ready = false;
   }
   pthread_mutex_unlock(&r_lock);
   return (granted != NULL || other) ? RCL_RET_OK : RCL_RET_TIMEOUT;
@@ -817,7 +841,7 @@ void asd_replay_publish(const void * publisher)
   pthread_mutex_lock(&r_lock);
   uint32_t id = find_id(publisher);
   if (id != 0) {
-    send_line("pub\t%u\t%d", id, r.token_tid == self_tid());
+    send_line("pub\t%u\t%d", id, own_token() != 0);
   }
   pthread_mutex_unlock(&r_lock);
 }
@@ -830,7 +854,7 @@ void asd_replay_take(const void * subscription)
     if (r.entries[id].pending > 0) {
       --r.entries[id].pending;
     }
-    send_line("take\t%u\t%d", id, r.token_tid == self_tid());
+    send_line("take\t%u\t%d", id, own_token() != 0);
   }
   pthread_mutex_unlock(&r_lock);
 }
@@ -857,7 +881,7 @@ void asd_replay_timer_called(const void * timer)
   pthread_mutex_lock(&r_lock);
   uint32_t id = find_id(timer);
   if (id != 0) {
-    send_line("fire\t%u\t%d", id, r.token_tid == self_tid());
+    send_line("fire\t%u\t%d", id, own_token() != 0);
     report_next(id);
   }
   pthread_mutex_unlock(&r_lock);

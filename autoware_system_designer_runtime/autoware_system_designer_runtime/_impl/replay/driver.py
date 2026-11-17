@@ -28,6 +28,10 @@ published to a waited subscription shows as ready work there, every timer due is
 and every recorded publish was heard. All of it is counted from what the tracer
 observes; the declared event chains play no part. Publishes, takes and timer fires of
 a thread without the grant break the order and are counted as violations.
+
+A callback that waits for a transform holds the scope: the listener that would bring it
+is gated too. Once a callback has run for `nested_after`, the ready callbacks of its
+process on the transform topics are granted one at a time while it runs.
 """
 
 from __future__ import annotations
@@ -46,6 +50,8 @@ from .scope import INFRA_TOPICS
 
 logger = logging.getLogger(__name__)
 
+# Topics of the transform listeners, whose callbacks a running callback may wait on.
+TRANSFORM_TOPICS = frozenset({"/tf", "/tf_static"})
 # A subscription that missed this many deliveries in a row is no longer waited for.
 MISS_LIMIT = 3
 MAX_ANOMALIES = 200
@@ -84,6 +90,8 @@ class DriverOptions:
     startup_settle: float = 2.0
     match_timeout: float = 10.0
     callback_timeout: float = 30.0
+    # Wall time a callback runs before the transform callbacks of its process run beside it.
+    nested_after: float = 0.2
     delivery_timeout: float = 2.0
     # Pause before a callback whose subscription holds several messages in flight.
     burst_settle: float = 0.005
@@ -105,6 +113,8 @@ class ReplayResult:
     callbacks: int = 0
     # Callbacks on the topics every rcl process carries; their count follows the startup, not the bag.
     infra_callbacks: int = 0
+    # Transform callbacks run beside a callback that waited on them.
+    nested_callbacks: int = 0
     timer_fires: int = 0
     publishes: int = 0
     clock_steps: int = 0
@@ -143,6 +153,8 @@ class ReplayDriver:
         self._time_seq = 0
         self._match_seq = 0
         self._running: Optional[Endpoint] = None
+        # Transform callback granted beside the running one.
+        self._nested: Optional[Endpoint] = None
         self._stepping = False
         self._finished = False
         self._error: Optional[str] = None
@@ -167,12 +179,17 @@ class ReplayDriver:
                 self._seen_nodes.add(fields[0])
             elif kind == "hello" and self._time_seq:
                 link.send(f"time\t{self._time_seq}\t{self._now}")
-            elif kind == "fini" and self._running is not None and not self._running.alive:
-                self._running = None
+            elif kind == "fini":
+                if self._running is not None and not self._running.alive:
+                    self._running = None
+                if self._nested is not None and not self._nested.alive:
+                    self._nested = None
             return
         if kind == "bye":
             if self._running is not None and self._running.link is link:
                 self._running = None
+            if self._nested is not None and self._nested.link is link:
+                self._nested = None
             if not self._finished and link.endpoints:
                 self._error = f"process {link.pid} ({', '.join(link.nodes) or 'no node'}) left during the replay"
             return
@@ -191,16 +208,14 @@ class ReplayDriver:
             ep.ready = True
         elif kind == "unready":
             ep.ready = False
-            if self._running is ep:
-                self._running = None
+            self._ended(ep)
         elif kind == "next":
             ep.next_ns = int(fields[1])
             ep.stuck = False
         elif kind == "match":
             ep.matched = int(fields[1])
         elif kind == "done":
-            if self._running is ep:
-                self._running = None
+            self._ended(ep)
         elif kind == "take":
             ep.outstanding = max(ep.outstanding - 1, 0)
             ep.misses = 0
@@ -215,6 +230,12 @@ class ReplayDriver:
                 self._published(ep.topic)
         elif kind == "lost":
             self._anomaly(f"a message published to {ep.label()} never arrived")
+
+    def _ended(self, ep: Endpoint) -> None:
+        if self._nested is ep:
+            self._nested = None
+        elif self._running is ep:
+            self._running = None
 
     def _ordered(self, ep: Endpoint, gated: str, what: str) -> None:
         """Counts a publish, take or timer fire made outside the granted callback."""
@@ -242,6 +263,8 @@ class ReplayDriver:
         """What the scope still owes before the next step, None once it is settled."""
         if self._running is not None:
             return ("callback", self._running)
+        if self._nested is not None:
+            return ("callback", self._nested)
         for link in self._server.links.values():
             if link.connected and link.time_ack < self._time_seq:
                 return ("clock", link)
@@ -301,10 +324,33 @@ class ReplayDriver:
                 self._block = None
                 self._give_up(*block)
                 continue
+            if block[0] == "callback" and self._running is not None and self._nested is None:
+                nested_at = self._block_since + self._options.nested_after
+                if now >= nested_at:
+                    self._grant_nested(self._running)
+                else:
+                    remaining = min(remaining, nested_at - now)
             try:
                 await asyncio.wait_for(self._changed.wait(), remaining)
             except asyncio.TimeoutError:
                 pass
+
+    def _grant_nested(self, running: Endpoint) -> None:
+        """Grants the first ready transform callback of the process of *running*, if any."""
+        ready = [
+            ep
+            for ep in running.link.endpoints.values()
+            if ep.gated and ep.ready and ep.alive and ep.topic in TRANSFORM_TOPICS
+        ]
+        if not ready:
+            return
+        ep = min(ready, key=self._tie_key)
+        ep.ready = False
+        self._nested = ep
+        ep.link.send(f"grant\t{ep.id}")
+        if self._log is not None:
+            self._log(f"> grant {ep.link.pid} {ep.id} {ep.label()} beside {running.label()}")
+        self.result.nested_callbacks += 1
 
     # ---- steps ---------------------------------------------------------------------
 
