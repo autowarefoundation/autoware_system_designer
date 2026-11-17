@@ -1,5 +1,5 @@
-// Replay: the view as zones stacked top to bottom, each under a head that
-// folds or expands it. A divider between two zones moves height between the
+// Replay: the view as zones stacked top to bottom, each under a head whose
+// whole width, outside the controls it holds, folds or expands it. A divider between two zones moves height between the
 // nearest expanded zones above and below it. Heights and folds persist per zone.
 (function () {
   const SD = window.SD;
@@ -9,6 +9,10 @@
   // Least height of an expanded zone, its head included.
   const MIN_HEIGHT = 90;
   const CHEVRON = "M5 8l5 5 5-5";
+  // Parts of a head that keep their clicks: its controls other than the
+  // toggle, and anything marked data-zone-keep, its actions among them.
+  const HEAD_CONTROLS =
+    "input, select, textarea, a, label, button:not(.replay-zone-toggle), [data-zone-keep]";
 
   // Indices of the expanded zones nearest above and below divider `index`
   // (between zones index and index + 1); null when a side has none.
@@ -59,6 +63,7 @@
       toggle.appendChild(SD.workbench.svgIcon(CHEVRON));
       toggle.appendChild(element("h2", "", spec.title));
       const actions = element("div", "replay-zone-actions");
+      actions.dataset.zoneKeep = "";
       head.append(toggle, actions);
       const body = element("div", "replay-zone-body");
       node.append(head, body);
@@ -111,7 +116,8 @@
     }
 
     zones.forEach((zone) => {
-      zone.toggle.addEventListener("click", () => {
+      zone.head.addEventListener("click", (event) => {
+        if (event.target.closest(HEAD_CONTROLS)) return;
         zone.folded = !zone.folded;
         apply();
         save();

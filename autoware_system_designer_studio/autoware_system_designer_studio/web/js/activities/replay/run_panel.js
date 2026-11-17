@@ -1,5 +1,6 @@
-// Replay: a replay started through the daemon as a job: its options, the
-// pre-flight and run buttons, the outcome the job reports and its log. The
+// Replay: a replay started through the daemon as a job: its options with the
+// job followed, the pre-flight and run buttons, the outcome the job reports
+// and its log. The
 // Run section around it gives its heading.
 (function () {
   const SD = window.SD;
@@ -110,7 +111,7 @@
   }
 
   // The run's phases as segments, each filled by its share done, and the step
-  // the current phase is on.
+  // the current phase is on; every phase pending before the first job.
   function progressBar() {
     const root = element("div", "replay-run-progress");
     const segments = element("div", "replay-run-phases");
@@ -118,10 +119,12 @@
     root.append(segments, step);
 
     function render(job) {
-      const states = phaseStates(job);
+      const states = job
+        ? phaseStates(job)
+        : PHASES.map((phase) => ({ phase, state: "pending", width: 0 }));
       root.hidden = !states;
       if (!states) return;
-      const stoppedClass = job.state === "cancelled" ? "cancelled" : "failed";
+      const stoppedClass = job?.state === "cancelled" ? "cancelled" : "failed";
       segments.replaceChildren(
         ...states.map(({ phase, state, width }) => {
           const segment = element(
@@ -141,7 +144,7 @@
           return segment;
         }),
       );
-      const progress = job.detail?.progress;
+      const progress = job?.detail?.progress;
       const phase = PHASES.find((entry) => entry.name === progress?.phase);
       step.textContent = progress?.step && phase ? `${phase.label}: ${progress.step}` : "";
     }
@@ -171,10 +174,15 @@
       return wrapper;
     };
     const options = element("div", "replay-run-options");
+    const jobSelect = document.createElement("select");
+    jobSelect.setAttribute("aria-label", "Replay job");
+    const jobOption = option("Job", jobSelect);
+    jobOption.classList.add("replay-run-job");
     options.append(
       option("Duration (s)", duration),
       option("ROS domain id", domain),
       option("Save outputs as the reference", saveReference),
+      jobOption,
     );
     const check = element("button", "panel-button", "Pre-flight");
     const run = element("button", "panel-button primary", "Run replay");
@@ -186,8 +194,6 @@
     const error = element("div", "panel-banner panel-banner-error");
     error.hidden = true;
 
-    const jobSelect = document.createElement("select");
-    jobSelect.setAttribute("aria-label", "Replay job");
     const status = element("div", "replay-run-outcome");
     const progress = progressBar();
     const counts = element("div", "replay-run-counts");
@@ -196,7 +202,6 @@
     const logHost = element("div", "replay-run-log");
     const report = element("div", "replay-run-report");
     report.append(
-      jobSelect,
       status,
       progress.element,
       counts,
@@ -204,7 +209,9 @@
       findingList,
       logHost,
     );
-    report.hidden = true;
+    // Log shown before the first replay job.
+    const idleLog = terminal("No replay run yet.");
+    logHost.appendChild(idleLog.element);
     root.append(options, buttons, error, report);
 
     // The followed job: its id, terminal and the sequence of the last line shown.
@@ -241,14 +248,20 @@
       followed = id
         ? { id, log: terminal("No output yet."), lastSeq: 0 }
         : null;
-      logHost.replaceChildren(...(followed ? [followed.log.element] : []));
+      logHost.replaceChildren((followed ? followed.log : idleLog).element);
       fetchLog();
     }
 
     function renderReport() {
       const jobs = replayJobs();
-      report.hidden = !jobs.length;
-      if (!jobs.length) return;
+      jobOption.hidden = !jobs.length;
+      if (!jobs.length) {
+        follow(null);
+        status.textContent = counts.textContent = runDir.textContent = "";
+        progress.render(null);
+        findingList.replaceChildren();
+        return;
+      }
       if (!followed || !jobs.some((job) => job.id === followed.id))
         follow(jobs[0].id);
       SD.widgets.setOptions(

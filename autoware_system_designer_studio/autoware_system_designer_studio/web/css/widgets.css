@@ -330,8 +330,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 36px;
-  padding: 4px 14px;
+  min-height: 27px;
+  padding: 0 14px;
   font-size: 13px;
   background: var(--bg-sidebar-header);
   border-bottom: 1px solid var(--border-color);

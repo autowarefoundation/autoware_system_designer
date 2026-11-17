@@ -28,9 +28,9 @@
   const ZONES_KEY = "replay.zones";
   // Weights are heights in pixels, the scale a divider drag stores.
   const ZONES = [
-    { id: "diagram", title: "Diagram", weight: 500 },
-    { id: "boundary", title: "Inputs and outputs", weight: 300 },
-    { id: "run", title: "Run", weight: 200 },
+    { id: "diagram", title: "Diagram", weight: 440 },
+    { id: "boundary", title: "Inputs and outputs", weight: 260 },
+    { id: "run", title: "Run", weight: 300 },
   ];
   // Preference: directories of the bags read by path, as a JSON list.
   const BAG_DIRS_KEY = "replay.bagDirs";
@@ -287,7 +287,7 @@
         bagRow,
         bagState,
       );
-      view.head.classList.add("replay-view-head");
+      bagBox.dataset.zoneKeep = "";
       boundaryZone.head.insertBefore(bagBox, boundaryZone.actions);
 
       // -- boundary ------------------------------------------------------
