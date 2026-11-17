@@ -23,6 +23,7 @@
     accept: [/map/vector_map]                 # inputs, services or subscriptions that stay unfed
     outputs: [/perception/internal/objects]   # internal topics recorded beside the boundary outputs
     skip_outputs: [/perception/debug/image]   # boundary outputs left unrecorded
+    lead_in: 0.5                              # seconds only transforms and latched topics are fed
     compare:
       default: exact                          # exact | fields | ignore
       topics:
@@ -34,14 +35,19 @@
           uuid_order: true
         /diagnostics: {rule: ignore}
 
+A key the file leaves unset takes its value from ``config/replay_defaults.yaml`` of the package.
+
 Plain Python with no ROS import.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Optional
+
+REPLAY_DEFAULTS_FILE = Path(__file__).parents[2] / "config" / "replay_defaults.yaml"
 
 RULE_EXACT = "exact"
 RULE_FIELDS = "fields"
@@ -93,6 +99,8 @@ class ReplayConfig:
     accept: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=list)
     skip_outputs: list[str] = field(default_factory=list)
+    # Seconds from the bag's start over which only the ambient inputs and the latched topics are fed.
+    lead_in: float = field(default_factory=lambda: _defaults()["lead_in"])
     # Recorded bag topic to the topic it is fed as.
     remap: dict[str, str] = field(default_factory=dict)
     default_rule: CompareRule = field(default_factory=CompareRule)
@@ -107,7 +115,7 @@ class ReplayConfig:
             return cls()
         if not isinstance(payload, Mapping):
             raise ConfigError("replay configuration: expected a mapping")
-        unknown = set(payload) - {"scope", "inputs", "accept", "outputs", "skip_outputs", "remap", "compare"}
+        unknown = set(payload) - {"scope", "inputs", "accept", "outputs", "skip_outputs", "lead_in", "remap", "compare"}
         if unknown:
             raise ConfigError(f"replay configuration: unknown key(s) {sorted(unknown)}")
         config = cls(
@@ -117,6 +125,8 @@ class ReplayConfig:
             outputs=_names(payload, "outputs"),
             skip_outputs=_names(payload, "skip_outputs"),
         )
+        if payload.get("lead_in") is not None:
+            config.lead_in = _seconds(payload["lead_in"], "lead_in")
         remap = payload.get("remap") or {}
         if not isinstance(remap, Mapping) or not all(
             isinstance(source, str) and isinstance(target, str) for source, target in remap.items()
@@ -149,6 +159,25 @@ class ReplayConfig:
         except (OSError, yaml.YAMLError) as exc:
             raise ConfigError(f"{path}: {exc}") from exc
         return cls.from_mapping(payload)
+
+
+def _seconds(value: Any, where: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        raise ConfigError(f"{where}: expected a number of seconds, zero or more")
+    return float(value)
+
+
+@lru_cache(maxsize=None)
+def _defaults() -> dict[str, float]:
+    import yaml
+
+    try:
+        payload = yaml.safe_load(REPLAY_DEFAULTS_FILE.read_text()) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise ConfigError(f"{REPLAY_DEFAULTS_FILE}: {exc}") from exc
+    if not isinstance(payload, Mapping) or set(payload) - {"lead_in"}:
+        raise ConfigError(f"{REPLAY_DEFAULTS_FILE}: expected a mapping with the key lead_in")
+    return {"lead_in": _seconds(payload.get("lead_in", 0.0), f"{REPLAY_DEFAULTS_FILE}: lead_in")}
 
 
 def _names(payload: Mapping[str, Any], key: str) -> list[str]:

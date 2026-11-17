@@ -168,6 +168,11 @@ def plan_replay(
     duration = params.get("duration")
     if duration is not None and (isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration <= 0):
         raise api.ApiError(api.INVALID_PARAMS, "duration must be a positive number of seconds")
+    lead_in = params.get("lead_in")
+    if lead_in is not None:
+        if isinstance(lead_in, bool) or not isinstance(lead_in, (int, float)) or lead_in < 0:
+            raise api.ApiError(api.INVALID_PARAMS, "lead_in must be a number of seconds, zero or more")
+        config["lead_in"] = lead_in
     domain_id = params.get("domain_id")
     if domain_id is not None and (
         isinstance(domain_id, bool) or not isinstance(domain_id, int) or not 0 <= domain_id <= DOMAIN_ID_MAX

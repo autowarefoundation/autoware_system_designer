@@ -17,7 +17,13 @@
 import pytest
 
 from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
-from autoware_system_designer_runtime._impl.replay.bag import BagError, info_from_metadata, read_bag_info, remap_topics
+from autoware_system_designer_runtime._impl.replay.bag import (
+    BagError,
+    LeadIn,
+    info_from_metadata,
+    read_bag_info,
+    remap_topics,
+)
 from autoware_system_designer_runtime._impl.replay.config import ConfigError, ReplayConfig
 from autoware_system_designer_runtime._impl.replay.preflight import (
     ERROR,
@@ -228,6 +234,22 @@ def test_undeclared_subscription_fails_and_undeclared_publisher_warns():
     assert check(FULL + [RealEndpoint("s", "/mod/a", "/secret")], fed=["/secret"]) == []
 
 
+def test_launch_file_member_stands_for_the_nodes_it_starts():
+    design = system(
+        [node("/map", out_ports=[out_port("vector_map", "/map/vector_map", "map.vector_map", [])], state="ros2_launch_file")]
+    )
+    inner = [
+        RealEndpoint("p", "/map/loader", "/map/vector_map", launch_file="/map"),
+        RealEndpoint("s", "/map/visualization", "/map/vector_map", launch_file="/map"),
+        RealEndpoint("s", "/map/visualization", "/secret", launch_file="/map"),
+    ]
+
+    problems = check_endpoints(NodeGraph.from_system_structure(design), {}, inner)
+
+    assert [(p.level, p.code) for p in problems] == [(ERROR, "undeclared_subscription")]
+    assert "/secret" in problems[0].message
+
+
 def test_timer_without_a_node_name_counts_for_the_nodes_of_its_process():
     unnamed = [e for e in FULL if e.kind != "t"] + [
         RealEndpoint("t", "", period_ns=100_000_000, process_nodes=("/mod/a",))
@@ -259,6 +281,37 @@ def test_missing_endpoints_and_timer_rate_mismatch_warn():
 
     assert codes(problems, ERROR) == []
     assert codes(problems) == ["event_mismatch", "input_not_subscribed", "output_not_published"]
+
+
+class _Messages:
+    def __init__(self, messages):
+        self._messages = list(messages)
+
+    def peek(self):
+        return self._messages[0] if self._messages else None
+
+    def pop(self):
+        return self._messages.pop(0)
+
+
+def test_lead_in_feeds_only_the_kept_topics_before_its_end():
+    source = LeadIn(
+        _Messages([(0, "/in", b""), (1, "/tf", b""), (2, "/in", b""), (5, "/in", b""), (6, "/tf", b"")]), 5, {"/tf"}
+    )
+
+    fed = []
+    while source.peek() is not None:
+        fed.append(source.pop()[:2])
+
+    assert fed == [(1, "/tf"), (5, "/in"), (6, "/tf")]
+
+
+def test_config_reads_the_lead_in_over_the_default_and_rejects_a_negative_one():
+    assert ReplayConfig.from_mapping({"lead_in": 0.5}).lead_in == 0.5
+    assert ReplayConfig.from_mapping({"lead_in": 0}).lead_in == 0.0
+    assert ReplayConfig.from_mapping({}).lead_in == 0.5
+    with pytest.raises(ConfigError):
+        ReplayConfig.from_mapping({"lead_in": -1})
 
 
 def test_config_reads_rules_and_rejects_unknown_keys():

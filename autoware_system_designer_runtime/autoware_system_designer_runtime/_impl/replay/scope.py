@@ -297,6 +297,16 @@ def scope_node_fqns(data: Mapping[str, Any], scope: Scope) -> dict[str, str]:
     return names
 
 
+def scope_launch_files(data: Mapping[str, Any], scope: Scope) -> set[str]:
+    """Design paths of the scope members that are launch files."""
+    members = set(scope.members)
+    return {
+        _entity_path(entity)
+        for entity in _launched_nodes(data.get("data", data), None)
+        if _entity_path(entity) in members and entity["launcher"].get("launch_state") == "ros2_launch_file"
+    }
+
+
 def unconnected_ports(data: Mapping[str, Any], scope: Scope) -> dict[str, set[str]]:
     """Topic names the scope's nodes use for ports the design leaves unconnected, by ROS node name."""
     members = set(scope.members)

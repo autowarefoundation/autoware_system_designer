@@ -23,7 +23,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Optional, Sequence
+from typing import Any, Collection, Iterator, Mapping, Optional, Sequence
 
 METADATA_FILE = "metadata.yaml"
 _STORAGE_BY_SUFFIX = {".db3": "sqlite3", ".mcap": "mcap"}
@@ -265,6 +265,34 @@ class BagMessages:
 
     def close(self) -> None:
         self._reader = None
+
+
+class LeadIn:
+    """A message source without the messages recorded before *since_ns* on topics outside *kept*."""
+
+    def __init__(self, source, since_ns: int, kept: Collection[str]) -> None:
+        self._source = source
+        self._since_ns = since_ns
+        self._kept = frozenset(kept)
+        self._skip()
+
+    def _skip(self) -> None:
+        while True:
+            message = self._source.peek()
+            if message is None or message[0] >= self._since_ns or message[1] in self._kept:
+                return
+            self._source.pop()
+
+    def peek(self) -> Optional[tuple[int, str, bytes]]:
+        return self._source.peek()
+
+    def pop(self) -> tuple[int, str, bytes]:
+        message = self._source.pop()
+        self._skip()
+        return message
+
+    def close(self) -> None:
+        self._source.close()
 
 
 def topic_metadata(name: str, msg_type: str):

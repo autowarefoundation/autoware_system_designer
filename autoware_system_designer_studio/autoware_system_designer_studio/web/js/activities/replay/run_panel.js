@@ -165,6 +165,7 @@
   function runPanel(daemon, request) {
     const root = element("div", "replay-block");
     const duration = numberInput("whole bag", "0", "any");
+    const leadIn = numberInput("default", "0", "any");
     const domain = numberInput("environment's", "0", "1");
     const saveReference = document.createElement("input");
     saveReference.type = "checkbox";
@@ -180,6 +181,7 @@
     jobOption.classList.add("replay-run-job");
     options.append(
       option("Duration (s)", duration),
+      option("Lead-in (s)", leadIn),
       option("ROS domain id", domain),
       option("Save outputs as the reference", saveReference),
       jobOption,
@@ -308,6 +310,7 @@
       if (!checkOnly) {
         extra.save_reference = saveReference.checked;
         if (duration.value) extra.duration = Number(duration.value);
+        if (leadIn.value !== "") extra.lead_in = Number(leadIn.value);
       }
       if (domain.value !== "") extra.domain_id = Number(domain.value);
       check.disabled = run.disabled = true;

@@ -326,7 +326,7 @@ typed path and the directories of the bags it read by path before (kept by the b
 the bag at the path found.
 
 `replay.start` takes `system`, `mode`, `bag`, `deploy`, `scope` (design paths), `remap` (recorded
-topic to fed topic), `accept`, `outputs`, `skip_outputs`, `check`, `save_reference`, `duration` and `domain_id`. The
+topic to fed topic), `accept`, `outputs`, `skip_outputs`, `lead_in`, `check`, `save_reference`, `duration` and `domain_id`. The
 daemon writes the configuration into a new run directory `<log base>/<stamp>_replay` and runs the
 replay command of the launch environment on it; one replay runs per daemon (`conflict` while one
 runs), and `jobs.cancel` ends it. The job's `detail` names the `run_dir` and, once the job ended,

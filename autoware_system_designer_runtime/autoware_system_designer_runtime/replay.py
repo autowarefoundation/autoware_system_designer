@@ -37,7 +37,7 @@ import tempfile
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Collection, Mapping, Optional, Sequence
 
 from ._impl.core import events as ev
 from ._impl.core.config import ActorConfig
@@ -46,7 +46,16 @@ from ._impl.measure.node_graph import NodeGraph
 from ._impl.measure.session import TRACE_SUBDIR
 from ._impl.measure.tracer import TracerArming, locate_tracer
 from ._impl.replay import reference as ref
-from ._impl.replay.bag import BagError, BagInfo, BagMessages, BagSink, read_bag_info, read_messages, remap_topics
+from ._impl.replay.bag import (
+    BagError,
+    BagInfo,
+    BagMessages,
+    BagSink,
+    LeadIn,
+    read_bag_info,
+    read_messages,
+    remap_topics,
+)
 from ._impl.replay.config import ConfigError, ReplayConfig
 from ._impl.replay.middleware import replay_middleware
 from ._impl.replay.driver import DriverOptions, ReplayDriver, ReplayError, ReplayResult
@@ -67,6 +76,7 @@ from ._impl.replay.scope import (
     ScopeError,
     compute_boundary,
     replay_structure,
+    scope_launch_files,
     scope_node_fqns,
     select_scope,
     unconnected_ports,
@@ -89,6 +99,7 @@ from .replay_record import (
     progress_message,
 )
 from .run_log import write_run_manifest
+from .special_topics import special_topics
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -173,13 +184,23 @@ def _plain(value: Any) -> Any:
     return value
 
 
-def _real_endpoints(endpoints: Sequence[Endpoint]) -> list[RealEndpoint]:
-    return [
-        RealEndpoint(
-            kind=ep.kind, node=ep.node, topic=ep.topic, period_ns=ep.period_ns, process_nodes=tuple(ep.link.nodes)
+def _real_endpoints(
+    endpoints: Sequence[Endpoint], members: "_Members", launch_files: Collection[str]
+) -> list[RealEndpoint]:
+    real = []
+    for ep in endpoints:
+        member = members.name(ep.link.pid)
+        real.append(
+            RealEndpoint(
+                kind=ep.kind,
+                node=ep.node,
+                topic=ep.topic,
+                period_ns=ep.period_ns,
+                process_nodes=tuple(ep.link.nodes),
+                launch_file=member if member in launch_files else "",
+            )
         )
-        for ep in endpoints
-    ]
+    return real
 
 
 class _Members:
@@ -197,12 +218,16 @@ class _Members:
         if isinstance(event, ev.Started):
             self._by_pgid[event.pid] = event.name
 
+    def name(self, pid: int) -> str:
+        """The member whose process group holds *pid*, empty once the process is gone."""
+        try:
+            return self._by_pgid.get(os.getpgid(pid), "")
+        except OSError:
+            return ""
+
     def rank(self, pid: int) -> int:
         if pid not in self._rank:
-            try:
-                name = self._by_pgid.get(os.getpgid(pid))
-            except OSError:
-                name = None
+            name = self.name(pid)
             self._rank[pid] = self._names.index(name) if name in self._names else len(self._names)
         return self._rank[pid]
 
@@ -248,6 +273,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
     full_graph = NodeGraph.from_system_structure(payload)
     mode = full_graph.mode or Path(json_path).stem
     fqns = scope_node_fqns(payload, scope)
+    launch_files = scope_launch_files(payload, scope)
     unconnected = unconnected_ports(payload, scope)
     node_order = {fqns[path]: index for index, path in enumerate(scope.nodes) if path in fqns}
     recorded_types = boundary.boundary_outputs()
@@ -390,7 +416,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             found = check_endpoints(
                 full_graph,
                 fqns,
-                _real_endpoints(endpoints),
+                _real_endpoints(endpoints, members, launch_files),
                 accept=config.accept,
                 fed=[*fed, *config.inputs],
                 unconnected=unconnected,
@@ -427,6 +453,9 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
                 raise StopIteration
 
         source = BagMessages(bag, sorted(fed)) if bag is not None else _NoSource()
+        if bag is not None and config.lead_in > 0:
+            kept = {*special_topics().ambient_inputs, *(t for t in fed if bag.topics[t].transient_local)}
+            source = LeadIn(source, start_ns + int(config.lead_in * 1e9), kept)
         steps = open(out_dir / STEP_LOG_FILE, "w") if options.step_log else None
         started = time.monotonic()
 

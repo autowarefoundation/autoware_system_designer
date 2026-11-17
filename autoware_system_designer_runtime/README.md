@@ -480,6 +480,7 @@ remap: # recorded topic: topic it is fed as
 accept: [/map/vector_map] # inputs, services or subscriptions that stay unfed
 outputs: [/perception/object_recognition/tracking/objects] # internal topics recorded beside the boundary outputs
 skip_outputs: [/perception/object_recognition/debug/image] # boundary outputs left unrecorded
+lead_in: 0.5 # seconds from the bag's start over which only the ambient inputs and the latched topics are fed; unset, the value of config/replay_defaults.yaml
 compare:
   default: exact # exact | fields | ignore
   topics:
@@ -551,7 +552,7 @@ A reference is the `outputs/` of a run kept by `--save-reference`. It lives unde
 
 ### Limits
 
-- **Blocking calls in a callback.** A callback that waits on ROS time or on another callback (a TF lookup with a timeout, `spin_until_future_complete`, `Rate::sleep`, `wait_for_message`) blocks while the driver holds both. The run fails after `--callback-timeout` and names the callback.
+- **Blocking calls in a callback.** A callback that waits on ROS time or on another callback (a TF lookup with a timeout, `spin_until_future_complete`, `Rate::sleep`, `wait_for_message`) blocks while the driver holds both. The run fails after `--callback-timeout` and names the callback. A transform lookup for a message stamped before the bag's first transform is such a wait; `lead_in` in the replay configuration feeds only the ambient inputs and the latched topics over the first seconds of the bag.
 - **Services and actions** pass the gate unordered; their callbacks count as violations when they publish.
 - **Polled subscriptions** (taken inside another callback, never waited on) are not gated. A take that finds nothing while a published message is still in flight waits for it, so a poll sees what was published before it.
 - **Several messages in flight to one subscription** (a callback that publishes twice on a topic) are waited for by a fixed pause, not by observation; with a keep-last depth below the burst, which messages survive is not checked.

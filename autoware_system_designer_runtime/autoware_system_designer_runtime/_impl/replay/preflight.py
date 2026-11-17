@@ -157,6 +157,8 @@ class RealEndpoint:
     period_ns: int = 0
     # Nodes of the endpoint's process; a helper node counts for the design nodes beside it.
     process_nodes: tuple[str, ...] = ()
+    # Design path of the launch file member that started the endpoint's process.
+    launch_file: str = ""
 
 
 def check_endpoints(
@@ -176,6 +178,10 @@ def check_endpoints(
     fed = set(fed)
     unconnected = unconnected or {}
     by_fqn = {fqn: graph.nodes[path] for path, fqn in scope_fqns.items() if path in graph.nodes}
+    # A launch file member stands for every node it starts, under its design path.
+    for endpoint in endpoints:
+        if endpoint.launch_file in graph.nodes:
+            by_fqn.setdefault(endpoint.launch_file, graph.nodes[endpoint.launch_file])
     problems: list[Problem] = []
     seen_inputs: dict[str, set[str]] = {fqn: set() for fqn in by_fqn}
     seen_outputs: dict[str, set[str]] = {fqn: set() for fqn in by_fqn}
@@ -192,10 +198,13 @@ def check_endpoints(
 
     def declared_by(endpoint: RealEndpoint, inputs: bool) -> list[str]:
         """The design nodes whose port covers the endpoint: its own node, else every one of its
-        process (a helper node subscribes for any of them)."""
+        process (a helper node subscribes for any of them), else its launch file member."""
         if covers(endpoint.node, endpoint, inputs):
             return [endpoint.node]
-        return [fqn for fqn in endpoint.process_nodes if covers(fqn, endpoint, inputs)]
+        owners = [fqn for fqn in endpoint.process_nodes if covers(fqn, endpoint, inputs)]
+        if not owners and endpoint.launch_file and covers(endpoint.launch_file, endpoint, inputs):
+            owners = [endpoint.launch_file]
+        return owners
 
     for endpoint in endpoints:
         if endpoint.kind == "t":
@@ -228,6 +237,9 @@ def check_endpoints(
                 )
             continue
         if inputs and endpoint.topic in fed:
+            continue
+        # A topic the launch file member publishes stays inside the member.
+        if inputs and covers(endpoint.launch_file, endpoint, False):
             continue
         if inputs:
             level = WARNING if endpoint.topic in accepted else ERROR

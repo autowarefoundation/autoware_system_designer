@@ -141,6 +141,7 @@ def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_pat
         "accept": ["/map"],
         "skip_outputs": ["/debug"],
         "duration": 2.5,
+        "lead_in": 0.5,
         "domain_id": 7,
         "save_reference": True,
     }
@@ -162,6 +163,7 @@ def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_pat
         "accept": ["/map"],
         "outputs": [],
         "skip_outputs": ["/debug"],
+        "lead_in": 0.5,
     }
 
     done = _finished(served, job["id"])
