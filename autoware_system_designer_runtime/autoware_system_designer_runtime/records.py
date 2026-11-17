@@ -20,8 +20,8 @@ tree, which every rebuild replaces, and outside the per-run log directories::
 
     <record root>/<package>/<system>/latency/<Mode>/<YYYYmmdd-HHMMSS>.json
 
-The record root is ``$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR``, else ``records`` of the config root
-``$ROS_HOME/autoware_system_designer`` (``~/.ros`` when ``ROS_HOME`` is unset).
+The record root is ``$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR``, else ``records`` of the config root, the
+user home of user_home.
 Plain Python with no ROS import: the studio reads records without a sourced workspace.
 """
 
@@ -33,9 +33,9 @@ from pathlib import Path
 from typing import Optional
 
 from .export_tree import read_manifest
+from .user_home import home
 
 RECORD_DIR_ENV = "AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR"
-CONFIG_SUBPATH = Path("autoware_system_designer")
 RECORDS_DIR = "records"
 LATENCY_KIND = "latency"
 STAMP_FORMAT = "%Y%m%d-%H%M%S"
@@ -46,8 +46,7 @@ SYSTEM_STRUCTURE_DIR = "system_structure"
 
 def config_root() -> Path:
     """Directory of the kept files: records and saved setups, each in a subdirectory."""
-    ros_home = os.environ.get("ROS_HOME") or os.path.join("~", ".ros")
-    return Path(ros_home).expanduser() / CONFIG_SUBPATH
+    return home()
 
 
 def record_root() -> Path:

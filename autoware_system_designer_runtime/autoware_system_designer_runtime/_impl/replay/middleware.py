@@ -14,7 +14,8 @@
 
 """What a replay sets on the middleware of its scope, and the message types it reads by convention.
 
-Read from ``config/replay_middleware.yaml`` of the package:
+Read from ``config/replay_middleware.yaml`` of the package, layered with the user's file of the same name
+(see user_home):
 
 .. code-block:: yaml
 
@@ -35,7 +36,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-REPLAY_MIDDLEWARE_FILE = Path(__file__).parents[2] / "config" / "replay_middleware.yaml"
+from ...user_home import PACKAGE_CONFIG_DIR, ConfigFileError, describe, read_config
+
+REPLAY_MIDDLEWARE_NAME = "replay_middleware.yaml"
+REPLAY_MIDDLEWARE_FILE = PACKAGE_CONFIG_DIR / REPLAY_MIDDLEWARE_NAME
 
 _KEYS = ("node_parameters", "launcher", "isolation_environment", "domain_id_variable", "identifier_types")
 # Design parameter type of a value, by its Python type.
@@ -128,5 +132,12 @@ def _strings(payload: Mapping[str, Any], key: str) -> dict[str, str]:
 
 @lru_cache(maxsize=1)
 def replay_middleware() -> ReplayMiddleware:
-    """The settings of the package's own configuration file."""
-    return ReplayMiddleware.load(REPLAY_MIDDLEWARE_FILE)
+    """The settings of the package's configuration file, layered with the user's."""
+    try:
+        payload, files = read_config(REPLAY_MIDDLEWARE_NAME)
+    except ConfigFileError as exc:
+        raise ReplayMiddlewareError(str(exc)) from exc
+    try:
+        return ReplayMiddleware.from_mapping(payload)
+    except ReplayMiddlewareError as exc:
+        raise ReplayMiddlewareError(f"{describe(files)}: {exc}") from exc

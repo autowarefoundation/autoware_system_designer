@@ -58,6 +58,12 @@ def handled_interrupt():
 
 
 @pytest.fixture(autouse=True)
+def _user_home(tmp_path, monkeypatch):
+    """Each test has a user home of its own, without config overrides."""
+    monkeypatch.setenv("AUTOWARE_SYSTEM_DESIGNER_HOME", str(tmp_path / "user_home"))
+
+
+@pytest.fixture(autouse=True)
 def _studio_settings(tmp_path, monkeypatch):
     """Each test reads and writes a studio settings file of its own, whose roots are under the test's
     directory."""

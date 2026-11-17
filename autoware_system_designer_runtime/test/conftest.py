@@ -48,6 +48,12 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip)
 
 
+@pytest.fixture(autouse=True)
+def _user_home(tmp_path, monkeypatch):
+    """Each test has a user home of its own, without config overrides."""
+    monkeypatch.setenv("AUTOWARE_SYSTEM_DESIGNER_HOME", str(tmp_path / "user_home"))
+
+
 @pytest.fixture
 def ros_domain_id():
     """A ROS domain no other test run of this host holds, kept for the length of the test."""

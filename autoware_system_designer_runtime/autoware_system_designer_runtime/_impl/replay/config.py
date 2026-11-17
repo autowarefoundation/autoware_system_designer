@@ -35,7 +35,8 @@
           uuid_order: true
         /diagnostics: {rule: ignore}
 
-A key the file leaves unset takes its value from ``config/replay_defaults.yaml`` of the package.
+A key the file leaves unset takes its value from ``config/replay_defaults.yaml`` of the package, layered
+with the user's file of the same name (see user_home).
 
 Plain Python with no ROS import.
 """
@@ -47,7 +48,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-REPLAY_DEFAULTS_FILE = Path(__file__).parents[2] / "config" / "replay_defaults.yaml"
+from ...user_home import PACKAGE_CONFIG_DIR, ConfigFileError, describe, read_config
+
+REPLAY_DEFAULTS_NAME = "replay_defaults.yaml"
+REPLAY_DEFAULTS_FILE = PACKAGE_CONFIG_DIR / REPLAY_DEFAULTS_NAME
 
 RULE_EXACT = "exact"
 RULE_FIELDS = "fields"
@@ -169,15 +173,14 @@ def _seconds(value: Any, where: str) -> float:
 
 @lru_cache(maxsize=None)
 def _defaults() -> dict[str, float]:
-    import yaml
-
     try:
-        payload = yaml.safe_load(REPLAY_DEFAULTS_FILE.read_text()) or {}
-    except (OSError, yaml.YAMLError) as exc:
-        raise ConfigError(f"{REPLAY_DEFAULTS_FILE}: {exc}") from exc
-    if not isinstance(payload, Mapping) or set(payload) - {"lead_in"}:
-        raise ConfigError(f"{REPLAY_DEFAULTS_FILE}: expected a mapping with the key lead_in")
-    return {"lead_in": _seconds(payload.get("lead_in", 0.0), f"{REPLAY_DEFAULTS_FILE}: lead_in")}
+        payload, files = read_config(REPLAY_DEFAULTS_NAME)
+    except ConfigFileError as exc:
+        raise ConfigError(str(exc)) from exc
+    where = describe(files)
+    if set(payload) - {"lead_in"}:
+        raise ConfigError(f"{where}: expected a mapping with the key lead_in")
+    return {"lead_in": _seconds(payload.get("lead_in", 0.0), f"{where}: lead_in")}
 
 
 def _names(payload: Mapping[str, Any], key: str) -> list[str]:

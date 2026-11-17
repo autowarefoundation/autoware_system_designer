@@ -14,7 +14,8 @@
 
 """Topics of the middleware that no design declares, by the role the runtime gives them.
 
-The roles are read from ``config/special_topics.yaml`` of this package:
+The roles are read from ``config/special_topics.yaml`` of this package, layered with the user's file of
+the same name (see user_home):
 
 .. code-block:: yaml
 
@@ -35,7 +36,10 @@ from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-SPECIAL_TOPICS_FILE = Path(__file__).parent / "config" / "special_topics.yaml"
+from .user_home import PACKAGE_CONFIG_DIR, ConfigFileError, describe, read_config
+
+SPECIAL_TOPICS_NAME = "special_topics.yaml"
+SPECIAL_TOPICS_FILE = PACKAGE_CONFIG_DIR / SPECIAL_TOPICS_NAME
 
 _LIST_KEYS = ("infrastructure", "clock", "ambient_inputs", "nested_callbacks", "handshake_suffixes")
 _KEYS = (*_LIST_KEYS, "companions")
@@ -125,5 +129,12 @@ def _names(payload: Mapping[str, Any], key: str) -> list[str]:
 
 @lru_cache(maxsize=1)
 def special_topics() -> SpecialTopics:
-    """The roles of the package's own configuration file."""
-    return SpecialTopics.load(SPECIAL_TOPICS_FILE)
+    """The roles of the package's configuration file, layered with the user's."""
+    try:
+        payload, files = read_config(SPECIAL_TOPICS_NAME)
+    except ConfigFileError as exc:
+        raise SpecialTopicsError(str(exc)) from exc
+    try:
+        return SpecialTopics.from_mapping(payload)
+    except SpecialTopicsError as exc:
+        raise SpecialTopicsError(f"{describe(files)}: {exc}") from exc

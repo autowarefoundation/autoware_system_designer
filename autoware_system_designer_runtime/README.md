@@ -228,6 +228,7 @@ log base, the manifest, the member directory name and the tail of a member file.
 | `run_log.py`                          | Layout of a run's log directory: log base, manifest, member directory, file tail (no ROS import)        |
 | `control_protocol.py`                 | Member actions, measure verbs and interlock policies of the control surfaces (no ROS import)            |
 | `special_topics.py`                   | Roles of the topics no design declares, read from `config/special_topics.yaml` (no ROS import)          |
+| `user_home.py`                        | User home of the tools and the user's config files layered over the package's (no ROS import)           |
 | `_impl/core/config.py`                | `ActorConfig` (respawn, output dir, shutdown timeout)                                                   |
 | `_impl/core/events.py`                | Control commands (`Stop`, `Restart`, `KillSignal`, `ToggleRespawn`) and state events of the actors      |
 | `_impl/core/state.py`                 | State dataclasses: `NodePending/Running/Respawning/Stopped/Done/Failed`, `Composable*`, `BlockReason`   |
@@ -417,7 +418,20 @@ The latency file (`autoware_system_designer/latency/2`) is documented in [doc/la
 <record root>/<package>/<system>/latency/<Mode>/<YYYYmmdd-HHMMSS>.json
 ```
 
-The record root is `$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR`, else `records/` of the config root `$ROS_HOME/autoware_system_designer` (`~/.ros/...` when `ROS_HOME` is unset): outside the install tree, which every rebuild replaces, and outside the per-run log directories. A JSON outside an export tree writes `<log-dir>/latency/<Mode>_latency.json` instead. The studio shows the newest record of a mode, else the reference measurement the export carries (`latency/<Mode>_latency.json` beside the system definition file, copied into `exports/<system>/latency/` by the build). `autoware_system_designer_runtime.records` holds this layout for other tools.
+The record root is `$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR`, else `records/` of the config root, the user home (see [User home](#user-home)): outside the install tree, which every rebuild replaces, and outside the per-run log directories. A JSON outside an export tree writes `<log-dir>/latency/<Mode>_latency.json` instead. The studio shows the newest record of a mode, else the reference measurement the export carries (`latency/<Mode>_latency.json` beside the system definition file, copied into `exports/<system>/latency/` by the build). `autoware_system_designer_runtime.records` holds this layout for other tools.
+
+## User home
+
+The tools keep the user's files under `$AUTOWARE_SYSTEM_DESIGNER_HOME`, else `~/.autoware/system_designer`:
+
+```text
+<user home>/studio.yaml          # studio settings
+<user home>/config/<name>.yaml   # overrides of the package's config/<name>.yaml
+<user home>/records/             # measurement records
+<user home>/replay_setups/       # saved replay setups
+```
+
+Each of `special_topics.yaml`, `replay_middleware.yaml` and `replay_defaults.yaml` is read from `config/` of this package, with every top-level key the user's file of the same name sets replaced by the user's value. A user file holds only the keys it changes; the files are read once per process.
 
 ## Deterministic replay
 
@@ -445,7 +459,7 @@ autoware-system-designer-replay SYSTEM.json --scope /perception/object_recogniti
 
 `--scope PATH` selects every node at or under a design path. A node placed at a module's own path (a player node at `/sensing` beside the `sensing` module) is under that path, and is named alone as `<path>/<name>`. The boundary comes from the export: an input topic of a scope node with a publisher outside the scope is a boundary input, an output topic with a subscriber outside the scope (or none inside) is a boundary output. The scope's members are launched as in `autoware-system-designer-launch`, each with `use_sim_time: true` and without intra-process delivery.
 
-The topics no design declares take their role from `config/special_topics.yaml` of this package; measurement and the studio read the same file:
+The topics no design declares take their role from `config/special_topics.yaml` of this package, layered with the user's (see [User home](#user-home)); measurement and the studio read the same file:
 
 | Key                  | Role                                                                           | Topics                         |
 | -------------------- | ------------------------------------------------------------------------------ | ------------------------------ |
@@ -456,7 +470,7 @@ The topics no design declares take their role from `config/special_topics.yaml` 
 | `nested_callbacks`   | Topics whose callbacks a running callback of the same process may wait on      | `/tf`, `/tf_static`            |
 | `handshake_suffixes` | Suffixes of the handshake topics a publisher creates beside a negotiated topic | `/_supported_types`            |
 
-What a replay sets on the middleware of its scope comes from `config/replay_middleware.yaml` of this package:
+What a replay sets on the middleware of its scope comes from `config/replay_middleware.yaml` of this package, layered with the user's:
 
 | Key                     | Role                                                                     | Value                                   |
 | ----------------------- | ------------------------------------------------------------------------ | --------------------------------------- |

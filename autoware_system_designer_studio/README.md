@@ -146,7 +146,7 @@ autoware-system-designer-studio serve \
     --record-dir ~/records \       # measurement records (default: records/ of the config root)
     --bag-dir /data/bags \         # where the bag of a dropped file is searched (repeatable)
     --log-root /data/asd_logs \    # run logs: launch/, replay/ (default: /tmp/autoware_system_designer_logs)
-    --config-root ~/asd \          # kept files: records/, replay_setups/ (default: $ROS_HOME/autoware_system_designer)
+    --config-root ~/asd \          # kept files: records/, replay_setups/ (default: ~/.autoware/system_designer)
     --port 8780 \                  # 0 picks a free port
     --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
     --compute-unit main_ecu \      # units local to this daemon (repeatable; default: every onboard unit)
@@ -364,7 +364,7 @@ The daemon writes under two roots, each function in a subdirectory of its own:
 | Root        | Default                              | Subdirectories                                                |
 | ----------- | ------------------------------------ | ------------------------------------------------------------- |
 | log root    | `/tmp/autoware_system_designer_logs` | `launch/` launch runs, `replay/` replay runs                  |
-| config root | `$ROS_HOME/autoware_system_designer` | `records/` measurement records, `replay_setups/` saved setups |
+| config root | `~/.autoware/system_designer`        | `records/` measurement records, `replay_setups/` saved setups |
 
 A launch gets its run directory under `launch/` (the launcher's `--log-dir`) and the record root in
 `$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR`; `--record-dir` or that variable set for the daemon fixes the
@@ -373,8 +373,10 @@ subdirectories; a root is chosen with a path selector, or set back to its defaul
 `settings.set` (`log_root`, `config_root`: an absolute path,
 or empty for the default); `settings.get` (`GET /api/settings`) and `health` (`storage`) give the
 same view. Roots set so are kept in the settings file
-(`$AUTOWARE_SYSTEM_DESIGNER_STUDIO_SETTINGS`, else `$XDG_CONFIG_HOME/autoware_system_designer/studio.yaml`)
-and used at the next start; `--log-root` and `--config-root` win over it.
+(`$AUTOWARE_SYSTEM_DESIGNER_STUDIO_SETTINGS`, else `studio.yaml` of the user home,
+`$AUTOWARE_SYSTEM_DESIGNER_HOME` or `~/.autoware/system_designer`) and used at the next start;
+`--log-root` and `--config-root` win over it. The view also names the user's config directory and
+the files in it that override a config file of the runtime (`user_config_dir`, `config_overrides`).
 
 ### Launch
 

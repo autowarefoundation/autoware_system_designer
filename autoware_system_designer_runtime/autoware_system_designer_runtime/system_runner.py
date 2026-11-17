@@ -394,7 +394,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="FILE",
         help="Latency file to write, JSON. Default: a new record latency/<Mode>/<stamp>.json of the export "
-        "under the record root ($AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR, else $ROS_HOME/autoware_system_designer/records), "
+        "under the record root ($AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR, else ~/.autoware/system_designer/records), "
         "else <log-dir>/latency/<Mode>_latency.json.",
     )
     return parser

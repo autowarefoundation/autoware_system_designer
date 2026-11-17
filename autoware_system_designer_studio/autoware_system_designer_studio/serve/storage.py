@@ -27,25 +27,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-from autoware_system_designer_runtime import records
+from autoware_system_designer_runtime import records, user_home
 from autoware_system_designer_runtime.run_log import LAUNCH_LOGS, LOG_BASE, REPLAY_LOGS
 
 from . import api
 
 SETTINGS_ENV = "AUTOWARE_SYSTEM_DESIGNER_STUDIO_SETTINGS"
-SETTINGS_FILE = Path("autoware_system_designer") / "studio.yaml"
+SETTINGS_FILE = "studio.yaml"
 ROOTS = ("log_root", "config_root")
 REPLAY_SETUPS = "replay_setups"
 
 
 def settings_file() -> Path:
-    """The daemon's settings file: ``$AUTOWARE_SYSTEM_DESIGNER_STUDIO_SETTINGS``, else under the user's
-    configuration directory."""
+    """The daemon's settings file: ``$AUTOWARE_SYSTEM_DESIGNER_STUDIO_SETTINGS``, else in the user home."""
     override = os.environ.get(SETTINGS_ENV)
     if override:
         return Path(override).expanduser()
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / SETTINGS_FILE
+    return user_home.home() / SETTINGS_FILE
 
 
 def defaults() -> dict[str, Path]:
@@ -176,4 +174,6 @@ class Storage:
                 "replay_setups": str(self.replay_setups),
             },
             "records_fixed": self.record_override is not None,
+            "user_config_dir": str(user_home.user_config_dir()),
+            "config_overrides": [str(path) for path in user_home.user_overrides()],
         }

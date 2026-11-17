@@ -134,7 +134,7 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         "--config-root",
         type=Path,
         help="directory of the kept files, records/ and replay_setups/ under it "
-        "(default: the settings file's, else $ROS_HOME/autoware_system_designer)",
+        "(default: the settings file's, else ~/.autoware/system_designer)",
     )
     serve.add_argument(
         "--heartbeat-interval",
