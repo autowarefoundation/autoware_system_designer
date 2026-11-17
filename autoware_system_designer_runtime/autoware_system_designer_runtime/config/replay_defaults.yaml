@@ -1,4 +1,4 @@
 # Values of the replay configuration keys a run leaves unset.
 
-# Seconds from the bag's start over which only the ambient inputs and the latched topics are fed.
+# Seconds from the bag's start over which only the ambient inputs and the last message of each latched topic are fed.
 lead_in: 0.5

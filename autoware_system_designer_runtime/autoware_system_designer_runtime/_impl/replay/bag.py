@@ -111,7 +111,7 @@ def info_from_metadata(payload: Mapping[str, Any], path: Path, fingerprint: str 
         )
     return BagInfo(
         path=Path(path),
-        storage_id=str(info.get("storage_identifier", "")),
+        storage_id=str(info.get("storage_identifier") or "") or _storage_of_files(info, Path(path)),
         start_ns=int((info.get("starting_time") or {}).get("nanoseconds_since_epoch", 0)),
         duration_ns=int((info.get("duration") or {}).get("nanoseconds", 0)),
         topics=topics,
@@ -145,6 +145,16 @@ def remap_topics(info: BagInfo, remap: Mapping[str, str]) -> BagInfo:
         else:
             topics[name] = topic
     return replace(info, topics=topics, shadowed=sorted(shadowed))
+
+
+def _storage_of_files(info: Mapping[str, Any], directory: Path) -> str:
+    """Storage of a bag whose metadata names none: the suffix of its listed files, else of the files
+    in *directory*."""
+    for name in info.get("relative_file_paths") or []:
+        storage_id = _STORAGE_BY_SUFFIX.get(Path(str(name)).suffix)
+        if storage_id:
+            return storage_id
+    return _storage_id(directory) if directory.is_dir() else ""
 
 
 def _storage_id(directory: Path) -> str:
@@ -268,28 +278,34 @@ class BagMessages:
 
 
 class LeadIn:
-    """A message source without the messages recorded before *since_ns* on topics outside *kept*."""
+    """A message source that, before *since_ns*, holds every message of the topics in *kept* and the
+    last message of each topic in *latched*: what a subscriber joining at *since_ns* receives from a
+    transient-local publisher, whatever rate it was recorded at."""
 
-    def __init__(self, source, since_ns: int, kept: Collection[str]) -> None:
+    def __init__(self, source, since_ns: int, kept: Collection[str], latched: Collection[str] = ()) -> None:
         self._source = source
-        self._since_ns = since_ns
-        self._kept = frozenset(kept)
-        self._skip()
-
-    def _skip(self) -> None:
+        kept = frozenset(kept)
+        latched = frozenset(latched) - kept
+        held: list[tuple[int, tuple[int, str, bytes]]] = []
+        last: dict[str, tuple[int, tuple[int, str, bytes]]] = {}
+        order = 0
         while True:
-            message = self._source.peek()
-            if message is None or message[0] >= self._since_ns or message[1] in self._kept:
-                return
-            self._source.pop()
+            message = source.peek()
+            if message is None or message[0] >= since_ns:
+                break
+            source.pop()
+            if message[1] in kept:
+                held.append((order, message))
+            elif message[1] in latched:
+                last[message[1]] = (order, message)
+            order += 1
+        self._held = [message for _, message in sorted([*held, *last.values()], key=lambda item: item[0])]
 
     def peek(self) -> Optional[tuple[int, str, bytes]]:
-        return self._source.peek()
+        return self._held[0] if self._held else self._source.peek()
 
     def pop(self) -> tuple[int, str, bytes]:
-        message = self._source.pop()
-        self._skip()
-        return message
+        return self._held.pop(0) if self._held else self._source.pop()
 
     def close(self) -> None:
         self._source.close()

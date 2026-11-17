@@ -422,7 +422,8 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
                 fqns,
                 _real_endpoints(endpoints, members, launch_files),
                 accept=config.accept,
-                fed=[*fed, *config.inputs],
+                # Without a bag, the ambient inputs a run would feed stand in for the fed topics.
+                fed=[*fed, *config.inputs, *(special_topics().ambient_inputs if bag is None else ())],
                 unconnected=unconnected,
             )
             if options.allow_undeclared:
@@ -458,8 +459,8 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
 
         source = BagMessages(bag, sorted(fed)) if bag is not None else _NoSource()
         if bag is not None and config.lead_in > 0:
-            kept = {*special_topics().ambient_inputs, *(t for t in fed if bag.topics[t].transient_local)}
-            source = LeadIn(source, start_ns + int(config.lead_in * 1e9), kept)
+            latched = {t for t in fed if bag.topics[t].transient_local}
+            source = LeadIn(source, start_ns + int(config.lead_in * 1e9), special_topics().ambient_inputs, latched)
         steps = open(out_dir / STEP_LOG_FILE, "w") if options.step_log else None
         started = time.monotonic()
 

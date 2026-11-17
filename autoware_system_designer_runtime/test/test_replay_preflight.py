@@ -236,7 +236,13 @@ def test_undeclared_subscription_fails_and_undeclared_publisher_warns():
 
 def test_launch_file_member_stands_for_the_nodes_it_starts():
     design = system(
-        [node("/map", out_ports=[out_port("vector_map", "/map/vector_map", "map.vector_map", [])], state="ros2_launch_file")]
+        [
+            node(
+                "/map",
+                out_ports=[out_port("vector_map", "/map/vector_map", "map.vector_map", [])],
+                state="ros2_launch_file",
+            )
+        ]
     )
     inner = [
         RealEndpoint("p", "/map/loader", "/map/vector_map", launch_file="/map"),
@@ -304,6 +310,36 @@ def test_lead_in_feeds_only_the_kept_topics_before_its_end():
         fed.append(source.pop()[:2])
 
     assert fed == [(1, "/tf"), (5, "/in"), (6, "/tf")]
+
+
+def test_lead_in_feeds_the_last_message_of_a_latched_topic_before_its_end():
+    source = LeadIn(
+        _Messages(
+            [(0, "/latched", b"a"), (1, "/tf", b""), (2, "/latched", b"b"), (3, "/in", b""), (5, "/latched", b"c")]
+        ),
+        5,
+        {"/tf"},
+        {"/latched"},
+    )
+
+    fed = []
+    while source.peek() is not None:
+        fed.append(source.pop())
+
+    assert fed == [(1, "/tf", b""), (2, "/latched", b"b"), (5, "/latched", b"c")]
+
+
+def test_bag_metadata_without_storage_takes_it_from_the_file_suffix(tmp_path):
+    (tmp_path / "metadata.yaml").write_text(
+        "rosbag2_bagfile_information:\n"
+        "  storage_identifier: ''\n"
+        "  starting_time: {nanoseconds_since_epoch: 1000}\n"
+        "  duration: {nanoseconds: 500}\n"
+        "  relative_file_paths: [drive_0.mcap]\n"
+        "  topics_with_message_count: []\n"
+    )
+
+    assert read_bag_info(tmp_path).storage_id == "mcap"
 
 
 def test_config_reads_the_lead_in_over_the_default_and_rejects_a_negative_one():

@@ -23,7 +23,7 @@
     accept: [/map/vector_map]                 # inputs, services or subscriptions that stay unfed
     outputs: [/perception/internal/objects]   # internal topics recorded beside the boundary outputs
     skip_outputs: [/perception/debug/image]   # boundary outputs left unrecorded
-    lead_in: 0.5                              # seconds only transforms and latched topics are fed
+    lead_in: 0.5                              # seconds only transforms and latched last messages are fed
     compare:
       default: exact                          # exact | fields | ignore
       topics:
@@ -99,7 +99,7 @@ class ReplayConfig:
     accept: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=list)
     skip_outputs: list[str] = field(default_factory=list)
-    # Seconds from the bag's start over which only the ambient inputs and the latched topics are fed.
+    # Seconds from the bag's start over which only the ambient inputs and the last message of each latched topic are fed.
     lead_in: float = field(default_factory=lambda: _defaults()["lead_in"])
     # Recorded bag topic to the topic it is fed as.
     remap: dict[str, str] = field(default_factory=dict)

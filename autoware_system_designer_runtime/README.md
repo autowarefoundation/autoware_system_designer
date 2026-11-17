@@ -469,7 +469,7 @@ What a replay sets on the middleware of its scope comes from `config/replay_midd
 The run starts with two checks:
 
 - **Bag against boundary** (`--check` stops after it): every boundary input is in the bag with the design's message type and a type the workspace can load. An input the design gives no publisher, an input also published inside the scope (the bag then carries the scope's own recorded messages) and a service server without a client in scope are warnings; a service client without a server in scope is an error.
-- **Real endpoints against the design**, once the scope is up (`--check-endpoints` stops after it and needs no bag): the subscriptions, publishers and timers each process created, reported by the tracer, against the declared ports and periodic events. A subscription no port of its process declares is a missing boundary input and fails the run (`--allow-undeclared` runs anyway); the ambient inputs of the bag (`/tf`, `/tf_static`) are fed to every scope and accepted as subscriptions, since a node may create its transform listener inside a callback; an undeclared publisher, a declared port without an endpoint and a declared rate without a timer are warnings.
+- **Real endpoints against the design**, once the scope is up (`--check-endpoints` stops after it and needs no bag): the subscriptions, publishers and timers each process created, reported by the tracer, against the declared ports and periodic events. A subscription no port of its process declares is a missing boundary input and fails the run (`--allow-undeclared` runs anyway); the ambient inputs of the bag (`/tf`, `/tf_static`) are fed to every scope and accepted as subscriptions, since a node may create its transform listener inside a callback (without a bag, the ambient inputs are accepted as well); an undeclared publisher, a declared port without an endpoint and a declared rate without a timer are warnings.
 
 The replay configuration (`--config FILE`, YAML) declares what the ports do not say:
 
@@ -481,7 +481,7 @@ remap: # recorded topic: topic it is fed as
 accept: [/map/vector_map] # inputs, services or subscriptions that stay unfed
 outputs: [/perception/object_recognition/tracking/objects] # internal topics recorded beside the boundary outputs
 skip_outputs: [/perception/object_recognition/debug/image] # boundary outputs left unrecorded
-lead_in: 0.5 # seconds from the bag's start over which only the ambient inputs and the latched topics are fed; unset, the value of config/replay_defaults.yaml
+lead_in: 0.5 # seconds from the bag's start over which only the ambient inputs and the last message of each latched topic are fed; unset, the value of config/replay_defaults.yaml
 compare:
   default: exact # exact | fields | ignore
   topics:
@@ -553,7 +553,7 @@ A reference is the `outputs/` of a run kept by `--save-reference`. It lives unde
 
 ### Limits
 
-- **Blocking calls in a callback.** A callback that waits on ROS time or on another callback (a TF lookup with a timeout, `spin_until_future_complete`, `Rate::sleep`, `wait_for_message`) blocks while the driver holds both. The run fails after `--callback-timeout` and names the callback. A transform lookup for a message stamped before the bag's first transform is such a wait; `lead_in` in the replay configuration feeds only the ambient inputs and the latched topics over the first seconds of the bag.
+- **Blocking calls in a callback.** A callback that waits on ROS time or on another callback (a TF lookup with a timeout, `spin_until_future_complete`, `Rate::sleep`, `wait_for_message`) blocks while the driver holds both. The run fails after `--callback-timeout` and names the callback. A transform lookup for a message stamped before the bag's first transform is such a wait; `lead_in` in the replay configuration feeds only the ambient inputs over the first seconds of the bag, and of each latched (transient-local) topic the last message recorded before its end.
 - **Services and actions** pass the gate unordered; their callbacks count as violations when they publish.
 - **Polled subscriptions** (taken inside another callback, never waited on) are not gated. A take that finds nothing while a published message is still in flight waits for it, so a poll sees what was published before it.
 - **Several messages in flight to one subscription** (a callback that publishes twice on a topic) are waited for by a fixed pause, not by observation; with a keep-last depth below the burst, which messages survive is not checked.
