@@ -22,14 +22,20 @@ require(
 const { phaseStates } = global.window.SD.activities.replay;
 
 function states(job) {
-  return phaseStates(job).map(({ phase, state, width }) => [phase.name, state, width]);
+  return phaseStates(job).map(({ phase, state, width }) => [
+    phase.name,
+    state,
+    width,
+  ]);
 }
 
 function job(state, phases, current, params = {}) {
   return {
     state,
     params,
-    detail: phases ? { phases, progress: { phase: current, step: "", fraction: null } } : {},
+    detail: phases
+      ? { phases, progress: { phase: current, step: "", fraction: null } }
+      : {},
   };
 }
 
@@ -68,7 +74,11 @@ test("a replay cut short stays stopped while its post-process completes", () => 
 });
 
 test("a scope that never came up stops in its pre-process", () => {
-  const failed = job("failed", { "pre-process": null, "post-process": 1 }, "post-process");
+  const failed = job(
+    "failed",
+    { "pre-process": null, "post-process": 1 },
+    "post-process",
+  );
   assert.deepEqual(states(failed), [
     ["pre-process", "stopped", null],
     ["replay", "pending", 0],

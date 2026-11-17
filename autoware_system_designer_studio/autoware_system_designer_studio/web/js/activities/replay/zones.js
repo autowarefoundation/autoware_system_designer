@@ -32,7 +32,10 @@
     const { above, below } = pair;
     const total = heights[above] + heights[below];
     if (total < 2 * least) return heights;
-    const top = Math.max(least, Math.min(heights[above] + delta, total - least));
+    const top = Math.max(
+      least,
+      Math.min(heights[above] + delta, total - least),
+    );
     const next = heights.slice();
     next[above] = top;
     next[below] = total - top;
@@ -106,7 +109,9 @@
     function apply() {
       zones.forEach((zone) => {
         zone.element.classList.toggle("folded", zone.folded);
-        zone.element.style.flex = zone.folded ? "0 0 auto" : `${zone.weight} 1 0px`;
+        zone.element.style.flex = zone.folded
+          ? "0 0 auto"
+          : `${zone.weight} 1 0px`;
         zone.toggle.setAttribute("aria-expanded", String(!zone.folded));
         zone.toggle.title = zone.folded ? "Expand" : "Fold";
       });
@@ -130,7 +135,9 @@
         if (!neighbours(folds(), index)) return;
         start = {
           y: event.clientY,
-          heights: zones.map((zone) => zone.element.getBoundingClientRect().height),
+          heights: zones.map(
+            (zone) => zone.element.getBoundingClientRect().height,
+          ),
         };
         // Weights in pixels, so a drag moves the edge with the pointer.
         zones.forEach((zone, i) => {
@@ -142,7 +149,12 @@
       });
       divider.addEventListener("pointermove", (event) => {
         if (!start) return;
-        const heights = resize(start.heights, folds(), index, event.clientY - start.y);
+        const heights = resize(
+          start.heights,
+          folds(),
+          index,
+          event.clientY - start.y,
+        );
         zones.forEach((zone, i) => {
           if (!zone.folded) zone.weight = heights[i];
         });

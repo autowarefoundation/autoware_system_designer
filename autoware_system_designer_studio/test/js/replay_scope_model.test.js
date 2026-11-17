@@ -230,11 +230,7 @@ test("an input of no design type takes any free bag topic", () => {
   assert.deepEqual(untyped.candidates, ["/raw"]);
   assert.deepEqual(
     model.inputChoices(untyped, bag).map((choice) => choice.note),
-    [
-      `7 messages, ${STRING}, remapped`,
-      "",
-      "the pre-flight passes without it",
-    ],
+    [`7 messages, ${STRING}, remapped`, "", "the pre-flight passes without it"],
   );
 });
 

@@ -35,8 +35,9 @@ import logging
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-from autoware_system_designer_runtime.special_topics import special_topics
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+from autoware_system_designer_runtime.special_topics import special_topics
 
 from .. import latency
 from ..exports import SystemExport
