@@ -1,10 +1,11 @@
 // Replay: the scope selector, the mode's namespace tree with one checkbox per
-// entry. A checked entry selects every launched node at or under its path.
+// entry. A checked entry selects every launched node at or under its path; a
+// node placed at a module's own path has an entry of its own below it.
 (function () {
   const SD = window.SD;
   const { element, section } = SD.widgets;
   const replay = (SD.activities.replay ||= {});
-  const { under } = replay.model;
+  const { selects } = replay.model;
 
   // `selection` is { nodes(), selected(): Set of node paths, toggle(path, on), clear() }.
   function scopeTree(selection) {
@@ -38,7 +39,7 @@
         selectable: () => false,
         onToggle: render,
         decorate(entry, row) {
-          const members = nodes.filter((node) => under(node.path, entry.path));
+          const members = nodes.filter((node) => selects(node, entry.path));
           const chosen = members.filter((node) => selected.has(node.path));
           const box = document.createElement("input");
           box.type = "checkbox";
@@ -60,7 +61,12 @@
     // Entities of the structure draw the tree; top-level entries start open.
     function setStructure(data) {
       root = data
-        ? SD.NamespaceTree.build(SD.NamespaceTree.entities(data))
+        ? SD.NamespaceTree.build(
+            SD.NamespaceTree.entities(data).map((entity) => ({
+              ...entity,
+              path: SD.NamespaceTree.entityKey(entity),
+            })),
+          )
         : null;
       expanded.clear();
       if (root) root.children.forEach((child) => expanded.add(child.path));

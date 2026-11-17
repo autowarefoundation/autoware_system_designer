@@ -90,6 +90,25 @@ test("the fewest paths name a selection", () => {
   assert.deepEqual(paths(), []);
 });
 
+test("a node at a module's own path is selected by its key", () => {
+  const root = design();
+  const player = node("/mod/player", [], [port("/in")]);
+  root.children.push({ ...player, path: "/mod", namespace: "/" });
+  const nodes = model.nodes(root);
+  const paths = (...selected) => model.patternsOf(nodes, new Set(selected));
+
+  assert.equal(nodes[nodes.length - 1].key, "/mod/player");
+  assert.deepEqual(model.selectScope(nodes, ["/mod"]).nodes, [
+    "/mod/a",
+    "/mod/b",
+    "/mod",
+  ]);
+  assert.deepEqual(model.selectScope(nodes, ["/mod/player"]).nodes, ["/mod"]);
+  assert.deepEqual(paths("/mod/a", "/mod/b", "/mod"), ["/mod"]);
+  assert.deepEqual(paths("/mod/a", "/mod/b"), ["/mod/a", "/mod/b"]);
+  assert.deepEqual(paths("/mod"), ["/mod/player"]);
+});
+
 test("the boundary holds outside inputs, outputs and service ports", () => {
   const nodes = model.nodes(design());
   const bound = model.boundary(nodes, ["/mod/a", "/mod/b"]);
@@ -190,6 +209,7 @@ test("the configuration and command name the scope, remap and bag", () => {
       remap: { "/raw": "/in" },
       accept: ["/srv/get", "/lonely"],
       outputs: ["/mid"],
+      skip_outputs: ["/out"],
     }),
     [
       "scope:",
@@ -201,6 +221,8 @@ test("the configuration and command name the scope, remap and bag", () => {
       "  - /srv/get",
       "outputs:",
       "  - /mid",
+      "skip_outputs:",
+      "  - /out",
       "",
     ].join("\n"),
   );
@@ -285,4 +307,98 @@ test("findings list problems and the topics that differ", () => {
     { level: "warning", text: "shadowed" },
     { level: "error", text: "/b: differs, count" },
   ]);
+});
+
+test("an input's choices are the bag topics of its type, unfed and accepted", () => {
+  const nodes = model.nodes(design());
+  const bound = model.boundary(nodes, ["/mod/a", "/mod/b"]);
+  const bag = new Map([
+    ["/raw", { type: STRING, count: 7 }],
+    ["/tf", { type: "tf2_msgs/msg/TFMessage", count: 1 }],
+  ]);
+  const choices = (remap, accept, withBag = bag) =>
+    Object.fromEntries(
+      model
+        .matchInputs(bound, withBag, remap, new Set(accept))
+        .map((input) => [
+          input.topic,
+          model
+            .inputChoices(input, withBag)
+            .map((c) => (c.current ? `[${c.value}]` : c.value)),
+        ]),
+    );
+
+  assert.deepEqual(choices({ "/raw": "/in" }, ["/lonely"]), {
+    "/in": ["[/raw]", "", model.ACCEPT],
+    "/lonely": ["/raw", "", `[${model.ACCEPT}]`],
+    "/tf": ["/raw", "[/tf]"],
+  });
+  assert.deepEqual(choices({}, [], null)["/in"], ["[]", model.ACCEPT]);
+});
+
+test("the graph joins bag topics, boundary ports and the scope's node ports", () => {
+  const nodes = model.nodes(design());
+  const scope = model.selectScope(nodes, ["/mod"]);
+  const bound = model.boundary(nodes, scope.nodes);
+  const bag = new Map([["/raw", { type: STRING, count: 7 }]]);
+  const matched = model.matchInputs(bound, bag, { "/raw": "/in" }, new Set());
+  const draw = (recorded, skipped = []) => {
+    const graph = model.graph(
+      nodes,
+      scope,
+      bound,
+      matched,
+      new Set(recorded),
+      new Set(skipped),
+    );
+    const names = new Map();
+    graph.bag.forEach((row) => names.set(row.id, `bag ${row.name}`));
+    graph.inputs.forEach((input) => names.set(input.id, `in ${input.topic}`));
+    graph.nodes.forEach((item) =>
+      [...item.inputs, ...item.outputs].forEach((p) =>
+        names.set(p.id, `${item.path}:${p.name}`),
+      ),
+    );
+    return {
+      graph,
+      edges: graph.edges.map(
+        (e) => `${e.kind} ${names.get(e.from)} > ${names.get(e.to)}`,
+      ),
+    };
+  };
+
+  const { graph, edges } = draw([]);
+  assert.deepEqual(
+    graph.nodes.map((item) => [item.path, item.name, item.container]),
+    [
+      ["/mod/a", "a", false],
+      ["/mod/b", "b", false],
+      ["/cc", "cc", true],
+    ],
+  );
+  assert.deepEqual(
+    graph.bag.map((row) => [row.name, row.input, row.status]),
+    [["/raw", "/in", "remapped"]],
+  );
+  assert.deepEqual(edges, [
+    "feed bag /raw > in /in",
+    "input in /in > /mod/a:/in",
+    "input in /lonely > /mod/a:/lonely",
+    "internal /mod/a:/mid > /mod/b:/mid",
+    "input in /tf > /mod/b:/tf",
+  ]);
+  const marks = (drawn) =>
+    drawn.nodes
+      .flatMap((item) => item.outputs)
+      .map((p) => [p.topic, p.boundary, p.recorded]);
+  assert.deepEqual(marks(graph), [
+    ["/mid", false, false],
+    ["/out", true, true],
+  ]);
+  const chosen = draw(["/mid"], ["/out"]).graph;
+  assert.deepEqual(marks(chosen), [
+    ["/mid", false, true],
+    ["/out", true, false],
+  ]);
+  assert.equal(chosen.key, graph.key);
 });

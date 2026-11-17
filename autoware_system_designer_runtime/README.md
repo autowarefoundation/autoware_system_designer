@@ -259,7 +259,7 @@ log base, the manifest, the member directory name and the tail of a member file.
 | `_impl/measure/writer.py`             | Latency file                                                                                            |
 | `_impl/replay/scope.py`               | Scope selection by design path, boundary inputs and outputs, the scope's structure                      |
 | `_impl/replay/config.py`              | Replay configuration file                                                                               |
-| `_impl/replay/bag.py`                 | Bag metadata, messages in recorded order, writer of the recorded outputs                                |
+| `_impl/replay/bag.py`                 | Bag metadata, read or generated, messages in recorded order, writer of the recorded outputs             |
 | `_impl/replay/preflight.py`           | Bag against boundary, real endpoints against the design                                                 |
 | `_impl/replay/link.py`                | Socket link to the gated processes                                                                      |
 | `_impl/replay/driver.py`              | Replay driver: steps, settling, tie order                                                               |
@@ -440,7 +440,7 @@ autoware-system-designer-replay SYSTEM.json --scope /perception/object_recogniti
 
 ### Scope and boundary
 
-`--scope PATH` selects every node at or under a design path. The boundary comes from the export: an input topic of a scope node with a publisher outside the scope is a boundary input, an output topic with a subscriber outside the scope (or none inside) is a boundary output. The scope's members are launched as in `autoware-system-designer-launch`, each with `use_sim_time: true` and without intra-process delivery.
+`--scope PATH` selects every node at or under a design path. A node placed at a module's own path (a player node at `/sensing` beside the `sensing` module) is under that path, and is named alone as `<path>/<name>`. The boundary comes from the export: an input topic of a scope node with a publisher outside the scope is a boundary input, an output topic with a subscriber outside the scope (or none inside) is a boundary output. The scope's members are launched as in `autoware-system-designer-launch`, each with `use_sim_time: true` and without intra-process delivery.
 
 The run starts with two checks:
 
@@ -456,6 +456,7 @@ remap: # recorded topic: topic it is fed as
   /sensing/lidar/top/pointcloud: /perception/input/pointcloud
 accept: [/map/vector_map] # inputs, services or subscriptions that stay unfed
 outputs: [/perception/object_recognition/tracking/objects] # internal topics recorded beside the boundary outputs
+skip_outputs: [/perception/object_recognition/debug/image] # boundary outputs left unrecorded
 compare:
   default: exact # exact | fields | ignore
   topics:

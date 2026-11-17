@@ -69,6 +69,15 @@ def test_scope_path_matches_whole_segments():
     assert select_scope(design["data"], ["/mod"]).nodes == ["/mod/a"]
 
 
+def test_scope_names_a_node_placed_at_a_module_path():
+    player = {**node("/mod/player"), "path": "/mod", "namespace": "/"}
+    design = system([node("/mod/a"), player])
+
+    assert select_scope(design["data"], ["/mod"]).nodes == ["/mod/a", "/mod"]
+    assert select_scope(design["data"], ["/mod/player"]).nodes == ["/mod"]
+    assert select_scope(design["data"], ["/mod/a"]).nodes == ["/mod/a"]
+
+
 def test_scope_that_selects_nothing_is_an_error():
     with pytest.raises(ScopeError, match="/nowhere"):
         select_scope(pipeline_design()["data"], ["/mod", "/nowhere"])

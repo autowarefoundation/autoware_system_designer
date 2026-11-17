@@ -20,6 +20,7 @@ through ``rosbag2_py``, imported on first use.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional, Sequence
@@ -146,13 +147,46 @@ def remap_topics(info: BagInfo, remap: Mapping[str, str]) -> BagInfo:
     return replace(info, topics=topics, shadowed=sorted(shadowed))
 
 
-def read_bag_info(path: Path) -> BagInfo:
-    """Topics, types and time span of the bag at *path* (its directory or one of its files)."""
+def _storage_id(directory: Path) -> str:
+    """Storage of the bag files in *directory*; empty when it holds none."""
+    for suffix, storage_id in _STORAGE_BY_SUFFIX.items():
+        if any(directory.glob(f"*{suffix}")):
+            return storage_id
+    return ""
+
+
+def write_metadata(path: Path) -> Path:
+    """``metadata.yaml`` of the bag at *path* (its directory or one of its files), written by the
+    rosbag2 reindexer from the storage files of the directory; ``PermissionError`` where the
+    directory is not writable."""
+    directory = bag_directory(Path(path))
+    storage_id = _STORAGE_BY_SUFFIX.get(Path(path).suffix, "") if Path(path).is_file() else _storage_id(directory)
+    if not storage_id:
+        raise BagError(f"{path}: no .db3 or .mcap file to write {METADATA_FILE} from")
+    if not os.access(directory, os.W_OK):
+        raise PermissionError(f"{directory} is not writable")
+    import rosbag2_py
+
+    try:
+        rosbag2_py.Reindexer().reindex(rosbag2_py.StorageOptions(uri=str(directory), storage_id=storage_id))
+    except RuntimeError as exc:
+        raise BagError(f"{directory}: {exc}") from exc
+    metadata = directory / METADATA_FILE
+    if not metadata.is_file():
+        raise BagError(f"{directory}: the reindexer wrote no {METADATA_FILE}")
+    return metadata
+
+
+def read_bag_info(path: Path, *, generate: bool = False) -> BagInfo:
+    """Topics, types and time span of the bag at *path* (its directory or one of its files). With
+    *generate*, a bag without metadata gets its ``metadata.yaml`` written first."""
     path = Path(path)
     if not path.exists():
         raise BagError(f"bag {path} not found")
     directory = bag_directory(path)
     metadata = directory / METADATA_FILE
+    if generate and not metadata.is_file():
+        write_metadata(path)
     if metadata.is_file():
         import yaml
 

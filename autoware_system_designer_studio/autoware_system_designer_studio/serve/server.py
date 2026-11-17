@@ -639,7 +639,11 @@ class ServeDaemon:
         return (await self.launch.start_rviz()).to_view()
 
     async def _replay_bag(self, params: dict[str, Any]) -> dict[str, Any]:
-        return await asyncio.to_thread(replay.read_bag, _str_param(params, "path", required=True))
+        generate = params.get("generate", False)
+        if not isinstance(generate, bool):
+            raise api.ApiError(api.INVALID_PARAMS, "generate must be a boolean")
+        path = _str_param(params, "path", required=True)
+        return await asyncio.to_thread(replay.read_bag, path, generate=generate)
 
     async def _replay_start(self, params: dict[str, Any]) -> dict[str, Any]:
         system = await self._find_system(_str_param(params, "system", required=True))

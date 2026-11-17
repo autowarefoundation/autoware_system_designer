@@ -100,6 +100,16 @@ def test_bag_topics_are_read_by_path(served, tmp_path):
     assert _call(served, "replay.bag", {"path": str(tmp_path / "none")})["error"]["code"] == "not_found"
 
 
+def test_bag_with_metadata_is_read_as_is_by_uri(served, tmp_path):
+    bag = _bag(tmp_path)
+
+    body = _call(served, "replay.bag", {"path": bag.as_uri(), "generate": True})
+
+    assert body["ok"], body
+    assert (body["result"]["metadata"], body["result"]["path"]) == ("file", str(bag))
+    assert _call(served, "replay.bag", {"path": str(bag), "generate": "yes"})["error"]["code"] == "invalid_params"
+
+
 def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_path):
     params = {
         "system": SYSTEM_ID,
@@ -109,6 +119,7 @@ def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_pat
         "scope": ["/perception"],
         "remap": {"/raw": "/in"},
         "accept": ["/map"],
+        "skip_outputs": ["/debug"],
         "duration": 2.5,
         "domain_id": 7,
         "save_reference": True,
@@ -130,6 +141,7 @@ def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_pat
         "remap": {"/raw": "/in"},
         "accept": ["/map"],
         "outputs": [],
+        "skip_outputs": ["/debug"],
     }
 
     done = _finished(served, job["id"])

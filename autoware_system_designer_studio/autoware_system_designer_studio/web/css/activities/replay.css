@@ -1,4 +1,4 @@
-/* Replay activity: the scope tree's checkboxes and the boundary tables. */
+/* Replay activity: the scope tree's checkboxes, the scope diagram and the blocks below it. */
 
 .replay-scope-head {
   display: flex;
@@ -19,6 +19,323 @@
 
 .ns-row.in-scope .ns-label {
   color: var(--text-primary);
+}
+
+/* Scope diagram: the top of the view, at the height the divider sets. */
+.replay-diagram {
+  position: relative;
+  flex: 0 0 auto;
+  height: 48%;
+  min-height: 120px;
+  max-height: calc(100% - 120px);
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.replay-divider {
+  flex-shrink: 0;
+  height: 6px;
+  margin: -3px 0;
+  cursor: row-resize;
+  border-top: 1px solid var(--border-color);
+  background: transparent;
+  background-clip: padding-box;
+  z-index: 2;
+  touch-action: none;
+  transition: background 0.2s;
+}
+
+.replay-divider:hover,
+.replay-divider.resizing {
+  background: var(--border-active);
+  opacity: 0.5;
+}
+
+.replay-graph-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.replay-graph-empty[hidden] {
+  display: none;
+}
+
+.replay-graph-summary {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.replay-graph-summary.blocked {
+  color: var(--state-failed);
+}
+
+.replay-graph-fit {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* Graph marks. Text keeps the canvas font, which sizes the boxes. */
+.replay-graph text {
+  dominant-baseline: central;
+  font-size: 11px;
+  fill: var(--text-primary);
+  pointer-events: none;
+  user-select: none;
+}
+
+.replay-graph .replay-g-caption {
+  dominant-baseline: auto;
+  font-weight: 600;
+  fill: var(--text-secondary);
+}
+
+.replay-graph .replay-g-note,
+.replay-graph .replay-g-count,
+.replay-graph .replay-g-namespace,
+.replay-graph .replay-g-portname {
+  font-size: 9px;
+  fill: var(--text-muted);
+}
+
+.replay-graph .replay-g-portname {
+  fill: var(--text-secondary);
+}
+
+.replay-graph .replay-g-name {
+  font-weight: 600;
+}
+
+.replay-g-bag > rect {
+  fill: var(--flow-topic-bg);
+  stroke: var(--flow-topic-border);
+}
+
+.replay-g-row > rect {
+  fill: transparent;
+}
+
+.replay-g-frame {
+  fill: var(--bg-secondary);
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 8 5;
+}
+
+.replay-g-node > rect {
+  fill: var(--flow-node-bg);
+  stroke: var(--flow-node-border);
+}
+
+.replay-g-node.container > rect {
+  stroke-dasharray: 4 3;
+}
+
+.replay-g-hit {
+  fill: transparent;
+  stroke: none;
+}
+
+.replay-g-port {
+  fill: var(--text-muted);
+}
+
+.replay-g-nodeport.input .replay-g-port {
+  fill: var(--flow-in);
+}
+
+/* Output port: hollow while its topic is not recorded. */
+.replay-g-nodeport.output .replay-g-port {
+  fill: var(--bg-secondary);
+  stroke: var(--flow-out);
+  stroke-width: 1;
+}
+
+.replay-g-nodeport.output.recorded .replay-g-port {
+  fill: var(--flow-out);
+}
+
+.replay-g-nodeport.recorded .replay-g-portname {
+  fill: var(--flow-out);
+  font-weight: 600;
+}
+
+.replay-g-action {
+  cursor: pointer;
+}
+
+.replay-g-chip > rect {
+  fill: var(--bg-secondary);
+  stroke: var(--state-idle);
+  stroke-width: 1.2;
+}
+
+.replay-g-chip.fed > rect,
+.replay-g-chip.remapped > rect {
+  fill: var(--flow-in-bg);
+  stroke: var(--flow-in);
+}
+
+.replay-g-chip.accepted > rect,
+.replay-g-chip.unpublished > rect {
+  stroke: var(--state-warning);
+  stroke-dasharray: 4 3;
+}
+
+.replay-g-chip.missing > rect,
+.replay-g-chip.type > rect {
+  stroke: var(--state-failed);
+}
+
+.replay-g-chip.missing text,
+.replay-g-chip.type text,
+.replay-g-row.type text {
+  fill: var(--state-failed);
+}
+
+.replay-g-edge {
+  fill: none;
+  stroke: var(--border-hover);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.replay-g-edge.feed {
+  stroke: var(--flow-in);
+  stroke-width: 1.4;
+}
+
+/* A remap: the bag topic feeds an input of another name. */
+.replay-g-edge.feed.remapped {
+  stroke: var(--highlight);
+  stroke-dasharray: 6 3;
+}
+
+.replay-g-row.remapped .replay-g-topic {
+  fill: var(--highlight);
+}
+
+.replay-g-edge.feed.type {
+  stroke: var(--state-failed);
+  stroke-dasharray: 2 3;
+}
+
+.replay-g-edge.lit {
+  stroke: var(--highlight);
+  stroke-width: 2;
+}
+
+.replay-g-chip.lit > rect,
+.replay-g-row.lit > rect {
+  stroke: var(--highlight);
+  stroke-width: 1.6;
+}
+
+.replay-g-nodeport.lit .replay-g-hit {
+  fill: var(--highlight-bg);
+}
+
+/* Sources of a boundary input, beside the pointer. */
+.replay-menu {
+  position: absolute;
+  z-index: 110;
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  max-width: min(520px, calc(100% - 8px));
+  max-height: calc(100% - 8px);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-hover);
+  border-radius: 4px;
+  box-shadow: 0 4px 14px var(--shadow);
+}
+
+.replay-menu[hidden] {
+  display: none;
+}
+
+.replay-menu-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  font-family: var(--mono-font);
+  border-bottom: 1px solid var(--border-color);
+  word-break: break-all;
+}
+
+.replay-menu-topic {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.replay-menu-type,
+.replay-menu-note {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.replay-menu-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.replay-menu-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 10px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--text-primary);
+  background: none;
+  border: none;
+  box-shadow: inset 3px 0 0 transparent;
+  cursor: pointer;
+}
+
+.replay-menu-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.replay-menu-item.current {
+  box-shadow: inset 3px 0 0 var(--border-active);
+  background: var(--highlight-bg);
+}
+
+.replay-menu-label {
+  font-family: var(--mono-font);
+  word-break: break-all;
+}
+
+.replay-menu-note {
+  flex-shrink: 0;
+}
+
+/* Drop target of a bag: the whole view. */
+.replay-dropping {
+  outline: 2px dashed var(--border-active);
+  outline-offset: -4px;
 }
 
 .replay-body {
@@ -78,6 +395,91 @@
   color: var(--text-muted);
 }
 
+/* Check lists of the boundary inputs and the scope's outputs, side by side. */
+.replay-selectors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.replay-selector {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+}
+
+.replay-selector-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.replay-selector-head .replay-block-count {
+  font-weight: 400;
+}
+
+.replay-selector-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.replay-selector-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-family: var(--mono-font);
+  word-break: break-all;
+}
+
+.replay-selector-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.replay-selector-item input {
+  flex-shrink: 0;
+  margin: 0;
+  align-self: center;
+}
+
+.replay-selector-note {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.replay-selector-item.fed .replay-selector-note,
+.replay-selector-item.remapped .replay-selector-note {
+  color: var(--state-ok);
+}
+
+.replay-selector-item.accepted .replay-selector-note,
+.replay-selector-item.unpublished .replay-selector-note {
+  color: var(--state-warning);
+}
+
+.replay-selector-item.missing .replay-selector-note,
+.replay-selector-item.type .replay-selector-note {
+  color: var(--state-failed);
+}
+
+.replay-selector-item.internal .replay-topic-name {
+  color: var(--text-secondary);
+}
+
 .replay-table {
   width: 100%;
   border-collapse: collapse;
@@ -99,16 +501,7 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.replay-table tr.replay-input td:first-child {
-  box-shadow: inset 3px 0 0 var(--flow-in);
-}
-
-.replay-table tr.replay-output.boundary td:first-child {
-  box-shadow: inset 3px 0 0 var(--flow-out);
-}
-
-.replay-topic,
-.replay-paths {
+.replay-topic {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -123,38 +516,6 @@
 .replay-topic-type {
   font-size: 11px;
   color: var(--text-muted);
-}
-
-.replay-bag-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
-.replay-bag-cell select {
-  max-width: 320px;
-  font-size: 12px;
-}
-
-.replay-status {
-  font-weight: 600;
-  color: var(--state-idle);
-}
-
-.replay-status.fed,
-.replay-status.remapped {
-  color: var(--state-ok);
-}
-
-.replay-status.unpublished,
-.replay-status.accepted {
-  color: var(--state-warning);
-}
-
-.replay-status.missing,
-.replay-status.type {
-  color: var(--state-failed);
 }
 
 .replay-code {

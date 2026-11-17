@@ -29,7 +29,7 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from ._impl.replay.bag import BagError, read_bag_info
+from ._impl.replay.bag import METADATA_FILE, BagError, bag_directory, read_bag_info
 
 REPLAY_COMMAND = "autoware-system-designer-replay"
 REPLAY_SUBDIR = "replay"
@@ -58,11 +58,19 @@ __all__ = [
 ]
 
 
-def bag_topics(path: Path) -> dict[str, Any]:
-    """Topics, storage and time span of the bag at *path*; raises ``BagError`` for no readable bag."""
-    info = read_bag_info(Path(path))
+def bag_topics(path: Path, *, generate: bool = False) -> dict[str, Any]:
+    """Topics, storage and time span of the bag at *path*; raises ``BagError`` for no readable bag.
+
+    ``metadata`` tells where they were read from: the bag's ``file``, one ``generated`` on this call
+    (with *generate*, for a bag without one), or the ``storage`` file itself.
+    """
+    path = Path(path)
+    had_metadata = (bag_directory(path) / METADATA_FILE).is_file()
+    info = read_bag_info(path, generate=generate)
+    has_metadata = (bag_directory(path) / METADATA_FILE).is_file()
     return {
         "path": str(info.path),
+        "metadata": "file" if had_metadata else "generated" if has_metadata else "storage",
         "storage": info.storage_id,
         "start_ns": info.start_ns,
         "duration_ns": info.duration_ns,

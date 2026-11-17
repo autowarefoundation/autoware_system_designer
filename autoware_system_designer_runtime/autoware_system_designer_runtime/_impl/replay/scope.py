@@ -121,25 +121,36 @@ def _entity_path(entity: Mapping[str, Any]) -> str:
     return entity.get("path") or node_fqn(entity.get("name", ""), entity.get("namespace"))
 
 
+def _entity_key(entity: Mapping[str, Any]) -> str:
+    """Path that names the node alone: a node placed at a module's own path is named below it."""
+    path = _entity_path(entity)
+    name = entity.get("name", "")
+    return path if path.rstrip("/").rsplit("/", 1)[-1] == name else f"{path.rstrip('/')}/{name}"
+
+
+def _selects(entity: Mapping[str, Any], pattern: str) -> bool:
+    return _under(_entity_path(entity), pattern) or _entity_key(entity) == pattern.rstrip("/")
+
+
 def _under(path: str, pattern: str) -> bool:
     base = pattern.rstrip("/")
     return path == base or path.startswith(base + "/") or base == ""
 
 
 def select_scope(data: Mapping[str, Any], patterns: Sequence[str], *, ecu: Optional[str] = None) -> Scope:
-    """The nodes at or under each of *patterns*; every pattern must select at least one."""
+    """The nodes at or under each of *patterns*, or named by one; every pattern must select at least one."""
     if not patterns:
         raise ScopeError("no scope given")
     entities = list(_launched_nodes(data, ecu))
     nodes: list[str] = []
     targets: set[str] = set()
     for pattern in patterns:
-        matched = [e for e in entities if _under(_entity_path(e), pattern)]
+        matched = [e for e in entities if _selects(e, pattern)]
         if not matched:
             raise ScopeError(f"scope {pattern!r} selects no node of the system")
     for entity in entities:
         path = _entity_path(entity)
-        if not any(_under(path, pattern) for pattern in patterns):
+        if not any(_selects(entity, pattern) for pattern in patterns):
             continue
         nodes.append(path)
         launcher = entity["launcher"]

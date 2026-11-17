@@ -78,6 +78,30 @@ def test_bag_metadata_gives_topics_types_and_span(tmp_path):
     assert info.fingerprint
 
 
+def test_bag_without_metadata_gets_one_generated(tmp_path):
+    pytest.importorskip("rosbag2_py")
+    from autoware_system_designer_runtime._impl.replay.bag import BagSink
+    from autoware_system_designer_runtime.replay_record import bag_topics
+
+    bag = tmp_path / "bag"
+    sink = BagSink(bag, {"/in": "std_msgs/msg/String"}, "mcap")
+    for stamp in (1000, 2000, 3000):
+        sink.write("/in", b"\x00\x01\x00\x00\x01\x00\x00\x00\x00", stamp)
+    sink.close()
+    (bag / "metadata.yaml").unlink()
+    (storage_file,) = bag.glob("*.mcap")
+
+    from_storage = bag_topics(storage_file)
+    generated = bag_topics(storage_file, generate=True)
+
+    assert (from_storage["metadata"], generated["metadata"]) == ("storage", "generated")
+    assert (bag / "metadata.yaml").is_file() and generated["path"] == str(bag)
+    assert generated["topics"] == from_storage["topics"] == [{"name": "/in", "type": "std_msgs/msg/String", "count": 3}]
+    assert bag_topics(bag, generate=True)["metadata"] == "file"
+    with pytest.raises(BagError):
+        read_bag_info(tmp_path, generate=True)
+
+
 def test_bag_durability_is_read_from_the_offered_profiles():
     info = info_from_metadata(
         bag({"/map": ("std_msgs/msg/String", 1, TRANSIENT_LOCAL), "/in": ("std_msgs/msg/String", 1, "")}), "bag"
@@ -196,14 +220,19 @@ def test_undeclared_subscription_fails_and_undeclared_publisher_warns():
 
 
 def test_timer_without_a_node_name_counts_for_the_nodes_of_its_process():
-    unnamed = [e for e in FULL if e.kind != "t"] + [RealEndpoint("t", "", period_ns=100_000_000, process_nodes=("/mod/a",))]
+    unnamed = [e for e in FULL if e.kind != "t"] + [
+        RealEndpoint("t", "", period_ns=100_000_000, process_nodes=("/mod/a",))
+    ]
 
     assert check(unnamed) == []
     assert codes(check([e for e in FULL if e.kind != "t"]), WARNING) == ["event_mismatch"]
 
 
 def test_negotiation_handshake_topics_are_infrastructure():
-    handshake = [RealEndpoint("s", "/mod/a", "/out/cuda/_supported_types"), RealEndpoint("p", "/mod/a", "/in/_supported_types")]
+    handshake = [
+        RealEndpoint("s", "/mod/a", "/out/cuda/_supported_types"),
+        RealEndpoint("p", "/mod/a", "/in/_supported_types"),
+    ]
 
     assert check(FULL + handshake) == []
 
@@ -228,6 +257,7 @@ def test_config_reads_rules_and_rejects_unknown_keys():
         {
             "scope": "/mod",
             "inputs": ["/tf"],
+            "skip_outputs": ["/debug"],
             "compare": {
                 "default": "exact",
                 "topics": {"/out": {"abs_tolerance": 1e-6, "ignore_fields": ["header.stamp"]}, "/diag": "ignore"},
@@ -235,6 +265,7 @@ def test_config_reads_rules_and_rejects_unknown_keys():
         }
     )
 
+    assert config.skip_outputs == ["/debug"]
     assert config.scope == ["/mod"] and config.inputs == ["/tf"]
     assert config.rule_for("/out").rule == "fields" and config.rule_for("/out").abs_tolerance == 1e-6
     assert config.rule_for("/diag").rule == "ignore"

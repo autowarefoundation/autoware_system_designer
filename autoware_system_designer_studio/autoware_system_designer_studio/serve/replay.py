@@ -27,6 +27,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Optional
+from urllib.parse import unquote, urlsplit
 
 from autoware_system_designer_runtime.replay_record import (
     BOUNDARY_FILE,
@@ -71,9 +72,23 @@ def find_command(install_root: Path, env: Mapping[str, str]) -> Optional[Path]:
     return None
 
 
-def read_bag(path: str) -> dict[str, Any]:
+def bag_path(text: str) -> Path:
+    """The bag a request names, by its path or its ``file://`` URI."""
+    parsed = urlsplit(text)
+    if parsed.scheme == "file":
+        return Path(unquote(parsed.path))
+    return Path(text).expanduser()
+
+
+def read_bag(path: str, *, generate: bool = False) -> dict[str, Any]:
+    """Topics of the bag at *path*; with *generate*, a bag without metadata gets its ``metadata.yaml``,
+    and is read from its storage file where the directory cannot be written."""
+    target = bag_path(path)
     try:
-        return bag_topics(Path(path).expanduser())
+        try:
+            return bag_topics(target, generate=generate)
+        except PermissionError:
+            return bag_topics(target)
     except BagError as exc:
         raise api.ApiError(api.NOT_FOUND, str(exc)) from exc
     except ImportError as exc:
@@ -115,6 +130,7 @@ def plan_replay(
         "remap": _remap(params),
         "accept": _topic_names(params, "accept"),
         "outputs": _topic_names(params, "outputs"),
+        "skip_outputs": _topic_names(params, "skip_outputs"),
     }
     check = params.get("check", False)
     save_reference = params.get("save_reference", False)
@@ -137,7 +153,7 @@ def plan_replay(
         "--config",
         str(run_dir / CONFIG_FILE),
         "--bag",
-        str(Path(bag).expanduser()),
+        str(bag_path(bag)),
         "--log-dir",
         str(run_dir),
     ]

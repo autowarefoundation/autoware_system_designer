@@ -1,24 +1,31 @@
 // Replay activity: the scope of a deterministic replay chosen on the mode's
-// namespace tree, beside its boundary: the inputs a bag feeds, each matched
-// against the bag's topics and remapped where the bag names it otherwise, the
-// outputs recorded, the service ports that leave the scope, and the replay
-// configuration and command they give. With a daemon, the bag is read by its
-// path and the replay runs as a job.
+// namespace tree, drawn as a graph inside its boundary: the inputs a bag
+// feeds, each joined to the bag topic that feeds it and remapped where the bag
+// names it otherwise, and the outputs recorded. The diagram keeps the top of
+// the view at a height the divider below it sets; under it are the bag, the
+// service ports that leave the scope, and the replay configuration and command
+// the choices give. The bag is a file or path dropped on the view, a file
+// opened, or a path typed. With a daemon, the bag is read by its path and the
+// replay runs as a job.
 (function () {
   const SD = window.SD;
   const { element, copyButton, mainView } = SD.widgets;
-  const { model, scopeTree, runPanel } = SD.activities.replay;
+  const { model, scopeTree, scopeDiagram, bagFile, runPanel } =
+    SD.activities.replay;
 
-  const INPUT_STATUS = {
+  const { ACCEPT } = model;
+  const INPUT_NOTE = {
     fed: "in the bag",
     remapped: "remapped",
     accepted: "accepted unfed",
     type: "other type in the bag",
     unpublished: "no publisher, not in the bag",
     missing: "not in the bag",
-    unknown: "no bag loaded",
+    unknown: "no bag read",
   };
-  const ACCEPT = "\u0000accept";
+  // Preference: height of the scope diagram in pixels.
+  const DIAGRAM_HEIGHT_KEY = "replay.diagramHeight";
+  const DIAGRAM_MIN_HEIGHT = 120;
 
   function table(columns) {
     const node = element("table", "replay-table");
@@ -50,10 +57,54 @@
     return cell;
   }
 
-  function pathList(paths) {
-    const cell = element("div", "replay-paths");
-    paths.forEach((path) => cell.appendChild(element("span", "", path)));
-    return cell;
+  // Check list of topics under a head that clears every topic it may, or
+  // checks them all once none is; `toggle(topic, on)` takes each change.
+  function topicSelector(title, toggle) {
+    const node = element("div", "replay-selector");
+    const all = document.createElement("input");
+    all.type = "checkbox";
+    const count = element("span", "replay-block-count");
+    const head = element("label", "replay-selector-head");
+    head.append(all, element("span", "", title), count);
+    const list = element("div", "replay-selector-list");
+    node.append(head, list);
+    let items = [];
+    all.addEventListener("change", () => {
+      const on = !items.some((item) => item.checked && !item.fixed);
+      items
+        .filter((item) => !item.fixed && item.checked !== on)
+        .forEach((item) => toggle(item.topic, on));
+    });
+    return {
+      element: node,
+      // `next` is [{ topic, note, level, checked, fixed }].
+      set(next) {
+        items = next;
+        const checked = items.filter((item) => item.checked).length;
+        all.checked = items.length > 0 && checked === items.length;
+        all.indeterminate = checked > 0 && !all.checked;
+        all.disabled = items.every((item) => item.fixed);
+        count.textContent = `${checked} of ${items.length}`;
+        list.replaceChildren(
+          ...items.map((item) => {
+            const box = document.createElement("input");
+            box.type = "checkbox";
+            box.checked = item.checked;
+            box.disabled = !!item.fixed;
+            box.addEventListener("change", () =>
+              toggle(item.topic, box.checked),
+            );
+            const row = element("label", `replay-selector-item ${item.level}`);
+            row.append(
+              box,
+              element("span", "replay-topic-name", item.topic),
+              element("span", "replay-selector-note", item.note),
+            );
+            return row;
+          }),
+        );
+      },
+    };
   }
 
   function block(title, note) {
@@ -108,13 +159,19 @@
 
       let nodes = [];
       let selected = new Set();
-      // Bag topics by recorded name; null until a metadata file is read.
+      // Bag topics by recorded name; null until a bag is read.
       let bag = null;
       let bagName = "";
+      // What reading the bag last failed with, shown in the bag's place.
+      let bagNote = "";
       // Recorded topic -> boundary input it is fed as.
       const remap = {};
       const accept = new Set();
       const recordedInternals = new Set();
+      // Boundary outputs left unrecorded.
+      const skippedOutputs = new Set();
+      // Boundary of the scope shown, with the inputs matched against the bag.
+      let shownBound = { inputs: [], outputs: [] };
       // Parameters of a replay of the shown choices, or what it still lacks.
       let request = { blocker: "Check nodes or modules to replay." };
 
@@ -127,13 +184,38 @@
         render();
       }
 
+      // An internal topic is recorded once chosen, a boundary output unless skipped.
+      function setRecorded(topic, on) {
+        const output = shownBound.outputs.find((o) => o.topic === topic);
+        if (!output) return;
+        if (output.boundary) {
+          if (on) skippedOutputs.delete(topic);
+          else skippedOutputs.add(topic);
+        } else if (on) recordedInternals.add(topic);
+        else recordedInternals.delete(topic);
+        render();
+      }
+
+      // A fed input expects its topic from the bag; one not fed is accepted
+      // unfed, without the remap onto it.
+      function setFed(topic, on) {
+        if (on) accept.delete(topic);
+        else {
+          Object.keys(remap).forEach((recorded) => {
+            if (remap[recorded] === topic) delete remap[recorded];
+          });
+          accept.add(topic);
+        }
+        render();
+      }
+
       const tree = scopeTree({
         nodes: () => nodes,
         selected: () => selected,
         toggle(path, on) {
           const next = new Set(selected);
           nodes
-            .filter((node) => model.under(node.path, path))
+            .filter((node) => model.selects(node, path))
             .forEach((node) =>
               on ? next.add(node.path) : next.delete(node.path),
             );
@@ -145,47 +227,97 @@
 
       const view = mainView({ title: "Replay scope" });
       main.appendChild(view.element);
+      const diagram = scopeDiagram({
+        choices: (input) => model.inputChoices(input, bag),
+        choose(input, value) {
+          Object.keys(remap).forEach((recorded) => {
+            if (remap[recorded] === input.topic) delete remap[recorded];
+          });
+          accept.delete(input.topic);
+          if (value === ACCEPT) accept.add(input.topic);
+          else if (value && value !== input.topic) remap[value] = input.topic;
+          render();
+        },
+        record: setRecorded,
+      });
+      const divider = element("div", "replay-divider");
+      divider.setAttribute("role", "separator");
+      divider.setAttribute("aria-orientation", "horizontal");
+      divider.title = "Drag to size the scope diagram";
       const body = element("div", "replay-body");
-      view.body.appendChild(body);
+      view.body.append(diagram.element, divider, body);
+
+      // Dragging the divider sets the diagram's height, kept across visits.
+      const setDiagramHeight = (height) => {
+        const most = view.body.clientHeight - DIAGRAM_MIN_HEIGHT;
+        diagram.element.style.height = `${Math.max(DIAGRAM_MIN_HEIGHT, Math.min(height, most))}px`;
+      };
+      const storedHeight = parseInt(SD.storage.get(DIAGRAM_HEIGHT_KEY), 10);
+      if (storedHeight) diagram.element.style.height = `${storedHeight}px`;
+      let sizing = null;
+      divider.addEventListener("pointerdown", (event) => {
+        sizing = {
+          y: event.clientY,
+          height: diagram.element.getBoundingClientRect().height,
+        };
+        divider.setPointerCapture(event.pointerId);
+        divider.classList.add("resizing");
+        event.preventDefault();
+      });
+      divider.addEventListener("pointermove", (event) => {
+        if (sizing) setDiagramHeight(sizing.height + event.clientY - sizing.y);
+      });
+      const endSizing = () => {
+        if (!sizing) return;
+        sizing = null;
+        divider.classList.remove("resizing");
+        SD.storage.set(
+          DIAGRAM_HEIGHT_KEY,
+          String(Math.round(diagram.element.getBoundingClientRect().height)),
+        );
+      };
+      divider.addEventListener("pointerup", endSizing);
+      divider.addEventListener("pointercancel", endSizing);
+      // The activity's slots are visible from mount until another activity takes over.
+      let visible = true;
 
       // -- bag -----------------------------------------------------------
       const bagBlock = block(
         "Bag",
-        "The bag's metadata.yaml names its topics; the path goes into the command.",
+        "Drop a bag file, its directory, its metadata.yaml or its path on this view. " +
+          "A dropped file gives its topics and no path: the command takes the path typed here.",
       );
       const bagPath = element("input", "panel-search");
       bagPath.type = "text";
       bagPath.placeholder = "Path of the bag, as the replay reads it";
       bagPath.setAttribute("aria-label", "Bag path");
-      const bagFile = document.createElement("input");
-      bagFile.type = "file";
-      bagFile.accept = ".yaml,.yml";
-      bagFile.hidden = true;
-      const bagLoad = element("button", "panel-button", "Load metadata.yaml");
+      const bagInput = document.createElement("input");
+      bagInput.type = "file";
+      bagInput.accept = ".yaml,.yml,.mcap";
+      bagInput.hidden = true;
+      const bagLoad = element("button", "panel-button", "Open bag file");
       bagLoad.type = "button";
+      bagLoad.title = "Read the topics of a metadata.yaml or .mcap file";
       const bagRead = element("button", "panel-button", "Read bag");
       bagRead.type = "button";
       bagRead.title =
-        "Read the topics of the bag at this path through the daemon";
+        "Read the topics of the bag at this path through the daemon; a bag without metadata.yaml gets one";
       const bagState = element("span", "replay-bag-state");
       const bagRow = element("div", "replay-bag-row");
-      bagRow.append(bagPath, bagRead, bagLoad, bagFile, bagState);
+      bagRow.append(bagPath, bagRead, bagLoad, bagInput, bagState);
       bagBlock.element.appendChild(bagRow);
 
       // -- boundary ------------------------------------------------------
-      const inputBlock = block(
-        "Boundary inputs",
-        "Topics a node outside the scope publishes; the bag feeds them.",
+      const selectorBlock = block(
+        "Inputs and outputs",
+        "A checked input is fed from the bag, an unchecked one is accepted unfed. " +
+          "A checked output is recorded; the head of a list clears it, or checks all of a cleared one.",
       );
-      const inputs = table(["Topic", "Published by", "Subscribed by", "Bag"]);
-      inputBlock.element.appendChild(inputs.element);
-
-      const outputBlock = block(
-        "Outputs",
-        "Boundary outputs are recorded; an internal topic is recorded once checked.",
-      );
-      const outputs = table(["Topic", "Published by", "Read by", "Record"]);
-      outputBlock.element.appendChild(outputs.element);
+      const inputSelector = topicSelector("Inputs", setFed);
+      const outputSelector = topicSelector("Outputs", setRecorded);
+      const selectors = element("div", "replay-selectors");
+      selectors.append(inputSelector.element, outputSelector.element);
+      selectorBlock.element.appendChild(selectors);
 
       const serviceBlock = block(
         "Services leaving the scope",
@@ -206,54 +338,20 @@
       );
 
       const panel = runPanel(daemon, () => request);
+      // Blocks a scope fills.
+      const scopeBlocks = [
+        selectorBlock.element,
+        serviceBlock.element,
+        resultBlock.element,
+        panel.element,
+      ];
       body.append(
         bagBlock.element,
-        inputBlock.element,
-        outputBlock.element,
+        selectorBlock.element,
         serviceBlock.element,
         resultBlock.element,
         panel.element,
       );
-
-      function bagControl(input) {
-        if (!bag) {
-          const box = checkbox(accept.has(input.topic), (on) => {
-            if (on) accept.add(input.topic);
-            else accept.delete(input.topic);
-            render();
-          });
-          const label = element("label", "panel-check");
-          label.append(box, "accept unfed");
-          return label;
-        }
-        const select = document.createElement("select");
-        const options = bag.has(input.topic) ? [] : [["", "not fed"]];
-        input.candidates.forEach((name) =>
-          options.push([
-            name,
-            name === input.topic
-              ? `${name} (${bag.get(name).count})`
-              : `${name} (${bag.get(name).count}), remapped`,
-          ]),
-        );
-        if (bag.has(input.topic) && !input.candidates.includes(input.topic))
-          options.push([input.topic, `${input.topic}, ${input.recordedType}`]);
-        if (!bag.has(input.topic)) options.push([ACCEPT, "accept unfed"]);
-        SD.widgets.setOptions(select, options);
-        select.value =
-          input.status === "accepted" ? ACCEPT : input.recordedName || "";
-        select.addEventListener("change", () => {
-          Object.keys(remap).forEach((recorded) => {
-            if (remap[recorded] === input.topic) delete remap[recorded];
-          });
-          accept.delete(input.topic);
-          if (select.value === ACCEPT) accept.add(input.topic);
-          else if (select.value && select.value !== input.topic)
-            remap[select.value] = input.topic;
-          render();
-        });
-        return select;
-      }
 
       function checkbox(checked, onChange, disabled = false) {
         const box = document.createElement("input");
@@ -287,29 +385,37 @@
               (inputTopics.has(name) && !bag?.has(name)) || leaving.has(name),
           ),
           outputs: [...recordedInternals].filter((t) => internal.has(t)),
+          skip_outputs: bound.outputs
+            .filter((o) => o.boundary && skippedOutputs.has(o.topic))
+            .map((o) => o.topic),
         };
       }
 
       function render() {
         const scope = model.selectScope(nodes, patterns());
-        view.setEmpty(
-          scope.nodes.length
-            ? ""
-            : "Check nodes or modules in the scope tree to replay them from a bag.",
-        );
         bagRead.hidden = !daemon.health || !daemon.offers("replay.bag");
         bagRead.disabled = !daemon.connected || !bagPath.value.trim();
+        if (bagNote) bagState.textContent = bagNote;
+        else
+          bagState.textContent = bag
+            ? `${bagName}: ${bag.size} topics`
+            : "no bag read";
+        scopeBlocks.forEach((node) => {
+          node.hidden = !scope.nodes.length;
+        });
         if (!scope.nodes.length) {
+          if (visible) diagram.show(null);
+          view.setTitle("Replay scope");
           request = { blocker: "Check nodes or modules to replay." };
           panel.refresh();
           return;
         }
-        view.setTitle(
-          `Replay scope: ${scope.nodes.length} node${scope.nodes.length > 1 ? "s" : ""}` +
-            (scope.containers.length
-              ? `, ${scope.containers.length} container${scope.containers.length > 1 ? "s" : ""}`
-              : ""),
-        );
+        const members =
+          `${scope.nodes.length} node${scope.nodes.length > 1 ? "s" : ""}` +
+          (scope.containers.length
+            ? `, ${scope.containers.length} container${scope.containers.length > 1 ? "s" : ""}`
+            : "");
+        view.setTitle(`Replay scope: ${members}`);
         const bound = model.boundary(nodes, scope.nodes);
         const kept = current(bound);
         const matched = model.matchInputs(
@@ -319,70 +425,66 @@
           new Set(kept.accept),
         );
 
-        bagState.textContent = bag
-          ? `${bagName}: ${bag.size} topics`
-          : "no metadata loaded";
+        shownBound = bound;
+        const skipped = new Set(kept.skip_outputs);
+        inputSelector.set(
+          matched.map((input) => ({
+            topic: input.topic,
+            note: INPUT_NOTE[input.status],
+            level: input.status,
+            checked: input.status !== "accepted",
+            // The bag feeds a topic it holds under the input's name.
+            fixed: !!bag && bag.has(input.topic),
+          })),
+        );
+        outputSelector.set(
+          [
+            ...bound.outputs.filter((output) => output.boundary),
+            ...bound.outputs.filter((output) => !output.boundary),
+          ].map((output) => ({
+            topic: output.topic,
+            note: output.boundary ? "boundary" : "internal",
+            level: output.boundary ? "boundary" : "internal",
+            checked: output.boundary
+              ? !skipped.has(output.topic)
+              : kept.outputs.includes(output.topic),
+          })),
+        );
 
-        inputs.clear();
-        matched.forEach((input) => {
-          const cell = element("div", "replay-bag-cell");
-          cell.append(
-            element(
-              "span",
-              `replay-status ${input.status}`,
-              INPUT_STATUS[input.status],
-            ),
-            bagControl(input),
+        if (visible) {
+          const unfed = matched.filter((input) =>
+            ["missing", "type"].includes(input.status),
+          ).length;
+          const remapped = matched.filter(
+            (input) => input.status === "remapped",
+          ).length;
+          const drawn = model.graph(
+            nodes,
+            scope,
+            bound,
+            matched,
+            new Set(kept.outputs),
+            skipped,
           );
-          inputs.row(
-            [
-              topicCell(input.topic, input.type),
-              pathList(input.publishers),
-              pathList(input.subscribers),
-              cell,
-            ],
-            `replay-input ${input.status}`,
-          );
-        });
-        const open = matched.filter((input) =>
-          ["missing", "type"].includes(input.status),
-        ).length;
-        inputBlock.count.textContent = bag
-          ? `${matched.length}, ${open} unfed`
-          : `${matched.length}`;
-        inputBlock.count.classList.toggle("blocked", open > 0);
-        inputs.element.hidden = !matched.length;
-
-        outputs.clear();
-        [
-          ...bound.outputs.filter((output) => output.boundary),
-          ...bound.outputs.filter((output) => !output.boundary),
-        ].forEach((output) => {
-          outputs.row(
-            [
-              topicCell(output.topic, output.type),
-              pathList(output.publishers),
-              output.outsideSubscribers.length || output.scopeSubscribers.length
-                ? pathList([
-                    ...output.outsideSubscribers,
-                    ...output.scopeSubscribers.map((path) => `${path} (scope)`),
-                  ])
-                : "no subscriber",
-              checkbox(
-                output.boundary || recordedInternals.has(output.topic),
-                (on) => {
-                  if (on) recordedInternals.add(output.topic);
-                  else recordedInternals.delete(output.topic);
-                  render();
-                },
-                output.boundary,
-              ),
-            ],
-            output.boundary ? "replay-output boundary" : "replay-output",
-          );
-        });
-        outputBlock.count.textContent = `${bound.outputs.filter((o) => o.boundary).length} boundary, ${bound.outputs.length} in all`;
-        outputs.element.hidden = !bound.outputs.length;
+          const recorded =
+            bound.outputs.filter((o) => o.boundary).length -
+            skipped.size +
+            kept.outputs.length;
+          diagram.show({
+            ...drawn,
+            bagTitle: bag ? `Bag: ${bagName}` : "Bag",
+            bagNote: bag
+              ? "no topic of the bag feeds the scope"
+              : "no bag read: drop one on the view",
+            scopeTitle: `Replay boundary: ${members}`,
+            summary:
+              `${matched.length} input${matched.length === 1 ? "" : "s"}` +
+              (bag ? `, ${unfed} unfed` : "") +
+              (remapped ? `, ${remapped} remapped` : "") +
+              `, ${recorded} of ${bound.outputs.length} outputs recorded`,
+            blocked: unfed > 0,
+          });
+        }
 
         services.clear();
         const leaving = bound.services.filter(
@@ -436,15 +538,63 @@
       function setBag(topics, name) {
         bag = topics;
         bagName = name;
+        bagNote = "";
         bagState.classList.remove("blocked");
         render();
       }
 
-      function bagFailed(name, message) {
+      function bagFailed(message) {
         bag = null;
+        bagNote = message;
         bagState.classList.add("blocked");
         render();
-        bagState.textContent = `${name}: ${message}`;
+      }
+
+      async function readFile(file) {
+        try {
+          setBag(
+            await bagFile.readTopics(file, model.parseBagMetadata),
+            file.name,
+          );
+        } catch (error) {
+          bagFailed(error.message);
+        }
+      }
+
+      function readPath() {
+        const path = bagPath.value.trim();
+        daemon.rpc("replay.bag", { path, generate: true }).then(
+          (info) =>
+            setBag(
+              new Map(
+                info.topics.map((t) => [
+                  t.name,
+                  { type: t.type, count: t.count },
+                ]),
+              ),
+              info.metadata === "generated"
+                ? `${info.path} (metadata.yaml written)`
+                : info.path,
+            ),
+          (error) => bagFailed(`${path}: ${error.message}`),
+        );
+      }
+
+      // A dropped path is read through the daemon; dropped files give the
+      // topics of their metadata, else of an MCAP file among them.
+      async function readDrop(dataTransfer) {
+        const { files, path } = await bagFile.dropped(dataTransfer);
+        const file = bagFile.pick(files);
+        if (path) {
+          bagPath.value = path;
+          if (daemon.connected && daemon.offers("replay.bag")) {
+            readPath();
+            return;
+          }
+        }
+        if (file) await readFile(file);
+        else if (path) render();
+        else bagFailed("the drop holds no bag file, metadata.yaml or path");
       }
 
       async function loadMode() {
@@ -456,7 +606,7 @@
         const wanted = (store.get("scope") || "").split(",").filter(Boolean);
         selected = new Set(
           nodes
-            .filter((node) => wanted.some((p) => model.under(node.path, p)))
+            .filter((node) => wanted.some((p) => model.selects(node, p)))
             .map((node) => node.path),
         );
         store.set("scope", patterns().join(","));
@@ -464,32 +614,35 @@
         render();
       }
 
-      bagLoad.addEventListener("click", () => bagFile.click());
-      bagFile.addEventListener("change", async () => {
-        const file = bagFile.files[0];
-        bagFile.value = "";
-        if (!file) return;
-        try {
-          setBag(model.parseBagMetadata(await file.text()), file.name);
-        } catch (error) {
-          bagFailed(file.name, error.message);
-        }
+      bagLoad.addEventListener("click", () => bagInput.click());
+      bagInput.addEventListener("change", () => {
+        const file = bagInput.files[0];
+        bagInput.value = "";
+        if (file) readFile(file);
       });
-      bagRead.addEventListener("click", () => {
-        const path = bagPath.value.trim();
-        daemon.rpc("replay.bag", { path }).then(
-          (info) =>
-            setBag(
-              new Map(
-                info.topics.map((t) => [
-                  t.name,
-                  { type: t.type, count: t.count },
-                ]),
-              ),
-              info.path,
-            ),
-          (error) => bagFailed(path, error.message),
-        );
+      bagRead.addEventListener("click", readPath);
+      // Drags entered minus drags left: children fire their own pairs.
+      let dragDepth = 0;
+      const dropping = (on) =>
+        view.element.classList.toggle("replay-dropping", on);
+      view.element.addEventListener("dragenter", (event) => {
+        event.preventDefault();
+        dragDepth += 1;
+        dropping(true);
+      });
+      view.element.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      });
+      view.element.addEventListener("dragleave", () => {
+        dragDepth = Math.max(0, dragDepth - 1);
+        dropping(dragDepth > 0);
+      });
+      view.element.addEventListener("drop", (event) => {
+        event.preventDefault();
+        dragDepth = 0;
+        dropping(false);
+        readDrop(event.dataTransfer).catch((error) => bagFailed(error.message));
       });
       ["daemon.health", "daemon.connection"].forEach((topic) =>
         SD.on(topic, render),
@@ -500,6 +653,15 @@
         loadMode().catch((error) => console.warn("replay:", error));
       store.onChange("mode", reload);
       reload();
+      return {
+        show() {
+          visible = true;
+          render();
+        },
+        hide() {
+          visible = false;
+        },
+      };
     },
   });
 })();

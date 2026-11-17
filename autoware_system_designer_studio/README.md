@@ -252,25 +252,57 @@ The Replay activity prepares a deterministic replay of the runtime (`autoware-sy
 see the runtime README) on any page and runs it where a daemon serves the page. Its side panel is the namespace tree of the mode with a
 checkbox per entry: a checked entry selects every launched node at or under its path, and the
 selection is kept as the fewest such paths (`?scope=`, comma separated), the runtime's `--scope`.
+A node placed at a module's own path has an entry of its own below that path, named `<path>/<name>`.
 Containers of the selected composable nodes join the scope.
 
-The main area shows the boundary of the scope, computed from the export as the runtime computes it:
+The top of the main area keeps the scope diagram, at a height set by dragging the divider below it
+(kept across visits). The diagram is drawn from the boundary the runtime computes, by topic:
 
-- **Boundary inputs**: topics a node outside the scope publishes, with their publishers and
-  subscribers. "Load metadata.yaml" reads the topics of a bag from its metadata file; each input then
-  shows whether the bag holds it with the design's type, and a selector of the bag topics of that
-  type. Choosing one recorded under another name remaps it onto the input; an input the bag lacks
-  can be accepted unfed.
-- **Outputs**: the boundary outputs, which a replay records, then the topics internal to the scope,
-  each recorded once checked.
-- **Services leaving the scope**: service ports whose other side is outside, each accepted once
-  checked.
+- the **replay boundary** is a frame around the scope's nodes and containers; each node shows its
+  topic ports, joined inside the frame where one node of the scope publishes what another reads;
+- each **boundary input**, a topic a node outside the scope publishes, is a chip on the left side of
+  the frame, joined to the ports that subscribe to it and coloured by its match against the bag;
+- the **bag** block left of the frame lists the recorded topics that feed the scope, each joined to
+  the input it feeds. A topic recorded under another name than its input is a remap, drawn dashed;
+- an **output** port of a node is filled where its topic is recorded: a boundary output unless left
+  unrecorded, a topic internal to the scope once chosen. The boundary outputs are not drawn.
 
-Below them are the replay configuration these choices give (`scope`, `remap`, `accept`, `outputs`),
+A click on an input chip or its bag topic lists the sources of the input: the bag topics of its type
+(choosing one recorded under another name remaps it onto the input), and for an input the bag lacks,
+leaving it unfed or accepting it unfed. A click on an output port of a node toggles the
+recording of its topic. The pointer on a port, chip or bag topic lights
+the whole topic. The diagram follows every change of the scope, bag and choices: a view the viewer
+zoomed or panned keeps the boundary frame in place, an untouched one is fitted again.
+
+Below it, the **Bag** block takes the bag whose topics the boundary is matched against:
+
+- a file dropped on the view or picked with "Open bag file": a `metadata.yaml`, or an `.mcap` file,
+  whose topics, types and message counts are read in the page from its summary section. A dropped
+  directory gives its `metadata.yaml`, else its `.mcap` file. A browser gives no path of a dropped
+  file, so the path for the command is typed in the Bag field;
+- a path or `file://` URI dropped as text, or typed: it fills the Bag field and, with a daemon, is
+  read there ("Read bag"). A `.db3` bag without `metadata.yaml` is read this way.
+
+Then comes the **Inputs and outputs** block, two check lists with the same choices as the diagram:
+
+- **Inputs**: the boundary inputs with their match against the bag. An unchecked input is accepted
+  unfed, without the remap onto it; an input the bag holds under its own name is always fed.
+- **Outputs**: the boundary outputs, recorded unless unchecked (`skip_outputs`), then the topics
+  internal to the scope, recorded once checked (`outputs`).
+
+The checkbox at the head of a list clears every topic of it, or checks them all once none is, so
+one click on the outputs' head replays without recording.
+
+Then come the **services leaving the scope**, service ports whose other side is outside, each
+accepted once checked.
+
+Below them are the replay configuration these choices give (`scope`, `remap`, `accept`, `outputs`, `skip_outputs`),
 to copy or download as `replay.yaml`, and the pre-flight and replay commands on the mode's structure
 file with the bag path typed in the Bag field and the deploy of the top bar.
 
-With a daemon, "Read bag" reads the topics of the bag at the typed path (`replay.bag`), and the Run
+With a daemon, "Read bag" reads the topics of the bag at the typed path (`replay.bag`): a bag
+without `metadata.yaml` gets one written beside its files by the rosbag2 reindexer, and is read from
+its storage file where the directory is not writable. The Run
 block starts the replay as a job (`replay.start`): "Pre-flight" checks the bag against the boundary
 and stops, "Run replay" replays the scope, over the first seconds of the bag when a duration is
 given and with the outputs kept as the reference when asked. The block shows the selected replay
@@ -278,8 +310,13 @@ job: its outcome (pre-flight passed or failed, outputs match or differ from the 
 reference yet, saved as the reference), the counts of the run, the pre-flight and endpoint problems,
 the violations of the granted order, the topics that differ, the run directory and the job's log.
 
+`replay.bag` takes `path` (a path or `file://` URI of the bag directory or one of its files) and
+`generate` (write a missing `metadata.yaml`, off by default); its result names the `path`, the
+`storage`, the time span, the `topics` and where they were read from as `metadata` (`file`,
+`generated` or `storage`).
+
 `replay.start` takes `system`, `mode`, `bag`, `deploy`, `scope` (design paths), `remap` (recorded
-topic to fed topic), `accept`, `outputs`, `check`, `save_reference`, `duration` and `domain_id`. The
+topic to fed topic), `accept`, `outputs`, `skip_outputs`, `check`, `save_reference`, `duration` and `domain_id`. The
 daemon writes the configuration into a new run directory `<log base>/<stamp>_replay` and runs the
 replay command of the launch environment on it; one replay runs per daemon (`conflict` while one
 runs), and `jobs.cancel` ends it. The job's `detail` names the `run_dir` and, once the job ended,

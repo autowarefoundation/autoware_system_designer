@@ -122,6 +122,8 @@ ACTIVITIES = {
         "scripts": (
             "js/activities/replay/scope_model.js",
             "js/activities/replay/scope_tree.js",
+            "js/activities/replay/scope_diagram.js",
+            "js/activities/replay/bag_file.js",
             "js/activities/replay/run_panel.js",
             "js/activities/replay/index.js",
         ),

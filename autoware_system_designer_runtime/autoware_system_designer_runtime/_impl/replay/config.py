@@ -22,6 +22,7 @@
       /sensing/lidar/top/pointcloud: /perception/input/pointcloud
     accept: [/map/vector_map]                 # inputs, services or subscriptions that stay unfed
     outputs: [/perception/internal/objects]   # internal topics recorded beside the boundary outputs
+    skip_outputs: [/perception/debug/image]   # boundary outputs left unrecorded
     compare:
       default: exact                          # exact | fields | ignore
       topics:
@@ -91,6 +92,7 @@ class ReplayConfig:
     inputs: list[str] = field(default_factory=list)
     accept: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=list)
+    skip_outputs: list[str] = field(default_factory=list)
     # Recorded bag topic to the topic it is fed as.
     remap: dict[str, str] = field(default_factory=dict)
     default_rule: CompareRule = field(default_factory=CompareRule)
@@ -105,7 +107,7 @@ class ReplayConfig:
             return cls()
         if not isinstance(payload, Mapping):
             raise ConfigError("replay configuration: expected a mapping")
-        unknown = set(payload) - {"scope", "inputs", "accept", "outputs", "remap", "compare"}
+        unknown = set(payload) - {"scope", "inputs", "accept", "outputs", "skip_outputs", "remap", "compare"}
         if unknown:
             raise ConfigError(f"replay configuration: unknown key(s) {sorted(unknown)}")
         config = cls(
@@ -113,6 +115,7 @@ class ReplayConfig:
             inputs=_names(payload, "inputs"),
             accept=_names(payload, "accept"),
             outputs=_names(payload, "outputs"),
+            skip_outputs=_names(payload, "skip_outputs"),
         )
         remap = payload.get("remap") or {}
         if not isinstance(remap, Mapping) or not all(

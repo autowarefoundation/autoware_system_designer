@@ -234,6 +234,11 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             logger.error("replay: output %s of the configuration is no output of the scope", topic)
             return EXIT_FAILED
         recorded_types[topic] = boundary.output_types()[topic]
+    for topic in config.skip_outputs:
+        if topic not in boundary.output_types():
+            logger.error("replay: skipped output %s of the configuration is no output of the scope", topic)
+            return EXIT_FAILED
+        recorded_types.pop(topic, None)
 
     out_root = options.output_dir or ensure_output_dir()
     out_dir = out_root / REPLAY_SUBDIR

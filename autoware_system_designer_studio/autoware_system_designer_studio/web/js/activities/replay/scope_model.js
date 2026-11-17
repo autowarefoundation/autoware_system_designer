@@ -1,6 +1,7 @@
 // Replay: the scope of a deterministic replay and its boundary, read from a
 // mode's system structure as the runtime's replay does, the bag topics matched
-// against the boundary inputs, and the replay configuration they give.
+// against the boundary inputs, the graph drawn of them, and the replay
+// configuration they give.
 (function () {
   const SD = window.SD;
   const replay = ((SD.activities ||= {}).replay ||= {});
@@ -9,6 +10,8 @@
   const INFRA_TOPICS = new Set(["/rosout", "/parameter_events", "/clock"]);
   const REPLAY_COMMAND = "autoware-system-designer-replay";
   const CONFIG_FILE = "replay.yaml";
+  // Choice of an input that accepts it unfed; no topic bears the name.
+  const ACCEPT = "\u0000accept";
 
   function resolveTopic(port) {
     const topic = port.topic;
@@ -38,31 +41,43 @@
   }
 
   // Launched nodes of a structure in design order, each with its topics by
-  // direction and its service ports.
+  // direction, the port name of each topic and its service ports.
   function nodes(root) {
     const list = [];
     const walk = (entity) => {
       if (entity.entity_type === "node" && entity.launcher) {
+        const path = entity.path || fqn(entity);
         const node = {
-          path: entity.path || fqn(entity),
+          path,
+          // Path that names the node alone: a node placed at a module's own
+          // path is named below it.
+          key:
+            path.split("/").filter(Boolean).pop() === entity.name
+              ? path
+              : `${path.replace(/\/+$/, "")}/${entity.name}`,
           fqn: fqn(entity),
           unit: entity.compute_unit || "",
           launchState: entity.launcher.launch_state || "",
           containerTarget: entity.launcher.container_target || "",
           inputs: new Map(),
           outputs: new Map(),
+          inputNames: new Map(),
+          outputNames: new Map(),
           services: [],
         };
         [
-          ["in_ports", node.inputs, "client"],
-          ["out_ports", node.outputs, "server"],
-        ].forEach(([side, topics, fallbackRole]) => {
+          ["in_ports", node.inputs, node.inputNames, "client"],
+          ["out_ports", node.outputs, node.outputNames, "server"],
+        ].forEach(([side, topics, names, fallbackRole]) => {
           (entity[side] || []).forEach((port) => {
             const name = resolveTopic(port);
             if (name === null) return;
             const type = String(port.msg_type || "");
             if (isTopicPort(port)) {
-              if (!topics.has(name)) topics.set(name, type);
+              if (!topics.has(name)) {
+                topics.set(name, type);
+                names.set(name, String(port.name || name));
+              }
               return;
             }
             const role = ["client", "server"].includes(port.role)
@@ -84,11 +99,19 @@
     return base === "" || path === base || path.startsWith(`${base}/`);
   }
 
+  // Whether a scope path selects the node: the node is at or under it, or it
+  // is the node's key.
+  function selects(node, pattern) {
+    return (
+      under(node.path, pattern) || node.key === pattern.replace(/\/+$/, "")
+    );
+  }
+
   // Nodes at or under the patterns, the containers of the selected composable
   // nodes, and the patterns that select nothing.
   function selectScope(nodeList, patterns) {
     const selected = nodeList.filter((node) =>
-      patterns.some((pattern) => under(node.path, pattern)),
+      patterns.some((pattern) => selects(node, pattern)),
     );
     const targets = new Set(
       selected
@@ -107,13 +130,14 @@
         )
         .map((node) => node.path),
       unmatched: patterns.filter(
-        (pattern) => !nodeList.some((node) => under(node.path, pattern)),
+        (pattern) => !nodeList.some((node) => selects(node, pattern)),
       ),
     };
   }
 
   // Fewest paths of the namespace tree that select exactly `selected` (a Set
-  // of node paths): an entry whose every node is selected stands for them.
+  // of node paths): an entry whose every node is selected stands for them, and
+  // a node at the path of an entry partly selected goes by its key.
   function patternsOf(nodeList, selected) {
     const patterns = [];
     const visit = (prefix, members) => {
@@ -126,7 +150,11 @@
       const groups = new Map();
       members.forEach((node) => {
         const segments = node.path.split("/").filter(Boolean);
-        if (segments.length <= depth) return;
+        if (segments.length <= depth) {
+          if (selected.has(node.path) && node.key !== node.path)
+            patterns.push(node.key);
+          return;
+        }
         const child = `/${segments.slice(0, depth + 1).join("/")}`;
         if (!groups.has(child)) groups.set(child, []);
         groups.get(child).push(node);
@@ -300,15 +328,154 @@
     });
   }
 
+  // Sources the viewer picks among for a matched input: the bag topics of its
+  // type, the topic recorded with another type, and where the bag lacks the
+  // topic, leaving it unfed or accepting it unfed. One entry is `current`.
+  function inputChoices(input, bag) {
+    const choices = [];
+    if (bag) {
+      input.candidates.forEach((name) =>
+        choices.push({
+          value: name,
+          label: name,
+          note:
+            `${bag.get(name).count} messages` +
+            (name === input.topic ? "" : ", remapped"),
+        }),
+      );
+      if (bag.has(input.topic) && !input.candidates.includes(input.topic))
+        choices.push({
+          value: input.topic,
+          label: input.topic,
+          note: `recorded as ${input.recordedType}`,
+        });
+    }
+    if (!bag || !bag.has(input.topic))
+      choices.push(
+        { value: "", label: "not fed", note: "" },
+        {
+          value: ACCEPT,
+          label: "accept unfed",
+          note: "the pre-flight passes without it",
+        },
+      );
+    const current =
+      input.status === "accepted" ? ACCEPT : input.recordedName || "";
+    return choices.map((choice) => ({
+      ...choice,
+      current: choice.value === current,
+    }));
+  }
+
+  // Drawn form of a scope: the bag topics that feed it, the boundary inputs
+  // as ports of the boundary, the scope's nodes with their topic ports, each
+  // output port marked where its topic is recorded, and the edges a topic
+  // gives between them. `containers` are drawn without ports; `recorded`
+  // holds the internal topics recorded and `skipped` the boundary outputs
+  // left unrecorded.
+  function graph(nodeList, scope, bound, matched, recorded, skipped) {
+    const inside = new Set(scope.nodes);
+    const containers = new Set(scope.containers);
+    const edges = [];
+    const edge = (kind, from, to, topic, status = "") =>
+      edges.push({ id: `e${edges.length}`, kind, from, to, topic, status });
+
+    const inputs = matched.map((input, index) => ({
+      ...input,
+      id: `in${index}`,
+    }));
+    const inputId = new Map(inputs.map((input) => [input.topic, input.id]));
+    const bag = inputs
+      .filter((input) => input.recordedName)
+      .map((input) => ({
+        id: `bag${input.id}`,
+        name: input.recordedName,
+        type: input.recordedType,
+        count: input.count,
+        input: input.topic,
+        status: input.status,
+      }));
+    bag.forEach((row) =>
+      edge("feed", row.id, inputId.get(row.input), row.input, row.status),
+    );
+
+    const boundaryOutputs = new Set(
+      bound.outputs.filter((o) => o.boundary).map((o) => o.topic),
+    );
+    const isRecorded = (topic) =>
+      boundaryOutputs.has(topic) ? !skipped.has(topic) : recorded.has(topic);
+
+    const drawn = nodeList.filter(
+      (node) => inside.has(node.path) || containers.has(node.path),
+    );
+    const publisherPorts = new Map();
+    const nodes = drawn.map((node, index) => {
+      const id = `n${index}`;
+      const segments = node.path.split("/").filter(Boolean);
+      const container = !inside.has(node.path);
+      const ports = (topics, names, side) =>
+        container
+          ? []
+          : [...topics.entries()]
+              .filter(([topic]) => !INFRA_TOPICS.has(topic))
+              .map(([topic, type], at) => ({
+                id: `${id}${side}${at}`,
+                topic,
+                type,
+                name: names.get(topic) || topic,
+              }));
+      const item = {
+        id,
+        path: node.path,
+        name: segments[segments.length - 1] || node.path,
+        namespace: `/${segments.slice(0, -1).join("/")}`,
+        container,
+        inputs: ports(node.inputs, node.inputNames, "i"),
+        outputs: ports(node.outputs, node.outputNames, "o").map((port) => ({
+          ...port,
+          boundary: boundaryOutputs.has(port.topic),
+          recorded: isRecorded(port.topic),
+        })),
+      };
+      item.outputs.forEach((port) => {
+        if (!publisherPorts.has(port.topic)) publisherPorts.set(port.topic, []);
+        publisherPorts.get(port.topic).push(port.id);
+      });
+      return item;
+    });
+    nodes.forEach((node) =>
+      node.inputs.forEach((port) => {
+        if (inputId.has(port.topic))
+          edge("input", inputId.get(port.topic), port.id, port.topic);
+        (publisherPorts.get(port.topic) || []).forEach((from) =>
+          edge("internal", from, port.id, port.topic),
+        );
+      }),
+    );
+    return {
+      key: [...scope.nodes, ...scope.containers].join("\n"),
+      bag,
+      inputs,
+      nodes,
+      edges,
+    };
+  }
+
   function yamlList(key, items) {
     return items.length
       ? [`${key}:`, ...items.map((item) => `  - ${item}`)]
       : [];
   }
 
-  // Replay configuration of the runtime: scope, remap, accepted names and
-  // internal outputs to record.
-  function configYaml({ patterns, remap = {}, accept = [], outputs = [] }) {
+  // Replay configuration of the runtime: scope, remap, accepted names,
+  // internal outputs to record and boundary outputs to leave unrecorded.
+  function configYaml({
+    patterns,
+    remap = {},
+    accept = [],
+    outputs = [],
+    skip_outputs: skipped = [],
+  }) {
     const pairs = Object.entries(remap).sort(([a], [b]) => a.localeCompare(b));
     return [
       ...yamlList("scope", patterns),
@@ -317,6 +484,7 @@
         : []),
       ...yamlList("accept", [...accept].sort()),
       ...yamlList("outputs", [...outputs].sort()),
+      ...yamlList("skip_outputs", [...skipped].sort()),
       "",
     ].join("\n");
   }
@@ -346,13 +514,17 @@
 
   replay.model = {
     CONFIG_FILE,
+    ACCEPT,
     nodes,
     under,
+    selects,
     selectScope,
     patternsOf,
     boundary,
     parseBagMetadata,
     matchInputs,
+    inputChoices,
+    graph,
     configYaml,
     structurePath,
     command,
