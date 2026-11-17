@@ -22,6 +22,8 @@
   <exec_depend>python3-yaml</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
+  <test_depend>rosbag2_py</test_depend>
+  <test_depend>rosbag2_storage_mcap</test_depend>
 
   <export>
     <build_type>ament_python</build_type>
