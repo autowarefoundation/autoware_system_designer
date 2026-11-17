@@ -215,6 +215,29 @@ test("inputs match the bag by name, remap and accepted names", () => {
   );
 });
 
+test("an input of no design type takes any free bag topic", () => {
+  const bag = new Map([
+    ["/raw", { type: STRING, count: 7 }],
+    ["/taken", { type: "tf2_msgs/msg/TFMessage", count: 1 }],
+  ]);
+  const bound = {
+    inputs: [
+      { topic: "/untyped", type: "", publishers: ["/x"] },
+      { topic: "/taken", type: STRING, publishers: ["/x"] },
+    ],
+  };
+  const [untyped] = model.matchInputs(bound, bag, {}, new Set());
+  assert.deepEqual(untyped.candidates, ["/raw"]);
+  assert.deepEqual(
+    model.inputChoices(untyped, bag).map((choice) => choice.note),
+    [
+      `7 messages, ${STRING}, remapped`,
+      "",
+      "the pre-flight passes without it",
+    ],
+  );
+});
+
 test("the configuration and command name the scope, remap and bag", () => {
   assert.equal(
     model.configYaml({

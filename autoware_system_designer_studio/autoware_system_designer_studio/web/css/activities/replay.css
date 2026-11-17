@@ -143,44 +143,17 @@
   background: var(--bg-primary);
 }
 
-/* Inputs and outputs fill the zone's body; their lists scroll inside. */
+/* Inputs, outputs and services stack in one column; the zone's body scrolls
+   them as one page. */
 .replay-boundary-lists {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-  flex: 1 1 auto;
-  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  flex: none;
 }
 
 .replay-boundary-lists > .replay-block {
   min-width: 0;
-  min-height: 0;
-  max-height: 100%;
-}
-
-.replay-boundary-lists > .replay-block:first-of-type {
-  flex: 2 1 640px;
-}
-
-.replay-boundary-lists > .replay-block + .replay-block {
-  flex: 1 1 320px;
-  overflow: auto;
-}
-
-.replay-boundary-lists .replay-selectors {
-  flex: 1 1 auto;
-  min-height: 0;
-  grid-auto-rows: minmax(0, 1fr);
-}
-
-.replay-boundary-lists .replay-selector {
-  min-height: 0;
-}
-
-.replay-boundary-lists .replay-selector-list {
-  flex: 1 1 auto;
-  min-height: 60px;
-  max-height: none;
 }
 
 /* The run fills its zone's body; its log takes the height the rest leaves. */
@@ -621,10 +594,10 @@
   color: var(--text-muted);
 }
 
-/* Check lists of the boundary inputs and the scope's outputs, side by side. */
+/* Lists of the boundary inputs and the scope's outputs, one above the other. */
 .replay-selectors {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
@@ -652,11 +625,16 @@
   font-weight: 400;
 }
 
+.replay-selector-head .panel-button {
+  margin-left: auto;
+  padding: 1px 10px;
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .replay-selector-list {
   display: flex;
   flex-direction: column;
-  max-height: 260px;
-  overflow-y: auto;
 }
 
 .replay-selector-item {
@@ -700,6 +678,25 @@
 .replay-selector-item.missing .replay-selector-note,
 .replay-selector-item.type .replay-selector-note {
   color: var(--state-failed);
+}
+
+/* Source of an input: a pulldown, or the one source it has. */
+.replay-selector-source {
+  flex: 0 1 360px;
+  min-width: 0;
+  max-width: 45%;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+select.replay-selector-source {
+  align-self: center;
+  padding: 1px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .replay-selector-item.internal .replay-topic-name {

@@ -3,8 +3,8 @@
 // feeds, each joined to the bag topic that feeds it and remapped where the bag
 // names it otherwise, and the outputs recorded. The view stacks three zones,
 // each folded or expanded and sized by the dividers between them: the diagram;
-// the inputs, outputs and service ports that leave the scope, with the rosbag
-// in its head; and the run, whose popup holds the replay configuration and
+// the inputs, outputs and service ports that leave the scope, stacked in one
+// scrolled page with the rosbag in its head; and the run, whose popup holds the replay configuration and
 // command the choices give. The bag is a file or path dropped on the view, a file
 // opened, or a path typed. With a daemon, the bag is read by its path and the
 // replay runs as a job.
@@ -123,6 +123,104 @@
     };
   }
 
+  // Rank of an input status in the inputs list: unresolved inputs head it.
+  const INPUT_RANK = [
+    "missing",
+    "type",
+    "unpublished",
+    "unknown",
+    "accepted",
+    "remapped",
+    "fed",
+  ];
+  // Statuses the head's action accepts unfed.
+  const UNRESOLVED = ["missing", "unpublished"];
+
+  // List of the boundary inputs, each with a pulldown of its sources;
+  // `choices(input)` gives them, `choose(input, value)` takes a pick and
+  // `acceptAll(inputs)` the head's action.
+  function inputSelector(choices, choose, acceptAll) {
+    const node = element("div", "replay-selector");
+    const count = element("span", "replay-block-count");
+    const acceptButton = element("button", "panel-button", "Accept unfed");
+    acceptButton.type = "button";
+    acceptButton.title =
+      "Accept every input that is not in the bag unfed; the pre-flight passes without them";
+    const head = element("div", "replay-selector-head");
+    head.append(element("span", "", "Inputs"), count, acceptButton);
+    const list = element("div", "replay-selector-list");
+    node.append(head, list);
+    let unresolved = [];
+    acceptButton.addEventListener("click", () => acceptAll(unresolved));
+
+    function picker(input) {
+      const options = choices(input);
+      // An input fed by the one topic of its name has nothing to pick.
+      if (options.length < 2)
+        return element(
+          "span",
+          "replay-selector-source",
+          options[0]?.value === input.topic ? "" : options[0]?.label || "",
+        );
+      const select = document.createElement("select");
+      select.className = "replay-selector-source";
+      select.setAttribute("aria-label", `Source of ${input.topic}`);
+      options.forEach((choice, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = choice.note
+          ? `${choice.label} (${choice.note})`
+          : choice.label;
+        option.selected = choice.current;
+        select.appendChild(option);
+      });
+      if (!options.some((choice) => choice.current)) select.selectedIndex = -1;
+      select.addEventListener("change", () =>
+        choose(input, options[Number(select.value)].value),
+      );
+      return select;
+    }
+
+    return {
+      element: node,
+      // `inputs` is the matched inputs, `notes` the text of each status.
+      set(inputs, notes) {
+        const ranked = inputs
+          .map((input, index) => ({ input, index }))
+          .sort(
+            (a, b) =>
+              INPUT_RANK.indexOf(a.input.status) -
+                INPUT_RANK.indexOf(b.input.status) || a.index - b.index,
+          )
+          .map(({ input }) => input);
+        unresolved = ranked.filter((input) =>
+          UNRESOLVED.includes(input.status),
+        );
+        const issues = ranked.filter(
+          (input) => INPUT_RANK.indexOf(input.status) < 4,
+        ).length;
+        count.textContent =
+          `${ranked.length}` + (issues ? `, ${issues} unresolved` : "");
+        acceptButton.hidden = !unresolved.length;
+        list.replaceChildren(
+          ...ranked.map((input) => {
+            const row = element(
+              "div",
+              `replay-selector-item ${input.status}`,
+            );
+            row.append(
+              element("span", "replay-topic-name", input.topic),
+              element("span", "replay-selector-note", notes[input.status]),
+              picker(input),
+            );
+            row.title = input.type;
+            return row;
+          }),
+        );
+      },
+    };
+  }
+
   function block(title, note) {
     const node = element("section", "replay-block");
     const head = element("div", "replay-block-head");
@@ -212,16 +310,19 @@
         render();
       }
 
-      // A fed input expects its topic from the bag; one not fed is accepted
-      // unfed, without the remap onto it.
-      function setFed(topic, on) {
-        if (on) accept.delete(topic);
-        else {
-          Object.keys(remap).forEach((recorded) => {
-            if (remap[recorded] === topic) delete remap[recorded];
-          });
-          accept.add(topic);
-        }
+      // Source of a boundary input: a recorded topic, remapped where the names
+      // differ, nothing, or ACCEPT to accept it unfed.
+      function setSource(topic, value) {
+        Object.keys(remap).forEach((recorded) => {
+          if (remap[recorded] === topic) delete remap[recorded];
+        });
+        accept.delete(topic);
+        if (value === ACCEPT) accept.add(topic);
+        else if (value && value !== topic) remap[value] = topic;
+      }
+
+      function chooseSource(input, value) {
+        setSource(input.topic, value);
         render();
       }
 
@@ -249,15 +350,7 @@
       main.appendChild(view.element);
       const diagram = scopeDiagram({
         choices: (input) => model.inputChoices(input, bag),
-        choose(input, value) {
-          Object.keys(remap).forEach((recorded) => {
-            if (remap[recorded] === input.topic) delete remap[recorded];
-          });
-          accept.delete(input.topic);
-          if (value === ACCEPT) accept.add(input.topic);
-          else if (value && value !== input.topic) remap[value] = input.topic;
-          render();
-        },
+        choose: chooseSource,
         record: setRecorded,
       });
       const stack = zoneStack(ZONES_KEY, ZONES);
@@ -309,14 +402,22 @@
         element(
           "p",
           "panel-note",
-          "A checked input is fed from the bag, an unchecked one is accepted unfed. " +
-            "A checked output is recorded; the head of a list clears it, or checks all of a cleared one.",
+          "Each input is fed from the bag topic its pulldown names, remapped where the names differ, " +
+            "or accepted unfed. A checked output is recorded; the head of a list clears it, " +
+            "or checks all of a cleared one.",
         ),
       );
-      const inputSelector = topicSelector("Inputs", setFed);
+      const inputList = inputSelector(
+        (input) => model.inputChoices(input, bag),
+        chooseSource,
+        (inputs) => {
+          inputs.forEach((input) => setSource(input.topic, ACCEPT));
+          render();
+        },
+      );
       const outputSelector = topicSelector("Outputs", setRecorded);
       const selectors = element("div", "replay-selectors");
-      selectors.append(inputSelector.element, outputSelector.element);
+      selectors.append(inputList.element, outputSelector.element);
       selectorBlock.element.appendChild(selectors);
 
       const serviceBlock = block(
@@ -449,16 +550,7 @@
 
         shownBound = bound;
         const skipped = new Set(kept.skip_outputs);
-        inputSelector.set(
-          matched.map((input) => ({
-            topic: input.topic,
-            note: INPUT_NOTE[input.status],
-            level: input.status,
-            checked: input.status !== "accepted",
-            // The bag feeds a topic it holds under the input's name.
-            fixed: !!bag && bag.has(input.topic),
-          })),
-        );
+        inputList.set(matched, INPUT_NOTE);
         outputSelector.set(
           [
             ...bound.outputs.filter((output) => output.boundary),
@@ -509,9 +601,17 @@
         }
 
         services.clear();
-        const leaving = bound.services.filter(
-          (edge) => !edge.scopePeers.length,
-        );
+        // Unaccepted services head the table, clients before servers.
+        const serviceRank = (edge) =>
+          (accept.has(edge.name) ? 2 : 0) + (edge.role === "client" ? 0 : 1);
+        const leaving = bound.services
+          .filter((edge) => !edge.scopePeers.length)
+          .map((edge, index) => ({ edge, index }))
+          .sort(
+            (a, b) =>
+              serviceRank(a.edge) - serviceRank(b.edge) || a.index - b.index,
+          )
+          .map(({ edge }) => edge);
         leaving.forEach((edge) => {
           services.row(
             [
@@ -527,7 +627,9 @@
             `replay-service ${edge.role}${accept.has(edge.name) ? " accepted" : ""}`,
           );
         });
-        serviceBlock.count.textContent = `${leaving.length}`;
+        const open = leaving.filter((edge) => !accept.has(edge.name)).length;
+        serviceBlock.count.textContent =
+          `${leaving.length}` + (open ? `, ${open} unaccepted` : "");
         serviceBlock.element.hidden = !leaving.length;
 
         const yaml = model.configYaml({ patterns: patterns(), ...kept });

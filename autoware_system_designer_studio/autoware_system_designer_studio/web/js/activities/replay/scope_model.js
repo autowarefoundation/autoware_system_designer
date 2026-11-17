@@ -290,7 +290,8 @@
   // (recorded topic -> fed topic) and the accepted names:
   //   fed | remapped | accepted | type (recorded with another type) |
   //   unpublished (no publisher in the design, not in the bag) | missing | unknown (no bag)
-  // with the bag topics of the input's type that no input takes as `candidates`.
+  // with the bag topics of the input's type that no input takes as `candidates`;
+  // an input of no design type takes any of them.
   function matchInputs(bound, bag, remap, accept) {
     const source = new Map(
       Object.entries(remap).map(([recorded, fed]) => [fed, recorded]),
@@ -303,7 +304,7 @@
         ? [...bag.entries()]
             .filter(
               ([name, topic]) =>
-                topic.type === input.type &&
+                (!input.type || topic.type === input.type) &&
                 (!taken.has(name) || name === input.topic),
             )
             .map(([name]) => name)
@@ -342,6 +343,7 @@
           label: name,
           note:
             `${bag.get(name).count} messages` +
+            (input.type ? "" : `, ${bag.get(name).type}`) +
             (name === input.topic ? "" : ", remapped"),
         }),
       );

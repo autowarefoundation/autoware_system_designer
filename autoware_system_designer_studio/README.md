@@ -293,18 +293,19 @@ Below it, the **Bag** block takes the bag whose topics the boundary is matched a
 - a path or `file://` URI dropped as text, or typed: it fills the Bag field and, with a daemon, is
   read there ("Read bag"). A `.db3` bag without `metadata.yaml` is read this way.
 
-Then comes the **Inputs and outputs** block, two check lists with the same choices as the diagram:
+Then comes the **Inputs and outputs** block, one scrolled column of inputs, outputs and services
+with the same choices as the diagram:
 
-- **Inputs**: the boundary inputs with their match against the bag. An unchecked input is accepted
-  unfed, without the remap onto it; an input the bag holds under its own name is always fed.
+- **Inputs**: the boundary inputs with their match against the bag, those not fed (not in the bag,
+  recorded with another type, without publisher) first. Each input has a pulldown of its sources:
+  the bag topics of its type (any bag topic for an input of no design type), one recorded under
+  another name remapping it, and for an input the bag lacks, leaving it unfed or accepting it unfed.
+  "Accept unfed" at the head accepts every input not in the bag.
 - **Outputs**: the boundary outputs, recorded unless unchecked (`skip_outputs`), then the topics
-  internal to the scope, recorded once checked (`outputs`).
-
-The checkbox at the head of a list clears every topic of it, or checks them all once none is, so
-one click on the outputs' head replays without recording.
-
-Then come the **services leaving the scope**, service ports whose other side is outside, each
-accepted once checked.
+  internal to the scope, recorded once checked (`outputs`). The checkbox at the head clears every
+  topic, or checks them all once none is, so one click replays without recording.
+- **Services leaving the scope**: service ports whose other side is outside, unaccepted clients
+  first, each accepted once checked.
 
 Below them are the replay configuration these choices give (`scope`, `remap`, `accept`, `outputs`, `skip_outputs`),
 to copy or download as `replay.yaml`, and the pre-flight and replay commands on the mode's structure
