@@ -1,16 +1,17 @@
 // Replay activity: the scope of a deterministic replay chosen on the mode's
 // namespace tree, drawn as a graph inside its boundary: the inputs a bag
 // feeds, each joined to the bag topic that feeds it and remapped where the bag
-// names it otherwise, and the outputs recorded. The diagram keeps the top of
-// the view at a height the divider below it sets; under it are the bag, the
-// service ports that leave the scope, and the replay configuration and command
-// the choices give. The bag is a file or path dropped on the view, a file
+// names it otherwise, and the outputs recorded. The view stacks three zones,
+// each folded or expanded and sized by the dividers between them: the diagram;
+// the inputs, outputs and service ports that leave the scope, with the rosbag
+// in its head; and the run, whose popup holds the replay configuration and
+// command the choices give. The bag is a file or path dropped on the view, a file
 // opened, or a path typed. With a daemon, the bag is read by its path and the
 // replay runs as a job.
 (function () {
   const SD = window.SD;
-  const { element, copyButton, mainView } = SD.widgets;
-  const { model, scopeTree, scopeDiagram, bagFile, runPanel } =
+  const { element, copyButton, mainView, popup } = SD.widgets;
+  const { model, scopeTree, scopeDiagram, bagFile, runPanel, zoneStack } =
     SD.activities.replay;
 
   const { ACCEPT } = model;
@@ -23,9 +24,14 @@
     missing: "not in the bag",
     unknown: "no bag read",
   };
-  // Preference: height of the scope diagram in pixels.
-  const DIAGRAM_HEIGHT_KEY = "replay.diagramHeight";
-  const DIAGRAM_MIN_HEIGHT = 120;
+  // Preference: height share and fold of each zone of the view.
+  const ZONES_KEY = "replay.zones";
+  // Weights are heights in pixels, the scale a divider drag stores.
+  const ZONES = [
+    { id: "diagram", title: "Diagram", weight: 500 },
+    { id: "boundary", title: "Inputs and outputs", weight: 300 },
+    { id: "run", title: "Run", weight: 200 },
+  ];
   // Preference: directories of the bags read by path, as a JSON list.
   const BAG_DIRS_KEY = "replay.bagDirs";
   const BAG_DIRS_KEPT = 5;
@@ -244,78 +250,55 @@
         },
         record: setRecorded,
       });
-      const divider = element("div", "replay-divider");
-      divider.setAttribute("role", "separator");
-      divider.setAttribute("aria-orientation", "horizontal");
-      divider.title = "Drag to size the scope diagram";
-      const body = element("div", "replay-body");
-      view.body.append(diagram.element, divider, body);
-
-      // Dragging the divider sets the diagram's height, kept across visits.
-      const setDiagramHeight = (height) => {
-        const most = view.body.clientHeight - DIAGRAM_MIN_HEIGHT;
-        diagram.element.style.height = `${Math.max(DIAGRAM_MIN_HEIGHT, Math.min(height, most))}px`;
-      };
-      const storedHeight = parseInt(SD.storage.get(DIAGRAM_HEIGHT_KEY), 10);
-      if (storedHeight) diagram.element.style.height = `${storedHeight}px`;
-      let sizing = null;
-      divider.addEventListener("pointerdown", (event) => {
-        sizing = {
-          y: event.clientY,
-          height: diagram.element.getBoundingClientRect().height,
-        };
-        divider.setPointerCapture(event.pointerId);
-        divider.classList.add("resizing");
-        event.preventDefault();
-      });
-      divider.addEventListener("pointermove", (event) => {
-        if (sizing) setDiagramHeight(sizing.height + event.clientY - sizing.y);
-      });
-      const endSizing = () => {
-        if (!sizing) return;
-        sizing = null;
-        divider.classList.remove("resizing");
-        SD.storage.set(
-          DIAGRAM_HEIGHT_KEY,
-          String(Math.round(diagram.element.getBoundingClientRect().height)),
-        );
-      };
-      divider.addEventListener("pointerup", endSizing);
-      divider.addEventListener("pointercancel", endSizing);
+      const stack = zoneStack(ZONES_KEY, ZONES);
+      const { diagram: diagramZone, boundary: boundaryZone, run: runZone } =
+        stack.zones;
+      diagramZone.body.appendChild(diagram.element);
+      view.body.appendChild(stack.element);
       // The activity's slots are visible from mount until another activity takes over.
       let visible = true;
 
-      // -- bag -----------------------------------------------------------
-      const bagBlock = block(
-        "Bag",
-        "Drop a bag file, its directory, its metadata.yaml or its path on this view. " +
-          "A dropped file gives its topics and no path: the command takes the path typed here.",
-      );
+      // -- rosbag --------------------------------------------------------
+      const bagBox = element("div", "replay-bag-bar");
       const bagPath = element("input", "panel-search");
       bagPath.type = "text";
-      bagPath.placeholder = "Path of the bag, as the replay reads it";
+      bagPath.placeholder = "Bag path, or drop a bag";
+      bagPath.title =
+        "Path the replay reads the bag from. A bag dropped on the view gives its topics; " +
+        "a dropped file gives no path.";
       bagPath.setAttribute("aria-label", "Bag path");
       const bagInput = document.createElement("input");
       bagInput.type = "file";
       bagInput.accept = ".yaml,.yml,.mcap";
       bagInput.hidden = true;
-      const bagLoad = element("button", "panel-button", "Open bag file");
+      const bagLoad = element("button", "panel-button", "Open file");
       bagLoad.type = "button";
       bagLoad.title = "Read the topics of a metadata.yaml or .mcap file";
-      const bagRead = element("button", "panel-button", "Read bag");
+      const bagRead = element("button", "panel-button", "Read");
       bagRead.type = "button";
       bagRead.title =
         "Read the topics of the bag at this path through the daemon; a bag without metadata.yaml gets one";
       const bagState = element("span", "replay-bag-state");
       const bagRow = element("div", "replay-bag-row");
-      bagRow.append(bagPath, bagRead, bagLoad, bagInput, bagState);
-      bagBlock.element.appendChild(bagRow);
+      bagRow.append(bagRead, bagLoad, bagInput);
+      bagBox.append(
+        element("span", "replay-bag-label", "Rosbag"),
+        bagPath,
+        bagRow,
+        bagState,
+      );
+      view.head.classList.add("replay-view-head");
+      boundaryZone.head.insertBefore(bagBox, boundaryZone.actions);
 
       // -- boundary ------------------------------------------------------
-      const selectorBlock = block(
-        "Inputs and outputs",
-        "A checked input is fed from the bag, an unchecked one is accepted unfed. " +
-          "A checked output is recorded; the head of a list clears it, or checks all of a cleared one.",
+      const selectorBlock = { element: element("div", "replay-block") };
+      selectorBlock.element.appendChild(
+        element(
+          "p",
+          "panel-note",
+          "A checked input is fed from the bag, an unchecked one is accepted unfed. " +
+            "A checked output is recorded; the head of a list clears it, or checks all of a cleared one.",
+        ),
       );
       const inputSelector = topicSelector("Inputs", setFed);
       const outputSelector = topicSelector("Outputs", setRecorded);
@@ -330,32 +313,46 @@
       const services = table(["Service", "Node", "Role", "Accept"]);
       serviceBlock.element.appendChild(services.element);
 
-      // -- result --------------------------------------------------------
-      const resultBlock = block("Configuration and command");
+      // -- configuration and command popup -------------------------------
+      const commands = popup("Configuration and command");
       const configCode = codeBlock(model.CONFIG_FILE);
       const checkCode = codeBlock("Pre-flight");
       const runCode = codeBlock("Replay");
-      resultBlock.element.append(
+      commands.body.append(
         configCode.element,
         checkCode.element,
         runCode.element,
       );
+      const commandsOpen = element(
+        "button",
+        "panel-button",
+        "Configuration and command",
+      );
+      commandsOpen.type = "button";
+      commandsOpen.title =
+        "The replay configuration file and the commands that run it";
+      commandsOpen.setAttribute("aria-haspopup", "dialog");
+      commandsOpen.addEventListener("click", commands.open);
 
+      // -- zones: the boundary, then the run --------------------------------
+      const lists = element("div", "replay-boundary-lists");
+      lists.append(selectorBlock.element, serviceBlock.element);
+      boundaryZone.body.appendChild(lists);
       const panel = runPanel(daemon, () => request);
-      // Blocks a scope fills.
+      runZone.actions.appendChild(commandsOpen);
+      // Without the daemon's replay, the popup's commands run the replay.
+      const runNote = element(
+        "p",
+        "panel-note",
+        "Running a replay from here needs the studio daemon; without it, run the commands of Configuration and command in a shell.",
+      );
+      runZone.body.append(runNote, panel.element);
+      // Parts a scope fills.
       const scopeBlocks = [
         selectorBlock.element,
         serviceBlock.element,
-        resultBlock.element,
-        panel.element,
+        commandsOpen,
       ];
-      body.append(
-        bagBlock.element,
-        selectorBlock.element,
-        serviceBlock.element,
-        resultBlock.element,
-        panel.element,
-      );
 
       function checkbox(checked, onChange, disabled = false) {
         const box = document.createElement("input");
@@ -411,10 +408,12 @@
           node.hidden = !scope.nodes.length;
         });
         if (!scope.nodes.length) {
+          commands.close();
           if (visible) diagram.show(null);
           view.setTitle("Replay scope");
           request = { blocker: "Check nodes or modules to replay." };
           panel.refresh();
+          runNote.hidden = !panel.element.hidden;
           return;
         }
         const members =
@@ -544,6 +543,7 @@
                 : "Give the path of the bag.",
             };
         panel.refresh();
+        runNote.hidden = !panel.element.hidden;
       }
 
       function setBag(topics, name) {
@@ -719,6 +719,7 @@
         },
         hide() {
           visible = false;
+          commands.close();
         },
       };
     },

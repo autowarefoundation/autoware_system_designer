@@ -21,15 +21,156 @@
   color: var(--text-primary);
 }
 
-/* Scope diagram: the top of the view, at the height the divider sets. */
+/* Zones of the view: diagram, inputs and outputs, run; each folds to its head,
+   and an expanded one takes its share of the height. */
+.replay-zones {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.replay-zone {
+  display: flex;
+  flex-direction: column;
+  min-height: 90px;
+  overflow: hidden;
+}
+
+.replay-zone.folded {
+  min-height: 0;
+}
+
+.replay-zone-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 4px 16px 4px 8px;
+  background: var(--bg-sidebar-header);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.replay-zone-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.replay-zone-toggle:hover {
+  background: var(--border-color);
+}
+
+.replay-zone-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  transition: transform 0.15s;
+}
+
+.replay-zone.folded .replay-zone-toggle svg {
+  transform: rotate(-90deg);
+}
+
+.replay-zone-toggle h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.replay-zone-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.replay-zone-actions .panel-button {
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.replay-zone-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  padding: 10px 16px 14px;
+  overflow: auto;
+}
+
+.replay-zone.folded .replay-zone-body {
+  display: none;
+}
+
+.replay-zone-diagram .replay-zone-body {
+  padding: 0;
+  overflow: hidden;
+}
+
 .replay-diagram {
   position: relative;
-  flex: 0 0 auto;
-  height: 48%;
-  min-height: 120px;
-  max-height: calc(100% - 120px);
+  flex: 1 1 0;
+  min-height: 0;
   overflow: hidden;
   background: var(--bg-primary);
+}
+
+.replay-boundary-lists {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 24px;
+}
+
+.replay-boundary-lists > .replay-block:first-of-type {
+  flex: 2 1 640px;
+  min-width: 0;
+}
+
+.replay-boundary-lists > .replay-block + .replay-block {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+/* Rosbag: one row at the right end of the head of the inputs and outputs */
+.replay-view-head .main-view-title {
+  flex-shrink: 0;
+  max-width: 40%;
+}
+
+.replay-bag-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.replay-bag-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.replay-bag-bar .replay-bag-state {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 220px;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .replay-divider {
@@ -43,6 +184,11 @@
   z-index: 2;
   touch-action: none;
   transition: background 0.2s;
+}
+
+.replay-divider.inert {
+  cursor: default;
+  pointer-events: none;
 }
 
 .replay-divider:hover,
@@ -369,16 +515,6 @@
   outline-offset: -4px;
 }
 
-.replay-body {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 14px 16px 24px;
-  overflow: auto;
-  min-height: 0;
-  flex: 1;
-}
-
 .replay-block {
   display: flex;
   flex-direction: column;
@@ -410,18 +546,25 @@
 
 .replay-bag-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  flex-shrink: 0;
+  gap: 6px;
 }
 
-.replay-bag-row .panel-search {
-  flex: 1 1 280px;
-  width: auto;
+.replay-bag-row .panel-button {
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.replay-bag-bar .panel-search {
+  flex: 0 1 240px;
+  width: 240px;
+  min-width: 120px;
+  padding: 3px 6px;
   font-family: var(--mono-font);
+  font-size: 12px;
 }
 
-.replay-bag-row .panel-search.blocked {
+.replay-bag-bar .panel-search.blocked {
   border-color: var(--state-failed);
 }
 

@@ -125,6 +125,7 @@ ACTIVITIES = {
             "js/activities/replay/scope_diagram.js",
             "js/activities/replay/bag_file.js",
             "js/activities/replay/run_panel.js",
+            "js/activities/replay/zones.js",
             "js/activities/replay/index.js",
         ),
         "styles": ("css/activities/replay.css",),

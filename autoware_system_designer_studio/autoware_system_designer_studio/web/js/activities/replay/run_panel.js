@@ -1,5 +1,6 @@
 // Replay: a replay started through the daemon as a job: its options, the
-// pre-flight and run buttons, the outcome the job reports and its log.
+// pre-flight and run buttons, the outcome the job reports and its log. The
+// Run section around it gives its heading.
 (function () {
   const SD = window.SD;
   const { element, terminal } = SD.widgets;
@@ -159,9 +160,7 @@
 
   // `request()` gives { params } of a replay, or { blocker } naming what it lacks.
   function runPanel(daemon, request) {
-    const root = element("section", "replay-block");
-    const head = element("div", "replay-block-head");
-    head.appendChild(element("h3", "", "Run"));
+    const root = element("div", "replay-block");
     const duration = numberInput("whole bag", "0", "any");
     const domain = numberInput("environment's", "0", "1");
     const saveReference = document.createElement("input");
@@ -206,7 +205,7 @@
       logHost,
     );
     report.hidden = true;
-    root.append(head, options, buttons, error, report);
+    root.append(options, buttons, error, report);
 
     // The followed job: its id, terminal and the sequence of the last line shown.
     let followed = null;
