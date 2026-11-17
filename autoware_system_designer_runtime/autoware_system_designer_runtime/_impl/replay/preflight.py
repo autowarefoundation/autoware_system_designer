@@ -172,10 +172,12 @@ def check_endpoints(
 ) -> list[Problem]:
     """The scope's real subscriptions, publishers and timers against its declared ports and events.
     *fed* names the topics fed beside the declared ports; *unconnected* names the topics of declared
-    ports the design connects to nothing."""
+    ports the design connects to nothing. An ambient input needs no port: the bag or the scope provides it."""
     special = special_topics()
     accepted = set(accept)
     fed = set(fed)
+    ambient = set(special.ambient_inputs)
+    published = {endpoint.topic for endpoint in endpoints if endpoint.kind == "p"}
     unconnected = unconnected or {}
     by_fqn = {fqn: graph.nodes[path] for path, fqn in scope_fqns.items() if path in graph.nodes}
     # A launch file member stands for every node it starts, under its design path.
@@ -238,6 +240,16 @@ def check_endpoints(
             continue
         if inputs and endpoint.topic in fed:
             continue
+        if inputs and endpoint.topic in ambient:
+            if endpoint.topic not in published:
+                problems.append(
+                    Problem(
+                        WARNING,
+                        "ambient_unfed",
+                        f"{endpoint.node} subscribes to {endpoint.topic}, which neither the bag nor the scope provides",
+                    )
+                )
+            continue
         # A topic the launch file member publishes stays inside the member.
         if inputs and covers(endpoint.launch_file, endpoint, False):
             continue
@@ -263,7 +275,8 @@ def check_endpoints(
 
     for fqn, node in by_fqn.items():
         for topic in node.inputs:
-            if topic not in seen_inputs[fqn] and topic not in special.process:
+            # An ambient input may be subscribed lazily, inside a callback after startup.
+            if topic not in seen_inputs[fqn] and topic not in special.process and topic not in ambient:
                 problems.append(
                     Problem(WARNING, "input_not_subscribed", f"{fqn} declares input {topic} and never subscribed to it")
                 )

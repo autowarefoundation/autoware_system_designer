@@ -234,6 +234,18 @@ def test_undeclared_subscription_fails_and_undeclared_publisher_warns():
     assert check(FULL + [RealEndpoint("s", "/mod/a", "/secret")], fed=["/secret"]) == []
 
 
+def test_ambient_input_needs_no_port_and_warns_when_nothing_provides_it():
+    # A node of no declared process, so no /tf port covers it.
+    listener = [RealEndpoint("s", "/other", "/tf"), RealEndpoint("s", "/other", "/tf_static")]
+    broadcaster = [RealEndpoint("p", "/mod/a", "/tf"), RealEndpoint("p", "/mod/a", "/tf_static")]
+
+    assert codes(check(FULL + listener + broadcaster)) == ["undeclared_publisher", "undeclared_publisher"]
+    assert codes(check(FULL + listener)) == ["ambient_unfed", "ambient_unfed"]
+    assert check(FULL + listener, fed=["/tf", "/tf_static"]) == []
+    # The declared /tf input of /mod/a is not subscribed yet.
+    assert check([e for e in FULL if e.topic != "/tf"]) == []
+
+
 def test_launch_file_member_stands_for_the_nodes_it_starts():
     design = system(
         [
@@ -283,7 +295,7 @@ def test_subscription_of_an_unconnected_port_only_warns():
 
 
 def test_missing_endpoints_and_timer_rate_mismatch_warn():
-    problems = check([RealEndpoint("s", "/mod/a", "/in"), RealEndpoint("t", "/mod/a", period_ns=500_000_000)])
+    problems = check([RealEndpoint("s", "/mod/a", "/tf"), RealEndpoint("t", "/mod/a", period_ns=500_000_000)])
 
     assert codes(problems, ERROR) == []
     assert codes(problems) == ["event_mismatch", "input_not_subscribed", "output_not_published"]
