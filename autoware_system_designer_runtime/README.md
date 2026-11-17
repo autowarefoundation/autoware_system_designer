@@ -515,7 +515,7 @@ A reference is the `outputs/` of a run kept by `--save-reference`. It lives unde
 <record root>/<package>/<system>/replay/<Mode>/<key>/{reference.json, outputs/}
 ```
 
-`--reference DIR` names the directory directly (required for a JSON outside an export tree). Each topic compares message by message in publish order, driver time included, by its rule; `--warmup S` leaves the first seconds out.
+`--reference DIR` names the directory directly (required for a JSON outside an export tree). Each topic compares message by message in publish order, driver time included, by its rule; `--warmup S` leaves the first seconds out. `exact` compares the field values without tolerance, `fields` with the tolerance, exclusions and UUID ranking of the rule. Serialized bytes are not compared: the padding between aligned fields is left unset by the publisher. The digest in `result.json` is over the field values too.
 
 | Exit code | Meaning                                                                                 |
 | --------- | --------------------------------------------------------------------------------------- |

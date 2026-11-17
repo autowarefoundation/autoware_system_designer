@@ -125,6 +125,22 @@ def test_exact_rule_reports_the_first_differing_message():
     assert verdict.status == DIFFER and verdict.difference["index"] == 1
 
 
+def test_exact_rule_and_digest_follow_the_content_of_differing_bytes():
+    reference = records(Sample(1, [Vector(1.0, 2.0)]))
+    padded = [(stamp, data + b" ") for stamp, data in reference]
+    changed = records(Sample(1, [Vector(1.0, 2.5)]))
+
+    assert compare_topic("/t", "T", reference, padded, CompareRule(), decode).status == MATCH
+    assert compare_topic("/t", "T", reference, padded, CompareRule()).status == DIFFER
+    verdict = compare_topic("/t", "T", reference, changed, CompareRule(), decode)
+    assert verdict.status == DIFFER and "points.y" in verdict.difference["detail"]
+
+    types = {"/t": "T"}
+    assert digest({"/t": reference}, types, decode) == digest({"/t": padded}, types, decode)
+    assert digest({"/t": reference}, types, decode) != digest({"/t": changed}, types, decode)
+    assert digest({"/t": reference}) != digest({"/t": padded})
+
+
 def test_count_and_driver_time_differences_are_reported():
     reference = records(Sample(1, []), Sample(2, []))
 

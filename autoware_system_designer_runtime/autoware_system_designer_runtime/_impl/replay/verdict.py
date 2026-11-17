@@ -15,8 +15,12 @@
 """Verdict of a replay: its recorded outputs against a reference, topic by topic.
 
 Both sides are sequences of (driver time, serialized message) per topic. The rule
-of a topic says how two messages compare: byte for byte, field by field with a
+of a topic says how two messages compare: by content, field by field with a
 numeric tolerance, or not at all. Driver times compare exactly under every rule.
+
+Content is the field values of a message. The bytes between aligned fields of a
+serialized message are padding the publisher leaves unset, so equal messages
+can serialize to different bytes.
 """
 
 from __future__ import annotations
@@ -171,8 +175,10 @@ def compare_topic(
     if rule.rule == RULE_IGNORE:
         verdict.status = IGNORED
         return verdict
-    fields = _FieldComparison(rule) if rule.rule == RULE_FIELDS else None
-    if fields is not None and deserialize is None:
+    exact = rule.rule == RULE_EXACT
+    # The exact rule is the field comparison without tolerance, exclusion or UUID ranking.
+    fields = _FieldComparison(CompareRule(rule=RULE_FIELDS) if exact else rule) if deserialize is not None else None
+    if fields is None and not exact:
         raise ValueError(f"{topic}: the fields rule needs a deserializer")
     for index, ((ref_stamp, ref_data), (stamp, data)) in enumerate(zip(reference, recorded)):
         detail: Optional[str] = None
@@ -228,11 +234,42 @@ def ros_deserialize(msg_type: str, data: bytes) -> Any:
     return deserialize_message(data, get_message(msg_type))
 
 
-def digest(records: Mapping[str, list[Record]]) -> str:
-    """One hash over every recorded output, for a quick equality check of two runs."""
+def _hash_content(sha: Any, value: Any) -> None:
+    """Feed the field values of a message to *sha*, in field order."""
+    if _is_message(value):
+        for name in value.get_fields_and_field_types():
+            _hash_content(sha, getattr(value, name))
+    elif isinstance(value, (str, bytes)):
+        raw = value.encode() if isinstance(value, str) else value
+        sha.update(f"{len(raw)}\0".encode())
+        sha.update(raw)
+    elif hasattr(value, "tobytes"):
+        # Primitive arrays: array.array and numpy.ndarray.
+        sha.update(f"{len(value)}\0".encode())
+        sha.update(value.tobytes())
+    elif _is_sequence(value):
+        sha.update(f"{len(value)}\0".encode())
+        for item in value:
+            _hash_content(sha, item)
+    else:
+        sha.update(f"{value!r}\0".encode())
+
+
+def digest(
+    records: Mapping[str, list[Record]],
+    types: Optional[Mapping[str, str]] = None,
+    deserialize: Optional[Deserialize] = None,
+) -> str:
+    """One hash over every recorded output, for a quick equality check of two runs. A topic with a
+    type in *types* is hashed by content, any other by its serialized bytes."""
     sha = hashlib.sha256()
     for topic in sorted(records):
+        msg_type = (types or {}).get(topic) if deserialize is not None else None
         for stamp, data in records[topic]:
-            sha.update(f"{topic}\0{stamp}\0{len(data)}\0".encode())
-            sha.update(data)
+            if msg_type:
+                sha.update(f"{topic}\0{stamp}\0".encode())
+                _hash_content(sha, deserialize(msg_type, data))
+            else:
+                sha.update(f"{topic}\0{stamp}\0{len(data)}\0".encode())
+                sha.update(data)
     return sha.hexdigest()

@@ -507,7 +507,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             )
         since_ns = start_ns + int(options.warmup * 1e9)
         recorded = group_by_topic(read_messages(out_dir / ref.OUTPUTS_DIR), since_ns=since_ns)
-        summary["outputs_digest"] = digest(recorded)
+        summary["outputs_digest"] = digest(recorded, recorded_types, ros_deserialize)
         if options.strict and result.violations:
             code = EXIT_DIFFERS
         if options.save_reference:
