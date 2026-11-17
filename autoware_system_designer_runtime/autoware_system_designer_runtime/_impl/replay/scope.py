@@ -29,6 +29,7 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 from ..measure.node_graph import NodeGraph, NodeInfo, _is_topic_port, _walk, resolve_topic
 from ...special_topics import special_topics
 from ..ros2.common.namespace import node_fqn
+from .middleware import replay_middleware
 
 
 class ScopeError(ValueError):
@@ -171,7 +172,7 @@ def select_scope(data: Mapping[str, Any], patterns: Sequence[str], *, ecu: Optio
 
 
 def replay_structure(data: Mapping[str, Any], scope: Scope) -> dict[str, Any]:
-    """The system reduced to the scope's members, each on simulated time and without intra-process delivery."""
+    """The system reduced to the scope's members, each with the replay's node parameters and launcher settings."""
     keep = set(scope.members)
 
     def reduce(entity: Mapping[str, Any]) -> Optional[dict[str, Any]]:
@@ -192,13 +193,13 @@ def replay_structure(data: Mapping[str, Any], scope: Scope) -> dict[str, Any]:
 
 
 def _to_replay_node(entity: dict[str, Any]) -> None:
+    middleware = replay_middleware()
     launcher = entity["launcher"]
-    launcher["use_intra_process_comms"] = False
+    launcher.update(middleware.launcher)
     # A launch file takes its parameters as launch arguments; its nodes keep the file's own setting.
     if launcher.get("launch_state") in ("single_node", "composable_node"):
-        parameters = [p for p in entity.get("parameters", []) if p.get("name") != "use_sim_time"]
-        parameters.append({"name": "use_sim_time", "value": True, "type": "bool", "parameter_type": "MODE"})
-        entity["parameters"] = parameters
+        parameters = [p for p in entity.get("parameters", []) if p.get("name") not in middleware.node_parameters]
+        entity["parameters"] = parameters + middleware.parameter_entries()
 
 
 def _service_ports(entity: Mapping[str, Any]) -> Iterable[tuple[str, str, str]]:

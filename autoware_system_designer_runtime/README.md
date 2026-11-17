@@ -260,6 +260,7 @@ log base, the manifest, the member directory name and the tail of a member file.
 | `_impl/measure/writer.py`             | Latency file                                                                                            |
 | `_impl/replay/scope.py`               | Scope selection by design path, boundary inputs and outputs, the scope's structure                      |
 | `_impl/replay/config.py`              | Replay configuration file                                                                               |
+| `_impl/replay/middleware.py`          | Middleware settings of a replay, read from `config/replay_middleware.yaml`                              |
 | `_impl/replay/bag.py`                 | Bag metadata, read or generated, messages in recorded order, writer of the recorded outputs             |
 | `_impl/replay/preflight.py`           | Bag against boundary, real endpoints against the design                                                 |
 | `_impl/replay/link.py`                | Socket link to the gated processes                                                                      |
@@ -454,6 +455,16 @@ The topics no design declares take their role from `config/special_topics.yaml` 
 | `nested_callbacks`   | Topics whose callbacks a running callback of the same process may wait on      | `/tf`, `/tf_static`            |
 | `handshake_suffixes` | Suffixes of the handshake topics a publisher creates beside a negotiated topic | `/_supported_types`            |
 
+What a replay sets on the middleware of its scope comes from `config/replay_middleware.yaml` of this package:
+
+| Key                     | Role                                                                     | Value                                   |
+| ----------------------- | ------------------------------------------------------------------------ | --------------------------------------- |
+| `node_parameters`       | Parameters set on every node of the scope                                | `use_sim_time: true`                    |
+| `launcher`              | Launcher settings set on every member of the scope                       | `use_intra_process_comms: false`        |
+| `isolation_environment` | Environment of a replay whose discovery stays on this host               | `ROS_LOCALHOST_ONLY=1`                  |
+| `domain_id_variable`    | Environment variable that carries `--domain-id`                          | `ROS_DOMAIN_ID`                         |
+| `identifier_types`      | Identifier message types `uuid_order` ranks, with the field of the bytes | `unique_identifier_msgs/msg/UUID: uuid` |
+
 The run starts with two checks:
 
 - **Bag against boundary** (`--check` stops after it): every boundary input is in the bag with the design's message type and a type the workspace can load. An input the design gives no publisher, an input also published inside the scope (the bag then carries the scope's own recorded messages) and a service server without a client in scope are warnings; a service client without a server in scope is an error.
@@ -508,7 +519,7 @@ autoware-system-designer-replay SYSTEM.json --scope /perception/object_recogniti
 - **Settling.** Before each step the driver waits until no callback runs, every process holds its time, every message published to a subscription shows as ready work there, every due timer is ready and every recorded publish was heard. All of it is counted from the `rcl` calls the tracer observes; the declared event chains play no part, so a wrong chain cannot break the order.
 - **Nested callbacks.** A callback that waits for a transform holds the scope while the listener that brings it is gated. Once a callback has run for 0.2 s of wall time, the ready callbacks of its process on the nested callback topics (`/tf`, `/tf_static`) are granted one at a time beside it; the result counts them as `nested_callbacks`.
 - **Tie order.** Callbacks ready together run by the design order of their node, then by creation order of the endpoint. `--tie-break-seed N` draws among them instead, repeatably per seed, to exercise other fan-in orders.
-- **Isolation.** The run sets `ROS_LOCALHOST_ONLY=1` (`--no-isolate` keeps discovery as it is); `--domain-id` gives it a domain of its own.
+- **Isolation.** The run sets the isolation environment (`ROS_LOCALHOST_ONLY=1`; `--no-isolate` keeps discovery as it is); `--domain-id` gives it a domain of its own.
 
 A publish, take or timer fire by a thread that holds no grant (a worker thread, a service callback) breaks the order. The run counts them per node and endpoint as `violations` in the result; `--strict` turns any into exit code 1.
 

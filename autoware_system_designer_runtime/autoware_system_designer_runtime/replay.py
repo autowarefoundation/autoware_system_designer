@@ -48,6 +48,7 @@ from ._impl.measure.tracer import TracerArming, locate_tracer
 from ._impl.replay import reference as ref
 from ._impl.replay.bag import BagError, BagInfo, BagMessages, BagSink, read_bag_info, read_messages, remap_topics
 from ._impl.replay.config import ConfigError, ReplayConfig
+from ._impl.replay.middleware import replay_middleware
 from ._impl.replay.driver import DriverOptions, ReplayDriver, ReplayError, ReplayResult
 from ._impl.replay.link import CLOCK_FREE, SOCKET_ENV, START_ENV, TIMER, WALL_TIMERS_ENV, Endpoint, LinkServer
 from ._impl.replay.preflight import (
@@ -337,10 +338,11 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
         logger.error("replay: the tracer gates the scope and is not installed: %s", exc)
         return EXIT_FAILED
 
+    middleware = replay_middleware()
     if options.isolate:
-        os.environ["ROS_LOCALHOST_ONLY"] = "1"
-    if options.domain_id is not None:
-        os.environ["ROS_DOMAIN_ID"] = str(options.domain_id)
+        os.environ.update(middleware.isolation_environment)
+    if options.domain_id is not None and middleware.domain_id_variable:
+        os.environ[middleware.domain_id_variable] = str(options.domain_id)
 
     start_ns = bag.start_ns if bag is not None else time.time_ns()
     end_ns = start_ns + int(options.duration * 1e9) if (bag is not None and options.duration is not None) else None
@@ -463,8 +465,8 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
                     env[WALL_TIMERS_ENV] = "free"
                 spec.env = env
                 cmd = list(spec.cmd)
-                if "--ros-args" in cmd and not any(str(arg).startswith("use_sim_time:=") for arg in cmd):
-                    spec.cmd = cmd + ["-p", "use_sim_time:=true"]
+                if "--ros-args" in cmd:
+                    spec.cmd = cmd + middleware.parameter_arguments(cmd)
 
         async def drive(coord) -> None:
             try:
@@ -670,9 +672,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Write every step of the driver and every event of the gated processes to replay/steps.log.",
     )
     run.add_argument(
-        "--no-isolate", action="store_true", help="Do not restrict ROS discovery to this host (ROS_LOCALHOST_ONLY)."
+        "--no-isolate", action="store_true", help="Do not restrict discovery to this host."
     )
-    run.add_argument("--domain-id", type=int, default=None, help="ROS_DOMAIN_ID of the replay.")
+    run.add_argument("--domain-id", type=int, default=None, help="Middleware domain of the replay.")
     run.add_argument("--startup-timeout", type=float, default=60.0, metavar="S")
     run.add_argument(
         "--startup-settle",

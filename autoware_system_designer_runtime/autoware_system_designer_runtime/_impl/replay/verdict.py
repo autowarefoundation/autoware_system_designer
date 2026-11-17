@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Optional
 
 from .config import RULE_EXACT, RULE_FIELDS, RULE_IGNORE, CompareRule, ReplayConfig
+from .middleware import replay_middleware
 
 MATCH = "match"
 DIFFER = "differ"
@@ -96,14 +97,16 @@ class _UuidOrder:
     def __init__(self) -> None:
         self._rank: dict[bytes, int] = {}
 
-    def rank(self, uuid: Any) -> int:
-        key = bytes(bytearray(uuid.uuid))
+    def rank(self, uuid: Any, field: str) -> int:
+        key = bytes(bytearray(getattr(uuid, field)))
         return self._rank.setdefault(key, len(self._rank))
 
 
-def _is_uuid(value: Any) -> bool:
-    cls = type(value)
-    return cls.__name__ == "UUID" and cls.__module__.startswith("unique_identifier_msgs")
+def _uuid_field(reference: Any, value: Any) -> Optional[str]:
+    """Field holding the identifier bytes when both messages are identifiers of one type."""
+    if type(reference) is not type(value):
+        return None
+    return replay_middleware().identifier_field(value)
 
 
 def _is_message(value: Any) -> bool:
@@ -135,8 +138,9 @@ class _FieldComparison:
         """Where *value* leaves *reference*, None when they agree under the rule."""
         if path and self._ignored(path):
             return None
-        if self._rule.uuid_order and _is_uuid(reference) and _is_uuid(value):
-            a, b = self._reference_uuids.rank(reference), self._uuids.rank(value)
+        uuid_field = _uuid_field(reference, value) if self._rule.uuid_order else None
+        if uuid_field is not None:
+            a, b = self._reference_uuids.rank(reference, uuid_field), self._uuids.rank(value, uuid_field)
             return None if a == b else f"{path}: UUID is the {b + 1}. new one, the reference's the {a + 1}."
         if _is_message(reference) and _is_message(value):
             if type(reference) is not type(value):
