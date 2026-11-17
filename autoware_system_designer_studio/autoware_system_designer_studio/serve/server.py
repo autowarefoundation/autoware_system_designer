@@ -46,12 +46,11 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
 from autoware_system_designer_runtime.control_protocol import DEFAULT_POLICY, MEASURE_VERBS, MEMBER_ACTIONS, POLICIES
-from autoware_system_designer_runtime.run_log import LOG_BASE
 
 from .. import exports
 from ..pages import assets
 from ..pages.render import ICON_FILE, INDEX_PAGE, SYSTEMS_DIR, Site, system_pages
-from . import api, build, events, jobs, launch, peers, record_watch, replay, runs
+from . import api, build, events, jobs, launch, peers, record_watch, replay, runs, storage
 from .events import TOPIC_DAEMON, TOPIC_SYSTEMS_CHANGED
 from .http import (
     CLIENT_HEADER,
@@ -168,6 +167,8 @@ class ServeDaemon:
 
     ``workspace`` is the colcon workspace builds run in, None when this daemon does not build.
     ``launch_env`` is the environment launch jobs run in (this process's when None; see launch.capture_env).
+    ``log_root``, ``config_root`` and ``record_root`` override the roots of the settings file at
+    ``settings_path`` (see storage.Storage).
     ``restart_required`` turns true once a build rebuilt this package inside the served install tree:
     the running daemon keeps the code it started with.
     """
@@ -180,12 +181,13 @@ class ServeDaemon:
         served_units: Optional[Iterable[str]] = None,
         workspace: Optional[Path] = None,
         record_root: Optional[Path] = None,
+        log_root: Optional[Path] = None,
+        config_root: Optional[Path] = None,
+        settings_path: Optional[Path] = None,
         bag_dirs: Iterable[Path] = (),
         launch_env: Optional[Mapping[str, str]] = None,
         env_script: Optional[Path] = None,
         rviz_config: Optional[Path] = None,
-        log_base: Optional[Path] = None,
-        replay_setup_dir: Optional[Path] = None,
         peer_specs: Iterable[peers.PeerSpec] = (),
         heartbeat_s: float = HEARTBEAT_INTERVAL_S,
         max_connections: int = MAX_CONNECTIONS,
@@ -194,7 +196,9 @@ class ServeDaemon:
         self.install_root = install_root
         self.served_units = None if served_units is None else sorted(set(served_units))
         self.workspace = workspace
-        self.record_root = record_root
+        self.storage = storage.Storage.load(
+            settings_path, log_root=log_root, config_root=config_root, record_root=record_root
+        )
         self.bag_dirs = [Path(directory).expanduser() for directory in bag_dirs]
         self.restart_required = False
         self.serves_own_install = exports.module_install_root() == install_root
@@ -235,12 +239,12 @@ class ServeDaemon:
         self.methods.register("replay.bag", self._replay_bag)
         self.methods.register("replay.find", self._replay_find)
         self.methods.register("replay.start", self._replay_start)
+        self.methods.register("settings.get", self._settings_get, get_path="settings")
+        self.methods.register("settings.set", self._settings_set)
         self.methods.register("replay.setups", self._replay_setups)
         self.methods.register("replay.setup.get", self._replay_setup_get)
         self.methods.register("replay.setup.save", self._replay_setup_save)
         self.methods.register("replay.setup.delete", self._replay_setup_delete)
-        self._log_base = log_base
-        self.replay_setup_dir = replay_setup_dir or replay.default_setup_dir()
         # Launch id and count of the starts under way, by (system id, mode).
         self._starting: dict[tuple[str, str], list[Any]] = {}
         self.launch_cwd = workspace or install_root.parent
@@ -252,9 +256,9 @@ class ServeDaemon:
             env=launch_env,
             env_script=env_script,
             rviz_config=rviz_config,
-            log_base=log_base,
+            storage=self.storage,
         )
-        self.records = record_watch.RecordWatcher(self.hub, record_root)
+        self.records = record_watch.RecordWatcher(self.hub, self.storage.records)
         self._server: Optional[asyncio.AbstractServer] = None
         self._heartbeat: Optional[asyncio.Task] = None
         self._record_watch: Optional[asyncio.Task] = None
@@ -378,7 +382,7 @@ class ServeDaemon:
             "workspace": None if self.workspace is None else str(self.workspace),
             "record_root": str(self.records.record_root),
             "bag_dirs": [str(directory) for directory in self.bag_dirs],
-            "replay": {"log_dir": str(self._log_base or LOG_BASE), "setup_dir": str(self.replay_setup_dir)},
+            "storage": self.storage.view(),
             "restart_required": self.restart_required,
             "heartbeat_s": self.heartbeat_s,
             "peers": self.peers.views(),
@@ -698,7 +702,7 @@ class ServeDaemon:
             mode=mode,
             bag=_str_param(params, "bag", required=True),
             deploy=deploy,
-            log_base=self._log_base,
+            log_base=self.storage.replay_logs,
         )
         # A launched unit on the replay's domain answers the scope's requests and feeds its topics.
         launched = sorted(s.compute_unit for s in self.launch.sessions.values() if s.active)
@@ -730,20 +734,25 @@ class ServeDaemon:
         await asyncio.to_thread(replay.write_config, plan)
         return (await self.jobs.start(spec)).to_view()
 
-    def _setup_dir(self, params: dict[str, Any]) -> Path:
-        return replay.directory_param(params, "dir") or self.replay_setup_dir
+    async def _settings_get(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self.storage.view()
+
+    async def _settings_set(self, params: dict[str, Any]) -> dict[str, Any]:
+        await asyncio.to_thread(self.storage.set, params)
+        self.records.record_root = self.storage.records
+        return self.storage.view()
 
     async def _replay_setups(self, params: dict[str, Any]) -> dict[str, Any]:
-        directory = self._setup_dir(params)
+        directory = self.storage.replay_setups
         return {"dir": str(directory), "setups": await asyncio.to_thread(replay.list_setups, directory)}
 
     async def _replay_setup_get(self, params: dict[str, Any]) -> dict[str, Any]:
-        directory = self._setup_dir(params)
+        directory = self.storage.replay_setups
         setup = await asyncio.to_thread(replay.read_setup, directory, params.get("name"))
         return {"name": params["name"], "setup": setup}
 
     async def _replay_setup_save(self, params: dict[str, Any]) -> dict[str, Any]:
-        directory = self._setup_dir(params)
+        directory = self.storage.replay_setups
         try:
             path = await asyncio.to_thread(replay.write_setup, directory, params.get("name"), params.get("setup"))
         except OSError as exc:
@@ -751,7 +760,7 @@ class ServeDaemon:
         return {"name": params["name"], "path": str(path)}
 
     async def _replay_setup_delete(self, params: dict[str, Any]) -> dict[str, Any]:
-        directory = self._setup_dir(params)
+        directory = self.storage.replay_setups
         await asyncio.to_thread(replay.delete_setup, directory, params.get("name"))
         return {"name": params["name"]}
 
@@ -886,7 +895,7 @@ class ServeDaemon:
             systems = [export] if export is not None else []
         else:
             systems, _ = exports.discover_systems(self.install_root)
-        return Site(systems, record_root=self.record_root).render(site_path)
+        return Site(systems, record_root=self.storage.records).render(site_path)
 
     async def _file_response(self, request: Request, path: Optional[Path]) -> Response:
         if path is None:

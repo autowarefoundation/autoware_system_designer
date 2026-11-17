@@ -509,8 +509,9 @@ body.inspector-hidden #inspector-resizer {
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   z-index: 201;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 #settings-popup.open {
@@ -581,6 +582,31 @@ body.inspector-hidden #inspector-resizer {
   font-family: monospace;
   background: var(--bg-secondary);
   color: var(--text-primary);
+}
+
+.settings-dirs {
+  display: grid;
+  gap: 4px;
+  padding: 10px 16px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.settings-dirs div {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-dirs code {
+  font-family: monospace;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.settings-error {
+  padding: 8px 16px 0;
+  font-size: 12px;
+  color: var(--error-color);
 }
 
 .settings-row select {

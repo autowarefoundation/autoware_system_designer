@@ -55,3 +55,12 @@ def handled_interrupt():
         signal.signal(signal.SIGINT, signal.default_int_handler)
     yield
     signal.signal(signal.SIGINT, previous)
+
+
+@pytest.fixture(autouse=True)
+def _studio_settings(tmp_path, monkeypatch):
+    """Each test reads and writes a studio settings file of its own, whose roots are under the test's
+    directory."""
+    settings = tmp_path / "studio.yaml"
+    settings.write_text(f"log_root: {tmp_path / 'default_logs'}\nconfig_root: {tmp_path / 'default_config'}\n")
+    monkeypatch.setenv("AUTOWARE_SYSTEM_DESIGNER_STUDIO_SETTINGS", str(settings))

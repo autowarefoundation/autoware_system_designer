@@ -27,7 +27,6 @@ from typing import Any, Callable, Iterable, Mapping, Optional
 
 from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord
 from autoware_system_designer_runtime.run_log import (
-    LOG_BASE,
     RUN_MANIFEST,
     STREAMS,
     TAIL_LINES,
@@ -43,11 +42,12 @@ MAX_RUNS = 100
 
 
 class RunArchive:
-    """The runs under the log bases. ``session_dirs`` lists the log directory of each launch session
-    with whether the session still runs."""
+    """The runs under the log bases. ``log_base`` gives the directory launches write their runs under,
+    ``session_dirs`` lists the log directory of each launch session with whether the session still
+    runs."""
 
-    def __init__(self, log_base: Optional[Path], session_dirs: Callable[[], Iterable[tuple[Path, bool]]]) -> None:
-        self.log_base = log_base or LOG_BASE
+    def __init__(self, log_base: Callable[[], Path], session_dirs: Callable[[], Iterable[tuple[Path, bool]]]) -> None:
+        self._log_base = log_base
         self._session_dirs = session_dirs
         # The rates record read last, with the path, change time and size of its file.
         self._rates_record: Optional[tuple[tuple[Path, int, int], RatesRecord]] = None
@@ -57,7 +57,7 @@ class RunArchive:
     def log_bases(self, sessions: Optional[Iterable[tuple[Path, bool]]] = None) -> list[Path]:
         """Directories holding run directories: the log base and the parents of the sessions' log
         directories."""
-        bases = [self.log_base]
+        bases = [self._log_base()]
         for log_dir, _ in self._session_dirs() if sessions is None else sessions:
             if log_dir.parent not in bases:
                 bases.append(log_dir.parent)

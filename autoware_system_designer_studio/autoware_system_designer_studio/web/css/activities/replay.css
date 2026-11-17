@@ -966,21 +966,7 @@
   overflow: hidden;
 }
 
-/* Saved setups under the scope selector. */
-.replay-setups {
-  margin: 4px 0 8px;
-  padding: 8px 0;
-  border-top: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.replay-setups-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
-}
-
+/* Saved setups above the scope selector. */
 .replay-setup-row {
   display: flex;
   gap: 6px;

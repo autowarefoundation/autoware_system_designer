@@ -143,9 +143,10 @@ ROS module, so its `bin/` copy runs without any setup script sourced.
 ```bash
 autoware-system-designer-studio serve \
     --install-root install \       # default: first COLCON_PREFIX_PATH entry
-    --record-dir ~/.ros/autoware_system_designer/records \  # measurement records (default shown)
+    --record-dir ~/records \       # measurement records (default: records/ of the config root)
     --bag-dir /data/bags \         # where the bag of a dropped file is searched (repeatable)
-    --replay-setup-dir ~/replay \  # saved replay setups (default: $XDG_CONFIG_HOME/autoware_system_designer/replay)
+    --log-root /data/asd_logs \    # run logs: launch/, replay/ (default: /tmp/autoware_system_designer_logs)
+    --config-root ~/asd \          # kept files: records/, replay_setups/ (default: $ROS_HOME/autoware_system_designer)
     --port 8780 \                  # 0 picks a free port
     --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
     --compute-unit main_ecu \      # units local to this daemon (repeatable; default: every onboard unit)
@@ -256,14 +257,10 @@ checkbox per entry: a checked entry selects every launched node at or under its 
 selection is kept as the fewest such paths (`?scope=`, comma separated), the runtime's `--scope`.
 A node placed at a module's own path has an entry of its own below that path, named `<path>/<name>`.
 Containers of the selected composable nodes join the scope: their entries are checked and locked.
-With a daemon, **saved setups** sit under the tree's head: a setup is the shown replay saved by name
-(system, mode, deploy, bag path, configuration and run options) as `<name>.yaml` in the setup
-directory, and loading one shows it again, switching the mode and deploy it names.
-
-The workbench settings hold two replay directories, kept by the browser: the **replay log
-directory** the runs are written under, and the **replay setup directory** the setups are kept in.
-An empty field leaves the daemon's default, shown as its placeholder (`health` names both under
-`replay`).
+With a daemon, **saved setups** sit above the tree: a setup is the shown replay saved by name
+(system, mode, deploy, bag path, configuration and run options) as `<name>.yaml` in the replay
+setups of the config root (see Storage), and loading one shows it again, switching the mode and
+deploy it names.
 
 The top of the main area keeps the scope diagram, at a height set by dragging the divider below it
 (kept across visits). The diagram is drawn from the boundary the runtime computes, by topic:
@@ -335,9 +332,8 @@ typed path and the directories of the bags it read by path before (kept by the b
 the bag at the path found.
 
 `replay.start` takes `system`, `mode`, `bag`, `deploy`, `scope` (design paths), `remap` (recorded
-topic to fed topic), `accept`, `outputs`, `skip_outputs`, `lead_in`, `check`, `save_reference`, `duration`, `domain_id` and `log_dir`. The
-daemon writes the configuration into a new run directory `<log_dir>/<stamp>_replay` (the log base
-without `log_dir`) and runs the
+topic to fed topic), `accept`, `outputs`, `skip_outputs`, `lead_in`, `check`, `save_reference`, `duration` and `domain_id`. The
+daemon writes the configuration into a new run directory `<log root>/replay/<stamp>` and runs the
 replay command of the launch environment on it; one replay runs per daemon (`conflict` while one
 runs), and `jobs.cancel` ends it. The job's `detail` names the `run_dir` and, once the job ended,
 carries the pre-flight `problems`, the `fed` and `recorded` topics, the `result` counts and the
@@ -345,12 +341,30 @@ carries the pre-flight `problems`, the `fed` and `recorded` topics, the `result`
 daemon, which would answer the scope's requests and feed its topics: while one is launched, a
 replay without a `domain_id` of its own answers `conflict` (a pre-flight starts no node and runs).
 
-`replay.setups` lists the setups of a directory: their `name`, `modified` time, `system`, `mode` and
-`scope`, or the `error` of one that does not read. `replay.setup.get`, `replay.setup.save` (with the
-`setup`) and `replay.setup.delete` take its `name` (letters, digits, `_`, `.`, `-`). Each takes `dir`,
-an absolute path, else the daemon's `--replay-setup-dir`. A setup holds `system`, `mode`, `deploy`,
+`replay.setups` lists the saved setups (`<config root>/replay_setups`): their `name`, `modified`
+time, `system`, `mode` and `scope`, or the `error` of one that does not read. `replay.setup.get`,
+`replay.setup.save` (with the `setup`) and `replay.setup.delete` take its `name` (letters, digits,
+`_`, `.`, `-`). A setup holds `system`, `mode`, `deploy`,
 `bag`, `config` (the replay configuration: `scope`, `remap`, `accept`, `outputs`, `skip_outputs`,
 `lead_in`) and `run` (`duration`, `domain_id`, `save_reference`).
+
+### Storage
+
+The daemon writes under two roots, each function in a subdirectory of its own:
+
+| Root        | Default                              | Subdirectories                                                |
+| ----------- | ------------------------------------ | ------------------------------------------------------------- |
+| log root    | `/tmp/autoware_system_designer_logs` | `launch/` launch runs, `replay/` replay runs                  |
+| config root | `$ROS_HOME/autoware_system_designer` | `records/` measurement records, `replay_setups/` saved setups |
+
+A launch gets its run directory under `launch/` (the launcher's `--log-dir`) and the record root in
+`$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR`; `--record-dir` or that variable set for the daemon fixes the
+record root apart from the config root. The workbench settings show both roots and the
+subdirectories, and set a root through `settings.set` (`log_root`, `config_root`: an absolute path,
+or empty for the default); `settings.get` (`GET /api/settings`) and `health` (`storage`) give the
+same view. Roots set so are kept in the settings file
+(`$AUTOWARE_SYSTEM_DESIGNER_STUDIO_SETTINGS`, else `$XDG_CONFIG_HOME/autoware_system_designer/studio.yaml`)
+and used at the next start; `--log-root` and `--config-root` win over it.
 
 ### Launch
 
@@ -390,8 +404,8 @@ The Logs view follows the selected node (a composable node through its container
 it is shown, keeps the followed log once the launcher ended and marks where it ended.
 
 A selector beside the Logs title shows a past launch instead of the live sessions. A run is
-a directory under the runtime's log base (`/tmp/autoware_system_designer_logs`, and the parents of
-the sessions' log directories) holding a `run.json`; a directory without one is not a run. The
+a directory under the launch logs of the log root (`<log root>/launch`, and the parents of the
+sessions' log directories) holding a `run.json`; a directory without one is not a run. The
 daemon lists the runs of the system that no active session is writing, newest first, labelled by
 start time, mode, deploy variant and compute unit from the manifest. A run is one runtime, so one
 compute unit. A session and its

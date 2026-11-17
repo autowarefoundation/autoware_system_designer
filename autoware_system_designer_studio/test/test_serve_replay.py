@@ -75,7 +75,8 @@ def served(tmp_path):
         _install_tree(tmp_path, compute_units=UNITS),
         served_units=["main_ecu"],
         launch_env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "ROS_DISTRO": "test"},
-        log_base=tmp_path / "logs",
+        log_root=tmp_path / "logs",
+        config_root=tmp_path / "config",
         heartbeat_s=60,
     )
     yield running
@@ -156,7 +157,7 @@ def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_pat
     assert argv[argv.index("--deploy") + 1] == "car_a"
     assert argv[argv.index("--duration") + 1] == "2.5" and argv[argv.index("--domain-id") + 1] == "7"
     assert "--save-reference" in argv and "--check" not in argv
-    run_dir = tmp_path / "logs" / os.path.basename(job["detail"]["run_dir"])
+    run_dir = tmp_path / "logs" / "replay" / os.path.basename(job["detail"]["run_dir"])
     assert json.loads((run_dir / "replay_config.json").read_text()) == {
         "scope": ["/perception"],
         "remap": {"/raw": "/in"},
@@ -221,22 +222,32 @@ def test_replay_is_unavailable_without_a_ros_environment(tmp_path):
     assert body["error"]["code"] == "unavailable"
 
 
-def test_replay_runs_under_the_requested_log_directory(served, tmp_path):
-    params = {"system": SYSTEM_ID, "mode": "Runtime", "bag": str(_bag(tmp_path)), "scope": ["/a"], "check": True}
+def test_storage_roots_give_the_subdirectories_and_are_kept_in_the_settings_file(served, tmp_path):
+    storage = _call(served, "health", {})["result"]["storage"]
+    assert storage["dirs"] == {
+        "launch_logs": str(tmp_path / "logs" / "launch"),
+        "replay_logs": str(tmp_path / "logs" / "replay"),
+        "records": str(tmp_path / "config" / "records"),
+        "replay_setups": str(tmp_path / "config" / "replay_setups"),
+    }
 
-    body = _call(served, "replay.start", {**params, "log_dir": str(tmp_path / "chosen")})
+    changed = _call(served, "settings.set", {"log_root": str(tmp_path / "other_logs"), "config_root": ""})
+    assert changed["ok"], changed
+    assert changed["result"]["dirs"]["replay_logs"] == str(tmp_path / "other_logs" / "replay")
+    assert changed["result"]["config_root"] == changed["result"]["defaults"]["config_root"]
+    assert served.daemon.records.record_root == served.daemon.storage.records
+    assert (tmp_path / "studio.yaml").read_text() == f"log_root: {tmp_path / 'other_logs'}\n"
+    assert _call(served, "settings.get", {})["result"] == changed["result"]
+    assert _call(served, "settings.set", {"log_root": "relative"})["error"]["code"] == "invalid_params"
+    assert _call(served, "settings.set", {})["error"]["code"] == "invalid_params"
 
-    assert body["ok"], body
-    assert os.path.dirname(body["result"]["detail"]["run_dir"]) == str(tmp_path / "chosen")
+    body = _call(
+        served,
+        "replay.start",
+        {"system": SYSTEM_ID, "mode": "Runtime", "bag": str(_bag(tmp_path)), "scope": ["/a"], "check": True},
+    )
+    assert os.path.dirname(body["result"]["detail"]["run_dir"]) == str(tmp_path / "other_logs" / "replay")
     _finished(served, body["result"]["id"])
-    assert _call(served, "replay.start", {**params, "log_dir": "relative"})["error"]["code"] == "invalid_params"
-
-
-def test_health_names_the_replay_directories(served, tmp_path):
-    replay_dirs = _call(served, "health", {})["result"]["replay"]
-
-    assert replay_dirs["log_dir"] == str(tmp_path / "logs")
-    assert replay_dirs["setup_dir"] == str(served.daemon.replay_setup_dir)
 
 
 SETUP = {
@@ -250,12 +261,13 @@ SETUP = {
 
 
 def test_setups_are_saved_listed_loaded_and_deleted(served, tmp_path):
-    where = {"dir": str(tmp_path / "setups")}
+    where = {}
+    directory = tmp_path / "config" / "replay_setups"
 
-    assert _call(served, "replay.setups", where)["result"] == {"dir": where["dir"], "setups": []}
+    assert _call(served, "replay.setups", where)["result"] == {"dir": str(directory), "setups": []}
     saved = _call(served, "replay.setup.save", {**where, "name": "perception-a", "setup": SETUP})
     assert saved["ok"], saved
-    assert saved["result"]["path"] == str(tmp_path / "setups" / "perception-a.yaml")
+    assert saved["result"]["path"] == str(directory / "perception-a.yaml")
 
     listed = _call(served, "replay.setups", where)["result"]["setups"]
     assert [(s["name"], s["mode"], s["scope"]) for s in listed] == [("perception-a", "Runtime", ["/perception"])]
@@ -275,19 +287,12 @@ def test_setups_are_saved_listed_loaded_and_deleted(served, tmp_path):
     assert _call(served, "replay.setup.get", {**where, "name": "perception-a"})["error"]["code"] == "not_found"
 
 
-def test_setups_default_to_the_daemon_directory(served, tmp_path):
-    served.daemon.replay_setup_dir = tmp_path / "default_setups"
-
-    assert _call(served, "replay.setup.save", {"name": "a", "setup": SETUP})["ok"]
-    assert (tmp_path / "default_setups" / "a.yaml").is_file()
-
-
 def test_an_unreadable_setup_is_listed_with_its_error(served, tmp_path):
-    directory = tmp_path / "setups"
-    directory.mkdir()
+    directory = tmp_path / "config" / "replay_setups"
+    directory.mkdir(parents=True)
     (directory / "broken.yaml").write_text("config: {scope: []}\n")
 
-    listed = _call(served, "replay.setups", {"dir": str(directory)})["result"]["setups"]
+    listed = _call(served, "replay.setups", {})["result"]["setups"]
 
     assert [s["name"] for s in listed] == ["broken"] and "scope is required" in listed[0]["error"]
 
@@ -302,10 +307,7 @@ def test_an_unreadable_setup_is_listed_with_its_error(served, tmp_path):
         {"name": "a", "setup": {**SETUP, "config": {"scope": ["/a"], "compare": {}}}},
         {"name": "a", "setup": {**SETUP, "run": {"duration": 0}}},
         {"name": "a", "setup": {**SETUP, "run": {"check": True}}},
-        {"name": "a", "setup": SETUP, "dir": "relative"},
     ],
 )
 def test_setups_refuse_invalid_saves(served, tmp_path, params):
-    params = {"dir": str(tmp_path / "setups"), **params}
-
     assert _call(served, "replay.setup.save", params)["error"]["code"] == "invalid_params"

@@ -24,6 +24,7 @@ Plain Python with no ROS import: the studio reads runs without a sourced workspa
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import time
@@ -31,11 +32,29 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
 LOG_BASE = Path("/tmp/autoware_system_designer_logs")
+# Subdirectories of a log base, one per kind of run.
+LAUNCH_LOGS = "launch"
+REPLAY_LOGS = "replay"
 RUN_MANIFEST = "run.json"
 STREAMS = ("out", "err")
 # Tail of a member file: at most this many lines from its last bytes.
 TAIL_LINES = 200
 TAIL_BYTES = 64 * 1024
+
+
+def new_run_dir(base: Path) -> Path:
+    """A new timestamped directory under *base*; a run starting within the second of another gets a
+    numbered one."""
+    base.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    for name in itertools.chain([stamp], (f"{stamp}_{n}" for n in itertools.count(2))):
+        out = base / name
+        try:
+            out.mkdir()
+        except FileExistsError:
+            continue
+        return out
+    raise AssertionError("unreachable")
 
 
 def member_dir_name(path: str) -> str:

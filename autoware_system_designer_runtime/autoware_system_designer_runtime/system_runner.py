@@ -47,7 +47,7 @@ from ._impl.ros2.operation_mode import OperationModeGuard
 from .control_protocol import DEFAULT_POLICY, GUARD_POLICY, POLICIES
 from .export_tree import manifest_path, read_manifest, resolve_structure_paths
 from .rates_record import RATES_FILE
-from .run_log import LOG_BASE, RUN_MANIFEST, write_run_manifest
+from .run_log import LAUNCH_LOGS, LOG_BASE, RUN_MANIFEST, write_run_manifest
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -286,7 +286,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--log-dir",
         type=Path,
         default=None,
-        help="Base directory for per-node log output. Default: a fresh " f"timestamped folder under {LOG_BASE}.",
+        help="Directory of the run's per-node log output. Default: a fresh timestamped folder under "
+        f"{LOG_BASE / LAUNCH_LOGS}.",
     )
     parser.add_argument(
         "--respawn",

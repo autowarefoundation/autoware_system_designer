@@ -315,7 +315,6 @@
         if (leadIn.value !== "") extra.lead_in = Number(leadIn.value);
       }
       if (domain.value !== "") extra.domain_id = Number(domain.value);
-      Object.assign(extra, replay.setups.logDirParam());
       check.disabled = run.disabled = true;
       daemon
         .rpc(START, { ...params, ...extra })

@@ -119,14 +119,14 @@ class _Units:
             served_units=["main_ecu"],
             launch_env=self.env,
             heartbeat_s=60,
-            log_base=tmp_path / "logs_main",
+            log_root=tmp_path / "logs_main",
             peer_specs=[peers.PeerSpec("sub_ecu", self.sub.url)],
         )
         self.wait_peer(peers.PEER_CONNECTED)
 
     def start_sub(self, port=0, **kwargs):
         options = {"served_units": ["sub_ecu"], "launch_env": self.env, "heartbeat_s": self.sub_heartbeat_s}
-        return _Daemon(self.install, port, log_base=self.tmp_path / "logs_sub", **{**options, **kwargs})
+        return _Daemon(self.install, port, log_root=self.tmp_path / "logs_sub", **{**options, **kwargs})
 
     def wait_peer(self, state):
         return _until(lambda: self.main.peer()["state"] == state and self.main.peer(), f"peer {state}")
@@ -515,7 +515,7 @@ def test_a_mode_is_refused_while_another_mode_of_the_system_starts(units):
 
 def test_the_runs_of_peer_units_do_not_crowd_out_local_runs(units, monkeypatch):
     monkeypatch.setattr(runs, "MAX_RUNS", 1)
-    base = units.tmp_path / "logs_main"
+    base = units.tmp_path / "logs_main" / "launch"
     _run_tree(base, "20260101_000000", {"system": SYSTEM, "compute_unit": "main_ecu", "started": 1.0})
     _run_tree(base, "20260102_000000", {"system": SYSTEM, "compute_unit": "sub_ecu", "started": 2.0})
     assert [run["run"] for run in units.main.call("launch.runs")["runs"]] == ["20260101_000000"]

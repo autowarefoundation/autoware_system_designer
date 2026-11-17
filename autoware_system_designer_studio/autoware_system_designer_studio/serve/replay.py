@@ -15,11 +15,11 @@
 """Deterministic replay of a scope as a job: the runtime's replay command on a mode's system
 structure, with the request's scope, remap, accepted names and outputs as its configuration.
 
-One replay runs per daemon. Its run directory is under the request's log directory, else the
-runtime's log base; the job's detail names it and, once the job ended, carries the summary of the
+One replay runs per daemon. Its run directory is under the daemon's replay logs; the job's detail
+names it and, once the job ended, carries the summary of the
 files the replay wrote there.
 
-A setup is a replay saved by name as a YAML file in a setup directory: the system, mode, deploy and
+A setup is a replay saved by name as a YAML file in the daemon's setup directory: the system, mode, deploy and
 bag it runs on, its configuration (the runtime's configuration file content) and its run options.
 """
 
@@ -45,7 +45,7 @@ from autoware_system_designer_runtime.replay_record import (
     parse_progress,
     read_replay_file,
 )
-from autoware_system_designer_runtime.run_log import LOG_BASE
+from autoware_system_designer_runtime.run_log import LOG_BASE, REPLAY_LOGS
 
 from ..exports import SystemExport
 from . import api
@@ -154,25 +154,6 @@ def _remap(params: Mapping[str, Any]) -> dict[str, str]:
     return dict(value)
 
 
-def directory_param(params: Mapping[str, Any], name: str) -> Optional[Path]:
-    """The absolute directory a request names under *name*; None when it names none."""
-    value = params.get(name)
-    if value is None or value == "":
-        return None
-    if not isinstance(value, str):
-        raise api.ApiError(api.INVALID_PARAMS, f"{name} must be a path")
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        raise api.ApiError(api.INVALID_PARAMS, f"{name} must be an absolute path")
-    return path
-
-
-def default_setup_dir() -> Path:
-    """Directory of saved setups when neither the request nor the daemon names one."""
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "autoware_system_designer" / "replay"
-
-
 def _seconds(params: Mapping[str, Any], name: str, *, positive: bool) -> Optional[float]:
     value = params.get(name)
     if value is None:
@@ -217,8 +198,7 @@ def plan_replay(
     deploy: Optional[str],
     log_base: Optional[Path] = None,
 ) -> ReplayPlan:
-    """The command of one replay request, in a new run directory under the request's log directory,
-    else under the log base."""
+    """The command of one replay request, in a new run directory under *log_base*."""
     config = replay_config(params)
     check = params.get("check", False)
     save_reference = params.get("save_reference", False)
@@ -226,10 +206,7 @@ def plan_replay(
         raise api.ApiError(api.INVALID_PARAMS, "check and save_reference must be booleans")
     duration = _seconds(params, "duration", positive=True)
     domain_id = _domain_id(params)
-    log_dir = directory_param(params, "log_dir") or log_base or LOG_BASE
-
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    run_dir = log_dir / f"{stamp}_replay"
+    run_dir = (log_base or LOG_BASE / REPLAY_LOGS) / time.strftime("%Y%m%d_%H%M%S")
     argv = [
         str(command),
         str(system.structure_path(mode)),

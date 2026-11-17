@@ -362,7 +362,10 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
         "--arg",
         "x=1",
         "--measure",
+        "--log-dir",
+        argv[-1],
     ]
+    assert Path(argv[-1]).parent == launching.daemon.storage.launch_logs
     assert job["result"]["job"]["params"]["measure"] is True
 
     deadline = time.time() + 5
@@ -713,7 +716,7 @@ def archived(tmp_path):
     another system), a directory without a manifest and a stray file."""
     install = _install_tree(tmp_path, compute_units=UNITS)
     export = install / PKG / "share" / PKG / "exports" / SYSTEM
-    base = tmp_path / "logs"
+    base = tmp_path / "logs" / "launch"
     _run_tree(
         base,
         "20260101_000000",
@@ -738,7 +741,7 @@ def archived(tmp_path):
     _run_tree(base, "20260103_000000", {"system": "Other", "started": 3.0})
     _run_tree(base, "20260104_000000", None, members=("demo_talker", "demo_listener"))
     (base / "stray").write_text("")
-    running = _Running(install, served_units=["main_ecu"], log_base=base, heartbeat_s=60)
+    running = _Running(install, served_units=["main_ecu"], log_root=tmp_path / "logs", heartbeat_s=60)
     yield running
     running.close()
 
@@ -768,7 +771,7 @@ def test_a_run_manifest_is_read_once_per_change_of_its_file(archived, tmp_path, 
     del read[:]
     assert [name for name, _ in listed()] == names[::-1] and read == []
 
-    base = tmp_path / "logs"
+    base = tmp_path / "logs" / "launch"
     _run_tree(base, names[0], {"system": SYSTEM, "started": 5.0}, members=())
     shutil.rmtree(base / names[2])
     assert listed() == [(names[0], 5.0), (names[1], 2.0)] and read == [names[0]]
@@ -799,7 +802,7 @@ def test_a_past_run_lists_its_members_and_tails_them(archived):
 def test_a_past_run_reads_back_its_topic_rates(archived, tmp_path):
     from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesWriter, Sample
 
-    run = tmp_path / "logs" / "20260101_000000"
+    run = tmp_path / "logs" / "launch" / "20260101_000000"
     writer = RatesWriter(run / RATES_FILE, interval_s=10)
     key = ("/demo/talker", "out", "/chatter")
     for second, count in ((0, 0), (10, 10), (20, 50)):

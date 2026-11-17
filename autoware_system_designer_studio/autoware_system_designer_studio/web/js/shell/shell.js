@@ -334,11 +334,66 @@
       SD.editor.setScheme(e.target.value),
     );
 
-    // Settings an activity adds, below the shared ones.
-    const slot = el("settings-activities");
-    orderedActivities().forEach((activity) =>
-      activity.def.settings?.(slot, context()),
-    );
+    initStorageSettings();
+  }
+
+  // The daemon's log and config roots: an empty field sets a root back to
+  // its default, which shows as the placeholder; the subdirectories each
+  // function writes show below the fields.
+  function initStorageSettings() {
+    const section = el("settings-storage");
+    const fields = {
+      log_root: el("settings-log-root"),
+      config_root: el("settings-config-root"),
+    };
+    const dirs = el("settings-storage-dirs");
+    const error = el("settings-storage-error");
+
+    function show(storage) {
+      section.hidden = !storage || !SD.daemon.offers("settings.set");
+      if (section.hidden) return;
+      Object.entries(fields).forEach(([name, input]) => {
+        input.placeholder = storage.defaults[name];
+        if (document.activeElement !== input)
+          input.value = storage.set[name] ? storage[name] : "";
+      });
+      const d = storage.dirs;
+      dirs.replaceChildren(
+        ...[
+          ["Launch logs", d.launch_logs],
+          ["Replay runs", d.replay_logs],
+          [storage.records_fixed ? "Records (fixed)" : "Records", d.records],
+          ["Replay setups", d.replay_setups],
+        ].map(([label, path]) => {
+          const row = document.createElement("div");
+          const name = document.createElement("span");
+          name.textContent = label;
+          const value = document.createElement("code");
+          value.textContent = path;
+          row.append(name, value);
+          return row;
+        }),
+      );
+    }
+
+    Object.entries(fields).forEach(([name, input]) => {
+      input.addEventListener("change", () => {
+        SD.daemon.rpc("settings.set", { [name]: input.value.trim() }).then(
+          (storage) => {
+            error.hidden = true;
+            input.value = storage.set[name] ? storage[name] : "";
+            show(storage);
+            SD.emit("settings.storage", storage);
+          },
+          (err) => {
+            error.textContent = err.message;
+            error.hidden = false;
+          },
+        );
+      });
+    });
+    SD.on("daemon.health", (health) => show(health?.storage));
+    show(SD.daemon.health?.storage);
   }
 
   function renderConnection(connected) {

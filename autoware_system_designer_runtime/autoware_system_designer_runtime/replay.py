@@ -57,9 +57,9 @@ from ._impl.replay.bag import (
     remap_topics,
 )
 from ._impl.replay.config import ConfigError, ReplayConfig
-from ._impl.replay.middleware import replay_middleware
 from ._impl.replay.driver import DriverOptions, ReplayDriver, ReplayError, ReplayResult
 from ._impl.replay.link import CLOCK_FREE, SOCKET_ENV, START_ENV, TIMER, WALL_TIMERS_ENV, Endpoint, LinkServer
+from ._impl.replay.middleware import replay_middleware
 from ._impl.replay.preflight import (
     ERROR,
     Problem,
@@ -85,10 +85,10 @@ from ._impl.replay.verdict import Verdict, compare_outputs, digest, group_by_top
 from .export_tree import resolve_structure_paths
 from .replay_record import (
     BOUNDARY_FILE,
-    OPTIONS_FILE,
     EXIT_DIFFERS,
     EXIT_FAILED,
     EXIT_OK,
+    OPTIONS_FILE,
     PHASE_POST,
     PHASE_PRE,
     PHASE_REPLAY,
@@ -98,7 +98,7 @@ from .replay_record import (
     VERDICT_FILE,
     progress_message,
 )
-from .run_log import write_run_manifest
+from .run_log import LOG_BASE, REPLAY_LOGS, write_run_manifest
 from .special_topics import special_topics
 
 logger = logging.getLogger("autoware_system_designer")
@@ -288,13 +288,17 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             return EXIT_FAILED
         recorded_types.pop(topic, None)
 
-    out_root = options.output_dir or ensure_output_dir()
+    out_root = options.output_dir or ensure_output_dir(LOG_BASE / REPLAY_LOGS)
     out_dir = out_root / REPLAY_SUBDIR
     out_dir.mkdir(parents=True, exist_ok=True)
     logger.info("logs: %s", out_root)
     _write_json(
         out_dir / OPTIONS_FILE,
-        {"system_structure": str(Path(json_path).resolve()), "options": _plain(asdict(options)), "config": asdict(config)},
+        {
+            "system_structure": str(Path(json_path).resolve()),
+            "options": _plain(asdict(options)),
+            "config": asdict(config),
+        },
     )
     _log_boundary(scope, boundary)
 
@@ -700,9 +704,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Write every step of the driver and every event of the gated processes to replay/steps.log.",
     )
-    run.add_argument(
-        "--no-isolate", action="store_true", help="Do not restrict discovery to this host."
-    )
+    run.add_argument("--no-isolate", action="store_true", help="Do not restrict discovery to this host.")
     run.add_argument("--domain-id", type=int, default=None, help="Middleware domain of the replay.")
     run.add_argument("--startup-timeout", type=float, default=60.0, metavar="S")
     run.add_argument(

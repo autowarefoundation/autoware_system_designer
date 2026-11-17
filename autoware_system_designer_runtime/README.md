@@ -108,7 +108,7 @@ requests and gets one response each:
 
 ```text
 → {"event":"hello","pid":4242,"methods":[...],"policy":"guard","measure_armed":true,"monitor":true,
-   "log_dir":"/tmp/autoware_system_designer_logs/20260521_153012",
+   "log_dir":"/tmp/autoware_system_designer_logs/launch/20260521_153012",
    "members":[{"path":"/sensing/lidar/driver","state":"pending","detail":{},"time":0,"restarts":0,"respawns":0}],
    "launch_ready":false,"shutting_down":false}
 → {"event":"member","path":"/sensing/lidar/driver","state":"running","detail":{"pid":4310},"time":1793930000.1,"restarts":0,"respawns":0}
@@ -166,7 +166,7 @@ process itself. `--control-policy open` disables the interlock.
 Each member gets its own directory under `--log-dir`:
 
 ```text
-/tmp/autoware_system_designer_logs/20260521_153012/
+/tmp/autoware_system_designer_logs/launch/20260521_153012/
 ├── run.json           the run: system, mode, compute unit, deploy, launch, structure path, start time, member paths
 ├── rates.jsonl        counters per node and topic over the run (see Live rates)
 ├── trace/             tracer files of the run's processes
@@ -177,8 +177,9 @@ Each member gets its own directory under `--log-dir`:
     └── err            stderr
 ```
 
-The default base path is `/tmp/autoware_system_designer_logs/`; a timestamped
-subdirectory is created per run unless `--log-dir` overrides it. `run.json` names what the
+The log base is `/tmp/autoware_system_designer_logs/`, with a subdirectory per kind of run:
+`launch/` for launches, `replay/` for replays. A timestamped directory is created there per run
+unless `--log-dir` names the run's directory. `run.json` names what the
 directory holds, so a reader can map a member directory back to its member path. `--launch-id`
 sets its `launch`: the runs of a system's compute units launched together carry one id, each in its
 own directory on its own unit. A restarted or respawned member appends to its `out` and `err`.
@@ -416,7 +417,7 @@ The latency file (`autoware_system_designer/latency/2`) is documented in [doc/la
 <record root>/<package>/<system>/latency/<Mode>/<YYYYmmdd-HHMMSS>.json
 ```
 
-The record root is `$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR`, else `$ROS_HOME/autoware_system_designer/records` (`~/.ros/...` when `ROS_HOME` is unset): outside the install tree, which every rebuild replaces, and outside the per-run log directories. A JSON outside an export tree writes `<log-dir>/latency/<Mode>_latency.json` instead. The studio shows the newest record of a mode, else the reference measurement the export carries (`latency/<Mode>_latency.json` beside the system definition file, copied into `exports/<system>/latency/` by the build). `autoware_system_designer_runtime.records` holds this layout for other tools.
+The record root is `$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR`, else `records/` of the config root `$ROS_HOME/autoware_system_designer` (`~/.ros/...` when `ROS_HOME` is unset): outside the install tree, which every rebuild replaces, and outside the per-run log directories. A JSON outside an export tree writes `<log-dir>/latency/<Mode>_latency.json` instead. The studio shows the newest record of a mode, else the reference measurement the export carries (`latency/<Mode>_latency.json` beside the system definition file, copied into `exports/<system>/latency/` by the build). `autoware_system_designer_runtime.records` holds this layout for other tools.
 
 ## Deterministic replay
 

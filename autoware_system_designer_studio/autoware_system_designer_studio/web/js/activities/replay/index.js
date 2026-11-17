@@ -158,7 +158,6 @@
     daemon: false,
     inspector: false,
     icon: "M16 4v12M13 10l-9-6v12z",
-    settings: setups.settings,
     status: (store) => {
       const scope =
         store.get("scope") ??
@@ -226,27 +225,24 @@
         render();
       }
 
-      // Saved setups, under the scope selector's head.
+      // Saved setups, above the scope selector.
       const setupSlot = element("div");
-      const tree = scopeTree(
-        {
-          nodes: () => nodes,
-          selected: () => selected,
-          locked: () =>
-            new Set(model.selectScope(nodes, patterns()).containers),
-          toggle(path, on) {
-            const next = new Set(selected);
-            nodes
-              .filter((node) => model.selects(node, path))
-              .forEach((node) =>
-                on ? next.add(node.path) : next.delete(node.path),
-              );
-            setSelected(next);
-          },
-          clear: () => setSelected(new Set()),
+      side.appendChild(setupSlot);
+      const tree = scopeTree({
+        nodes: () => nodes,
+        selected: () => selected,
+        locked: () => new Set(model.selectScope(nodes, patterns()).containers),
+        toggle(path, on) {
+          const next = new Set(selected);
+          nodes
+            .filter((node) => model.selects(node, path))
+            .forEach((node) =>
+              on ? next.add(node.path) : next.delete(node.path),
+            );
+          setSelected(next);
         },
-        setupSlot,
-      );
+        clear: () => setSelected(new Set()),
+      });
       side.appendChild(tree.element);
 
       const view = mainView({ title: "Replay scope" });
@@ -365,7 +361,7 @@
       );
       runZone.body.append(runNote, panel.element);
       const setupBar = setups.setupBar(daemon, capture, applySetup);
-      setupSlot.appendChild(setupBar.element);
+      setupSlot.replaceWith(setupBar.element);
       // Parts a scope fills.
       const scopeBlocks = [
         selectorBlock.element,

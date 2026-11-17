@@ -142,7 +142,30 @@
           <option value="subl">Sublime Text</option>
         </select>
       </div>
-      <div id="settings-activities"></div>
+      <div id="settings-storage" hidden>
+        <div class="settings-row settings-row-path">
+          <label for="settings-log-root">Log root</label>
+          <input
+            id="settings-log-root"
+            class="settings-path"
+            type="text"
+            spellcheck="false"
+            title="Directory of the run logs; empty for the default"
+          />
+        </div>
+        <div class="settings-row settings-row-path">
+          <label for="settings-config-root">Config root</label>
+          <input
+            id="settings-config-root"
+            class="settings-path"
+            type="text"
+            spellcheck="false"
+            title="Directory of the kept files; empty for the default"
+          />
+        </div>
+        <div id="settings-storage-error" class="settings-error" hidden></div>
+        <div id="settings-storage-dirs" class="settings-dirs"></div>
+      </div>
     </div>
 
     <script src="{{ entry_script }}"></script>

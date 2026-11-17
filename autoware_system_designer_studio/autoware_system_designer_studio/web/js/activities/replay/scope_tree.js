@@ -9,9 +9,8 @@
   const { selects } = replay.model;
 
   // `selection` is { nodes(), selected(): Set of node paths, locked(): Set of
-  // container paths the selected nodes need, toggle(path, on), clear() };
-  // `extras` are shown between the head and the tree.
-  function scopeTree(selection, ...extras) {
+  // container paths the selected nodes need, toggle(path, on), clear() }.
+  function scopeTree(selection) {
     const input = element("input", "panel-search");
     input.type = "search";
     input.placeholder = "Filter nodes and namespaces";
@@ -22,7 +21,7 @@
     const head = element("div", "replay-scope-head");
     head.append(summary, clear);
     const tree = element("div", "ns-tree");
-    const group = section("Scope", input, head, ...extras, tree);
+    const group = section("Scope", input, head, tree);
 
     let root = null;
     const expanded = new Set();
