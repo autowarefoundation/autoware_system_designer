@@ -48,10 +48,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-from ...user_home import PACKAGE_CONFIG_DIR, ConfigFileError, describe, read_config
+from ...user_home import ConfigFileError, describe, read_config
 
 REPLAY_DEFAULTS_NAME = "replay_defaults.yaml"
-REPLAY_DEFAULTS_FILE = PACKAGE_CONFIG_DIR / REPLAY_DEFAULTS_NAME
 
 RULE_EXACT = "exact"
 RULE_FIELDS = "fields"

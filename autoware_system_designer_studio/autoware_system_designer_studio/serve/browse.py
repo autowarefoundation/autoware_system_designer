@@ -53,6 +53,13 @@ def _start(path: Optional[str]) -> Path:
     return current
 
 
+def _is_dir(entry: os.DirEntry) -> bool:
+    try:
+        return entry.is_dir()
+    except OSError:
+        return False
+
+
 def list_directory(path: Optional[str], *, files: bool = False, hidden: bool = False) -> dict[str, Any]:
     """The entries of the directory at *path* (see ``_start``): subdirectories, with ``bag`` for one that
     holds a rosbag, and with *files* the files and their sizes; names starting with ``.`` only with
@@ -67,7 +74,7 @@ def list_directory(path: Optional[str], *, files: bool = False, hidden: bool = F
         raise api.ApiError(api.NOT_FOUND, f"{directory}: {exc.strerror or exc}") from exc
     entries = []
     truncated = False
-    for entry in sorted(found, key=lambda e: (not e.is_dir(), e.name.lower())):
+    for entry in sorted(found, key=lambda e: (not _is_dir(e), e.name.lower())):
         if len(entries) >= MAX_ENTRIES:
             truncated = True
             break

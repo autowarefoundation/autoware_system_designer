@@ -455,6 +455,9 @@ rcl_ret_t rcl_publish(
   const rcl_publisher_t * publisher, const void * ros_message, rmw_publisher_allocation_t * allocation)
 {
   FORWARD(publish_fn, "rcl_publish");
+  if (!tracing() && !asd_replay_armed()) {
+    return real(publisher, ros_message, allocation);
+  }
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, ros_message, allocation);
   if (ret == RCL_RET_OK) {
@@ -468,6 +471,9 @@ rcl_ret_t rcl_publish_serialized_message(
   rmw_publisher_allocation_t * allocation)
 {
   FORWARD(publish_serialized_fn, "rcl_publish_serialized_message");
+  if (!tracing() && !asd_replay_armed()) {
+    return real(publisher, serialized_message, allocation);
+  }
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, serialized_message, allocation);
   if (ret == RCL_RET_OK) {
@@ -480,6 +486,9 @@ rcl_ret_t rcl_publish_loaned_message(
   const rcl_publisher_t * publisher, void * ros_message, rmw_publisher_allocation_t * allocation)
 {
   FORWARD(publish_loaned_fn, "rcl_publish_loaned_message");
+  if (!tracing() && !asd_replay_armed()) {
+    return real(publisher, ros_message, allocation);
+  }
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, ros_message, allocation);
   if (ret == RCL_RET_OK) {
@@ -531,6 +540,9 @@ rcl_ret_t rcl_take(
   rmw_subscription_allocation_t * allocation)
 {
   FORWARD(take_fn, "rcl_take");
+  if (!tracing() && !asd_replay_armed()) {
+    return real(subscription, ros_message, message_info, allocation);
+  }
   TAKE_INFO(message_info);
   TAKE(real(subscription, ros_message, info, allocation));
   if (ret == RCL_RET_OK) {
@@ -544,6 +556,9 @@ rcl_ret_t rcl_take_serialized_message(
   rmw_message_info_t * message_info, rmw_subscription_allocation_t * allocation)
 {
   FORWARD(take_serialized_fn, "rcl_take_serialized_message");
+  if (!tracing() && !asd_replay_armed()) {
+    return real(subscription, serialized_message, message_info, allocation);
+  }
   TAKE_INFO(message_info);
   TAKE(real(subscription, serialized_message, info, allocation));
   if (ret == RCL_RET_OK) {
@@ -557,6 +572,9 @@ rcl_ret_t rcl_take_loaned_message(
   rmw_subscription_allocation_t * allocation)
 {
   FORWARD(take_loaned_fn, "rcl_take_loaned_message");
+  if (!tracing() && !asd_replay_armed()) {
+    return real(subscription, loaned_message, message_info, allocation);
+  }
   TAKE_INFO(message_info);
   TAKE(real(subscription, loaned_message, info, allocation));
   if (ret == RCL_RET_OK) {

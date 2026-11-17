@@ -293,7 +293,7 @@ Below it, the **Bag** block takes the bag whose topics the boundary is matched a
   file: a daemon finds it by the file's name and size (`replay.find`), else the path for the command
   is typed in the Bag field;
 - a path or `file://` URI dropped as text, or typed: it fills the Bag field and, with a daemon, is
-  read there ("Read bag"). A `.db3` bag without `metadata.yaml` is read this way.
+  read there ("Read"). A `.db3` bag without `metadata.yaml` is read this way.
 
 Then comes the **Inputs and outputs** block, one scrolled column of inputs, outputs and services
 with the same choices as the diagram:
@@ -313,7 +313,7 @@ Below them are the replay configuration these choices give (`scope`, `remap`, `a
 to copy or download as `replay.yaml`, and the pre-flight and replay commands on the mode's structure
 file with the bag path typed in the Bag field and the deploy of the top bar.
 
-With a daemon, "Read bag" reads the topics of the bag at the typed path (`replay.bag`): a bag
+With a daemon, "Read" reads the topics of the bag at the typed path (`replay.bag`): a bag
 without `metadata.yaml` gets one written beside its files by the rosbag2 reindexer, and is read from
 its storage file where the directory is not writable. The Run
 block starts the replay as a job (`replay.start`): "Pre-flight" checks the bag against the boundary

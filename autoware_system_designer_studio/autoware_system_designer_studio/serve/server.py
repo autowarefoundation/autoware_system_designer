@@ -733,7 +733,11 @@ class ServeDaemon:
             on_exit=on_exit,
         )
         await asyncio.to_thread(replay.write_config, plan)
-        return (await self.jobs.start(spec)).to_view()
+        try:
+            return (await self.jobs.start(spec)).to_view()
+        except api.ApiError:
+            await asyncio.to_thread(replay.discard_config, plan)
+            raise
 
     async def _fs_list(self, params: dict[str, Any]) -> dict[str, Any]:
         files = _bool_param(params, "files")

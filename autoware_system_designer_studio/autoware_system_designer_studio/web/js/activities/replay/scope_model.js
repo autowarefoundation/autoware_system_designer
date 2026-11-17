@@ -12,6 +12,16 @@
   const CONFIG_FILE = "replay.yaml";
   // Choice of an input that accepts it unfed; no topic bears the name.
   const ACCEPT = "\u0000accept";
+  // Note of each status an input takes against the bag.
+  const INPUT_NOTE = {
+    fed: "in the bag",
+    remapped: "remapped",
+    accepted: "accepted unfed",
+    type: "other type in the bag",
+    unpublished: "no publisher, not in the bag",
+    missing: "not in the bag",
+    unknown: "no bag read",
+  };
 
   function resolveTopic(port) {
     const topic = port.topic;
@@ -579,8 +589,8 @@
     CONFIG_FILE,
     bagCollection,
     ACCEPT,
+    INPUT_NOTE,
     nodes,
-    under,
     selects,
     selectScope,
     patternsOf,

@@ -124,7 +124,7 @@ typedef struct replay {
   bool own_clock_ready;
 } replay_t;
 
-static replay_t r;
+static replay_t r = {.fd = -1};
 static pthread_mutex_t r_state_lock = PTHREAD_MUTEX_INITIALIZER;
 // Entries, grant and socket writes.
 static pthread_mutex_t r_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -212,7 +212,7 @@ static void send_line(const char * format, ...)
       if (errno == EINTR) {
         continue;
       }
-      r.gating = false;
+      __atomic_store_n(&r.gating, false, __ATOMIC_RELAXED);
       pthread_cond_broadcast(&r_cond);
       return;
     }
@@ -326,12 +326,16 @@ static uint32_t add_entry(const void * handle, char kind, const char * node)
       return 0;
     }
   }
+  char * name = strdup(node);
+  if (name == NULL) {
+    return 0;
+  }
   uint32_t id = r.count++;
   entry_t * e = &r.entries[id];
   memset(e, 0, sizeof(*e));
   e->handle = handle;
   e->kind = kind;
-  e->node = strdup(node);
+  e->node = name;
   e->next_ns = INT64_MIN;
   table_put(handle, id);
   return id;
@@ -475,7 +479,7 @@ static void on_command(char * line)
     pthread_mutex_unlock(&r_lock);
   } else if (strcmp(line, "free") == 0) {
     pthread_mutex_lock(&r_lock);
-    r.gating = false;
+    __atomic_store_n(&r.gating, false, __ATOMIC_RELAXED);
     pthread_cond_broadcast(&r_cond);
     pthread_mutex_unlock(&r_lock);
   }
@@ -508,7 +512,7 @@ static void * reader_main(void * arg)
     }
   }
   pthread_mutex_lock(&r_lock);
-  r.gating = false;
+  __atomic_store_n(&r.gating, false, __ATOMIC_RELAXED);
   pthread_cond_broadcast(&r_cond);
   pthread_mutex_unlock(&r_lock);
   return NULL;
@@ -536,7 +540,7 @@ static int connect_locked(void)
     return STATE_OFF;
   }
   r.fd = fd;
-  r.gating = true;
+  __atomic_store_n(&r.gating, true, __ATOMIC_RELAXED);
   const char * wall = getenv(WALL_TIMERS_ENV);
   r.wall_free = wall != NULL && strcmp(wall, "free") == 0;
   const char * start = getenv(START_ENV);
@@ -558,7 +562,7 @@ static int connect_locked(void)
   if (created != 0) {
     close(fd);
     r.fd = -1;
-    r.gating = false;
+    __atomic_store_n(&r.gating, false, __ATOMIC_RELAXED);
     return STATE_OFF;
   }
   pthread_detach(thread);
@@ -586,10 +590,13 @@ void asd_replay_at_fork_child(void)
     close(r.fd);
   }
   memset(&r, 0, sizeof(r));
+  r.fd = -1;
   pthread_mutex_init(&r_state_lock, NULL);
   pthread_mutex_init(&r_lock, NULL);
   init_locks();
   tls_tid = 0;
+  tls_callback_depth = 0;
+  tls_node[0] = '\0';
 }
 
 // ---- endpoints -----------------------------------------------------------------------

@@ -25,9 +25,10 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Collection, Iterator, Mapping, Optional, Sequence
 
+from .link import DURABILITY_TRANSIENT_LOCAL
+
 METADATA_FILE = "metadata.yaml"
 _STORAGE_BY_SUFFIX = {".db3": "sqlite3", ".mcap": "mcap"}
-DURABILITY_TRANSIENT_LOCAL = 1
 
 
 class BagError(ValueError):
@@ -269,7 +270,7 @@ class BagMessages:
     def pop(self) -> tuple[int, str, bytes]:
         message = self._next
         if message is None:
-            raise StopIteration
+            raise IndexError("no message")
         self._advance()
         return message
 
@@ -344,9 +345,9 @@ class BagSink:
         self._writer = None
 
 
-def read_messages(path: Path, topics: Optional[Sequence[str]] = None) -> Iterator[tuple[int, str, bytes]]:
+def read_messages(path: Path) -> Iterator[tuple[int, str, bytes]]:
     """Every message of a bag as (stamp, topic, serialized message), in recorded order."""
     info = read_bag_info(path)
-    messages = BagMessages(info, list(topics) if topics is not None else sorted(info.topics))
+    messages = BagMessages(info, sorted(info.topics))
     while messages.peek() is not None:
         yield messages.pop()

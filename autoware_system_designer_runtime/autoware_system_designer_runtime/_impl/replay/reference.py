@@ -76,10 +76,10 @@ def reference_key(inputs: Mapping[str, Any]) -> str:
     return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()[:KEY_LENGTH]
 
 
-def reference_dir(json_path: Path, mode: str, key: str, root: Optional[Path] = None) -> Optional[Path]:
+def reference_dir(json_path: Path, mode: str, key: str) -> Optional[Path]:
     """The keyed reference directory of an export's structure file; None outside an export tree."""
     identity = export_identity(Path(json_path))
     if identity is None:
         return None
     package, system = identity
-    return system_record_dir(package, system, root) / REPLAY_KIND / mode / key
+    return system_record_dir(package, system) / REPLAY_KIND / mode / key

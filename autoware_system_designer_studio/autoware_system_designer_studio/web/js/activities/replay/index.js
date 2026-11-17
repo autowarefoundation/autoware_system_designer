@@ -21,16 +21,7 @@
     setups,
   } = SD.activities.replay;
 
-  const { ACCEPT } = model;
-  const INPUT_NOTE = {
-    fed: "in the bag",
-    remapped: "remapped",
-    accepted: "accepted unfed",
-    type: "other type in the bag",
-    unpublished: "no publisher, not in the bag",
-    missing: "not in the bag",
-    unknown: "no bag read",
-  };
+  const { ACCEPT, INPUT_NOTE } = model;
   // Preference: height share and fold of each zone of the view.
   const ZONES_KEY = "replay.zones";
   // Weights are heights in pixels, the scale a divider drag stores.
@@ -894,11 +885,15 @@
         );
       }
 
+      // Latest bag request; the answer of an earlier one is dropped.
+      let bagRequest = 0;
+
       // The daemon finds the path of a file read here, under the typed path,
       // the remembered directories and its own.
       function locate(file) {
         if (!daemon.connected || !daemon.offers("replay.find")) return;
         const typed = bagPath.value.trim();
+        const request = ++bagRequest;
         daemon
           .rpc("replay.find", {
             name: file.name,
@@ -907,6 +902,7 @@
           })
           .then(
             (found) => {
+              if (request !== bagRequest) return;
               bagPath.value = found.path;
               readPath();
             },
@@ -915,13 +911,13 @@
       }
 
       async function readFile(file) {
+        const request = ++bagRequest;
         try {
-          setBag(
-            await bagFile.readTopics(file, model.parseBagMetadata),
-            file.name,
-          );
+          const topics = await bagFile.readTopics(file, model.parseBagMetadata);
+          if (request !== bagRequest) return;
+          setBag(topics, file.name);
         } catch (error) {
-          bagFailed(error.message);
+          if (request === bagRequest) bagFailed(error.message);
           return;
         }
         locate(file);
@@ -929,8 +925,10 @@
 
       function readPath() {
         const path = bagPath.value.trim();
+        const request = ++bagRequest;
         daemon.rpc("replay.bag", { path, generate: true }).then(
           (info) => {
+            if (request !== bagRequest) return;
             rememberBagDir(info.path);
             setBag(
               new Map(
@@ -944,7 +942,9 @@
                 : info.path,
             );
           },
-          (error) => bagFailed(`${path}: ${error.message}`),
+          (error) => {
+            if (request === bagRequest) bagFailed(`${path}: ${error.message}`);
+          },
         );
       }
 

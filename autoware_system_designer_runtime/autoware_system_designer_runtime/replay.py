@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -62,6 +63,7 @@ from ._impl.replay.link import CLOCK_FREE, SOCKET_ENV, START_ENV, TIMER, WALL_TI
 from ._impl.replay.middleware import replay_middleware
 from ._impl.replay.preflight import (
     ERROR,
+    WARNING,
     Problem,
     RealEndpoint,
     check_bag,
@@ -87,6 +89,7 @@ from .replay_record import (
     BOUNDARY_FILE,
     EXIT_DIFFERS,
     EXIT_FAILED,
+    EXIT_INTERRUPTED,
     EXIT_OK,
     OPTIONS_FILE,
     PHASE_POST,
@@ -173,17 +176,6 @@ def _write_json(path: Path, payload: Any) -> None:
     os.replace(partial, path)
 
 
-def _plain(value: Any) -> Any:
-    """*value* with its paths as strings, for a JSON file."""
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, Mapping):
-        return {key: _plain(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_plain(item) for item in value]
-    return value
-
-
 def _real_endpoints(
     endpoints: Sequence[Endpoint], members: "_Members", launch_files: Collection[str]
 ) -> list[RealEndpoint]:
@@ -245,11 +237,18 @@ def _compare(
 
 
 def _save_reference(out_dir: Path, reference_dir: Path, inputs: Mapping[str, Any]) -> None:
+    # Built beside its place and renamed into it: a reference is whole or absent.
+    staging = reference_dir.with_name(reference_dir.name + ".new")
+    retired = reference_dir.with_name(reference_dir.name + ".old")
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True)
+    shutil.copytree(out_dir / ref.OUTPUTS_DIR, staging / ref.OUTPUTS_DIR)
+    _write_json(staging / ref.REFERENCE_FILE, {"saved": time.time(), "key": inputs})
+    shutil.rmtree(retired, ignore_errors=True)
     if reference_dir.exists():
-        shutil.rmtree(reference_dir)
-    reference_dir.mkdir(parents=True)
-    shutil.copytree(out_dir / ref.OUTPUTS_DIR, reference_dir / ref.OUTPUTS_DIR)
-    _write_json(reference_dir / ref.REFERENCE_FILE, {"saved": time.time(), "key": inputs})
+        os.replace(reference_dir, retired)
+    os.replace(staging, reference_dir)
+    shutil.rmtree(retired, ignore_errors=True)
 
 
 def replay_from_json(json_path: str, options: ReplayOptions) -> int:
@@ -296,7 +295,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
         out_dir / OPTIONS_FILE,
         {
             "system_structure": str(Path(json_path).resolve()),
-            "options": _plain(asdict(options)),
+            "options": asdict(options),
             "config": asdict(config),
         },
     )
@@ -355,6 +354,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
                 "inputs": {topic: bag.topics[topic].source for topic in sorted(fed)},
                 "outputs": sorted(recorded_types),
                 "duration": options.duration,
+                "lead_in": config.lead_in,
                 "seed": options.seed,
                 "free_wall_timers": options.free_wall_timers,
             },
@@ -404,6 +404,11 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
     )
 
     async def _run() -> int:
+        # Bag reader, output writer and step log, closed however the run ends.
+        with contextlib.ExitStack() as resources:
+            return await _run_scope(resources)
+
+    async def _run_scope(resources: contextlib.ExitStack) -> int:
         from ._impl.replay.ros_io import RosReplayIO
         from ._impl.ros2.builder import populate_builder
 
@@ -414,6 +419,8 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
         # rosbag2 writes into a directory it creates.
         shutil.rmtree(out_dir / ref.OUTPUTS_DIR, ignore_errors=True)
         sink = BagSink(out_dir / ref.OUTPUTS_DIR, recorded_types, bag.storage_id) if bag is not None else None
+        if sink is not None:
+            resources.callback(sink.close)
         recorder = OutputRecorder(recorded_types if bag is not None else {}, sink)
 
         def on_scope_up(endpoints: list[Endpoint]) -> None:
@@ -427,7 +434,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
                 unconnected=unconnected,
             )
             if options.allow_undeclared:
-                found = [Problem("warning", p.code, p.message) if p.level == ERROR else p for p in found]
+                found = [Problem(WARNING, p.code, p.message) if p.level == ERROR else p for p in found]
             free = [ep for ep in endpoints if ep.kind == TIMER and ep.clock == CLOCK_FREE]
             for ep in free:
                 logger.warning("replay: %s runs on a wall clock, outside the driver's time", ep.label())
@@ -455,13 +462,17 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
                 return None
 
             def pop(self):
-                raise StopIteration
+                raise IndexError("no message")
+
+            def close(self) -> None:
+                return None
 
         source = BagMessages(bag, sorted(fed)) if bag is not None else _NoSource()
         if bag is not None and config.lead_in > 0:
             latched = {t for t in fed if bag.topics[t].transient_local}
             source = LeadIn(source, start_ns + int(config.lead_in * 1e9), special_topics().ambient_inputs, latched)
-        steps = open(out_dir / STEP_LOG_FILE, "w") if options.step_log else None
+        resources.callback(source.close)
+        steps = resources.enter_context(open(out_dir / STEP_LOG_FILE, "w")) if options.step_log else None
         started = time.monotonic()
 
         def log_step(line: str) -> None:
@@ -545,10 +556,6 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             return await coord.run()
         finally:
             await server.close()
-            if steps is not None:
-                steps.close()
-            if sink is not None:
-                sink.close()
             await worker.stop()
 
     _progress(PHASE_PRE, "launching the scope")
@@ -556,7 +563,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
         run_code = asyncio.run(_run())
     except KeyboardInterrupt:
         logger.info("replay interrupted")
-        return 130
+        return EXIT_INTERRUPTED
     finally:
         shutil.rmtree(socket_dir, ignore_errors=True)
 

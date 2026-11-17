@@ -29,16 +29,6 @@
   // Id of the undrawn port and edge that space a bag without feeds.
   const SPACER = "bag-spacer";
 
-  const STATUS = {
-    fed: "in the bag",
-    remapped: "remapped",
-    accepted: "accepted unfed",
-    type: "other type in the bag",
-    unpublished: "no publisher, not in the bag",
-    missing: "not in the bag",
-    unknown: "no bag read",
-  };
-
   function svg(tag, attrs = {}, className = "") {
     const node = document.createElementNS(SVG_NS, tag);
     Object.entries(attrs).forEach(([key, value]) =>
@@ -550,7 +540,7 @@
       tooltip(chip, [
         input.topic,
         input.type,
-        STATUS[input.status],
+        replay.model.INPUT_NOTE[input.status],
         input.status === "remapped" ? `recorded as ${input.recordedName}` : "",
         input.status === "type" ? `recorded as ${input.recordedType}` : "",
         input.publishers.length

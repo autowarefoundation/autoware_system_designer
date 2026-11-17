@@ -47,6 +47,7 @@ STEP_LOG_FILE = "steps.log"
 EXIT_OK = 0
 EXIT_DIFFERS = 1
 EXIT_FAILED = 2
+EXIT_INTERRUPTED = 130
 
 PROGRESS_MARK = "replay progress: "
 PHASE_PRE = "pre-process"

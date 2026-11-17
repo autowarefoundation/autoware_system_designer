@@ -26,6 +26,7 @@ resolved to and the outputs recorded, and its run options.
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import re
@@ -189,6 +190,15 @@ def replay_config(params: Mapping[str, Any]) -> dict[str, Any]:
     return config
 
 
+def _new_run_dir(base: Path) -> Path:
+    """A timestamped directory name under *base* that no run holds; numbered within the second of another."""
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    for name in itertools.chain([stamp], (f"{stamp}_{n}" for n in itertools.count(2))):
+        if not (base / name).exists():
+            return base / name
+    raise AssertionError("unreachable")
+
+
 def plan_replay(
     system: SystemExport,
     command: Path,
@@ -207,7 +217,7 @@ def plan_replay(
         raise api.ApiError(api.INVALID_PARAMS, "check and save_reference must be booleans")
     duration = _seconds(params, "duration", positive=True)
     domain_id = _domain_id(params)
-    run_dir = (log_base or LOG_BASE / REPLAY_LOGS) / time.strftime("%Y%m%d_%H%M%S")
+    run_dir = _new_run_dir(log_base or LOG_BASE / REPLAY_LOGS)
     argv = [
         str(command),
         str(system.structure_path(mode)),
@@ -251,6 +261,11 @@ def write_config(plan: ReplayPlan) -> None:
     """The plan's configuration in its run directory; JSON, which the runtime reads as YAML."""
     plan.run_dir.mkdir(parents=True, exist_ok=True)
     (plan.run_dir / CONFIG_FILE).write_text(json.dumps(plan.config, indent=2) + "\n")
+
+
+def discard_config(plan: ReplayPlan) -> None:
+    """Removes the run directory of a plan whose job did not start."""
+    shutil.rmtree(plan.run_dir, ignore_errors=True)
 
 
 def update_progress(detail: dict[str, Any], line: str) -> bool:

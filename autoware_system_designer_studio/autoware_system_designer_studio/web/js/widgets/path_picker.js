@@ -115,7 +115,11 @@
       else choose(listing.bag ? listing.path : "");
     }
 
+    // Latest listing request; the answer of an earlier one is dropped.
+    let loads = 0;
+
     function load(target) {
+      const request = ++loads;
       return SD.daemon
         .rpc("fs.list", {
           path: target || "",
@@ -124,11 +128,13 @@
         })
         .then(
           (result) => {
+            if (request !== loads) return;
             listing = result;
             error.hidden = true;
             render();
           },
           (err) => {
+            if (request !== loads) return;
             error.textContent = err.message;
             error.hidden = false;
           },

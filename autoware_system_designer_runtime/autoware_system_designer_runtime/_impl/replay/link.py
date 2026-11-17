@@ -157,7 +157,10 @@ class LinkServer:
                 if link is None:
                     if kind != "hello" or not fields:
                         continue
-                    link = ProcessLink(pid=int(fields[0]), writer=writer)
+                    try:
+                        link = ProcessLink(pid=int(fields[0]), writer=writer)
+                    except ValueError:
+                        continue
                     self.links[link.pid] = link
                 try:
                     self._register(link, kind, fields)

@@ -26,6 +26,7 @@ from typing import Iterable, Mapping, Optional, Sequence
 from ...special_topics import special_topics
 from ..measure.node_graph import NodeGraph
 from .bag import BagInfo
+from .link import PUBLISHER, SUBSCRIPTION, TIMER
 from .scope import Boundary
 
 ERROR = "error"
@@ -177,7 +178,7 @@ def check_endpoints(
     accepted = set(accept)
     fed = set(fed)
     ambient = set(special.ambient_inputs)
-    published = {endpoint.topic for endpoint in endpoints if endpoint.kind == "p"}
+    published = {endpoint.topic for endpoint in endpoints if endpoint.kind == PUBLISHER}
     unconnected = unconnected or {}
     by_fqn = {fqn: graph.nodes[path] for path, fqn in scope_fqns.items() if path in graph.nodes}
     # A launch file member stands for every node it starts, under its design path.
@@ -209,7 +210,7 @@ def check_endpoints(
         return owners
 
     for endpoint in endpoints:
-        if endpoint.kind == "t":
+        if endpoint.kind == TIMER:
             # A timer carries no node name: it counts for every design node of its process.
             owners = {endpoint.node, *endpoint.process_nodes} & timer_rates.keys()
             if endpoint.period_ns > 0:
@@ -218,7 +219,7 @@ def check_endpoints(
             continue
         if endpoint.topic in special.process or special.is_handshake(endpoint.topic):
             continue
-        inputs = endpoint.kind == "s"
+        inputs = endpoint.kind == SUBSCRIPTION
         owners = declared_by(endpoint, inputs)
         if owners:
             for owner in owners:
