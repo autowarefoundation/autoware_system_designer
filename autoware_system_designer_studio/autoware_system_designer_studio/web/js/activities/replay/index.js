@@ -146,11 +146,11 @@
   SD.workbench.registerActivity({
     id: "replay",
     title: "Replay",
-    group: "Replay",
+    group: "Test",
     order: 25,
     daemon: false,
     inspector: false,
-    icon: "M4 4v12M7 10l9-6v12z",
+    icon: "M16 4v12M13 10l-9-6v12z",
     status: (store) => {
       const scope =
         store.get("scope") ??

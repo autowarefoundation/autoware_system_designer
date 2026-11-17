@@ -35,7 +35,7 @@
   SD.workbench.registerActivity({
     id: "explore",
     title: "Explore",
-    group: "Diagrams",
+    group: "Analyze",
     order: 10,
     daemon: false,
     inspector: true,
