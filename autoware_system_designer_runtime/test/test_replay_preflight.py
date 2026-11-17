@@ -202,6 +202,12 @@ def test_timer_without_a_node_name_counts_for_the_nodes_of_its_process():
     assert codes(check([e for e in FULL if e.kind != "t"]), WARNING) == ["event_mismatch"]
 
 
+def test_negotiation_handshake_topics_are_infrastructure():
+    handshake = [RealEndpoint("s", "/mod/a", "/out/cuda/_supported_types"), RealEndpoint("p", "/mod/a", "/in/_supported_types")]
+
+    assert check(FULL + handshake) == []
+
+
 def test_subscription_of_an_unconnected_port_only_warns():
     problems = check(
         FULL + [RealEndpoint("s", "/mod/a", "/mod/a/input/spare")], unconnected={"/mod/a": {"/mod/a/input/spare"}}

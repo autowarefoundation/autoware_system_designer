@@ -34,6 +34,9 @@ WARNING = "warning"
 COMPANION_TOPICS: dict[str, tuple[str, ...]] = {"/tf": ("/tf_static",)}
 _COMPANION_OF = {companion: topic for topic, companions in COMPANION_TOPICS.items() for companion in companions}
 
+# Handshake topic of a negotiated publisher, beside the topic it negotiates.
+NEGOTIATION_SUFFIX = "/_supported_types"
+
 # Relative gap between a declared rate and a timer's rate that still counts as the same.
 RATE_TOLERANCE = 0.02
 
@@ -181,17 +184,20 @@ def check_endpoints(
     timer_rates: dict[str, list[float]] = {fqn: [] for fqn in by_fqn}
     reported: set[tuple[str, str, str]] = set()
 
-    def declared_by(endpoint: RealEndpoint, inputs: bool) -> Optional[str]:
-        """The design node whose port covers the endpoint: its own node, else one of its process."""
-        for fqn in (endpoint.node,) + tuple(endpoint.process_nodes):
-            node = by_fqn.get(fqn)
-            if node is None:
-                continue
-            if endpoint.topic in (node.inputs if inputs else node.outputs):
-                return fqn
-            if inputs and _COMPANION_OF.get(endpoint.topic) in node.inputs:
-                return fqn
-        return None
+    def covers(fqn: str, endpoint: RealEndpoint, inputs: bool) -> bool:
+        node = by_fqn.get(fqn)
+        if node is None:
+            return False
+        if endpoint.topic in (node.inputs if inputs else node.outputs):
+            return True
+        return inputs and _COMPANION_OF.get(endpoint.topic) in node.inputs
+
+    def declared_by(endpoint: RealEndpoint, inputs: bool) -> list[str]:
+        """The design nodes whose port covers the endpoint: its own node, else every one of its
+        process (a helper node subscribes for any of them)."""
+        if covers(endpoint.node, endpoint, inputs):
+            return [endpoint.node]
+        return [fqn for fqn in endpoint.process_nodes if covers(fqn, endpoint, inputs)]
 
     for endpoint in endpoints:
         if endpoint.kind == "t":
@@ -201,12 +207,13 @@ def check_endpoints(
                 for owner in owners:
                     timer_rates[owner].append(1e9 / endpoint.period_ns)
             continue
-        if endpoint.topic in INFRA_TOPICS:
+        if endpoint.topic in INFRA_TOPICS or endpoint.topic.endswith(NEGOTIATION_SUFFIX):
             continue
         inputs = endpoint.kind == "s"
-        owner = declared_by(endpoint, inputs)
-        if owner is not None:
-            (seen_inputs if inputs else seen_outputs)[owner].add(endpoint.topic)
+        owners = declared_by(endpoint, inputs)
+        if owners:
+            for owner in owners:
+                (seen_inputs if inputs else seen_outputs)[owner].add(endpoint.topic)
             continue
         key = (endpoint.kind, endpoint.node, endpoint.topic)
         if key in reported:
