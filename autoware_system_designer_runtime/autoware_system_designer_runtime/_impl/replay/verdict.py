@@ -28,6 +28,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import math
+import struct
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Optional
 
@@ -238,42 +239,88 @@ def ros_deserialize(msg_type: str, data: bytes) -> Any:
     return deserialize_message(data, get_message(msg_type))
 
 
-def _hash_content(sha: Any, value: Any) -> None:
-    """Feed the field values of a message to *sha*, in field order."""
+# Struct codes of the numeric field types.
+_NUMBER_CODES = {
+    "boolean": "?",
+    "int8": "b",
+    "uint8": "B",
+    "int16": "h",
+    "uint16": "H",
+    "int32": "i",
+    "uint32": "I",
+    "int64": "q",
+    "uint64": "Q",
+    "float": "d",
+    "double": "d",
+}
+# Per message class: its field names in field order, and the packer of a class of numbers only.
+_LAYOUTS: dict[type, tuple[tuple[str, ...], Optional[Callable[..., bytes]]]] = {}
+
+
+def _layout(value: Any) -> tuple[tuple[str, ...], Optional[Callable[..., bytes]]]:
+    layout = _LAYOUTS.get(type(value))
+    if layout is None:
+        fields = value.get_fields_and_field_types()
+        codes = [_NUMBER_CODES.get(field_type) for field_type in fields.values()]
+        pack = struct.Struct("<" + "".join(codes)).pack if codes and all(codes) else None
+        layout = _LAYOUTS[type(value)] = (tuple(fields), pack)
+    return layout
+
+
+def _content(value: Any, parts: list[bytes]) -> None:
+    """Appends the field values of a message to *parts*, in field order."""
     if _is_message(value):
-        for name in value.get_fields_and_field_types():
-            _hash_content(sha, getattr(value, name))
+        names, pack = _layout(value)
+        if pack is not None:
+            try:
+                parts.append(pack(*[getattr(value, name) for name in names]))
+                return
+            except (struct.error, TypeError):
+                pass
+        for name in names:
+            _content(getattr(value, name), parts)
     elif isinstance(value, (str, bytes)):
         raw = value.encode() if isinstance(value, str) else value
-        sha.update(f"{len(raw)}\0".encode())
-        sha.update(raw)
+        parts.append(b"%d\0" % len(raw))
+        parts.append(raw)
     elif hasattr(value, "tobytes"):
         # Primitive arrays: array.array and numpy.ndarray.
-        sha.update(f"{len(value)}\0".encode())
-        sha.update(value.tobytes())
+        parts.append(b"%d\0" % len(value))
+        parts.append(value.tobytes())
     elif _is_sequence(value):
-        sha.update(f"{len(value)}\0".encode())
+        parts.append(b"%d\0" % len(value))
         for item in value:
-            _hash_content(sha, item)
+            _content(item, parts)
     else:
-        sha.update(f"{value!r}\0".encode())
+        parts.append(f"{value!r}\0".encode())
 
 
 def digest(
-    records: Mapping[str, list[Record]],
+    messages: Iterable[tuple[int, str, bytes]],
     types: Optional[Mapping[str, str]] = None,
     deserialize: Optional[Deserialize] = None,
+    *,
+    since_ns: int = 0,
 ) -> str:
-    """One hash over every recorded output, for a quick equality check of two runs. A topic with a
-    type in *types* is hashed by content, any other by its serialized bytes."""
-    sha = hashlib.sha256()
-    for topic in sorted(records):
+    """One hash over every recorded output from *since_ns* on, for a quick equality check of two runs.
+    A topic with a type in *types* is hashed by content, any other by its serialized bytes. Each topic
+    is hashed in its own order as the messages pass, so the bag is never held in memory."""
+    hashes: dict[str, Any] = {}
+    for stamp, topic, data in messages:
+        if stamp < since_ns:
+            continue
+        sha = hashes.get(topic)
+        if sha is None:
+            sha = hashes[topic] = hashlib.sha256()
         msg_type = (types or {}).get(topic) if deserialize is not None else None
-        for stamp, data in records[topic]:
-            if msg_type:
-                sha.update(f"{topic}\0{stamp}\0".encode())
-                _hash_content(sha, deserialize(msg_type, data))
-            else:
-                sha.update(f"{topic}\0{stamp}\0{len(data)}\0".encode())
-                sha.update(data)
-    return sha.hexdigest()
+        if msg_type:
+            parts = [b"%d\0" % stamp]
+            _content(deserialize(msg_type, data), parts)
+            sha.update(b"".join(parts))
+        else:
+            sha.update(b"%d\0%d\0" % (stamp, len(data)))
+            sha.update(data)
+    total = hashlib.sha256()
+    for topic in sorted(hashes):
+        total.update(f"{topic}\0{hashes[topic].hexdigest()}\0".encode())
+    return total.hexdigest()

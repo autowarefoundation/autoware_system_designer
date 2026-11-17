@@ -38,6 +38,7 @@
 //     grant  id                 run one callback of the endpoint; a second one of a process
 //                               is granted while the first waits on it
 //     expect id                 a message was published to the subscription
+//     pass   id on              on 1: the callbacks of the endpoint run without a grant; 0: gated again
 //     match  seq                report the matched subscriptions of every publisher
 //     free                      stop gating
 //
@@ -86,6 +87,7 @@ typedef struct entry {
   const void * handle;  // NULL once finalized
   char kind;            // 'p', 's', 't'
   bool gated;
+  bool pass;            // gated endpoint whose callbacks run without a grant
   bool waited;
   bool ready;
   uint32_t depth;       // subscription: keep-last depth, 0 without a bound
@@ -462,6 +464,15 @@ static void on_command(char * line)
       }
     }
     pthread_mutex_unlock(&r_lock);
+  } else if (sscanf(line, "pass\t%llu\t%lld", &a, &b) == 2) {
+    pthread_mutex_lock(&r_lock);
+    if (a > 0 && a < r.count && r.entries[a].handle != NULL) {
+      r.entries[a].pass = b != 0;
+      r.entries[a].ready = false;
+      ++r.wake;
+      pthread_cond_broadcast(&r_cond);
+    }
+    pthread_mutex_unlock(&r_lock);
   } else if (strcmp(line, "free") == 0) {
     pthread_mutex_lock(&r_lock);
     r.gating = false;
@@ -780,7 +791,7 @@ rcl_ret_t asd_replay_wait(asd_wait_fn real, rcl_wait_set_t * wait_set, int64_t t
     }
     bool ready = *slot_of(wait_set, i) != NULL;
     uint32_t id = find_id(tls_snapshot[i]);
-    if (id == 0 || !r.entries[id].gated) {
+    if (id == 0 || !r.entries[id].gated || r.entries[id].pass) {
       other = other || ready;
       continue;
     }

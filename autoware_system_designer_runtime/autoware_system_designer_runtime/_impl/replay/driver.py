@@ -29,6 +29,9 @@ and every recorded publish was heard. All of it is counted from what the tracer
 observes; the declared event chains play no part. Publishes, takes and timer fires of
 a thread without the grant break the order and are counted as violations.
 
+Until the first step the subscriptions on the topics every process carries pass the gate: the
+events of the startup are handled as they arrive and leave no backlog to step through.
+
 A callback that waits on another callback of its process, as on a transform listener, holds
 the scope: that callback is gated too. Once a callback has run for `nested_after`, the ready
 callbacks of its process on the nested callback topics are granted one at a time while it runs.
@@ -179,6 +182,8 @@ class ReplayDriver:
             self._last_registration = time.monotonic()
             if kind == "node":
                 self._seen_nodes.add(fields[0])
+            elif kind == "ep":
+                self._pass_until_stepping(link.endpoints.get(int(fields[0])))
             elif kind == "hello" and self._time_seq:
                 link.send(f"time\t{self._time_seq}\t{self._now}")
             elif kind == "fini":
@@ -234,6 +239,21 @@ class ReplayDriver:
                 self._published(ep.topic)
         elif kind == "lost":
             self._anomaly(f"a message published to {ep.label()} never arrived")
+
+    def _pass_until_stepping(self, ep: Optional[Endpoint]) -> None:
+        if ep is None or ep.kind != SUBSCRIPTION or ep.topic not in self._special.process:
+            return
+        if self._stepping or self._finished:
+            return
+        ep.passing = True
+        ep.link.send(f"pass\t{ep.id}\t1")
+
+    def _gate_passing(self) -> None:
+        for ep in self._server.endpoints():
+            if ep.passing:
+                ep.passing = False
+                ep.ready = False
+                ep.link.send(f"pass\t{ep.id}\t0")
 
     def _ended(self, ep: Endpoint) -> None:
         if self._nested is ep:
@@ -534,6 +554,7 @@ class ReplayDriver:
             ep.outstanding = 0
         self._recorder.start()
         self._stepping = True
+        self._gate_passing()
         self._set_time(self._now)
         await self._drain()
         progress = time.monotonic()

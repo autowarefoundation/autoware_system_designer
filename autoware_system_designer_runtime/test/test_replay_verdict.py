@@ -135,10 +135,13 @@ def test_exact_rule_and_digest_follow_the_content_of_differing_bytes():
     verdict = compare_topic("/t", "T", reference, changed, CompareRule(), decode)
     assert verdict.status == DIFFER and "points.y" in verdict.difference["detail"]
 
+    def stream(topic_records):
+        return [(stamp, "/t", data) for stamp, data in topic_records]
+
     types = {"/t": "T"}
-    assert digest({"/t": reference}, types, decode) == digest({"/t": padded}, types, decode)
-    assert digest({"/t": reference}, types, decode) != digest({"/t": changed}, types, decode)
-    assert digest({"/t": reference}) != digest({"/t": padded})
+    assert digest(stream(reference), types, decode) == digest(stream(padded), types, decode)
+    assert digest(stream(reference), types, decode) != digest(stream(changed), types, decode)
+    assert digest(stream(reference)) != digest(stream(padded))
 
 
 def test_count_and_driver_time_differences_are_reported():
@@ -231,5 +234,9 @@ def test_grouping_leaves_out_the_warmup_and_the_digest_follows_the_content():
     messages = [(100, "/a", b"1"), (200, "/b", b"2"), (300, "/a", b"3")]
 
     assert group_by_topic(messages, since_ns=200) == {"/b": [(200, b"2")], "/a": [(300, b"3")]}
-    assert digest(group_by_topic(messages)) == digest(group_by_topic(list(messages)))
-    assert digest(group_by_topic(messages)) != digest(group_by_topic(messages[:2]))
+    assert digest(messages) == digest(iter(messages))
+    assert digest(messages) != digest(messages[:2])
+    assert digest(messages, since_ns=200) == digest(messages[1:])
+    # Topics are hashed apart: the order across topics does not count, the order within one does.
+    assert digest(messages) == digest([messages[1], messages[0], messages[2]])
+    assert digest(messages) != digest([messages[2], messages[1], messages[0]])

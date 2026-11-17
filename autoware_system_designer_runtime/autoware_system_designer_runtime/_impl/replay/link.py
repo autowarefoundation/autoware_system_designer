@@ -75,10 +75,14 @@ class Endpoint:
     misses: int = 0
     # Timer: due and never ready; left out of the schedule until it reports a new call time.
     stuck: bool = False
+    # Subscription: its callbacks run without a grant.
+    passing: bool = False
 
     @property
     def gated(self) -> bool:
-        return self.kind == SUBSCRIPTION or (self.kind == TIMER and self.clock != CLOCK_FREE)
+        if self.kind == SUBSCRIPTION:
+            return not self.passing
+        return self.kind == TIMER and self.clock != CLOCK_FREE
 
     def label(self) -> str:
         if self.kind == TIMER:

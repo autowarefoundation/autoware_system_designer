@@ -146,6 +146,8 @@ class FakeProcess:
                         self.send(f"done\t{waiting}")
                 if ident in self._subs and self._subs[ident]["queued"] > 0:
                     self.send(f"ready\t{ident}")
+            elif kind == "pass":
+                self._world.passed.append((self.pid, int(fields[1]), int(fields[2]), len(self._world.granted)))
             elif kind == "free":
                 self._world.freed.add(self.pid)
 
@@ -162,6 +164,8 @@ class World:
         self.recorder = OutputRecorder({topic: "std_msgs/msg/String" for topic in recorded}, self)
         self.granted: list[tuple[int, int]] = []
         self.freed: set[int] = set()
+        # (pid, endpoint id, on, callbacks granted so far) of every pass command.
+        self.passed: list[tuple[int, int, int, int]] = []
         self.published: list[str] = []
         self.driver = None
 
@@ -389,6 +393,18 @@ def test_a_scope_whose_node_never_starts_fails_at_startup():
 
     with pytest.raises(ReplayError, match="/b did not start"):
         replay(world, [a], node_order={"/a": 0, "/b": 1}, startup_timeout=0.3)
+
+
+def test_infrastructure_subscriptions_pass_the_gate_until_the_first_step():
+    world = World([(T0 + 50 * MS, "/in", b"1")], ["/out"])
+    a = FakeProcess(1, world).node("/a")
+    events = a.sub("/parameter_events")
+    a.sub("/in", publishes=(a.pub("/out"),))
+
+    result = replay(world, [a], node_order={"/a": 0})
+
+    assert world.passed == [(1, events, 1, 0), (1, events, 0, 0)]
+    assert (result.callbacks, result.infra_callbacks) == (1, 0)
 
 
 def test_startup_only_stops_before_the_first_step():

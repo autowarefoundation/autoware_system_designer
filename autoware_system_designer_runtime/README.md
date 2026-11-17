@@ -543,7 +543,7 @@ A reference is the `outputs/` of a run kept by `--save-reference`. It lives unde
 <record root>/<package>/<system>/replay/<Mode>/<key>/{reference.json, outputs/}
 ```
 
-`--reference DIR` names the directory directly (required for a JSON outside an export tree). Each topic compares message by message in publish order, driver time included, by its rule; `--warmup S` leaves the first seconds out. `exact` compares the field values without tolerance, `fields` with the tolerance, exclusions and UUID ranking of the rule. Serialized bytes are not compared: the padding between aligned fields is left unset by the publisher. The digest in `result.json` is over the field values too.
+`--reference DIR` names the directory directly (required for a JSON outside an export tree). Each topic compares message by message in publish order, driver time included, by its rule; `--warmup S` leaves the first seconds out. `exact` compares the field values without tolerance, `fields` with the tolerance, exclusions and UUID ranking of the rule. Serialized bytes are not compared: the padding between aligned fields is left unset by the publisher. The digest in `result.json` is over the field values too, topic by topic in recorded order.
 
 | Exit code | Meaning                                                                                 |
 | --------- | --------------------------------------------------------------------------------------- |
@@ -557,7 +557,7 @@ A reference is the `outputs/` of a run kept by `--save-reference`. It lives unde
 - **Services and actions** pass the gate unordered; their callbacks count as violations when they publish.
 - **Polled subscriptions** (taken inside another callback, never waited on) are not gated. A take that finds nothing while a published message is still in flight waits for it, so a poll sees what was published before it.
 - **Several messages in flight to one subscription** (a callback that publishes twice on a topic) are waited for by a fixed pause, not by observation; with a keep-last depth below the burst, which messages survive is not checked.
-- **Startup is not gated.** The scope starts freely and is held at the bag's start time; parameter events published during startup are delivered first, in an order that follows the startup. What a node publishes before the first step is not recorded.
+- **Startup is not gated.** The scope starts freely and is held at the bag's start time; the subscriptions on the infrastructure and clock topics pass the gate until the first step, so parameter events published during startup are handled as they arrive, in an order that follows the startup. What a node publishes before the first step is not recorded.
 - **Node-level nondeterminism** (unseeded random numbers, wall-clock reads in logic, GPU inference) is the node's own; replay shows it as a differing verdict. A tolerance and `uuid_order` cover part of it in the comparison.
 - **Executors that do not wait through `rcl_wait`** (rclcpp's `EventsExecutor`) are not gated. Nodes of a `ros2_launch_file` member keep the launch file's own `use_sim_time`.
 - The loop is open against the bag: a loop that closes through a node outside the scope replays the recorded messages, not the reaction to the scope's new outputs.
