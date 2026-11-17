@@ -336,7 +336,12 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
 
         def on_scope_up(endpoints: list[Endpoint]) -> None:
             found = check_endpoints(
-                full_graph, fqns, _real_endpoints(endpoints), accept=config.accept, unconnected=unconnected
+                full_graph,
+                fqns,
+                _real_endpoints(endpoints),
+                accept=config.accept,
+                fed=[*fed, *config.inputs],
+                unconnected=unconnected,
             )
             if options.allow_undeclared:
                 found = [Problem("warning", p.code, p.message) if p.level == ERROR else p for p in found]

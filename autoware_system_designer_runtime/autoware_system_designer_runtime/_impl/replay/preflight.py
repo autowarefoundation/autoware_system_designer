@@ -154,11 +154,14 @@ def check_endpoints(
     endpoints: Sequence[RealEndpoint],
     *,
     accept: Sequence[str] = (),
+    fed: Sequence[str] = (),
     unconnected: Optional[Mapping[str, set[str]]] = None,
 ) -> list[Problem]:
     """The scope's real subscriptions, publishers and timers against its declared ports and events.
-    *unconnected* names the topics of declared ports the design connects to nothing."""
+    *fed* names the topics fed beside the declared ports; *unconnected* names the topics of declared
+    ports the design connects to nothing."""
     accepted = set(accept)
+    fed = set(fed)
     unconnected = unconnected or {}
     by_fqn = {fqn: graph.nodes[path] for path, fqn in scope_fqns.items() if path in graph.nodes}
     problems: list[Problem] = []
@@ -200,6 +203,8 @@ def check_endpoints(
                         f"{endpoint.node} subscribes to {endpoint.topic}, a port the design connects to nothing",
                     )
                 )
+            continue
+        if inputs and endpoint.topic in fed:
             continue
         if inputs:
             level = WARNING if endpoint.topic in accepted else ERROR

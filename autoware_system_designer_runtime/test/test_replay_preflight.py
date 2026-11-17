@@ -180,6 +180,7 @@ def test_undeclared_subscription_fails_and_undeclared_publisher_warns():
     assert codes(problems, ERROR) == ["undeclared_subscription"]
     assert codes(problems, WARNING) == ["undeclared_publisher"]
     assert codes(check(FULL + [RealEndpoint("s", "/mod/a", "/secret")], accept=["/secret"]), ERROR) == []
+    assert check(FULL + [RealEndpoint("s", "/mod/a", "/secret")], fed=["/secret"]) == []
 
 
 def test_subscription_of_an_unconnected_port_only_warns():
