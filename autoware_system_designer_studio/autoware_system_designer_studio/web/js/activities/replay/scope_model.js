@@ -6,8 +6,8 @@
   const SD = window.SD;
   const replay = ((SD.activities ||= {}).replay ||= {});
 
-  // Topics every rcl process carries; no boundary holds them.
-  const INFRA_TOPICS = new Set(["/rosout", "/parameter_events", "/clock"]);
+  // Topics every process carries, from the page configuration; no boundary holds them.
+  const isProcessTopic = (topic) => (SD.processTopics || []).includes(topic);
   const REPLAY_COMMAND = "autoware-system-designer-replay";
   const CONFIG_FILE = "replay.yaml";
   // Choice of an input that accepts it unfed; no topic bears the name.
@@ -187,7 +187,7 @@
     const scoped = nodeList.filter((node) => inside.has(node.path));
     scoped.forEach((node) => {
       node.inputs.forEach((type, topic) => {
-        if (INFRA_TOPICS.has(topic)) return;
+        if (isProcessTopic(topic)) return;
         const sources = publishers.get(topic) || [];
         const outside = sources.filter((path) => !inside.has(path));
         if (sources.length && !outside.length) return;
@@ -202,7 +202,7 @@
         inputs.get(topic).subscribers.push(node.path);
       });
       node.outputs.forEach((type, topic) => {
-        if (INFRA_TOPICS.has(topic)) return;
+        if (isProcessTopic(topic)) return;
         if (!outputs.has(topic)) {
           const readers = subscribers.get(topic) || [];
           const scopeSubscribers = readers.filter((path) => inside.has(path));
@@ -465,7 +465,7 @@
         container
           ? []
           : [...topics.entries()]
-              .filter(([topic]) => !INFRA_TOPICS.has(topic))
+              .filter(([topic]) => !isProcessTopic(topic))
               .map(([topic, type], at) => ({
                 id: `${id}${side}${at}`,
                 topic,

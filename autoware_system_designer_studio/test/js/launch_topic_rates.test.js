@@ -15,7 +15,12 @@ const JS_DIR = path.join(
   "js",
 );
 
-global.window = { SD: { activities: {} } };
+global.window = {
+  SD: {
+    activities: {},
+    processTopics: ["/rosout", "/parameter_events", "/clock"],
+  },
+};
 require(path.join(JS_DIR, "activities", "launch", "topic_model.js"));
 const launch = global.window.SD.activities.launch.topicModel;
 

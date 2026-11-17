@@ -23,23 +23,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Mapping, Optional, Sequence
 
+from ...special_topics import special_topics
 from ..measure.node_graph import NodeGraph
 from .bag import BagInfo
-from .scope import INFRA_TOPICS, Boundary
+from .scope import Boundary
 
 ERROR = "error"
 WARNING = "warning"
-
-# Topics a subscriber of the key also subscribes to, without a port of their own.
-COMPANION_TOPICS: dict[str, tuple[str, ...]] = {"/tf": ("/tf_static",)}
-_COMPANION_OF = {companion: topic for topic, companions in COMPANION_TOPICS.items() for companion in companions}
-
-# Transforms reach a node through a listener of its own, which a node may create inside a callback:
-# they are fed to every scope whose bag holds them.
-TRANSFORM_TOPICS = ("/tf", "/tf_static")
-
-# Handshake topic of a negotiated publisher, beside the topic it negotiates.
-NEGOTIATION_SUFFIX = "/_supported_types"
 
 # Relative gap between a declared rate and a timer's rate that still counts as the same.
 RATE_TOLERANCE = 0.02
@@ -60,10 +50,12 @@ def has_errors(problems: Iterable[Problem]) -> bool:
 
 
 def fed_topics(boundary: Boundary, bag: BagInfo, extra_inputs: Sequence[str]) -> dict[str, str]:
-    """Bag topics the driver delivers, with their recorded types: boundary inputs, declared extras, transforms."""
+    """Bag topics the driver delivers, with their recorded types: boundary inputs, declared extras,
+    their companions and the ambient inputs."""
+    special = special_topics()
     wanted = list(boundary.input_topics()) + [t for t in extra_inputs if t not in boundary.input_topics()]
-    wanted += [c for t in list(wanted) for c in COMPANION_TOPICS.get(t, ()) if c not in wanted]
-    wanted += [t for t in TRANSFORM_TOPICS if t not in wanted]
+    wanted += [c for t in list(wanted) for c in special.companions.get(t, ()) if c not in wanted]
+    wanted += [t for t in special.ambient_inputs if t not in wanted]
     return {topic: bag.topics[topic].msg_type for topic in wanted if topic in bag.topics}
 
 
@@ -135,7 +127,7 @@ def check_bag(
         if topic not in bag.topics:
             problems.append(Problem(ERROR, "input_missing", f"declared input {topic} is not in the bag"))
     for topic in sorted(taken & bag.topics.keys()):
-        for companion in COMPANION_TOPICS.get(topic, ()):
+        for companion in special_topics().companions.get(topic, ()):
             if companion not in bag.topics and companion not in accepted:
                 problems.append(
                     Problem(WARNING, "companion_missing", f"{companion}, subscribed with {topic}, is not in the bag")
@@ -179,6 +171,7 @@ def check_endpoints(
     """The scope's real subscriptions, publishers and timers against its declared ports and events.
     *fed* names the topics fed beside the declared ports; *unconnected* names the topics of declared
     ports the design connects to nothing."""
+    special = special_topics()
     accepted = set(accept)
     fed = set(fed)
     unconnected = unconnected or {}
@@ -195,7 +188,7 @@ def check_endpoints(
             return False
         if endpoint.topic in (node.inputs if inputs else node.outputs):
             return True
-        return inputs and _COMPANION_OF.get(endpoint.topic) in node.inputs
+        return inputs and special.companion_of(endpoint.topic) in node.inputs
 
     def declared_by(endpoint: RealEndpoint, inputs: bool) -> list[str]:
         """The design nodes whose port covers the endpoint: its own node, else every one of its
@@ -212,7 +205,7 @@ def check_endpoints(
                 for owner in owners:
                     timer_rates[owner].append(1e9 / endpoint.period_ns)
             continue
-        if endpoint.topic in INFRA_TOPICS or endpoint.topic.endswith(NEGOTIATION_SUFFIX):
+        if endpoint.topic in special.process or special.is_handshake(endpoint.topic):
             continue
         inputs = endpoint.kind == "s"
         owners = declared_by(endpoint, inputs)
@@ -258,12 +251,12 @@ def check_endpoints(
 
     for fqn, node in by_fqn.items():
         for topic in node.inputs:
-            if topic not in seen_inputs[fqn] and topic not in INFRA_TOPICS:
+            if topic not in seen_inputs[fqn] and topic not in special.process:
                 problems.append(
                     Problem(WARNING, "input_not_subscribed", f"{fqn} declares input {topic} and never subscribed to it")
                 )
         for topic in node.outputs:
-            if topic not in seen_outputs[fqn] and topic not in INFRA_TOPICS:
+            if topic not in seen_outputs[fqn] and topic not in special.process:
                 problems.append(
                     Problem(WARNING, "output_not_published", f"{fqn} declares output {topic} and created no publisher")
                 )

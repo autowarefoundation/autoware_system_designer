@@ -35,6 +35,7 @@ import logging
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
+from autoware_system_designer_runtime.special_topics import special_topics
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .. import latency
@@ -203,6 +204,7 @@ class Site:
             editor_scheme=EDITOR_SCHEME,
             system_definition_file=export.system_file,
             compute_units=export.compute_units(),
+            process_topics=sorted(special_topics().process),
             deploy_names=[v["name"] for v in export.deploy_variants()],
             launch_commands=launch_command_records(export),
         )

@@ -27,10 +27,8 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
 from ..measure.node_graph import NodeGraph, NodeInfo, _is_topic_port, _walk, resolve_topic
+from ...special_topics import special_topics
 from ..ros2.common.namespace import node_fqn
-
-# Topics every rcl process carries; the design declares none of them and the bag feeds none.
-INFRA_TOPICS = frozenset({"/rosout", "/parameter_events", "/clock"})
 
 
 class ScopeError(ValueError):
@@ -231,12 +229,13 @@ def compute_boundary(data: Mapping[str, Any], scope: Scope, *, ecu: Optional[str
         for topic in node.inputs:
             subscribers.setdefault(topic, []).append(node.path)
 
+    process_topics = special_topics().process
     boundary = Boundary()
     inputs: dict[str, InputTopic] = {}
     outputs: dict[str, OutputTopic] = {}
     for node in scoped:
         for topic, port in node.inputs.items():
-            if topic in INFRA_TOPICS:
+            if topic in process_topics:
                 continue
             sources = publishers.get(topic, [])
             outside = [p for p in sources if p not in inside]
@@ -254,7 +253,7 @@ def compute_boundary(data: Mapping[str, Any], scope: Scope, *, ecu: Optional[str
             )
             entry.subscribers.append(node.path)
         for topic, port in node.outputs.items():
-            if topic in INFRA_TOPICS:
+            if topic in process_topics:
                 continue
             readers = subscribers.get(topic, [])
             entry = outputs.setdefault(

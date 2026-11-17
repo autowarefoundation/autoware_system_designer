@@ -10,8 +10,8 @@
   // HIGH times the declared one is off.
   const LOW = 0.8;
   const HIGH = 1.25;
-  // Topics every node owns; they say nothing about the design.
-  const INFRA_TOPICS = new Set(["/rosout", "/parameter_events", "/clock"]);
+  // Topics every process carries, from the page configuration; they say nothing about the design.
+  const isProcessTopic = (topic) => (SD.processTopics || []).includes(topic);
 
   // Row status -> label, meaning and run-state token of its colour.
   const STATUS = {
@@ -316,7 +316,7 @@
     if (undeclared) observed.forEach((_value, topic) => names.add(topic));
     const rows = [];
     names.forEach((topic) => {
-      if (INFRA_TOPICS.has(topic)) return;
+      if (isProcessTopic(topic)) return;
       const declared = design.get(topic) || null;
       const seen = observed.get(topic) || { publishers: [], subscribers: [] };
       const rate = topicRate(seen.publishers, seen.subscribers);

@@ -17,7 +17,7 @@
 .. code-block:: yaml
 
     scope: [/perception/object_recognition]   # node or module paths, beside --scope
-    inputs: [/tf, /tf_static]                 # bag topics fed beside the boundary inputs
+    inputs: [/vehicle/status/velocity]        # bag topics fed beside the boundary inputs
     remap:                                    # recorded topic: topic it is fed as
       /sensing/lidar/top/pointcloud: /perception/input/pointcloud
     accept: [/map/vector_map]                 # inputs, services or subscriptions that stay unfed

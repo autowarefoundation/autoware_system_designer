@@ -29,9 +29,9 @@ and every recorded publish was heard. All of it is counted from what the tracer
 observes; the declared event chains play no part. Publishes, takes and timer fires of
 a thread without the grant break the order and are counted as violations.
 
-A callback that waits for a transform holds the scope: the listener that would bring it
-is gated too. Once a callback has run for `nested_after`, the ready callbacks of its
-process on the transform topics are granted one at a time while it runs.
+A callback that waits on another callback of its process, as on a transform listener, holds
+the scope: that callback is gated too. Once a callback has run for `nested_after`, the ready
+callbacks of its process on the nested callback topics are granted one at a time while it runs.
 """
 
 from __future__ import annotations
@@ -44,14 +44,12 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Optional, Protocol
 
+from ...special_topics import special_topics
 from .link import PUBLISHER, SUBSCRIPTION, TIMER, Endpoint, LinkServer, ProcessLink
 from .recorder import OutputRecorder
-from .scope import INFRA_TOPICS
 
 logger = logging.getLogger(__name__)
 
-# Topics of the transform listeners, whose callbacks a running callback may wait on.
-TRANSFORM_TOPICS = frozenset({"/tf", "/tf_static"})
 # A subscription that missed this many deliveries in a row is no longer waited for.
 MISS_LIMIT = 3
 MAX_ANOMALIES = 200
@@ -90,7 +88,7 @@ class DriverOptions:
     startup_settle: float = 2.0
     match_timeout: float = 10.0
     callback_timeout: float = 30.0
-    # Wall time a callback runs before the transform callbacks of its process run beside it.
+    # Wall time a callback runs before the nested callbacks of its process run beside it.
     nested_after: float = 0.2
     delivery_timeout: float = 2.0
     # Pause before a callback whose subscription holds several messages in flight.
@@ -114,9 +112,9 @@ class ReplayResult:
     wall_s: float = 0.0
     messages: int = 0
     callbacks: int = 0
-    # Callbacks on the topics every rcl process carries; their count follows the startup, not the bag.
+    # Callbacks on the topics every process carries; their count follows the startup, not the bag.
     infra_callbacks: int = 0
-    # Transform callbacks run beside a callback that waited on them.
+    # Callbacks on the nested callback topics run beside a callback that waited on them.
     nested_callbacks: int = 0
     timer_fires: int = 0
     publishes: int = 0
@@ -150,13 +148,14 @@ class ReplayDriver:
         self._node_order = dict(node_order)
         self._expected_nodes = set(expected_nodes)
         self._process_rank = process_rank
+        self._special = special_topics()
         self._random = random.Random(options.seed) if options.seed is not None else None
         self._changed = asyncio.Event()
         self._now = options.start_ns
         self._time_seq = 0
         self._match_seq = 0
         self._running: Optional[Endpoint] = None
-        # Transform callback granted beside the running one.
+        # Nested callback granted beside the running one.
         self._nested: Optional[Endpoint] = None
         self._stepping = False
         self._finished = False
@@ -244,7 +243,7 @@ class ReplayDriver:
 
     def _ordered(self, ep: Endpoint, gated: str, what: str) -> None:
         """Counts a publish, take or timer fire made outside the granted callback."""
-        if gated == "1" or not self._stepping or ep.topic in INFRA_TOPICS:
+        if gated == "1" or not self._stepping or ep.topic in self._special.process:
             return
         self._violations[(what, ep.node, ep.topic or f"{ep.period_ns / 1e6:g} ms")] += 1
 
@@ -341,11 +340,11 @@ class ReplayDriver:
                 pass
 
     def _grant_nested(self, running: Endpoint) -> None:
-        """Grants the first ready transform callback of the process of *running*, if any."""
+        """Grants the first ready nested callback of the process of *running*, if any."""
         ready = [
             ep
             for ep in running.link.endpoints.values()
-            if ep.gated and ep.ready and ep.alive and ep.topic in TRANSFORM_TOPICS
+            if ep.gated and ep.ready and ep.alive and ep.topic in self._special.nested_callbacks
         ]
         if not ready:
             return
@@ -371,7 +370,7 @@ class ReplayDriver:
         """The next callback among the ready ones. Callbacks on the topics every rcl process carries
         go first and take no draw: their number follows the startup, and the draws must not."""
         ready.sort(key=self._tie_key)
-        infra = [ep for ep in ready if ep.topic in INFRA_TOPICS]
+        infra = [ep for ep in ready if ep.topic in self._special.process]
         if infra:
             return infra[0]
         return self._random.choice(ready) if self._random is not None else ready[0]
@@ -394,7 +393,7 @@ class ReplayDriver:
             ep.link.send(f"grant\t{ep.id}")
             if self._log is not None:
                 self._log(f"> grant {ep.link.pid} {ep.id} {ep.label()}")
-            if ep.topic in INFRA_TOPICS:
+            if ep.topic in self._special.process:
                 self.result.infra_callbacks += 1
             else:
                 self.result.callbacks += 1
@@ -467,7 +466,7 @@ class ReplayDriver:
                 readers[ep.topic] += 1
         short: dict[str, str] = {}
         for ep in self._server.endpoints():
-            if ep.kind != PUBLISHER or ep.topic in INFRA_TOPICS:
+            if ep.kind != PUBLISHER or ep.topic in self._special.process:
                 continue
             needed = readers[ep.topic] + (ep.topic in self._recorder.topics)
             if ep.matched < needed:

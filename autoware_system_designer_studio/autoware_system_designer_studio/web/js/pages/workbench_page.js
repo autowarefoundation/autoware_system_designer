@@ -7,6 +7,7 @@
     );
     return;
   }
+  SD.processTopics = deploymentConfig.processTopics || [];
   SD.editor.setDefaultScheme(deploymentConfig.editorScheme || "vscode");
 
   window.addEventListener("load", () => {

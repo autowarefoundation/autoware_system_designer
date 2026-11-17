@@ -24,12 +24,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Optional
 
+from ...special_topics import special_topics
 from ..ros2.common.namespace import node_fqn
 
 logger = logging.getLogger(__name__)
-
-# Topics every rcl process carries that no design declares.
-INFRA_TOPICS = frozenset({"/rosout", "/parameter_events"})
 
 
 @dataclass
@@ -294,7 +292,7 @@ class NodeGraph:
             if not node.intra_process:
                 continue
             for topic, port in node.outputs.items():
-                if topic in INFRA_TOPICS:
+                if topic in special_topics().infrastructure:
                     continue
                 readers = [link for link in self.links if link.topic == topic and link.publisher == node.path]
                 if all(link.intra_process for link in readers):

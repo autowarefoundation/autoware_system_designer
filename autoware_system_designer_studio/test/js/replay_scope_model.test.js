@@ -5,7 +5,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-global.window = { SD: {} };
+global.window = {
+  SD: { processTopics: ["/rosout", "/parameter_events", "/clock"] },
+};
 require(
   path.join(
     __dirname,

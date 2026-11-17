@@ -1,0 +1,28 @@
+# Topics of the middleware that no design declares, by the role the runtime gives them.
+
+# Carried by every process; no boundary, check or measurement counts them.
+infrastructure:
+  - /rosout
+  - /parameter_events
+
+# Time source of a process on simulated time; treated as infrastructure wherever time is driven or measured.
+clock:
+  - /clock
+
+# Topics subscribed together with the key, without a port of their own.
+companions:
+  /tf: [/tf_static]
+
+# Bag topics fed to every replay scope, beside its boundary inputs.
+ambient_inputs:
+  - /tf
+  - /tf_static
+
+# Topics whose callbacks a running callback of the same process may wait on.
+nested_callbacks:
+  - /tf
+  - /tf_static
+
+# Suffixes of the handshake topics a publisher creates beside the topic it negotiates.
+handshake_suffixes:
+  - /_supported_types

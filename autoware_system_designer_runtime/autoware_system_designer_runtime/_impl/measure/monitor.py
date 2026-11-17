@@ -43,8 +43,8 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ...rates_record import Counters, Key, RatesWriter, Sample, rates_between
+from ...special_topics import special_topics
 from .node_graph import NodeGraph
-from .node_stats import LIFECYCLE_TOPICS
 from .stats_reader import ProcessStats, StatsDir, counts_since
 from .trace_reader import Endpoint, TimerInfo
 
@@ -167,7 +167,7 @@ class RateMonitor:
             _add(state.retired, key, *counts)
 
     def _endpoint_key(self, entry: Endpoint) -> Optional[Key]:
-        if entry.topic in LIFECYCLE_TOPICS:
+        if entry.topic in special_topics().process:
             return None
         return self.node_key(entry.fqn), "in" if entry.kind == "sub" else "out", entry.topic
 

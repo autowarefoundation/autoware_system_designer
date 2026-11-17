@@ -226,6 +226,7 @@ log base, the manifest, the member directory name and the tail of a member file.
 | `rates_record.py`                     | Rates record of a run: writer, reader, rates between two samples (no ROS import)                        |
 | `run_log.py`                          | Layout of a run's log directory: log base, manifest, member directory, file tail (no ROS import)        |
 | `control_protocol.py`                 | Member actions, measure verbs and interlock policies of the control surfaces (no ROS import)            |
+| `special_topics.py`                   | Roles of the topics no design declares, read from `config/special_topics.yaml` (no ROS import)          |
 | `_impl/core/config.py`                | `ActorConfig` (respawn, output dir, shutdown timeout)                                                   |
 | `_impl/core/events.py`                | Control commands (`Stop`, `Restart`, `KillSignal`, `ToggleRespawn`) and state events of the actors      |
 | `_impl/core/state.py`                 | State dataclasses: `NodePending/Running/Respawning/Stopped/Done/Failed`, `Composable*`, `BlockReason`   |
@@ -442,10 +443,21 @@ autoware-system-designer-replay SYSTEM.json --scope /perception/object_recogniti
 
 `--scope PATH` selects every node at or under a design path. A node placed at a module's own path (a player node at `/sensing` beside the `sensing` module) is under that path, and is named alone as `<path>/<name>`. The boundary comes from the export: an input topic of a scope node with a publisher outside the scope is a boundary input, an output topic with a subscriber outside the scope (or none inside) is a boundary output. The scope's members are launched as in `autoware-system-designer-launch`, each with `use_sim_time: true` and without intra-process delivery.
 
+The topics no design declares take their role from `config/special_topics.yaml` of this package; measurement and the studio read the same file:
+
+| Key                  | Role                                                                           | Topics                         |
+| -------------------- | ------------------------------------------------------------------------------ | ------------------------------ |
+| `infrastructure`     | Carried by every process; no boundary, check or measurement counts them        | `/rosout`, `/parameter_events` |
+| `clock`              | Time source of a process on simulated time; treated as infrastructure          | `/clock`                       |
+| `companions`         | Subscribed together with the key topic, without a port of their own            | `/tf_static` with `/tf`        |
+| `ambient_inputs`     | Bag topics fed to every scope, beside its boundary inputs                      | `/tf`, `/tf_static`            |
+| `nested_callbacks`   | Topics whose callbacks a running callback of the same process may wait on      | `/tf`, `/tf_static`            |
+| `handshake_suffixes` | Suffixes of the handshake topics a publisher creates beside a negotiated topic | `/_supported_types`            |
+
 The run starts with two checks:
 
 - **Bag against boundary** (`--check` stops after it): every boundary input is in the bag with the design's message type and a type the workspace can load. An input the design gives no publisher, an input also published inside the scope (the bag then carries the scope's own recorded messages) and a service server without a client in scope are warnings; a service client without a server in scope is an error.
-- **Real endpoints against the design**, once the scope is up (`--check-endpoints` stops after it and needs no bag): the subscriptions, publishers and timers each process created, reported by the tracer, against the declared ports and periodic events. A subscription no port of its process declares is a missing boundary input and fails the run (`--allow-undeclared` runs anyway); `/tf` and `/tf_static` of the bag are fed to every scope and accepted as subscriptions, since a node may create its transform listener inside a callback; an undeclared publisher, a declared port without an endpoint and a declared rate without a timer are warnings.
+- **Real endpoints against the design**, once the scope is up (`--check-endpoints` stops after it and needs no bag): the subscriptions, publishers and timers each process created, reported by the tracer, against the declared ports and periodic events. A subscription no port of its process declares is a missing boundary input and fails the run (`--allow-undeclared` runs anyway); the ambient inputs of the bag (`/tf`, `/tf_static`) are fed to every scope and accepted as subscriptions, since a node may create its transform listener inside a callback; an undeclared publisher, a declared port without an endpoint and a declared rate without a timer are warnings.
 
 The replay configuration (`--config FILE`, YAML) declares what the ports do not say:
 
@@ -494,7 +506,7 @@ autoware-system-designer-replay SYSTEM.json --scope /perception/object_recogniti
 - **Time.** The driver sets ROS time through the tracer (`rcl_set_ros_time_override` inside each process) and waits for every process to confirm. No `/clock` is published and an override from elsewhere is dropped. Every ROS clock reads driver time from its creation, and a timer created on a wall clock is created on a driver-timed clock instead (`--free-wall-timers` leaves those alone). `now()` does not advance inside a callback.
 - **Steps.** (1) While a callback is ready, grant the first in the tie order. (2) Else, when the earliest timer expiry is not after the next bag message, set the clocks exactly to it. (3) Else set the clocks to the next bag message's recorded time and publish it.
 - **Settling.** Before each step the driver waits until no callback runs, every process holds its time, every message published to a subscription shows as ready work there, every due timer is ready and every recorded publish was heard. All of it is counted from the `rcl` calls the tracer observes; the declared event chains play no part, so a wrong chain cannot break the order.
-- **Transform waits.** A callback that waits for a transform holds the scope while the listener that brings it is gated. Once a callback has run for 0.2 s of wall time, the ready `/tf` and `/tf_static` callbacks of its process are granted one at a time beside it; the result counts them as `nested_callbacks`.
+- **Nested callbacks.** A callback that waits for a transform holds the scope while the listener that brings it is gated. Once a callback has run for 0.2 s of wall time, the ready callbacks of its process on the nested callback topics (`/tf`, `/tf_static`) are granted one at a time beside it; the result counts them as `nested_callbacks`.
 - **Tie order.** Callbacks ready together run by the design order of their node, then by creation order of the endpoint. `--tie-break-seed N` draws among them instead, repeatably per seed, to exercise other fan-in orders.
 - **Isolation.** The run sets `ROS_LOCALHOST_ONLY=1` (`--no-isolate` keeps discovery as it is); `--domain-id` gives it a domain of its own.
 
