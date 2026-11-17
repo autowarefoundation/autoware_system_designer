@@ -574,14 +574,28 @@ body.inspector-hidden #inspector-resizer {
   gap: 6px;
 }
 
+.settings-path-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .settings-path {
+  flex: 1 1 100%;
+  min-width: 0;
   padding: 5px 8px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  font-size: 13px;
-  font-family: monospace;
+  font-size: 12px;
+  font-family: var(--mono-font);
   background: var(--bg-secondary);
   color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.settings-path.default {
+  color: var(--text-secondary);
 }
 
 .settings-dirs {
@@ -598,7 +612,7 @@ body.inspector-hidden #inspector-resizer {
 }
 
 .settings-dirs code {
-  font-family: monospace;
+  font-family: var(--mono-font);
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }

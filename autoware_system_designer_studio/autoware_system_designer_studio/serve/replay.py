@@ -20,7 +20,8 @@ names it and, once the job ended, carries the summary of the
 files the replay wrote there.
 
 A setup is a replay saved by name as a YAML file in the daemon's setup directory: the system, mode, deploy and
-bag it runs on, its configuration (the runtime's configuration file content) and its run options.
+bag it runs on, its configuration (the runtime's configuration file content), the source each boundary input
+resolved to and the outputs recorded, and its run options.
 """
 
 from __future__ import annotations
@@ -60,7 +61,7 @@ SUMMARY_ITEMS = 50
 # Name of a saved setup: its file name without the suffix.
 SETUP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SETUP_SUFFIX = ".yaml"
-SETUP_KEYS = ("system", "mode", "deploy", "bag", "config", "run")
+SETUP_KEYS = ("system", "mode", "deploy", "bag", "config", "inputs", "recorded", "run")
 SETUP_CONFIG_KEYS = ("scope", "remap", "accept", "outputs", "skip_outputs", "lead_in")
 SETUP_RUN_KEYS = ("duration", "domain_id", "save_reference")
 # Levels below a bag directory a file search descends, and the directories it visits at most.
@@ -337,6 +338,18 @@ def check_setup(setup: Any) -> dict[str, Any]:
         raise api.ApiError(api.INVALID_PARAMS, "setup: run.save_reference must be a boolean")
     checked = {key: setup[key] for key in ("system", "mode", "deploy", "bag") if setup.get(key)}
     checked["config"] = replay_config(config)
+    inputs = setup.get("inputs") or {}
+    if not isinstance(inputs, Mapping) or not all(
+        isinstance(topic, str)
+        and topic.startswith("/")
+        and (source is None or (isinstance(source, str) and source.startswith("/")))
+        for topic, source in inputs.items()
+    ):
+        raise api.ApiError(
+            api.INVALID_PARAMS, "setup: inputs maps each input to its bag topic, or to null when accepted unfed"
+        )
+    checked["inputs"] = dict(inputs)
+    checked["recorded"] = _topic_names(setup, "recorded")
     checked["run"] = {key: run[key] for key in SETUP_RUN_KEYS if run.get(key) is not None}
     return checked
 

@@ -258,9 +258,11 @@ selection is kept as the fewest such paths (`?scope=`, comma separated), the run
 A node placed at a module's own path has an entry of its own below that path, named `<path>/<name>`.
 Containers of the selected composable nodes join the scope: their entries are checked and locked.
 With a daemon, **saved setups** sit above the tree: a setup is the shown replay saved by name
-(system, mode, deploy, bag path, configuration and run options) as `<name>.yaml` in the replay
-setups of the config root (see Storage), and loading one shows it again, switching the mode and
-deploy it names.
+(system, mode, deploy, bag path, configuration, the bag topic each input resolved to, the recorded
+outputs and run options) as `<name>.yaml` in the replay setups of the config root (see Storage), and
+loading one shows it again, switching the mode and deploy it names. The recorded list decides the
+outputs on load: a boundary output missing from it stays unrecorded. The Rosbag "Browse" button
+picks the bag on the daemon's host with a path selector.
 
 The top of the main area keeps the scope diagram, at a height set by dragging the divider below it
 (kept across visits). The diagram is drawn from the boundary the runtime computes, by topic:
@@ -347,7 +349,13 @@ time, `system`, `mode` and `scope`, or the `error` of one that does not read. `r
 `replay.setup.save` (with the `setup`) and `replay.setup.delete` take its `name` (letters, digits,
 `_`, `.`, `-`). A setup holds `system`, `mode`, `deploy`,
 `bag`, `config` (the replay configuration: `scope`, `remap`, `accept`, `outputs`, `skip_outputs`,
-`lead_in`) and `run` (`duration`, `domain_id`, `save_reference`).
+`lead_in`), `inputs` (each boundary input to the bag topic it is fed from, `null` when accepted
+unfed), `recorded` (the outputs recorded) and `run` (`duration`, `domain_id`, `save_reference`).
+
+`fs.list` lists one directory for the path selectors: `path` (absolute; its nearest existing
+directory, else the home directory), `files` (list files too) and `hidden` (names starting with
+`.`). Its result names the `path`, the `parent`, whether the directory holds a rosbag (`bag`) and the
+`entries`, directories first, each directory with `bag`, each file with its `size`.
 
 ### Storage
 
@@ -361,7 +369,8 @@ The daemon writes under two roots, each function in a subdirectory of its own:
 A launch gets its run directory under `launch/` (the launcher's `--log-dir`) and the record root in
 `$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR`; `--record-dir` or that variable set for the daemon fixes the
 record root apart from the config root. The workbench settings show both roots and the
-subdirectories, and set a root through `settings.set` (`log_root`, `config_root`: an absolute path,
+subdirectories; a root is chosen with a path selector, or set back to its default, through
+`settings.set` (`log_root`, `config_root`: an absolute path,
 or empty for the default); `settings.get` (`GET /api/settings`) and `health` (`storage`) give the
 same view. Roots set so are kept in the settings file
 (`$AUTOWARE_SYSTEM_DESIGNER_STUDIO_SETTINGS`, else `$XDG_CONFIG_HOME/autoware_system_designer/studio.yaml`)

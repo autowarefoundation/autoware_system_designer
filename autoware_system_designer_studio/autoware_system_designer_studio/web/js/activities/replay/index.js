@@ -204,10 +204,7 @@
         acceptButton.hidden = !unresolved.length;
         list.replaceChildren(
           ...ranked.map((input) => {
-            const row = element(
-              "div",
-              `replay-selector-item ${input.status}`,
-            );
+            const row = element("div", `replay-selector-item ${input.status}`);
             row.append(
               element("span", "replay-topic-name", input.topic),
               element("span", "replay-selector-note", notes[input.status]),
@@ -288,6 +285,10 @@
       let shownBound = { inputs: [], outputs: [] };
       // Parameters of a replay of the shown choices, or what it still lacks.
       let request = { blocker: "Check nodes or modules to replay." };
+      // Recorded outputs of a loaded setup not applied yet, by mode.
+      let pendingRecorded = null;
+      // Mode the shown nodes are of.
+      let nodesMode = null;
 
       const patterns = () => model.patternsOf(nodes, selected);
 
@@ -384,9 +385,14 @@
       bagRead.type = "button";
       bagRead.title =
         "Read the topics of the bag at this path through the daemon; a bag without metadata.yaml gets one";
+      const bagBrowse = element("button", "panel-button", "Browse");
+      bagBrowse.type = "button";
+      bagBrowse.title =
+        "Choose a bag directory or file on the daemon's host, then read it";
+      const bagPicker = SD.widgets.pathPicker({ title: "Rosbag", kind: "bag" });
       const bagState = element("span", "replay-bag-state");
       const bagRow = element("div", "replay-bag-row");
-      bagRow.append(bagRead, bagLoad, bagInput);
+      bagRow.append(bagBrowse, bagRead, bagLoad, bagInput);
       bagBox.append(
         element("span", "replay-bag-label", "Rosbag"),
         bagPath,
@@ -511,6 +517,8 @@
       function render() {
         const scope = model.selectScope(nodes, patterns());
         bagRead.hidden = !daemon.health || !daemon.offers("replay.bag");
+        bagBrowse.hidden = bagRead.hidden || !daemon.offers("fs.list");
+        bagBrowse.disabled = !daemon.connected;
         bagRead.disabled = !daemon.connected || !bagPath.value.trim();
         // A bag read from a file names no path for the replay to open.
         const pathless = !!bag && !bagPath.value.trim();
@@ -540,6 +548,7 @@
             : "");
         view.setTitle(`Replay scope: ${members}`);
         const bound = model.boundary(nodes, scope.nodes);
+        applyRecorded(bound);
         const kept = current(bound);
         const matched = model.matchInputs(
           bound,
@@ -665,12 +674,49 @@
         setupBar.render();
       }
 
+      // Recorded outputs of a loaded setup, applied once the nodes of its mode
+      // give the boundary: a listed output is recorded, another one is not.
+      function applyRecorded(bound) {
+        if (!pendingRecorded || pendingRecorded.mode !== nodesMode) return;
+        const wanted = new Set(pendingRecorded.topics);
+        pendingRecorded = null;
+        skippedOutputs.clear();
+        recordedInternals.clear();
+        bound.outputs.forEach((output) => {
+          if (output.boundary && !wanted.has(output.topic))
+            skippedOutputs.add(output.topic);
+          else if (!output.boundary && wanted.has(output.topic))
+            recordedInternals.add(output.topic);
+        });
+      }
+
       // The shown replay as a saved setup, or what it lacks.
       function capture() {
         const scope = model.selectScope(nodes, patterns());
         if (!scope.nodes.length)
           return { blocker: "Check nodes or modules to save a setup." };
-        const kept = current(model.boundary(nodes, scope.nodes));
+        const bound = model.boundary(nodes, scope.nodes);
+        const kept = current(bound);
+        const accepted = new Set(kept.accept);
+        const matched = model.matchInputs(bound, bag, kept.remap, accepted);
+        const sourceOf = Object.fromEntries(
+          Object.entries(kept.remap).map(([recorded, fed]) => [fed, recorded]),
+        );
+        // Bag topic each input is fed from; null for one accepted unfed.
+        const inputs = {};
+        matched.forEach((input) => {
+          if (accepted.has(input.topic)) inputs[input.topic] = null;
+          else if (input.recordedName) inputs[input.topic] = input.recordedName;
+          else if (sourceOf[input.topic])
+            inputs[input.topic] = sourceOf[input.topic];
+        });
+        const skipped = new Set(kept.skip_outputs);
+        const recorded = [
+          ...bound.outputs
+            .filter((o) => o.boundary && !skipped.has(o.topic))
+            .map((o) => o.topic),
+          ...kept.outputs,
+        ].sort();
         const { run, leadIn } = panel.getOptions();
         const bagValue = bagPath.value.trim();
         return {
@@ -684,6 +730,8 @@
               ...kept,
               ...(leadIn === null ? {} : { lead_in: leadIn }),
             },
+            inputs,
+            recorded,
             run,
           },
         };
@@ -703,6 +751,17 @@
           set.clear();
           (items || []).forEach((item) => set.add(item));
         });
+        Object.entries(setup.inputs || {}).forEach(([topic, source]) =>
+          setSource(topic, source === null ? ACCEPT : source),
+        );
+        pendingRecorded = setup.recorded
+          ? {
+              mode: config.availableModes.includes(setup.mode)
+                ? setup.mode
+                : store.get("mode"),
+              topics: setup.recorded,
+            }
+          : null;
         panel.setOptions(setup.run || {}, saved.lead_in);
         if (setup.system && setup.system !== config.systemId)
           missed.push(`saved for ${setup.system}`);
@@ -842,11 +901,13 @@
       }
 
       async function loadMode() {
+        const mode = store.get("mode");
         const data = await SD.NamespaceTree.loadStructure(
           config.dataBase,
-          store.get("mode"),
+          mode,
         );
         nodes = model.nodes(data);
+        nodesMode = mode;
         tree.setStructure(data);
         selectScopePaths();
       }
@@ -865,6 +926,12 @@
       }
 
       bagLoad.addEventListener("click", () => bagInput.click());
+      bagBrowse.addEventListener("click", () =>
+        bagPicker.open(bagPath.value.trim() || bagDirs()[0] || "", (path) => {
+          bagPath.value = path;
+          readPath();
+        }),
+      );
       bagInput.addEventListener("change", () => {
         const file = bagInput.files[0];
         bagInput.value = "";

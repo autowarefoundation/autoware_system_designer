@@ -82,6 +82,7 @@ SHELL_SCRIPTS = (
     "js/widgets/terminal.js",
     "js/widgets/main_view.js",
     "js/widgets/popup.js",
+    "js/widgets/path_picker.js",
     "js/widgets/namespace_tree.js",
     "js/widgets/run_state.js",
 )

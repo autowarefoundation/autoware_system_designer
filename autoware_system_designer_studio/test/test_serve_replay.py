@@ -256,6 +256,8 @@ SETUP = {
     "deploy": "car_a",
     "bag": "/bags/run",
     "config": {"scope": ["/perception"], "remap": {"/raw": "/in"}, "skip_outputs": ["/debug"], "lead_in": 0.5},
+    "inputs": {"/in": "/raw", "/map": None},
+    "recorded": ["/objects"],
     "run": {"duration": 2.5, "save_reference": False},
 }
 
@@ -282,6 +284,7 @@ def test_setups_are_saved_listed_loaded_and_deleted(served, tmp_path):
     }
     assert loaded["run"] == {"duration": 2.5, "save_reference": False}
     assert (loaded["bag"], loaded["deploy"]) == ("/bags/run", "car_a")
+    assert (loaded["inputs"], loaded["recorded"]) == ({"/in": "/raw", "/map": None}, ["/objects"])
 
     assert _call(served, "replay.setup.delete", {**where, "name": "perception-a"})["ok"]
     assert _call(served, "replay.setup.get", {**where, "name": "perception-a"})["error"]["code"] == "not_found"
@@ -307,7 +310,33 @@ def test_an_unreadable_setup_is_listed_with_its_error(served, tmp_path):
         {"name": "a", "setup": {**SETUP, "config": {"scope": ["/a"], "compare": {}}}},
         {"name": "a", "setup": {**SETUP, "run": {"duration": 0}}},
         {"name": "a", "setup": {**SETUP, "run": {"check": True}}},
+        {"name": "a", "setup": {**SETUP, "inputs": {"/in": "raw"}}},
+        {"name": "a", "setup": {**SETUP, "inputs": ["/in"]}},
+        {"name": "a", "setup": {**SETUP, "recorded": ["objects"]}},
     ],
 )
 def test_setups_refuse_invalid_saves(served, tmp_path, params):
     assert _call(served, "replay.setup.save", params)["error"]["code"] == "invalid_params"
+
+
+def test_directories_are_listed_for_the_path_selectors(served, tmp_path):
+    root = tmp_path / "browse"
+    (root / "bags" / "run_0").mkdir(parents=True)
+    (root / "bags" / "run_0" / "run_0.mcap").write_bytes(b"12")
+    (root / "bags" / "notes.txt").write_text("")
+    (root / ".hidden").mkdir()
+
+    listed = _call(served, "fs.list", {"path": str(root)})["result"]
+    assert listed["path"] == str(root) and listed["parent"] == str(tmp_path)
+    assert listed["entries"] == [{"name": "bags", "dir": True, "bag": False}]
+    hidden = _call(served, "fs.list", {"path": str(root), "hidden": True})["result"]
+    assert [e["name"] for e in hidden["entries"]] == [".hidden", "bags"]
+
+    bags = _call(served, "fs.list", {"path": str(root / "bags" / "gone" / "deeper"), "files": True})["result"]
+    assert bags["path"] == str(root / "bags")
+    assert bags["entries"] == [
+        {"name": "run_0", "dir": True, "bag": True},
+        {"name": "notes.txt", "dir": False, "size": 0},
+    ]
+    assert _call(served, "fs.list", {"path": str(root / "bags" / "run_0")})["result"]["bag"] is True
+    assert _call(served, "fs.list", {"path": "relative"})["error"]["code"] == "invalid_params"

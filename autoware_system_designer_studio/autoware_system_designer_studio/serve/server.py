@@ -50,7 +50,7 @@ from autoware_system_designer_runtime.control_protocol import DEFAULT_POLICY, ME
 from .. import exports
 from ..pages import assets
 from ..pages.render import ICON_FILE, INDEX_PAGE, SYSTEMS_DIR, Site, system_pages
-from . import api, build, events, jobs, launch, peers, record_watch, replay, runs, storage
+from . import api, browse, build, events, jobs, launch, peers, record_watch, replay, runs, storage
 from .events import TOPIC_DAEMON, TOPIC_SYSTEMS_CHANGED
 from .http import (
     CLIENT_HEADER,
@@ -241,6 +241,7 @@ class ServeDaemon:
         self.methods.register("replay.start", self._replay_start)
         self.methods.register("settings.get", self._settings_get, get_path="settings")
         self.methods.register("settings.set", self._settings_set)
+        self.methods.register("fs.list", self._fs_list)
         self.methods.register("replay.setups", self._replay_setups)
         self.methods.register("replay.setup.get", self._replay_setup_get)
         self.methods.register("replay.setup.save", self._replay_setup_save)
@@ -733,6 +734,11 @@ class ServeDaemon:
         )
         await asyncio.to_thread(replay.write_config, plan)
         return (await self.jobs.start(spec)).to_view()
+
+    async def _fs_list(self, params: dict[str, Any]) -> dict[str, Any]:
+        files = _bool_param(params, "files")
+        hidden = _bool_param(params, "hidden")
+        return await asyncio.to_thread(browse.list_directory, params.get("path"), files=files, hidden=hidden)
 
     async def _settings_get(self, params: dict[str, Any]) -> dict[str, Any]:
         return self.storage.view()

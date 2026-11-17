@@ -525,3 +525,99 @@
 .terminal-note {
   font-style: italic;
 }
+
+/* Path selector: above the settings popup it may open from. */
+.popup-overlay.path-picker-overlay {
+  z-index: 210;
+}
+
+.path-picker-overlay .popup {
+  width: min(640px, 92vw);
+}
+
+.path-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.path-picker-bar,
+.path-picker-foot {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.path-picker-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono-font);
+}
+
+.path-picker-hidden {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.path-picker-list {
+  height: min(50vh, 420px);
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+}
+
+.path-picker-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.path-picker-item:hover,
+.path-picker-item:focus {
+  background: var(--bg-tertiary);
+  outline: none;
+}
+
+.path-picker-item.selected {
+  background: var(--highlight-bg);
+}
+
+.path-picker-icon {
+  width: 12px;
+  color: var(--text-secondary);
+}
+
+.path-picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.path-picker-item.dir .path-picker-name {
+  font-weight: 500;
+}
+
+.path-picker-note {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.path-picker-item.bag .path-picker-note {
+  color: var(--link-color);
+}
+
+.path-picker-chosen {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+}
