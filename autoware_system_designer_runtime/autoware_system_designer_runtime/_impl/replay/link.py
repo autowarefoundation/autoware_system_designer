@@ -128,12 +128,14 @@ class LinkServer:
     async def close(self) -> None:
         if self._server is not None:
             self._server.close()
-            await self._server.wait_closed()
-            self._server = None
+        # wait_closed() also waits for the open connections (Python >= 3.12), so the links close first.
         for link in self.links.values():
             if link.connected:
                 link.connected = False
                 link.writer.close()
+        if self._server is not None:
+            await self._server.wait_closed()
+            self._server = None
         self._path.unlink(missing_ok=True)
 
     def broadcast(self, line: str) -> None:
