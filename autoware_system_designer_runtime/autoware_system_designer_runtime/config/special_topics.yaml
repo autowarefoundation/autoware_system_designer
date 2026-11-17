@@ -26,3 +26,9 @@ nested_callbacks:
 # Suffixes of the handshake topics a publisher creates beside the topic it negotiates.
 handshake_suffixes:
   - /_supported_types
+
+# Suffixes of the topics a service or an action carries beside the ports of its design.
+hidden_suffixes:
+  - /_service_event
+  - /_action/feedback
+  - /_action/status

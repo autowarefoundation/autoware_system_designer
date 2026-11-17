@@ -15,7 +15,6 @@
 import pytest
 
 from autoware_system_designer_runtime._impl.replay.middleware import (
-    REPLAY_MIDDLEWARE_FILE,
     ReplayMiddleware,
     ReplayMiddlewareError,
     replay_middleware,
@@ -32,12 +31,13 @@ class Header:
 
 def test_the_package_file_gives_the_replay_settings():
     middleware = replay_middleware()
-    assert REPLAY_MIDDLEWARE_FILE.is_file()
     assert middleware.parameter_entries() == [
         {"name": "use_sim_time", "value": True, "type": "bool", "parameter_type": "MODE"}
     ]
     assert middleware.launcher == {"use_intra_process_comms": False}
-    assert middleware.isolation_environment == {"ROS_LOCALHOST_ONLY": "1"}
+    assert middleware.isolation({"ROS_DISTRO": "humble"}) == {"ROS_LOCALHOST_ONLY": "1"}
+    assert middleware.isolation({"ROS_DISTRO": "jazzy"}) == {"ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST"}
+    assert middleware.isolation({}) == {"ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST"}
     assert middleware.domain_id_variable == "ROS_DOMAIN_ID"
     assert middleware.identifier_field(UUID()) == "uuid"
     assert middleware.identifier_field(Header()) is None
@@ -59,6 +59,7 @@ def test_an_empty_file_sets_nothing():
     assert middleware.parameter_entries() == []
     assert middleware.parameter_arguments(["node", "--ros-args"]) == []
     assert middleware.identifier_field(UUID()) is None
+    assert middleware.isolation({"ROS_DISTRO": "humble"}) == {}
 
 
 @pytest.mark.parametrize(
@@ -68,7 +69,9 @@ def test_an_empty_file_sets_nothing():
         {"parameters": {}},
         {"node_parameters": ["use_sim_time"]},
         {"node_parameters": {"use_sim_time": [True]}},
-        {"isolation_environment": {"ROS_LOCALHOST_ONLY": 1}},
+        {"isolation_environment": {"ROS_LOCALHOST_ONLY": "1"}},
+        {"isolation_environment": {"humble": {"ROS_LOCALHOST_ONLY": 1}}},
+        {"distro_variable": ["ROS_DISTRO"]},
         {"domain_id_variable": 3},
         {"identifier_types": {"unique_identifier_msgs/msg/UUID": None}},
     ],

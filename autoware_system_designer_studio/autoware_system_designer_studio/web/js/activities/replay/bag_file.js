@@ -1,6 +1,8 @@
-// Replay: the topics of a bag handed to the page as a file, and what a drop
-// carries. A `metadata.yaml` is read as text, an MCAP file from its summary
-// section; a path or `file://` URI dropped as text names the bag for the daemon.
+// Replay: the topics of a bag handed to the page as files, and what a drop
+// carries. A `metadata.yaml` is read as text, MCAP files from their summary
+// sections, the splits of a bag as one; a `.db3` file and a file compressed as
+// a whole (`.zstd`) are read by the daemon. A path or `file://` URI dropped as
+// text names the bag for the daemon.
 (function () {
   const SD = window.SD;
   const replay = ((SD.activities ||= {}).replay ||= {});
@@ -19,7 +21,10 @@
 
   const isMetadata = (name) => /\.ya?ml$/i.test(name);
   const isMcap = (name) => /\.mcap$/i.test(name);
-  const isDb3 = (name) => /\.db3$/i.test(name);
+  // Storage files the page does not read: SQLite, and any file compressed as a whole.
+  const isOpaque = (name) => /\.db3$|\.(mcap|db3)\.zstd$/i.test(name);
+  const isAbsolute = (path) => /^(\/|~(\/|$)|file:\/\/)/i.test(path);
+  const plural = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
   function mcapSummary(view, name) {
     const text = new TextDecoder();
@@ -96,24 +101,75 @@
     return mcapSummary(new DataView(summary), file.name);
   }
 
-  // The file of `files` that names a bag's topics: its metadata, else an MCAP file.
-  function pick(files) {
-    return (
-      files.find((file) => isMetadata(file.name)) ||
-      files.find((file) => isMcap(file.name)) ||
-      files.find((file) => isDb3(file.name)) ||
-      null
-    );
+  // Topics of the splits of one bag: the counts summed by topic.
+  async function mergedTopics(files) {
+    const merged = new Map();
+    for (const file of files) {
+      (await mcapTopics(file)).forEach((topic, name) => {
+        const known = merged.get(name);
+        if (!known) merged.set(name, { ...topic });
+        else {
+          known.count += topic.count;
+          known.type ||= topic.type;
+        }
+      });
+    }
+    return merged;
   }
 
-  async function readTopics(file, parseMetadata) {
-    if (isMetadata(file.name)) return parseMetadata(await file.text());
-    if (isMcap(file.name)) return mcapTopics(file);
-    if (isDb3(file.name))
+  // What of `files` names a bag's topics: its `metadata`, else its `mcaps` in
+  // name order, else an `opaque` storage file; null when none does.
+  function choose(files) {
+    const byName = [...files].sort((a, b) => a.name.localeCompare(b.name));
+    const metadata = byName.find((file) => isMetadata(file.name));
+    if (metadata) return { metadata };
+    const mcaps = byName.filter((file) => isMcap(file.name));
+    if (mcaps.length) return { mcaps };
+    const opaque = byName.find((file) => isOpaque(file.name));
+    return opaque ? { opaque } : null;
+  }
+
+  // The bag `files` hold as { topics, name, file, splits }: `file` is the one a
+  // daemon finds the bag by, `splits` the number of storage files read.
+  // `topics` is null for a storage file only the daemon reads.
+  async function readTopics(files, parseMetadata) {
+    const chosen = choose(files);
+    if (!chosen)
       throw new Error(
-        `${file.name}: a .db3 bag is read from its metadata.yaml, or by its path through the daemon`,
+        files.length === 1
+          ? `${files[0].name}: not a metadata.yaml or bag file`
+          : "no metadata.yaml or bag file among the files",
       );
-    throw new Error(`${file.name}: not a metadata.yaml or .mcap file`);
+    if (chosen.metadata)
+      return {
+        topics: parseMetadata(await chosen.metadata.text()),
+        name: chosen.metadata.name,
+        file: chosen.metadata,
+        splits: 0,
+      };
+    if (chosen.opaque)
+      return {
+        topics: null,
+        name: chosen.opaque.name,
+        file: chosen.opaque,
+        splits: 0,
+      };
+    const { mcaps } = chosen;
+    return {
+      topics: await mergedTopics(mcaps),
+      name:
+        mcaps.length === 1
+          ? mcaps[0].name
+          : `${mcaps[0].name} and ${plural(mcaps.length - 1, "more split")}`,
+      file: mcaps[0],
+      splits: mcaps.length,
+    };
+  }
+
+  // Why the page does not read the storage file `name` itself.
+  function opaqueNote(name) {
+    const kind = /\.zstd$/i.test(name) ? "compressed bag file" : ".db3 file";
+    return `${name}: a ${kind} is not read in the page; drop its metadata.yaml, or connect the studio daemon and give the bag's path`;
   }
 
   // Path a dropped text names: a `file://` URI or an absolute path, else "".
@@ -182,5 +238,13 @@
     return { files: found.flat().filter(Boolean), path };
   }
 
-  replay.bagFile = { mcapTopics, pick, readTopics, droppedPath, dropped };
+  replay.bagFile = {
+    mcapTopics,
+    choose,
+    readTopics,
+    opaqueNote,
+    isAbsolute,
+    droppedPath,
+    dropped,
+  };
 })();

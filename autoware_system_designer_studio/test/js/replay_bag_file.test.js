@@ -80,7 +80,7 @@ function statistics(counts) {
 }
 
 // An MCAP file of a data section of `dataSize` bytes and the summary records.
-function mcap(summary, dataSize = 16) {
+function mcap(summary, dataSize = 16, name = "bag_0.mcap") {
   const head = Buffer.concat([Buffer.from(MAGIC), Buffer.alloc(dataSize)]);
   const body = Buffer.concat(summary);
   const footer = record(
@@ -90,7 +90,7 @@ function mcap(summary, dataSize = 16) {
     u32(0),
   );
   const file = new Blob([head, body, footer, Buffer.from(MAGIC)]);
-  file.name = "bag_0.mcap";
+  file.name = name;
   return file;
 }
 
@@ -122,29 +122,94 @@ test("mcapTopics refuses a file without a footer or a summary section", async ()
   await assert.rejects(bagFile.mcapTopics(mcap([])), /without a summary/);
 });
 
-test("pick prefers the metadata, then an MCAP file", () => {
-  const files = ["notes.txt", "bag_0.db3", "bag_0.mcap", "metadata.yaml"].map(
-    (name) => ({ name }),
+test("choose prefers the metadata, then the MCAP files, then an opaque file", () => {
+  const files = [
+    "notes.txt",
+    "bag_0.db3",
+    "bag_1.mcap",
+    "bag_0.mcap",
+    "metadata.yaml",
+  ].map((name) => ({ name }));
+  assert.equal(bagFile.choose(files).metadata.name, "metadata.yaml");
+  assert.deepEqual(
+    bagFile.choose(files.slice(0, 4)).mcaps.map((file) => file.name),
+    ["bag_0.mcap", "bag_1.mcap"],
   );
-  assert.equal(bagFile.pick(files).name, "metadata.yaml");
-  assert.equal(bagFile.pick(files.slice(0, 3)).name, "bag_0.mcap");
-  assert.equal(bagFile.pick(files.slice(0, 2)).name, "bag_0.db3");
-  assert.equal(bagFile.pick(files.slice(0, 1)), null);
+  assert.equal(bagFile.choose(files.slice(0, 2)).opaque.name, "bag_0.db3");
+  assert.equal(
+    bagFile.choose([{ name: "bag_0.mcap.zstd" }]).opaque.name,
+    "bag_0.mcap.zstd",
+  );
+  assert.equal(bagFile.choose(files.slice(0, 1)), null);
 });
 
-test("readTopics reads by file kind", async () => {
+test("readTopics reads the metadata among the files", async () => {
   const metadata = { name: "metadata.yaml", text: async () => "yaml" };
-  assert.equal(
-    await bagFile.readTopics(metadata, (text) => `${text}!`),
-    "yaml!",
+  const read = await bagFile.readTopics(
+    [{ name: "bag_0.mcap.zstd" }, metadata],
+    (text) => `${text}!`,
   );
-  await assert.rejects(
-    bagFile.readTopics({ name: "bag_0.db3" }),
-    /metadata\.yaml/,
+  assert.deepEqual(
+    [read.topics, read.name, read.file, read.splits],
+    ["yaml!", "metadata.yaml", metadata, 0],
   );
+});
+
+test("readTopics merges the splits of a bag", async () => {
+  const first = mcap(
+    [
+      schema(1, "std_msgs/msg/String"),
+      channel(1, 1, "/chatter"),
+      statistics({ 1: 7 }),
+    ],
+    16,
+    "bag_0.mcap",
+  );
+  const second = mcap(
+    [
+      schema(4, "std_msgs/msg/String"),
+      schema(5, "tf2_msgs/msg/TFMessage"),
+      channel(1, 5, "/tf"),
+      channel(2, 4, "/chatter"),
+      statistics({ 1: 2, 2: 5 }),
+    ],
+    16,
+    "bag_1.mcap",
+  );
+  const read = await bagFile.readTopics([second, first]);
+  assert.deepEqual(
+    [...read.topics],
+    [
+      ["/chatter", { type: "std_msgs/msg/String", count: 12 }],
+      ["/tf", { type: "tf2_msgs/msg/TFMessage", count: 2 }],
+    ],
+  );
+  assert.equal(read.name, "bag_0.mcap and 1 more split");
+  assert.equal(read.file, first);
+  assert.equal(read.splits, 2);
+});
+
+test("readTopics leaves a storage file it cannot read to the daemon", async () => {
+  for (const name of ["bag_0.db3", "bag_0.mcap.zstd", "bag_0.db3.zstd"]) {
+    const read = await bagFile.readTopics([{ name }]);
+    assert.equal(read.topics, null);
+    assert.equal(read.file.name, name);
+    assert.match(bagFile.opaqueNote(name), /not read in the page/);
+  }
+  assert.match(bagFile.opaqueNote("bag_0.mcap.zstd"), /compressed bag file/);
   await assert.rejects(
-    bagFile.readTopics({ name: "notes.txt" }),
+    bagFile.readTopics([{ name: "notes.txt" }]),
     /not a metadata/,
+  );
+  await assert.rejects(bagFile.readTopics([]), /no metadata/);
+});
+
+test("isAbsolute takes a rooted path, a home path or a file URI", () => {
+  ["/data/bag", "~/bag", "~", "file:///data/bag"].forEach((path) =>
+    assert.equal(bagFile.isAbsolute(path), true, path),
+  );
+  ["bag", "./bag", "data/bag", "~user/bag", ""].forEach((path) =>
+    assert.equal(bagFile.isAbsolute(path), false, path),
   );
 });
 

@@ -8,9 +8,15 @@ node_parameters:
 launcher:
   use_intra_process_comms: false
 
-# Environment of a replay whose discovery stays on this host.
+# Environment variable that names the distribution of the environment.
+distro_variable: ROS_DISTRO
+
+# Environment of a replay whose discovery stays on this host, by distribution; `default` is for any other.
 isolation_environment:
-  ROS_LOCALHOST_ONLY: "1"
+  humble:
+    ROS_LOCALHOST_ONLY: "1"
+  default:
+    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
 
 # Environment variable that carries the domain of the replay.
 domain_id_variable: ROS_DOMAIN_ID

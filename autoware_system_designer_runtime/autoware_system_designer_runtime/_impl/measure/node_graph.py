@@ -131,7 +131,7 @@ def resolve_topic(port: Mapping[str, Any]) -> Optional[str]:
     return None
 
 
-def _is_topic_port(port: Mapping[str, Any]) -> bool:
+def is_topic_port(port: Mapping[str, Any]) -> bool:
     return "/srv/" not in str(port.get("msg_type", "")) and "/action/" not in str(port.get("msg_type", ""))
 
 
@@ -155,7 +155,7 @@ class NodeGraph:
         graph.mode = meta.get("mode")
         graph.system_name = meta.get("system_name")
         graph.source_file = data.get("source_file")
-        for entity in _walk(data):
+        for entity in walk_entities(data):
             if entity.get("entity_type") != "node" or not entity.get("launcher"):
                 continue
             if ecu is not None and entity.get("compute_unit") != ecu:
@@ -232,7 +232,7 @@ class NodeGraph:
 
     @staticmethod
     def _port_info(port: Mapping[str, Any], *, producers: bool) -> Optional[PortInfo]:
-        if not _is_topic_port(port):
+        if not is_topic_port(port):
             return None
         topic = resolve_topic(port)
         if topic is None:
@@ -364,7 +364,7 @@ class NodeGraph:
         return [node.events[i].name for i in port.process_ids if i in node.events]
 
 
-def _walk(entity: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
+def walk_entities(entity: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
     yield entity
     for child in entity.get("children", []):
-        yield from _walk(child)
+        yield from walk_entities(child)

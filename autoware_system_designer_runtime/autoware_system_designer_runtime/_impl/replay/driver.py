@@ -48,14 +48,23 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Optional, Protocol
 
 from ...special_topics import special_topics
-from .link import PUBLISHER, SUBSCRIPTION, TIMER, Endpoint, LinkServer, ProcessLink
+from .link import PROTOCOL, PUBLISHER, SUBSCRIPTION, TIMER, Endpoint, LinkServer, ProcessLink
 from .recorder import OutputRecorder
 
 logger = logging.getLogger(__name__)
 
-# A subscription that missed this many deliveries in a row is no longer waited for.
-MISS_LIMIT = 3
 MAX_ANOMALIES = 200
+# Driver settings the driver reads itself; fields of DriverOptions.
+DRIVER_OPTION_NAMES = (
+    "startup_timeout",
+    "startup_settle",
+    "match_timeout",
+    "callback_timeout",
+    "nested_after",
+    "delivery_timeout",
+    "burst_settle",
+    "miss_limit",
+)
 
 
 class ReplayError(RuntimeError):
@@ -63,9 +72,11 @@ class ReplayError(RuntimeError):
 
 
 class Source(Protocol):
-    def peek(self) -> Optional[tuple[int, str, bytes]]: ...
+    def peek(self) -> Optional[tuple[int, str, bytes]]:
+        ...
 
-    def pop(self) -> tuple[int, str, bytes]: ...
+    def pop(self) -> tuple[int, str, bytes]:
+        ...
 
 
 class ReplayIO(Protocol):
@@ -74,28 +85,30 @@ class ReplayIO(Protocol):
     # Topic and message type of every bag topic the driver publishes.
     fed_topics: Mapping[str, str]
 
-    async def prepare(self, driver: "ReplayDriver") -> None: ...
+    async def prepare(self, driver: "ReplayDriver") -> None:
+        ...
 
-    async def publish(self, topic: str, data: bytes) -> None: ...
+    async def publish(self, topic: str, data: bytes) -> None:
+        ...
 
-    async def subscription_count(self, topic: str) -> int: ...
+    async def subscription_count(self, topic: str) -> int:
+        ...
 
 
 @dataclass
 class DriverOptions:
     start_ns: int
+    # Driver settings, see config.DRIVER_SETTINGS.
+    startup_timeout: float
+    startup_settle: float
+    match_timeout: float
+    callback_timeout: float
+    nested_after: float
+    delivery_timeout: float
+    burst_settle: float
+    miss_limit: int
     # Bag messages after it are not delivered.
     end_ns: Optional[int] = None
-    startup_timeout: float = 60.0
-    # The scope is up once no endpoint was created for this long.
-    startup_settle: float = 2.0
-    match_timeout: float = 10.0
-    callback_timeout: float = 30.0
-    # Wall time a callback runs before the nested callbacks of its process run beside it.
-    nested_after: float = 0.2
-    delivery_timeout: float = 2.0
-    # Pause before a callback whose subscription holds several messages in flight.
-    burst_settle: float = 0.005
     # Ties go to a seeded draw among the ready callbacks; None takes the first in design order.
     seed: Optional[int] = None
     max_callbacks_per_instant: int = 100000
@@ -123,6 +136,8 @@ class ReplayResult:
     publishes: int = 0
     clock_steps: int = 0
     outputs: int = 0
+    # Publishes on recorded topics the recorder never heard.
+    lost_outputs: int = 0
     violations: list[dict[str, Any]] = field(default_factory=list)
     anomalies: list[str] = field(default_factory=list)
 
@@ -141,7 +156,7 @@ class ReplayDriver:
         *,
         node_order: Mapping[str, int],
         expected_nodes: frozenset[str] = frozenset(),
-        process_rank: Callable[[int], int] = lambda pid: 0,
+        member_rank: Callable[[str], int] = lambda member: 0,
     ) -> None:
         self._server = server
         self._source = source
@@ -150,7 +165,7 @@ class ReplayDriver:
         self._options = options
         self._node_order = dict(node_order)
         self._expected_nodes = set(expected_nodes)
-        self._process_rank = process_rank
+        self._member_rank = member_rank
         self._special = special_topics()
         self._random = random.Random(options.seed) if options.seed is not None else None
         self._changed = asyncio.Event()
@@ -170,6 +185,25 @@ class ReplayDriver:
         self._violations: Counter = Counter()
         self._log = options.step_log
         self.result = ReplayResult(start_ns=options.start_ns)
+        self._registrations = {
+            "hello": self._on_hello,
+            "node": self._on_node,
+            "ep": self._on_endpoint,
+            "timer": self._on_registration,
+            "fini": self._on_fini,
+        }
+        self._endpoint_lines = {
+            "waited": self._on_waited,
+            "ready": self._on_ready,
+            "unready": self._on_unready,
+            "next": self._on_next,
+            "match": self._on_match,
+            "done": self._on_done,
+            "take": self._on_take,
+            "fire": self._on_fire,
+            "pub": self._on_publish,
+            "lost": self._on_lost,
+        }
 
     # ---- link events -------------------------------------------------------------
 
@@ -177,68 +211,93 @@ class ReplayDriver:
         """One line of a process; the server has already registered what it creates."""
         self._changed.set()
         if self._log is not None:
-            self._log(f"< {link.pid} {kind} {' '.join(fields)}")
-        if kind in ("hello", "node", "ep", "timer", "fini"):
+            self._log(f"< {link.id} {kind} {' '.join(fields)}")
+        registration = self._registrations.get(kind)
+        if registration is not None:
             self._last_registration = time.monotonic()
-            if kind == "node":
-                self._seen_nodes.add(fields[0])
-            elif kind == "ep":
-                self._pass_until_stepping(link.endpoints.get(int(fields[0])))
-            elif kind == "hello" and self._time_seq:
-                link.send(f"time\t{self._time_seq}\t{self._now}")
-            elif kind == "fini":
-                if self._running is not None and not self._running.alive:
-                    self._running = None
-                if self._nested is not None and not self._nested.alive:
-                    self._nested = None
-            return
-        if kind == "bye":
-            if self._running is not None and self._running.link is link:
-                self._running = None
-            if self._nested is not None and self._nested.link is link:
-                self._nested = None
-            if not self._finished and link.endpoints:
-                self._error = f"process {link.pid} ({', '.join(link.nodes) or 'no node'}) left during the replay"
-            return
-        if kind == "time":
+            registration(link, fields)
+        elif kind == "bye":
+            self._on_bye(link)
+        elif kind == "time":
             link.time_ack = int(fields[0])
-            return
-        if kind == "matched":
+        elif kind == "matched":
             link.match_ack = int(fields[0])
-            return
-        ep = link.endpoints.get(int(fields[0]))
-        if ep is None:
-            return
-        if kind == "waited":
-            ep.waited = True
-        elif kind == "ready":
-            ep.ready = True
-        elif kind == "unready":
-            ep.ready = False
-            self._ended(ep)
-        elif kind == "next":
-            ep.next_ns = int(fields[1])
-            ep.stuck = False
-        elif kind == "match":
-            ep.matched = int(fields[1])
-        elif kind == "done":
-            self._ended(ep)
-        elif kind == "take":
-            ep.outstanding = max(ep.outstanding - 1, 0)
-            ep.misses = 0
-            ep.ready = False
-            self._ordered(ep, fields[1], "take")
-        elif kind == "fire":
-            self.result.timer_fires += self._stepping
-            ep.ready = False
-            self._ordered(ep, fields[1], "timer")
-        elif kind == "pub":
-            self._ordered(ep, fields[1], "publish")
-            if self._stepping:
-                self.result.publishes += 1
-                self._published(ep.topic)
-        elif kind == "lost":
-            self._anomaly(f"a message published to {ep.label()} never arrived")
+        elif kind in self._endpoint_lines:
+            ep = link.endpoints.get(int(fields[0]))
+            if ep is not None:
+                self._endpoint_lines[kind](ep, fields)
+
+    def _on_registration(self, link: ProcessLink, fields: list[str]) -> None:
+        return None
+
+    def _on_hello(self, link: ProcessLink, fields: list[str]) -> None:
+        if link.protocol != PROTOCOL:
+            self._error = (
+                f"{link.label()} speaks link protocol {link.protocol}, the driver {PROTOCOL}: "
+                "the tracer and the runtime are of different builds"
+            )
+        elif self._time_seq:
+            link.send(f"time\t{self._time_seq}\t{self._now}")
+
+    def _on_node(self, link: ProcessLink, fields: list[str]) -> None:
+        self._seen_nodes.add(fields[0])
+
+    def _on_endpoint(self, link: ProcessLink, fields: list[str]) -> None:
+        self._pass_until_stepping(link.endpoints.get(int(fields[0])))
+
+    def _on_fini(self, link: ProcessLink, fields: list[str]) -> None:
+        if self._running is not None and not self._running.alive:
+            self._running = None
+        if self._nested is not None and not self._nested.alive:
+            self._nested = None
+
+    def _on_bye(self, link: ProcessLink) -> None:
+        if self._running is not None and self._running.link is link:
+            self._running = None
+        if self._nested is not None and self._nested.link is link:
+            self._nested = None
+        if not self._finished and link.endpoints:
+            self._error = f"{link.label()} left during the replay"
+
+    def _on_waited(self, ep: Endpoint, fields: list[str]) -> None:
+        ep.waited = True
+
+    def _on_ready(self, ep: Endpoint, fields: list[str]) -> None:
+        ep.ready = True
+
+    def _on_unready(self, ep: Endpoint, fields: list[str]) -> None:
+        ep.ready = False
+        self._ended(ep)
+
+    def _on_next(self, ep: Endpoint, fields: list[str]) -> None:
+        ep.next_ns = int(fields[1])
+        ep.stuck = False
+
+    def _on_match(self, ep: Endpoint, fields: list[str]) -> None:
+        ep.matched = int(fields[1])
+
+    def _on_done(self, ep: Endpoint, fields: list[str]) -> None:
+        self._ended(ep)
+
+    def _on_take(self, ep: Endpoint, fields: list[str]) -> None:
+        ep.outstanding = max(ep.outstanding - 1, 0)
+        ep.misses = 0
+        ep.ready = False
+        self._ordered(ep, fields[1], "take")
+
+    def _on_fire(self, ep: Endpoint, fields: list[str]) -> None:
+        self.result.timer_fires += self._stepping
+        ep.ready = False
+        self._ordered(ep, fields[1], "timer")
+
+    def _on_publish(self, ep: Endpoint, fields: list[str]) -> None:
+        self._ordered(ep, fields[1], "publish")
+        if self._stepping:
+            self.result.publishes += 1
+            self._published(ep.topic)
+
+    def _on_lost(self, ep: Endpoint, fields: list[str]) -> None:
+        self._anomaly(f"a message published to {ep.label()} never arrived")
 
     def _pass_until_stepping(self, ep: Optional[Endpoint]) -> None:
         if ep is None or ep.kind != SUBSCRIPTION or ep.topic not in self._special.process:
@@ -311,13 +370,13 @@ class ReplayDriver:
             )
         if kind == "clock":
             assert isinstance(subject, ProcessLink)
-            raise ReplayError(f"process {subject.pid} ({', '.join(subject.nodes)}) did not apply the clock step")
+            raise ReplayError(f"{subject.label()} did not apply the clock step")
         if kind == "delivery":
             assert isinstance(subject, Endpoint)
             subject.outstanding = 0
             subject.misses += 1
             self._anomaly(f"a message published to {subject.label()} did not show up as work")
-            if subject.misses >= MISS_LIMIT:
+            if subject.misses >= self._options.miss_limit:
                 subject.expect = False
                 self._anomaly(f"{subject.label()} is no longer waited for")
         elif kind == "timer":
@@ -373,7 +432,7 @@ class ReplayDriver:
         self._nested = ep
         ep.link.send(f"grant\t{ep.id}")
         if self._log is not None:
-            self._log(f"> grant {ep.link.pid} {ep.id} {ep.label()} beside {running.label()}")
+            self._log(f"> grant {ep.link.id} {ep.id} {ep.label()} beside {running.label()}")
         self.result.nested_callbacks += 1
 
     # ---- steps ---------------------------------------------------------------------
@@ -381,8 +440,8 @@ class ReplayDriver:
     def _tie_key(self, ep: Endpoint) -> tuple[int, int, int, int]:
         return (
             self._node_order.get(ep.node, len(self._node_order)),
-            self._process_rank(ep.link.pid),
-            ep.link.pid if ep.node not in self._node_order else 0,
+            self._member_rank(ep.link.member),
+            ep.link.id if ep.node not in self._node_order else 0,
             ep.id,
         )
 
@@ -412,7 +471,7 @@ class ReplayDriver:
             self._running = ep
             ep.link.send(f"grant\t{ep.id}")
             if self._log is not None:
-                self._log(f"> grant {ep.link.pid} {ep.id} {ep.label()}")
+                self._log(f"> grant {ep.link.id} {ep.id} {ep.label()}")
             if ep.topic in self._special.process:
                 self.result.infra_callbacks += 1
             else:
@@ -537,6 +596,7 @@ class ReplayDriver:
             result.end_ns = self._now
             result.wall_s = round(time.monotonic() - started, 3)
             result.outputs = self._recorder.written
+            result.lost_outputs = self._recorder.lost
             result.violations = [
                 {"kind": kind, "node": node, "endpoint": endpoint, "count": count}
                 for (kind, node, endpoint), count in sorted(self._violations.items())

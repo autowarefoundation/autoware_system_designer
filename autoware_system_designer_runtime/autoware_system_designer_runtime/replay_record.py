@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._impl.replay.bag import METADATA_FILE, BagError, bag_directory, read_bag_info
+from ._impl.replay.config import driver_settings
 
 REPLAY_COMMAND = "autoware-system-designer-replay"
 REPLAY_SUBDIR = "replay"
@@ -73,25 +74,23 @@ __all__ = [
     "STEP_LOG_FILE",
     "VERDICT_FILE",
     "bag_topics",
+    "driver_settings",
     "parse_progress",
     "progress_message",
     "read_replay_file",
 ]
 
 
-def bag_topics(path: Path, *, generate: bool = False) -> dict[str, Any]:
+def bag_topics(path: Path) -> dict[str, Any]:
     """Topics, storage and time span of the bag at *path*; raises ``BagError`` for no readable bag.
 
-    ``metadata`` tells where they were read from: the bag's ``file``, one ``generated`` on this call
-    (with *generate*, for a bag without one), or the ``storage`` file itself.
+    ``metadata`` tells where they were read from: the bag's ``file`` or the ``storage`` file itself.
     """
     path = Path(path)
-    had_metadata = (bag_directory(path) / METADATA_FILE).is_file()
-    info = read_bag_info(path, generate=generate)
-    has_metadata = (bag_directory(path) / METADATA_FILE).is_file()
+    info = read_bag_info(path)
     return {
         "path": str(info.path),
-        "metadata": "file" if had_metadata else "generated" if has_metadata else "storage",
+        "metadata": "file" if (bag_directory(path) / METADATA_FILE).is_file() else "storage",
         "storage": info.storage_id,
         "start_ns": info.start_ns,
         "duration_ns": info.duration_ns,

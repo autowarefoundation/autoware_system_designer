@@ -32,7 +32,7 @@
 //             rcl_timer_init2 (Jazzy+, also reached from rcl_timer_init)
 //   fini      rcl_publisher_fini, rcl_subscription_fini, rcl_timer_fini
 //   clock     rcl_set_ros_time_override
-// A process linked to a replay driver (ASD_REPLAY_SOCKET, see replay.c) is gated
+// A process linked to a replay driver (ASD_REPLAY_SOCKET, see replay_link.c) is gated
 // through the same hooks and these:
 //   wait      rcl_wait
 //   node      rcl_node_init

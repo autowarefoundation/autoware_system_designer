@@ -24,6 +24,8 @@
     outputs: [/perception/internal/objects]   # internal topics recorded beside the boundary outputs
     skip_outputs: [/perception/debug/image]   # boundary outputs left unrecorded
     lead_in: 0.5                              # seconds only transforms and latched last messages are fed
+    driver:                                   # driver settings, see DRIVER_SETTINGS
+      callback_timeout: 60
     compare:
       default: exact                          # exact | fields | ignore
       topics:
@@ -35,8 +37,8 @@
           uuid_order: true
         /diagnostics: {rule: ignore}
 
-A key the file leaves unset takes its value from ``config/replay_defaults.yaml`` of the package, layered
-with the user's file of the same name (see user_home).
+``lead_in`` and each driver setting the file leaves unset take their value from
+``config/replay_defaults.yaml`` of the package, layered with the user's file of the same name (see user_home).
 
 Plain Python with no ROS import.
 """
@@ -44,11 +46,10 @@ Plain Python with no ROS import.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-from ...user_home import ConfigFileError, describe, read_config
+from ...user_home import ConfigFileError, cached_config, load_yaml
 
 REPLAY_DEFAULTS_NAME = "replay_defaults.yaml"
 
@@ -58,8 +59,45 @@ RULE_IGNORE = "ignore"
 RULES = (RULE_EXACT, RULE_FIELDS, RULE_IGNORE)
 
 
+SECONDS = "s"
+COUNT = "count"
+
+
 class ConfigError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class DriverSetting:
+    name: str
+    unit: str
+    description: str
+
+
+DRIVER_SETTINGS = (
+    DriverSetting("startup_timeout", SECONDS, "The scope has to be up within it."),
+    DriverSetting("startup_settle", SECONDS, "The scope is up once no endpoint was created for this long."),
+    DriverSetting("match_timeout", SECONDS, "Publishers have this long to match the subscriptions of the scope."),
+    DriverSetting("callback_timeout", SECONDS, "A granted callback has to return within it."),
+    DriverSetting(
+        "nested_after", SECONDS, "Wall time a callback runs before the nested callbacks of its process run beside it."
+    ),
+    DriverSetting(
+        "delivery_timeout",
+        SECONDS,
+        "A published message has this long to show as work, a due timer to become ready, a publish to be recorded.",
+    ),
+    DriverSetting(
+        "burst_settle", SECONDS, "Pause before a callback whose subscription holds several messages in flight."
+    ),
+    DriverSetting(
+        "miss_limit", COUNT, "A subscription that missed this many deliveries in a row is no longer waited for."
+    ),
+    DriverSetting("shutdown_timeout", SECONDS, "Members have this long to exit before they are killed."),
+    DriverSetting("gate_hold", SECONDS, "Longest stay of an executor in its wait with ready work and no grant."),
+    DriverSetting("take_timeout", SECONDS, "A take waits this long for a message in flight."),
+    DriverSetting("process_grants", COUNT, "Threads of a process that hold a grant at once."),
+)
 
 
 @dataclass
@@ -106,6 +144,8 @@ class ReplayConfig:
     lead_in: float = field(default_factory=lambda: _defaults()["lead_in"])
     # Recorded bag topic to the topic it is fed as.
     remap: dict[str, str] = field(default_factory=dict)
+    # Value of every driver setting.
+    driver: dict[str, float] = field(default_factory=lambda: dict(_defaults()["driver"]))
     default_rule: CompareRule = field(default_factory=CompareRule)
     topic_rules: dict[str, CompareRule] = field(default_factory=dict)
 
@@ -118,7 +158,17 @@ class ReplayConfig:
             return cls()
         if not isinstance(payload, Mapping):
             raise ConfigError("replay configuration: expected a mapping")
-        unknown = set(payload) - {"scope", "inputs", "accept", "outputs", "skip_outputs", "lead_in", "remap", "compare"}
+        unknown = set(payload) - {
+            "scope",
+            "inputs",
+            "accept",
+            "outputs",
+            "skip_outputs",
+            "lead_in",
+            "remap",
+            "driver",
+            "compare",
+        }
         if unknown:
             raise ConfigError(f"replay configuration: unknown key(s) {sorted(unknown)}")
         config = cls(
@@ -136,6 +186,7 @@ class ReplayConfig:
         ):
             raise ConfigError("remap: expected a mapping of recorded topic to replayed topic")
         config.remap = dict(remap)
+        config.driver.update(parse_driver(payload.get("driver"), "driver"))
         compare = payload.get("compare") or {}
         if not isinstance(compare, Mapping):
             raise ConfigError("compare: expected a mapping")
@@ -155,13 +206,10 @@ class ReplayConfig:
     def load(cls, path: Optional[Path]) -> "ReplayConfig":
         if path is None:
             return cls()
-        import yaml
-
         try:
-            payload = yaml.safe_load(Path(path).read_text())
-        except (OSError, yaml.YAMLError) as exc:
-            raise ConfigError(f"{path}: {exc}") from exc
-        return cls.from_mapping(payload)
+            return cls.from_mapping(load_yaml(Path(path)))
+        except ConfigFileError as exc:
+            raise ConfigError(str(exc)) from exc
 
 
 def _seconds(value: Any, where: str) -> float:
@@ -170,16 +218,50 @@ def _seconds(value: Any, where: str) -> float:
     return float(value)
 
 
-@lru_cache(maxsize=None)
-def _defaults() -> dict[str, float]:
-    try:
-        payload, files = read_config(REPLAY_DEFAULTS_NAME)
-    except ConfigFileError as exc:
-        raise ConfigError(str(exc)) from exc
-    where = describe(files)
-    if set(payload) - {"lead_in"}:
-        raise ConfigError(f"{where}: expected a mapping with the key lead_in")
-    return {"lead_in": _seconds(payload.get("lead_in", 0.0), f"{where}: lead_in")}
+def parse_driver(value: Any, where: str) -> dict[str, float]:
+    """The driver settings *value* sets, each checked against its unit."""
+    if value is None:
+        return {}
+    units = {setting.name: setting.unit for setting in DRIVER_SETTINGS}
+    if not isinstance(value, Mapping) or set(value) - set(units):
+        raise ConfigError(f"{where}: expected a mapping with keys of {', '.join(units)}")
+    found: dict[str, float] = {}
+    for name, item in value.items():
+        if units[name] == COUNT:
+            if isinstance(item, bool) or not isinstance(item, int) or item < 1:
+                raise ConfigError(f"{where}.{name}: expected a count, one or more")
+            found[name] = item
+        else:
+            found[name] = _seconds(item, f"{where}.{name}")
+    return found
+
+
+def _defaults() -> dict[str, Any]:
+    return cached_config(REPLAY_DEFAULTS_NAME, _parse_defaults, ConfigError, merged=("driver",))
+
+
+def _parse_defaults(payload: Mapping[str, Any]) -> dict[str, Any]:
+    if set(payload) - {"lead_in", "driver"}:
+        raise ConfigError("expected a mapping with the keys lead_in and driver")
+    driver = parse_driver(payload.get("driver"), "driver")
+    missing = [setting.name for setting in DRIVER_SETTINGS if setting.name not in driver]
+    if missing:
+        raise ConfigError(f"driver: no value of {', '.join(missing)}")
+    return {"lead_in": _seconds(payload.get("lead_in", 0.0), "lead_in"), "driver": driver}
+
+
+def driver_settings() -> list[dict[str, Any]]:
+    """Every driver setting with its unit, description and default value."""
+    defaults = _defaults()["driver"]
+    return [
+        {
+            "name": setting.name,
+            "unit": setting.unit,
+            "description": setting.description,
+            "default": defaults[setting.name],
+        }
+        for setting in DRIVER_SETTINGS
+    ]
 
 
 def _names(payload: Mapping[str, Any], key: str) -> list[str]:

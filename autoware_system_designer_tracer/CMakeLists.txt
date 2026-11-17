@@ -6,7 +6,14 @@ find_package(rcl REQUIRED)
 find_package(rmw REQUIRED)
 
 # The interposer: preloaded into every traced ROS process, records only.
-add_library(${PROJECT_NAME} SHARED src/tracer.c src/writer.c src/replay.c)
+add_library(${PROJECT_NAME} SHARED
+  src/tracer.c
+  src/writer.c
+  src/replay_link.c
+  src/replay_table.c
+  src/replay_clock.c
+  src/replay_gate.c
+)
 target_include_directories(${PROJECT_NAME}
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

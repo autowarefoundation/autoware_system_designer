@@ -21,7 +21,10 @@ Read from ``config/replay_middleware.yaml`` of the package, layered with the use
 
     node_parameters: {use_sim_time: true}               # set on every node of the scope
     launcher: {use_intra_process_comms: false}          # set on every member of the scope
-    isolation_environment: {ROS_LOCALHOST_ONLY: "1"}    # keeps discovery on this host
+    distro_variable: ROS_DISTRO                         # names the distribution of the environment
+    isolation_environment:                              # keeps discovery on this host, by distribution
+      humble: {ROS_LOCALHOST_ONLY: "1"}
+      default: {ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST}
     domain_id_variable: ROS_DOMAIN_ID                   # carries the domain of the replay
     identifier_types:                                   # type: field holding the identifier's bytes
       unique_identifier_msgs/msg/UUID: uuid
@@ -32,16 +35,22 @@ Plain Python with no ROS import.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import lru_cache
-from pathlib import Path
 from typing import Any, Mapping, Optional
 
-from ...user_home import PACKAGE_CONFIG_DIR, ConfigFileError, describe, read_config
+from ...user_home import cached_config
 
 REPLAY_MIDDLEWARE_NAME = "replay_middleware.yaml"
-REPLAY_MIDDLEWARE_FILE = PACKAGE_CONFIG_DIR / REPLAY_MIDDLEWARE_NAME
 
-_KEYS = ("node_parameters", "launcher", "isolation_environment", "domain_id_variable", "identifier_types")
+_KEYS = (
+    "node_parameters",
+    "launcher",
+    "distro_variable",
+    "isolation_environment",
+    "domain_id_variable",
+    "identifier_types",
+)
+# Entry of isolation_environment for a distribution without one of its own.
+DEFAULT_DISTRO = "default"
 # Design parameter type of a value, by its Python type.
 _PARAMETER_TYPES = {bool: "bool", int: "int", float: "double", str: "string"}
 
@@ -54,7 +63,9 @@ class ReplayMiddlewareError(ValueError):
 class ReplayMiddleware:
     node_parameters: Mapping[str, Any] = field(default_factory=dict)
     launcher: Mapping[str, Any] = field(default_factory=dict)
-    isolation_environment: Mapping[str, str] = field(default_factory=dict)
+    distro_variable: str = ""
+    # Distribution name to the environment that keeps its discovery on this host.
+    isolation_environment: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     domain_id_variable: str = ""
     identifier_types: Mapping[str, str] = field(default_factory=dict)
 
@@ -73,6 +84,14 @@ class ReplayMiddleware:
                 text = str(value).lower() if isinstance(value, bool) else str(value)
                 arguments += ["-p", f"{name}:={text}"]
         return arguments
+
+    def isolation(self, environment: Mapping[str, str]) -> dict[str, str]:
+        """Variables that keep discovery on this host, for the distribution *environment* names."""
+        distro = environment.get(self.distro_variable, "") if self.distro_variable else ""
+        chosen = self.isolation_environment.get(distro)
+        if chosen is None:
+            chosen = self.isolation_environment.get(DEFAULT_DISTRO, {})
+        return dict(chosen)
 
     def identifier_field(self, message: Any) -> Optional[str]:
         """Field of *message* that holds its identifier bytes, None when it is no identifier."""
@@ -94,26 +113,19 @@ class ReplayMiddleware:
         for name, value in node_parameters.items():
             if type(value) not in _PARAMETER_TYPES:
                 raise ReplayMiddlewareError(f"node_parameters.{name}: expected a bool, a number or a string")
-        domain_id_variable = payload.get("domain_id_variable") or ""
-        if not isinstance(domain_id_variable, str):
-            raise ReplayMiddlewareError("domain_id_variable: expected a name")
+        variables = {}
+        for key in ("distro_variable", "domain_id_variable"):
+            variables[key] = payload.get(key) or ""
+            if not isinstance(variables[key], str):
+                raise ReplayMiddlewareError(f"{key}: expected a name")
+        isolation = _mapping(payload, "isolation_environment")
         return cls(
             node_parameters=node_parameters,
             launcher=_mapping(payload, "launcher"),
-            isolation_environment=_strings(payload, "isolation_environment"),
-            domain_id_variable=domain_id_variable,
+            isolation_environment={distro: _strings(isolation, distro) for distro in isolation},
+            **variables,
             identifier_types=_strings(payload, "identifier_types"),
         )
-
-    @classmethod
-    def load(cls, path: Path) -> "ReplayMiddleware":
-        import yaml
-
-        try:
-            payload = yaml.safe_load(Path(path).read_text())
-        except (OSError, yaml.YAMLError) as exc:
-            raise ReplayMiddlewareError(f"{path}: {exc}") from exc
-        return cls.from_mapping(payload)
 
 
 def _mapping(payload: Mapping[str, Any], key: str) -> dict[str, Any]:
@@ -130,14 +142,6 @@ def _strings(payload: Mapping[str, Any], key: str) -> dict[str, str]:
     return value
 
 
-@lru_cache(maxsize=1)
 def replay_middleware() -> ReplayMiddleware:
     """The settings of the package's configuration file, layered with the user's."""
-    try:
-        payload, files = read_config(REPLAY_MIDDLEWARE_NAME)
-    except ConfigFileError as exc:
-        raise ReplayMiddlewareError(str(exc)) from exc
-    try:
-        return ReplayMiddleware.from_mapping(payload)
-    except ReplayMiddlewareError as exc:
-        raise ReplayMiddlewareError(f"{describe(files)}: {exc}") from exc
+    return cached_config(REPLAY_MIDDLEWARE_NAME, ReplayMiddleware.from_mapping, ReplayMiddlewareError)

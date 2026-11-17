@@ -14,7 +14,7 @@
 
 """Driver side of the replay link: one Unix socket connection per gated process.
 
-The lines are those of ``autoware_system_designer_tracer/src/replay.c``. The server
+The lines are those of ``autoware_system_designer_tracer/src/replay_link.c``. The server
 keeps what a process registered (nodes, endpoints, timers) and hands every line to
 the driver.
 """
@@ -29,13 +29,22 @@ from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
+# Version of the lines both sides speak; a process of another version is refused.
+PROTOCOL = 2
+
 SOCKET_ENV = "ASD_REPLAY_SOCKET"
 START_ENV = "ASD_REPLAY_START_NS"
 WALL_TIMERS_ENV = "ASD_REPLAY_WALL_TIMERS"
+# Name the processes of one member say hello with.
+MEMBER_ENV = "ASD_REPLAY_MEMBER"
+GATE_HOLD_ENV = "ASD_REPLAY_GATE_HOLD_NS"
+TAKE_TIMEOUT_ENV = "ASD_REPLAY_TAKE_TIMEOUT_NS"
+GRANTS_ENV = "ASD_REPLAY_GRANTS"
 
 # rmw_qos_*_policy_t values.
 RELIABILITY_BEST_EFFORT = 2
 DURABILITY_TRANSIENT_LOCAL = 1
+DURABILITY_VOLATILE = 2
 HISTORY_KEEP_ALL = 2
 
 PUBLISHER = "p"
@@ -92,6 +101,12 @@ class Endpoint:
 
 @dataclass(eq=False)
 class ProcessLink:
+    # Order of connection; names the link within the run.
+    id: int
+    protocol: int
+    # Member that started the process, empty when its environment names none.
+    member: str
+    # Process id in the process's own pid namespace.
     pid: int
     writer: asyncio.StreamWriter = field(repr=False)
     endpoints: dict[int, Endpoint] = field(default_factory=dict)
@@ -104,6 +119,9 @@ class ProcessLink:
         if self.connected:
             self.writer.write((line + "\n").encode())
 
+    def label(self) -> str:
+        return f"process {self.pid} of {self.member or 'no member'} ({', '.join(self.nodes) or 'no node'})"
+
 
 # (link, line kind, fields after the kind). "bye" follows the last line of a process.
 LineHandler = Callable[[ProcessLink, str, list[str]], None]
@@ -114,6 +132,7 @@ class LinkServer:
         self._path = Path(path)
         self._handler = handler
         self._server: Optional[asyncio.AbstractServer] = None
+        # By link id.
         self.links: dict[int, ProcessLink] = {}
 
     @property
@@ -155,18 +174,15 @@ class LinkServer:
                 fields = raw.decode(errors="replace").rstrip("\n").split("\t")
                 kind, fields = fields[0], fields[1:]
                 if link is None:
-                    if kind != "hello" or not fields:
+                    if kind != "hello":
                         continue
-                    try:
-                        link = ProcessLink(pid=int(fields[0]), writer=writer)
-                    except ValueError:
-                        continue
-                    self.links[link.pid] = link
+                    link = self._greet(fields, writer)
+                    self.links[link.id] = link
                 try:
                     self._register(link, kind, fields)
                     self._handler(link, kind, fields)
                 except (ValueError, IndexError, KeyError) as exc:
-                    logger.warning("replay link of pid %d: bad line %s %s: %s", link.pid, kind, fields, exc)
+                    logger.warning("replay link of %s: bad line %s %s: %s", link.label(), kind, fields, exc)
         except (ConnectionError, asyncio.IncompleteReadError):
             pass
         finally:
@@ -176,6 +192,14 @@ class LinkServer:
                     ep.alive = False
                 self._handler(link, "bye", [])
             writer.close()
+
+    def _greet(self, fields: list[str], writer: asyncio.StreamWriter) -> ProcessLink:
+        """The link of a process that said hello; one whose hello does not read has protocol 0."""
+        try:
+            protocol, member, pid = int(fields[0]), fields[1], int(fields[2])
+        except (ValueError, IndexError):
+            protocol, member, pid = 0, "", 0
+        return ProcessLink(id=len(self.links) + 1, protocol=protocol, member=member, pid=pid, writer=writer)
 
     @staticmethod
     def _register(link: ProcessLink, kind: str, fields: list[str]) -> None:

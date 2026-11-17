@@ -20,12 +20,11 @@ through ``rosbag2_py``, imported on first use.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Collection, Iterator, Mapping, Optional, Sequence
 
-from .link import DURABILITY_TRANSIENT_LOCAL
+from .link import DURABILITY_TRANSIENT_LOCAL, DURABILITY_VOLATILE
 
 METADATA_FILE = "metadata.yaml"
 _STORAGE_BY_SUFFIX = {".db3": "sqlite3", ".mcap": "mcap"}
@@ -65,6 +64,8 @@ class BagInfo:
     fingerprint: str = ""
     # Recorded topics a remap took the name of; they are not fed.
     shadowed: list[str] = field(default_factory=list)
+    # Storage files of a bag without metadata, in the order of their start times.
+    files: list[Path] = field(default_factory=list)
 
     @property
     def end_ns(self) -> int:
@@ -77,6 +78,8 @@ def bag_directory(path: Path) -> Path:
 
 
 def _durabilities(profiles: Any) -> list[int]:
+    """Durability of each offered profile, as rmw enum values; a name other than transient local
+    counts as volatile."""
     if isinstance(profiles, str):
         import yaml
 
@@ -90,7 +93,7 @@ def _durabilities(profiles: Any) -> list[int]:
         if isinstance(value, int):
             found.append(value)
         elif isinstance(value, str):
-            found.append(DURABILITY_TRANSIENT_LOCAL if "transient" in value.lower() else 2)
+            found.append(DURABILITY_TRANSIENT_LOCAL if "transient" in value.lower() else DURABILITY_VOLATILE)
     return found
 
 
@@ -166,38 +169,14 @@ def _storage_id(directory: Path) -> str:
     return ""
 
 
-def write_metadata(path: Path) -> Path:
-    """``metadata.yaml`` of the bag at *path* (its directory or one of its files), written by the
-    rosbag2 reindexer from the storage files of the directory; ``PermissionError`` where the
-    directory is not writable."""
-    directory = bag_directory(Path(path))
-    storage_id = _STORAGE_BY_SUFFIX.get(Path(path).suffix, "") if Path(path).is_file() else _storage_id(directory)
-    if not storage_id:
-        raise BagError(f"{path}: no .db3 or .mcap file to write {METADATA_FILE} from")
-    if not os.access(directory, os.W_OK):
-        raise PermissionError(f"{directory} is not writable")
-    import rosbag2_py
-
-    try:
-        rosbag2_py.Reindexer().reindex(rosbag2_py.StorageOptions(uri=str(directory), storage_id=storage_id))
-    except RuntimeError as exc:
-        raise BagError(f"{directory}: {exc}") from exc
-    metadata = directory / METADATA_FILE
-    if not metadata.is_file():
-        raise BagError(f"{directory}: the reindexer wrote no {METADATA_FILE}")
-    return metadata
-
-
-def read_bag_info(path: Path, *, generate: bool = False) -> BagInfo:
-    """Topics, types and time span of the bag at *path* (its directory or one of its files). With
-    *generate*, a bag without metadata gets its ``metadata.yaml`` written first."""
+def read_bag_info(path: Path) -> BagInfo:
+    """Topics, types and time span of the bag at *path* (its directory or one of its files), from its
+    ``metadata.yaml``, else from the storage file itself."""
     path = Path(path)
     if not path.exists():
         raise BagError(f"bag {path} not found")
     directory = bag_directory(path)
     metadata = directory / METADATA_FILE
-    if generate and not metadata.is_file():
-        write_metadata(path)
     if metadata.is_file():
         import yaml
 
@@ -213,30 +192,39 @@ def read_bag_info(path: Path, *, generate: bool = False) -> BagInfo:
 
 
 def _info_from_storage(path: Path) -> BagInfo:
-    """A storage file without metadata, read through rosbag2."""
-    storage_id = _STORAGE_BY_SUFFIX.get(path.suffix)
-    if not path.is_file() or storage_id is None:
-        raise BagError(f"{path}: no {METADATA_FILE} and not a .db3 or .mcap file")
+    """A bag without metadata, read through rosbag2 from its storage file, or from the split files of
+    its directory."""
+    files = [path] if path.is_file() else sorted(p for suffix in _STORAGE_BY_SUFFIX for p in path.glob(f"*{suffix}"))
+    storages = {_STORAGE_BY_SUFFIX.get(file.suffix) for file in files}
+    if len(storages) != 1 or None in storages:
+        raise BagError(f"{path}: no {METADATA_FILE} and not a .db3 or .mcap file, or a directory of either")
+    (storage_id,) = storages
     import rosbag2_py
 
-    meta = rosbag2_py.Info().read_metadata(str(path), storage_id)
-    topics = {
-        item.topic_metadata.name: BagTopic(
-            name=item.topic_metadata.name,
-            msg_type=item.topic_metadata.type,
-            count=item.message_count,
-            durabilities=_durabilities(item.topic_metadata.offered_qos_profiles),
-        )
-        for item in meta.topics_with_message_count
-    }
-    stat = path.stat()
+    topics: dict[str, BagTopic] = {}
+    spans: list[tuple[int, int, Path]] = []
+    marks = []
+    for file in files:
+        meta = rosbag2_py.Info().read_metadata(str(file), storage_id)
+        for item in meta.topics_with_message_count:
+            name = item.topic_metadata.name
+            topic = topics.setdefault(name, BagTopic(name=name, msg_type=item.topic_metadata.type, count=0))
+            topic.count += item.message_count
+            topic.durabilities += _durabilities(item.topic_metadata.offered_qos_profiles)
+        if meta.message_count:
+            start = int(meta.starting_time.nanoseconds)
+            spans.append((start, start + int(meta.duration.nanoseconds), file))
+        marks.append(f"{file.name}:{file.stat().st_size}:{meta.message_count}")
+    spans.sort()
+    start_ns = spans[0][0] if spans else 0
     return BagInfo(
         path=path,
         storage_id=storage_id,
-        start_ns=int(meta.starting_time.nanoseconds),
-        duration_ns=int(meta.duration.nanoseconds),
+        start_ns=start_ns,
+        duration_ns=max((end for _, end, _ in spans), default=0) - start_ns,
         topics=topics,
-        fingerprint=f"{path.name}:{stat.st_size}:{meta.message_count}",
+        fingerprint=" ".join(marks),
+        files=[file for _, _, file in spans],
     )
 
 
@@ -245,24 +233,32 @@ class BagMessages:
     Topics are chosen and given by their replayed names."""
 
     def __init__(self, info: BagInfo, topics: Sequence[str]) -> None:
+        self._storage_id = info.storage_id
+        self._names = {info.topics[name].source if name in info.topics else name: name for name in topics}
+        # What is left to open: the bag itself, or its storage files one after the other.
+        self._uris = [str(file) for file in info.files] or [str(info.path)]
+        self._reader = None
+        self._next: Optional[tuple[int, str, bytes]] = None
+        self._advance()
+
+    def _open(self, uri: str) -> None:
         import rosbag2_py
 
         self._reader = rosbag2_py.SequentialReader()
         self._reader.open(
-            rosbag2_py.StorageOptions(uri=str(info.path), storage_id=info.storage_id),
+            rosbag2_py.StorageOptions(uri=uri, storage_id=self._storage_id),
             rosbag2_py.ConverterOptions(input_serialization_format="", output_serialization_format=""),
         )
-        self._names = {info.topics[name].source if name in info.topics else name: name for name in topics}
         self._reader.set_filter(rosbag2_py.StorageFilter(topics=list(self._names)))
-        self._next: Optional[tuple[int, str, bytes]] = None
-        self._advance()
 
     def _advance(self) -> None:
-        if self._reader.has_next():
-            topic, data, stamp = self._reader.read_next()
-            self._next = (int(stamp), self._names.get(topic, topic), data)
-        else:
-            self._next = None
+        while self._reader is None or not self._reader.has_next():
+            if not self._uris:
+                self._next = None
+                return
+            self._open(self._uris.pop(0))
+        topic, data, stamp = self._reader.read_next()
+        self._next = (int(stamp), self._names.get(topic, topic), data)
 
     def peek(self) -> Optional[tuple[int, str, bytes]]:
         return self._next
@@ -276,6 +272,7 @@ class BagMessages:
 
     def close(self) -> None:
         self._reader = None
+        self._uris = []
 
 
 class LeadIn:

@@ -25,6 +25,7 @@ the same name (see user_home):
     ambient_inputs: [/tf, /tf_static]              # bag topics fed to every replay scope
     nested_callbacks: [/tf, /tf_static]            # callbacks a running callback may wait on
     handshake_suffixes: [/_supported_types]        # handshake topics beside a negotiated topic
+    hidden_suffixes: [/_action/feedback]           # topics a service or an action carries
 
 Plain Python with no ROS import.
 """
@@ -32,16 +33,14 @@ Plain Python with no ROS import.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import cached_property, lru_cache
-from pathlib import Path
+from functools import cached_property
 from typing import Any, Mapping, Optional
 
-from .user_home import PACKAGE_CONFIG_DIR, ConfigFileError, describe, read_config
+from .user_home import cached_config
 
 SPECIAL_TOPICS_NAME = "special_topics.yaml"
-SPECIAL_TOPICS_FILE = PACKAGE_CONFIG_DIR / SPECIAL_TOPICS_NAME
 
-_LIST_KEYS = ("infrastructure", "clock", "ambient_inputs", "nested_callbacks", "handshake_suffixes")
+_LIST_KEYS = ("infrastructure", "clock", "ambient_inputs", "nested_callbacks", "handshake_suffixes", "hidden_suffixes")
 _KEYS = (*_LIST_KEYS, "companions")
 
 
@@ -58,6 +57,7 @@ class SpecialTopics:
     ambient_inputs: tuple[str, ...] = ()
     nested_callbacks: frozenset[str] = frozenset()
     handshake_suffixes: tuple[str, ...] = ()
+    hidden_suffixes: tuple[str, ...] = ()
 
     @cached_property
     def process(self) -> frozenset[str]:
@@ -72,18 +72,10 @@ class SpecialTopics:
         """The topic *topic* is subscribed together with, if it is a companion."""
         return self._companion_of.get(topic)
 
-    def is_handshake(self, topic: str) -> bool:
-        return topic.endswith(self.handshake_suffixes) if self.handshake_suffixes else False
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "infrastructure": sorted(self.infrastructure),
-            "clock": sorted(self.clock),
-            "companions": {topic: list(companions) for topic, companions in self.companions.items()},
-            "ambient_inputs": list(self.ambient_inputs),
-            "nested_callbacks": sorted(self.nested_callbacks),
-            "handshake_suffixes": list(self.handshake_suffixes),
-        }
+    def is_undeclared(self, topic: str) -> bool:
+        """*topic* is created by the client library beside a topic, a service or an action."""
+        suffixes = self.handshake_suffixes + self.hidden_suffixes
+        return topic.endswith(suffixes) if suffixes else False
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "SpecialTopics":
@@ -105,17 +97,8 @@ class SpecialTopics:
             ambient_inputs=tuple(names["ambient_inputs"]),
             nested_callbacks=frozenset(names["nested_callbacks"]),
             handshake_suffixes=tuple(names["handshake_suffixes"]),
+            hidden_suffixes=tuple(names["hidden_suffixes"]),
         )
-
-    @classmethod
-    def load(cls, path: Path) -> "SpecialTopics":
-        import yaml
-
-        try:
-            payload = yaml.safe_load(Path(path).read_text())
-        except (OSError, yaml.YAMLError) as exc:
-            raise SpecialTopicsError(f"{path}: {exc}") from exc
-        return cls.from_mapping(payload)
 
 
 def _names(payload: Mapping[str, Any], key: str) -> list[str]:
@@ -127,14 +110,6 @@ def _names(payload: Mapping[str, Any], key: str) -> list[str]:
     return list(value)
 
 
-@lru_cache(maxsize=1)
 def special_topics() -> SpecialTopics:
     """The roles of the package's configuration file, layered with the user's."""
-    try:
-        payload, files = read_config(SPECIAL_TOPICS_NAME)
-    except ConfigFileError as exc:
-        raise SpecialTopicsError(str(exc)) from exc
-    try:
-        return SpecialTopics.from_mapping(payload)
-    except SpecialTopicsError as exc:
-        raise SpecialTopicsError(f"{describe(files)}: {exc}") from exc
+    return cached_config(SPECIAL_TOPICS_NAME, SpecialTopics.from_mapping, SpecialTopicsError)

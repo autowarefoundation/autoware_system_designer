@@ -109,11 +109,36 @@ def test_bag_topics_are_read_by_path(served, tmp_path):
 def test_bag_with_metadata_is_read_as_is_by_uri(served, tmp_path):
     bag = _bag(tmp_path)
 
-    body = _call(served, "replay.bag", {"path": bag.as_uri(), "generate": True})
+    body = _call(served, "replay.bag", {"path": bag.as_uri()})
 
     assert body["ok"], body
     assert (body["result"]["metadata"], body["result"]["path"]) == ("file", str(bag))
-    assert _call(served, "replay.bag", {"path": str(bag), "generate": "yes"})["error"]["code"] == "invalid_params"
+
+
+def test_a_bag_without_metadata_gets_none_written(served, tmp_path):
+    bag = tmp_path / "bare"
+    bag.mkdir()
+    (bag / "bare_0.mcap").write_bytes(b"")
+
+    body = _call(served, "replay.bag", {"path": str(bag)})
+
+    assert not body["ok"] and not (bag / "metadata.yaml").exists()
+
+
+@pytest.mark.parametrize("path", ["bags/run", "./run", "file:run"])
+def test_a_relative_bag_path_is_refused_by_name(served, path):
+    error = _call(served, "replay.bag", {"path": path})["error"]
+
+    assert error["code"] == "invalid_params" and error["message"] == f"the bag path must be absolute: {path}"
+    params = {"system": SYSTEM_ID, "mode": "Runtime", "bag": path, "scope": ["/a"]}
+    assert _call(served, "replay.start", params)["error"] == error
+
+
+def test_driver_settings_are_listed_with_their_defaults(served):
+    settings = _call(served, "replay.settings", {})["result"]["driver"]
+
+    assert {"name", "unit", "description", "default"} <= set(settings[0])
+    assert {"callback_timeout", "process_grants"} <= {setting["name"] for setting in settings}
 
 
 def test_a_bag_file_is_found_by_name_and_size(served, tmp_path):
@@ -144,6 +169,7 @@ def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_pat
         "skip_outputs": ["/debug"],
         "duration": 2.5,
         "lead_in": 0.5,
+        "driver": {"callback_timeout": 60, "miss_limit": 5},
         "domain_id": 7,
         "save_reference": True,
     }
@@ -166,6 +192,7 @@ def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_pat
         "outputs": [],
         "skip_outputs": ["/debug"],
         "lead_in": 0.5,
+        "driver": {"callback_timeout": 60, "miss_limit": 5},
     }
 
     done = _finished(served, job["id"])
@@ -195,6 +222,11 @@ def test_pre_flight_passes_check_and_writes_no_result(served, tmp_path):
         {"scope": []},
         {"scope": ["relative"]},
         {"remap": {"/a": "b"}},
+        {"driver": {"unknown": 1}},
+        {"driver": {"callback_timeout": -1}},
+        {"driver": {"miss_limit": 0}},
+        {"driver": {"miss_limit": 1.5}},
+        {"driver": ["callback_timeout"]},
         {"duration": 0},
         {"domain_id": 500},
         {"check": "yes"},
@@ -238,7 +270,7 @@ def test_storage_roots_give_the_subdirectories_and_are_kept_in_the_settings_file
     assert changed["result"]["config_root"] == changed["result"]["defaults"]["config_root"]
     assert served.daemon.records.record_root == served.daemon.storage.records
     assert (tmp_path / "studio.yaml").read_text() == f"log_root: {tmp_path / 'other_logs'}\n"
-    assert _call(served, "settings.get", {})["result"] == changed["result"]
+    assert _call(served, "health", {})["result"]["storage"] == changed["result"]
     assert _call(served, "settings.set", {"log_root": "relative"})["error"]["code"] == "invalid_params"
     assert _call(served, "settings.set", {})["error"]["code"] == "invalid_params"
 
@@ -256,7 +288,13 @@ SETUP = {
     "mode": "Runtime",
     "deploy": "car_a",
     "bag": "/bags/run",
-    "config": {"scope": ["/perception"], "remap": {"/raw": "/in"}, "skip_outputs": ["/debug"], "lead_in": 0.5},
+    "config": {
+        "scope": ["/perception"],
+        "remap": {"/raw": "/in"},
+        "skip_outputs": ["/debug"],
+        "lead_in": 0.5,
+        "driver": {"startup_settle": 4},
+    },
     "inputs": {"/in": "/raw", "/map": None},
     "recorded": ["/objects"],
     "run": {"duration": 2.5, "save_reference": False},
@@ -282,6 +320,7 @@ def test_setups_are_saved_listed_loaded_and_deleted(served, tmp_path):
         "outputs": [],
         "skip_outputs": ["/debug"],
         "lead_in": 0.5,
+        "driver": {"startup_settle": 4},
     }
     assert loaded["run"] == {"duration": 2.5, "save_reference": False}
     assert (loaded["bag"], loaded["deploy"]) == ("/bags/run", "car_a")
@@ -309,6 +348,7 @@ def test_an_unreadable_setup_is_listed_with_its_error(served, tmp_path):
         {"name": "a", "setup": {**SETUP, "extra": 1}},
         {"name": "a", "setup": {**SETUP, "config": {"scope": []}}},
         {"name": "a", "setup": {**SETUP, "config": {"scope": ["/a"], "compare": {}}}},
+        {"name": "a", "setup": {**SETUP, "config": {"scope": ["/a"], "driver": {"gate_hold": "long"}}}},
         {"name": "a", "setup": {**SETUP, "run": {"duration": 0}}},
         {"name": "a", "setup": {**SETUP, "run": {"check": True}}},
         {"name": "a", "setup": {**SETUP, "inputs": {"/in": "raw"}}},

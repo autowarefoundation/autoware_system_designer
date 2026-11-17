@@ -40,7 +40,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Collection, Mapping, Optional, Sequence
 
-from ._impl.core import events as ev
 from ._impl.core.config import ActorConfig
 from ._impl.core.coordinator import ensure_output_dir
 from ._impl.measure.node_graph import NodeGraph
@@ -57,10 +56,22 @@ from ._impl.replay.bag import (
     read_messages,
     remap_topics,
 )
-from ._impl.replay.config import ConfigError, ReplayConfig
-from ._impl.replay.driver import DriverOptions, ReplayDriver, ReplayError, ReplayResult
-from ._impl.replay.link import CLOCK_FREE, SOCKET_ENV, START_ENV, TIMER, WALL_TIMERS_ENV, Endpoint, LinkServer
-from ._impl.replay.middleware import replay_middleware
+from ._impl.replay.config import SECONDS, ConfigError, ReplayConfig, driver_settings, parse_driver
+from ._impl.replay.driver import DRIVER_OPTION_NAMES, DriverOptions, ReplayDriver, ReplayError, ReplayResult
+from ._impl.replay.link import (
+    CLOCK_FREE,
+    GATE_HOLD_ENV,
+    GRANTS_ENV,
+    MEMBER_ENV,
+    SOCKET_ENV,
+    START_ENV,
+    TAKE_TIMEOUT_ENV,
+    TIMER,
+    WALL_TIMERS_ENV,
+    Endpoint,
+    LinkServer,
+)
+from ._impl.replay.middleware import ReplayMiddleware, replay_middleware
 from ._impl.replay.preflight import (
     ERROR,
     WARNING,
@@ -103,6 +114,7 @@ from .replay_record import (
 )
 from .run_log import LOG_BASE, REPLAY_LOGS, write_run_manifest
 from .special_topics import special_topics
+from .system_runner import bind_deploy_arguments, parse_arg_overrides, setup_logging
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -140,10 +152,8 @@ class ReplayOptions:
     free_wall_timers: bool = False
     # Write every step and every line of the gated processes to replay/steps.log.
     step_log: bool = False
-    startup_timeout: float = 60.0
-    startup_settle: float = 2.0
-    callback_timeout: float = 30.0
-    graceful_shutdown_timeout: float = 5.0
+    # Driver settings by name, over the configuration's.
+    driver: Mapping[str, float] = field(default_factory=dict)
 
 
 def _log_problems(problems: Sequence[Problem]) -> None:
@@ -176,52 +186,18 @@ def _write_json(path: Path, payload: Any) -> None:
     os.replace(partial, path)
 
 
-def _real_endpoints(
-    endpoints: Sequence[Endpoint], members: "_Members", launch_files: Collection[str]
-) -> list[RealEndpoint]:
-    real = []
-    for ep in endpoints:
-        member = members.name(ep.link.pid)
-        real.append(
-            RealEndpoint(
-                kind=ep.kind,
-                node=ep.node,
-                topic=ep.topic,
-                period_ns=ep.period_ns,
-                process_nodes=tuple(ep.link.nodes),
-                launch_file=member if member in launch_files else "",
-            )
+def _real_endpoints(endpoints: Sequence[Endpoint], launch_files: Collection[str]) -> list[RealEndpoint]:
+    return [
+        RealEndpoint(
+            kind=ep.kind,
+            node=ep.node,
+            topic=ep.topic,
+            period_ns=ep.period_ns,
+            process_nodes=tuple(ep.link.nodes),
+            launch_file=ep.link.member if ep.link.member in launch_files else "",
         )
-    return real
-
-
-class _Members:
-    """Rank of a traced process in the tie order: the index of the member whose process group holds it."""
-
-    def __init__(self) -> None:
-        self._names: list[str] = []
-        self._by_pgid: dict[int, str] = {}
-        self._rank: dict[int, int] = {}
-
-    def set_names(self, names: Sequence[str]) -> None:
-        self._names = list(names)
-
-    def on_state(self, event: object) -> None:
-        if isinstance(event, ev.Started):
-            self._by_pgid[event.pid] = event.name
-
-    def name(self, pid: int) -> str:
-        """The member whose process group holds *pid*, empty once the process is gone."""
-        try:
-            return self._by_pgid.get(os.getpgid(pid), "")
-        except OSError:
-            return ""
-
-    def rank(self, pid: int) -> int:
-        if pid not in self._rank:
-            name = self.name(pid)
-            self._rank[pid] = self._names.index(name) if name in self._names else len(self._names)
-        return self._rank[pid]
+        for ep in endpoints
+    ]
 
 
 def _compare(
@@ -251,41 +227,113 @@ def _save_reference(out_dir: Path, reference_dir: Path, inputs: Mapping[str, Any
     shutil.rmtree(retired, ignore_errors=True)
 
 
-def replay_from_json(json_path: str, options: ReplayOptions) -> int:
-    from .system_runner import _bind_deploy_arguments
+class _Stop(Exception):
+    """The replay ends before its scope is launched, with this exit code."""
 
+    def __init__(self, code: int) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+def _fail(message: str, *args: Any) -> _Stop:
+    logger.error("replay: " + message, *args)
+    return _Stop(EXIT_FAILED)
+
+
+@dataclass
+class _Plan:
+    """What the launch of a scope and its verdict read: the scope, its boundary, the bag and the run's files."""
+
+    json_path: str
+    payload: Mapping[str, Any]
+    config: ReplayConfig
+    scope: Scope
+    structure: Mapping[str, Any]
+    full_graph: NodeGraph
+    mode: str
+    # Design path of each node of the scope to its fully qualified name.
+    fqns: Mapping[str, str]
+    launch_files: Collection[str]
+    unconnected: Any
+    recorded_types: dict[str, str]
+    out_root: Path
+    out_dir: Path
+    bag: Optional[BagInfo]
+    fed: dict[str, str]
+    key_inputs: dict[str, Any]
+    reference_dir: Optional[Path]
+    start_ns: int
+    end_ns: Optional[int]
+
+    @property
+    def node_order(self) -> dict[str, int]:
+        return {self.fqns[path]: index for index, path in enumerate(self.scope.nodes) if path in self.fqns}
+
+
+@dataclass
+class _Outcome:
+    result: ReplayResult
+    # The driver ran, to its end or to an error.
+    driven: bool = False
+    error: Optional[str] = None
+    endpoint_problems: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _recorded_types(config: ReplayConfig, boundary: Boundary) -> dict[str, str]:
+    """Topic and type of every recorded output: the boundary's, with the configuration's added and skipped."""
+    recorded = boundary.boundary_outputs()
+    outputs = boundary.output_types()
+    for topic in config.outputs:
+        if topic not in outputs:
+            raise _fail("output %s of the configuration is no output of the scope", topic)
+        recorded[topic] = outputs[topic]
+    for topic in config.skip_outputs:
+        if topic not in outputs:
+            raise _fail("skipped output %s of the configuration is no output of the scope", topic)
+        recorded.pop(topic, None)
+    return recorded
+
+
+def _check_bag(
+    options: ReplayOptions, config: ReplayConfig, boundary: Boundary, recorded_types: Mapping[str, str]
+) -> tuple[BagInfo, dict[str, str], list[Problem]]:
+    """The bag with its topics as they are fed, the fed topics and the pre-flight problems."""
+    from ._impl.replay.ros_io import unknown_types
+
+    if options.bag is None:
+        raise _fail("no bag given")
+    _progress(PHASE_PRE, "checking the bag")
+    try:
+        bag = remap_topics(read_bag_info(options.bag), {**config.remap, **options.remap})
+    except BagError as exc:
+        raise _fail("%s", exc) from exc
+    problems = check_bag(boundary, bag, extra_inputs=config.inputs, accept=config.accept)
+    fed = fed_topics(boundary, bag, config.inputs)
+    for topic in fed:
+        if bag.topics[topic].recorded_name:
+            logger.info("  remap  %s -> %s", bag.topics[topic].recorded_name, topic)
+    for topic, reason in unknown_types({**fed, **recorded_types}).items():
+        problems.append(Problem(ERROR, "type_unknown", f"{topic}: message type not in the workspace ({reason})"))
+    return bag, fed, problems
+
+
+def _prepare(json_path: str, options: ReplayOptions) -> _Plan:
+    """Selects the scope, checks the bag against its boundary and writes the boundary report."""
     _progress(PHASE_PRE, "selecting the scope")
     try:
         config = ReplayConfig.load(options.config)
+        config.driver.update(options.driver)
         with open(json_path) as handle:
             payload = json.load(handle)
         payload = resolve_structure_paths(payload, json_path)
-        payload = _bind_deploy_arguments(payload, json_path, deploy=options.deploy, overrides=options.arguments)
+        payload = bind_deploy_arguments(payload, json_path, deploy=options.deploy, overrides=options.arguments)
         patterns = list(options.scope) + [p for p in config.scope if p not in options.scope]
         scope = select_scope(payload["data"], patterns, ecu=options.ecu)
         boundary = compute_boundary(payload, scope)
     except (ConfigError, ScopeError, RuntimeError, OSError, ValueError) as exc:
-        logger.error("replay: %s", exc)
-        return EXIT_FAILED
-
-    structure = replay_structure(payload["data"], scope)
+        raise _fail("%s", exc) from exc
+    recorded_types = _recorded_types(config, boundary)
     full_graph = NodeGraph.from_system_structure(payload)
-    mode = full_graph.mode or Path(json_path).stem
-    fqns = scope_node_fqns(payload, scope)
-    launch_files = scope_launch_files(payload, scope)
-    unconnected = unconnected_ports(payload, scope)
-    node_order = {fqns[path]: index for index, path in enumerate(scope.nodes) if path in fqns}
-    recorded_types = boundary.boundary_outputs()
-    for topic in config.outputs:
-        if topic not in boundary.output_types():
-            logger.error("replay: output %s of the configuration is no output of the scope", topic)
-            return EXIT_FAILED
-        recorded_types[topic] = boundary.output_types()[topic]
-    for topic in config.skip_outputs:
-        if topic not in boundary.output_types():
-            logger.error("replay: skipped output %s of the configuration is no output of the scope", topic)
-            return EXIT_FAILED
-        recorded_types.pop(topic, None)
 
     out_root = options.output_dir or ensure_output_dir(LOG_BASE / REPLAY_LOGS)
     out_dir = out_root / REPLAY_SUBDIR
@@ -305,24 +353,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
     bag: Optional[BagInfo] = None
     fed: dict[str, str] = {}
     if not options.check_endpoints:
-        if options.bag is None:
-            logger.error("replay: no bag given")
-            return EXIT_FAILED
-        _progress(PHASE_PRE, "checking the bag")
-        try:
-            bag = remap_topics(read_bag_info(options.bag), {**config.remap, **options.remap})
-        except BagError as exc:
-            logger.error("replay: %s", exc)
-            return EXIT_FAILED
-        problems = check_bag(boundary, bag, extra_inputs=config.inputs, accept=config.accept)
-        fed = fed_topics(boundary, bag, config.inputs)
-        for topic in fed:
-            if bag.topics[topic].recorded_name:
-                logger.info("  remap  %s -> %s", bag.topics[topic].recorded_name, topic)
-        from ._impl.replay.ros_io import unknown_types
-
-        for topic, reason in unknown_types({**fed, **recorded_types}).items():
-            problems.append(Problem(ERROR, "type_unknown", f"{topic}: message type not in the workspace ({reason})"))
+        bag, fed, problems = _check_bag(options, config, boundary, recorded_types)
     _write_json(
         out_dir / BOUNDARY_FILE,
         {
@@ -336,13 +367,14 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
     )
     _log_problems(problems)
     if has_errors(problems):
-        logger.error("replay: pre-flight failed, see %s", out_dir / BOUNDARY_FILE)
-        return EXIT_FAILED
+        raise _fail("pre-flight failed, see %s", out_dir / BOUNDARY_FILE)
     if options.check_only:
         logger.info("replay: pre-flight passed")
         _progress(PHASE_PRE, "pre-flight passed", 1.0)
-        return EXIT_OK
+        raise _Stop(EXIT_OK)
 
+    structure = replay_structure(payload["data"], scope)
+    mode = full_graph.mode or Path(json_path).stem
     key_inputs: dict[str, Any] = {}
     reference_dir = options.reference
     if bag is not None:
@@ -361,116 +393,165 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
         )
         if reference_dir is None:
             reference_dir = ref.reference_dir(Path(json_path), mode, ref.reference_key(key_inputs))
-
-    try:
-        arming = TracerArming(locate_tracer(), out_root / TRACE_SUBDIR)
-    except FileNotFoundError as exc:
-        logger.error("replay: the tracer gates the scope and is not installed: %s", exc)
-        return EXIT_FAILED
-
-    middleware = replay_middleware()
-    if options.isolate:
-        os.environ.update(middleware.isolation_environment)
-    if options.domain_id is not None and middleware.domain_id_variable:
-        os.environ[middleware.domain_id_variable] = str(options.domain_id)
-
     start_ns = bag.start_ns if bag is not None else time.time_ns()
-    end_ns = start_ns + int(options.duration * 1e9) if (bag is not None and options.duration is not None) else None
-    # Driver time the bag is stepped through, for the progress of the replay phase.
-    span_ns = 0
-    if bag is not None:
-        span_ns = (bag.end_ns if end_ns is None else min(end_ns, bag.end_ns)) - start_ns
-
-    stepping: list[bool] = []
-
-    def on_progress(now_ns: int) -> None:
-        if not stepping:
-            stepping.append(True)
-            _progress(PHASE_PRE, "the scope is up", 1.0)
-        done = max(now_ns - start_ns, 0)
-        _progress(
-            PHASE_REPLAY,
-            f"{done / 1e9:.1f} of {span_ns / 1e9:.1f} s",
-            done / span_ns if span_ns > 0 else 1.0,
-        )
-
-    # A Unix socket path holds about a hundred characters, fewer than a log directory may have.
-    socket_dir = Path(tempfile.mkdtemp(prefix="asd_replay_"))
-    socket_path = socket_dir / SOCKET_FILE
-    outcome: dict[str, Any] = {"error": None, "endpoint_problems": []}
-    result_holder: list[ReplayResult] = []
-    actor_config = ActorConfig(
-        respawn_enabled=False, output_dir=out_root, graceful_shutdown_timeout=options.graceful_shutdown_timeout
+    return _Plan(
+        json_path=json_path,
+        payload=payload,
+        config=config,
+        scope=scope,
+        structure=structure,
+        full_graph=full_graph,
+        mode=mode,
+        fqns=scope_node_fqns(payload, scope),
+        launch_files=scope_launch_files(payload, scope),
+        unconnected=unconnected_ports(payload, scope),
+        recorded_types=recorded_types,
+        out_root=out_root,
+        out_dir=out_dir,
+        bag=bag,
+        fed=fed,
+        key_inputs=key_inputs,
+        reference_dir=reference_dir,
+        start_ns=start_ns,
+        end_ns=start_ns + int(options.duration * 1e9) if (bag is not None and options.duration is not None) else None,
     )
 
-    async def _run() -> int:
-        # Bag reader, output writer and step log, closed however the run ends.
-        with contextlib.ExitStack() as resources:
-            return await _run_scope(resources)
 
-    async def _run_scope(resources: contextlib.ExitStack) -> int:
-        from ._impl.replay.ros_io import RosReplayIO
-        from ._impl.ros2.builder import populate_builder
+def _middleware_environment(options: ReplayOptions, middleware: ReplayMiddleware) -> dict[str, str]:
+    """Variables that place the replay on the middleware: its discovery range and its domain."""
+    environment = middleware.isolation(os.environ) if options.isolate else {}
+    if options.domain_id is not None and middleware.domain_id_variable:
+        environment[middleware.domain_id_variable] = str(options.domain_id)
+    return environment
 
-        builder, worker = populate_builder(structure, ecu=None, config=actor_config)
-        arming.install(builder)
-        members = _Members()
-        builder.add_state_hook(members.on_state)
+
+def _gate_environment(plan: _Plan, options: ReplayOptions, socket_path: Path) -> dict[str, str]:
+    """Variables that link a member's processes to the driver and set their gate."""
+    driver = plan.config.driver
+    environment = {
+        SOCKET_ENV: str(socket_path),
+        START_ENV: str(plan.start_ns),
+        GATE_HOLD_ENV: str(int(driver["gate_hold"] * 1e9)),
+        TAKE_TIMEOUT_ENV: str(int(driver["take_timeout"] * 1e9)),
+        GRANTS_ENV: str(driver["process_grants"]),
+    }
+    if options.free_wall_timers:
+        environment[WALL_TIMERS_ENV] = "free"
+    return environment
+
+
+class _NoIO:
+    """Driver endpoints of a run without a bag: nothing is fed or recorded."""
+
+    fed_topics: dict[str, str] = {}
+
+    def __init__(self, on_scope_up) -> None:
+        self._on_scope_up = on_scope_up
+
+    async def prepare(self, driver: ReplayDriver) -> None:
+        self._on_scope_up(driver.endpoints())
+
+    async def publish(self, topic: str, data: bytes) -> None:
+        return None
+
+    async def subscription_count(self, topic: str) -> int:
+        return 0
+
+
+class _NoSource:
+    def peek(self):
+        return None
+
+    def pop(self):
+        raise IndexError("no message")
+
+    def close(self) -> None:
+        return None
+
+
+class _Progress:
+    """Reports the driver time of a stepped bag as the progress of the replay phase."""
+
+    def __init__(self, plan: _Plan) -> None:
+        bag = plan.bag
+        self._start_ns = plan.start_ns
+        self._span_ns = 0
+        if bag is not None:
+            self._span_ns = (bag.end_ns if plan.end_ns is None else min(plan.end_ns, bag.end_ns)) - plan.start_ns
+        self._stepping = False
+
+    def __call__(self, now_ns: int) -> None:
+        if not self._stepping:
+            self._stepping = True
+            _progress(PHASE_PRE, "the scope is up", 1.0)
+        done = max(now_ns - self._start_ns, 0)
+        _progress(
+            PHASE_REPLAY,
+            f"{done / 1e9:.1f} of {self._span_ns / 1e9:.1f} s",
+            done / self._span_ns if self._span_ns > 0 else 1.0,
+        )
+
+
+def _source(plan: _Plan):
+    """The bag messages a run feeds, in feeding order."""
+    bag, fed = plan.bag, plan.fed
+    if bag is None:
+        return _NoSource()
+    source = BagMessages(bag, sorted(fed))
+    if plan.config.lead_in > 0:
+        latched = {t for t in fed if bag.topics[t].transient_local}
+        lead_in_end = plan.start_ns + int(plan.config.lead_in * 1e9)
+        return LeadIn(source, lead_in_end, special_topics().ambient_inputs, latched)
+    return source
+
+
+async def _run_scope(plan: _Plan, options: ReplayOptions, socket_path: Path, outcome: _Outcome) -> int:
+    """Launches the scope's members and steps them through the bag; returns the coordinator's exit code."""
+    from ._impl.replay.ros_io import RosReplayIO
+    from ._impl.ros2.builder import populate_builder
+
+    bag, config, out_dir = plan.bag, plan.config, plan.out_dir
+    middleware = replay_middleware()
+    actor_config = ActorConfig(
+        respawn_enabled=False, output_dir=plan.out_root, graceful_shutdown_timeout=config.driver["shutdown_timeout"]
+    )
+    builder, worker = populate_builder(plan.structure, ecu=None, config=actor_config)
+    TracerArming(locate_tracer(), plan.out_root / TRACE_SUBDIR).install(builder)
+    member_names: list[str] = []
+
+    def member_rank(member: str) -> int:
+        return member_names.index(member) if member in member_names else len(member_names)
+
+    def on_scope_up(endpoints: list[Endpoint]) -> None:
+        found = check_endpoints(
+            plan.full_graph,
+            plan.fqns,
+            _real_endpoints(endpoints, plan.launch_files),
+            accept=config.accept,
+            # Without a bag, the ambient inputs a run would feed stand in for the fed topics.
+            fed=[*plan.fed, *config.inputs, *(special_topics().ambient_inputs if bag is None else ())],
+            unconnected=plan.unconnected,
+        )
+        if options.allow_undeclared:
+            found = [Problem(WARNING, p.code, p.message) if p.level == ERROR else p for p in found]
+        for ep in endpoints:
+            if ep.kind == TIMER and ep.clock == CLOCK_FREE:
+                logger.warning("replay: %s runs on a wall clock, outside the driver's time", ep.label())
+        outcome.endpoint_problems = [p.as_dict() for p in found]
+        _log_problems(found)
+        if has_errors(found):
+            raise ReplayError("the scope's endpoints do not match the design; --allow-undeclared runs anyway")
+
+    # Bag reader, output writer and step log, closed however the run ends.
+    with contextlib.ExitStack() as resources:
         # rosbag2 writes into a directory it creates.
         shutil.rmtree(out_dir / ref.OUTPUTS_DIR, ignore_errors=True)
-        sink = BagSink(out_dir / ref.OUTPUTS_DIR, recorded_types, bag.storage_id) if bag is not None else None
+        sink = BagSink(out_dir / ref.OUTPUTS_DIR, plan.recorded_types, bag.storage_id) if bag is not None else None
         if sink is not None:
             resources.callback(sink.close)
-        recorder = OutputRecorder(recorded_types if bag is not None else {}, sink)
-
-        def on_scope_up(endpoints: list[Endpoint]) -> None:
-            found = check_endpoints(
-                full_graph,
-                fqns,
-                _real_endpoints(endpoints, members, launch_files),
-                accept=config.accept,
-                # Without a bag, the ambient inputs a run would feed stand in for the fed topics.
-                fed=[*fed, *config.inputs, *(special_topics().ambient_inputs if bag is None else ())],
-                unconnected=unconnected,
-            )
-            if options.allow_undeclared:
-                found = [Problem(WARNING, p.code, p.message) if p.level == ERROR else p for p in found]
-            free = [ep for ep in endpoints if ep.kind == TIMER and ep.clock == CLOCK_FREE]
-            for ep in free:
-                logger.warning("replay: %s runs on a wall clock, outside the driver's time", ep.label())
-            outcome["endpoint_problems"] = [p.as_dict() for p in found]
-            _log_problems(found)
-            if has_errors(found):
-                raise ReplayError("the scope's endpoints do not match the design; --allow-undeclared runs anyway")
-
-        io = RosReplayIO(worker, fed, bag, recorder, on_scope_up=on_scope_up) if bag is not None else None
-
-        class _NoIO:
-            fed_topics: dict[str, str] = {}
-
-            async def prepare(self, driver: ReplayDriver) -> None:
-                on_scope_up(driver.endpoints())
-
-            async def publish(self, topic: str, data: bytes) -> None:
-                return None
-
-            async def subscription_count(self, topic: str) -> int:
-                return 0
-
-        class _NoSource:
-            def peek(self):
-                return None
-
-            def pop(self):
-                raise IndexError("no message")
-
-            def close(self) -> None:
-                return None
-
-        source = BagMessages(bag, sorted(fed)) if bag is not None else _NoSource()
-        if bag is not None and config.lead_in > 0:
-            latched = {t for t in fed if bag.topics[t].transient_local}
-            source = LeadIn(source, start_ns + int(config.lead_in * 1e9), special_topics().ambient_inputs, latched)
+        recorder = OutputRecorder(plan.recorded_types if bag is not None else {}, sink)
+        io = RosReplayIO(worker, plan.fed, bag, recorder, on_scope_up=on_scope_up) if bag is not None else None
+        source = _source(plan)
         resources.callback(source.close)
         steps = resources.enter_context(open(out_dir / STEP_LOG_FILE, "w")) if options.step_log else None
         started = time.monotonic()
@@ -482,33 +563,28 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
         driver = ReplayDriver(
             server,
             source,
-            io if io is not None else _NoIO(),
+            io if io is not None else _NoIO(on_scope_up),
             recorder,
             DriverOptions(
-                start_ns=start_ns,
-                end_ns=end_ns,
+                start_ns=plan.start_ns,
+                end_ns=plan.end_ns,
                 seed=options.seed,
-                startup_timeout=options.startup_timeout,
-                startup_settle=options.startup_settle,
-                callback_timeout=options.callback_timeout,
                 startup_only=options.check_endpoints,
                 step_log=log_step if steps is not None else None,
-                progress=on_progress if bag is not None else None,
+                progress=_Progress(plan) if bag is not None else None,
+                **{name: config.driver[name] for name in DRIVER_OPTION_NAMES},
             ),
-            node_order=node_order,
-            expected_nodes=frozenset(fqns.values()),
-            process_rank=members.rank,
+            node_order=plan.node_order,
+            expected_nodes=frozenset(plan.fqns.values()),
+            member_rank=member_rank,
         )
+        gate = _gate_environment(plan, options, socket_path)
 
         async def pre_start(coord) -> None:
-            members.set_names(coord.names())
+            member_names[:] = coord.names()
             for spec in coord.specs():
-                env = dict(spec.env if spec.env is not None else os.environ)
-                env[SOCKET_ENV] = str(socket_path)
-                env[START_ENV] = str(start_ns)
-                if options.free_wall_timers:
-                    env[WALL_TIMERS_ENV] = "free"
-                spec.env = env
+                base = spec.env if spec.env is not None else os.environ
+                spec.env = {**base, **gate, MEMBER_ENV: spec.name}
                 cmd = list(spec.cmd)
                 if "--ros-args" in cmd:
                     spec.cmd = cmd + middleware.parameter_arguments(cmd)
@@ -517,18 +593,18 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             try:
                 await coord.launch_ready.wait()
                 _progress(PHASE_PRE, "waiting for the scope to come up")
-                result_holder.append(await driver.run())
+                outcome.driven = True
+                await driver.run()
                 if bag is not None:
                     _progress(PHASE_REPLAY, "the bag is stepped through", 1.0)
             except ReplayError as exc:
-                outcome["error"] = str(exc)
-                result_holder.append(driver.result)
+                outcome.error = str(exc)
                 logger.error("replay: %s", exc)
             except Exception as exc:  # noqa: BLE001
-                outcome["error"] = f"{type(exc).__name__}: {exc}"
-                result_holder.append(driver.result)
+                outcome.error = f"{type(exc).__name__}: {exc}"
                 logger.exception("replay driver failed")
             finally:
+                outcome.result = driver.result
                 _progress(PHASE_POST, "shutting down the scope")
                 coord.request_shutdown()
 
@@ -540,9 +616,9 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
         coord = builder.build()
         try:
             write_run_manifest(
-                out_root,
-                json_path=json_path,
-                data=payload,
+                plan.out_root,
+                json_path=plan.json_path,
+                data=plan.payload,
                 ecu=options.ecu,
                 deploy=options.deploy,
                 members=coord.names(),
@@ -558,35 +634,83 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             await server.close()
             await worker.stop()
 
+
+def _run(plan: _Plan, options: ReplayOptions) -> _Outcome:
+    """Runs the scope under the driver; the outcome holds what the driver counted and why it stopped."""
+    try:
+        locate_tracer()
+    except FileNotFoundError as exc:
+        raise _fail("the tracer gates the scope and is not installed: %s", exc) from exc
+    # The driver's own endpoints read the process environment, the members inherit it.
+    os.environ.update(_middleware_environment(options, replay_middleware()))
+    # A Unix socket path holds about a hundred characters, fewer than a log directory may have.
+    socket_dir = Path(tempfile.mkdtemp(prefix="asd_replay_"))
+    outcome = _Outcome(result=ReplayResult(start_ns=plan.start_ns))
     _progress(PHASE_PRE, "launching the scope")
     try:
-        run_code = asyncio.run(_run())
-    except KeyboardInterrupt:
-        logger.info("replay interrupted")
-        return EXIT_INTERRUPTED
+        run_code = asyncio.run(_run_scope(plan, options, socket_dir / SOCKET_FILE, outcome))
     finally:
         shutil.rmtree(socket_dir, ignore_errors=True)
+    if outcome.error is None and not outcome.driven:
+        outcome.error = "the scope stopped before the replay started"
+    elif outcome.error is None and run_code != 0:
+        outcome.error = "a member of the scope failed"
+    return outcome
 
-    result = result_holder[0] if result_holder else ReplayResult(start_ns=start_ns)
-    error = outcome["error"]
-    if error is None and not result_holder:
-        error = "the scope stopped before the replay started"
-    elif error is None and run_code != 0:
-        error = "a member of the scope failed"
+
+def _judge(plan: _Plan, options: ReplayOptions, result: ReplayResult, summary: dict[str, Any]) -> int:
+    """Digests the recorded outputs, then saves them as the reference or compares them with it."""
+    out_dir, reference_dir = plan.out_dir, plan.reference_dir
+    code = EXIT_DIFFERS if options.strict and result.violations else EXIT_OK
+    _progress(PHASE_POST, "saving the reference" if options.save_reference else "comparing the outputs")
+    since_ns = plan.start_ns + int(options.warmup * 1e9)
+    summary["outputs_digest"] = digest(
+        read_messages(out_dir / ref.OUTPUTS_DIR), plan.recorded_types, ros_deserialize, since_ns=since_ns
+    )
+    if options.save_reference:
+        if reference_dir is None:
+            logger.error("replay: no export to key the reference by; give --reference DIR")
+            return EXIT_FAILED
+        _save_reference(out_dir, reference_dir, plan.key_inputs)
+        summary["reference"] = {"path": str(reference_dir), "saved": True}
+        logger.info("replay: reference saved to %s", reference_dir)
+    elif reference_dir is not None and (reference_dir / ref.OUTPUTS_DIR).is_dir():
+        verdict = _compare(out_dir, reference_dir, plan.recorded_types, plan.config, since_ns)
+        _write_json(out_dir / VERDICT_FILE, {**verdict.as_dict(), "reference": str(reference_dir)})
+        summary["reference"] = {"path": str(reference_dir), "passed": verdict.passed}
+        for topic in verdict.topics:
+            if topic.difference is not None:
+                logger.error("replay: %s differs: %s", topic.topic, topic.difference.get("detail"))
+        if verdict.passed:
+            logger.info("replay: outputs match the reference %s", reference_dir)
+        else:
+            logger.error("replay: outputs differ from the reference, see %s", out_dir / VERDICT_FILE)
+            return EXIT_DIFFERS
+    elif options.reference is not None:
+        logger.error("replay: reference %s holds no outputs", options.reference)
+        return EXIT_FAILED
+    else:
+        summary["reference"] = None
+        logger.info("replay: no reference for this scope, bag and parameters; --save-reference stores this run")
+    return code
+
+
+def _conclude(plan: _Plan, options: ReplayOptions, outcome: _Outcome) -> int:
+    """Logs the run's counts, judges its outputs and writes the result file; returns the exit code."""
+    result, bag = outcome.result, plan.bag
     summary: dict[str, Any] = {
         "format": RESULT_FORMAT,
-        "system_structure": str(Path(json_path).resolve()),
-        "mode": mode,
-        "scope": scope.patterns,
+        "system_structure": str(Path(plan.json_path).resolve()),
+        "mode": plan.mode,
+        "scope": plan.scope.patterns,
         "bag": str(bag.path) if bag is not None else None,
-        "completed": error is None,
-        "error": error,
-        "endpoint_problems": outcome["endpoint_problems"],
+        "completed": outcome.error is None,
+        "error": outcome.error,
+        "endpoint_problems": outcome.endpoint_problems,
         **result.as_dict(),
     }
-
-    code = EXIT_OK if error is None else EXIT_FAILED
-    if error is None and bag is not None:
+    code = EXIT_OK if outcome.error is None else EXIT_FAILED
+    if outcome.error is None and bag is not None:
         logger.info(
             "replay: %.3f s of ROS time in %.1f s: %d messages in, %d callbacks, %d timer fires, %d outputs",
             (result.end_ns - result.start_ns) / 1e9,
@@ -596,6 +720,8 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             result.timer_fires,
             result.outputs,
         )
+        if result.lost_outputs:
+            logger.warning("replay: %d publish(es) on recorded topics were never heard", result.lost_outputs)
         for violation in result.violations:
             logger.warning(
                 "replay: %s of %s on %s outside the granted callback: %d",
@@ -604,43 +730,23 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
                 violation["endpoint"],
                 violation["count"],
             )
-        _progress(PHASE_POST, "saving the reference" if options.save_reference else "comparing the outputs")
-        since_ns = start_ns + int(options.warmup * 1e9)
-        summary["outputs_digest"] = digest(
-            read_messages(out_dir / ref.OUTPUTS_DIR), recorded_types, ros_deserialize, since_ns=since_ns
-        )
-        if options.strict and result.violations:
-            code = EXIT_DIFFERS
-        if options.save_reference:
-            if reference_dir is None:
-                logger.error("replay: no export to key the reference by; give --reference DIR")
-                code = EXIT_FAILED
-            else:
-                _save_reference(out_dir, reference_dir, key_inputs)
-                summary["reference"] = {"path": str(reference_dir), "saved": True}
-                logger.info("replay: reference saved to %s", reference_dir)
-        elif reference_dir is not None and (reference_dir / ref.OUTPUTS_DIR).is_dir():
-            verdict = _compare(out_dir, reference_dir, recorded_types, config, since_ns)
-            _write_json(out_dir / VERDICT_FILE, {**verdict.as_dict(), "reference": str(reference_dir)})
-            summary["reference"] = {"path": str(reference_dir), "passed": verdict.passed}
-            for topic in verdict.topics:
-                if topic.difference is not None:
-                    logger.error("replay: %s differs: %s", topic.topic, topic.difference.get("detail"))
-            if verdict.passed:
-                logger.info("replay: outputs match the reference %s", reference_dir)
-            else:
-                logger.error("replay: outputs differ from the reference, see %s", out_dir / VERDICT_FILE)
-                code = EXIT_DIFFERS
-        elif options.reference is not None:
-            logger.error("replay: reference %s holds no outputs", options.reference)
-            code = EXIT_FAILED
-        else:
-            summary["reference"] = None
-            logger.info("replay: no reference for this scope, bag and parameters; --save-reference stores this run")
-    _write_json(out_dir / RESULT_FILE, summary)
-    logger.info("replay: result in %s", out_dir / RESULT_FILE)
+        code = _judge(plan, options, result, summary)
+    _write_json(plan.out_dir / RESULT_FILE, summary)
+    logger.info("replay: result in %s", plan.out_dir / RESULT_FILE)
     _progress(PHASE_POST, "result written", 1.0)
     return code
+
+
+def replay_from_json(json_path: str, options: ReplayOptions) -> int:
+    try:
+        plan = _prepare(json_path, options)
+        outcome = _run(plan, options)
+    except _Stop as stop:
+        return stop.code
+    except KeyboardInterrupt:
+        logger.info("replay interrupted")
+        return EXIT_INTERRUPTED
+    return _conclude(plan, options, outcome)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -715,20 +821,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--no-isolate", action="store_true", help="Do not restrict discovery to this host.")
     run.add_argument("--domain-id", type=int, default=None, help="Middleware domain of the replay.")
-    run.add_argument("--startup-timeout", type=float, default=60.0, metavar="S")
     run.add_argument(
-        "--startup-settle",
-        type=float,
-        default=2.0,
-        metavar="S",
-        help="The scope is up once no endpoint was created for S seconds (default: 2).",
-    )
-    run.add_argument(
-        "--callback-timeout",
-        type=float,
-        default=30.0,
-        metavar="S",
-        help="Fail when a granted callback does not return within S seconds (default: 30).",
+        "--driver",
+        action="append",
+        default=None,
+        metavar="NAME=VALUE",
+        help="Set one driver setting, over the configuration's. Repeatable. "
+        + " ".join(
+            f"{setting['name']} ({setting['default']:g}{' s' if setting['unit'] == SECONDS else ''}): "
+            f"{setting['description']}"
+            for setting in driver_settings()
+        ),
     )
     verdict = parser.add_argument_group("verdict")
     verdict.add_argument(
@@ -760,18 +863,27 @@ def _parse_remaps(items: Optional[Sequence[str]]) -> dict[str, str]:
     return remap
 
 
-def main() -> None:
-    from .system_runner import _parse_arg_overrides, _setup_logging
+def _parse_driver(items: Optional[Sequence[str]]) -> dict[str, float]:
+    values: dict[str, Any] = {}
+    for name, text in parse_arg_overrides(items).items():
+        try:
+            values[name] = int(text)
+        except ValueError:
+            values[name] = float(text)
+    return parse_driver(values, "--driver")
 
+
+def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
     if args.bag is None and not args.check_endpoints:
         parser.error("--bag is required unless --check-endpoints is given")
     try:
         remap = _parse_remaps(args.remap)
+        driver = _parse_driver(args.driver)
     except ValueError as exc:
         parser.error(str(exc))
-    _setup_logging(args.log_level)
+    setup_logging(args.log_level)
     sys.exit(
         replay_from_json(
             args.json_file,
@@ -782,7 +894,7 @@ def main() -> None:
                 remap=remap,
                 ecu=args.compute_unit,
                 deploy=args.deploy,
-                arguments=_parse_arg_overrides(args.arg),
+                arguments=parse_arg_overrides(args.arg),
                 output_dir=args.log_dir,
                 reference=args.reference,
                 save_reference=args.save_reference,
@@ -797,9 +909,7 @@ def main() -> None:
                 domain_id=args.domain_id,
                 free_wall_timers=args.free_wall_timers,
                 step_log=args.step_log,
-                startup_timeout=args.startup_timeout,
-                startup_settle=args.startup_settle,
-                callback_timeout=args.callback_timeout,
+                driver=driver,
             ),
         )
     )

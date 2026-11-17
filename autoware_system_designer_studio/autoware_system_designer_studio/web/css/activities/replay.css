@@ -873,6 +873,40 @@ select.replay-selector-source {
   width: 110px;
 }
 
+.replay-run-driver {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.replay-run-driver > summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.replay-run-driver > summary .replay-block-count {
+  margin-left: 8px;
+}
+
+.replay-run-driver-list {
+  display: grid;
+  grid-template-columns: max-content 110px minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.replay-run-driver-row {
+  display: contents;
+}
+
+.replay-run-driver-name {
+  font-family: var(--mono-font);
+}
+
+.replay-run-driver-note {
+  color: var(--text-muted);
+}
+
 .replay-run-report {
   display: flex;
   flex-direction: column;

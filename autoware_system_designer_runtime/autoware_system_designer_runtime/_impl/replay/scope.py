@@ -27,7 +27,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
 from ...special_topics import special_topics
-from ..measure.node_graph import NodeGraph, NodeInfo, _is_topic_port, _walk, resolve_topic
+from ..measure.node_graph import NodeGraph, NodeInfo, is_topic_port, walk_entities, resolve_topic
 from ..ros2.common.namespace import node_fqn
 from .middleware import replay_middleware
 
@@ -108,7 +108,7 @@ class Boundary:
 
 
 def _launched_nodes(data: Mapping[str, Any], ecu: Optional[str]) -> Iterable[Mapping[str, Any]]:
-    for entity in _walk(data):
+    for entity in walk_entities(data):
         if entity.get("entity_type") != "node" or not entity.get("launcher"):
             continue
         if ecu is not None and entity.get("compute_unit") != ecu:
@@ -206,7 +206,7 @@ def _service_ports(entity: Mapping[str, Any]) -> Iterable[tuple[str, str, str]]:
     """(resolved name, type, role) of the service and action ports of a node."""
     for side, fallback in (("in_ports", "client"), ("out_ports", "server")):
         for port in entity.get(side, []):
-            if _is_topic_port(port):
+            if is_topic_port(port):
                 continue
             name = resolve_topic(port)
             if name is None:
@@ -318,7 +318,7 @@ def unconnected_ports(data: Mapping[str, Any], scope: Scope) -> dict[str, set[st
         namespace = fqn.rsplit("/", 1)[0]
         for port in list(entity.get("in_ports", [])) + list(entity.get("out_ports", [])):
             target = port.get("remap_target")
-            if not _is_topic_port(port) or resolve_topic(port) is not None or not isinstance(target, str):
+            if not is_topic_port(port) or resolve_topic(port) is not None or not isinstance(target, str):
                 continue
             if target.startswith("~"):
                 name = fqn + target[1:]

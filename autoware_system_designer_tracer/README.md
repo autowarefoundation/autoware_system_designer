@@ -21,20 +21,24 @@ The layout is `include/autoware_system_designer_tracer/trace_format.h`; the Pyth
 
 ## Environment
 
-| Variable                 | Role                                                                                                     |
-| ------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `ASD_TRACE_DIR`          | arms the tracer; the directory the files go to                                                           |
-| `ASD_TRACE_CAPACITY`     | event records per process file, a ring of the latest ones (default 4194304, at most 16777216)            |
-| `ASD_STATS_SLOTS`        | counter slots per process (default 1024, at most 65536); live endpoints past it are counted, not tracked |
-| `ASD_REPLAY_SOCKET`      | arms the replay gate; the Unix socket of the replay driver                                               |
-| `ASD_REPLAY_START_NS`    | ROS time every clock holds until the driver's first clock step                                           |
-| `ASD_REPLAY_WALL_TIMERS` | `free` leaves timers of a steady or system clock on that clock, ungated                                  |
+| Variable                     | Role                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `ASD_TRACE_DIR`              | arms the tracer; the directory the files go to                                                           |
+| `ASD_TRACE_CAPACITY`         | event records per process file, a ring of the latest ones (default 4194304, at most 16777216)            |
+| `ASD_STATS_SLOTS`            | counter slots per process (default 1024, at most 65536); live endpoints past it are counted, not tracked |
+| `ASD_REPLAY_SOCKET`          | arms the replay gate; the Unix socket of the replay driver                                               |
+| `ASD_REPLAY_START_NS`        | ROS time every clock holds until the driver's first clock step                                           |
+| `ASD_REPLAY_WALL_TIMERS`     | `free` leaves timers of a steady or system clock on that clock, ungated                                  |
+| `ASD_REPLAY_MEMBER`          | name of the member that started the process, sent in its `hello`                                         |
+| `ASD_REPLAY_GATE_HOLD_NS`    | longest stay of an executor in `rcl_wait` with ready work and no grant (default 2000000)                 |
+| `ASD_REPLAY_TAKE_TIMEOUT_NS` | time a take waits for a message in flight (default 2000000000)                                           |
+| `ASD_REPLAY_GRANTS`          | threads of the process that hold a grant at once (default 4, at most 64)                                 |
 
 The runtime sets `LD_PRELOAD` and `ASD_TRACE_DIR` on every process it spawns and locates the library through the ament index or `ASD_TRACER_LIB`.
 
 ## Replay
 
-A process started with `ASD_REPLAY_SOCKET` connects to the replay driver of `autoware-system-designer-replay` on its first rcl call and is gated from then on (`src/replay.c`; the lines of the link are listed at its top):
+A process started with `ASD_REPLAY_SOCKET` connects to the replay driver of `autoware-system-designer-replay` on its first rcl call and is gated from then on (`src/replay_link.c` holds the link and lists its lines at its top, `replay_table.c` the endpoints, `replay_clock.c` the clocks, `replay_gate.c` the gate):
 
 - `rcl_wait` reports the subscriptions and timers that have work, hides them from the executor and returns the one the driver granted. The grant ends when `rclcpp::Executor::execute_any_executable` returns, else at the thread's next `rcl_wait`.
 - Publishes, takes and timer calls are reported with whether their thread holds the grant; a take that finds nothing while a published message is in flight waits for it.

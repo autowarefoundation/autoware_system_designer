@@ -23,11 +23,7 @@ from autoware_system_designer_runtime.special_topics import SpecialTopicsError, 
 def home(tmp_path, monkeypatch):
     path = tmp_path / "home"
     monkeypatch.setenv(user_home.HOME_ENV, str(path))
-    special_topics.cache_clear()
-    middleware.replay_middleware.cache_clear()
-    yield path
-    special_topics.cache_clear()
-    middleware.replay_middleware.cache_clear()
+    return path
 
 
 def _override(home, name, text):
@@ -75,3 +71,30 @@ def test_a_user_file_that_is_no_mapping_is_named_in_the_error(home):
     path = _override(home, "special_topics.yaml", "- /x\n")
     with pytest.raises(SpecialTopicsError, match=f"{path}: expected a mapping"):
         special_topics()
+
+
+def test_a_changed_user_file_is_read_again(home):
+    assert special_topics().ambient_inputs == ("/tf", "/tf_static")
+    path = _override(home, "special_topics.yaml", "ambient_inputs: [/tf]\n")
+    assert special_topics().ambient_inputs == ("/tf",)
+    assert special_topics() is special_topics()
+    path.unlink()
+    assert special_topics().ambient_inputs == ("/tf", "/tf_static")
+
+
+def test_a_user_file_sets_driver_defaults(home):
+    from autoware_system_designer_runtime._impl.replay.config import ConfigError, ReplayConfig, driver_settings
+
+    defaults = {setting["name"]: setting["default"] for setting in driver_settings()}
+    assert defaults["callback_timeout"] == 30.0
+    path = _override(home, "replay_defaults.yaml", "driver: {callback_timeout: 5}\n")
+    assert ReplayConfig().driver == {**defaults, "callback_timeout": 5.0}
+    path.unlink()
+    assert ReplayConfig.from_mapping({"driver": {"callback_timeout": 5, "miss_limit": 4}}).driver == {
+        **defaults,
+        "callback_timeout": 5.0,
+        "miss_limit": 4,
+    }
+    for bad in ({"unknown": 1}, {"miss_limit": 0}, {"miss_limit": 1.5}, {"gate_hold": -1}):
+        with pytest.raises(ConfigError):
+            ReplayConfig.from_mapping({"driver": bad})

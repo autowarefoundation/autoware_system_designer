@@ -13,7 +13,8 @@
 # limitations under the License.
 
 """Deterministic replay of a scope as a job: the runtime's replay command on a mode's system
-structure, with the request's scope, remap, accepted names and outputs as its configuration.
+structure, with the request's scope, remap, accepted names, outputs and driver settings as its
+configuration. `register` gives a daemon the replay methods.
 
 One replay runs per daemon. Its run directory is under the daemon's replay logs; the job's detail
 names it and, once the job ended, carries the summary of the
@@ -26,6 +27,7 @@ resolved to and the outputs recorded, and its run options.
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import json
 import os
@@ -34,7 +36,7 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional
 from urllib.parse import unquote, urlsplit
 
 from autoware_system_designer_runtime.replay_record import (
@@ -44,13 +46,17 @@ from autoware_system_designer_runtime.replay_record import (
     VERDICT_FILE,
     BagError,
     bag_topics,
+    driver_settings,
     parse_progress,
     read_replay_file,
 )
 from autoware_system_designer_runtime.run_log import LOG_BASE, REPLAY_LOGS
 
 from ..exports import SystemExport
-from . import api
+from . import api, jobs
+
+if TYPE_CHECKING:
+    from .server import ServeDaemon
 
 REPLAY_JOB_KIND = "replay"
 RUNTIME_PACKAGE = "autoware_system_designer_runtime"
@@ -63,7 +69,7 @@ SUMMARY_ITEMS = 50
 SETUP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SETUP_SUFFIX = ".yaml"
 SETUP_KEYS = ("system", "mode", "deploy", "bag", "config", "inputs", "recorded", "run")
-SETUP_CONFIG_KEYS = ("scope", "remap", "accept", "outputs", "skip_outputs", "lead_in")
+SETUP_CONFIG_KEYS = ("scope", "remap", "accept", "outputs", "skip_outputs", "lead_in", "driver")
 SETUP_RUN_KEYS = ("duration", "domain_id", "save_reference")
 # Levels below a bag directory a file search descends, and the directories it visits at most.
 FIND_DEPTH = 4
@@ -90,12 +96,19 @@ def find_command(install_root: Path, env: Mapping[str, str]) -> Optional[Path]:
     return None
 
 
-def bag_path(text: str) -> Path:
-    """The bag a request names, by its path or its ``file://`` URI."""
+def _path_of(text: str) -> Path:
     parsed = urlsplit(text)
     if parsed.scheme == "file":
         return Path(unquote(parsed.path))
     return Path(text).expanduser()
+
+
+def bag_path(text: str) -> Path:
+    """The bag a request names, by its absolute path or its ``file://`` URI."""
+    path = _path_of(text)
+    if not path.is_absolute():
+        raise api.ApiError(api.INVALID_PARAMS, f"the bag path must be absolute: {text}")
+    return path
 
 
 def find_bag_file(directories: Iterable[Path], name: str, size: int) -> Optional[Path]:
@@ -122,15 +135,11 @@ def find_bag_file(directories: Iterable[Path], name: str, size: int) -> Optional
     return max(found)[1] if found else None
 
 
-def read_bag(path: str, *, generate: bool = False) -> dict[str, Any]:
-    """Topics of the bag at *path*; with *generate*, a bag without metadata gets its ``metadata.yaml``,
-    and is read from its storage file where the directory cannot be written."""
+def read_bag(path: str) -> dict[str, Any]:
+    """Topics of the bag at *path*, from its ``metadata.yaml``, else from its storage file."""
     target = bag_path(path)
     try:
-        try:
-            return bag_topics(target, generate=generate)
-        except PermissionError:
-            return bag_topics(target)
+        return bag_topics(target)
     except BagError as exc:
         raise api.ApiError(api.NOT_FOUND, str(exc)) from exc
     except ImportError as exc:
@@ -175,6 +184,22 @@ def _domain_id(params: Mapping[str, Any]) -> Optional[int]:
     return value
 
 
+def _driver(params: Mapping[str, Any]) -> dict[str, Any]:
+    """The driver settings a request or a setup sets, each of the runtime's names and of its unit."""
+    value = params.get("driver") or {}
+    units = {setting["name"]: setting["unit"] for setting in driver_settings()}
+    if not isinstance(value, dict) or set(value) - set(units):
+        raise api.ApiError(api.INVALID_PARAMS, f"driver must map settings of {', '.join(units)} to values")
+    for name, item in value.items():
+        number = not isinstance(item, bool) and isinstance(item, (int, float))
+        if units[name] == "count":
+            if not number or not isinstance(item, int) or item < 1:
+                raise api.ApiError(api.INVALID_PARAMS, f"driver.{name} must be a count, one or more")
+        elif not number or item < 0:
+            raise api.ApiError(api.INVALID_PARAMS, f"driver.{name} must be a number of seconds, zero or more")
+    return dict(value)
+
+
 def replay_config(params: Mapping[str, Any]) -> dict[str, Any]:
     """The runtime configuration a request or a setup gives."""
     config = {
@@ -187,6 +212,9 @@ def replay_config(params: Mapping[str, Any]) -> dict[str, Any]:
     lead_in = _seconds(params, "lead_in", positive=False)
     if lead_in is not None:
         config["lead_in"] = lead_in
+    driver = _driver(params)
+    if driver:
+        config["driver"] = driver
     return config
 
 
@@ -301,6 +329,7 @@ def summary(run_dir: Path) -> dict[str, Any]:
                 "callbacks",
                 "timer_fires",
                 "outputs",
+                "lost_outputs",
                 "outputs_digest",
                 "reference",
             )
@@ -419,3 +448,122 @@ def delete_setup(directory: Path, name: Any) -> None:
         path.unlink()
     except FileNotFoundError as exc:
         raise api.ApiError(api.NOT_FOUND, f"no setup {name!r} in {directory}") from exc
+
+
+# -- daemon methods -----------------------------------------------------------
+
+
+def register(daemon: "ServeDaemon") -> None:
+    """Registers the replay methods on *daemon*."""
+
+    async def read(params: dict[str, Any]) -> dict[str, Any]:
+        return await asyncio.to_thread(read_bag, api.str_param(params, "path", required=True))
+
+    async def find(params: dict[str, Any]) -> dict[str, Any]:
+        name = api.str_param(params, "name", required=True)
+        size = params.get("size")
+        directories = params.get("directories") or []
+        if "/" in name or name in (".", ".."):
+            raise api.ApiError(api.INVALID_PARAMS, "name must be a file name")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            raise api.ApiError(api.INVALID_PARAMS, "size must be a number of bytes")
+        if not isinstance(directories, list) or not all(isinstance(item, str) and item for item in directories):
+            raise api.ApiError(api.INVALID_PARAMS, "directories must be a list of paths")
+        searched = [path for path in map(_path_of, directories) if path.is_absolute()] + daemon.bag_dirs
+        found = await asyncio.to_thread(find_bag_file, searched, name, size)
+        if found is None:
+            raise api.ApiError(api.NOT_FOUND, f"no {name} of {size} bytes under the bag directories")
+        return {"path": str(found)}
+
+    async def settings(params: dict[str, Any]) -> dict[str, Any]:
+        return {"driver": await asyncio.to_thread(driver_settings)}
+
+    async def start(params: dict[str, Any]) -> dict[str, Any]:
+        system = await daemon.find_system(api.str_param(params, "system", required=True))
+        mode = api.str_param(params, "mode") or system.manifest.get("default_mode")
+        if not isinstance(mode, str) or mode not in system.mode_keys():
+            raise api.ApiError(api.INVALID_PARAMS, f"unknown mode {mode!r} of {system.id}")
+        if not system.structure_path(mode).is_file():
+            raise api.ApiError(api.INVALID_PARAMS, f"mode {mode!r} of {system.id} has no system structure")
+        deploy = api.str_param(params, "deploy")
+        if deploy is not None and deploy not in {v["name"] for v in system.deploy_variants()}:
+            raise api.ApiError(api.INVALID_PARAMS, f"unknown deploy variant {deploy!r} of {system.id}")
+        env = daemon.launch.env
+        if not env.get("ROS_DISTRO"):
+            raise api.ApiError(api.UNAVAILABLE, "the launch environment has no ROS_DISTRO (see --env-script)")
+        command = find_command(daemon.install_root, env)
+        if command is None:
+            raise api.ApiError(
+                api.UNAVAILABLE, f"{REPLAY_COMMAND} not found on the launch PATH or under the install tree"
+            )
+        plan = plan_replay(
+            system,
+            command,
+            params,
+            mode=mode,
+            bag=api.str_param(params, "bag", required=True),
+            deploy=deploy,
+            log_base=daemon.storage.replay_logs,
+        )
+        # A launched unit on the replay's domain answers the scope's requests and feeds its topics.
+        launched = sorted(s.compute_unit for s in daemon.launch.sessions.values() if s.active)
+        if launched and not plan.params["check"] and plan.params["domain_id"] is None:
+            raise api.ApiError(
+                api.CONFLICT,
+                f"compute unit(s) {', '.join(launched)} are launched on this daemon; "
+                "shut them down or give the replay a domain_id of its own",
+            )
+
+        def on_line(job: jobs.Job, line: str) -> bool:
+            return update_progress(job.detail, line)
+
+        def on_exit(job: jobs.Job) -> None:
+            job.detail.update(summary(plan.run_dir))
+
+        spec = jobs.JobSpec(
+            key=REPLAY_JOB_KIND,
+            kind=REPLAY_JOB_KIND,
+            title=plan.title,
+            argv=list(plan.argv),
+            cwd=daemon.launch_cwd,
+            env=env,
+            params=plan.params,
+            detail={"run_dir": str(plan.run_dir)},
+            on_line=on_line,
+            on_exit=on_exit,
+        )
+        await asyncio.to_thread(write_config, plan)
+        try:
+            return (await daemon.jobs.start(spec)).to_view()
+        except api.ApiError:
+            await asyncio.to_thread(discard_config, plan)
+            raise
+
+    async def setups(params: dict[str, Any]) -> dict[str, Any]:
+        directory = daemon.storage.replay_setups
+        return {"dir": str(directory), "setups": await asyncio.to_thread(list_setups, directory)}
+
+    async def setup_get(params: dict[str, Any]) -> dict[str, Any]:
+        setup = await asyncio.to_thread(read_setup, daemon.storage.replay_setups, params.get("name"))
+        return {"name": params["name"], "setup": setup}
+
+    async def setup_save(params: dict[str, Any]) -> dict[str, Any]:
+        directory = daemon.storage.replay_setups
+        try:
+            path = await asyncio.to_thread(write_setup, directory, params.get("name"), params.get("setup"))
+        except OSError as exc:
+            raise api.ApiError(api.UNAVAILABLE, f"cannot write to {directory}: {exc}") from exc
+        return {"name": params["name"], "path": str(path)}
+
+    async def setup_delete(params: dict[str, Any]) -> dict[str, Any]:
+        await asyncio.to_thread(delete_setup, daemon.storage.replay_setups, params.get("name"))
+        return {"name": params["name"]}
+
+    daemon.methods.register("replay.bag", read)
+    daemon.methods.register("replay.find", find)
+    daemon.methods.register("replay.settings", settings)
+    daemon.methods.register("replay.start", start)
+    daemon.methods.register("replay.setups", setups)
+    daemon.methods.register("replay.setup.get", setup_get)
+    daemon.methods.register("replay.setup.save", setup_save)
+    daemon.methods.register("replay.setup.delete", setup_delete)

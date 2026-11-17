@@ -8,6 +8,7 @@
   const replay = (SD.activities.replay ||= {});
   const JOB_KIND = "replay";
   const START = "replay.start";
+  const SETTINGS = "replay.settings";
   // Phases a replay's progress lines name, in order, with their share of the bar.
   const PHASES = [
     { name: "pre-process", label: "Pre-process", grow: 1 },
@@ -24,8 +25,7 @@
         level: "running",
         text: job.cancel_requested ? "Cancelling" : "Running",
       };
-    if (job.state === "cancelled")
-      return { level: "warning", text: "Cancelled" };
+    if (job.state === "cancelled") return { level: "warning", text: "Cancelled" };
     if (errors.length)
       return {
         level: "failed",
@@ -57,7 +57,8 @@
     const seconds = ((result.end_ns - result.start_ns) / 1e9).toFixed(3);
     return (
       `${seconds} s of ROS time in ${result.wall_s} s: ${result.messages} messages in, ` +
-      `${result.callbacks} callbacks, ${result.timer_fires} timer fires, ${result.outputs} outputs`
+      `${result.callbacks} callbacks, ${result.timer_fires} timer fires, ${result.outputs} outputs` +
+      (result.lost_outputs ? `, ${result.lost_outputs} publishes never heard` : "")
     );
   }
 
@@ -65,9 +66,7 @@
   function findings(job) {
     const detail = job.detail || {};
     const lines = [];
-    (detail.problems || []).forEach((p) =>
-      lines.push({ level: p.level, text: p.message }),
-    );
+    (detail.problems || []).forEach((p) => lines.push({ level: p.level, text: p.message }));
     (detail.result?.endpoint_problems || []).forEach((p) =>
       lines.push({ level: p.level, text: p.message }),
     );
@@ -103,8 +102,7 @@
     return phases.map((phase) => {
       const fraction = reached[phase.name] ?? null;
       if (fraction === 1) return { phase, state: "done", width: 1 };
-      if (running && phase.name === current)
-        return { phase, state: "active", width: fraction };
+      if (running && phase.name === current) return { phase, state: "active", width: fraction };
       if (phase.name in reached || phase.name === current)
         return { phase, state: "stopped", width: fraction };
       return { phase, state: "pending", width: 0 };
@@ -147,8 +145,7 @@
       );
       const progress = job?.detail?.progress;
       const phase = PHASES.find((entry) => entry.name === progress?.phase);
-      step.textContent =
-        progress?.step && phase ? `${phase.label}: ${progress.step}` : "";
+      step.textContent = progress?.step && phase ? `${phase.label}: ${progress.step}` : "";
     }
 
     return { element: root, render };
@@ -161,6 +158,80 @@
     input.step = step;
     input.placeholder = placeholder;
     return input;
+  }
+
+  // The driver settings of the runtime, folded: each with its description and
+  // an input that shows the default while empty. A setting left empty takes
+  // the default of the run.
+  function driverSettings(daemon) {
+    const root = element("details", "replay-run-driver");
+    const count = element("span", "replay-block-count");
+    const summary = element("summary", "", "Driver settings");
+    summary.appendChild(count);
+    const rows = element("div", "replay-run-driver-list");
+    root.append(summary, rows);
+    // Settings the daemon listed, and the values set, by name.
+    let settings = [];
+    let values = {};
+
+    function render() {
+      root.hidden = !settings.length;
+      const set = Object.keys(values).length;
+      count.textContent = set ? `${set} set` : "defaults";
+      rows.replaceChildren(
+        ...settings.map((setting) => {
+          const seconds = setting.unit === "s";
+          const input = numberInput(
+            `${setting.default}${seconds ? " s" : ""}`,
+            seconds ? "0" : "1",
+            seconds ? "any" : "1",
+          );
+          input.value = values[setting.name] ?? "";
+          input.setAttribute("aria-label", setting.name);
+          input.addEventListener("input", () => {
+            if (input.value === "" || !input.checkValidity()) delete values[setting.name];
+            else values[setting.name] = Number(input.value);
+            const now = Object.keys(values).length;
+            count.textContent = now ? `${now} set` : "defaults";
+          });
+          const row = element("label", "replay-run-driver-row");
+          row.title = `${setting.description} Default: ${setting.default}${seconds ? " s" : ""}`;
+          row.append(
+            element("span", "replay-run-driver-name", setting.name),
+            input,
+            element("span", "replay-run-driver-note", setting.description),
+          );
+          return row;
+        }),
+      );
+    }
+
+    function load() {
+      if (!daemon.connected || !daemon.health || !daemon.offers(SETTINGS)) return;
+      daemon.rpc(SETTINGS).then(
+        (result) => {
+          if (JSON.stringify(result.driver) === JSON.stringify(settings)) return;
+          settings = result.driver;
+          render();
+        },
+        () => {},
+      );
+    }
+
+    SD.on("daemon.health", load);
+    SD.on("daemon.connection", load);
+    load();
+    render();
+    return {
+      element: root,
+      // Values set, by name; empty when every setting is at its default.
+      values: () => ({ ...values }),
+      set(next) {
+        values = { ...(next || {}) };
+        root.open = Object.keys(values).length > 0;
+        render();
+      },
+    };
   }
 
   // `request()` gives { params } of a replay, or { blocker } naming what it lacks.
@@ -188,6 +259,7 @@
       option("Save outputs as the reference", saveReference),
       jobOption,
     );
+    const driver = driverSettings(daemon);
     const check = element("button", "panel-button", "Pre-flight");
     const run = element("button", "panel-button primary", "Run replay");
     const cancel = element("button", "panel-button", "Cancel");
@@ -205,18 +277,11 @@
     const findingList = element("ul", "replay-run-findings");
     const logHost = element("div", "replay-run-log");
     const report = element("div", "replay-run-report");
-    report.append(
-      status,
-      progress.element,
-      counts,
-      runDir,
-      findingList,
-      logHost,
-    );
+    report.append(status, progress.element, counts, runDir, findingList, logHost);
     // Log shown before the first replay job.
     const idleLog = terminal("No replay run yet.");
     logHost.appendChild(idleLog.element);
-    root.append(options, buttons, error, report);
+    root.append(options, driver.element, buttons, error, report);
 
     // The followed job: its id, terminal and the sequence of the last line shown.
     let followed = null;
@@ -249,9 +314,7 @@
 
     function follow(id) {
       if (followed?.id === id) return;
-      followed = id
-        ? { id, log: terminal("No output yet."), lastSeq: 0 }
-        : null;
+      followed = id ? { id, log: terminal("No output yet."), lastSeq: 0 } : null;
       logHost.replaceChildren((followed ? followed.log : idleLog).element);
       fetchLog();
     }
@@ -266,8 +329,7 @@
         findingList.replaceChildren();
         return;
       }
-      if (!followed || !jobs.some((job) => job.id === followed.id))
-        follow(jobs[0].id);
+      if (!followed || !jobs.some((job) => job.id === followed.id)) follow(jobs[0].id);
       SD.widgets.setOptions(
         jobSelect,
         jobs.map((job) => [job.id, `${job.id} · ${job.title}`]),
@@ -313,6 +375,8 @@
         extra.save_reference = saveReference.checked;
         if (duration.value) extra.duration = Number(duration.value);
         if (leadIn.value !== "") extra.lead_in = Number(leadIn.value);
+        const set = driver.values();
+        if (Object.keys(set).length) extra.driver = set;
       }
       if (domain.value !== "") extra.domain_id = Number(domain.value);
       check.disabled = run.disabled = true;
@@ -354,19 +418,24 @@
       refresh();
     });
 
-    // Run options as a setup keeps them: lead-in apart, as the configuration holds it.
+    // Run options as a setup keeps them: lead-in and driver settings apart, as the configuration holds them.
     function getOptions() {
       const run = { save_reference: saveReference.checked };
       if (duration.value) run.duration = Number(duration.value);
       if (domain.value !== "") run.domain_id = Number(domain.value);
-      return { run, leadIn: leadIn.value === "" ? null : Number(leadIn.value) };
+      return {
+        run,
+        leadIn: leadIn.value === "" ? null : Number(leadIn.value),
+        driver: driver.values(),
+      };
     }
 
-    function setOptions(run, leadInValue) {
+    function setOptions(run, leadInValue, driverValues) {
       duration.value = run.duration ?? "";
       domain.value = run.domain_id ?? "";
       saveReference.checked = !!run.save_reference;
       leadIn.value = leadInValue ?? "";
+      driver.set(driverValues);
     }
 
     return { element: root, refresh, getOptions, setOptions };

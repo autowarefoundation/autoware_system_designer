@@ -22,7 +22,8 @@ The user home is ``$AUTOWARE_SYSTEM_DESIGNER_HOME``, else ``~/.autoware/system_d
     <user home>/replay_setups/       # saved replay setups
 
 A configuration file is the package's file with each top-level key the user's file of the same name
-sets replaced by the user's value.
+sets replaced by the user's value; a key a configuration names as merged keeps the package's entries
+the user's mapping does not set.
 
 Plain Python with no ROS import.
 """
@@ -31,7 +32,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Collection, Mapping, TypeVar
+
+T = TypeVar("T")
 
 HOME_ENV = "AUTOWARE_SYSTEM_DESIGNER_HOME"
 DEFAULT_HOME = Path("~") / ".autoware" / "system_designer"
@@ -69,23 +72,66 @@ def user_overrides() -> list[Path]:
     return [directory / name for name in names if (directory / name).is_file()]
 
 
-def read_config(name: str) -> tuple[dict[str, Any], list[Path]]:
-    """The mapping of the configuration *name* with the files it was read from."""
+def load_yaml(path: Path) -> Any:
+    """The content of one YAML file."""
     import yaml
 
+    try:
+        return yaml.safe_load(path.read_text())
+    except (OSError, yaml.YAMLError) as exc:
+        raise ConfigFileError(f"{path}: {exc}") from exc
+
+
+def read_config(name: str, merged: Collection[str] = ()) -> tuple[dict[str, Any], list[Path]]:
+    """The mapping of the configuration *name* with the files it was read from; the mappings of the
+    *merged* keys are layered entry by entry."""
     files = config_files(name)
-    merged: dict[str, Any] = {}
+    layered: dict[str, Any] = {}
     for path in files:
-        try:
-            payload = yaml.safe_load(path.read_text())
-        except (OSError, yaml.YAMLError) as exc:
-            raise ConfigFileError(f"{path}: {exc}") from exc
+        payload = load_yaml(path)
         if payload is None:
             continue
         if not isinstance(payload, dict):
             raise ConfigFileError(f"{path}: expected a mapping")
-        merged.update(payload)
-    return merged, files
+        for key, value in payload.items():
+            if key in merged and isinstance(value, dict) and isinstance(layered.get(key), dict):
+                value = {**layered[key], **value}
+            layered[key] = value
+    return layered, files
+
+
+def _stamp(files: list[Path]) -> tuple[tuple[str, int, int], ...]:
+    stamps = []
+    for path in files:
+        status = path.stat()
+        stamps.append((str(path), status.st_mtime_ns, status.st_size))
+    return tuple(stamps)
+
+
+# Parsed configuration by name, with the stamp of the files it was read from.
+_parsed: dict[str, tuple[tuple[tuple[str, int, int], ...], Any]] = {}
+
+
+def cached_config(
+    name: str, parse: Callable[[Mapping[str, Any]], T], error: type[ValueError], merged: Collection[str] = ()
+) -> T:
+    """The configuration *name* parsed by *parse*; read again once one of its files changed, appeared
+    or went. A failure is raised as *error*, naming the files."""
+    try:
+        files = config_files(name)
+        stamp = _stamp(files)
+        cached = _parsed.get(name)
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
+        payload, files = read_config(name, merged)
+    except (ConfigFileError, OSError) as exc:
+        raise error(str(exc)) from exc
+    try:
+        value = parse(payload)
+    except ValueError as exc:
+        raise error(f"{describe(files)}: {exc}") from exc
+    _parsed[name] = (stamp, value)
+    return value
 
 
 def describe(files: list[Path]) -> str:

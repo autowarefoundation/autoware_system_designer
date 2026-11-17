@@ -263,7 +263,7 @@ log base, the manifest, the member directory name and the tail of a member file.
 | `_impl/replay/scope.py`               | Scope selection by design path, boundary inputs and outputs, the scope's structure                      |
 | `_impl/replay/config.py`              | Replay configuration file                                                                               |
 | `_impl/replay/middleware.py`          | Middleware settings of a replay, read from `config/replay_middleware.yaml`                              |
-| `_impl/replay/bag.py`                 | Bag metadata, read or generated, messages in recorded order, writer of the recorded outputs             |
+| `_impl/replay/bag.py`                 | Bag metadata, messages in recorded order, writer of the recorded outputs                                |
 | `_impl/replay/preflight.py`           | Bag against boundary, real endpoints against the design                                                 |
 | `_impl/replay/link.py`                | Socket link to the gated processes                                                                      |
 | `_impl/replay/driver.py`              | Replay driver: steps, settling, tie order                                                               |
@@ -431,7 +431,7 @@ The tools keep the user's files under `$AUTOWARE_SYSTEM_DESIGNER_HOME`, else `~/
 <user home>/replay_setups/       # saved replay setups
 ```
 
-Each of `special_topics.yaml`, `replay_middleware.yaml` and `replay_defaults.yaml` is read from `config/` of this package, with every top-level key the user's file of the same name sets replaced by the user's value. A user file holds only the keys it changes; the files are read once per process.
+Each of `special_topics.yaml`, `replay_middleware.yaml` and `replay_defaults.yaml` is read from `config/` of this package, with every top-level key the user's file of the same name sets replaced by the user's value. The `driver` mapping of `replay_defaults.yaml` is layered entry by entry. A user file holds only the keys it changes; a file that changed, appeared or went is read again on the next use, also in a running daemon.
 
 ## Deterministic replay
 
@@ -447,6 +447,8 @@ autoware-system-designer-replay SYSTEM.json --scope /perception/object_recogniti
     --bag /data/bags/drive_01 --deploy my_vehicle    # later runs: exit 1 when the outputs differ
 ```
 
+`--bag` takes a bag directory or one of its files. A bag without `metadata.yaml` is read from its `.db3` or `.mcap` file, a directory of split files in the order of their start times; the replay writes nothing into the bag.
+
 | Term                              | Meaning                                                                                |
 | --------------------------------- | -------------------------------------------------------------------------------------- |
 | scope                             | the selected nodes, with the containers of the selected composable nodes               |
@@ -461,24 +463,26 @@ autoware-system-designer-replay SYSTEM.json --scope /perception/object_recogniti
 
 The topics no design declares take their role from `config/special_topics.yaml` of this package, layered with the user's (see [User home](#user-home)); measurement and the studio read the same file:
 
-| Key                  | Role                                                                           | Topics                         |
-| -------------------- | ------------------------------------------------------------------------------ | ------------------------------ |
-| `infrastructure`     | Carried by every process; no boundary, check or measurement counts them        | `/rosout`, `/parameter_events` |
-| `clock`              | Time source of a process on simulated time; treated as infrastructure          | `/clock`                       |
-| `companions`         | Subscribed together with the key topic, without a port of their own            | `/tf_static` with `/tf`        |
-| `ambient_inputs`     | Bag topics fed to every scope, beside its boundary inputs                      | `/tf`, `/tf_static`            |
-| `nested_callbacks`   | Topics whose callbacks a running callback of the same process may wait on      | `/tf`, `/tf_static`            |
-| `handshake_suffixes` | Suffixes of the handshake topics a publisher creates beside a negotiated topic | `/_supported_types`            |
+| Key                  | Role                                                                           | Topics                                                    |
+| -------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| `infrastructure`     | Carried by every process; no boundary, check or measurement counts them        | `/rosout`, `/parameter_events`                            |
+| `clock`              | Time source of a process on simulated time; treated as infrastructure          | `/clock`                                                  |
+| `companions`         | Subscribed together with the key topic, without a port of their own            | `/tf_static` with `/tf`                                   |
+| `ambient_inputs`     | Bag topics fed to every scope, beside its boundary inputs                      | `/tf`, `/tf_static`                                       |
+| `nested_callbacks`   | Topics whose callbacks a running callback of the same process may wait on      | `/tf`, `/tf_static`                                       |
+| `handshake_suffixes` | Suffixes of the handshake topics a publisher creates beside a negotiated topic | `/_supported_types`                                       |
+| `hidden_suffixes`    | Suffixes of the topics a service or an action carries beside its design ports  | `/_service_event`, `/_action/feedback`, `/_action/status` |
 
 What a replay sets on the middleware of its scope comes from `config/replay_middleware.yaml` of this package, layered with the user's:
 
-| Key                     | Role                                                                     | Value                                   |
-| ----------------------- | ------------------------------------------------------------------------ | --------------------------------------- |
-| `node_parameters`       | Parameters set on every node of the scope                                | `use_sim_time: true`                    |
-| `launcher`              | Launcher settings set on every member of the scope                       | `use_intra_process_comms: false`        |
-| `isolation_environment` | Environment of a replay whose discovery stays on this host               | `ROS_LOCALHOST_ONLY=1`                  |
-| `domain_id_variable`    | Environment variable that carries `--domain-id`                          | `ROS_DOMAIN_ID`                         |
-| `identifier_types`      | Identifier message types `uuid_order` ranks, with the field of the bytes | `unique_identifier_msgs/msg/UUID: uuid` |
+| Key                     | Role                                                                                                    | Value                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `node_parameters`       | Parameters set on every node of the scope                                                               | `use_sim_time: true`                                                                   |
+| `launcher`              | Launcher settings set on every member of the scope                                                      | `use_intra_process_comms: false`                                                       |
+| `distro_variable`       | Environment variable that names the distribution                                                        | `ROS_DISTRO`                                                                           |
+| `isolation_environment` | Environment of a replay whose discovery stays on this host, by distribution; `default` is for any other | `humble`: `ROS_LOCALHOST_ONLY=1`, `default`: `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` |
+| `domain_id_variable`    | Environment variable that carries `--domain-id`                                                         | `ROS_DOMAIN_ID`                                                                        |
+| `identifier_types`      | Identifier message types `uuid_order` ranks, with the field of the bytes                                | `unique_identifier_msgs/msg/UUID: uuid`                                                |
 
 The run starts with two checks:
 
@@ -496,6 +500,8 @@ accept: [/map/vector_map] # inputs, services or subscriptions that stay unfed
 outputs: [/perception/object_recognition/tracking/objects] # internal topics recorded beside the boundary outputs
 skip_outputs: [/perception/object_recognition/debug/image] # boundary outputs left unrecorded
 lead_in: 0.5 # seconds from the bag's start over which only the ambient inputs and the last message of each latched topic are fed; unset, the value of config/replay_defaults.yaml
+driver: # driver settings, each unset one takes the value of config/replay_defaults.yaml
+  callback_timeout: 60
 compare:
   default: exact # exact | fields | ignore
   topics:
@@ -507,6 +513,25 @@ compare:
       uuid_order: true # UUIDs compare by order of first appearance
     /diagnostics: { rule: ignore }
 ```
+
+### Driver settings
+
+The timings and limits of the driver and of the gate are the `driver` mapping of `config/replay_defaults.yaml`, layered with the user's file. The `driver` mapping of the replay configuration sets them for one run, and `--driver NAME=VALUE` (repeatable) over it. `replay/options.json` holds the values a run used.
+
+| Setting            | Default | Role                                                                                                     |
+| ------------------ | ------- | -------------------------------------------------------------------------------------------------------- |
+| `startup_timeout`  | 60 s    | The scope has to be up within it                                                                         |
+| `startup_settle`   | 2 s     | The scope is up once no endpoint was created for this long                                               |
+| `match_timeout`    | 10 s    | Publishers have this long to match the subscriptions of the scope                                        |
+| `callback_timeout` | 30 s    | A granted callback has to return within it                                                               |
+| `nested_after`     | 0.2 s   | Wall time a callback runs before the nested callbacks of its process run beside it                       |
+| `delivery_timeout` | 2 s     | A published message has this long to show as work, a due timer to become ready, a publish to be recorded |
+| `burst_settle`     | 0.005 s | Pause before a callback whose subscription holds several messages in flight                              |
+| `miss_limit`       | 3       | A subscription that missed this many deliveries in a row is no longer waited for                         |
+| `shutdown_timeout` | 5 s     | Members have this long to exit before they are killed                                                    |
+| `gate_hold`        | 0.002 s | Longest stay of an executor in its wait with ready work and no grant                                     |
+| `take_timeout`     | 2 s     | A take waits this long for a message in flight                                                           |
+| `process_grants`   | 4       | Threads of a process that hold a grant at once                                                           |
 
 ### Topic remap
 
@@ -532,11 +557,11 @@ autoware-system-designer-replay SYSTEM.json --scope /perception/object_recogniti
 - **Gate.** In every scope process the tracer's `rcl_wait` reports which subscriptions and timers have work, hides all of them from the executor and hands back the one the driver grants. One callback runs at a time across the whole scope. It ends when rclcpp's `Executor::execute_any_executable` returns, else when its thread calls `rcl_wait` again (rclpy, other executors).
 - **Time.** The driver sets ROS time through the tracer (`rcl_set_ros_time_override` inside each process) and waits for every process to confirm. No `/clock` is published and an override from elsewhere is dropped. Every ROS clock reads driver time from its creation, and a timer created on a wall clock is created on a driver-timed clock instead (`--free-wall-timers` leaves those alone). `now()` does not advance inside a callback.
 - **Steps.** (1) While a callback is ready, grant the first in the tie order. (2) Else, when the earliest timer expiry is not after the next bag message, set the clocks exactly to it. (3) Else set the clocks to the next bag message's recorded time and publish it.
-- **Startup and length.** The scope is up once no endpoint was created for `--startup-settle S` seconds (default 2); the run fails when that takes longer than `--startup-timeout S` (default 60). `--duration S` replays the first S seconds of the bag.
+- **Startup and length.** The scope is up once no endpoint was created for `startup_settle` seconds; the run fails when that takes longer than `startup_timeout` (see [Driver settings](#driver-settings)). `--duration S` replays the first S seconds of the bag.
 - **Settling.** Before each step the driver waits until no callback runs, every process holds its time, every message published to a subscription shows as ready work there, every due timer is ready and every recorded publish was heard. All of it is counted from the `rcl` calls the tracer observes; the declared event chains play no part, so a wrong chain cannot break the order.
-- **Nested callbacks.** A callback that waits for a transform holds the scope while the listener that brings it is gated. Once a callback has run for 0.2 s of wall time, the ready callbacks of its process on the nested callback topics (`/tf`, `/tf_static`) are granted one at a time beside it; the result counts them as `nested_callbacks`.
+- **Nested callbacks.** A callback that waits for a transform holds the scope while the listener that brings it is gated. Once a callback has run for `nested_after` of wall time, the ready callbacks of its process on the nested callback topics (`/tf`, `/tf_static`) are granted one at a time beside it; the result counts them as `nested_callbacks`.
 - **Tie order.** Callbacks ready together run by the design order of their node, then by creation order of the endpoint. `--tie-break-seed N` draws among them instead, repeatably per seed, to exercise other fan-in orders.
-- **Isolation.** The run sets the isolation environment (`ROS_LOCALHOST_ONLY=1`; `--no-isolate` keeps discovery as it is); `--domain-id` gives it a domain of its own.
+- **Isolation.** The run sets the isolation environment of its distribution (`ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`, on Humble `ROS_LOCALHOST_ONLY=1`; `--no-isolate` keeps discovery as it is); `--domain-id` gives it a domain of its own.
 
 A publish, take or timer fire by a thread that holds no grant (a worker thread, a service callback) breaks the order. The run counts them per node and endpoint as `violations` in the result; `--strict` turns any into exit code 1.
 
@@ -547,7 +572,7 @@ A publish, take or timer fire by a thread that holds no grant (a worker thread, 
 ├── options.json    command options and the replay configuration of the run
 ├── boundary.json   scope, boundary inputs and outputs, services, fed and recorded topics, pre-flight problems
 ├── outputs/        rosbag of the recorded outputs, stamped with the driver time of their publish
-├── result.json     counts, violations, anomalies, endpoint problems, digest of the outputs, verdict summary
+├── result.json     counts (lost_outputs: recorded publishes never heard), violations, anomalies, endpoint problems, digest of the outputs, verdict summary
 ├── verdict.json    per topic: rule, counts, first difference (written when a reference exists)
 └── steps.log       every step and every tracer event, with --step-log
 ```
@@ -568,7 +593,7 @@ A reference is the `outputs/` of a run kept by `--save-reference`. It lives unde
 
 ### Limits
 
-- **Blocking calls in a callback.** A callback that waits on ROS time or on another callback (a TF lookup with a timeout, `spin_until_future_complete`, `Rate::sleep`, `wait_for_message`) blocks while the driver holds both. The run fails after `--callback-timeout` and names the callback. A transform lookup for a message stamped before the bag's first transform is such a wait; `lead_in` in the replay configuration feeds only the ambient inputs over the first seconds of the bag, and of each latched (transient-local) topic the last message recorded before its end.
+- **Blocking calls in a callback.** A callback that waits on ROS time or on another callback (a TF lookup with a timeout, `spin_until_future_complete`, `Rate::sleep`, `wait_for_message`) blocks while the driver holds both. The run fails after `callback_timeout` and names the callback. A transform lookup for a message stamped before the bag's first transform is such a wait; `lead_in` in the replay configuration feeds only the ambient inputs over the first seconds of the bag, and of each latched (transient-local) topic the last message recorded before its end.
 - **Services and actions** pass the gate unordered; their callbacks count as violations when they publish.
 - **Polled subscriptions** (taken inside another callback, never waited on) are not gated. A take that finds nothing while a published message is still in flight waits for it, so a poll sees what was published before it.
 - **Several messages in flight to one subscription** (a callback that publishes twice on a topic) are waited for by a fixed pause, not by observation; with a keep-last depth below the burst, which messages survive is not checked.

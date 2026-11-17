@@ -21,8 +21,14 @@ from pathlib import Path
 
 import pytest
 
-from autoware_system_designer_runtime._impl.replay.driver import DriverOptions, ReplayDriver, ReplayError
-from autoware_system_designer_runtime._impl.replay.link import LinkServer
+from autoware_system_designer_runtime._impl.replay.config import ReplayConfig
+from autoware_system_designer_runtime._impl.replay.driver import (
+    DRIVER_OPTION_NAMES,
+    DriverOptions,
+    ReplayDriver,
+    ReplayError,
+)
+from autoware_system_designer_runtime._impl.replay.link import PROTOCOL, LinkServer
 from autoware_system_designer_runtime._impl.replay.recorder import OutputRecorder
 
 MS = 1_000_000
@@ -35,10 +41,10 @@ class FakeProcess:
     A message published to a subscription makes it ready; a clock step makes the timers due ready.
     """
 
-    def __init__(self, pid: int, world: "World") -> None:
+    def __init__(self, pid: int, world: "World", protocol: int = PROTOCOL) -> None:
         self.pid = pid
         self._world = world
-        self._lines: list[str] = [f"hello\t{pid}"]
+        self._lines: list[str] = [f"hello\t{protocol}\tmember{pid}\t{pid}"]
         self._subs: dict[int, dict] = {}
         self._timers: dict[int, dict] = {}
         self._pubs: dict[int, str] = {}
@@ -204,11 +210,18 @@ def replay(world: World, processes, *, node_order, expected=(), **options):
             world,
             world.recorder,
             DriverOptions(
-                **{"start_ns": T0, "startup_settle": 0.05, "startup_timeout": 5.0, "burst_settle": 0.0, **options}
+                **{
+                    **{name: ReplayConfig().driver[name] for name in DRIVER_OPTION_NAMES},
+                    "start_ns": T0,
+                    "startup_settle": 0.05,
+                    "startup_timeout": 5.0,
+                    "burst_settle": 0.0,
+                    **options,
+                }
             ),
             node_order=node_order,
             expected_nodes=frozenset(expected or node_order),
-            process_rank=lambda pid: pid,
+            member_rank=lambda member: int(member[len("member") :]),
         )
         await server.start()
         tasks = [asyncio.ensure_future(process.run(world.path)) for process in processes]
@@ -393,6 +406,14 @@ def test_a_scope_whose_node_never_starts_fails_at_startup():
 
     with pytest.raises(ReplayError, match="/b did not start"):
         replay(world, [a], node_order={"/a": 0, "/b": 1}, startup_timeout=0.3)
+
+
+def test_a_process_of_another_link_protocol_fails_the_replay():
+    world = World([])
+    a = FakeProcess(1, world, protocol=PROTOCOL + 1).node("/a")
+    a.sub("/in")
+    with pytest.raises(ReplayError, match="link protocol"):
+        replay(world, [a], node_order={"/a": 0})
 
 
 def test_infrastructure_subscriptions_pass_the_gate_until_the_first_step():

@@ -287,13 +287,17 @@ zoomed or panned keeps the boundary frame in place, an untouched one is fitted a
 
 Below it, the **Bag** block takes the bag whose topics the boundary is matched against:
 
-- a file dropped on the view or picked with "Open bag file": a `metadata.yaml`, or an `.mcap` file,
-  whose topics, types and message counts are read in the page from its summary section. A dropped
-  directory gives its `metadata.yaml`, else its `.mcap` file. A browser gives no path of a dropped
-  file: a daemon finds it by the file's name and size (`replay.find`), else the path for the command
-  is typed in the Bag field;
+- files dropped on the view or picked with "Open file": a `metadata.yaml`, or `.mcap` files, whose
+  topics, types and message counts are read in the page from their summary sections; the splits of
+  one bag are read as one, their counts summed. A dropped directory gives its `metadata.yaml`, else
+  its `.mcap` files. Compressed messages and chunks leave the summary readable; a file compressed as
+  a whole (`.mcap.zstd`, `.db3.zstd`) and a `.db3` file are not read in the page: with a daemon the
+  bag is found and read by its path, without one the page asks for the `metadata.yaml`. A browser
+  gives no path of a dropped file: a daemon finds it by the file's name and size (`replay.find`),
+  else the path for the command is typed in the Bag field;
 - a path or `file://` URI dropped as text, or typed: it fills the Bag field and, with a daemon, is
-  read there ("Read"). A `.db3` bag without `metadata.yaml` is read this way.
+  read there ("Read"). The path is absolute (`/...`, `~/...` or a `file://` URI): a relative one is
+  refused, by the page and by the daemon.
 
 Then comes the **Inputs and outputs** block, one scrolled column of inputs, outputs and services
 with the same choices as the diagram:
@@ -313,20 +317,24 @@ Below them are the replay configuration these choices give (`scope`, `remap`, `a
 to copy or download as `replay.yaml`, and the pre-flight and replay commands on the mode's structure
 file with the bag path typed in the Bag field and the deploy of the top bar.
 
-With a daemon, "Read" reads the topics of the bag at the typed path (`replay.bag`): a bag
-without `metadata.yaml` gets one written beside its files by the rosbag2 reindexer, and is read from
-its storage file where the directory is not writable. The Run
+With a daemon, "Read" reads the topics of the bag at the typed path (`replay.bag`), from its
+`metadata.yaml`, else from the storage file the path names; reading writes nothing into the bag. The Run
 block starts the replay as a job (`replay.start`): "Pre-flight" checks the bag against the boundary
 and stops, "Run replay" replays the scope, over the first seconds of the bag when a duration is
-given and with the outputs kept as the reference when asked. The block shows the selected replay
+given and with the outputs kept as the reference when asked. "Driver settings", folded under the run
+options, lists the driver settings of the runtime (`replay.settings`) with their descriptions; an
+empty field shows the default and leaves it to the run, a value goes into the run's configuration
+(`driver`). The block shows the selected replay
 job: its outcome (pre-flight passed or failed, outputs match or differ from the reference, no
 reference yet, saved as the reference), the counts of the run, the pre-flight and endpoint problems,
 the violations of the granted order, the topics that differ, the run directory and the job's log.
 
-`replay.bag` takes `path` (a path or `file://` URI of the bag directory or one of its files) and
-`generate` (write a missing `metadata.yaml`, off by default); its result names the `path`, the
-`storage`, the time span, the `topics` and where they were read from as `metadata` (`file`,
-`generated` or `storage`).
+`replay.bag` takes `path` (an absolute path or `file://` URI of the bag directory or one of its
+files; `invalid_params` for a relative one); its result names the `path`, the `storage`, the time
+span, the `topics` and where they were read from as `metadata` (`file` or `storage`).
+
+`replay.settings` gives the `driver` settings of the runtime: the `name`, `unit` (`s` or `count`),
+`description` and `default` of each.
 
 `replay.find` takes the `name` and `size` (bytes) of a bag file and `directories` to search, and
 gives the `path` of the newest such file under them or under the daemon's `--bag-dir` directories,
@@ -335,7 +343,8 @@ typed path and the directories of the bags it read by path before (kept by the b
 the bag at the path found.
 
 `replay.start` takes `system`, `mode`, `bag`, `deploy`, `scope` (design paths), `remap` (recorded
-topic to fed topic), `accept`, `outputs`, `skip_outputs`, `lead_in`, `check`, `save_reference`, `duration` and `domain_id`. The
+topic to fed topic), `accept`, `outputs`, `skip_outputs`, `lead_in`, `driver` (driver setting to
+value), `check`, `save_reference`, `duration` and `domain_id`. The
 daemon writes the configuration into a new run directory `<log root>/replay/<stamp>` and runs the
 replay command of the launch environment on it; one replay runs per daemon (`conflict` while one
 runs), and `jobs.cancel` ends it. The job's `detail` names the `run_dir` and, once the job ended,
@@ -349,13 +358,17 @@ time, `system`, `mode` and `scope`, or the `error` of one that does not read. `r
 `replay.setup.save` (with the `setup`) and `replay.setup.delete` take its `name` (letters, digits,
 `_`, `.`, `-`). A setup holds `system`, `mode`, `deploy`,
 `bag`, `config` (the replay configuration: `scope`, `remap`, `accept`, `outputs`, `skip_outputs`,
-`lead_in`), `inputs` (each boundary input to the bag topic it is fed from, `null` when accepted
+`lead_in`, `driver`), `inputs` (each boundary input to the bag topic it is fed from, `null` when accepted
 unfed), `recorded` (the outputs recorded) and `run` (`duration`, `domain_id`, `save_reference`).
 
 `fs.list` lists one directory for the path selectors: `path` (absolute; its nearest existing
 directory, else the home directory), `files` (list files too) and `hidden` (names starting with
 `.`). Its result names the `path`, the `parent`, whether the directory holds a rosbag (`bag`) and the
 `entries`, directories first, each directory with `bag`, each file with its `size`.
+
+`fs.list`, `replay.bag` and `replay.find` reach every directory and file the daemon's user can read:
+the daemon restricts them to no root, so whoever reaches it (its loopback port, or a forward to it)
+lists them.
 
 ### Storage
 
@@ -371,8 +384,7 @@ A launch gets its run directory under `launch/` (the launcher's `--log-dir`) and
 record root apart from the config root. The workbench settings show both roots and the
 subdirectories; a root is chosen with a path selector, or set back to its default, through
 `settings.set` (`log_root`, `config_root`: an absolute path,
-or empty for the default); `settings.get` (`GET /api/settings`) and `health` (`storage`) give the
-same view. Roots set so are kept in the settings file
+or empty for the default); `health` (`storage`) gives the same view. Roots set so are kept in the settings file
 (`$AUTOWARE_SYSTEM_DESIGNER_STUDIO_SETTINGS`, else `studio.yaml` of the user home,
 `$AUTOWARE_SYSTEM_DESIGNER_HOME` or `~/.autoware/system_designer`) and used at the next start;
 `--log-root` and `--config-root` win over it. The view also names the user's config directory and

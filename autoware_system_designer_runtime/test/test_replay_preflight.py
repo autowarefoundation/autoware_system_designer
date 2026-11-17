@@ -84,7 +84,7 @@ def test_bag_metadata_gives_topics_types_and_span(tmp_path):
     assert info.fingerprint
 
 
-def test_bag_without_metadata_gets_one_generated(tmp_path):
+def test_bag_without_metadata_is_read_from_its_storage_file(tmp_path):
     pytest.importorskip("rosbag2_py")
     from autoware_system_designer_runtime._impl.replay.bag import BagSink
     from autoware_system_designer_runtime.replay_record import bag_topics
@@ -94,18 +94,47 @@ def test_bag_without_metadata_gets_one_generated(tmp_path):
     for stamp in (1000, 2000, 3000):
         sink.write("/in", b"\x00\x01\x00\x00\x01\x00\x00\x00\x00", stamp)
     sink.close()
+    with_metadata = bag_topics(bag)
     (bag / "metadata.yaml").unlink()
     (storage_file,) = bag.glob("*.mcap")
 
     from_storage = bag_topics(storage_file)
-    generated = bag_topics(storage_file, generate=True)
 
-    assert (from_storage["metadata"], generated["metadata"]) == ("storage", "generated")
-    assert (bag / "metadata.yaml").is_file() and generated["path"] == str(bag)
-    assert generated["topics"] == from_storage["topics"] == [{"name": "/in", "type": "std_msgs/msg/String", "count": 3}]
-    assert bag_topics(bag, generate=True)["metadata"] == "file"
+    assert (with_metadata["metadata"], from_storage["metadata"]) == ("file", "storage")
+    assert not (bag / "metadata.yaml").exists()
+    assert (
+        from_storage["topics"]
+        == with_metadata["topics"]
+        == [{"name": "/in", "type": "std_msgs/msg/String", "count": 3}]
+    )
+    assert bag_topics(bag)["topics"] == with_metadata["topics"]
     with pytest.raises(BagError):
-        read_bag_info(tmp_path, generate=True)
+        read_bag_info(tmp_path)
+
+
+def test_split_files_without_metadata_read_as_one_bag(tmp_path):
+    pytest.importorskip("rosbag2_py")
+    from autoware_system_designer_runtime._impl.replay.bag import BagMessages, BagSink
+
+    for index, stamps in enumerate([(4000, 5000), (1000, 2000, 3000)]):
+        part = tmp_path / f"part_{index}"
+        sink = BagSink(part, {"/in": "std_msgs/msg/String"}, "mcap")
+        for stamp in stamps:
+            sink.write("/in", b"\x00\x01\x00\x00\x01\x00\x00\x00\x00", stamp)
+        sink.close()
+        (storage_file,) = part.glob("*.mcap")
+        (tmp_path / "bag").mkdir(exist_ok=True)
+        storage_file.rename(tmp_path / "bag" / f"split_{index}.mcap")
+
+    info = read_bag_info(tmp_path / "bag")
+    source = BagMessages(info, ["/in"])
+    stamps = []
+    while source.peek() is not None:
+        stamps.append(source.pop()[0])
+
+    assert (info.start_ns, info.end_ns, info.topics["/in"].count) == (1000, 5000, 5)
+    assert [file.name for file in info.files] == ["split_1.mcap", "split_0.mcap"]
+    assert stamps == [1000, 2000, 3000, 4000, 5000]
 
 
 def test_bag_durability_is_read_from_the_offered_profiles():

@@ -110,6 +110,31 @@ def result_of(reply: dict[str, Any], fallback: str) -> Any:
     raise ApiError(str(error.get("code") or INTERNAL), str(error.get("message") or fallback), error.get("data"))
 
 
+def str_param(params: dict[str, Any], name: str, *, required: bool = False) -> Optional[str]:
+    value = params.get(name)
+    if value is None or value == "":
+        if required:
+            raise ApiError(INVALID_PARAMS, f"{name} is required")
+        return None
+    if not isinstance(value, str):
+        raise ApiError(INVALID_PARAMS, f"{name} must be a string")
+    return value
+
+
+def bool_param(params: dict[str, Any], name: str, default: bool = False) -> bool:
+    value = params.get(name, default)
+    if not isinstance(value, bool):
+        raise ApiError(INVALID_PARAMS, f"{name} must be a boolean")
+    return value
+
+
+def int_param(params: dict[str, Any], name: str, default: int, low: int, high: int) -> int:
+    value = params.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise ApiError(INVALID_PARAMS, f"{name} must be an integer within {low}..{high}")
+    return value
+
+
 def parse_rpc(body: bytes) -> tuple[RequestId, str, dict[str, Any]]:
     """Validated (id, method, params) of one request envelope."""
     try:

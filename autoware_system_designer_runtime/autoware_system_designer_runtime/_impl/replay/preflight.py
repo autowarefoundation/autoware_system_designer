@@ -217,7 +217,7 @@ def check_endpoints(
                 for owner in owners:
                     timer_rates[owner].append(1e9 / endpoint.period_ns)
             continue
-        if endpoint.topic in special.process or special.is_handshake(endpoint.topic):
+        if endpoint.topic in special.process or special.is_undeclared(endpoint.topic):
             continue
         inputs = endpoint.kind == SUBSCRIPTION
         owners = declared_by(endpoint, inputs)
