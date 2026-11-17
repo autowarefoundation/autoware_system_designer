@@ -179,6 +179,7 @@ class ServeDaemon:
         served_units: Optional[Iterable[str]] = None,
         workspace: Optional[Path] = None,
         record_root: Optional[Path] = None,
+        bag_dirs: Iterable[Path] = (),
         launch_env: Optional[Mapping[str, str]] = None,
         env_script: Optional[Path] = None,
         rviz_config: Optional[Path] = None,
@@ -192,6 +193,7 @@ class ServeDaemon:
         self.served_units = None if served_units is None else sorted(set(served_units))
         self.workspace = workspace
         self.record_root = record_root
+        self.bag_dirs = [Path(directory).expanduser() for directory in bag_dirs]
         self.restart_required = False
         self.serves_own_install = exports.module_install_root() == install_root
         self._requested_port = port
@@ -229,6 +231,7 @@ class ServeDaemon:
         self._register_of_unit("monitor.sample", self._monitor_sample)
         self.methods.register("rviz.start", self._rviz_start)
         self.methods.register("replay.bag", self._replay_bag)
+        self.methods.register("replay.find", self._replay_find)
         self.methods.register("replay.start", self._replay_start)
         self._log_base = log_base
         # Launch id and count of the starts under way, by (system id, mode).
@@ -367,6 +370,7 @@ class ServeDaemon:
             "served_units": self.served_units,
             "workspace": None if self.workspace is None else str(self.workspace),
             "record_root": str(self.records.record_root),
+            "bag_dirs": [str(directory) for directory in self.bag_dirs],
             "restart_required": self.restart_required,
             "heartbeat_s": self.heartbeat_s,
             "peers": self.peers.views(),
@@ -644,6 +648,22 @@ class ServeDaemon:
             raise api.ApiError(api.INVALID_PARAMS, "generate must be a boolean")
         path = _str_param(params, "path", required=True)
         return await asyncio.to_thread(replay.read_bag, path, generate=generate)
+
+    async def _replay_find(self, params: dict[str, Any]) -> dict[str, Any]:
+        name = _str_param(params, "name", required=True)
+        size = params.get("size")
+        directories = params.get("directories") or []
+        if "/" in name or name in (".", ".."):
+            raise api.ApiError(api.INVALID_PARAMS, "name must be a file name")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            raise api.ApiError(api.INVALID_PARAMS, "size must be a number of bytes")
+        if not isinstance(directories, list) or not all(isinstance(item, str) and item for item in directories):
+            raise api.ApiError(api.INVALID_PARAMS, "directories must be a list of paths")
+        searched = [replay.bag_path(item) for item in directories] + self.bag_dirs
+        found = await asyncio.to_thread(replay.find_bag_file, searched, name, size)
+        if found is None:
+            raise api.ApiError(api.NOT_FOUND, f"no {name} of {size} bytes under the bag directories")
+        return {"path": str(found)}
 
     async def _replay_start(self, params: dict[str, Any]) -> dict[str, Any]:
         system = await self._find_system(_str_param(params, "system", required=True))

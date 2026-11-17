@@ -144,6 +144,7 @@ ROS module, so its `bin/` copy runs without any setup script sourced.
 autoware-system-designer-studio serve \
     --install-root install \       # default: first COLCON_PREFIX_PATH entry
     --record-dir ~/.ros/autoware_system_designer/records \  # measurement records (default shown)
+    --bag-dir /data/bags \         # where the bag of a dropped file is searched (repeatable)
     --port 8780 \                  # 0 picks a free port
     --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
     --compute-unit main_ecu \      # units local to this daemon (repeatable; default: every onboard unit)
@@ -281,7 +282,8 @@ Below it, the **Bag** block takes the bag whose topics the boundary is matched a
 - a file dropped on the view or picked with "Open bag file": a `metadata.yaml`, or an `.mcap` file,
   whose topics, types and message counts are read in the page from its summary section. A dropped
   directory gives its `metadata.yaml`, else its `.mcap` file. A browser gives no path of a dropped
-  file, so the path for the command is typed in the Bag field;
+  file: a daemon finds it by the file's name and size (`replay.find`), else the path for the command
+  is typed in the Bag field;
 - a path or `file://` URI dropped as text, or typed: it fills the Bag field and, with a daemon, is
   read there ("Read bag"). A `.db3` bag without `metadata.yaml` is read this way.
 
@@ -316,6 +318,12 @@ the violations of the granted order, the topics that differ, the run directory a
 `generate` (write a missing `metadata.yaml`, off by default); its result names the `path`, the
 `storage`, the time span, the `topics` and where they were read from as `metadata` (`file`,
 `generated` or `storage`).
+
+`replay.find` takes the `name` and `size` (bytes) of a bag file and `directories` to search, and
+gives the `path` of the newest such file under them or under the daemon's `--bag-dir` directories,
+four levels deep at most. The page calls it for a file dropped or opened without a path, with the
+typed path and the directories of the bags it read by path before (kept by the browser), then reads
+the bag at the path found.
 
 `replay.start` takes `system`, `mode`, `bag`, `deploy`, `scope` (design paths), `remap` (recorded
 topic to fed topic), `accept`, `outputs`, `skip_outputs`, `check`, `save_reference`, `duration` and `domain_id`. The

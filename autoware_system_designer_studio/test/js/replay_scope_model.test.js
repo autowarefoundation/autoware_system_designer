@@ -80,6 +80,17 @@ test("a scope path selects the nodes under it with their container", () => {
   assert.deepEqual(model.selectScope(nodes, ["/mo"]).nodes, []);
 });
 
+test("a bag path names the directory that holds its bag directory", () => {
+  assert.equal(model.bagCollection("/data/bags/run"), "/data/bags");
+  assert.equal(model.bagCollection("/data/bags/run/run_0.mcap"), "/data/bags");
+  assert.equal(
+    model.bagCollection("/data/bags/run/metadata.yaml"),
+    "/data/bags",
+  );
+  assert.equal(model.bagCollection("/run"), "");
+  assert.equal(model.bagCollection(""), "");
+});
+
 test("the fewest paths name a selection", () => {
   const nodes = model.nodes(design());
   const paths = (...selected) => model.patternsOf(nodes, new Set(selected));

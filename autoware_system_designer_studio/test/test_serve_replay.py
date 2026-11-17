@@ -110,6 +110,22 @@ def test_bag_with_metadata_is_read_as_is_by_uri(served, tmp_path):
     assert _call(served, "replay.bag", {"path": str(bag), "generate": "yes"})["error"]["code"] == "invalid_params"
 
 
+def test_a_bag_file_is_found_by_name_and_size(served, tmp_path):
+    storage = tmp_path / "bags" / "day" / "run" / "run_0.mcap"
+    storage.parent.mkdir(parents=True)
+    storage.write_bytes(b"12345")
+    (tmp_path / "bags" / "run_0.mcap").write_bytes(b"1234")
+    find = {"name": "run_0.mcap", "size": 5, "directories": [str(tmp_path / "bags")]}
+
+    assert _call(served, "replay.find", find)["result"] == {"path": str(storage)}
+    assert _call(served, "replay.find", {**find, "size": 6})["error"]["code"] == "not_found"
+    assert _call(served, "replay.find", {**find, "directories": []})["error"]["code"] == "not_found"
+    assert _call(served, "replay.find", {**find, "name": "day/run_0.mcap"})["error"]["code"] == "invalid_params"
+
+    served.daemon.bag_dirs = [tmp_path / "bags" / "day"]
+    assert _call(served, "replay.find", {**find, "directories": []})["result"] == {"path": str(storage)}
+
+
 def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_path):
     params = {
         "system": SYSTEM_ID,

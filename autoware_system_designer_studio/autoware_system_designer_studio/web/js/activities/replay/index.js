@@ -26,6 +26,9 @@
   // Preference: height of the scope diagram in pixels.
   const DIAGRAM_HEIGHT_KEY = "replay.diagramHeight";
   const DIAGRAM_MIN_HEIGHT = 120;
+  // Preference: directories of the bags read by path, as a JSON list.
+  const BAG_DIRS_KEY = "replay.bagDirs";
+  const BAG_DIRS_KEPT = 5;
 
   function table(columns) {
     const node = element("table", "replay-table");
@@ -396,10 +399,13 @@
         const scope = model.selectScope(nodes, patterns());
         bagRead.hidden = !daemon.health || !daemon.offers("replay.bag");
         bagRead.disabled = !daemon.connected || !bagPath.value.trim();
+        // A bag read from a file names no path for the replay to open.
+        const pathless = !!bag && !bagPath.value.trim();
+        bagPath.classList.toggle("blocked", pathless);
         if (bagNote) bagState.textContent = bagNote;
         else
           bagState.textContent = bag
-            ? `${bagName}: ${bag.size} topics`
+            ? `${bagName}: ${bag.size} topics${pathless ? ", path not given" : ""}`
             : "no bag read";
         scopeBlocks.forEach((node) => {
           node.hidden = !scope.nodes.length;
@@ -532,7 +538,11 @@
                 ...kept,
               },
             }
-          : { blocker: "Give the path of the bag." };
+          : {
+              blocker: bag
+                ? "Type the path of the bag in the Bag field: a file gives none."
+                : "Give the path of the bag.",
+            };
         panel.refresh();
       }
 
@@ -551,6 +561,50 @@
         render();
       }
 
+      // Directories of the bags read by path, newest first.
+      function bagDirs() {
+        try {
+          const dirs = JSON.parse(SD.storage.get(BAG_DIRS_KEY) || "[]");
+          return Array.isArray(dirs) ? dirs.filter(Boolean).map(String) : [];
+        } catch (_error) {
+          return [];
+        }
+      }
+
+      function rememberBagDir(path) {
+        const dir = model.bagCollection(path);
+        if (!dir) return;
+        SD.storage.set(
+          BAG_DIRS_KEY,
+          JSON.stringify(
+            [dir, ...bagDirs().filter((d) => d !== dir)].slice(
+              0,
+              BAG_DIRS_KEPT,
+            ),
+          ),
+        );
+      }
+
+      // The daemon finds the path of a file read here, under the typed path,
+      // the remembered directories and its own.
+      function locate(file) {
+        if (!daemon.connected || !daemon.offers("replay.find")) return;
+        const typed = bagPath.value.trim();
+        daemon
+          .rpc("replay.find", {
+            name: file.name,
+            size: file.size,
+            directories: [...(typed ? [typed] : []), ...bagDirs()],
+          })
+          .then(
+            (found) => {
+              bagPath.value = found.path;
+              readPath();
+            },
+            () => {},
+          );
+      }
+
       async function readFile(file) {
         try {
           setBag(
@@ -559,13 +613,16 @@
           );
         } catch (error) {
           bagFailed(error.message);
+          return;
         }
+        locate(file);
       }
 
       function readPath() {
         const path = bagPath.value.trim();
         daemon.rpc("replay.bag", { path, generate: true }).then(
-          (info) =>
+          (info) => {
+            rememberBagDir(info.path);
             setBag(
               new Map(
                 info.topics.map((t) => [
@@ -576,7 +633,8 @@
               info.metadata === "generated"
                 ? `${info.path} (metadata.yaml written)`
                 : info.path,
-            ),
+            );
+          },
           (error) => bagFailed(`${path}: ${error.message}`),
         );
       }

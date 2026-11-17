@@ -22,11 +22,12 @@ names it and, once the job ended, carries the summary of the files the replay wr
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
 from urllib.parse import unquote, urlsplit
 
 from autoware_system_designer_runtime.replay_record import (
@@ -50,6 +51,9 @@ CONFIG_FILE = "replay_config.json"
 DOMAIN_ID_MAX = 232
 # Pre-flight problems and differing topics kept in a job's summary.
 SUMMARY_ITEMS = 50
+# Levels below a bag directory a file search descends, and the directories it visits at most.
+FIND_DEPTH = 4
+FIND_DIRECTORIES = 20000
 
 
 @dataclass(frozen=True)
@@ -78,6 +82,30 @@ def bag_path(text: str) -> Path:
     if parsed.scheme == "file":
         return Path(unquote(parsed.path))
     return Path(text).expanduser()
+
+
+def find_bag_file(directories: Iterable[Path], name: str, size: int) -> Optional[Path]:
+    """The newest file called *name* of *size* bytes under the *directories*; None when they hold none."""
+    found: list[tuple[float, Path]] = []
+    visited = 0
+    for directory in directories:
+        base = directory if directory.is_dir() else directory.parent
+        for current, children, files in os.walk(base):
+            visited += 1
+            if visited > FIND_DIRECTORIES:
+                break
+            if len(Path(current).relative_to(base).parts) >= FIND_DEPTH:
+                children.clear()
+            if name not in files:
+                continue
+            candidate = Path(current) / name
+            try:
+                status = candidate.stat()
+            except OSError:
+                continue
+            if status.st_size == size:
+                found.append((status.st_mtime, candidate))
+    return max(found)[1] if found else None
 
 
 def read_bag(path: str, *, generate: bool = False) -> dict[str, Any]:

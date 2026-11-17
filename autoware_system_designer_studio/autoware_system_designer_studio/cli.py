@@ -116,6 +116,14 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         "under the launch environment's ament prefixes, else none)",
     )
     serve.add_argument(
+        "--bag-dir",
+        dest="bag_dirs",
+        action="append",
+        default=[],
+        type=Path,
+        help="directory the bag of a dropped file is searched under, for a replay (repeatable)",
+    )
+    serve.add_argument(
         "--heartbeat-interval",
         type=float,
         default=HEARTBEAT_INTERVAL_S,
@@ -183,6 +191,7 @@ def _run_serve(args: argparse.Namespace) -> None:
         served_units=args.compute_units,
         workspace=resolve_workspace(install_root, args.workspace),
         record_root=args.record_dir,
+        bag_dirs=args.bag_dirs,
         launch_env=launch_env,
         env_script=args.env_script,
         rviz_config=args.rviz_config,

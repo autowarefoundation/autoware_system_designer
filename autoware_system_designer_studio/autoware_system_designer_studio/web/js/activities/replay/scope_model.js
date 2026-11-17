@@ -562,8 +562,20 @@
     ].join(" ");
   }
 
+  // Directory that holds the bag at `path` beside others: the parent of the
+  // bag directory, which a path of one of its files names by that file.
+  function bagCollection(path) {
+    const parts = String(path || "")
+      .split("/")
+      .filter(Boolean);
+    if (/\.(mcap|db3|ya?ml)$/i.test(parts[parts.length - 1] || "")) parts.pop();
+    parts.pop();
+    return parts.length ? `/${parts.join("/")}` : "";
+  }
+
   replay.model = {
     CONFIG_FILE,
+    bagCollection,
     ACCEPT,
     nodes,
     under,
