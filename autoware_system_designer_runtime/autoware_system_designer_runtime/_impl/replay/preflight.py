@@ -30,6 +30,10 @@ from .scope import INFRA_TOPICS, Boundary
 ERROR = "error"
 WARNING = "warning"
 
+# Topics a subscriber of the key also subscribes to, without a port of their own.
+COMPANION_TOPICS: dict[str, tuple[str, ...]] = {"/tf": ("/tf_static",)}
+_COMPANION_OF = {companion: topic for topic, companions in COMPANION_TOPICS.items() for companion in companions}
+
 # Relative gap between a declared rate and a timer's rate that still counts as the same.
 RATE_TOLERANCE = 0.02
 
@@ -51,6 +55,7 @@ def has_errors(problems: Iterable[Problem]) -> bool:
 def fed_topics(boundary: Boundary, bag: BagInfo, extra_inputs: Sequence[str]) -> dict[str, str]:
     """Bag topics the driver delivers, with their recorded types: boundary inputs and declared extras."""
     wanted = list(boundary.input_topics()) + [t for t in extra_inputs if t not in boundary.input_topics()]
+    wanted += [c for t in list(wanted) for c in COMPANION_TOPICS.get(t, ()) if c not in wanted]
     return {topic: bag.topics[topic].msg_type for topic in wanted if topic in bag.topics}
 
 
@@ -121,6 +126,12 @@ def check_bag(
     for topic in extra_inputs:
         if topic not in bag.topics:
             problems.append(Problem(ERROR, "input_missing", f"declared input {topic} is not in the bag"))
+    for topic in sorted(taken & bag.topics.keys()):
+        for companion in COMPANION_TOPICS.get(topic, ()):
+            if companion not in bag.topics and companion not in accepted:
+                problems.append(
+                    Problem(WARNING, "companion_missing", f"{companion}, subscribed with {topic}, is not in the bag")
+                )
     for edge in boundary.services:
         if edge.scope_peers or edge.name in accepted:
             continue
@@ -174,14 +185,21 @@ def check_endpoints(
         """The design node whose port covers the endpoint: its own node, else one of its process."""
         for fqn in (endpoint.node,) + tuple(endpoint.process_nodes):
             node = by_fqn.get(fqn)
-            if node is not None and endpoint.topic in (node.inputs if inputs else node.outputs):
+            if node is None:
+                continue
+            if endpoint.topic in (node.inputs if inputs else node.outputs):
+                return fqn
+            if inputs and _COMPANION_OF.get(endpoint.topic) in node.inputs:
                 return fqn
         return None
 
     for endpoint in endpoints:
         if endpoint.kind == "t":
-            if endpoint.node in timer_rates and endpoint.period_ns > 0:
-                timer_rates[endpoint.node].append(1e9 / endpoint.period_ns)
+            # A timer carries no node name: it counts for every design node of its process.
+            owners = {endpoint.node, *endpoint.process_nodes} & timer_rates.keys()
+            if endpoint.period_ns > 0:
+                for owner in owners:
+                    timer_rates[owner].append(1e9 / endpoint.period_ns)
             continue
         if endpoint.topic in INFRA_TOPICS:
             continue

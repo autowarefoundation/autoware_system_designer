@@ -94,12 +94,24 @@ def test_bag_with_every_input_passes_and_names_what_is_fed():
         "bag",
     )
 
-    assert check_bag(boundary, info) == []
+    assert codes(check_bag(boundary, info)) == ["companion_missing"]
+    assert check_bag(boundary, info, accept=["/tf_static"]) == []
     assert fed_topics(boundary, info, ["/x"]) == {
         "/mid": "std_msgs/msg/String",
         "/tf": "std_msgs/msg/String",
         "/x": "a/msg/B",
     }
+
+
+def test_static_transforms_are_fed_and_accepted_with_the_transforms():
+    boundary = boundary_of(pipeline_design(), "/mod/b")
+    topics = {name: ("std_msgs/msg/String", 1, "") for name in ("/mid", "/tf", "/tf_static")}
+    info = info_from_metadata(bag(topics), "bag")
+
+    assert check_bag(boundary, info) == []
+    assert "/tf_static" in fed_topics(boundary, info, [])
+    listener = RealEndpoint("s", "/transform_listener_impl_55aa", "/tf_static", process_nodes=("/mod/a",))
+    assert check(FULL + [listener]) == []
 
 
 def test_missing_or_mistyped_input_fails_the_preflight():
@@ -181,6 +193,13 @@ def test_undeclared_subscription_fails_and_undeclared_publisher_warns():
     assert codes(problems, WARNING) == ["undeclared_publisher"]
     assert codes(check(FULL + [RealEndpoint("s", "/mod/a", "/secret")], accept=["/secret"]), ERROR) == []
     assert check(FULL + [RealEndpoint("s", "/mod/a", "/secret")], fed=["/secret"]) == []
+
+
+def test_timer_without_a_node_name_counts_for_the_nodes_of_its_process():
+    unnamed = [e for e in FULL if e.kind != "t"] + [RealEndpoint("t", "", period_ns=100_000_000, process_nodes=("/mod/a",))]
+
+    assert check(unnamed) == []
+    assert codes(check([e for e in FULL if e.kind != "t"]), WARNING) == ["event_mismatch"]
 
 
 def test_subscription_of_an_unconnected_port_only_warns():

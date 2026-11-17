@@ -445,7 +445,7 @@ autoware-system-designer-replay SYSTEM.json --scope /perception/object_recogniti
 The run starts with two checks:
 
 - **Bag against boundary** (`--check` stops after it): every boundary input is in the bag with the design's message type and a type the workspace can load. An input the design gives no publisher, an input also published inside the scope (the bag then carries the scope's own recorded messages) and a service server without a client in scope are warnings; a service client without a server in scope is an error.
-- **Real endpoints against the design**, once the scope is up (`--check-endpoints` stops after it and needs no bag): the subscriptions, publishers and timers each process created, reported by the tracer, against the declared ports and periodic events. A subscription no port of its process declares is a missing boundary input and fails the run (`--allow-undeclared` runs anyway); an undeclared publisher, a declared port without an endpoint and a declared rate without a timer are warnings.
+- **Real endpoints against the design**, once the scope is up (`--check-endpoints` stops after it and needs no bag): the subscriptions, publishers and timers each process created, reported by the tracer, against the declared ports and periodic events. A subscription no port of its process declares is a missing boundary input and fails the run (`--allow-undeclared` runs anyway); `/tf_static` goes with a declared `/tf`, fed from the bag and accepted as a subscription; an undeclared publisher, a declared port without an endpoint and a declared rate without a timer are warnings.
 
 The replay configuration (`--config FILE`, YAML) declares what the ports do not say:
 
