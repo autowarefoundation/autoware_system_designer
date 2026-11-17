@@ -35,7 +35,7 @@ import shutil
 import sys
 import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
@@ -74,6 +74,7 @@ from ._impl.replay.verdict import Verdict, compare_outputs, digest, group_by_top
 from .export_tree import resolve_structure_paths
 from .replay_record import (
     BOUNDARY_FILE,
+    OPTIONS_FILE,
     EXIT_DIFFERS,
     EXIT_FAILED,
     EXIT_OK,
@@ -158,6 +159,17 @@ def _write_json(path: Path, payload: Any) -> None:
     partial = path.with_name(path.name + ".tmp")
     partial.write_text(json.dumps(payload, indent=2, default=str) + "\n")
     os.replace(partial, path)
+
+
+def _plain(value: Any) -> Any:
+    """*value* with its paths as strings, for a JSON file."""
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    return value
 
 
 def _real_endpoints(endpoints: Sequence[Endpoint]) -> list[RealEndpoint]:
@@ -253,6 +265,10 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
     out_dir = out_root / REPLAY_SUBDIR
     out_dir.mkdir(parents=True, exist_ok=True)
     logger.info("logs: %s", out_root)
+    _write_json(
+        out_dir / OPTIONS_FILE,
+        {"system_structure": str(Path(json_path).resolve()), "options": _plain(asdict(options)), "config": asdict(config)},
+    )
     _log_boundary(scope, boundary)
 
     problems: list[Problem] = []

@@ -445,7 +445,7 @@ autoware-system-designer-replay SYSTEM.json --scope /perception/object_recogniti
 The run starts with two checks:
 
 - **Bag against boundary** (`--check` stops after it): every boundary input is in the bag with the design's message type and a type the workspace can load. An input the design gives no publisher, an input also published inside the scope (the bag then carries the scope's own recorded messages) and a service server without a client in scope are warnings; a service client without a server in scope is an error.
-- **Real endpoints against the design**, once the scope is up (`--check-endpoints` stops after it and needs no bag): the subscriptions, publishers and timers each process created, reported by the tracer, against the declared ports and periodic events. A subscription no port of its process declares is a missing boundary input and fails the run (`--allow-undeclared` runs anyway); `/tf_static` goes with a declared `/tf`, fed from the bag and accepted as a subscription; an undeclared publisher, a declared port without an endpoint and a declared rate without a timer are warnings.
+- **Real endpoints against the design**, once the scope is up (`--check-endpoints` stops after it and needs no bag): the subscriptions, publishers and timers each process created, reported by the tracer, against the declared ports and periodic events. A subscription no port of its process declares is a missing boundary input and fails the run (`--allow-undeclared` runs anyway); `/tf` and `/tf_static` of the bag are fed to every scope and accepted as subscriptions, since a node may create its transform listener inside a callback; an undeclared publisher, a declared port without an endpoint and a declared rate without a timer are warnings.
 
 The replay configuration (`--config FILE`, YAML) declares what the ports do not say:
 
@@ -504,6 +504,7 @@ A publish, take or timer fire by a thread that holds no grant (a worker thread, 
 
 ```text
 <log-dir>/replay/
+├── options.json    command options and the replay configuration of the run
 ├── boundary.json   scope, boundary inputs and outputs, services, fed and recorded topics, pre-flight problems
 ├── outputs/        rosbag of the recorded outputs, stamped with the driver time of their publish
 ├── result.json     counts, violations, anomalies, endpoint problems, digest of the outputs, verdict summary

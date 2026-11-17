@@ -34,6 +34,10 @@ WARNING = "warning"
 COMPANION_TOPICS: dict[str, tuple[str, ...]] = {"/tf": ("/tf_static",)}
 _COMPANION_OF = {companion: topic for topic, companions in COMPANION_TOPICS.items() for companion in companions}
 
+# Transforms reach a node through a listener of its own, which a node may create inside a callback:
+# they are fed to every scope whose bag holds them.
+TRANSFORM_TOPICS = ("/tf", "/tf_static")
+
 # Handshake topic of a negotiated publisher, beside the topic it negotiates.
 NEGOTIATION_SUFFIX = "/_supported_types"
 
@@ -56,9 +60,10 @@ def has_errors(problems: Iterable[Problem]) -> bool:
 
 
 def fed_topics(boundary: Boundary, bag: BagInfo, extra_inputs: Sequence[str]) -> dict[str, str]:
-    """Bag topics the driver delivers, with their recorded types: boundary inputs and declared extras."""
+    """Bag topics the driver delivers, with their recorded types: boundary inputs, declared extras, transforms."""
     wanted = list(boundary.input_topics()) + [t for t in extra_inputs if t not in boundary.input_topics()]
     wanted += [c for t in list(wanted) for c in COMPANION_TOPICS.get(t, ()) if c not in wanted]
+    wanted += [t for t in TRANSFORM_TOPICS if t not in wanted]
     return {topic: bag.topics[topic].msg_type for topic in wanted if topic in bag.topics}
 
 

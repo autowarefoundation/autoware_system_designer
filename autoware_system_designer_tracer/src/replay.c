@@ -24,8 +24,9 @@
 //     fini   id
 //     waited id                 the endpoint sits in a wait set: its callbacks are gated
 //     ready  id / unready id    it has work, or lost it without a callback
-//     take   id gated           a message was taken; gated: by the thread holding the grant
-//     fire   id gated           a timer was called
+//     take   id gated           a message was taken; gated: by the thread holding the grant.
+//                               The subscription is not ready until a later `ready`
+//     fire   id gated           a timer was called; it is not ready until a later `ready`
 //     next   id next_ns         a timer's next call time, -1 when canceled
 //     pub    id gated
 //     done   id                 the granted callback returned to its executor
@@ -89,6 +90,7 @@ typedef struct entry {
   bool ready;
   uint32_t depth;       // subscription: keep-last depth, 0 without a bound
   uint32_t pending;     // subscription: messages published to it and not taken
+  uint32_t takes;       // messages taken, or calls of the timer
   char * node;
   rcl_clock_t * clock;  // timer
   int64_t next_ns;      // timer: the next call time last reported
@@ -135,6 +137,8 @@ static __thread int tls_callback_depth = 0;
 static __thread char tls_node[512] = "";
 static __thread const void ** tls_snapshot = NULL;
 static __thread bool * tls_gated = NULL;
+// Takes of each slot's entry when the wait began; a take during the wait voids what it saw.
+static __thread uint32_t * tls_takes = NULL;
 static __thread size_t tls_snapshot_size = 0;
 
 #define TABLE_TOMB UINT32_MAX
@@ -671,6 +675,11 @@ static bool reserve_snapshot(size_t size)
     return false;
   }
   tls_gated = gated;
+  uint32_t * takes = realloc(tls_takes, size * sizeof(uint32_t));
+  if (takes == NULL) {
+    return false;
+  }
+  tls_takes = takes;
   tls_snapshot_size = size;
   return true;
 }
@@ -740,6 +749,7 @@ rcl_ret_t asd_replay_wait(asd_wait_fn real, rcl_wait_set_t * wait_set, int64_t t
   for (size_t i = 0; i < slots; ++i) {
     tls_snapshot[i] = *slot_of(wait_set, i);
     uint32_t id = find_id(tls_snapshot[i]);
+    tls_takes[i] = id != 0 ? r.entries[id].takes : 0;
     if (id != 0 && r.entries[id].gated && !r.entries[id].waited) {
       r.entries[id].waited = true;
       send_line("waited\t%u", id);
@@ -762,6 +772,7 @@ rcl_ret_t asd_replay_wait(asd_wait_fn real, rcl_wait_set_t * wait_set, int64_t t
     any_ready((const void * const *)wait_set->services, wait_set->size_of_services) ||
     any_ready((const void * const *)wait_set->events, wait_set->size_of_events);
   size_t held = 0;
+  bool stale = false;
   for (size_t i = 0; i < slots; ++i) {
     tls_gated[i] = false;
     if (tls_snapshot[i] == NULL) {
@@ -775,6 +786,11 @@ rcl_ret_t asd_replay_wait(asd_wait_fn real, rcl_wait_set_t * wait_set, int64_t t
     }
     tls_gated[i] = true;
     entry_t * e = &r.entries[id];
+    if (ready && e->takes != tls_takes[i]) {
+      *slot_of(wait_set, i) = NULL;
+      stale = true;
+      continue;
+    }
     if (ready != e->ready) {
       e->ready = ready;
       send_line(ready ? "ready\t%u" : "unready\t%u", id);
@@ -789,7 +805,7 @@ rcl_ret_t asd_replay_wait(asd_wait_fn real, rcl_wait_set_t * wait_set, int64_t t
     return ret;
   }
 
-  int64_t hold_ns = (other || timeout == 0) ? 0 : HOLD_NS;
+  int64_t hold_ns = (other || stale || timeout == 0) ? 0 : HOLD_NS;
   if (timeout > 0 && timeout < hold_ns) {
     hold_ns = timeout;
   }
@@ -854,6 +870,8 @@ void asd_replay_take(const void * subscription)
     if (r.entries[id].pending > 0) {
       --r.entries[id].pending;
     }
+    ++r.entries[id].takes;
+    r.entries[id].ready = false;
     send_line("take\t%u\t%d", id, own_token() != 0);
   }
   pthread_mutex_unlock(&r_lock);
@@ -881,6 +899,8 @@ void asd_replay_timer_called(const void * timer)
   pthread_mutex_lock(&r_lock);
   uint32_t id = find_id(timer);
   if (id != 0) {
+    ++r.entries[id].takes;
+    r.entries[id].ready = false;
     send_line("fire\t%u\t%d", id, own_token() != 0);
     report_next(id);
   }

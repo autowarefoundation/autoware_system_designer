@@ -138,6 +138,15 @@ def test_static_transforms_are_fed_and_accepted_with_the_transforms():
     assert check(FULL + [listener]) == []
 
 
+def test_transforms_are_fed_to_a_scope_that_declares_none():
+    boundary = boundary_of(pipeline_design(), "/mod/a")
+    topics = {name: ("std_msgs/msg/String", 1, "") for name in ("/in", "/tf", "/tf_static")}
+    info = info_from_metadata(bag(topics), "bag")
+
+    assert "/tf" not in boundary.input_topics()
+    assert {"/tf", "/tf_static"} <= fed_topics(boundary, info, []).keys()
+
+
 def test_missing_or_mistyped_input_fails_the_preflight():
     boundary = boundary_of(pipeline_design(), "/mod/b")
     info = info_from_metadata(bag({"/mid": ("std_msgs/msg/Int32", 5, "")}), "bag")

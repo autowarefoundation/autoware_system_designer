@@ -222,9 +222,11 @@ class ReplayDriver:
         elif kind == "take":
             ep.outstanding = max(ep.outstanding - 1, 0)
             ep.misses = 0
+            ep.ready = False
             self._ordered(ep, fields[1], "take")
         elif kind == "fire":
             self.result.timer_fires += self._stepping
+            ep.ready = False
             self._ordered(ep, fields[1], "timer")
         elif kind == "pub":
             self._ordered(ep, fields[1], "publish")

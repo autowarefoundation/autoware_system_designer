@@ -39,6 +39,7 @@ from ._impl.replay.bag import METADATA_FILE, BagError, bag_directory, read_bag_i
 REPLAY_COMMAND = "autoware-system-designer-replay"
 REPLAY_SUBDIR = "replay"
 BOUNDARY_FILE = "boundary.json"
+OPTIONS_FILE = "options.json"
 RESULT_FILE = "result.json"
 VERDICT_FILE = "verdict.json"
 STEP_LOG_FILE = "steps.log"
@@ -55,6 +56,7 @@ PHASES = (PHASE_PRE, PHASE_REPLAY, PHASE_POST)
 
 __all__ = [
     "BOUNDARY_FILE",
+    "OPTIONS_FILE",
     "BagError",
     "EXIT_DIFFERS",
     "EXIT_FAILED",

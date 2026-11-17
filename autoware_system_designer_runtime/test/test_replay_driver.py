@@ -47,6 +47,8 @@ class FakeProcess:
         # Callbacks that never report their end, by endpoint id.
         self.stuck: set[int] = set()
         self.ungated_publish_on_take: dict[int, int] = {}
+        # Subscriptions another thread reports ready between the grant and the take.
+        self.ready_again_on_take: set[int] = set()
         # Callbacks that end once another subscription of the process ran: waiting id -> awaited id.
         self.waits_on: dict[int, int] = {}
 
@@ -118,6 +120,8 @@ class FakeProcess:
                 if ident in self._subs:
                     sub = self._subs[ident]
                     sub["queued"] -= 1
+                    if ident in self.ready_again_on_take:
+                        self.send(f"ready\t{ident}")
                     self.send(f"take\t{ident}\t1")
                     publishes = sub["publishes"]
                     if ident in self.ungated_publish_on_take:
@@ -321,6 +325,18 @@ def test_a_queue_of_several_messages_runs_one_callback_each():
 
     assert world.written == [("/out", 10 * MS)] * 3
     assert result.callbacks == 4
+
+
+def test_a_subscription_reported_ready_during_its_callback_is_not_granted_again():
+    world = World([(T0 + 10 * MS, "/in", b"1")])
+    a = FakeProcess(1, world).node("/a")
+    sub = a.sub("/in")
+    a.ready_again_on_take.add(sub)
+
+    result = replay(world, [a], node_order={"/a": 0}, callback_timeout=0.5)
+
+    assert world.granted == [(1, sub)]
+    assert result.callbacks == 1
 
 
 def test_a_publish_outside_the_granted_callback_is_a_violation():
