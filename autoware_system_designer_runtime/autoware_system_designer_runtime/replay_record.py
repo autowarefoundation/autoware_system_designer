@@ -20,6 +20,11 @@ A replay writes into the ``replay`` directory of its run directory::
     <run dir>/replay/result.json     counts, violations, digest of the outputs, verdict summary
     <run dir>/replay/verdict.json    per topic comparison with the reference
 
+Its log carries progress lines, ``replay progress: {"phase", "step", "fraction"}``: the phase is
+pre-process (scope, bag pre-flight, launch and startup), replay (the bag stepped through, with the
+fraction of its time span done) or post-process (shutdown, verdict, result). A phase that completed
+reports fraction 1 last.
+
 Plain Python with no ROS import while the bag has a ``metadata.yaml``.
 """
 
@@ -42,18 +47,31 @@ EXIT_OK = 0
 EXIT_DIFFERS = 1
 EXIT_FAILED = 2
 
+PROGRESS_MARK = "replay progress: "
+PHASE_PRE = "pre-process"
+PHASE_REPLAY = "replay"
+PHASE_POST = "post-process"
+PHASES = (PHASE_PRE, PHASE_REPLAY, PHASE_POST)
+
 __all__ = [
     "BOUNDARY_FILE",
     "BagError",
     "EXIT_DIFFERS",
     "EXIT_FAILED",
     "EXIT_OK",
+    "PHASES",
+    "PHASE_POST",
+    "PHASE_PRE",
+    "PHASE_REPLAY",
+    "PROGRESS_MARK",
     "REPLAY_COMMAND",
     "REPLAY_SUBDIR",
     "RESULT_FILE",
     "STEP_LOG_FILE",
     "VERDICT_FILE",
     "bag_topics",
+    "parse_progress",
+    "progress_message",
     "read_replay_file",
 ]
 
@@ -88,3 +106,30 @@ def read_replay_file(run_dir: Path, name: str) -> Optional[dict[str, Any]]:
     except (OSError, ValueError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def progress_message(phase: str, step: str = "", fraction: Optional[float] = None) -> str:
+    """One progress line of a replay's log; *fraction* is the share of the phase done."""
+    payload: dict[str, Any] = {"phase": phase, "step": step}
+    if fraction is not None:
+        payload["fraction"] = round(min(max(fraction, 0.0), 1.0), 4)
+    return PROGRESS_MARK + json.dumps(payload)
+
+
+def parse_progress(line: str) -> Optional[dict[str, Any]]:
+    """The progress a log line carries; None for any other line."""
+    index = line.find(PROGRESS_MARK)
+    if index < 0:
+        return None
+    try:
+        payload = json.loads(line[index + len(PROGRESS_MARK) :])
+    except ValueError:
+        return None
+    if not isinstance(payload, dict) or payload.get("phase") not in PHASES:
+        return None
+    fraction = payload.get("fraction")
+    return {
+        "phase": payload["phase"],
+        "step": str(payload.get("step") or ""),
+        "fraction": float(fraction) if isinstance(fraction, (int, float)) and not isinstance(fraction, bool) else None,
+    }

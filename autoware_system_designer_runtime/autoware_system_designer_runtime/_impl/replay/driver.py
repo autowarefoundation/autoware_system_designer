@@ -102,6 +102,9 @@ class DriverOptions:
     startup_only: bool = False
     # Receives one line per step and per line of a process, for a step log.
     step_log: Optional[Callable[[str], None]] = None
+    # Receives the driver time while the bag is stepped through, at most every progress_interval.
+    progress: Optional[Callable[[int], None]] = None
+    progress_interval: float = 1.0
 
 
 @dataclass
@@ -533,7 +536,13 @@ class ReplayDriver:
         self._set_time(self._now)
         await self._drain()
         progress = time.monotonic()
+        reported = progress
+        if options.progress is not None:
+            options.progress(self._now)
         while True:
+            if options.progress is not None and time.monotonic() - reported >= options.progress_interval:
+                reported = time.monotonic()
+                options.progress(self._now)
             message = self._source.peek()
             if message is None or (options.end_ns is not None and message[0] > options.end_ns):
                 break
@@ -562,3 +571,5 @@ class ReplayDriver:
                     self._recorder.written,
                 )
         await self._settle()
+        if options.progress is not None:
+            options.progress(self._now)

@@ -61,7 +61,8 @@ SHUTDOWN_WAIT_S = 5.0
 
 @dataclass
 class JobSpec:
-    """What to run; hooks run on the event loop and may fill ``job.detail``."""
+    """What to run; hooks run on the event loop and may fill ``job.detail``. A line hook returns
+    true when it changed the detail, which publishes the job's view."""
 
     key: str
     kind: str
@@ -71,7 +72,7 @@ class JobSpec:
     env: Optional[dict[str, str]] = None
     params: dict[str, Any] = field(default_factory=dict)
     detail: dict[str, Any] = field(default_factory=dict)
-    on_line: Optional[Callable[["Job", str], None]] = None
+    on_line: Optional[Callable[["Job", str], Optional[bool]]] = None
     on_exit: Optional[Callable[["Job"], None]] = None
 
 
@@ -257,7 +258,8 @@ class JobRunner:
             pending.append(line)
             if job.spec.on_line is not None:
                 try:
-                    job.spec.on_line(job, line)
+                    if job.spec.on_line(job, line):
+                        self._publish_state(job)
                 except Exception:  # noqa: BLE001 - a hook must not stop log capture
                     logger.exception("job %s line hook failed", job.id)
             if len(pending) >= LOG_BATCH_LINES:

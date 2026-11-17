@@ -41,6 +41,10 @@ if "--check" not in args:
     (out / "result.json").write_text(json.dumps({{"completed": True, "outputs": 3, "violations": [], "ignored": 1}}))
     (out / "verdict.json").write_text(json.dumps({{"passed": True, "topics": [{{"topic": "/out", "status": "match"}}]}}))
 print("scope", ",".join(config["scope"]), flush=True)
+print('[12:00:00] replay - replay progress: {{"phase": "pre-process", "step": "launching"}}', flush=True)
+if "--check" not in args:
+    print('[12:00:01] replay - replay progress: {{"phase": "pre-process", "step": "up", "fraction": 1}}', flush=True)
+    print('[12:00:02] replay - replay progress: {{"phase": "replay", "step": "1 of 2 s", "fraction": 0.5}}', flush=True)
 sys.exit(int(os.environ.get("FAKE_REPLAY_EXIT", "0")))
 """
 
@@ -165,6 +169,8 @@ def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_pat
     assert done["detail"]["fed"] == ["/in"] and done["detail"]["recorded"] == ["/out"]
     assert done["detail"]["result"]["completed"] is True and "ignored" not in done["detail"]["result"]
     assert done["detail"]["verdict"]["passed"] is True
+    assert done["detail"]["progress"] == {"phase": "replay", "step": "1 of 2 s", "fraction": 0.5}
+    assert done["detail"]["phases"] == {"pre-process": 1.0, "replay": 0.5}
 
 
 def test_pre_flight_passes_check_and_writes_no_result(served, tmp_path):

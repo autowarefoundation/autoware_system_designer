@@ -701,6 +701,9 @@ class ServeDaemon:
                 "shut them down or give the replay a domain_id of its own",
             )
 
+        def on_line(job: jobs.Job, line: str) -> bool:
+            return replay.update_progress(job.detail, line)
+
         def on_exit(job: jobs.Job) -> None:
             job.detail.update(replay.summary(plan.run_dir))
 
@@ -713,6 +716,7 @@ class ServeDaemon:
             env=env,
             params=plan.params,
             detail={"run_dir": str(plan.run_dir)},
+            on_line=on_line,
             on_exit=on_exit,
         )
         await asyncio.to_thread(replay.write_config, plan)

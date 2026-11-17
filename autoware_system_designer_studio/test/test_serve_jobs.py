@@ -95,6 +95,24 @@ def test_job_captures_merged_output_and_exit_code():
     assert sorted(logged) == ["err", "out"]
 
 
+def test_line_hook_that_changes_the_detail_publishes_the_job():
+    def mark(job, line):
+        if line != "mark":
+            return False
+        job.detail["marked"] = True
+        return True
+
+    async def scenario():
+        hub = _Recorder()
+        await _run(jobs.JobRunner(hub), _spec("print('plain'); print('mark')", on_line=mark))
+        return hub
+
+    hub = asyncio.run(scenario())
+    views = [data for topic, data in hub.published if topic == jobs.TOPIC_JOB]
+    assert [view["state"] for view in views] == [jobs.STATE_RUNNING, jobs.STATE_RUNNING, jobs.STATE_SUCCEEDED]
+    assert views[1]["detail"]["marked"] is True
+
+
 def test_job_cuts_overlong_lines():
     async def scenario():
         runner = jobs.JobRunner(_Recorder())

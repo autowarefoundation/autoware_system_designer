@@ -263,6 +263,16 @@ def test_messages_after_the_end_are_not_delivered():
     assert result.messages == 1
 
 
+def test_progress_reports_the_driver_time_from_the_first_step_to_the_last():
+    world = World([(T0 + 50 * MS, "/in", b"1"), (T0 + 150 * MS, "/in", b"2")], ["/out", "/tick"])
+    reported = []
+
+    replay(world, chain(world), node_order={"/a": 0, "/b": 1}, progress=reported.append, progress_interval=0.0)
+
+    assert reported[0] == T0 and reported[-1] == T0 + 150 * MS
+    assert reported == sorted(reported)
+
+
 def fan_in(world: World):
     """/x and /y both hear /in; /z hears what each of them publishes."""
     processes = []

@@ -643,6 +643,93 @@
   color: var(--state-failed);
 }
 
+/* Run phases: pre-process, replay and post-process segments, each filled by its share done */
+.replay-run-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.replay-run-phases {
+  display: flex;
+  gap: 4px;
+}
+
+.replay-run-phase {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-basis: 0;
+  min-width: 0;
+  --phase-color: var(--state-idle);
+}
+
+.replay-run-phase.done {
+  --phase-color: var(--state-ok);
+}
+
+.replay-run-phase.active {
+  --phase-color: var(--state-running);
+}
+
+.replay-run-phase.failed {
+  --phase-color: var(--state-failed);
+}
+
+.replay-run-phase.cancelled {
+  --phase-color: var(--state-warning);
+}
+
+.replay-run-phase-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.replay-run-phase.pending .replay-run-phase-label {
+  color: var(--text-muted);
+}
+
+.replay-run-phase-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+
+.replay-run-phase-fill {
+  height: 100%;
+  width: 0;
+  background: var(--phase-color);
+  transition: width 0.3s ease;
+}
+
+.replay-run-phase-fill.indeterminate {
+  width: 100%;
+  background: repeating-linear-gradient(-45deg, var(--phase-color) 0 6px, transparent 6px 12px);
+  background-size: 17px 100%;
+  animation: replay-run-phase-stripes 0.8s linear infinite;
+}
+
+.replay-run-phase.failed .replay-run-phase-fill.indeterminate,
+.replay-run-phase.cancelled .replay-run-phase-fill.indeterminate {
+  animation: none;
+}
+
+@keyframes replay-run-phase-stripes {
+  to {
+    background-position: 17px 0;
+  }
+}
+
+.replay-run-step {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-height: 1em;
+}
+
 .replay-run-counts,
 .replay-run-dir {
   font-size: 12px;

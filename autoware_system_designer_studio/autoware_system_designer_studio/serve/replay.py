@@ -37,6 +37,7 @@ from autoware_system_designer_runtime.replay_record import (
     VERDICT_FILE,
     BagError,
     bag_topics,
+    parse_progress,
     read_replay_file,
 )
 from autoware_system_designer_runtime.run_log import LOG_BASE
@@ -218,6 +219,17 @@ def write_config(plan: ReplayPlan) -> None:
     """The plan's configuration in its run directory; JSON, which the runtime reads as YAML."""
     plan.run_dir.mkdir(parents=True, exist_ok=True)
     (plan.run_dir / CONFIG_FILE).write_text(json.dumps(plan.config, indent=2) + "\n")
+
+
+def update_progress(detail: dict[str, Any], line: str) -> bool:
+    """The progress a log line reports: the detail's ``progress`` is the last one, its ``phases`` the
+    last fraction of each phase reached; true when the line carries one."""
+    progress = parse_progress(line)
+    if progress is None:
+        return False
+    detail["progress"] = progress
+    detail.setdefault("phases", {})[progress["phase"]] = progress["fraction"]
+    return True
 
 
 def summary(run_dir: Path) -> dict[str, Any]:

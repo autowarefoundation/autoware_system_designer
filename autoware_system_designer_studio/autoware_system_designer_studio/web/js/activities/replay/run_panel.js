@@ -6,6 +6,12 @@
   const replay = (SD.activities.replay ||= {});
   const JOB_KIND = "replay";
   const START = "replay.start";
+  // Phases a replay's progress lines name, in order, with their share of the bar.
+  const PHASES = [
+    { name: "pre-process", label: "Pre-process", grow: 1 },
+    { name: "replay", label: "Replay", grow: 3 },
+    { name: "post-process", label: "Post-process", grow: 1 },
+  ];
 
   // What a replay job came to, as { level: ok | warning | failed | running, text }.
   function outcome(job) {
@@ -80,6 +86,68 @@
     return lines;
   }
 
+  // State of each phase segment of a job, as { phase, state, width (0..1) or
+  // null for an unknown share }, with state done | active | stopped | pending:
+  // a phase is done once it reported fraction 1, active while the running job
+  // is on it, stopped when the job left it otherwise. Null when the job
+  // reported no progress. A pre-flight has its first phase only.
+  function phaseStates(job) {
+    const detail = job.detail || {};
+    const running = job.state === "running";
+    if (!detail.progress && !running) return null;
+    const reached = detail.phases || {};
+    const current = detail.progress?.phase ?? PHASES[0].name;
+    const phases = job.params?.check ? PHASES.slice(0, 1) : PHASES;
+    return phases.map((phase) => {
+      const fraction = reached[phase.name] ?? null;
+      if (fraction === 1) return { phase, state: "done", width: 1 };
+      if (running && phase.name === current) return { phase, state: "active", width: fraction };
+      if (phase.name in reached || phase.name === current)
+        return { phase, state: "stopped", width: fraction };
+      return { phase, state: "pending", width: 0 };
+    });
+  }
+
+  // The run's phases as segments, each filled by its share done, and the step
+  // the current phase is on.
+  function progressBar() {
+    const root = element("div", "replay-run-progress");
+    const segments = element("div", "replay-run-phases");
+    const step = element("div", "replay-run-step");
+    root.append(segments, step);
+
+    function render(job) {
+      const states = phaseStates(job);
+      root.hidden = !states;
+      if (!states) return;
+      const stoppedClass = job.state === "cancelled" ? "cancelled" : "failed";
+      segments.replaceChildren(
+        ...states.map(({ phase, state, width }) => {
+          const segment = element(
+            "div",
+            `replay-run-phase ${state === "stopped" ? stoppedClass : state}`,
+          );
+          segment.style.flexGrow = phase.grow;
+          const track = element("div", "replay-run-phase-track");
+          const fill = element("div", "replay-run-phase-fill");
+          if (width === null) fill.classList.add("indeterminate");
+          else fill.style.width = `${(width * 100).toFixed(1)}%`;
+          track.appendChild(fill);
+          const label = element("span", "replay-run-phase-label", phase.label);
+          if (state === "active" && width !== null && width < 1)
+            label.textContent += ` ${Math.floor(width * 100)}%`;
+          segment.append(label, track);
+          return segment;
+        }),
+      );
+      const progress = job.detail?.progress;
+      const phase = PHASES.find((entry) => entry.name === progress?.phase);
+      step.textContent = progress?.step && phase ? `${phase.label}: ${progress.step}` : "";
+    }
+
+    return { element: root, render };
+  }
+
   function numberInput(placeholder, min, step) {
     const input = element("input", "panel-search replay-run-number");
     input.type = "number";
@@ -122,12 +190,21 @@
     const jobSelect = document.createElement("select");
     jobSelect.setAttribute("aria-label", "Replay job");
     const status = element("div", "replay-run-outcome");
+    const progress = progressBar();
     const counts = element("div", "replay-run-counts");
     const runDir = element("div", "replay-run-dir");
     const findingList = element("ul", "replay-run-findings");
     const logHost = element("div", "replay-run-log");
     const report = element("div", "replay-run-report");
-    report.append(jobSelect, status, counts, runDir, findingList, logHost);
+    report.append(
+      jobSelect,
+      status,
+      progress.element,
+      counts,
+      runDir,
+      findingList,
+      logHost,
+    );
     report.hidden = true;
     root.append(head, options, buttons, error, report);
 
@@ -184,6 +261,7 @@
       const { level, text } = outcome(job);
       status.className = `replay-run-outcome ${level}`;
       status.textContent = text;
+      progress.render(job);
       counts.textContent = countsLine(job.detail?.result);
       runDir.textContent = job.detail?.run_dir || "";
       findingList.replaceChildren(
@@ -264,5 +342,6 @@
 
   replay.outcome = outcome;
   replay.findings = findings;
+  replay.phaseStates = phaseStates;
   replay.runPanel = runPanel;
 })();

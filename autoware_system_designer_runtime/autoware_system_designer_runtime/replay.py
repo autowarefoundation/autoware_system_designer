@@ -77,10 +77,14 @@ from .replay_record import (
     EXIT_DIFFERS,
     EXIT_FAILED,
     EXIT_OK,
+    PHASE_POST,
+    PHASE_PRE,
+    PHASE_REPLAY,
     REPLAY_SUBDIR,
     RESULT_FILE,
     STEP_LOG_FILE,
     VERDICT_FILE,
+    progress_message,
 )
 from .run_log import write_run_manifest
 
@@ -143,6 +147,10 @@ def _log_boundary(scope: Scope, boundary: Boundary) -> None:
     outside = [edge for edge in boundary.services if not edge.scope_peers]
     if outside:
         logger.info("  %d service port(s) leave the scope", len(outside))
+
+
+def _progress(phase: str, step: str = "", fraction: Optional[float] = None) -> None:
+    logger.info("%s", progress_message(phase, step, fraction))
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -209,6 +217,7 @@ def _save_reference(out_dir: Path, reference_dir: Path, inputs: Mapping[str, Any
 def replay_from_json(json_path: str, options: ReplayOptions) -> int:
     from .system_runner import _bind_deploy_arguments
 
+    _progress(PHASE_PRE, "selecting the scope")
     try:
         config = ReplayConfig.load(options.config)
         with open(json_path) as handle:
@@ -253,6 +262,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
         if options.bag is None:
             logger.error("replay: no bag given")
             return EXIT_FAILED
+        _progress(PHASE_PRE, "checking the bag")
         try:
             bag = remap_topics(read_bag_info(options.bag), {**config.remap, **options.remap})
         except BagError as exc:
@@ -284,6 +294,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
         return EXIT_FAILED
     if options.check_only:
         logger.info("replay: pre-flight passed")
+        _progress(PHASE_PRE, "pre-flight passed", 1.0)
         return EXIT_OK
 
     key_inputs: dict[str, Any] = {}
@@ -317,6 +328,24 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
 
     start_ns = bag.start_ns if bag is not None else time.time_ns()
     end_ns = start_ns + int(options.duration * 1e9) if (bag is not None and options.duration is not None) else None
+    # Driver time the bag is stepped through, for the progress of the replay phase.
+    span_ns = 0
+    if bag is not None:
+        span_ns = (bag.end_ns if end_ns is None else min(end_ns, bag.end_ns)) - start_ns
+
+    stepping: list[bool] = []
+
+    def on_progress(now_ns: int) -> None:
+        if not stepping:
+            stepping.append(True)
+            _progress(PHASE_PRE, "the scope is up", 1.0)
+        done = max(now_ns - start_ns, 0)
+        _progress(
+            PHASE_REPLAY,
+            f"{done / 1e9:.1f} of {span_ns / 1e9:.1f} s",
+            done / span_ns if span_ns > 0 else 1.0,
+        )
+
     # A Unix socket path holds about a hundred characters, fewer than a log directory may have.
     socket_dir = Path(tempfile.mkdtemp(prefix="asd_replay_"))
     socket_path = socket_dir / SOCKET_FILE
@@ -401,6 +430,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
                 callback_timeout=options.callback_timeout,
                 startup_only=options.check_endpoints,
                 step_log=log_step if steps is not None else None,
+                progress=on_progress if bag is not None else None,
             ),
             node_order=node_order,
             expected_nodes=frozenset(fqns.values()),
@@ -423,7 +453,10 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
         async def drive(coord) -> None:
             try:
                 await coord.launch_ready.wait()
+                _progress(PHASE_PRE, "waiting for the scope to come up")
                 result_holder.append(await driver.run())
+                if bag is not None:
+                    _progress(PHASE_REPLAY, "the bag is stepped through", 1.0)
             except ReplayError as exc:
                 outcome["error"] = str(exc)
                 result_holder.append(driver.result)
@@ -433,6 +466,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
                 result_holder.append(driver.result)
                 logger.exception("replay driver failed")
             finally:
+                _progress(PHASE_POST, "shutting down the scope")
                 coord.request_shutdown()
 
         async def post_start(coord) -> None:
@@ -465,6 +499,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
                 sink.close()
             await worker.stop()
 
+    _progress(PHASE_PRE, "launching the scope")
     try:
         run_code = asyncio.run(_run())
     except KeyboardInterrupt:
@@ -510,6 +545,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
                 violation["endpoint"],
                 violation["count"],
             )
+        _progress(PHASE_POST, "saving the reference" if options.save_reference else "comparing the outputs")
         since_ns = start_ns + int(options.warmup * 1e9)
         recorded = group_by_topic(read_messages(out_dir / ref.OUTPUTS_DIR), since_ns=since_ns)
         summary["outputs_digest"] = digest(recorded, recorded_types, ros_deserialize)
@@ -543,6 +579,7 @@ def replay_from_json(json_path: str, options: ReplayOptions) -> int:
             logger.info("replay: no reference for this scope, bag and parameters; --save-reference stores this run")
     _write_json(out_dir / RESULT_FILE, summary)
     logger.info("replay: result in %s", out_dir / RESULT_FILE)
+    _progress(PHASE_POST, "result written", 1.0)
     return code
 
 
