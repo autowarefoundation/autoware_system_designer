@@ -110,18 +110,43 @@
 
 .replay-graph .replay-g-note,
 .replay-graph .replay-g-count,
-.replay-graph .replay-g-namespace,
 .replay-graph .replay-g-portname {
   font-size: 9px;
   fill: var(--text-muted);
 }
 
+/* Node and namespace box: the colours of their component, set per element
+   as --c (line), --m (fill) and --t (text), with --d* for the dark theme. */
+.replay-graph .replay-g-name,
 .replay-graph .replay-g-portname {
-  fill: var(--text-secondary);
+  fill: var(--t, var(--text-primary));
 }
 
 .replay-graph .replay-g-name {
   font-weight: 600;
+}
+
+.replay-graph .replay-g-spacename {
+  font-weight: 600;
+  fill: var(--t, var(--text-secondary));
+}
+
+.replay-g-space > rect {
+  fill: var(--c, var(--text-muted));
+  fill-opacity: 0.1;
+  stroke: var(--c, var(--text-muted));
+}
+
+[data-theme="dark"] .replay-graph .replay-g-name,
+[data-theme="dark"] .replay-graph .replay-g-portname,
+[data-theme="dark"] .replay-graph .replay-g-spacename {
+  fill: var(--dt, var(--text-primary));
+}
+
+[data-theme="dark"] .replay-g-space > rect {
+  fill: var(--dc, var(--text-muted));
+  fill-opacity: 0.14;
+  stroke: var(--dc, var(--text-muted));
 }
 
 .replay-g-bag > rect {
@@ -138,11 +163,17 @@
   stroke: var(--text-muted);
   stroke-width: 1.5;
   stroke-dasharray: 8 5;
+  pointer-events: none;
 }
 
 .replay-g-node > rect {
-  fill: var(--flow-node-bg);
-  stroke: var(--flow-node-border);
+  fill: var(--m, var(--flow-node-bg));
+  stroke: var(--c, var(--flow-node-border));
+}
+
+[data-theme="dark"] .replay-g-node > rect {
+  fill: var(--dm, var(--flow-node-bg));
+  stroke: var(--dc, var(--flow-node-border));
 }
 
 .replay-g-node.container > rect {

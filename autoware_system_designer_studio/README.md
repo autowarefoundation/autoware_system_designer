@@ -253,17 +253,19 @@ see the runtime README) on any page and runs it where a daemon serves the page. 
 checkbox per entry: a checked entry selects every launched node at or under its path, and the
 selection is kept as the fewest such paths (`?scope=`, comma separated), the runtime's `--scope`.
 A node placed at a module's own path has an entry of its own below that path, named `<path>/<name>`.
-Containers of the selected composable nodes join the scope.
+Containers of the selected composable nodes join the scope: their entries are checked and locked.
 
 The top of the main area keeps the scope diagram, at a height set by dragging the divider below it
 (kept across visits). The diagram is drawn from the boundary the runtime computes, by topic:
 
-- the **replay boundary** is a frame around the scope's nodes and containers; each node shows its
-  topic ports, joined inside the frame where one node of the scope publishes what another reads;
+- the **replay boundary** is a frame around the scope's nodes and containers, nested in one box per
+  namespace (a namespace holding only one namespace shares its box), the outer a box the larger its
+  label. Nodes and boxes take the colours of their component, as on the node diagram. Each node
+  shows its topic ports, joined where one node of the scope publishes what another reads;
 - each **boundary input**, a topic a node outside the scope publishes, is a chip on the left side of
   the frame, joined to the ports that subscribe to it and coloured by its match against the bag;
 - the **bag** block left of the frame lists the recorded topics that feed the scope, each joined to
-  the input it feeds. A topic recorded under another name than its input is a remap, drawn dashed;
+  the input it feeds and named by its last two segments while the input bears the same name. A topic recorded under another name than its input is a remap, drawn dashed;
 - an **output** port of a node is filled where its topic is recorded: a boundary output unless left
   unrecorded, a topic internal to the scope once chosen. The boundary outputs are not drawn.
 

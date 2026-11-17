@@ -387,6 +387,14 @@ test("the graph joins bag topics, boundary ports and the scope's node ports", ()
     "internal /mod/a:/mid > /mod/b:/mid",
     "input in /tf > /mod/b:/tf",
   ]);
+  const nested = (items) =>
+    items.map((item) =>
+      item.node
+        ? graph.nodes.find((n) => n.id === item.node).name
+        : [item.label, item.depth, nested(item.items)],
+    );
+  assert.deepEqual(nested(graph.boxes), ["cc", ["mod", 0, ["a", "b"]]]);
+  assert.equal(graph.levels, 1);
   const marks = (drawn) =>
     drawn.nodes
       .flatMap((item) => item.outputs)

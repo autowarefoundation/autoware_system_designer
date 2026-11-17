@@ -56,6 +56,8 @@
               ? path
               : `${path.replace(/\/+$/, "")}/${entity.name}`,
           fqn: fqn(entity),
+          // Colours of the node's component.
+          guide: entity.vis_guide || null,
           unit: entity.compute_unit || "",
           launchState: entity.launcher.launch_state || "",
           containerTarget: entity.launcher.container_target || "",
@@ -367,12 +369,58 @@
     }));
   }
 
+  // Namespace boxes of drawn nodes: `boxes` nests { id, label, depth, guide,
+  // items } with items of { node: id } or a box, and `levels` counts the box
+  // depths. A namespace holding one namespace and no node shares its box.
+  function namespaceBoxes(nodes) {
+    const root = { label: "", spaces: new Map(), nodes: [] };
+    nodes.forEach((node) => {
+      let at = root;
+      node.namespace.forEach((segment) => {
+        if (!at.spaces.has(segment))
+          at.spaces.set(segment, {
+            label: segment,
+            spaces: new Map(),
+            nodes: [],
+          });
+        at = at.spaces.get(segment);
+      });
+      at.nodes.push(node);
+    });
+    let count = 0;
+    let levels = 0;
+    const firstGuide = (space) =>
+      space.nodes.find((node) => node.guide)?.guide ||
+      [...space.spaces.values()].map(firstGuide).find(Boolean) ||
+      null;
+    const items = (space, depth) => [
+      ...space.nodes.map((node) => ({ node: node.id })),
+      ...[...space.spaces.values()].map((inner) => box(inner, depth)),
+    ];
+    const box = (space, depth) => {
+      let label = space.label;
+      while (!space.nodes.length && space.spaces.size === 1) {
+        [space] = space.spaces.values();
+        label = `${label}/${space.label}`;
+      }
+      levels = Math.max(levels, depth + 1);
+      return {
+        id: `g${count++}`,
+        label,
+        depth,
+        guide: firstGuide(space),
+        items: items(space, depth + 1),
+      };
+    };
+    return { boxes: items(root, 0), levels };
+  }
+
   // Drawn form of a scope: the bag topics that feed it, the boundary inputs
   // as ports of the boundary, the scope's nodes with their topic ports, each
-  // output port marked where its topic is recorded, and the edges a topic
-  // gives between them. `containers` are drawn without ports; `recorded`
-  // holds the internal topics recorded and `skipped` the boundary outputs
-  // left unrecorded.
+  // output port marked where its topic is recorded, the edges a topic gives
+  // between them, and the namespace boxes that hold the nodes. `containers`
+  // are drawn without ports; `recorded` holds the internal topics recorded
+  // and `skipped` the boundary outputs left unrecorded.
   function graph(nodeList, scope, bound, matched, recorded, skipped) {
     const inside = new Set(scope.nodes);
     const containers = new Set(scope.containers);
@@ -411,7 +459,7 @@
     const publisherPorts = new Map();
     const nodes = drawn.map((node, index) => {
       const id = `n${index}`;
-      const segments = node.path.split("/").filter(Boolean);
+      const segments = node.key.split("/").filter(Boolean);
       const container = !inside.has(node.path);
       const ports = (topics, names, side) =>
         container
@@ -428,7 +476,8 @@
         id,
         path: node.path,
         name: segments[segments.length - 1] || node.path,
-        namespace: `/${segments.slice(0, -1).join("/")}`,
+        namespace: segments.slice(0, -1),
+        guide: node.guide,
         container,
         inputs: ports(node.inputs, node.inputNames, "i"),
         outputs: ports(node.outputs, node.outputNames, "o").map((port) => ({
@@ -457,6 +506,7 @@
       bag,
       inputs,
       nodes,
+      ...namespaceBoxes(nodes),
       edges,
     };
   }

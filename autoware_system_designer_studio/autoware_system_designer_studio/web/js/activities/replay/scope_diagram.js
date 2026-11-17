@@ -1,9 +1,10 @@
 // Replay: the scope diagram, drawn from the replay's own graph. The bag block
 // lists the recorded topics that feed the scope; the boundary frame holds the
-// scope's nodes, with one chip per boundary input on its left side. An edge
-// from a bag topic to an input chip is the feed, a remap where the two names
-// differ. A chip or bag topic opens the input's sources; an output port of a
-// node toggles the recording of its topic.
+// scope's nodes in nested namespace boxes, in the colours of their component,
+// with one chip per boundary input on its left side. An edge from a bag topic
+// to an input chip is the feed, a remap where the two names differ. A chip or
+// bag topic opens the input's sources; an output port of a node toggles the
+// recording of its topic.
 (function () {
   const SD = window.SD;
   const { element } = SD.widgets;
@@ -12,16 +13,18 @@
 
   const FONT = 11;
   const SMALL = 9;
-  const PAD = 8;
-  // Node box: a head of namespace and name over one row per port.
-  const NODE_HEAD = 32;
-  const NODE_MIN_WIDTH = 120;
-  const ROW = 16;
-  const PORT = 6;
+  const PAD = 6;
+  // Node box: a head of its name over one row per port.
+  const NODE_HEAD = 18;
+  const NODE_MIN_WIDTH = 90;
+  const ROW = 13;
+  const PORT = 5;
   // Chip of the boundary and row of the bag.
-  const CHIP = 18;
-  const CHIP_GAP = 4;
-  const LAYER_GAP = 48;
+  const CHIP = 15;
+  const CHIP_GAP = 2;
+  const LAYER_GAP = 28;
+  // Growth of a namespace box's marks per level above the innermost.
+  const LEVEL_SCALE = 1.35;
   // Id of the undrawn port and edge that space a bag without feeds.
   const SPACER = "bag-spacer";
 
@@ -55,6 +58,15 @@
     title.textContent = lines.filter(Boolean).join("\n");
     node.appendChild(title);
     return node;
+  }
+
+  // Name of a bag row: whole where the topic is remapped, else its last two
+  // segments, the input chip beside it carrying the whole name.
+  function rowName(row) {
+    const segments = row.name.split("/").filter(Boolean);
+    return row.name !== row.input || segments.length <= 2
+      ? row.name
+      : `…/${segments.slice(-2).join("/")}`;
   }
 
   function chevron(x, y, size, className) {
@@ -109,6 +121,19 @@
 
     // ── Layout graph ────────────────────────────────────────────────────────
 
+    // Marks of a namespace box at `depth` of `levels`: the outer a box, the
+    // larger its label, border and padding.
+    boxStyle(depth, levels) {
+      const scale = Math.pow(LEVEL_SCALE, levels - 1 - depth);
+      const font = Math.round(SMALL * scale);
+      return {
+        font,
+        pad: Math.round(PAD * scale),
+        head: font + Math.round(PAD * scale),
+        border: +(0.8 * scale).toFixed(1),
+      };
+    }
+
     nodeBox(node) {
       const side = (ports) =>
         Math.max(0, ...ports.map((port) => this.width(port.name, SMALL)));
@@ -116,8 +141,7 @@
       const width = Math.max(
         NODE_MIN_WIDTH,
         this.width(node.name) + 2 * PAD,
-        this.width(node.namespace, SMALL) + 2 * PAD,
-        side(node.inputs) + side(node.outputs) + 4 * PAD,
+        side(node.inputs) + side(node.outputs) + 5 * PAD,
       );
       const port = (item, index, x) => ({
         id: item.id,
@@ -129,7 +153,7 @@
       return {
         id: node.id,
         width,
-        height: NODE_HEAD + rows * ROW + (rows ? PAD / 2 : 0),
+        height: NODE_HEAD + rows * ROW + (rows ? 2 : 0),
         properties: { "org.eclipse.elk.portConstraints": "FIXED_POS" },
         ports: [
           ...node.inputs.map((item, index) => port(item, index, -PORT / 2)),
@@ -140,24 +164,34 @@
       };
     }
 
+    // Layout node of a namespace box or of the node an item names.
+    itemBox(item, model, nodes) {
+      if (item.node) return this.nodeBox(nodes.get(item.node));
+      const style = this.boxStyle(item.depth, model.levels);
+      return {
+        id: item.id,
+        children: item.items.map((inner) => this.itemBox(inner, model, nodes)),
+        properties: {
+          "org.eclipse.elk.padding": `[top=${style.head + style.pad},left=${style.pad},bottom=${style.pad},right=${style.pad}]`,
+          "org.eclipse.elk.nodeSize.constraints": "MINIMUM_SIZE",
+          "org.eclipse.elk.nodeSize.minimum": `(${this.width(item.label, style.font) + 2 * style.pad},0)`,
+        },
+      };
+    }
+
     toElk(model) {
       const stacked = {
         "org.eclipse.elk.portConstraints": "FIXED_SIDE",
         "org.eclipse.elk.portAlignment.default": "CENTER",
         "org.eclipse.elk.spacing.portPort": String(CHIP_GAP),
       };
-      const chips = (items, side) => {
-        const width =
-          Math.max(0, ...items.map((item) => this.width(item.topic))) + 2 * PAD;
-        return items.map((item) => ({
-          id: item.id,
-          width,
-          height: CHIP,
-          properties: { "org.eclipse.elk.port.side": side },
-        }));
-      };
+      const chipWidth =
+        Math.max(0, ...model.inputs.map((item) => this.width(item.topic))) +
+        2 * PAD;
       const rowWidth = (row) =>
-        this.width(row.name) + this.width(String(row.count), SMALL) + 3 * PAD;
+        this.width(rowName(row)) +
+        this.width(String(row.count), SMALL) +
+        3 * PAD;
       const bag = {
         id: "bag",
         width: Math.max(
@@ -178,48 +212,53 @@
           properties: { "org.eclipse.elk.port.side": "EAST" },
         })),
       };
-      const feeds = model.edges.filter((edge) => edge.kind === "feed");
+      const edges = [...model.edges];
       // An undrawn edge keeps a bag without feeds clear of the input chips.
-      if (!feeds.length && model.inputs.length) {
+      if (!edges.some((edge) => edge.kind === "feed") && model.inputs.length) {
         bag.ports.push({
           id: SPACER,
           width: 0,
           height: 0,
           properties: { "org.eclipse.elk.port.side": "EAST" },
         });
-        feeds.push({ id: SPACER, from: SPACER, to: model.inputs[0].id });
+        edges.push({ id: SPACER, from: SPACER, to: model.inputs[0].id });
       }
-      const inner = model.edges.filter((edge) => edge.kind !== "feed");
+      const nodes = new Map(model.nodes.map((node) => [node.id, node]));
       const scope = {
         id: "scope",
         properties: {
           ...stacked,
-          "org.eclipse.elk.padding": `[top=${3 * PAD},left=${3 * PAD},bottom=${3 * PAD},right=${3 * PAD}]`,
-          "org.eclipse.elk.spacing.nodeNode": String(2 * PAD),
-          "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers":
-            String(LAYER_GAP),
+          "org.eclipse.elk.padding": `[top=${2 * PAD},left=${3 * PAD},bottom=${2 * PAD},right=${2 * PAD}]`,
         },
-        ports: chips(model.inputs, "WEST"),
-        children: model.nodes.map((node) => this.nodeBox(node)),
-        edges: inner.map((edge) => ({
-          id: edge.id,
-          sources: [edge.from],
-          targets: [edge.to],
+        ports: model.inputs.map((item) => ({
+          id: item.id,
+          width: chipWidth,
+          height: CHIP,
+          properties: { "org.eclipse.elk.port.side": "WEST" },
         })),
+        children: model.boxes.map((item) => this.itemBox(item, model, nodes)),
       };
+      // The bag, the boundary and the namespace boxes are laid out as one
+      // graph: an edge joins ports across any of their borders.
       return {
         id: "root",
         layoutOptions: {
           "org.eclipse.elk.algorithm": "layered",
           "org.eclipse.elk.direction": "RIGHT",
           "org.eclipse.elk.edgeRouting": "ORTHOGONAL",
+          "org.eclipse.elk.hierarchyHandling": "INCLUDE_CHILDREN",
           "org.eclipse.elk.layered.layering.strategy": "NETWORK_SIMPLEX",
+          "org.eclipse.elk.spacing.nodeNode": String(PAD),
           "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers":
             String(LAYER_GAP),
+          "org.eclipse.elk.spacing.edgeNode": "4",
+          "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": "6",
+          "org.eclipse.elk.spacing.edgeEdge": "3",
+          "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": "3",
           "org.eclipse.elk.padding": `[top=${4 * PAD},left=${2 * PAD},bottom=${2 * PAD},right=${2 * PAD}]`,
         },
         children: [bag, scope],
-        edges: feeds.map((edge) => ({
+        edges: edges.map((edge) => ({
           id: edge.id,
           sources: [edge.from],
           targets: [edge.to],
@@ -235,7 +274,7 @@
     // ── Drawing ─────────────────────────────────────────────────────────────
 
     // Draws a laid-out graph with the boundary frame where the last drawing
-    // had it on screen.
+    // had it on screen: boxes under edges under nodes and chips.
     draw(graph, model) {
       const [bag, scope] = graph.children;
       if (this.frameAt) {
@@ -245,10 +284,47 @@
       this.frameAt = { x: scope.x, y: scope.y };
       const { layer } = this.createCanvas();
       this.byTopic.clear();
+      const boxes = svg("g");
+      const marks = svg("g");
+      // Origin of every box the layout nests, in the layer's coordinates.
+      const origin = new Map([["root", { x: 0, y: 0 }]]);
+      const placed = (item, parent) => {
+        const at = { x: parent.x + item.x, y: parent.y + item.y };
+        origin.set(item.id, at);
+        return { ...item, ...at };
+      };
+      const nodes = new Map(model.nodes.map((node) => [node.id, node]));
+      const spaces = new Map();
+      const index = (items) =>
+        items.forEach((item) => {
+          if (item.node) return;
+          spaces.set(item.id, item);
+          index(item.items);
+        });
+      index(model.boxes);
+      const walk = (item, parent) => {
+        const at = placed(item, parent);
+        if (nodes.has(item.id)) {
+          marks.appendChild(this.drawNode(at, nodes.get(item.id)));
+          return;
+        }
+        boxes.appendChild(this.drawSpace(at, spaces.get(item.id), model));
+        (item.children || []).forEach((child) => walk(child, at));
+      };
+      const frame = placed(scope, origin.get("root"));
+      boxes.appendChild(this.drawFrame(frame, model));
+      (scope.children || []).forEach((child) => walk(child, frame));
+      const inputs = new Map(model.inputs.map((input) => [input.id, input]));
+      (scope.ports || []).forEach((port) =>
+        marks.appendChild(
+          this.drawInput(placed(port, frame), inputs.get(port.id)),
+        ),
+      );
       layer.append(
-        this.drawBag(bag, model),
-        this.drawScope(scope, model),
-        ...this.drawEdges(graph.edges, model),
+        boxes,
+        ...this.drawEdges(graph.edges, model, origin),
+        this.drawBag(placed(bag, origin.get("root")), model),
+        marks,
       );
       this.graphBBox = layer.getBBox();
     }
@@ -259,6 +335,22 @@
         { transform: `translate(${node.x},${node.y})` },
         className,
       );
+    }
+
+    // Colours of a component for the theme rules of the element.
+    tint(node, guide) {
+      if (!guide) return node;
+      Object.entries({
+        "--c": guide.color,
+        "--m": guide.medium_color,
+        "--t": guide.text_color,
+        "--dc": guide.dark_color,
+        "--dm": guide.dark_medium_color,
+        "--dt": guide.dark_text_color,
+      }).forEach(([name, value]) => {
+        if (value) node.style.setProperty(name, value);
+      });
+      return node;
     }
 
     // Element of a topic: lit with every other element of the topic while the
@@ -314,7 +406,7 @@
             height: port.height,
             rx: 3,
           }),
-          label(row.name, { x: PAD, y: middle }, "replay-g-topic"),
+          label(rowName(row), { x: PAD, y: middle }, "replay-g-topic"),
           label(
             String(row.count),
             { x: box.width - PAD - PORT, y: middle, "text-anchor": "end" },
@@ -342,7 +434,7 @@
       return g;
     }
 
-    drawScope(box, model) {
+    drawFrame(box, model) {
       const g = this.group(box, "replay-g-scope");
       g.append(
         label(model.scopeTitle, { x: 0, y: -PAD }, "replay-g-caption"),
@@ -351,16 +443,34 @@
           { width: box.width, height: box.height, rx: 6 },
           "replay-g-frame",
         ),
-        ...this.drawEdges(box.edges, model),
       );
-      const nodes = new Map(model.nodes.map((node) => [node.id, node]));
-      (box.children || []).forEach((child) =>
-        g.appendChild(this.drawNode(child, nodes.get(child.id))),
+      return g;
+    }
+
+    // Namespace box: its label in the head, shortened to the box.
+    drawSpace(box, space, model) {
+      const style = this.boxStyle(space.depth, model.levels);
+      const g = this.tint(this.group(box, "replay-g-space"), space.guide);
+      const name = label(
+        "",
+        { x: style.pad, y: style.pad / 2 + style.head / 2 },
+        "replay-g-spacename",
       );
-      const inputs = new Map(model.inputs.map((input) => [input.id, input]));
-      (box.ports || []).forEach((port) =>
-        g.appendChild(this.drawInput(port, inputs.get(port.id))),
+      name.style.fontSize = `${style.font}px`;
+      this._truncateSVGText(
+        name,
+        space.label,
+        box.width - 2 * style.pad,
+        style.font,
       );
+      const rect = svg("rect", {
+        width: box.width,
+        height: box.height,
+        rx: 3,
+      });
+      rect.style.strokeWidth = style.border;
+      g.append(rect, name);
+      tooltip(g, [space.label]);
       return g;
     }
 
@@ -399,20 +509,15 @@
     }
 
     drawNode(box, node) {
-      const g = this.group(
-        box,
-        `replay-g-node${node.container ? " container" : ""}`,
+      const g = this.tint(
+        this.group(box, `replay-g-node${node.container ? " container" : ""}`),
+        node.guide,
       );
       g.append(
-        svg("rect", { width: box.width, height: box.height, rx: 4 }),
-        label(
-          node.container ? "container" : node.namespace,
-          { x: PAD, y: 10 },
-          "replay-g-namespace",
-        ),
-        label(node.name, { x: PAD, y: 22 }, "replay-g-name"),
+        svg("rect", { width: box.width, height: box.height, rx: 3 }),
+        label(node.name, { x: PAD, y: NODE_HEAD / 2 }, "replay-g-name"),
       );
-      tooltip(g, [node.path]);
+      tooltip(g, [node.path, node.container ? "container" : ""]);
       const position = new Map(
         (box.ports || []).map((port) => [port.id, port]),
       );
@@ -470,22 +575,31 @@
       return g;
     }
 
-    drawEdges(edges, model) {
+    // Edge paths in the layer's coordinates; the layout gives each edge in
+    // those of its `container`. An edge from an input chip starts at the
+    // frame.
+    drawEdges(edges, model, origin) {
       const byId = new Map(model.edges.map((edge) => [edge.id, edge]));
       return (edges || [])
         .filter((edge) => edge.sections?.length && byId.has(edge.id))
         .map((edge) => {
           const data = byId.get(edge.id);
+          const at = origin.get(edge.container) || origin.get("root");
           const points = edge.sections.flatMap((section) => [
             section.startPoint,
             ...(section.bendPoints || []),
             section.endPoint,
           ]);
+          if (data.kind === "input")
+            points[0] = { ...points[0], x: Math.max(points[0].x, 0) };
           const path = svg(
             "path",
             {
               d: points
-                .map((point, i) => `${i ? "L" : "M"}${point.x},${point.y}`)
+                .map(
+                  (point, i) =>
+                    `${i ? "L" : "M"}${at.x + point.x},${at.y + point.y}`,
+                )
                 .join(" "),
             },
             `replay-g-edge ${data.kind} ${data.status}`,

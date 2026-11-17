@@ -212,6 +212,7 @@
       const tree = scopeTree({
         nodes: () => nodes,
         selected: () => selected,
+        locked: () => new Set(model.selectScope(nodes, patterns()).containers),
         toggle(path, on) {
           const next = new Set(selected);
           nodes

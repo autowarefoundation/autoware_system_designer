@@ -1,13 +1,15 @@
 // Replay: the scope selector, the mode's namespace tree with one checkbox per
 // entry. A checked entry selects every launched node at or under its path; a
-// node placed at a module's own path has an entry of its own below it.
+// node placed at a module's own path has an entry of its own below it. The
+// container of a selected composable node is checked and locked.
 (function () {
   const SD = window.SD;
   const { element, section } = SD.widgets;
   const replay = (SD.activities.replay ||= {});
   const { selects } = replay.model;
 
-  // `selection` is { nodes(), selected(): Set of node paths, toggle(path, on), clear() }.
+  // `selection` is { nodes(), selected(): Set of node paths, locked(): Set of
+  // container paths the selected nodes need, toggle(path, on), clear() }.
   function scopeTree(selection) {
     const input = element("input", "panel-search");
     input.type = "search";
@@ -26,8 +28,10 @@
 
     function render() {
       const selected = selection.selected();
+      const locked = selection.locked();
       const nodes = selection.nodes();
-      summary.textContent = `${selected.size} of ${nodes.length} nodes`;
+      const inScope = new Set([...selected, ...locked]);
+      summary.textContent = `${inScope.size} of ${nodes.length} nodes`;
       clear.disabled = !selected.size;
       if (!root) {
         tree.replaceChildren(element("p", "panel-empty", "Loading…"));
@@ -40,11 +44,15 @@
         onToggle: render,
         decorate(entry, row) {
           const members = nodes.filter((node) => selects(node, entry.path));
-          const chosen = members.filter((node) => selected.has(node.path));
+          const chosen = members.filter((node) => inScope.has(node.path));
+          const fixed =
+            members.length > 0 &&
+            members.every((node) => locked.has(node.path));
           const box = document.createElement("input");
           box.type = "checkbox";
           box.className = "replay-scope-check";
-          box.disabled = !members.length;
+          box.disabled = !members.length || fixed;
+          if (fixed) box.title = "Container of a selected composable node";
           box.checked = members.length > 0 && chosen.length === members.length;
           box.indeterminate = chosen.length > 0 && !box.checked;
           box.setAttribute("aria-label", `Replay ${entry.path}`);
