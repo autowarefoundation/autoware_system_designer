@@ -3,8 +3,9 @@
 // scope's nodes in nested namespace boxes, in the colours of their component,
 // with one chip per boundary input on its left side. An edge from a bag topic
 // to an input chip is the feed, a remap where the two names differ. A chip or
-// bag topic opens the input's sources; an output port of a node toggles the
-// recording of its topic.
+// bag topic opens the input's sources and selects the input; the selected
+// input's chip, bag topic, edges and ports stay emphasized. An output port of
+// a node toggles the recording of its topic.
 (function () {
   const SD = window.SD;
   const { element } = SD.widgets;
@@ -86,6 +87,11 @@
       this.handlers = handlers;
       // Topic -> drawn elements lit together.
       this.byTopic = new Map();
+      // Topic of the selected input, and each input chip's box in the
+      // layer's coordinates.
+      this.selected = null;
+      this.chipAt = new Map();
+      this.layer = null;
       // Viewport as last fitted, and where the boundary frame is drawn.
       this.fittedView = null;
       this.frameAt = null;
@@ -113,6 +119,50 @@
     clear() {
       this.createCanvas();
       this.frameAt = null;
+      this.layer = null;
+      this.byTopic.clear();
+      this.chipAt.clear();
+    }
+
+    // Emphasizes the elements of the selected input's topic and mutes the
+    // rest of the boundary.
+    markSelected() {
+      this.byTopic.forEach((items, topic) =>
+        items.forEach((item) =>
+          item.classList.toggle("selected", topic === this.selected),
+        ),
+      );
+      this.layer?.classList.toggle(
+        "replay-g-focused",
+        this.byTopic.has(this.selected),
+      );
+    }
+
+    // Pans the selected input's chip into the view where it lies outside.
+    reveal() {
+      const box = this.chipAt.get(this.selected);
+      if (!box || !this.container.clientHeight) return;
+      const { k, x, y } = this.transform;
+      const width = this.container.clientWidth;
+      const height = this.container.clientHeight;
+      const left = x + box.x * k;
+      const top = y + box.y * k;
+      const inside =
+        left >= 0 &&
+        top >= 0 &&
+        left + box.width * k <= width &&
+        top + box.height * k <= height;
+      if (inside) return;
+      this.transform.x = width / 2 - (box.x + box.width / 2) * k;
+      this.transform.y = height / 2 - (box.y + box.height / 2) * k;
+      this.updateTransform();
+    }
+
+    select(topic) {
+      const changed = topic !== this.selected;
+      this.selected = topic;
+      this.markSelected();
+      if (changed && topic) this.reveal();
     }
 
     width(text, size = FONT) {
@@ -283,7 +333,9 @@
       }
       this.frameAt = { x: scope.x, y: scope.y };
       const { layer } = this.createCanvas();
+      this.layer = layer;
       this.byTopic.clear();
+      this.chipAt.clear();
       const boxes = svg("g");
       const marks = svg("g");
       // Origin of every box the layout nests, in the layer's coordinates.
@@ -327,6 +379,7 @@
         marks,
       );
       this.graphBBox = layer.getBBox();
+      this.markSelected();
     }
 
     group(node, className) {
@@ -488,6 +541,7 @@
     }
 
     drawInput(port, input) {
+      this.chipAt.set(input.topic, port);
       const chip = this.chip(
         port,
         input.topic,
@@ -611,7 +665,8 @@
     }
   }
 
-  // `handlers` is { choices(input), choose(input, value), record(topic, on) }.
+  // `handlers` is { choices(input), choose(input, value), record(topic, on),
+  // select(topic) }.
   function scopeDiagram(handlers) {
     const pane = element("div", "replay-diagram");
     const canvas = element("div", "diagram-canvas replay-graph");
@@ -678,7 +733,10 @@
     }
 
     const graph = new ScopeGraph(canvas, {
-      input: openMenu,
+      input(input, event) {
+        handlers.select(input.topic);
+        openMenu(input, event);
+      },
       record: handlers.record,
     });
     document.addEventListener("mousedown", (event) => {
@@ -739,7 +797,12 @@
       }
     }
 
-    return { element: pane, show };
+    // Emphasizes the input of `topic`, or none for null; kept across redraws.
+    function select(topic) {
+      graph.select(topic);
+    }
+
+    return { element: pane, show, select };
   }
 
   replay.scopeDiagram = scopeDiagram;

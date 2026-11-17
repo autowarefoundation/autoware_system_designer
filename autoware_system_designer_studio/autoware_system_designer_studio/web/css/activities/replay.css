@@ -451,6 +451,34 @@
   fill: var(--highlight-bg);
 }
 
+/* The selected input: its topic emphasized, the rest of the boundary muted. */
+.replay-g-focused .replay-g-chip:not(.selected),
+.replay-g-focused .replay-g-row:not(.selected),
+.replay-g-focused .replay-g-edge:not(.selected) {
+  opacity: 0.4;
+}
+
+.replay-g-edge.selected {
+  stroke: var(--highlight);
+  stroke-width: 2.4;
+}
+
+.replay-g-chip.selected > rect,
+.replay-g-row.selected > rect {
+  stroke: var(--highlight);
+  stroke-width: 2.4;
+  fill: var(--highlight-bg);
+}
+
+.replay-g-nodeport.selected .replay-g-hit {
+  fill: var(--highlight-bg);
+}
+
+.replay-g-nodeport.selected .replay-g-portname {
+  fill: var(--highlight);
+  font-weight: 600;
+}
+
 /* Sources of a boundary input, beside the pointer. */
 .replay-menu {
   position: absolute;
@@ -697,6 +725,55 @@ select.replay-selector-source {
   border-radius: 4px;
   background: var(--bg-primary);
   color: var(--text-primary);
+}
+
+/* A boundary input: its line, then its detail where it has an issue or is
+   selected. */
+.replay-selector-item.replay-input-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.replay-selector-item.replay-input-row.selected {
+  background: var(--highlight-bg);
+  border-left-color: var(--highlight);
+}
+
+.replay-input-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.replay-input-detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 1px 10px;
+  margin: 0 0 2px 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.replay-input-detail dt {
+  color: var(--text-muted);
+}
+
+.replay-input-detail dd {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.replay-input-detail .replay-input-conflict {
+  color: var(--state-failed);
+}
+
+.replay-input-detail .replay-input-none {
+  color: var(--state-warning);
 }
 
 .replay-selector-item.internal .replay-topic-name {

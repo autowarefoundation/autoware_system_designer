@@ -135,11 +135,39 @@
   ];
   // Statuses the head's action accepts unfed.
   const UNRESOLVED = ["missing", "unpublished"];
+  // Statuses whose rows always show the input's type and ports.
+  const ISSUES = ["missing", "type", "unpublished"];
+
+  // Type, bag record and nodes of a boundary input, a line each.
+  function inputDetail(input) {
+    const node = element("dl", "replay-input-detail");
+    const entry = (term, values, className = "") => {
+      const list = element("dd", className);
+      values.forEach((value) => list.appendChild(element("span", "", value)));
+      node.append(element("dt", "", term), list);
+    };
+    entry("type", [input.type || "any"]);
+    if (input.status === "type")
+      entry("in the bag", [input.recordedType], "replay-input-conflict");
+    else if (input.status === "remapped")
+      entry("in the bag", [input.recordedName]);
+    entry(
+      "published by",
+      input.publishers.length
+        ? input.publishers
+        : ["no publisher in the design"],
+      input.publishers.length ? "" : "replay-input-none",
+    );
+    entry("subscribed by", input.subscribers);
+    return node;
+  }
 
   // List of the boundary inputs, each with a pulldown of its sources;
-  // `choices(input)` gives them, `choose(input, value)` takes a pick and
-  // `acceptAll(inputs)` the head's action.
-  function inputSelector(choices, choose, acceptAll) {
+  // `choices(input)` gives them, `choose(input, value)` takes a pick,
+  // `acceptAll(inputs)` the head's action and `select(topic)` a click on a
+  // row, null for the selected one. Rows of an issue and the selected row
+  // show the input's detail.
+  function inputSelector(choices, choose, acceptAll, select) {
     const node = element("div", "replay-selector");
     const count = element("span", "replay-block-count");
     const acceptButton = element("button", "panel-button", "Accept unfed");
@@ -183,8 +211,9 @@
 
     return {
       element: node,
-      // `inputs` is the matched inputs, `notes` the text of each status.
-      set(inputs, notes) {
+      // `inputs` is the matched inputs, `notes` the text of each status,
+      // `selected` the topic of the selected input or null.
+      set(inputs, notes, selected) {
         const ranked = inputs
           .map((input, index) => ({ input, index }))
           .sort(
@@ -204,13 +233,37 @@
         acceptButton.hidden = !unresolved.length;
         list.replaceChildren(
           ...ranked.map((input) => {
-            const row = element("div", `replay-selector-item ${input.status}`);
-            row.append(
+            const chosen = input.topic === selected;
+            const row = element(
+              "div",
+              `replay-selector-item replay-input-row ${input.status}` +
+                (chosen ? " selected" : ""),
+            );
+            const line = element("div", "replay-input-line");
+            line.append(
               element("span", "replay-topic-name", input.topic),
               element("span", "replay-selector-note", notes[input.status]),
               picker(input),
             );
-            row.title = input.type;
+            row.appendChild(line);
+            if (chosen || ISSUES.includes(input.status))
+              row.appendChild(inputDetail(input));
+            row.tabIndex = 0;
+            row.setAttribute("aria-selected", String(chosen));
+            row.title = chosen
+              ? "Click to clear the selection"
+              : "Click to show the input in the diagram";
+            const toggle = () => select(chosen ? null : input.topic);
+            row.addEventListener("click", (event) => {
+              if (event.target.closest("select")) return;
+              toggle();
+            });
+            row.addEventListener("keydown", (event) => {
+              if (event.target !== row) return;
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              toggle();
+            });
             return row;
           }),
         );
@@ -281,6 +334,8 @@
       const recordedInternals = new Set();
       // Boundary outputs left unrecorded.
       const skippedOutputs = new Set();
+      // Topic of the input selected in the list or the diagram, or null.
+      let selectedInput = null;
       // Boundary of the scope shown, with the inputs matched against the bag.
       let shownBound = { inputs: [], outputs: [] };
       // Parameters of a replay of the shown choices, or what it still lacks.
@@ -327,6 +382,11 @@
         render();
       }
 
+      function selectInput(topic) {
+        selectedInput = topic;
+        render();
+      }
+
       // Saved setups, above the scope selector.
       const setupSlot = element("div");
       side.appendChild(setupSlot);
@@ -353,6 +413,7 @@
         choices: (input) => model.inputChoices(input, bag),
         choose: chooseSource,
         record: setRecorded,
+        select: selectInput,
       });
       const stack = zoneStack(ZONES_KEY, ZONES);
       const {
@@ -420,6 +481,7 @@
           inputs.forEach((input) => setSource(input.topic, ACCEPT));
           render();
         },
+        selectInput,
       );
       const outputSelector = topicSelector("Outputs", setRecorded);
       const selectors = element("div", "replay-selectors");
@@ -558,8 +620,10 @@
         );
 
         shownBound = bound;
+        if (!matched.some((input) => input.topic === selectedInput))
+          selectedInput = null;
         const skipped = new Set(kept.skip_outputs);
-        inputList.set(matched, INPUT_NOTE);
+        inputList.set(matched, INPUT_NOTE, selectedInput);
         outputSelector.set(
           [
             ...bound.outputs.filter((output) => output.boundary),
@@ -607,6 +671,7 @@
               `, ${recorded} of ${bound.outputs.length} outputs recorded`,
             blocked: unfed > 0,
           });
+          diagram.select(selectedInput);
         }
 
         services.clear();
