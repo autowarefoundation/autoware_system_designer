@@ -159,6 +159,15 @@ def test_a_bag_file_is_found_by_name_and_size(served, tmp_path):
     assert _call(served, "replay.find", {**find, "directories": []})["result"] == {"path": str(storage)}
 
 
+def test_a_recorded_bag_file_is_found_under_the_replay_logs(served):
+    storage = served.daemon.storage.replay_logs / "20260101_000000" / "replay" / "outputs" / "outputs_0.db3"
+    storage.parent.mkdir(parents=True)
+    storage.write_bytes(b"12345")
+    find = {"name": "outputs_0.db3", "size": 5, "directories": []}
+
+    assert _call(served, "replay.find", find)["result"] == {"path": str(storage)}
+
+
 def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_path):
     params = {
         "system": SYSTEM_ID,

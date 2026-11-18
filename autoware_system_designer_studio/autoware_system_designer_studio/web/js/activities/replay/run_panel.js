@@ -12,11 +12,12 @@
   // Share of the bar each phase takes, by its place in the run.
   const PHASE_GROW = [1, 3, 1];
   // Phases a replay's progress lines name, in order, from the page configuration.
-  const PHASES = ((SD.replayRuntime || {}).phases || []).map((name, index) => ({
-    name,
-    label: name.charAt(0).toUpperCase() + name.slice(1),
-    grow: PHASE_GROW[index] ?? 1,
-  }));
+  const phaseList = () =>
+    ((SD.replayRuntime || {}).phases || []).map((name, index) => ({
+      name,
+      label: name.charAt(0).toUpperCase() + name.slice(1),
+      grow: PHASE_GROW[index] ?? 1,
+    }));
 
   // What a replay job came to, as { level: ok | warning | failed | running, text }.
   function outcome(job) {
@@ -103,9 +104,10 @@
     const detail = job.detail || {};
     const running = job.state === "running";
     if (!detail.progress && !running) return null;
+    const all = phaseList();
     const reached = detail.phases || {};
-    const current = detail.progress?.phase ?? PHASES[0]?.name;
-    const phases = job.params?.check ? PHASES.slice(0, 1) : PHASES;
+    const current = detail.progress?.phase ?? all[0]?.name;
+    const phases = job.params?.check ? all.slice(0, 1) : all;
     return phases.map((phase) => {
       const fraction = reached[phase.name] ?? null;
       if (fraction === 1) return { phase, state: "done", width: 1 };
@@ -128,7 +130,7 @@
     function render(job) {
       const states = job
         ? phaseStates(job)
-        : PHASES.map((phase) => ({ phase, state: "pending", width: 0 }));
+        : phaseList().map((phase) => ({ phase, state: "pending", width: 0 }));
       root.hidden = !states;
       if (!states) return;
       const stoppedClass = job?.state === "cancelled" ? "cancelled" : "failed";
@@ -152,7 +154,9 @@
         }),
       );
       const progress = job?.detail?.progress;
-      const phase = PHASES.find((entry) => entry.name === progress?.phase);
+      const phase = states.find(
+        (entry) => entry.phase.name === progress?.phase,
+      )?.phase;
       step.textContent =
         progress?.step && phase ? `${phase.label}: ${progress.step}` : "";
     }

@@ -1,5 +1,5 @@
-// Replay: the rosbag of a replay, in a bar of its path and the ways to read
-// it. The bag is files dropped on the view or opened, read in the page, or a
+// Replay: the rosbag of a replay, in a box of its path, the ways to read it
+// and what the reading gave. The bag is files dropped on the view or opened, read in the page, or a
 // path dropped, typed or browsed, read by the daemon; a daemon finds the path
 // of a file read here. Reading a bag writes nothing into it.
 (function () {
@@ -52,7 +52,7 @@
     const root = element("div", "replay-bag-bar");
     const pathInput = element("input", "panel-search");
     pathInput.type = "text";
-    pathInput.placeholder = "Bag path, or drop a bag";
+    pathInput.placeholder = "Absolute path of the bag";
     pathInput.title =
       "Absolute path the replay reads the bag from. A bag dropped on the view gives its topics; " +
       "a dropped file gives no path.";
@@ -80,12 +80,9 @@
     const state = element("span", "replay-bag-state");
     const row = element("div", "replay-bag-row");
     row.append(browse, read, open, fileInput);
-    root.append(
-      element("span", "replay-bag-label", "Rosbag"),
-      pathInput,
-      row,
-      state,
-    );
+    const line = element("div", "replay-bag-line");
+    line.append(element("span", "replay-bag-label", "Rosbag"), pathInput, row);
+    root.append(line, state);
 
     const path = () => pathInput.value.trim();
     const reads = () => daemon.connected && daemon.offers(READ);

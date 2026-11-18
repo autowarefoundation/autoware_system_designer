@@ -475,7 +475,8 @@ def register(daemon: "ServeDaemon") -> None:
             raise api.ApiError(api.INVALID_PARAMS, "size must be a number of bytes")
         if not isinstance(directories, list) or not all(isinstance(item, str) and item for item in directories):
             raise api.ApiError(api.INVALID_PARAMS, "directories must be a list of paths")
-        searched = [path for path in map(_path_of, directories) if path.is_absolute()] + daemon.bag_dirs
+        searched = [path for path in map(_path_of, directories) if path.is_absolute()]
+        searched += [*daemon.bag_dirs, daemon.storage.replay_logs]
         found = await asyncio.to_thread(find_bag_file, searched, name, size)
         if found is None:
             raise api.ApiError(api.NOT_FOUND, f"no {name} of {size} bytes under the bag directories")

@@ -144,7 +144,7 @@ ROS module, so its `bin/` copy runs without any setup script sourced.
 autoware-system-designer-studio serve \
     --install-root install \       # default: first COLCON_PREFIX_PATH entry
     --record-dir ~/records \       # measurement records (default: records/ of the config root)
-    --bag-dir /data/bags \         # where the bag of a dropped file is searched (repeatable)
+    --bag-dir /data/bags \         # where the bag of a dropped file is searched, beside the replay logs (repeatable)
     --log-root /data/asd_logs \    # run logs: launch/, replay/ (default: /tmp/autoware_system_designer_logs)
     --config-root ~/asd \          # kept files: records/, replay_setups/ (default: ~/.autoware/system_designer)
     --port 8780 \                  # 0 picks a free port
@@ -340,8 +340,8 @@ span, the `topics` and where they were read from as `metadata` (`file` or `stora
 `description` and `default` of each.
 
 `replay.find` takes the `name` and `size` (bytes) of a bag file and `directories` to search, and
-gives the `path` of the newest such file under them or under the daemon's `--bag-dir` directories,
-four levels deep at most. The page calls it for a file dropped or opened without a path, with the
+gives the `path` of the newest such file under them, under the daemon's `--bag-dir` directories or
+under the replay logs of the log root, four levels deep at most. The page calls it for a file dropped or opened without a path, with the
 typed path and the directories of the bags it read by path before (kept by the browser), then reads
 the bag at the path found.
 

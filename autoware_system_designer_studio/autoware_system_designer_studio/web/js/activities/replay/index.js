@@ -358,18 +358,11 @@
     });
     diagramZone.body.appendChild(diagram.element);
 
-    bag.element.dataset.zoneKeep = "";
-    boundaryZone.head.insertBefore(bag.element, boundaryZone.actions);
+    const dropGuide = element("span", "replay-drop-guide", "Drop a rosbag");
+    dropGuide.title = "A rosbag dropped anywhere on the view is read";
+    boundaryZone.actions.appendChild(dropGuide);
+    boundaryZone.body.appendChild(bag.element);
     const selectorBlock = element("div", "replay-block");
-    selectorBlock.appendChild(
-      element(
-        "p",
-        "panel-note",
-        "Each input is fed from the bag topic its pulldown names, remapped where the names differ, " +
-          "or accepted unfed. A checked output is recorded; the head of a list clears it, " +
-          "or checks all of a cleared one.",
-      ),
-    );
     const inputList = lists.inputSelector(
       sourcesOf,
       chooseSource,
