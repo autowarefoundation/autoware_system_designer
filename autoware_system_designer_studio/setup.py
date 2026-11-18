@@ -31,7 +31,7 @@ def _package_files(*subdirs):
 
 setup(
     name=package_name,
-    version="0.5.0",
+    version="0.6.0",
     packages=find_packages(exclude=["test"]),
     # Web bundle and page templates read from the package directory.
     package_data={package_name: _package_files("web", os.path.join("pages", "templates"))},

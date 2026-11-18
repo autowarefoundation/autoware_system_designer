@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>autoware_system_designer_studio</name>
-  <version>0.5.0</version>
+  <version>0.6.0</version>
   <description>Studio for exported systems: visualization, build and launch control served from the export artifacts</description>
 
   <maintainer email="taekjin.lee@tier4.jp">Taekjin Lee</maintainer>
