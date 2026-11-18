@@ -20,6 +20,8 @@ through ``rosbag2_py``, imported on first use.
 
 from __future__ import annotations
 
+import struct
+from bisect import bisect_right
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Collection, Iterator, Mapping, Optional, Sequence
@@ -277,6 +279,75 @@ class BagMessages:
     def close(self) -> None:
         self._reader = None
         self._uris = []
+
+
+class BagClock:
+    """ROS time of a bag that recorded a clock topic, by recorded time: the clock value last recorded
+    plus the time recorded since, held at the value recorded next. Samples below the one before them
+    are left out."""
+
+    def __init__(self, samples: Sequence[tuple[int, int]]) -> None:
+        self._recorded: list[int] = []
+        self._clock: list[int] = []
+        for recorded_ns, clock_ns in samples:
+            if self._clock and clock_ns < self._clock[-1]:
+                continue
+            self._recorded.append(recorded_ns)
+            self._clock.append(clock_ns)
+        if not self._clock:
+            raise BagError("no clock sample")
+
+    def at(self, recorded_ns: int) -> int:
+        index = bisect_right(self._recorded, recorded_ns) - 1
+        if index < 0:
+            return self._clock[0] - (self._recorded[0] - recorded_ns)
+        clock_ns = self._clock[index] + (recorded_ns - self._recorded[index])
+        if index + 1 < len(self._clock):
+            return min(clock_ns, self._clock[index + 1])
+        return clock_ns
+
+
+def _clock_ns(data: bytes) -> int:
+    """Time of a serialized ``rosgraph_msgs/msg/Clock``: seconds and nanoseconds after the CDR header."""
+    sec, nanosec = struct.unpack_from("<iI" if data[1] & 1 else ">iI", data, 4)
+    return sec * 1_000_000_000 + nanosec
+
+
+def read_bag_clock(info: BagInfo, topic: str) -> BagClock:
+    """The clock of the bag's messages on *topic*."""
+    messages = BagMessages(info, [topic])
+    samples = []
+    while messages.peek() is not None:
+        stamp, _, data = messages.pop()
+        samples.append((stamp, _clock_ns(data)))
+    return BagClock(samples)
+
+
+def on_clock(info: BagInfo, clock: BagClock) -> BagInfo:
+    """The bag with its span in the time of *clock*."""
+    start_ns = clock.at(info.start_ns)
+    return replace(info, start_ns=start_ns, duration_ns=clock.at(info.end_ns) - start_ns)
+
+
+class ClockStamped:
+    """A message source with each stamp in the time of a bag clock."""
+
+    def __init__(self, source, clock: BagClock) -> None:
+        self._source = source
+        self._clock = clock
+
+    def _stamped(self, message: tuple[int, str, bytes]) -> tuple[int, str, bytes]:
+        return (self._clock.at(message[0]), message[1], message[2])
+
+    def peek(self) -> Optional[tuple[int, str, bytes]]:
+        message = self._source.peek()
+        return None if message is None else self._stamped(message)
+
+    def pop(self) -> tuple[int, str, bytes]:
+        return self._stamped(self._source.pop())
+
+    def close(self) -> None:
+        self._source.close()
 
 
 class LeadIn:

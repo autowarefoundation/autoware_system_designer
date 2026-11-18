@@ -33,6 +33,7 @@ import json
 import logging
 import os
 import shutil
+import struct
 import sys
 import tempfile
 import time
@@ -47,11 +48,15 @@ from ._impl.measure.session import TRACE_SUBDIR
 from ._impl.measure.tracer import TracerArming, locate_tracer
 from ._impl.replay import reference as ref
 from ._impl.replay.bag import (
+    BagClock,
     BagError,
     BagInfo,
     BagMessages,
     BagSink,
+    ClockStamped,
     LeadIn,
+    on_clock,
+    read_bag_clock,
     read_bag_info,
     read_messages,
     remap_topics,
@@ -263,7 +268,10 @@ class _Plan:
     recorded_types: dict[str, str]
     out_root: Path
     out_dir: Path
+    # Span in the time of the bag clock, when the bag has one.
     bag: Optional[BagInfo]
+    # Clock the bag recorded; None when it recorded none and its messages keep their recorded time.
+    bag_clock: Optional[BagClock]
     fed: dict[str, str]
     key_inputs: dict[str, Any]
     reference_dir: Optional[Path]
@@ -326,6 +334,27 @@ def _check_bag(
     return bag, fed, problems
 
 
+def _clock_topic(bag: BagInfo) -> Optional[str]:
+    """The clock topic a bag recorded messages of, None when it recorded none."""
+    recorded = (name for name in sorted(special_topics().clock) if name in bag.topics and bag.topics[name].count)
+    return next(recorded, None)
+
+
+def _bag_clock(bag: BagInfo, topic: str) -> BagClock:
+    """The clock a bag recorded on *topic*."""
+    _progress(PHASE_PRE, "reading the bag clock")
+    try:
+        clock = read_bag_clock(bag, topic)
+    except (BagError, struct.error, IndexError) as exc:
+        raise _fail("clock of the bag on %s: %s", topic, exc) from exc
+    logger.info(
+        "replay: time follows %s of the bag, %+.3f s from its recorded time at the start",
+        topic,
+        (clock.at(bag.start_ns) - bag.start_ns) / 1e9,
+    )
+    return clock
+
+
 def _prepare(json_path: str, options: ReplayOptions) -> _Plan:
     """Selects the scope, checks the bag against its boundary and writes the boundary report."""
     _progress(PHASE_PRE, "selecting the scope")
@@ -386,6 +415,7 @@ def _prepare(json_path: str, options: ReplayOptions) -> _Plan:
     mode = full_graph.mode or Path(json_path).stem
     key_inputs: dict[str, Any] = {}
     reference_dir = options.reference
+    clock_topic = _clock_topic(bag) if bag is not None else None
     if bag is not None:
         key_inputs = ref.key_inputs(
             structure,
@@ -399,10 +429,14 @@ def _prepare(json_path: str, options: ReplayOptions) -> _Plan:
                 "lead_in": config.lead_in,
                 "seed": options.seed,
                 "free_wall_timers": options.free_wall_timers,
+                **({"clock": bag.topics[clock_topic].source} if clock_topic else {}),
             },
         )
         if reference_dir is None:
             reference_dir = ref.reference_dir(Path(json_path), mode, ref.reference_key(key_inputs))
+    bag_clock = _bag_clock(bag, clock_topic) if clock_topic else None
+    if bag_clock is not None:
+        bag = on_clock(bag, bag_clock)
     start_ns = bag.start_ns + int(options.start * 1e9) if bag is not None else time.time_ns()
     return _Plan(
         json_path=json_path,
@@ -419,6 +453,7 @@ def _prepare(json_path: str, options: ReplayOptions) -> _Plan:
         out_root=out_root,
         out_dir=out_dir,
         bag=bag,
+        bag_clock=bag_clock,
         fed=fed,
         key_inputs=key_inputs,
         reference_dir=reference_dir,
@@ -508,6 +543,8 @@ def _source(plan: _Plan):
     if bag is None:
         return _NoSource()
     source = BagMessages(bag, sorted(fed))
+    if plan.bag_clock is not None:
+        source = ClockStamped(source, plan.bag_clock)
     latched = {t for t in fed if bag.topics[t].transient_local}
     if plan.start_ns > bag.start_ns:
         # Of the span before the replay's start, what a latched topic still holds at it.
