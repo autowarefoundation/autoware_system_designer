@@ -333,6 +333,81 @@
     editorSelect.addEventListener("change", (e) =>
       SD.editor.setScheme(e.target.value),
     );
+
+    initStorageSettings();
+  }
+
+  // The daemon's log and config roots, each chosen with a path selector or
+  // set back to its default; the subdirectories each function writes show
+  // below them.
+  function initStorageSettings() {
+    const section = el("settings-storage");
+    const shown = {
+      log_root: el("settings-log-root"),
+      config_root: el("settings-config-root"),
+    };
+    const labels = { log_root: "Log root", config_root: "Config root" };
+    const dirs = el("settings-storage-dirs");
+    const error = el("settings-storage-error");
+    let storage = null;
+
+    function show(next) {
+      storage = next;
+      section.hidden = !storage || !SD.daemon.offers("settings.set");
+      if (section.hidden) return;
+      Object.entries(shown).forEach(([name, code]) => {
+        code.textContent = storage[name];
+        code.title = storage.set[name] ? "Set" : "Default";
+        code.classList.toggle("default", !storage.set[name]);
+        section.querySelector(`[data-reset="${name}"]`).disabled =
+          !storage.set[name];
+      });
+      const d = storage.dirs;
+      dirs.replaceChildren(
+        ...[
+          ["Launch logs", d.launch_logs],
+          ["Replay runs", d.replay_logs],
+          [storage.records_fixed ? "Records (fixed)" : "Records", d.records],
+          ["Replay setups", d.replay_setups],
+        ].map(([label, path]) => {
+          const row = document.createElement("div");
+          const name = document.createElement("span");
+          name.textContent = label;
+          const value = document.createElement("code");
+          value.textContent = path;
+          row.append(name, value);
+          return row;
+        }),
+      );
+    }
+
+    function set(name, value) {
+      SD.daemon.rpc("settings.set", { [name]: value }).then(
+        (next) => {
+          error.hidden = true;
+          show(next);
+          SD.emit("settings.storage", next);
+        },
+        (err) => {
+          error.textContent = err.message;
+          error.hidden = false;
+        },
+      );
+    }
+
+    Object.keys(shown).forEach((name) => {
+      const picker = SD.widgets.pathPicker({ title: labels[name] });
+      section
+        .querySelector(`[data-browse="${name}"]`)
+        .addEventListener("click", () =>
+          picker.open(storage?.[name] || "", (path) => set(name, path)),
+        );
+      section
+        .querySelector(`[data-reset="${name}"]`)
+        .addEventListener("click", () => set(name, ""));
+    });
+    SD.on("daemon.health", (health) => show(health?.storage));
+    show(SD.daemon.health?.storage || null);
   }
 
   function renderConnection(connected) {

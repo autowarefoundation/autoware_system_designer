@@ -58,12 +58,14 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
 from autoware_system_designer_runtime.control_protocol import DEFAULT_POLICY
-from autoware_system_designer_runtime.run_log import member_dir_name
+from autoware_system_designer_runtime.records import RECORD_DIR_ENV
+from autoware_system_designer_runtime.run_log import member_dir_name, new_run_dir
 
 from ..exports import SystemExport
 from . import api, jobs
 from .events import EventHub
 from .runs import RunArchive, member_tails
+from .storage import Storage, settings_file
 from .tasks import TaskSet
 
 logger = logging.getLogger(__name__)
@@ -328,7 +330,7 @@ class LaunchManager:
         env_script: Optional[Path] = None,
         launcher: Optional[Path] = None,
         rviz_config: Optional[Path] = None,
-        log_base: Optional[Path] = None,
+        storage: Optional[Storage] = None,
     ) -> None:
         self._hub = hub
         self._jobs = runner
@@ -340,7 +342,8 @@ class LaunchManager:
         # (compute unit, system id, mode) -> the last session of that mode on the unit.
         self.sessions: dict[tuple[str, str, str], LaunchSession] = {}
         self._tasks = TaskSet()
-        self.archive = RunArchive(log_base, self._log_dirs)
+        self.storage = storage or Storage(settings_path=settings_file())
+        self.archive = RunArchive(lambda: self.storage.launch_logs, self._log_dirs)
 
     def info(self) -> dict[str, Any]:
         rviz = shutil.which(RVIZ, path=self.env.get("PATH"))
@@ -433,6 +436,11 @@ class LaunchManager:
             argv.append("--measure")
         if respawn:
             argv.append("--respawn")
+        try:
+            run_dir = await asyncio.to_thread(new_run_dir, self.storage.launch_logs)
+        except OSError as exc:
+            raise api.ApiError(api.UNAVAILABLE, f"cannot create a run directory: {exc}") from exc
+        argv += ["--log-dir", str(run_dir)]
         session = LaunchSession(system, compute_unit, mode, deploy, socket, launch_id)
         _unlink(socket)
         spec = jobs.JobSpec(
@@ -441,7 +449,7 @@ class LaunchManager:
             title=f"launch {system.name} {mode}/{compute_unit}",
             argv=argv,
             cwd=self._cwd,
-            env=self.env,
+            env={**self.env, RECORD_DIR_ENV: str(self.storage.records)},
             params={
                 "system": system.id,
                 "mode": mode,

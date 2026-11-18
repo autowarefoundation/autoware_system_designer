@@ -47,7 +47,7 @@ from ._impl.ros2.operation_mode import OperationModeGuard
 from .control_protocol import DEFAULT_POLICY, GUARD_POLICY, POLICIES
 from .export_tree import manifest_path, read_manifest, resolve_structure_paths
 from .rates_record import RATES_FILE
-from .run_log import LOG_BASE, RUN_MANIFEST, write_run_manifest
+from .run_log import LAUNCH_LOGS, LOG_BASE, RUN_MANIFEST, write_run_manifest
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -75,7 +75,7 @@ def _deploy_arguments(
     return resolve_argument_values(arguments)
 
 
-def _bind_deploy_arguments(
+def bind_deploy_arguments(
     data: Any,
     json_path: str,
     *,
@@ -100,7 +100,7 @@ def _bind_deploy_arguments(
     return resolved
 
 
-def _parse_arg_overrides(items: Optional[Sequence[str]]) -> dict[str, str]:
+def parse_arg_overrides(items: Optional[Sequence[str]]) -> dict[str, str]:
     overrides: dict[str, str] = {}
     for item in items or []:
         name, sep, value = item.partition("=")
@@ -144,7 +144,7 @@ def launch_from_json(
     with open(json_path) as f:
         data = json.load(f)
     data = resolve_structure_paths(data, json_path)
-    data = _bind_deploy_arguments(data, json_path, deploy=deploy, overrides=arguments or {})
+    data = bind_deploy_arguments(data, json_path, deploy=deploy, overrides=arguments or {})
 
     out_dir = output_dir or ensure_output_dir()
     logger.info("logs: %s", out_dir)
@@ -286,7 +286,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--log-dir",
         type=Path,
         default=None,
-        help="Base directory for per-node log output. Default: a fresh " f"timestamped folder under {LOG_BASE}.",
+        help="Directory of the run's per-node log output. Default: a fresh timestamped folder under "
+        f"{LOG_BASE / LAUNCH_LOGS}.",
     )
     parser.add_argument(
         "--respawn",
@@ -393,13 +394,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="FILE",
         help="Latency file to write, JSON. Default: a new record latency/<Mode>/<stamp>.json of the export "
-        "under the record root ($AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR, else $ROS_HOME/autoware_system_designer/records), "
+        "under the record root ($AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR, else ~/.autoware/system_designer/records), "
         "else <log-dir>/latency/<Mode>_latency.json.",
     )
     return parser
 
 
-def _setup_logging(level: str) -> None:
+def setup_logging(level: str) -> None:
     handler = logging.StreamHandler()
     handler.addFilter(_ShortNameFilter())
     handler.setFormatter(logging.Formatter("[%(asctime)s] %(short_name)s - %(message)s", datefmt="%H:%M:%S"))
@@ -421,14 +422,14 @@ def main() -> None:
             clock=args.measure_clock,
         )
 
-    _setup_logging(args.log_level)
+    setup_logging(args.log_level)
 
     sys.exit(
         launch_from_json(
             args.json_file,
             ecu=args.compute_unit,
             deploy=args.deploy,
-            arguments=_parse_arg_overrides(args.arg),
+            arguments=parse_arg_overrides(args.arg),
             output_dir=args.log_dir,
             respawn=args.respawn,
             respawn_delay=args.respawn_delay,

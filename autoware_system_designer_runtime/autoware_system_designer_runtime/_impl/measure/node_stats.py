@@ -37,8 +37,9 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Deque, Optional, Union
 
+from ...special_topics import special_topics
 from .clock import Clock, WallClock
-from .node_graph import INFRA_TOPICS, NodeGraph, NodeInfo
+from .node_graph import NodeGraph, NodeInfo
 from .trace_reader import Endpoint, TraceSet
 
 logger = logging.getLogger(__name__)
@@ -59,9 +60,6 @@ PREROLL_NS = 1 * NS_PER_S
 MATCH_SLACK_NS = 200_000
 # A publish call longer than this is not searched for a source timestamp.
 MATCH_SPAN_LIMIT_NS = 1 * NS_PER_S
-# Endpoints every node owns before its own code runs; they say nothing about
-# initialization and their messages are no inputs.
-LIFECYCLE_TOPICS = INFRA_TOPICS | {"/clock"}
 
 # What became of a node's process over the window.
 STATE_RUNNING = "running"
@@ -215,7 +213,7 @@ class NodeObs:
         """
         if self.info is not None and not self.info.inputs and not self.info.outputs:
             return True
-        return bool((self.subscribed | self.advertised) - LIFECYCLE_TOPICS)
+        return bool((self.subscribed | self.advertised) - special_topics().process)
 
 
 @dataclass(slots=True)
@@ -432,7 +430,7 @@ def _process_events(proc, analysis: Analysis, obs_for) -> list[Event]:
         if take.t < t0 or take.t > t1:
             continue
         endpoint = proc.endpoint(take.handle, take.t)
-        if endpoint is None or endpoint.topic in LIFECYCLE_TOPICS:
+        if endpoint is None or endpoint.topic in special_topics().process:
             continue
         events.append(
             TakeEvent(
@@ -471,7 +469,7 @@ def _process_events(proc, analysis: Analysis, obs_for) -> list[Event]:
         if pub.t_in < t0 or pub.t_in > t1:
             continue
         endpoint = proc.endpoint(pub.handle, pub.t_in)
-        if endpoint is None or endpoint.topic in LIFECYCLE_TOPICS:
+        if endpoint is None or endpoint.topic in special_topics().process:
             continue
         node = obs_for(endpoint)
         events.append(

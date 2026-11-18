@@ -1,0 +1,1291 @@
+/* Replay activity: the scope tree's checkboxes, the scope diagram and the blocks below it. */
+
+.replay-scope-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.replay-scope-head .panel-button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.replay-scope-check {
+  margin: 0 2px 0 0;
+  flex-shrink: 0;
+}
+
+.ns-row.in-scope .ns-label {
+  color: var(--text-primary);
+}
+
+/* Zones of the view: diagram, inputs and outputs, run; each folds to its head,
+   and an expanded one takes its share of the height. */
+.replay-zones {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.replay-zone {
+  display: flex;
+  flex-direction: column;
+  min-height: 90px;
+  overflow: hidden;
+}
+
+.replay-zone.folded {
+  min-height: 0;
+}
+
+.replay-zone-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 26px;
+  padding: 0 14px 0 6px;
+  background: var(--bg-sidebar-header);
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  user-select: none;
+}
+
+.replay-zone-head:hover {
+  background: var(--bg-tertiary);
+}
+
+.replay-zone-head [data-zone-keep] {
+  cursor: default;
+  user-select: text;
+  background: var(--bg-sidebar-header);
+}
+
+.replay-zone-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.replay-zone-toggle svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  transition: transform 0.15s;
+}
+
+.replay-zone.folded .replay-zone-toggle svg {
+  transform: rotate(-90deg);
+}
+
+.replay-zone-toggle h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Head controls span the head's height and reach its right edge, so a click
+   that misses a control lands on them and leaves the zone as it is. */
+.replay-zone-actions {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: 8px;
+  margin-right: -14px;
+  padding: 0 14px 0 12px;
+}
+
+.replay-zone-actions:empty {
+  display: none;
+}
+
+.replay-zone-actions .panel-button {
+  padding: 1px 10px;
+  font-size: 12px;
+}
+
+.replay-zone-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  padding: 10px 16px 14px;
+  overflow: auto;
+}
+
+.replay-zone.folded .replay-zone-body {
+  display: none;
+}
+
+.replay-zone-diagram .replay-zone-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.replay-diagram {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* Inputs, outputs and services stack in one column; the zone's body scrolls
+   them as one page. */
+.replay-boundary-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: none;
+}
+
+.replay-boundary-lists > .replay-block {
+  min-width: 0;
+}
+
+/* The run fills its zone's body; its log takes the height the rest leaves. */
+.replay-zone-run .replay-zone-body > .replay-block,
+.replay-zone-run .replay-run-report {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Rosbag: a box at the top of the inputs and outputs, the path and its
+   controls on one line, the state of the bag on the line below. */
+.replay-bag-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: none;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.replay-bag-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.replay-bag-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.replay-bag-bar .replay-bag-state {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* Drop guide: a dashed box at the right end of the head of the inputs and
+   outputs, sized as a head button. */
+.replay-drop-guide {
+  padding: 1px 10px;
+  border: 1px dashed var(--border-active);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.replay-divider {
+  flex-shrink: 0;
+  height: 6px;
+  margin: -3px 0;
+  cursor: row-resize;
+  border-top: 1px solid var(--border-color);
+  background: transparent;
+  background-clip: padding-box;
+  z-index: 2;
+  touch-action: none;
+  transition: background 0.2s;
+}
+
+.replay-divider.inert {
+  cursor: default;
+  pointer-events: none;
+}
+
+.replay-divider:hover,
+.replay-divider.resizing {
+  background: var(--border-active);
+  opacity: 0.5;
+}
+
+.replay-graph-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.replay-graph-empty[hidden] {
+  display: none;
+}
+
+.replay-graph-summary {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.replay-graph-summary.blocked {
+  color: var(--state-failed);
+}
+
+.replay-graph-fit {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* Graph marks. Text keeps the canvas font, which sizes the boxes. */
+.replay-graph text {
+  dominant-baseline: central;
+  font-size: 11px;
+  fill: var(--text-primary);
+  pointer-events: none;
+  user-select: none;
+}
+
+.replay-graph .replay-g-caption {
+  dominant-baseline: auto;
+  font-weight: 600;
+  fill: var(--text-secondary);
+}
+
+.replay-graph .replay-g-note,
+.replay-graph .replay-g-count,
+.replay-graph .replay-g-portname {
+  font-size: 9px;
+  fill: var(--text-muted);
+}
+
+/* Node and namespace box: the colours of their component, set per element
+   as --c (line), --m (fill) and --t (text), with --d* for the dark theme. */
+.replay-graph .replay-g-name,
+.replay-graph .replay-g-portname {
+  fill: var(--t, var(--text-primary));
+}
+
+.replay-graph .replay-g-name {
+  font-weight: 600;
+}
+
+.replay-graph .replay-g-spacename {
+  font-weight: 600;
+  fill: var(--t, var(--text-secondary));
+}
+
+.replay-g-space > rect {
+  fill: var(--c, var(--text-muted));
+  fill-opacity: 0.1;
+  stroke: var(--c, var(--text-muted));
+}
+
+[data-theme="dark"] .replay-graph .replay-g-name,
+[data-theme="dark"] .replay-graph .replay-g-portname,
+[data-theme="dark"] .replay-graph .replay-g-spacename {
+  fill: var(--dt, var(--text-primary));
+}
+
+[data-theme="dark"] .replay-g-space > rect {
+  fill: var(--dc, var(--text-muted));
+  fill-opacity: 0.14;
+  stroke: var(--dc, var(--text-muted));
+}
+
+.replay-g-bag > rect {
+  fill: var(--flow-topic-bg);
+  stroke: var(--flow-topic-border);
+}
+
+.replay-g-row > rect {
+  fill: transparent;
+}
+
+.replay-g-frame {
+  fill: var(--bg-secondary);
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 8 5;
+  pointer-events: none;
+}
+
+.replay-g-node > rect {
+  fill: var(--m, var(--flow-node-bg));
+  stroke: var(--c, var(--flow-node-border));
+}
+
+[data-theme="dark"] .replay-g-node > rect {
+  fill: var(--dm, var(--flow-node-bg));
+  stroke: var(--dc, var(--flow-node-border));
+}
+
+.replay-g-node.container > rect {
+  stroke-dasharray: 4 3;
+}
+
+.replay-g-hit {
+  fill: transparent;
+  stroke: none;
+}
+
+.replay-g-port {
+  fill: var(--text-muted);
+}
+
+.replay-g-nodeport.input .replay-g-port {
+  fill: var(--flow-in);
+}
+
+/* Output port: hollow while its topic is not recorded. */
+.replay-g-nodeport.output .replay-g-port {
+  fill: var(--bg-secondary);
+  stroke: var(--flow-out);
+  stroke-width: 1;
+}
+
+.replay-g-nodeport.output.recorded .replay-g-port {
+  fill: var(--flow-out);
+}
+
+.replay-g-nodeport.recorded .replay-g-portname {
+  fill: var(--flow-out);
+  font-weight: 600;
+}
+
+.replay-g-action {
+  cursor: pointer;
+}
+
+.replay-g-chip > rect {
+  fill: var(--bg-secondary);
+  stroke: var(--state-idle);
+  stroke-width: 1.2;
+}
+
+.replay-g-chip.fed > rect,
+.replay-g-chip.ambient > rect,
+.replay-g-chip.remapped > rect {
+  fill: var(--flow-in-bg);
+  stroke: var(--flow-in);
+}
+
+.replay-g-chip.accepted > rect,
+.replay-g-chip.unpublished > rect {
+  stroke: var(--state-warning);
+  stroke-dasharray: 4 3;
+}
+
+.replay-g-chip.missing > rect,
+.replay-g-chip.type > rect {
+  stroke: var(--state-failed);
+}
+
+.replay-g-chip.missing text,
+.replay-g-chip.type text,
+.replay-g-row.type text {
+  fill: var(--state-failed);
+}
+
+.replay-g-edge {
+  fill: none;
+  stroke: var(--border-hover);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.replay-g-edge.feed {
+  stroke: var(--flow-in);
+  stroke-width: 1.4;
+}
+
+/* A remap: the bag topic feeds an input of another name. */
+.replay-g-edge.feed.remapped {
+  stroke: var(--highlight);
+  stroke-dasharray: 6 3;
+}
+
+.replay-g-row.remapped .replay-g-topic {
+  fill: var(--highlight);
+}
+
+.replay-g-edge.feed.type {
+  stroke: var(--state-failed);
+  stroke-dasharray: 2 3;
+}
+
+.replay-g-edge.lit {
+  stroke: var(--highlight);
+  stroke-width: 2;
+}
+
+.replay-g-chip.lit > rect,
+.replay-g-row.lit > rect {
+  stroke: var(--highlight);
+  stroke-width: 1.6;
+}
+
+.replay-g-nodeport.lit .replay-g-hit {
+  fill: var(--highlight-bg);
+}
+
+/* The selected input: its topic emphasized, the rest of the boundary muted. */
+.replay-g-focused .replay-g-chip:not(.selected),
+.replay-g-focused .replay-g-row:not(.selected),
+.replay-g-focused .replay-g-edge:not(.selected) {
+  opacity: 0.4;
+}
+
+.replay-g-edge.selected {
+  stroke: var(--highlight);
+  stroke-width: 2.4;
+}
+
+.replay-g-chip.selected > rect,
+.replay-g-row.selected > rect {
+  stroke: var(--highlight);
+  stroke-width: 2.4;
+  fill: var(--highlight-bg);
+}
+
+.replay-g-nodeport.selected .replay-g-hit {
+  fill: var(--highlight-bg);
+}
+
+.replay-g-nodeport.selected .replay-g-portname {
+  fill: var(--highlight);
+  font-weight: 600;
+}
+
+/* Sources of a boundary input, beside the pointer. */
+.replay-menu {
+  position: absolute;
+  z-index: 110;
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  max-width: min(520px, calc(100% - 8px));
+  max-height: calc(100% - 8px);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-hover);
+  border-radius: 4px;
+  box-shadow: 0 4px 14px var(--shadow);
+}
+
+.replay-menu[hidden] {
+  display: none;
+}
+
+.replay-menu-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  font-family: var(--mono-font);
+  border-bottom: 1px solid var(--border-color);
+  word-break: break-all;
+}
+
+.replay-menu-topic {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.replay-menu-type,
+.replay-menu-note {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.replay-menu-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.replay-menu-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 10px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--text-primary);
+  background: none;
+  border: none;
+  box-shadow: inset 3px 0 0 transparent;
+  cursor: pointer;
+}
+
+.replay-menu-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.replay-menu-item.current {
+  box-shadow: inset 3px 0 0 var(--border-active);
+  background: var(--highlight-bg);
+}
+
+.replay-menu-label {
+  font-family: var(--mono-font);
+  word-break: break-all;
+}
+
+.replay-menu-note {
+  flex-shrink: 0;
+}
+
+/* Drop target of a bag: the whole view. */
+.replay-dropping {
+  outline: 2px dashed var(--border-active);
+  outline-offset: -4px;
+}
+
+.replay-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.replay-block-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.replay-block-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.replay-block-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.replay-block-count.blocked,
+.replay-bag-state.blocked {
+  color: var(--state-failed);
+}
+
+.replay-bag-row {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.replay-bag-row .panel-button {
+  padding: 1px 10px;
+  font-size: 12px;
+}
+
+.replay-bag-bar .panel-search {
+  flex: 1 1 auto;
+  min-width: 100px;
+  padding: 1px 6px;
+  font-family: var(--mono-font);
+  font-size: 12px;
+}
+
+.replay-bag-bar .panel-search.blocked {
+  border-color: var(--state-failed);
+}
+
+.replay-bag-state {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Lists of the boundary inputs and the scope's outputs, one above the other. */
+.replay-selectors {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.replay-selector {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+}
+
+.replay-selector-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.replay-selector-head .replay-block-count {
+  font-weight: 400;
+}
+
+.replay-selector-head .panel-button {
+  margin-left: auto;
+  padding: 1px 10px;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.replay-selector-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.replay-selector-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-family: var(--mono-font);
+  word-break: break-all;
+}
+
+.replay-selector-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.replay-selector-item input {
+  flex-shrink: 0;
+  margin: 0;
+  align-self: center;
+}
+
+.replay-selector-note {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.replay-selector-item.fed .replay-selector-note,
+.replay-selector-item.ambient .replay-selector-note,
+.replay-selector-item.remapped .replay-selector-note {
+  color: var(--state-ok);
+}
+
+.replay-selector-item.accepted .replay-selector-note,
+.replay-selector-item.unpublished .replay-selector-note {
+  color: var(--state-warning);
+}
+
+.replay-selector-item.missing .replay-selector-note,
+.replay-selector-item.type .replay-selector-note {
+  color: var(--state-failed);
+}
+
+/* Source of an input: a pulldown, or the one source it has. */
+.replay-selector-source {
+  flex: 0 1 360px;
+  min-width: 0;
+  max-width: 45%;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+select.replay-selector-source {
+  align-self: center;
+  padding: 1px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* A boundary input: its line, then its detail where it has an issue or is
+   selected. */
+.replay-selector-item.replay-input-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.replay-selector-item.replay-input-row.selected {
+  background: var(--highlight-bg);
+  border-left-color: var(--highlight);
+}
+
+.replay-input-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.replay-input-detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 1px 10px;
+  margin: 0 0 2px 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.replay-input-detail dt {
+  color: var(--text-muted);
+}
+
+.replay-input-detail dd {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.replay-input-detail .replay-input-conflict {
+  color: var(--state-failed);
+}
+
+.replay-input-detail .replay-input-none {
+  color: var(--state-warning);
+}
+
+.replay-selector-item.internal .replay-topic-name {
+  color: var(--text-secondary);
+}
+
+.replay-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.replay-table th {
+  padding: 4px 8px;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.replay-table td {
+  padding: 6px 8px;
+  vertical-align: top;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.replay-topic {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--mono-font);
+  word-break: break-all;
+}
+
+.replay-topic-name {
+  color: var(--text-primary);
+}
+
+.replay-topic-type {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.replay-code {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+}
+
+.replay-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.replay-code-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.replay-code-actions a {
+  text-decoration: none;
+}
+
+.replay-code pre {
+  margin: 0;
+  padding: 8px 10px;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.replay-run-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.replay-run-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.replay-run-number {
+  width: 110px;
+}
+
+.replay-run-span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.replay-span-brush {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+  height: 22px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.replay-span-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--highlight) 22%, transparent);
+  border-inline: 1px solid var(--highlight);
+  cursor: grab;
+}
+
+.replay-span-brush.dragging,
+.replay-span-brush.dragging .replay-span-range {
+  cursor: grabbing;
+}
+
+.replay-span-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  cursor: ew-resize;
+}
+
+.replay-span-handle:first-child {
+  left: -5px;
+}
+
+.replay-span-handle:last-child {
+  right: -5px;
+}
+
+.replay-span-handle::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 3px;
+  width: 3px;
+  background: var(--highlight);
+  border-radius: 2px;
+}
+
+.replay-span-handle:focus-visible {
+  outline: 2px solid var(--highlight);
+}
+
+/* A bag of unknown length takes no brushing. */
+.replay-span-brush.unknown {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.replay-span-brush.unknown .replay-span-range {
+  cursor: default;
+}
+
+.replay-span-brush.unknown .replay-span-handle {
+  display: none;
+}
+
+.replay-span-ends {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.replay-span-ends .replay-run-number {
+  width: 80px;
+}
+
+.replay-span-note {
+  font-family: var(--mono-font);
+  white-space: nowrap;
+}
+
+.replay-run-settings {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.replay-run-settings > summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.replay-run-settings > summary .replay-block-count {
+  margin-left: 8px;
+}
+
+.replay-run-setting-groups {
+  columns: 2 340px;
+  column-gap: 28px;
+  margin-top: 6px;
+}
+
+.replay-run-setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  break-inside: avoid;
+}
+
+.replay-run-setting-title {
+  margin: 0;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.replay-run-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 12px;
+  align-items: center;
+}
+
+.replay-run-setting-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.replay-run-setting-name {
+  font-family: var(--mono-font);
+}
+
+.replay-run-setting-note {
+  color: var(--text-muted);
+}
+
+.replay-run-report {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.replay-run-job {
+  min-width: 0;
+}
+
+.replay-run-job select {
+  max-width: 360px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.replay-run-outcome {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--state-idle);
+}
+
+.replay-run-outcome.ok {
+  color: var(--state-ok);
+}
+
+.replay-run-outcome.running {
+  color: var(--state-running);
+}
+
+.replay-run-outcome.warning {
+  color: var(--state-warning);
+}
+
+.replay-run-outcome.failed {
+  color: var(--state-failed);
+}
+
+/* Run phases: pre-process, replay and post-process segments, each filled by its share done */
+.replay-run-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.replay-run-progress[hidden] {
+  display: none;
+}
+
+.replay-run-phases {
+  display: flex;
+  gap: 4px;
+}
+
+.replay-run-phase {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-basis: 0;
+  min-width: 0;
+  --phase-color: var(--state-idle);
+}
+
+.replay-run-phase.done {
+  --phase-color: var(--state-ok);
+}
+
+.replay-run-phase.active {
+  --phase-color: var(--state-running);
+}
+
+.replay-run-phase.failed {
+  --phase-color: var(--state-failed);
+}
+
+.replay-run-phase.cancelled {
+  --phase-color: var(--state-warning);
+}
+
+.replay-run-phase-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.replay-run-phase.pending .replay-run-phase-label {
+  color: var(--text-muted);
+}
+
+.replay-run-phase-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+
+.replay-run-phase-fill {
+  height: 100%;
+  width: 0;
+  background: var(--phase-color);
+  transition: width 0.3s ease;
+}
+
+.replay-run-phase-fill.indeterminate {
+  width: 100%;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--phase-color) 0 6px,
+    transparent 6px 12px
+  );
+  background-size: 17px 100%;
+  animation: replay-run-phase-stripes 0.8s linear infinite;
+}
+
+.replay-run-phase.failed .replay-run-phase-fill.indeterminate,
+.replay-run-phase.cancelled .replay-run-phase-fill.indeterminate {
+  animation: none;
+}
+
+@keyframes replay-run-phase-stripes {
+  to {
+    background-position: 17px 0;
+  }
+}
+
+.replay-run-step {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-height: 1em;
+}
+
+/* Error that stopped the replay, and the stderr tails of the members it quotes */
+.replay-run-error {
+  padding: 6px 10px;
+  border-left: 3px solid var(--state-failed);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--state-failed) 10%, transparent);
+  font-size: 13px;
+  color: var(--state-failed);
+  overflow-wrap: anywhere;
+}
+
+.replay-run-error[hidden] {
+  display: none;
+}
+
+.replay-run-member-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.replay-run-member-logs:empty {
+  display: none;
+}
+
+.replay-run-member-log > summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.replay-run-member-lines {
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: var(--mono-font);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.replay-run-counts,
+.replay-run-dir {
+  font-size: 12px;
+  font-family: var(--mono-font);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.replay-run-dir {
+  color: var(--text-muted);
+}
+
+.replay-run-findings {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.replay-run-finding.error {
+  color: var(--state-failed);
+}
+
+.replay-run-finding.warning {
+  color: var(--state-warning);
+}
+
+.replay-run-log {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 120px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* Saved setups above the scope selector. */
+.replay-setup-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.replay-setup-select,
+.replay-setup-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.replay-setup-select {
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.replay-setup-note {
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
+.replay-setup-note:empty {
+  display: none;
+}
+
+.replay-setup-note.blocked {
+  color: var(--error-color);
+}

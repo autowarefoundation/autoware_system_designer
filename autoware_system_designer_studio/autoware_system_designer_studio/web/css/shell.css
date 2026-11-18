@@ -335,7 +335,7 @@ body.resizing-panel {
 /* Panel headers */
 #side-panel-header,
 #inspector-header {
-  padding: 10px 16px;
+  padding: 7px 16px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -373,6 +373,11 @@ body.side-panel-collapsed #side-panel-resizer {
   flex-direction: column;
   gap: 10px;
   padding: 14px 16px;
+}
+
+.side-panel-section.side-split {
+  box-sizing: border-box;
+  height: 100%;
 }
 
 /* Main area: one view per activity */
@@ -508,9 +513,10 @@ body.inspector-hidden #inspector-resizer {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  width: 300px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   z-index: 201;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 #settings-popup.open {
@@ -565,6 +571,61 @@ body.inspector-hidden #inspector-resizer {
   font-weight: 500;
   color: var(--text-secondary);
   margin: 0;
+}
+
+.settings-row-path {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.settings-path-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.settings-path {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: var(--mono-font);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.settings-path.default {
+  color: var(--text-secondary);
+}
+
+.settings-dirs {
+  display: grid;
+  gap: 4px;
+  padding: 10px 16px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.settings-dirs div {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-dirs code {
+  font-family: var(--mono-font);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.settings-error {
+  padding: 8px 16px 0;
+  font-size: 12px;
+  color: var(--error-color);
 }
 
 .settings-row select {

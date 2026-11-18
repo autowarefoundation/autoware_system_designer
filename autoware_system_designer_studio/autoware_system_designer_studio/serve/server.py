@@ -50,7 +50,7 @@ from autoware_system_designer_runtime.control_protocol import DEFAULT_POLICY, ME
 from .. import exports
 from ..pages import assets
 from ..pages.render import ICON_FILE, INDEX_PAGE, SYSTEMS_DIR, Site, system_pages
-from . import api, build, events, jobs, launch, peers, record_watch, runs
+from . import api, browse, build, events, jobs, launch, peers, record_watch, replay, runs, storage
 from .events import TOPIC_DAEMON, TOPIC_SYSTEMS_CHANGED
 from .http import (
     CLIENT_HEADER,
@@ -108,31 +108,6 @@ def _package_version() -> Optional[str]:
         return None
 
 
-def _str_param(params: dict[str, Any], name: str, *, required: bool = False) -> Optional[str]:
-    value = params.get(name)
-    if value is None or value == "":
-        if required:
-            raise api.ApiError(api.INVALID_PARAMS, f"{name} is required")
-        return None
-    if not isinstance(value, str):
-        raise api.ApiError(api.INVALID_PARAMS, f"{name} must be a string")
-    return value
-
-
-def _bool_param(params: dict[str, Any], name: str, default: bool = False) -> bool:
-    value = params.get(name, default)
-    if not isinstance(value, bool):
-        raise api.ApiError(api.INVALID_PARAMS, f"{name} must be a boolean")
-    return value
-
-
-def _int_param(params: dict[str, Any], name: str, default: int, low: int, high: int) -> int:
-    value = params.get(name, default)
-    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-        raise api.ApiError(api.INVALID_PARAMS, f"{name} must be an integer within {low}..{high}")
-    return value
-
-
 def _status_page(status: HTTPStatus, title: str, message: str, *, reload_s: Optional[int] = None) -> Response:
     """HTML answer to a page navigation that has no page; it reloads itself when the cause is transient."""
     refresh = f'<meta http-equiv="refresh" content="{reload_s}">' if reload_s else ""
@@ -167,6 +142,8 @@ class ServeDaemon:
 
     ``workspace`` is the colcon workspace builds run in, None when this daemon does not build.
     ``launch_env`` is the environment launch jobs run in (this process's when None; see launch.capture_env).
+    ``log_root``, ``config_root`` and ``record_root`` override the roots of the settings file at
+    ``settings_path`` (see storage.Storage).
     ``restart_required`` turns true once a build rebuilt this package inside the served install tree:
     the running daemon keeps the code it started with.
     """
@@ -179,10 +156,13 @@ class ServeDaemon:
         served_units: Optional[Iterable[str]] = None,
         workspace: Optional[Path] = None,
         record_root: Optional[Path] = None,
+        log_root: Optional[Path] = None,
+        config_root: Optional[Path] = None,
+        settings_path: Optional[Path] = None,
+        bag_dirs: Iterable[Path] = (),
         launch_env: Optional[Mapping[str, str]] = None,
         env_script: Optional[Path] = None,
         rviz_config: Optional[Path] = None,
-        log_base: Optional[Path] = None,
         peer_specs: Iterable[peers.PeerSpec] = (),
         heartbeat_s: float = HEARTBEAT_INTERVAL_S,
         max_connections: int = MAX_CONNECTIONS,
@@ -191,7 +171,10 @@ class ServeDaemon:
         self.install_root = install_root
         self.served_units = None if served_units is None else sorted(set(served_units))
         self.workspace = workspace
-        self.record_root = record_root
+        self.storage = storage.Storage.load(
+            settings_path, log_root=log_root, config_root=config_root, record_root=record_root
+        )
+        self.bag_dirs = [Path(directory).expanduser() for directory in bag_dirs]
         self.restart_required = False
         self.serves_own_install = exports.module_install_root() == install_root
         self._requested_port = port
@@ -228,19 +211,23 @@ class ServeDaemon:
         self._register_of_unit("monitor.unfollow", self._monitor_unfollow)
         self._register_of_unit("monitor.sample", self._monitor_sample)
         self.methods.register("rviz.start", self._rviz_start)
+        self.methods.register("settings.set", self._settings_set)
+        self.methods.register("fs.list", self._fs_list)
+        replay.register(self)
         # Launch id and count of the starts under way, by (system id, mode).
         self._starting: dict[tuple[str, str], list[Any]] = {}
+        self.launch_cwd = workspace or install_root.parent
         self.launch = launch.LaunchManager(
             self.hub,
             self.jobs,
             install_root=install_root,
-            cwd=workspace or install_root.parent,
+            cwd=self.launch_cwd,
             env=launch_env,
             env_script=env_script,
             rviz_config=rviz_config,
-            log_base=log_base,
+            storage=self.storage,
         )
-        self.records = record_watch.RecordWatcher(self.hub, record_root)
+        self.records = record_watch.RecordWatcher(self.hub, self.storage.records)
         self._server: Optional[asyncio.AbstractServer] = None
         self._heartbeat: Optional[asyncio.Task] = None
         self._record_watch: Optional[asyncio.Task] = None
@@ -363,6 +350,8 @@ class ServeDaemon:
             "served_units": self.served_units,
             "workspace": None if self.workspace is None else str(self.workspace),
             "record_root": str(self.records.record_root),
+            "bag_dirs": [str(directory) for directory in self.bag_dirs],
+            "storage": self.storage.view(),
             "restart_required": self.restart_required,
             "heartbeat_s": self.heartbeat_s,
             "peers": self.peers.views(),
@@ -395,7 +384,7 @@ class ServeDaemon:
     def _page_urls(system: exports.SystemExport) -> dict[str, str]:
         return {name: f"/{path}" for name, path in system_pages(system).items()}
 
-    async def _find_system(self, system_id: str) -> exports.SystemExport:
+    async def find_system(self, system_id: str) -> exports.SystemExport:
         systems, _ = await asyncio.to_thread(exports.discover_systems, self.install_root)
         for system in systems:
             if system.id == system_id:
@@ -409,21 +398,21 @@ class ServeDaemon:
         return {"jobs": views}
 
     async def _jobs_get(self, params: dict[str, Any]) -> dict[str, Any]:
-        since = _int_param(params, "since", 0, 0, 2**53)
-        limit = _int_param(params, "limit", jobs.LOG_RING_LINES, 1, jobs.LOG_RING_LINES)
-        job = self.jobs.get(_str_param(params, "job", required=True))
+        since = api.int_param(params, "since", 0, 0, 2**53)
+        limit = api.int_param(params, "limit", jobs.LOG_RING_LINES, 1, jobs.LOG_RING_LINES)
+        job = self.jobs.get(api.str_param(params, "job", required=True))
         first_seq, lines = job.log.since(since, limit)
         return {"job": job.to_view(), "log": {"first_seq": first_seq, "lines": lines}}
 
     async def _jobs_cancel(self, params: dict[str, Any]) -> dict[str, Any]:
-        return self.jobs.cancel(_str_param(params, "job", required=True)).to_view()
+        return self.jobs.cancel(api.str_param(params, "job", required=True)).to_view()
 
     async def _build_start(self, params: dict[str, Any]) -> dict[str, Any]:
         if self.workspace is None:
             raise api.ApiError(api.UNAVAILABLE, "this daemon has no workspace to build in (see --workspace)")
-        system = await self._find_system(_str_param(params, "system", required=True))
-        target = _str_param(params, "target", required=True)
-        compute_unit = _str_param(params, "compute_unit")
+        system = await self.find_system(api.str_param(params, "system", required=True))
+        target = api.str_param(params, "target", required=True)
+        compute_unit = api.str_param(params, "compute_unit")
         if self.peers.link_of(compute_unit) is not None:
             raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is built by its own daemon")
         if compute_unit is not None:
@@ -435,7 +424,7 @@ class ServeDaemon:
             system,
             self.install_root,
             target,
-            mode=_str_param(params, "mode"),
+            mode=api.str_param(params, "mode"),
             compute_unit=compute_unit,
         )
 
@@ -471,16 +460,16 @@ class ServeDaemon:
         return next((u["status"] for u in view["compute_units"] if u["name"] == compute_unit), None)
 
     async def _launch_start(self, params: dict[str, Any]) -> dict[str, Any]:
-        system = await self._find_system(_str_param(params, "system", required=True))
-        compute_unit = _str_param(params, "compute_unit", required=True)
+        system = await self.find_system(api.str_param(params, "system", required=True))
+        compute_unit = api.str_param(params, "compute_unit", required=True)
         status = self._unit_status(system, compute_unit)
         if status is None:
             raise api.ApiError(api.INVALID_PARAMS, f"unknown compute unit {compute_unit!r} of {system.id}")
-        mode = _str_param(params, "mode") or system.manifest.get("default_mode")
+        mode = api.str_param(params, "mode") or system.manifest.get("default_mode")
         if not isinstance(mode, str) or mode not in system.mode_keys():
             raise api.ApiError(api.INVALID_PARAMS, f"unknown mode {mode!r} of {system.id}")
         self._mode_conflict(system.id, mode)
-        launch_id = _str_param(params, "launch")
+        launch_id = api.str_param(params, "launch")
         if launch_id is not None and not launch.valid_launch_id(launch_id):
             raise api.ApiError(api.INVALID_PARAMS, "launch must be an id of letters, digits, '_', '.' and '-'")
         # A unit joins the launch of the system's units running or starting the mode; the first opens one.
@@ -508,10 +497,10 @@ class ServeDaemon:
             raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is {status} on this daemon")
         if not system.structure_path(mode).is_file():
             raise api.ApiError(api.INVALID_PARAMS, f"mode {mode!r} of {system.id} has no system structure")
-        deploy = _str_param(params, "deploy")
+        deploy = api.str_param(params, "deploy")
         if deploy is not None and deploy not in {v["name"] for v in system.deploy_variants()}:
             raise api.ApiError(api.INVALID_PARAMS, f"unknown deploy variant {deploy!r} of {system.id}")
-        policy = _str_param(params, "policy") or DEFAULT_POLICY
+        policy = api.str_param(params, "policy") or DEFAULT_POLICY
         if policy not in POLICIES:
             raise api.ApiError(api.INVALID_PARAMS, f"policy must be one of {', '.join(POLICIES)}")
         session = await self.launch.start(
@@ -521,14 +510,14 @@ class ServeDaemon:
             deploy=deploy,
             args=launch.parse_args_param(params.get("args")),
             policy=policy,
-            measure=_bool_param(params, "measure"),
-            respawn=_bool_param(params, "respawn"),
+            measure=api.bool_param(params, "measure"),
+            respawn=api.bool_param(params, "respawn"),
             launch_id=params["launch"],
         )
         return session.to_view()
 
     async def _launch_status(self, params: dict[str, Any]) -> dict[str, Any]:
-        compute_unit = _str_param(params, "compute_unit")
+        compute_unit = api.str_param(params, "compute_unit")
         link = self.peers.link_of(compute_unit)
         if link is not None:
             return {"sessions": await link.status_views(compute_unit)}
@@ -539,7 +528,7 @@ class ServeDaemon:
 
     async def _launch_forget(self, params: dict[str, Any]) -> dict[str, Any]:
         """Drops the sessions last reported for a unit whose peer does not answer."""
-        compute_unit = _str_param(params, "compute_unit", required=True)
+        compute_unit = api.str_param(params, "compute_unit", required=True)
         link = self.peers.link_of(compute_unit)
         if link is None:
             raise api.ApiError(api.INVALID_PARAMS, f"compute unit {compute_unit!r} is not served by a peer")
@@ -547,34 +536,34 @@ class ServeDaemon:
 
     def _member_action(self, action: str) -> api.Handler:
         async def handler(params: dict[str, Any]) -> Any:
-            compute_unit = _str_param(params, "compute_unit", required=True)
-            pattern = _str_param(params, "pattern", required=True)
-            exact = _bool_param(params, "exact")
+            compute_unit = api.str_param(params, "compute_unit", required=True)
+            pattern = api.str_param(params, "pattern", required=True)
+            exact = api.bool_param(params, "exact")
             return await self.launch.call(compute_unit, action, {"pattern": pattern, "exact": exact})
 
         return handler
 
     async def _launch_follow(self, params: dict[str, Any]) -> dict[str, Any]:
-        compute_unit = _str_param(params, "compute_unit", required=True)
+        compute_unit = api.str_param(params, "compute_unit", required=True)
         return await self.launch.follow(
             compute_unit,
-            _str_param(params, "path", required=True),
-            system_id=_str_param(params, "system"),
-            mode=_str_param(params, "mode"),
+            api.str_param(params, "path", required=True),
+            system_id=api.str_param(params, "system"),
+            mode=api.str_param(params, "mode"),
         )
 
     async def _launch_unfollow(self, params: dict[str, Any]) -> dict[str, Any]:
-        compute_unit = _str_param(params, "compute_unit", required=True)
+        compute_unit = api.str_param(params, "compute_unit", required=True)
         return await self.launch.unfollow(
             compute_unit,
-            _str_param(params, "path"),
-            system_id=_str_param(params, "system"),
-            mode=_str_param(params, "mode"),
+            api.str_param(params, "path"),
+            system_id=api.str_param(params, "system"),
+            mode=api.str_param(params, "mode"),
         )
 
     async def _launch_runs(self, params: dict[str, Any]) -> dict[str, Any]:
-        system_id = _str_param(params, "system")
-        system = None if system_id is None else await self._find_system(system_id)
+        system_id = api.str_param(params, "system")
+        system = None if system_id is None else await self.find_system(system_id)
         # A log base shared with a peer holds the runs of its units too; the peer lists those.
         listed = await self.launch.archive.runs(system, exclude_units=self.peers.units)
         listed += await self.peers.gather(lambda link: link.run_views(params))
@@ -582,11 +571,11 @@ class ServeDaemon:
         return {"runs": listed[: runs.MAX_RUNS]}
 
     async def _launch_run(self, params: dict[str, Any]) -> dict[str, Any]:
-        return self.launch.archive.run_members(_str_param(params, "run", required=True))
+        return self.launch.archive.run_members(api.str_param(params, "run", required=True))
 
     async def _launch_run_tail(self, params: dict[str, Any]) -> dict[str, Any]:
-        run = _str_param(params, "run", required=True)
-        return self.launch.archive.run_tail(run, _str_param(params, "member", required=True))
+        run = api.str_param(params, "run", required=True)
+        return self.launch.archive.run_tail(run, api.str_param(params, "member", required=True))
 
     async def _launch_run_rates(self, params: dict[str, Any]) -> dict[str, Any]:
         sample = params.get("sample")
@@ -597,29 +586,29 @@ class ServeDaemon:
                 raise api.ApiError(api.INVALID_PARAMS, f"{name} must be a sample number")
         if span_s is not None and (not isinstance(span_s, (int, float)) or isinstance(span_s, bool) or span_s <= 0):
             raise api.ApiError(api.INVALID_PARAMS, "span_s must be a positive number of seconds")
-        run = _str_param(params, "run", required=True)
+        run = api.str_param(params, "run", required=True)
         return await self.launch.archive.run_rates(run, sample=sample, start=start, span_s=span_s)
 
     async def _launch_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
-        return await self.launch.shutdown(_str_param(params, "compute_unit", required=True))
+        return await self.launch.shutdown(api.str_param(params, "compute_unit", required=True))
 
     def _measure(self, verb: str) -> api.Handler:
         async def handler(params: dict[str, Any]) -> Any:
-            compute_unit = _str_param(params, "compute_unit", required=True)
+            compute_unit = api.str_param(params, "compute_unit", required=True)
             return await self.launch.call(compute_unit, f"measure.{verb}", {})
 
         return handler
 
     async def _monitor_follow(self, params: dict[str, Any]) -> dict[str, Any]:
-        compute_unit = _str_param(params, "compute_unit", required=True)
-        return await self.launch.monitor_follow(compute_unit, _str_param(params, "client") or "")
+        compute_unit = api.str_param(params, "compute_unit", required=True)
+        return await self.launch.monitor_follow(compute_unit, api.str_param(params, "client") or "")
 
     async def _monitor_unfollow(self, params: dict[str, Any]) -> dict[str, Any]:
-        compute_unit = _str_param(params, "compute_unit", required=True)
-        return await self.launch.monitor_unfollow(compute_unit, _str_param(params, "client") or "")
+        compute_unit = api.str_param(params, "compute_unit", required=True)
+        return await self.launch.monitor_unfollow(compute_unit, api.str_param(params, "client") or "")
 
     async def _monitor_sample(self, params: dict[str, Any]) -> dict[str, Any]:
-        compute_unit = _str_param(params, "compute_unit", required=True)
+        compute_unit = api.str_param(params, "compute_unit", required=True)
         interval = params.get("interval", 1.0)
         if (
             not isinstance(interval, (int, float))
@@ -633,6 +622,16 @@ class ServeDaemon:
 
     async def _rviz_start(self, params: dict[str, Any]) -> dict[str, Any]:
         return (await self.launch.start_rviz()).to_view()
+
+    async def _fs_list(self, params: dict[str, Any]) -> dict[str, Any]:
+        files = api.bool_param(params, "files")
+        hidden = api.bool_param(params, "hidden")
+        return await asyncio.to_thread(browse.list_directory, params.get("path"), files=files, hidden=hidden)
+
+    async def _settings_set(self, params: dict[str, Any]) -> dict[str, Any]:
+        await asyncio.to_thread(self.storage.set, params)
+        self.records.record_root = self.storage.records
+        return self.storage.view()
 
     # -- connection handling -----------------------------------------------
 
@@ -765,7 +764,7 @@ class ServeDaemon:
             systems = [export] if export is not None else []
         else:
             systems, _ = exports.discover_systems(self.install_root)
-        return Site(systems, record_root=self.record_root).render(site_path)
+        return Site(systems, record_root=self.storage.records).render(site_path)
 
     async def _file_response(self, request: Request, path: Optional[Path]) -> Response:
         if path is None:

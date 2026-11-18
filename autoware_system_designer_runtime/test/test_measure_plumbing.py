@@ -170,10 +170,10 @@ def test_default_latency_out_is_a_new_record_of_the_export_or_under_the_log_dir(
     assert default_latency_out("Psim", loose, tmp_path / "logs") == tmp_path / "logs" / "latency" / "Psim_latency.json"
 
 
-def test_record_root_defaults_under_ros_home(tmp_path, monkeypatch):
+def test_record_root_defaults_under_the_user_home(tmp_path, monkeypatch):
     monkeypatch.delenv("AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR", raising=False)
-    monkeypatch.setenv("ROS_HOME", str(tmp_path / "ros"))
-    assert records.record_root() == tmp_path / "ros" / "autoware_system_designer" / "records"
+    monkeypatch.setenv("AUTOWARE_SYSTEM_DESIGNER_HOME", str(tmp_path / "home"))
+    assert records.record_root() == tmp_path / "home" / "records"
 
 
 def test_analyze_traces_writes_the_latency_file(tmp_path):

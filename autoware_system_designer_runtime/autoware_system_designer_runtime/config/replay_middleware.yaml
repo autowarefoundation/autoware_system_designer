@@ -1,0 +1,32 @@
+# What a replay sets on the middleware of its scope, and the message types it reads by convention.
+
+# Parameters set on every node of the scope.
+node_parameters:
+  use_sim_time: true
+
+# Launcher settings set on every member of the scope.
+launcher:
+  use_intra_process_comms: false
+
+# Environment variable that names the distribution of the environment.
+distro_variable: ROS_DISTRO
+
+# Environment of a replay whose discovery stays on this host, by distribution; `default` is for any other.
+isolation_environment:
+  humble:
+    ROS_LOCALHOST_ONLY: "1"
+  default:
+    ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+
+# Environment variable that carries the domain of the replay.
+domain_id_variable: ROS_DOMAIN_ID
+
+# Identifier message types, each with the field that holds the identifier's bytes.
+identifier_types:
+  unique_identifier_msgs/msg/UUID: uuid
+
+# Quality of service values a bag's metadata writes as numbers (rosbag2 before Iron), each with its rmw name.
+qos_value_names:
+  durability:
+    1: transient_local
+    2: volatile

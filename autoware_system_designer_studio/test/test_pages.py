@@ -126,6 +126,11 @@ def test_config_carries_the_selection_scope_and_launch_commands(tmp_path):
     assert f"systemId: {json.dumps(system.id)}" in text
     assert 'siteRoot: "../../../"' in text
     assert "deployNames: []" in text
+    assert 'processTopics: ["/clock", "/parameter_events", "/rosout"]' in text
+    assert 'ambientTopics: ["/tf", "/tf_static"]' in text
+    replay = json.loads(text.partition("replayRuntime: ")[2].partition(",\n")[0])
+    assert replay["command"] == "autoware-system-designer-replay" and replay["configFile"] == "replay.yaml"
+    assert replay["structurePaths"]["Runtime"].endswith(f"exports/{system.name}/system_structure/Runtime.json")
     units = json.loads(text.partition("computeUnits: ")[2].partition(",\n")[0])
     assert [u["name"] for u in units] == [u["name"] for u in system.compute_units()]
     commands = json.loads(text.partition("launchCommands: ")[2].rpartition("\n};")[0])

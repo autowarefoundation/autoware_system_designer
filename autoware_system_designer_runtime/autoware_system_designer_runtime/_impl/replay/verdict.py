@@ -1,0 +1,326 @@
+# Copyright 2026 TIER IV, inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Verdict of a replay: its recorded outputs against a reference, topic by topic.
+
+Both sides are sequences of (driver time, serialized message) per topic. The rule
+of a topic says how two messages compare: by content, field by field with a
+numeric tolerance, or not at all. Driver times compare exactly under every rule.
+
+Content is the field values of a message. The bytes between aligned fields of a
+serialized message are padding the publisher leaves unset, so equal messages
+can serialize to different bytes.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import hashlib
+import math
+import struct
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterable, Mapping, Optional
+
+from .config import RULE_EXACT, RULE_FIELDS, RULE_IGNORE, CompareRule, ReplayConfig
+from .middleware import replay_middleware
+
+MATCH = "match"
+DIFFER = "differ"
+IGNORED = "ignored"
+VERDICT_FORMAT = "autoware_system_designer/replay_verdict/1"
+
+Record = tuple[int, bytes]
+Deserialize = Callable[[str, bytes], Any]
+
+
+@dataclass
+class TopicVerdict:
+    topic: str
+    rule: str
+    status: str
+    reference_count: int = 0
+    count: int = 0
+    # First difference: message index, driver time and what differs.
+    difference: Optional[dict[str, Any]] = None
+
+    def as_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "topic": self.topic,
+            "rule": self.rule,
+            "status": self.status,
+            "reference_count": self.reference_count,
+            "count": self.count,
+        }
+        if self.difference is not None:
+            out["difference"] = self.difference
+        return out
+
+
+@dataclass
+class Verdict:
+    topics: list[TopicVerdict] = field(default_factory=list)
+
+    @property
+    def passed(self) -> bool:
+        return all(t.status != DIFFER for t in self.topics)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "format": VERDICT_FORMAT,
+            "passed": self.passed,
+            "topics": [t.as_dict() for t in self.topics],
+        }
+
+
+def group_by_topic(messages: Iterable[tuple[int, str, bytes]], *, since_ns: int = 0) -> dict[str, list[Record]]:
+    """Per-topic records of a bag read; messages before *since_ns* (the warm-up) are left out."""
+    grouped: dict[str, list[Record]] = {}
+    for stamp, topic, data in messages:
+        if stamp >= since_ns:
+            grouped.setdefault(topic, []).append((stamp, data))
+    return grouped
+
+
+class _UuidOrder:
+    """Rank of each UUID by first appearance on one side of one topic."""
+
+    def __init__(self) -> None:
+        self._rank: dict[bytes, int] = {}
+
+    def rank(self, uuid: Any, field: str) -> int:
+        key = bytes(bytearray(getattr(uuid, field)))
+        return self._rank.setdefault(key, len(self._rank))
+
+
+def _uuid_field(reference: Any, value: Any) -> Optional[str]:
+    """Field holding the identifier bytes when both messages are identifiers of one type."""
+    if type(reference) is not type(value):
+        return None
+    return replay_middleware().identifier_field(value)
+
+
+def _is_message(value: Any) -> bool:
+    return hasattr(value, "get_fields_and_field_types")
+
+
+def _is_sequence(value: Any) -> bool:
+    return not isinstance(value, (str, bytes)) and hasattr(value, "__len__") and hasattr(value, "__getitem__")
+
+
+class _FieldComparison:
+    def __init__(self, rule: CompareRule) -> None:
+        self._rule = rule
+        self._reference_uuids = _UuidOrder()
+        self._uuids = _UuidOrder()
+
+    def _ignored(self, path: str) -> bool:
+        return any(fnmatch.fnmatchcase(path, pattern) for pattern in self._rule.ignore_fields)
+
+    def _numbers(self, a: float, b: float) -> bool:
+        if a == b or (isinstance(a, float) and isinstance(b, float) and math.isnan(a) and math.isnan(b)):
+            return True
+        if isinstance(a, bool) or isinstance(b, bool):
+            return False
+        tolerance = max(self._rule.abs_tolerance, self._rule.rel_tolerance * max(abs(a), abs(b)))
+        return abs(a - b) <= tolerance
+
+    def difference(self, reference: Any, value: Any, path: str = "") -> Optional[str]:
+        """Where *value* leaves *reference*, None when they agree under the rule."""
+        if path and self._ignored(path):
+            return None
+        uuid_field = _uuid_field(reference, value) if self._rule.uuid_order else None
+        if uuid_field is not None:
+            a, b = self._reference_uuids.rank(reference, uuid_field), self._uuids.rank(value, uuid_field)
+            return None if a == b else f"{path}: UUID is the {b + 1}. new one, the reference's the {a + 1}."
+        if _is_message(reference) and _is_message(value):
+            if type(reference) is not type(value):
+                return f"{path or 'message'}: type {type(value).__name__}, reference {type(reference).__name__}"
+            for name in reference.get_fields_and_field_types():
+                found = self.difference(
+                    getattr(reference, name), getattr(value, name), f"{path}.{name}" if path else name
+                )
+                if found is not None:
+                    return found
+            return None
+        if _is_sequence(reference) and _is_sequence(value):
+            if len(reference) != len(value):
+                return f"{path}: {len(value)} elements, reference {len(reference)}"
+            for index in range(len(reference)):
+                found = self.difference(reference[index], value[index], path)
+                if found is not None:
+                    return f"{found} (element {index})" if "(element" not in found else found
+            return None
+        if isinstance(reference, (int, float)) and isinstance(value, (int, float)):
+            return None if self._numbers(reference, value) else f"{path}: {value!r}, reference {reference!r}"
+        return None if reference == value else f"{path}: {value!r}, reference {reference!r}"
+
+
+def compare_topic(
+    topic: str,
+    msg_type: str,
+    reference: list[Record],
+    recorded: list[Record],
+    rule: CompareRule,
+    deserialize: Optional[Deserialize] = None,
+) -> TopicVerdict:
+    verdict = TopicVerdict(
+        topic=topic, rule=rule.rule, status=MATCH, reference_count=len(reference), count=len(recorded)
+    )
+    if rule.rule == RULE_IGNORE:
+        verdict.status = IGNORED
+        return verdict
+    exact = rule.rule == RULE_EXACT
+    # The exact rule is the field comparison without tolerance, exclusion or UUID ranking.
+    fields = _FieldComparison(CompareRule(rule=RULE_FIELDS) if exact else rule) if deserialize is not None else None
+    if fields is None and not exact:
+        raise ValueError(f"{topic}: the fields rule needs a deserializer")
+    for index, ((ref_stamp, ref_data), (stamp, data)) in enumerate(zip(reference, recorded)):
+        detail: Optional[str] = None
+        if ref_stamp != stamp:
+            detail = f"driver time {stamp}, reference {ref_stamp}"
+        elif ref_data != data:
+            if fields is None:
+                detail = "message bytes differ"
+            else:
+                detail = fields.difference(deserialize(msg_type, ref_data), deserialize(msg_type, data))
+        elif fields is not None and rule.uuid_order:
+            # Equal bytes still advance the first-appearance ranks of both sides.
+            fields.difference(deserialize(msg_type, ref_data), deserialize(msg_type, data))
+        if detail is not None:
+            verdict.status = DIFFER
+            verdict.difference = {"index": index, "stamp_ns": stamp, "detail": detail}
+            return verdict
+    if len(reference) != len(recorded):
+        verdict.status = DIFFER
+        verdict.difference = {
+            "index": min(len(reference), len(recorded)),
+            "detail": f"{len(recorded)} messages, reference {len(reference)}",
+        }
+    return verdict
+
+
+def compare_outputs(
+    reference: Mapping[str, list[Record]],
+    recorded: Mapping[str, list[Record]],
+    types: Mapping[str, str],
+    config: ReplayConfig,
+    deserialize: Optional[Deserialize] = None,
+) -> Verdict:
+    verdict = Verdict()
+    for topic in sorted(set(reference) | set(recorded) | set(types)):
+        verdict.topics.append(
+            compare_topic(
+                topic,
+                types.get(topic, ""),
+                reference.get(topic, []),
+                recorded.get(topic, []),
+                config.rule_for(topic),
+                deserialize,
+            )
+        )
+    return verdict
+
+
+def ros_deserialize(msg_type: str, data: bytes) -> Any:
+    from rclpy.serialization import deserialize_message
+    from rosidl_runtime_py.utilities import get_message
+
+    return deserialize_message(data, get_message(msg_type))
+
+
+# Struct codes of the numeric field types.
+_NUMBER_CODES = {
+    "boolean": "?",
+    "int8": "b",
+    "uint8": "B",
+    "int16": "h",
+    "uint16": "H",
+    "int32": "i",
+    "uint32": "I",
+    "int64": "q",
+    "uint64": "Q",
+    "float": "d",
+    "double": "d",
+}
+# Per message class: its field names in field order, and the packer of a class of numbers only.
+_LAYOUTS: dict[type, tuple[tuple[str, ...], Optional[Callable[..., bytes]]]] = {}
+
+
+def _layout(value: Any) -> tuple[tuple[str, ...], Optional[Callable[..., bytes]]]:
+    layout = _LAYOUTS.get(type(value))
+    if layout is None:
+        fields = value.get_fields_and_field_types()
+        codes = [_NUMBER_CODES.get(field_type) for field_type in fields.values()]
+        pack = struct.Struct("<" + "".join(codes)).pack if codes and all(codes) else None
+        layout = _LAYOUTS[type(value)] = (tuple(fields), pack)
+    return layout
+
+
+def _content(value: Any, parts: list[bytes]) -> None:
+    """Appends the field values of a message to *parts*, in field order."""
+    if _is_message(value):
+        names, pack = _layout(value)
+        if pack is not None:
+            try:
+                parts.append(pack(*[getattr(value, name) for name in names]))
+                return
+            except (struct.error, TypeError):
+                pass
+        for name in names:
+            _content(getattr(value, name), parts)
+    elif isinstance(value, (str, bytes)):
+        raw = value.encode() if isinstance(value, str) else value
+        parts.append(b"%d\0" % len(raw))
+        parts.append(raw)
+    elif hasattr(value, "tobytes"):
+        # Primitive arrays: array.array and numpy.ndarray.
+        parts.append(b"%d\0" % len(value))
+        parts.append(value.tobytes())
+    elif _is_sequence(value):
+        parts.append(b"%d\0" % len(value))
+        for item in value:
+            _content(item, parts)
+    else:
+        parts.append(f"{value!r}\0".encode())
+
+
+def digest(
+    messages: Iterable[tuple[int, str, bytes]],
+    types: Optional[Mapping[str, str]] = None,
+    deserialize: Optional[Deserialize] = None,
+    *,
+    since_ns: int = 0,
+) -> str:
+    """One hash over every recorded output from *since_ns* on, for a quick equality check of two runs.
+    A topic with a type in *types* is hashed by content, any other by its serialized bytes. Each topic
+    is hashed in its own order as the messages pass, so the bag is never held in memory."""
+    hashes: dict[str, Any] = {}
+    for stamp, topic, data in messages:
+        if stamp < since_ns:
+            continue
+        sha = hashes.get(topic)
+        if sha is None:
+            sha = hashes[topic] = hashlib.sha256()
+        msg_type = (types or {}).get(topic) if deserialize is not None else None
+        if msg_type:
+            parts = [b"%d\0" % stamp]
+            _content(deserialize(msg_type, data), parts)
+            sha.update(b"".join(parts))
+        else:
+            sha.update(b"%d\0%d\0" % (stamp, len(data)))
+            sha.update(data)
+    total = hashlib.sha256()
+    for topic in sorted(hashes):
+        total.update(f"{topic}\0{hashes[topic].hexdigest()}\0".encode())
+    return total.hexdigest()

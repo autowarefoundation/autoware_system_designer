@@ -26,7 +26,6 @@ three roles:
 from __future__ import annotations
 
 import asyncio
-import itertools
 import logging
 import os
 import signal
@@ -35,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
-from ...run_log import LOG_BASE
+from ...run_log import LAUNCH_LOGS, LOG_BASE, new_run_dir
 from . import events as ev
 from .aio import cancel_and_wait
 from .config import ActorConfig
@@ -168,6 +167,8 @@ class Coordinator:
         self._actor_pids: dict[str, int] = {}
         self._had_failure: bool = False
         self._started_count: int = 0
+        # Signal that started the shutdown, None when the run ended by itself or by request.
+        self.stopped_by: Optional[int] = None
 
     # ---- public control surface ------------------------------------------
 
@@ -342,6 +343,7 @@ class Coordinator:
 
     def _on_signal(self, sig: int) -> None:
         if not self._shutdown.is_set():
+            self.stopped_by = sig
             logger.info("received %s, shutting down actors", _signame(sig))
             print(
                 f"\nReceived {_signame(sig)} — graceful shutdown in progress. " "Press Ctrl+C again to force quit.",
@@ -431,17 +433,8 @@ def _signame(sig: int) -> str:
 
 
 def ensure_output_dir(base: Optional[Path] = None) -> Path:
-    """Create a timestamped log directory under *base* (``LOG_BASE`` by default).
+    """Create a timestamped log directory under *base* (the launch logs of ``LOG_BASE`` by default).
 
     Each call owns its directory: a run starting within the second of another gets a numbered one.
     """
-    base = base or LOG_BASE
-    base.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    for name in itertools.chain([stamp], (f"{stamp}_{n}" for n in itertools.count(2))):
-        out = base / name
-        try:
-            out.mkdir()
-        except FileExistsError:
-            continue
-        return out
+    return new_run_dir(base or LOG_BASE / LAUNCH_LOGS)

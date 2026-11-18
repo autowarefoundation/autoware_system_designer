@@ -1,0 +1,29 @@
+# Values of the replay configuration keys a run leaves unset.
+
+# Seconds from the bag's start over which only the ambient inputs and the last message of each latched topic are fed.
+lead_in: 0.5
+
+# Driver settings; seconds unless a count is named.
+driver:
+  # The scope has to be up within it.
+  startup_timeout: 60.0
+  # The scope is up once no endpoint was created for this long.
+  startup_settle: 2.0
+  # Publishers have this long to match the subscriptions of the scope.
+  match_timeout: 10.0
+  # A granted callback has to return within it.
+  callback_timeout: 30.0
+  # Wall time a callback runs before the nested callbacks of its process run beside it.
+  nested_after: 0.2
+  # A published message has this long to show as work, a due timer to become ready, a publish to be recorded.
+  delivery_timeout: 2.0
+  # Pause before a callback whose subscription holds several messages in flight.
+  burst_settle: 0.005
+  # Count: a subscription that missed this many deliveries in a row is no longer waited for.
+  miss_limit: 3
+  # Longest stay of an executor in its wait with ready work and no grant.
+  gate_hold: 0.002
+  # A take waits this long for a message in flight.
+  take_timeout: 2.0
+  # Count: threads of a process that hold a grant at once.
+  process_grants: 4

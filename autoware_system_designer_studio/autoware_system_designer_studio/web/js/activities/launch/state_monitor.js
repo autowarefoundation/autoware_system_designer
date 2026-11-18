@@ -67,15 +67,10 @@
     runNote.hidden = true;
     const extraList = element("div", "monitor-run-extras");
     extraList.hidden = true;
-    treePane.append(
-      filter,
-      launcherList,
-      failureList,
-      runNote,
-      tree,
-      extraList,
-      legend,
-    );
+    const treeBlocks = SD.widgets.sideSplit(treePane);
+    treeBlocks.top.append(filter, launcherList, failureList, runNote);
+    treeBlocks.scroll.append(tree, extraList);
+    treePane.appendChild(legend);
     // Live sessions, or a past launch whose log directories the daemon reads.
     const runs = launch.runSelector({
       systemId: config.systemId,

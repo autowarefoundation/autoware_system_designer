@@ -23,7 +23,7 @@ import re
 import signal
 import sys
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Mapping, Optional, Sequence
 
 from .exports import resolve_install_root
 from .pack import PackError, pack
@@ -31,6 +31,7 @@ from .serve import peers
 from .serve.build import resolve_workspace
 from .serve.launch import LaunchEnvError, capture_env
 from .serve.server import BIND_HOST, HEARTBEAT_INTERVAL_S, ServeDaemon
+from .serve.storage import Storage
 
 logger = logging.getLogger("autoware_system_designer.studio")
 
@@ -55,7 +56,7 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
         "--record-dir",
         type=Path,
         help="measurement record root (default: $AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR, "
-        "else $ROS_HOME/autoware_system_designer/records)",
+        "else records/ of the config root)",
     )
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
 
@@ -114,6 +115,26 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         type=Path,
         help="RViz configuration opened by rviz.start (default: autoware_launch's autoware.rviz "
         "under the launch environment's ament prefixes, else none)",
+    )
+    serve.add_argument(
+        "--bag-dir",
+        dest="bag_dirs",
+        action="append",
+        default=[],
+        type=Path,
+        help="directory the bag of a dropped file is searched under, for a replay (repeatable)",
+    )
+    serve.add_argument(
+        "--log-root",
+        type=Path,
+        help="directory of the run logs, launch/ and replay/ under it "
+        "(default: the settings file's, else /tmp/autoware_system_designer_logs)",
+    )
+    serve.add_argument(
+        "--config-root",
+        type=Path,
+        help="directory of the kept files, records/ and replay_setups/ under it "
+        "(default: the settings file's, else ~/.autoware/system_designer)",
     )
     serve.add_argument(
         "--heartbeat-interval",
@@ -177,30 +198,41 @@ def _run_serve(args: argparse.Namespace) -> None:
         launch_env = capture_env(args.env_script)
     except LaunchEnvError as exc:
         sys.exit(str(exc))
-    daemon = ServeDaemon(
-        install_root,
-        port=args.port,
-        served_units=args.compute_units,
-        workspace=resolve_workspace(install_root, args.workspace),
-        record_root=args.record_dir,
-        launch_env=launch_env,
-        env_script=args.env_script,
-        rviz_config=args.rviz_config,
-        peer_specs=args.peer_specs,
-        heartbeat_s=args.heartbeat_interval,
-    )
+    try:
+        daemon = _daemon(args, install_root, launch_env)
+    except ValueError as exc:
+        sys.exit(f"studio settings: {exc}")
     try:
         asyncio.run(_serve(daemon))
     except OSError as exc:
         sys.exit(f"cannot serve on {BIND_HOST}:{args.port}: {exc}")
 
 
+def _daemon(args: argparse.Namespace, install_root: Path, launch_env: Mapping[str, str]) -> ServeDaemon:
+    return ServeDaemon(
+        install_root,
+        port=args.port,
+        served_units=args.compute_units,
+        workspace=resolve_workspace(install_root, args.workspace),
+        record_root=args.record_dir,
+        bag_dirs=args.bag_dirs,
+        log_root=args.log_root,
+        config_root=args.config_root,
+        launch_env=launch_env,
+        env_script=args.env_script,
+        rviz_config=args.rviz_config,
+        peer_specs=args.peer_specs,
+        heartbeat_s=args.heartbeat_interval,
+    )
+
+
 def _run_pack(args: argparse.Namespace) -> None:
     install_root = _install_root(args)
     output = args.output.expanduser().resolve()
     try:
-        written, errors = pack(install_root, output, systems=args.systems, record_root=args.record_dir)
-    except PackError as exc:
+        record_root = args.record_dir or Storage.load().records
+        written, errors = pack(install_root, output, systems=args.systems, record_root=record_root)
+    except (PackError, ValueError) as exc:
         sys.exit(str(exc))
     for error in errors:
         logger.warning("skipped %s: %s", error.path, error.message)

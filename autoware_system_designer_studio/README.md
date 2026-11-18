@@ -31,7 +31,7 @@ directory it wrote itself (marked by `.autoware_system_designer_studio`) or an e
 ```text
 index.html                                         opens the system shown last, else the first one
 assets/{css,js}/...                                web bundle
-systems/<package>/<system>/index.html              workbench; ?activity=explore|launch|build opens that activity
+systems/<package>/<system>/index.html              workbench; ?activity=explore|launch|replay|build opens that activity
 systems/<package>/<system>/config.js               workbench config
 systems/<package>/<system>/icon.svg                the system's icon
 systems/<package>/<system>/data/<mode>.js          system_structure/<mode>.json with vis guides attached
@@ -72,6 +72,7 @@ the systems of the site by package, each with its icon.
 | -------- | ------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
 | Explore  | Diagrams: Nodes, Logic, Sequence (`?diagram=`)    | entity search                                  | diagram canvas; inspector shows the selected element |
 | Launch   | Launch: Control; Monitor: Logs, Topics (`?view=`) | none                                           | the view of the mode                                 |
+| Replay   | Replay                                            | scope tree (`?scope=`)                         | boundary, bag match, configuration, run (daemon)     |
 | Build    | Build                                             | target, compute unit, start; job list (daemon) | log of the selected job (`?job=`)                    |
 
 The launch bar is the Launch activity's part of the top bar, shown on every activity: its drawer
@@ -142,7 +143,10 @@ ROS module, so its `bin/` copy runs without any setup script sourced.
 ```bash
 autoware-system-designer-studio serve \
     --install-root install \       # default: first COLCON_PREFIX_PATH entry
-    --record-dir ~/.ros/autoware_system_designer/records \  # measurement records (default shown)
+    --record-dir ~/records \       # measurement records (default: records/ of the config root)
+    --bag-dir /data/bags \         # where the bag of a dropped file is searched, beside the replay logs (repeatable)
+    --log-root /data/asd_logs \    # run logs: launch/, replay/ (default: /tmp/autoware_system_designer_logs)
+    --config-root ~/asd \          # kept files: records/, replay_setups/ (default: ~/.autoware/system_designer)
     --port 8780 \                  # 0 picks a free port
     --workspace . \                # colcon workspace builds run in (default: install parent holding src/)
     --compute-unit main_ecu \      # units local to this daemon (repeatable; default: every onboard unit)
@@ -245,6 +249,150 @@ colcon's `Starting >>>` lines). When a build rebuilds `autoware_system_designer_
 `autoware_system_designer_runtime` inside the install tree this daemon runs from, the daemon keeps
 running its loaded code and reports `restart_required`.
 
+### Replay
+
+The Replay activity prepares a deterministic replay of the runtime (`autoware-system-designer-replay`,
+see the runtime README) on any page and runs it where a daemon serves the page. Its side panel is the namespace tree of the mode with a
+checkbox per entry: a checked entry selects every launched node at or under its path, and the
+selection is kept as the fewest such paths (`?scope=`, comma separated), the runtime's `--scope`.
+A node placed at a module's own path has an entry of its own below that path, named `<path>/<name>`.
+Containers of the selected composable nodes join the scope: their entries are checked and locked.
+With a daemon, **saved setups** sit above the tree: a setup is the shown replay saved by name
+(system, mode, deploy, bag path, configuration, the bag topic each input resolved to, the recorded
+outputs and run options) as `<name>.yaml` in the replay setups of the config root (see Storage), and
+loading one shows it again, switching the mode and deploy it names. The recorded list decides the
+outputs on load: a boundary output missing from it stays unrecorded. The Rosbag "Browse" button
+picks the bag on the daemon's host with a path selector.
+
+The top of the main area keeps the scope diagram, at a height set by dragging the divider below it
+(kept across visits). The diagram is drawn from the boundary the runtime computes, by topic:
+
+- the **replay boundary** is a frame around the scope's nodes and containers, nested in one box per
+  namespace (a namespace holding only one namespace shares its box), the outer a box the larger its
+  label. Nodes and boxes take the colours of their component, as on the node diagram. Each node
+  shows its topic ports, joined where one node of the scope publishes what another reads;
+- each **boundary input**, a topic a node outside the scope publishes, is a chip on the left side of
+  the frame, joined to the ports that subscribe to it and coloured by its match against the bag;
+- the **bag** block left of the frame lists the recorded topics that feed the scope, each joined to
+  the input it feeds and named by its last two segments while the input bears the same name. A topic recorded under another name than its input is a remap, drawn dashed;
+- an **output** port of a node is filled where its topic is recorded: a boundary output unless left
+  unrecorded, a topic internal to the scope once chosen. The boundary outputs are not drawn.
+
+A click on an input chip or its bag topic lists the sources of the input: the bag topics of its type
+(choosing one recorded under another name remaps it onto the input), and for an input the bag lacks,
+leaving it unfed or accepting it unfed. A click on an output port of a node toggles the
+recording of its topic. The pointer on a port, chip or bag topic lights
+the whole topic. The diagram follows every change of the scope, bag and choices: a view the viewer
+zoomed or panned keeps the boundary frame in place, an untouched one is fitted again.
+
+Below it, the **Bag** block takes the bag whose topics the boundary is matched against:
+
+- files dropped on the view or picked with "Open file": a `metadata.yaml`, or `.mcap` files, whose
+  topics, types and message counts are read in the page from their summary sections; the splits of
+  one bag are read as one, their counts summed. A dropped directory gives its `metadata.yaml`, else
+  its `.mcap` files. Compressed messages and chunks leave the summary readable; a file compressed as
+  a whole (`.mcap.zstd`, `.db3.zstd`) and a `.db3` file are not read in the page: with a daemon the
+  bag is found and read by its path, without one the page asks for the `metadata.yaml`. A browser
+  gives no path of a dropped file: a daemon finds it by the file's name and size (`replay.find`),
+  else the path for the command is typed in the Bag field;
+- a path or `file://` URI dropped as text, or typed: it fills the Bag field and, with a daemon, is
+  read there ("Read"). The path is absolute (`/...`, `~/...` or a `file://` URI): a relative one is
+  refused, by the page and by the daemon.
+
+Then comes the **Inputs and outputs** block, one scrolled column of inputs, outputs and services
+with the same choices as the diagram:
+
+- **Inputs**: the boundary inputs with their match against the bag, those not fed (not in the bag,
+  recorded with another type, without publisher) first, and after them the topics of the bag a
+  replay feeds beside the inputs (the runtime's `ambient_inputs` and the `companions` of the
+  inputs), which have no source to pick. Each input has a pulldown of its sources:
+  the bag topics of its type (any bag topic for an input of no design type), one recorded under
+  another name remapping it, and for an input the bag lacks, leaving it unfed or accepting it unfed.
+  "Accept unfed" at the head accepts every input not in the bag.
+- **Outputs**: the boundary outputs, recorded unless unchecked (`skip_outputs`), then the topics
+  internal to the scope, recorded once checked (`outputs`). The checkbox at the head clears every
+  topic, or checks them all once none is, so one click replays without recording.
+- **Services leaving the scope**: service ports whose other side is outside, unaccepted clients
+  first, each accepted once checked.
+
+Below them are the replay configuration these choices and the run options give (`scope`, `remap`,
+`accept`, `outputs`, `skip_outputs`, `lead_in`, `driver`), the one a run through the daemon gets,
+to copy or download as `replay.yaml`, and the pre-flight and replay commands on the mode's structure
+file with the bag path typed in the Bag field and the deploy of the top bar.
+
+With a daemon, "Read" reads the topics of the bag at the typed path (`replay.bag`), from its
+`metadata.yaml`, else from the storage file the path names; reading writes nothing into the bag. The Run
+block starts the replay as a job (`replay.start`): "Pre-flight" checks the bag against the boundary
+and stops, "Run replay" replays the scope, over the first seconds of the bag when a duration is
+given and with the outputs kept as the reference when asked. "Driver settings", folded under the run
+options, lists the driver settings of the runtime (`replay.settings`) with their descriptions; an
+empty field shows the default and leaves it to the run, a value goes into the run's configuration
+(`driver`). The block shows the selected replay
+job: its outcome (pre-flight passed or failed, outputs match or differ from the reference, no
+reference yet, saved as the reference), the counts of the run, the pre-flight and endpoint problems,
+the violations of the granted order, the topics that differ, the run directory and the job's log.
+
+`replay.bag` takes `path` (an absolute path or `file://` URI of the bag directory or one of its
+files; `invalid_params` for a relative one); its result names the `path`, the `storage`, the time
+span, the `topics` and where they were read from as `metadata` (`file` or `storage`).
+
+`replay.settings` gives the `driver` settings of the runtime: the `name`, `unit` (`s` or `count`),
+`description` and `default` of each.
+
+`replay.find` takes the `name` and `size` (bytes) of a bag file and `directories` to search, and
+gives the `path` of the newest such file under them, under the daemon's `--bag-dir` directories or
+under the replay logs of the log root, four levels deep at most. The page calls it for a file dropped or opened without a path, with the
+typed path and the directories of the bags it read by path before (kept by the browser), then reads
+the bag at the path found.
+
+`replay.start` takes `system`, `mode`, `bag`, `deploy`, `scope` (design paths), `remap` (recorded
+topic to fed topic), `accept`, `outputs`, `skip_outputs`, `lead_in`, `driver` (driver setting to
+value), `check`, `save_reference`, `duration` and `domain_id`. The
+daemon writes the configuration into a new run directory `<log root>/replay/<stamp>` and runs the
+replay command of the launch environment on it; one replay runs per daemon (`conflict` while one
+runs), and `jobs.cancel` ends it. The job's `detail` names the `run_dir` and, once the job ended,
+carries the pre-flight `problems`, the `fed` and `recorded` topics, the `result` counts and the
+`verdict` from the run's replay files. A replay shares its ROS domain with the units launched on the
+daemon, which would answer the scope's requests and feed its topics: while one is launched, a
+replay without a `domain_id` of its own answers `conflict` (a pre-flight starts no node and runs).
+
+`replay.setups` lists the saved setups (`<config root>/replay_setups`): their `name`, `modified`
+time, `system`, `mode` and `scope`, or the `error` of one that does not read. `replay.setup.get`,
+`replay.setup.save` (with the `setup`) and `replay.setup.delete` take its `name` (letters, digits,
+`_`, `.`, `-`). A setup holds `system`, `mode`, `deploy`,
+`bag`, `config` (the replay configuration: `scope`, `remap`, `accept`, `outputs`, `skip_outputs`,
+`lead_in`, `driver`), `inputs` (each boundary input to the bag topic it is fed from, `null` when accepted
+unfed), `recorded` (the outputs recorded) and `run` (`duration`, `domain_id`, `save_reference`).
+
+`fs.list` lists one directory for the path selectors: `path` (absolute; its nearest existing
+directory, else the home directory), `files` (list files too) and `hidden` (names starting with
+`.`). Its result names the `path`, the `parent`, whether the directory holds a rosbag (`bag`) and the
+`entries`, directories first, each directory with `bag`, each file with its `size`.
+
+`fs.list`, `replay.bag` and `replay.find` reach every directory and file the daemon's user can read:
+the daemon restricts them to no root, so whoever reaches it (its loopback port, or a forward to it)
+lists them.
+
+### Storage
+
+The daemon writes under two roots, each function in a subdirectory of its own:
+
+| Root        | Default                              | Subdirectories                                                |
+| ----------- | ------------------------------------ | ------------------------------------------------------------- |
+| log root    | `/tmp/autoware_system_designer_logs` | `launch/` launch runs, `replay/` replay runs                  |
+| config root | `~/.autoware/system_designer`        | `records/` measurement records, `replay_setups/` saved setups |
+
+A launch gets its run directory under `launch/` (the launcher's `--log-dir`) and the record root in
+`$AUTOWARE_SYSTEM_DESIGNER_RECORD_DIR`; `--record-dir` or that variable set for the daemon fixes the
+record root apart from the config root. The workbench settings show both roots and the
+subdirectories; a root is chosen with a path selector, or set back to its default, through
+`settings.set` (`log_root`, `config_root`: an absolute path,
+or empty for the default); `health` (`storage`) gives the same view. Roots set so are kept in the settings file
+(`$AUTOWARE_SYSTEM_DESIGNER_STUDIO_SETTINGS`, else `studio.yaml` of the user home,
+`$AUTOWARE_SYSTEM_DESIGNER_HOME` or `~/.autoware/system_designer`) and used at the next start;
+`--log-root` and `--config-root` win over it. The view also names the user's config directory and
+the files in it that override a config file of the runtime (`user_config_dir`, `config_overrides`).
+
 ### Launch
 
 `launch.start` runs the designer runtime launcher (`autoware-system-designer-launch`, found on the
@@ -283,8 +431,8 @@ The Logs view follows the selected node (a composable node through its container
 it is shown, keeps the followed log once the launcher ended and marks where it ended.
 
 A selector beside the Logs title shows a past launch instead of the live sessions. A run is
-a directory under the runtime's log base (`/tmp/autoware_system_designer_logs`, and the parents of
-the sessions' log directories) holding a `run.json`; a directory without one is not a run. The
+a directory under the launch logs of the log root (`<log root>/launch`, and the parents of the
+sessions' log directories) holding a `run.json`; a directory without one is not a run. The
 daemon lists the runs of the system that no active session is writing, newest first, labelled by
 start time, mode, deploy variant and compute unit from the manifest. A run is one runtime, so one
 compute unit. A session and its

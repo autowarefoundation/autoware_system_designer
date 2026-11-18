@@ -35,7 +35,7 @@
   SD.workbench.registerActivity({
     id: "explore",
     title: "Explore",
-    group: "Diagrams",
+    group: "Analyze",
     order: 10,
     daemon: false,
     inspector: true,
@@ -57,12 +57,15 @@
       const search = entitySearch(config, store, (id) => host.focus(id));
       const depth = depthSelector(config, store);
       const live = liveOverlay(config, store, host, () => main.hidden);
-      side.append(depth, search, live.element);
+      const sideBlocks = SD.widgets.sideSplit(side);
+      sideBlocks.top.append(depth, search.element, live.element);
+      sideBlocks.scroll.appendChild(search.results);
 
       function showDiagramOptions() {
         const current = store.get("diagram");
         const diagram = config.diagrams.find((d) => d.type === current);
-        search.hidden = !diagram?.searchable;
+        search.element.hidden = !diagram?.searchable;
+        sideBlocks.scroll.hidden = !diagram?.searchable;
         depth.hidden = !diagram?.layered;
       }
 

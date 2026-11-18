@@ -1,0 +1,410 @@
+# Copyright 2026 TIER IV, inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""The serve daemon reads a bag's topics and runs a replay as a job, with a fake replay command."""
+
+import json
+import os
+import stat
+import sys
+import time
+
+import pytest
+import yaml
+
+from .test_serve import PKG, SYSTEM, UNITS, _install_tree, _Running
+
+SYSTEM_ID = f"{PKG}:{SYSTEM}"
+
+# Writes the files of a replay into its --log-dir and exits with FAKE_REPLAY_EXIT.
+FAKE_REPLAY = f"""#!{sys.executable}
+import json, os, sys
+from pathlib import Path
+import yaml
+
+args = sys.argv[1:]
+run = Path(args[args.index("--log-dir") + 1])
+out = run / "replay"
+out.mkdir(parents=True, exist_ok=True)
+config = yaml.safe_load(Path(args[args.index("--config") + 1]).read_text())
+(out / "boundary.json").write_text(json.dumps({{"fed": {{"/in": "t"}}, "recorded": {{"/out": "t"}}, "problems": []}}))
+if "--check" not in args:
+    (out / "result.json").write_text(json.dumps({{"completed": True, "outputs": 3, "violations": [], "ignored": 1}}))
+    (out / "verdict.json").write_text(json.dumps({{"passed": True, "topics": [{{"topic": "/out", "status": "match"}}]}}))
+print("scope", ",".join(config["scope"]), flush=True)
+print('[12:00:00] replay - replay progress: {{"phase": "pre-process", "step": "launching"}}', flush=True)
+if "--check" not in args:
+    print('[12:00:01] replay - replay progress: {{"phase": "pre-process", "step": "up", "fraction": 1}}', flush=True)
+    print('[12:00:02] replay - replay progress: {{"phase": "replay", "step": "1 of 2 s", "fraction": 0.5}}', flush=True)
+sys.exit(int(os.environ.get("FAKE_REPLAY_EXIT", "0")))
+"""
+
+
+def _bag(root):
+    bag = root / "bag"
+    bag.mkdir()
+    (bag / "metadata.yaml").write_text(
+        "rosbag2_bagfile_information:\n"
+        "  storage_identifier: sqlite3\n"
+        "  starting_time: {nanoseconds_since_epoch: 1000}\n"
+        "  duration: {nanoseconds: 500}\n"
+        "  topics_with_message_count:\n"
+        "    - topic_metadata: {name: /in, type: std_msgs/msg/String, offered_qos_profiles: ''}\n"
+        "      message_count: 3\n"
+    )
+    return bag
+
+
+@pytest.fixture
+def served(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    command = bin_dir / "autoware-system-designer-replay"
+    command.write_text(FAKE_REPLAY)
+    command.chmod(command.stat().st_mode | stat.S_IXUSR)
+    running = _Running(
+        _install_tree(tmp_path, compute_units=UNITS),
+        served_units=["main_ecu"],
+        launch_env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "ROS_DISTRO": "test"},
+        log_root=tmp_path / "logs",
+        config_root=tmp_path / "config",
+        heartbeat_s=60,
+    )
+    yield running
+    running.close()
+
+
+def _call(running, method, params):
+    _, body = running.rpc({"id": 1, "method": method, "params": params})
+    return body
+
+
+def _finished(running, job_id, timeout=10.0):
+    job = running.daemon.jobs.get(job_id)
+    deadline = time.time() + timeout
+    # Done is set after the exit hook fills the summary; the final state is set before it.
+    while not job.done.is_set():
+        assert time.time() < deadline, f"{job_id} did not end"
+        time.sleep(0.02)
+    return job.to_view()
+
+
+def test_bag_topics_are_read_by_path(served, tmp_path):
+    body = _call(served, "replay.bag", {"path": str(_bag(tmp_path))})
+
+    assert body["ok"], body
+    assert body["result"]["topics"] == [{"name": "/in", "type": "std_msgs/msg/String", "count": 3}]
+    assert _call(served, "replay.bag", {"path": str(tmp_path / "none")})["error"]["code"] == "not_found"
+
+
+def test_bag_with_metadata_is_read_as_is_by_uri(served, tmp_path):
+    bag = _bag(tmp_path)
+
+    body = _call(served, "replay.bag", {"path": bag.as_uri()})
+
+    assert body["ok"], body
+    assert (body["result"]["metadata"], body["result"]["path"]) == ("file", str(bag))
+
+
+def test_a_bag_without_metadata_gets_none_written(served, tmp_path):
+    bag = tmp_path / "bare"
+    bag.mkdir()
+    (bag / "bare_0.mcap").write_bytes(b"")
+
+    body = _call(served, "replay.bag", {"path": str(bag)})
+
+    assert not body["ok"] and not (bag / "metadata.yaml").exists()
+
+
+@pytest.mark.parametrize("path", ["bags/run", "./run", "file:run"])
+def test_a_relative_bag_path_is_refused_by_name(served, path):
+    error = _call(served, "replay.bag", {"path": path})["error"]
+
+    assert error["code"] == "invalid_params" and error["message"] == f"the bag path must be absolute: {path}"
+    params = {"system": SYSTEM_ID, "mode": "Runtime", "bag": path, "scope": ["/a"]}
+    assert _call(served, "replay.start", params)["error"] == error
+
+
+def test_driver_settings_are_listed_with_their_defaults(served):
+    settings = _call(served, "replay.settings", {})["result"]["driver"]
+
+    assert {"name", "unit", "description", "category", "default"} <= set(settings[0])
+    assert {"callback_timeout", "process_grants"} <= {setting["name"] for setting in settings}
+
+
+def test_a_bag_file_is_found_by_name_and_size(served, tmp_path):
+    storage = tmp_path / "bags" / "day" / "run" / "run_0.mcap"
+    storage.parent.mkdir(parents=True)
+    storage.write_bytes(b"12345")
+    (tmp_path / "bags" / "run_0.mcap").write_bytes(b"1234")
+    find = {"name": "run_0.mcap", "size": 5, "directories": [str(tmp_path / "bags")]}
+
+    assert _call(served, "replay.find", find)["result"] == {"path": str(storage)}
+    assert _call(served, "replay.find", {**find, "size": 6})["error"]["code"] == "not_found"
+    assert _call(served, "replay.find", {**find, "directories": []})["error"]["code"] == "not_found"
+    assert _call(served, "replay.find", {**find, "name": "day/run_0.mcap"})["error"]["code"] == "invalid_params"
+
+    served.daemon.bag_dirs = [tmp_path / "bags" / "day"]
+    assert _call(served, "replay.find", {**find, "directories": []})["result"] == {"path": str(storage)}
+
+
+def test_a_recorded_bag_file_is_found_under_the_replay_logs(served):
+    storage = served.daemon.storage.replay_logs / "20260101_000000" / "replay" / "outputs" / "outputs_0.db3"
+    storage.parent.mkdir(parents=True)
+    storage.write_bytes(b"12345")
+    find = {"name": "outputs_0.db3", "size": 5, "directories": []}
+
+    assert _call(served, "replay.find", find)["result"] == {"path": str(storage)}
+
+
+def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_path):
+    params = {
+        "system": SYSTEM_ID,
+        "mode": "Runtime",
+        "bag": str(_bag(tmp_path)),
+        "deploy": "car_a",
+        "scope": ["/perception"],
+        "remap": {"/raw": "/in"},
+        "accept": ["/map"],
+        "skip_outputs": ["/debug"],
+        "start": 4,
+        "duration": 2.5,
+        "lead_in": 0.5,
+        "driver": {"callback_timeout": 60, "miss_limit": 5},
+        "domain_id": 7,
+        "save_reference": True,
+    }
+
+    body = _call(served, "replay.start", params)
+
+    assert body["ok"], body
+    job = body["result"]
+    assert (job["kind"], job["key"]) == ("replay", "replay")
+    argv = job["argv"]
+    assert argv[1].endswith("system_structure/Runtime.json")
+    assert argv[argv.index("--deploy") + 1] == "car_a"
+    assert argv[argv.index("--duration") + 1] == "2.5" and argv[argv.index("--domain-id") + 1] == "7"
+    assert argv[argv.index("--start") + 1] == "4"
+    assert "--save-reference" in argv and "--check" not in argv
+    run_dir = tmp_path / "logs" / "replay" / os.path.basename(job["detail"]["run_dir"])
+    assert yaml.safe_load((run_dir / "replay.yaml").read_text()) == {
+        "scope": ["/perception"],
+        "remap": {"/raw": "/in"},
+        "accept": ["/map"],
+        "outputs": [],
+        "skip_outputs": ["/debug"],
+        "lead_in": 0.5,
+        "driver": {"callback_timeout": 60, "miss_limit": 5},
+    }
+
+    done = _finished(served, job["id"])
+    assert done["state"] == "succeeded"
+    assert done["detail"]["fed"] == ["/in"] and done["detail"]["recorded"] == ["/out"]
+    assert done["detail"]["result"]["completed"] is True and "ignored" not in done["detail"]["result"]
+    assert done["detail"]["verdict"]["passed"] is True
+    assert done["detail"]["progress"] == {"phase": "replay", "step": "1 of 2 s", "fraction": 0.5}
+    assert done["detail"]["phases"] == {"pre-process": 1.0, "replay": 0.5}
+
+
+def test_pre_flight_passes_check_and_writes_no_result(served, tmp_path):
+    body = _call(
+        served,
+        "replay.start",
+        {"system": SYSTEM_ID, "mode": "Runtime", "bag": str(_bag(tmp_path)), "scope": ["/a"], "check": True},
+    )
+
+    assert "--check" in body["result"]["argv"]
+    done = _finished(served, body["result"]["id"])
+    assert done["detail"]["problems"] == [] and "result" not in done["detail"]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"scope": []},
+        {"scope": ["relative"]},
+        {"remap": {"/a": "b"}},
+        {"driver": {"unknown": 1}},
+        {"driver": {"callback_timeout": -1}},
+        {"driver": {"miss_limit": 0}},
+        {"driver": {"miss_limit": 1.5}},
+        {"driver": ["callback_timeout"]},
+        {"duration": 0},
+        {"domain_id": 500},
+        {"check": "yes"},
+        {"mode": "Nope"},
+        {"deploy": "unknown"},
+        {"bag": ""},
+    ],
+)
+def test_replay_refuses_invalid_requests(served, tmp_path, change):
+    params = {"system": SYSTEM_ID, "mode": "Runtime", "bag": str(tmp_path / "bag"), "scope": ["/a"], **change}
+
+    assert _call(served, "replay.start", params)["error"]["code"] == "invalid_params"
+
+
+def test_replay_is_unavailable_without_a_ros_environment(tmp_path):
+    running = _Running(
+        _install_tree(tmp_path, compute_units=UNITS),
+        launch_env={**os.environ, "ROS_DISTRO": ""},
+        heartbeat_s=60,
+    )
+    try:
+        body = _call(running, "replay.start", {"system": SYSTEM_ID, "mode": "Runtime", "bag": "/b", "scope": ["/a"]})
+    finally:
+        running.close()
+
+    assert body["error"]["code"] == "unavailable"
+
+
+def test_storage_roots_give_the_subdirectories_and_are_kept_in_the_settings_file(served, tmp_path):
+    storage = _call(served, "health", {})["result"]["storage"]
+    assert storage["dirs"] == {
+        "launch_logs": str(tmp_path / "logs" / "launch"),
+        "replay_logs": str(tmp_path / "logs" / "replay"),
+        "records": str(tmp_path / "config" / "records"),
+        "replay_setups": str(tmp_path / "config" / "replay_setups"),
+    }
+
+    changed = _call(served, "settings.set", {"log_root": str(tmp_path / "other_logs"), "config_root": ""})
+    assert changed["ok"], changed
+    assert changed["result"]["dirs"]["replay_logs"] == str(tmp_path / "other_logs" / "replay")
+    assert changed["result"]["config_root"] == changed["result"]["defaults"]["config_root"]
+    assert served.daemon.records.record_root == served.daemon.storage.records
+    assert (tmp_path / "studio.yaml").read_text() == f"log_root: {tmp_path / 'other_logs'}\n"
+    assert _call(served, "health", {})["result"]["storage"] == changed["result"]
+    assert _call(served, "settings.set", {"log_root": "relative"})["error"]["code"] == "invalid_params"
+    assert _call(served, "settings.set", {})["error"]["code"] == "invalid_params"
+
+    body = _call(
+        served,
+        "replay.start",
+        {"system": SYSTEM_ID, "mode": "Runtime", "bag": str(_bag(tmp_path)), "scope": ["/a"], "check": True},
+    )
+    assert os.path.dirname(body["result"]["detail"]["run_dir"]) == str(tmp_path / "other_logs" / "replay")
+    _finished(served, body["result"]["id"])
+
+
+SETUP = {
+    "system": SYSTEM_ID,
+    "mode": "Runtime",
+    "deploy": "car_a",
+    "bag": "/bags/run",
+    "config": {
+        "scope": ["/perception"],
+        "remap": {"/raw": "/in"},
+        "skip_outputs": ["/debug"],
+        "lead_in": 0.5,
+        "driver": {"startup_settle": 4},
+    },
+    "inputs": {"/in": "/raw", "/map": None},
+    "recorded": ["/objects"],
+    "run": {"duration": 2.5, "save_reference": False},
+}
+
+
+def test_setups_are_saved_listed_loaded_and_deleted(served, tmp_path):
+    where = {}
+    directory = tmp_path / "config" / "replay_setups"
+
+    assert _call(served, "replay.setups", where)["result"] == {"dir": str(directory), "setups": []}
+    saved = _call(served, "replay.setup.save", {**where, "name": "perception-a", "setup": SETUP})
+    assert saved["ok"], saved
+    assert saved["result"]["path"] == str(directory / "perception-a.yaml")
+
+    listed = _call(served, "replay.setups", where)["result"]["setups"]
+    assert [(s["name"], s["mode"], s["scope"]) for s in listed] == [("perception-a", "Runtime", ["/perception"])]
+    loaded = _call(served, "replay.setup.get", {**where, "name": "perception-a"})["result"]["setup"]
+    assert loaded["config"] == {
+        "scope": ["/perception"],
+        "remap": {"/raw": "/in"},
+        "accept": [],
+        "outputs": [],
+        "skip_outputs": ["/debug"],
+        "lead_in": 0.5,
+        "driver": {"startup_settle": 4},
+    }
+    assert loaded["run"] == {"duration": 2.5, "save_reference": False}
+    assert (loaded["bag"], loaded["deploy"]) == ("/bags/run", "car_a")
+    assert (loaded["inputs"], loaded["recorded"]) == ({"/in": "/raw", "/map": None}, ["/objects"])
+
+    assert _call(served, "replay.setup.delete", {**where, "name": "perception-a"})["ok"]
+    assert _call(served, "replay.setup.get", {**where, "name": "perception-a"})["error"]["code"] == "not_found"
+
+
+def test_an_unreadable_setup_is_listed_with_its_error(served, tmp_path):
+    directory = tmp_path / "config" / "replay_setups"
+    directory.mkdir(parents=True)
+    (directory / "broken.yaml").write_text("config: {scope: []}\n")
+
+    listed = _call(served, "replay.setups", {})["result"]["setups"]
+
+    assert [s["name"] for s in listed] == ["broken"] and "scope is required" in listed[0]["error"]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"name": "../escape", "setup": SETUP},
+        {"name": "", "setup": SETUP},
+        {"name": "a", "setup": {**SETUP, "extra": 1}},
+        {"name": "a", "setup": {**SETUP, "config": {"scope": []}}},
+        {"name": "a", "setup": {**SETUP, "config": {"scope": ["/a"], "compare": {}}}},
+        {"name": "a", "setup": {**SETUP, "config": {"scope": ["/a"], "driver": {"gate_hold": "long"}}}},
+        {"name": "a", "setup": {**SETUP, "run": {"duration": 0}}},
+        {"name": "a", "setup": {**SETUP, "run": {"check": True}}},
+        {"name": "a", "setup": {**SETUP, "inputs": {"/in": "raw"}}},
+        {"name": "a", "setup": {**SETUP, "inputs": ["/in"]}},
+        {"name": "a", "setup": {**SETUP, "recorded": ["objects"]}},
+    ],
+)
+def test_setups_refuse_invalid_saves(served, tmp_path, params):
+    assert _call(served, "replay.setup.save", params)["error"]["code"] == "invalid_params"
+
+
+def test_directories_are_listed_for_the_path_selectors(served, tmp_path):
+    root = tmp_path / "browse"
+    (root / "bags" / "run_0").mkdir(parents=True)
+    (root / "bags" / "run_0" / "run_0.mcap").write_bytes(b"12")
+    (root / "bags" / "notes.txt").write_text("")
+    (root / ".hidden").mkdir()
+
+    listed = _call(served, "fs.list", {"path": str(root)})["result"]
+    assert listed["path"] == str(root) and listed["parent"] == str(tmp_path)
+    assert listed["entries"] == [{"name": "bags", "dir": True, "bag": False}]
+    hidden = _call(served, "fs.list", {"path": str(root), "hidden": True})["result"]
+    assert [e["name"] for e in hidden["entries"]] == [".hidden", "bags"]
+
+    bags = _call(served, "fs.list", {"path": str(root / "bags" / "gone" / "deeper"), "files": True})["result"]
+    assert bags["path"] == str(root / "bags")
+    assert bags["entries"] == [
+        {"name": "run_0", "dir": True, "bag": True},
+        {"name": "notes.txt", "dir": False, "size": 0},
+    ]
+    assert _call(served, "fs.list", {"path": str(root / "bags" / "run_0")})["result"]["bag"] is True
+    assert _call(served, "fs.list", {"path": "relative"})["error"]["code"] == "invalid_params"
+
+
+def test_a_run_directory_held_by_another_run_is_not_written(tmp_path):
+    from autoware_system_designer_studio.serve.replay import ReplayPlan, write_config
+
+    run_dir = tmp_path / "replay" / "20260101_000000"
+    run_dir.mkdir(parents=True)
+    (run_dir / "result.json").write_text("{}")
+    plan = ReplayPlan(argv=(), run_dir=run_dir, config={"scope": ["/a"]}, title="t", params={})
+
+    with pytest.raises(FileExistsError):
+        write_config(plan)
+
+    assert sorted(p.name for p in run_dir.iterdir()) == ["result.json"]

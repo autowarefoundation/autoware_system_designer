@@ -18,6 +18,17 @@
     return group;
   }
 
+  // Divides a side-panel slot or a side pane in two blocks: `top` keeps its place, `scroll`
+  // below it takes the height left and scrolls. The lower block shows while
+  // it holds a shown child.
+  function sideSplit(side) {
+    side.classList.add("side-split");
+    const top = element("div", "side-split-top");
+    const scroll = element("div", "side-split-scroll");
+    side.append(top, scroll);
+    return { top, scroll };
+  }
+
   // Single-choice list of [value, label] pairs; `onSelect(value)` runs on a click, `mark` shows the choice.
   function list(items, onSelect) {
     const group = element("div", "panel-list");
@@ -107,6 +118,7 @@
   SD.widgets = {
     element,
     section,
+    sideSplit,
     list,
     boundSelect,
     setOptions,

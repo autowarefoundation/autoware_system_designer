@@ -21,6 +21,8 @@ setup(
     name=package_name,
     version="0.5.0",
     packages=find_packages(exclude=["test"]),
+    # Default configuration files read from the package directory.
+    package_data={package_name: ["config/*.yaml"]},
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
@@ -30,6 +32,7 @@ setup(
             [
                 "scripts/autoware-system-designer-launch",
                 "scripts/autoware-system-designer-measure-analyze",
+                "scripts/autoware-system-designer-replay",
             ],
         ),
     ],
@@ -44,6 +47,7 @@ setup(
         "console_scripts": [
             "autoware-system-designer-launch = autoware_system_designer_runtime.system_runner:main",
             "autoware-system-designer-measure-analyze = autoware_system_designer_runtime.measure_analyze:main",
+            "autoware-system-designer-replay = autoware_system_designer_runtime.replay:main",
         ],
     },
 )
