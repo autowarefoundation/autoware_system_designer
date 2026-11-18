@@ -1,4 +1,4 @@
-autoware_system_design_format: 0.5.0
+autoware_system_design_format: 0.4.0
 
 name: TypeAlpha.system
 
@@ -23,14 +23,6 @@ modes:
     default: true
   - name: simulation
     description: Simulation mode
-
-compute_units:
-  - name: sensing_perception
-    description: Sensing and perception.
-  - name: map_localization
-    description: Map, localization and vehicle interface.
-  - name: planning_control
-    description: Planning and control.
 
 components:
   - name: sensing
