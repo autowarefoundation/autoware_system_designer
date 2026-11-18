@@ -855,7 +855,6 @@ select.replay-selector-source {
   word-break: break-all;
 }
 
-.replay-run-options,
 .replay-run-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -875,37 +874,157 @@ select.replay-selector-source {
   width: 110px;
 }
 
-.replay-run-driver {
+.replay-run-span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   font-size: 12px;
   color: var(--text-secondary);
 }
 
-.replay-run-driver > summary {
+.replay-span-brush {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+  height: 22px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.replay-span-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--highlight) 22%, transparent);
+  border-inline: 1px solid var(--highlight);
+  cursor: grab;
+}
+
+.replay-span-brush.dragging,
+.replay-span-brush.dragging .replay-span-range {
+  cursor: grabbing;
+}
+
+.replay-span-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  cursor: ew-resize;
+}
+
+.replay-span-handle:first-child {
+  left: -5px;
+}
+
+.replay-span-handle:last-child {
+  right: -5px;
+}
+
+.replay-span-handle::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 3px;
+  width: 3px;
+  background: var(--highlight);
+  border-radius: 2px;
+}
+
+.replay-span-handle:focus-visible {
+  outline: 2px solid var(--highlight);
+}
+
+/* A bag of unknown length takes no brushing. */
+.replay-span-brush.unknown {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.replay-span-brush.unknown .replay-span-range {
+  cursor: default;
+}
+
+.replay-span-brush.unknown .replay-span-handle {
+  display: none;
+}
+
+.replay-span-ends {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.replay-span-ends .replay-run-number {
+  width: 80px;
+}
+
+.replay-span-note {
+  font-family: var(--mono-font);
+  white-space: nowrap;
+}
+
+.replay-run-settings {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.replay-run-settings > summary {
   cursor: pointer;
   user-select: none;
 }
 
-.replay-run-driver > summary .replay-block-count {
+.replay-run-settings > summary .replay-block-count {
   margin-left: 8px;
 }
 
-.replay-run-driver-list {
-  display: grid;
-  grid-template-columns: max-content 110px minmax(0, 1fr);
-  gap: 4px 12px;
-  align-items: center;
+.replay-run-setting-groups {
+  columns: 2 340px;
+  column-gap: 28px;
   margin-top: 6px;
 }
 
-.replay-run-driver-row {
-  display: contents;
+.replay-run-setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  break-inside: avoid;
 }
 
-.replay-run-driver-name {
+.replay-run-setting-title {
+  margin: 0;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.replay-run-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 12px;
+  align-items: center;
+}
+
+.replay-run-setting-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.replay-run-setting-name {
   font-family: var(--mono-font);
 }
 
-.replay-run-driver-note {
+.replay-run-setting-note {
   color: var(--text-muted);
 }
 

@@ -375,6 +375,11 @@ body.side-panel-collapsed #side-panel-resizer {
   padding: 14px 16px;
 }
 
+.side-panel-section.side-split {
+  box-sizing: border-box;
+  height: 100%;
+}
+
 /* Main area: one view per activity */
 #main-area {
   display: flex;

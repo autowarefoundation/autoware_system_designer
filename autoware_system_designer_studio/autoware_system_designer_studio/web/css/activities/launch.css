@@ -322,9 +322,16 @@
 
 /* Logs view: member tree beside the selected member's log */
 .monitor-tree {
-  gap: 8px;
   width: 300px;
+}
+
+.monitor-tree > .side-split-top {
+  gap: 8px;
   padding: 10px;
+}
+
+.monitor-tree > .side-split-scroll {
+  padding: 8px 10px;
 }
 
 .member-head .main-view-title {
@@ -360,6 +367,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  margin-top: 8px;
 }
 
 .monitor-run-extras-title {
@@ -423,9 +431,10 @@
 .monitor-legend {
   display: flex;
   flex-wrap: wrap;
+  flex-shrink: 0;
   gap: 4px 10px;
   margin-top: auto;
-  padding-top: 6px;
+  padding: 6px 10px 10px;
   border-top: 1px solid var(--border-color);
   font-size: 11px;
   color: var(--text-muted);

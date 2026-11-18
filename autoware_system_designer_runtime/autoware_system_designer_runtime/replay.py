@@ -143,6 +143,8 @@ class ReplayOptions:
     # Launch the scope, compare its real endpoints with the design and stop; needs no bag.
     check_endpoints: bool = False
     allow_undeclared: bool = False
+    # Seconds from the bag's start the replay begins at.
+    start: float = 0.0
     duration: Optional[float] = None
     warmup: float = 0.0
     seed: Optional[int] = None
@@ -386,6 +388,7 @@ def _prepare(json_path: str, options: ReplayOptions) -> _Plan:
                 "inputs": {topic: bag.topics[topic].source for topic in sorted(fed)},
                 "outputs": sorted(recorded_types),
                 "duration": options.duration,
+                **({"start": options.start} if options.start else {}),
                 "lead_in": config.lead_in,
                 "seed": options.seed,
                 "free_wall_timers": options.free_wall_timers,
@@ -393,7 +396,7 @@ def _prepare(json_path: str, options: ReplayOptions) -> _Plan:
         )
         if reference_dir is None:
             reference_dir = ref.reference_dir(Path(json_path), mode, ref.reference_key(key_inputs))
-    start_ns = bag.start_ns if bag is not None else time.time_ns()
+    start_ns = bag.start_ns + int(options.start * 1e9) if bag is not None else time.time_ns()
     return _Plan(
         json_path=json_path,
         payload=payload,
@@ -498,8 +501,11 @@ def _source(plan: _Plan):
     if bag is None:
         return _NoSource()
     source = BagMessages(bag, sorted(fed))
+    latched = {t for t in fed if bag.topics[t].transient_local}
+    if plan.start_ns > bag.start_ns:
+        # Of the span before the replay's start, what a latched topic still holds at it.
+        source = LeadIn(source, plan.start_ns, latched.intersection(special_topics().ambient_inputs), latched)
     if plan.config.lead_in > 0:
-        latched = {t for t in fed if bag.topics[t].transient_local}
         lead_in_end = plan.start_ns + int(plan.config.lead_in * 1e9)
         return LeadIn(source, lead_in_end, special_topics().ambient_inputs, latched)
     return source
@@ -799,7 +805,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run although a member subscribes to a topic its design does not declare.",
     )
     run = parser.add_argument_group("run")
-    run.add_argument("--duration", type=float, default=None, metavar="S", help="Replay the first S seconds of the bag.")
+    run.add_argument(
+        "--start",
+        type=float,
+        default=0.0,
+        metavar="S",
+        help="Begin S seconds after the bag's start; the last message of each latched topic before it is fed.",
+    )
+    run.add_argument("--duration", type=float, default=None, metavar="S", help="Replay S seconds from the start.")
     run.add_argument(
         "--tie-break-seed",
         type=int,
@@ -876,6 +889,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.bag is None and not args.check_endpoints:
         parser.error("--bag is required unless --check-endpoints is given")
+    if args.start < 0:
+        parser.error("--start takes zero or more seconds")
     try:
         remap = _parse_remaps(args.remap)
         driver = _parse_driver(args.driver)
@@ -899,6 +914,7 @@ def main() -> None:
                 check_only=args.check,
                 check_endpoints=args.check_endpoints,
                 allow_undeclared=args.allow_undeclared,
+                start=args.start,
                 duration=args.duration,
                 warmup=args.warmup,
                 seed=args.tie_break_seed,

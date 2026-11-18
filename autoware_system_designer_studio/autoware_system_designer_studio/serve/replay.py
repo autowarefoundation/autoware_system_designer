@@ -69,7 +69,7 @@ SETUP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SETUP_SUFFIX = ".yaml"
 SETUP_KEYS = ("system", "mode", "deploy", "bag", "config", "inputs", "recorded", "run")
 SETUP_CONFIG_KEYS = ("scope", "remap", "accept", "outputs", "skip_outputs", "lead_in", "driver")
-SETUP_RUN_KEYS = ("duration", "domain_id", "save_reference")
+SETUP_RUN_KEYS = ("start", "duration", "domain_id", "save_reference")
 # Levels below a bag directory a file search descends, and the directories it visits at most.
 FIND_DEPTH = 4
 FIND_DIRECTORIES = 20000
@@ -242,6 +242,7 @@ def plan_replay(
     save_reference = params.get("save_reference", False)
     if not isinstance(check, bool) or not isinstance(save_reference, bool):
         raise api.ApiError(api.INVALID_PARAMS, "check and save_reference must be booleans")
+    start = _seconds(params, "start", positive=False)
     duration = _seconds(params, "duration", positive=True)
     domain_id = _domain_id(params)
     run_dir = _new_run_dir(log_base or LOG_BASE / REPLAY_LOGS)
@@ -261,6 +262,8 @@ def plan_replay(
         argv.append("--check")
     if save_reference:
         argv.append("--save-reference")
+    if start:
+        argv += ["--start", f"{start:g}"]
     if duration is not None:
         argv += ["--duration", f"{duration:g}"]
     if domain_id is not None:
@@ -278,6 +281,7 @@ def plan_replay(
             **config,
             "check": check,
             "save_reference": save_reference,
+            "start": start,
             "duration": duration,
             "domain_id": domain_id,
         },
@@ -377,6 +381,7 @@ def check_setup(setup: Any) -> dict[str, Any]:
     run = setup.get("run") or {}
     if not isinstance(run, Mapping) or set(run) - set(SETUP_RUN_KEYS):
         raise api.ApiError(api.INVALID_PARAMS, f"setup: run takes the keys {', '.join(SETUP_RUN_KEYS)}")
+    _seconds(run, "start", positive=False)
     _seconds(run, "duration", positive=True)
     _domain_id(run)
     if not isinstance(run.get("save_reference", False), bool):

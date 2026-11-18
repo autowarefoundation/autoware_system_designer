@@ -139,7 +139,7 @@ def test_a_relative_bag_path_is_refused_by_name(served, path):
 def test_driver_settings_are_listed_with_their_defaults(served):
     settings = _call(served, "replay.settings", {})["result"]["driver"]
 
-    assert {"name", "unit", "description", "default"} <= set(settings[0])
+    assert {"name", "unit", "description", "category", "default"} <= set(settings[0])
     assert {"callback_timeout", "process_grants"} <= {setting["name"] for setting in settings}
 
 
@@ -169,6 +169,7 @@ def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_pat
         "remap": {"/raw": "/in"},
         "accept": ["/map"],
         "skip_outputs": ["/debug"],
+        "start": 4,
         "duration": 2.5,
         "lead_in": 0.5,
         "driver": {"callback_timeout": 60, "miss_limit": 5},
@@ -185,6 +186,7 @@ def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_pat
     assert argv[1].endswith("system_structure/Runtime.json")
     assert argv[argv.index("--deploy") + 1] == "car_a"
     assert argv[argv.index("--duration") + 1] == "2.5" and argv[argv.index("--domain-id") + 1] == "7"
+    assert argv[argv.index("--start") + 1] == "4"
     assert "--save-reference" in argv and "--check" not in argv
     run_dir = tmp_path / "logs" / "replay" / os.path.basename(job["detail"]["run_dir"])
     assert yaml.safe_load((run_dir / "replay.yaml").read_text()) == {

@@ -21,7 +21,7 @@
     const head = element("div", "replay-scope-head");
     head.append(summary, clear);
     const tree = element("div", "ns-tree");
-    const group = section("Scope", input, head, tree);
+    const group = section("Scope", input, head);
 
     let root = null;
     const expanded = new Set();
@@ -83,7 +83,8 @@
 
     input.addEventListener("input", render);
     clear.addEventListener("click", () => selection.clear());
-    return { element: group, setStructure, render };
+    // `element` holds the filter and the count, `list` the tree itself.
+    return { element: group, list: tree, setStructure, render };
   }
 
   replay.scopeTree = scopeTree;

@@ -15,7 +15,7 @@
     const results = element("div", "search-results");
     results.hidden = true;
     results.append(summary, tree);
-    const group = section("Search", input, results);
+    const group = section("Search", input);
 
     let root = null;
     let selectedPath = "";
@@ -67,7 +67,8 @@
       loadMode().catch((error) => console.warn("explore search:", error));
     store.onChange("mode", reload);
     reload();
-    return group;
+    // `element` holds the search field, `results` the matches.
+    return { element: group, results };
   }
 
   explore.entitySearch = entitySearch;

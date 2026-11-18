@@ -329,7 +329,9 @@
       },
       clear: () => setSelected(new Set()),
     });
-    side.append(setupSlot, tree.element);
+    const sideBlocks = SD.widgets.sideSplit(side);
+    sideBlocks.top.append(setupSlot, tree.element);
+    sideBlocks.scroll.appendChild(tree.list);
 
     // -- main: the diagram, the boundary and the run, a zone each ---------
     const view = mainView({ title: "Replay scope" });
@@ -389,7 +391,7 @@
     boundaryLists.append(selectorBlock, services.element);
     boundaryZone.body.appendChild(boundaryLists);
 
-    const panel = runPanel(daemon, () => request);
+    const panel = runPanel(daemon, () => request, bag.span);
     const commands = commandsPopup(() => ({
       configuration: configuration(),
       args: shown.args,

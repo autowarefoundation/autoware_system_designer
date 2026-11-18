@@ -72,30 +72,46 @@ class DriverSetting:
     name: str
     unit: str
     description: str
+    # Part of a run the setting belongs to; settings are listed grouped by it.
+    category: str
 
 
 DRIVER_SETTINGS = (
-    DriverSetting("startup_timeout", SECONDS, "The scope has to be up within it."),
-    DriverSetting("startup_settle", SECONDS, "The scope is up once no endpoint was created for this long."),
-    DriverSetting("match_timeout", SECONDS, "Publishers have this long to match the subscriptions of the scope."),
-    DriverSetting("callback_timeout", SECONDS, "A granted callback has to return within it."),
+    DriverSetting("startup_timeout", SECONDS, "The scope has to be up within it.", "startup"),
+    DriverSetting("startup_settle", SECONDS, "The scope is up once no endpoint was created for this long.", "startup"),
     DriverSetting(
-        "nested_after", SECONDS, "Wall time a callback runs before the nested callbacks of its process run beside it."
+        "match_timeout", SECONDS, "Publishers have this long to match the subscriptions of the scope.", "startup"
+    ),
+    DriverSetting("callback_timeout", SECONDS, "A granted callback has to return within it.", "callbacks"),
+    DriverSetting(
+        "nested_after",
+        SECONDS,
+        "Wall time a callback runs before the nested callbacks of its process run beside it.",
+        "callbacks",
     ),
     DriverSetting(
         "delivery_timeout",
         SECONDS,
         "A published message has this long to show as work, a due timer to become ready, a publish to be recorded.",
+        "delivery",
     ),
     DriverSetting(
-        "burst_settle", SECONDS, "Pause before a callback whose subscription holds several messages in flight."
+        "burst_settle",
+        SECONDS,
+        "Pause before a callback whose subscription holds several messages in flight.",
+        "delivery",
     ),
     DriverSetting(
-        "miss_limit", COUNT, "A subscription that missed this many deliveries in a row is no longer waited for."
+        "miss_limit",
+        COUNT,
+        "A subscription that missed this many deliveries in a row is no longer waited for.",
+        "delivery",
     ),
-    DriverSetting("gate_hold", SECONDS, "Longest stay of an executor in its wait with ready work and no grant."),
-    DriverSetting("take_timeout", SECONDS, "A take waits this long for a message in flight."),
-    DriverSetting("process_grants", COUNT, "Threads of a process that hold a grant at once."),
+    DriverSetting(
+        "gate_hold", SECONDS, "Longest stay of an executor in its wait with ready work and no grant.", "gate"
+    ),
+    DriverSetting("take_timeout", SECONDS, "A take waits this long for a message in flight.", "gate"),
+    DriverSetting("process_grants", COUNT, "Threads of a process that hold a grant at once.", "gate"),
 )
 
 
@@ -250,13 +266,14 @@ def _parse_defaults(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def driver_settings() -> list[dict[str, Any]]:
-    """Every driver setting with its unit, description and default value."""
+    """Every driver setting with its unit, description, category and default value."""
     defaults = _defaults()["driver"]
     return [
         {
             "name": setting.name,
             "unit": setting.unit,
             "description": setting.description,
+            "category": setting.category,
             "default": defaults[setting.name],
         }
         for setting in DRIVER_SETTINGS

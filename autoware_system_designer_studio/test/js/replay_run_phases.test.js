@@ -25,7 +25,8 @@ require(
     "run_panel.js",
   ),
 );
-const { phaseStates } = global.window.SD.activities.replay;
+const { phaseStates, spanEnds, spanOptions } =
+  global.window.SD.activities.replay;
 
 function states(job) {
   return phaseStates(job).map(({ phase, state, width }) => [
@@ -97,4 +98,14 @@ test("a pre-flight has its pre-process only", () => {
     check: true,
   });
   assert.deepEqual(states(passed), [["pre-process", "done", 1]]);
+});
+
+test("a span gives the start and the duration of a run", () => {
+  assert.deepEqual(spanOptions(spanEnds(0, null, 60)), {});
+  assert.deepEqual(spanOptions(spanEnds(12.34, 45, 60)), {
+    start: 12.3,
+    duration: 32.7,
+  });
+  assert.deepEqual(spanOptions(spanEnds(5, 80, 60)), { start: 5 });
+  assert.deepEqual(spanEnds(50, 20, 60), { from: 19.9, to: 20 });
 });

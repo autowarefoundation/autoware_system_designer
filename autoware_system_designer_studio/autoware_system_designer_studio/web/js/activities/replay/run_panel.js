@@ -169,50 +169,290 @@
     return input;
   }
 
-  // The driver settings of the runtime, folded: each with its description and
-  // an input that shows the default while empty. A setting left empty takes
-  // the default of the run.
-  function driverSettings(daemon) {
-    const root = element("details", "replay-run-driver");
+  // Seconds of a span are kept to this step.
+  const SPAN_STEP = 0.1;
+  const snap = (seconds) => Math.round(seconds / SPAN_STEP) * SPAN_STEP;
+  const tenths = (seconds) => String(Number(seconds.toFixed(1)));
+
+  // Ends of a span as seconds from the bag's start: `from` at zero or more,
+  // `to` after it or null for the bag's end, both within `length` when known.
+  function spanEnds(from, to, length = null) {
+    const limit = length ?? Infinity;
+    const open = to === null || to === undefined || to === "";
+    const end = open
+      ? limit
+      : Math.min(Math.max(snap(Number(to)), SPAN_STEP), limit);
+    const start = Math.min(
+      Math.max(snap(Number(from) || 0), 0),
+      Math.max(end - SPAN_STEP, 0),
+    );
+    return { from: start, to: end >= limit ? null : end };
+  }
+
+  // Run options { start, duration } of a span; a span of the whole bag gives none.
+  function spanOptions({ from, to }) {
+    const options = {};
+    if (from > 0) options.start = Number(from.toFixed(1));
+    if (to !== null) options.duration = Number((to - from).toFixed(1));
+    return options;
+  }
+
+  function clock(ns) {
+    const d = new Date(ns / 1e6);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  // The replayed span of the bag: a brush over the bag's length with an end
+  // handle each side, and the two ends as seconds from the bag's start.
+  // `bagSpan()` gives { startNs, durationNs } of the bag or null; without it
+  // the ends are typed.
+  function spanTimeline(bagSpan) {
+    const root = element("div", "replay-run-span");
+    const brush = element("div", "replay-span-brush");
+    const range = element("div", "replay-span-range");
+    const handle = (label) => {
+      const node = element("div", "replay-span-handle");
+      node.tabIndex = 0;
+      node.setAttribute("role", "slider");
+      node.setAttribute("aria-label", label);
+      return node;
+    };
+    const fromHandle = handle("Span start");
+    const toHandle = handle("Span end");
+    range.append(fromHandle, toHandle);
+    brush.appendChild(range);
+    const fromInput = numberInput("0", "0", "any");
+    const toInput = numberInput("end", "0", "any");
+    fromInput.setAttribute("aria-label", "Span start in seconds");
+    toInput.setAttribute("aria-label", "Span end in seconds");
+    const ends = element("span", "replay-span-ends");
+    ends.append(fromInput, "–", toInput, "s");
+    const note = element("span", "replay-span-note");
+    const whole = element("button", "panel-button", "Whole bag");
+    whole.type = "button";
+    root.append(
+      element("span", "replay-span-label", "Span"),
+      brush,
+      ends,
+      note,
+      whole,
+    );
+
+    // The span shown, and the brush gesture under way: { anchor } stretches
+    // the span from a fixed second, { grab, from, to } shifts it whole. A span
+    // of the whole bag has no room to shift; a press on it anchors a new one.
+    let span = { from: 0, to: null };
+    let drag = null;
+
+    const length = () => {
+      const bag = bagSpan();
+      return bag ? bag.durationNs / 1e9 : null;
+    };
+
+    function render() {
+      const bag = bagSpan();
+      const total = length();
+      const to = span.to ?? total;
+      brush.classList.toggle("unknown", total === null);
+      whole.disabled = span.from === 0 && span.to === null;
+      if (document.activeElement !== fromInput)
+        fromInput.value = span.from ? tenths(span.from) : "";
+      if (document.activeElement !== toInput)
+        toInput.value = span.to === null ? "" : tenths(span.to);
+      toInput.placeholder = total === null ? "end" : tenths(total);
+      if (total === null) {
+        range.style.left = "0";
+        range.style.width = "100%";
+        note.textContent = to === null ? "" : `${tenths(to - span.from)} s`;
+        return;
+      }
+      const left = Math.min(span.from / total, 1);
+      range.style.left = `${100 * left}%`;
+      range.style.width = `${100 * (Math.min(to / total, 1) - left)}%`;
+      const at = (seconds) => clock(bag.startNs + seconds * 1e9);
+      note.textContent = `${at(span.from)} – ${at(to)} · ${tenths(to - span.from)} of ${tenths(total)} s`;
+      [
+        [fromHandle, span.from],
+        [toHandle, to],
+      ].forEach(([node, seconds]) => {
+        node.setAttribute("aria-valuemin", "0");
+        node.setAttribute("aria-valuemax", tenths(total));
+        node.setAttribute("aria-valuenow", tenths(seconds));
+        node.setAttribute("aria-valuetext", `${tenths(seconds)} s`);
+      });
+    }
+
+    function pick(from, to) {
+      span = spanEnds(from, to, length());
+      render();
+    }
+
+    function secondsAt(clientX) {
+      const box = brush.getBoundingClientRect();
+      const share = Math.min(Math.max((clientX - box.left) / box.width, 0), 1);
+      return snap(share * length());
+    }
+
+    brush.addEventListener("pointerdown", (event) => {
+      const total = length();
+      if (total === null || event.button !== 0) return;
+      const to = span.to ?? total;
+      const at = secondsAt(event.clientX);
+      if (event.target === fromHandle) drag = { anchor: to };
+      else if (event.target === toHandle) drag = { anchor: span.from };
+      else if (event.target === range && (span.from > 0 || span.to !== null))
+        drag = { grab: at, from: span.from, to };
+      else drag = { anchor: at };
+      brush.setPointerCapture(event.pointerId);
+      brush.classList.add("dragging");
+      event.preventDefault();
+    });
+    brush.addEventListener("pointermove", (event) => {
+      if (!drag) return;
+      const total = length();
+      const at = secondsAt(event.clientX);
+      if ("grab" in drag) {
+        const shift = Math.min(
+          Math.max(at - drag.grab, -drag.from),
+          total - drag.to,
+        );
+        pick(drag.from + shift, drag.to + shift);
+      } else if (at !== drag.anchor)
+        pick(Math.min(at, drag.anchor), Math.max(at, drag.anchor));
+    });
+    const endDrag = () => {
+      drag = null;
+      brush.classList.remove("dragging");
+    };
+    brush.addEventListener("pointerup", endDrag);
+    brush.addEventListener("pointercancel", endDrag);
+    // Arrow keys move a focused end by a second, with Shift by ten; Home and
+    // End to the farthest it reaches.
+    [fromHandle, toHandle].forEach((node) => {
+      node.addEventListener("keydown", (event) => {
+        const total = length();
+        if (total === null) return;
+        const unit = event.shiftKey ? 10 : 1;
+        const step = {
+          ArrowLeft: -unit,
+          ArrowDown: -unit,
+          ArrowRight: unit,
+          ArrowUp: unit,
+          Home: -total,
+          End: total,
+        }[event.key];
+        if (!step) return;
+        event.preventDefault();
+        const to = span.to ?? total;
+        if (node === fromHandle)
+          pick(Math.min(Math.max(span.from + step, 0), to - SPAN_STEP), to);
+        else pick(span.from, Math.max(to + step, span.from + SPAN_STEP));
+      });
+    });
+    const typed = () => {
+      if (!fromInput.checkValidity() || !toInput.checkValidity()) return;
+      pick(Number(fromInput.value), toInput.value);
+    };
+    [fromInput, toInput].forEach((input) => {
+      input.addEventListener("input", typed);
+      input.addEventListener("blur", render);
+    });
+    whole.addEventListener("click", () => pick(0, null));
+
+    render();
+    return {
+      element: root,
+      render,
+      // Run options { start, duration } of the span.
+      options: () => spanOptions(span),
+      set(run) {
+        const from = run.start ?? 0;
+        span = spanEnds(
+          from,
+          run.duration === undefined || run.duration === null
+            ? null
+            : from + run.duration,
+        );
+        render();
+      },
+    };
+  }
+
+  // Settings of a run, folded and grouped by category two groups abreast: the
+  // run's own (`own`, a list of { label, note, control }) and the driver
+  // settings of the runtime, each with its description and an input that
+  // shows the default while empty. A setting left empty takes the default of
+  // the run. `ownSet()` counts the run's own that are set.
+  function settingsFold(daemon, own, ownSet) {
+    const root = element("details", "replay-run-settings");
     const count = element("span", "replay-block-count");
-    const summary = element("summary", "", "Driver settings");
+    const summary = element("summary", "", "Settings");
     summary.appendChild(count);
-    const rows = element("div", "replay-run-driver-list");
-    root.append(summary, rows);
-    // Settings the daemon listed, and the values set, by name.
+    const groups = element("div", "replay-run-setting-groups");
+    root.append(summary, groups);
+    // Driver settings the daemon listed, and the values set, by name.
     let settings = [];
     let values = {};
 
-    function render() {
-      root.hidden = !settings.length;
-      const set = Object.keys(values).length;
+    function renderCount() {
+      const set = Object.keys(values).length + ownSet();
       count.textContent = set ? `${set} set` : "defaults";
-      rows.replaceChildren(
-        ...settings.map((setting) => {
-          const seconds = setting.unit === "s";
-          const input = numberInput(
-            `${setting.default}${seconds ? " s" : ""}`,
-            seconds ? "0" : "1",
-            seconds ? "any" : "1",
-          );
-          input.value = values[setting.name] ?? "";
-          input.setAttribute("aria-label", setting.name);
-          input.addEventListener("input", () => {
-            if (input.value === "" || !input.checkValidity())
-              delete values[setting.name];
-            else values[setting.name] = Number(input.value);
-            const now = Object.keys(values).length;
-            count.textContent = now ? `${now} set` : "defaults";
-          });
-          const row = element("label", "replay-run-driver-row");
-          row.title = `${setting.description} Default: ${setting.default}${seconds ? " s" : ""}`;
-          row.append(
-            element("span", "replay-run-driver-name", setting.name),
-            input,
-            element("span", "replay-run-driver-note", setting.description),
-          );
-          return row;
-        }),
+    }
+
+    function group(title, rows) {
+      const node = element("section", "replay-run-setting-group");
+      node.appendChild(element("h4", "replay-run-setting-title", title));
+      rows.forEach(({ label, note, control, title: tip }) => {
+        const row = element("label", "replay-run-setting");
+        if (tip) row.title = tip;
+        const text = element("span", "replay-run-setting-text");
+        text.appendChild(element("span", "replay-run-setting-name", label));
+        if (note)
+          text.appendChild(element("span", "replay-run-setting-note", note));
+        row.append(text, control);
+        node.appendChild(row);
+      });
+      return node;
+    }
+
+    function driverRow(setting) {
+      const seconds = setting.unit === "s";
+      const input = numberInput(
+        `${setting.default}${seconds ? " s" : ""}`,
+        seconds ? "0" : "1",
+        seconds ? "any" : "1",
+      );
+      input.value = values[setting.name] ?? "";
+      input.setAttribute("aria-label", setting.name);
+      input.addEventListener("input", () => {
+        if (input.value === "" || !input.checkValidity())
+          delete values[setting.name];
+        else values[setting.name] = Number(input.value);
+        renderCount();
+      });
+      return {
+        label: setting.name,
+        note: setting.description,
+        control: input,
+        title: `Default: ${setting.default}${seconds ? " s" : ""}`,
+      };
+    }
+
+    function render() {
+      renderCount();
+      // Driver settings by category, in the order the daemon lists them.
+      const categories = new Map();
+      settings.forEach((setting) => {
+        const name = setting.category || "driver";
+        if (!categories.has(name)) categories.set(name, []);
+        categories.get(name).push(driverRow(setting));
+      });
+      groups.replaceChildren(
+        group("Run", own),
+        ...[...categories].map(([name, rows]) =>
+          group(name.charAt(0).toUpperCase() + name.slice(1), rows),
+        ),
       );
     }
 
@@ -230,26 +470,30 @@
       );
     }
 
+    own.forEach(({ control }) =>
+      control.addEventListener("input", renderCount),
+    );
     SD.on("daemon.health", load);
     SD.on("daemon.connection", load);
     load();
     render();
     return {
       element: root,
-      // Values set, by name; empty when every setting is at its default.
+      // Driver values set, by name; empty when every setting is at its default.
       values: () => ({ ...values }),
       set(next) {
         values = { ...(next || {}) };
-        root.open = Object.keys(values).length > 0;
+        root.open = Object.keys(values).length + ownSet() > 0;
         render();
       },
     };
   }
 
-  // `request()` gives { params } of a replay, or { blocker } naming what it lacks.
-  function runPanel(daemon, request) {
+  // `request()` gives { params } of a replay, or { blocker } naming what it
+  // lacks; `bagSpan()` the time span of the bag, or null.
+  function runPanel(daemon, request, bagSpan = () => null) {
     const root = element("div", "replay-block");
-    const duration = numberInput("whole bag", "0", "any");
+    const span = spanTimeline(bagSpan);
     const leadIn = numberInput("default", "0", "any");
     const domain = numberInput("environment's", "0", "1");
     const saveReference = document.createElement("input");
@@ -259,26 +503,40 @@
       wrapper.appendChild(control);
       return wrapper;
     };
-    const options = element("div", "replay-run-options");
     const jobSelect = document.createElement("select");
     jobSelect.setAttribute("aria-label", "Replay job");
     const jobOption = option("Job", jobSelect);
     jobOption.classList.add("replay-run-job");
-    options.append(
-      option("Duration (s)", duration),
-      option("Lead-in (s)", leadIn),
-      option("ROS domain id", domain),
-      option("Save outputs as the reference", saveReference),
-      jobOption,
+    const settings = settingsFold(
+      daemon,
+      [
+        {
+          label: "lead_in",
+          note: "Seconds from the span's start over which only the ambient inputs and the last message of each latched topic are fed.",
+          control: leadIn,
+        },
+        {
+          label: "domain_id",
+          note: "ROS domain of the replay.",
+          control: domain,
+        },
+      ],
+      () => [leadIn, domain].filter((input) => input.value !== "").length,
     );
-    const driver = driverSettings(daemon);
     const check = element("button", "panel-button", "Pre-flight");
     const run = element("button", "panel-button primary", "Run replay");
     const cancel = element("button", "panel-button", "Cancel");
     [check, run, cancel].forEach((button) => (button.type = "button"));
     const hint = element("span", "panel-hint blocked");
     const buttons = element("div", "replay-run-buttons");
-    buttons.append(check, run, cancel, hint);
+    buttons.append(
+      check,
+      run,
+      cancel,
+      option("Save outputs as the reference", saveReference),
+      hint,
+      jobOption,
+    );
     const error = element("div", "panel-banner panel-banner-error");
     error.hidden = true;
 
@@ -300,7 +558,7 @@
     // Log shown before the first replay job.
     const idleLog = terminal("No replay run yet.");
     logHost.appendChild(idleLog.element);
-    root.append(options, driver.element, buttons, error, report);
+    root.append(span.element, settings.element, buttons, error, report);
 
     // The followed job: its id, terminal and the sequence of the last line shown.
     let followed = null;
@@ -375,6 +633,7 @@
       const offered = !!daemon.health && daemon.offers(START);
       root.hidden = !offered;
       if (!offered) return;
+      span.render();
       const { blocker } = request();
       const running = replayJobs().find((job) => job.state === "running");
       const text = !daemon.connected
@@ -395,9 +654,9 @@
       const extra = { check: checkOnly };
       if (!checkOnly) {
         extra.save_reference = saveReference.checked;
-        if (duration.value) extra.duration = Number(duration.value);
+        Object.assign(extra, span.options());
         if (leadIn.value !== "") extra.lead_in = Number(leadIn.value);
-        const set = driver.values();
+        const set = settings.values();
         if (Object.keys(set).length) extra.driver = set;
       }
       if (domain.value !== "") extra.domain_id = Number(domain.value);
@@ -442,22 +701,21 @@
 
     // Run options as a setup keeps them: lead-in and driver settings apart, as the configuration holds them.
     function getOptions() {
-      const run = { save_reference: saveReference.checked };
-      if (duration.value) run.duration = Number(duration.value);
+      const run = { save_reference: saveReference.checked, ...span.options() };
       if (domain.value !== "") run.domain_id = Number(domain.value);
       return {
         run,
         leadIn: leadIn.value === "" ? null : Number(leadIn.value),
-        driver: driver.values(),
+        driver: settings.values(),
       };
     }
 
     function setOptions(run, leadInValue, driverValues) {
-      duration.value = run.duration ?? "";
+      span.set(run);
       domain.value = run.domain_id ?? "";
       saveReference.checked = !!run.save_reference;
       leadIn.value = leadInValue ?? "";
-      driver.set(driverValues);
+      settings.set(driverValues);
     }
 
     return { element: root, refresh, getOptions, setOptions };
@@ -466,5 +724,7 @@
   replay.outcome = outcome;
   replay.findings = findings;
   replay.phaseStates = phaseStates;
+  replay.spanEnds = spanEnds;
+  replay.spanOptions = spanOptions;
   replay.runPanel = runPanel;
 })();

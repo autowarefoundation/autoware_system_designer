@@ -42,6 +42,8 @@
     // Bag topics by recorded name; null until a bag is read.
     let topics = null;
     let name = "";
+    // { startNs, durationNs } of the bag, where its reading gave them.
+    let span = null;
     // What reading the bag last failed with, shown in the bag's place.
     let note = "";
     // Latest bag request; the answer of an earlier one is dropped.
@@ -89,9 +91,10 @@
     const reads = () => daemon.connected && daemon.offers(READ);
     const finds = () => daemon.connected && daemon.offers(FIND);
 
-    function setBag(next, title) {
+    function setBag(next, title, nextSpan = null) {
       topics = next;
       name = title;
+      span = nextSpan;
       note = "";
       state.classList.remove("blocked");
       changed();
@@ -125,6 +128,9 @@
               ]),
             ),
             info.path,
+            info.duration_ns > 0
+              ? { startNs: info.start_ns, durationNs: info.duration_ns }
+              : null,
           );
         },
         (error) => {
@@ -262,6 +268,8 @@
       element: root,
       topics: () => topics,
       name: () => name,
+      // { startNs, durationNs } of the bag read through the daemon, else null.
+      span: () => (topics ? span : null),
       path,
       // What the path lacks for a replay to open the bag, or "".
       blocker() {
