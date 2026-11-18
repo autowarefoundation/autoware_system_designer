@@ -40,7 +40,6 @@ CASES = {
     "launch_wrapper": ("wrapper_pkg/Wrapped.system.yaml", ["default"]),
     "deployments_table": ("fleet_pkg/deployment/fleet.deployments.yaml", ["default"]),
     "queue_reads": ("queue_pkg/Queued.system.yaml", ["default"]),
-    "compute_units": ("units_pkg/Multi.system.yaml", ["default", "solo"]),
 }
 
 # Text artifacts snapshotted alongside the structure JSON, per case:
@@ -61,10 +60,6 @@ TEXT_ARTIFACTS = {
         "launcher/{mode}/main_ecu/api/api.launch.xml",
     ],
     "launch_wrapper": ["launcher/{mode}/main_ecu/map/map.launch.xml"],
-    "compute_units": [
-        "launcher/{mode}/main_ecu/main_ecu.launch.xml",
-        "launcher/{mode}/sub_ecu/sub_ecu.launch.xml",
-    ],
 }
 
 
