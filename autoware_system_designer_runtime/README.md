@@ -529,7 +529,6 @@ The timings and limits of the driver and of the gate are the `driver` mapping of
 | `delivery_timeout` | 2 s     | A published message has this long to show as work, a due timer to become ready, a publish to be recorded |
 | `burst_settle`     | 0.005 s | Pause before a callback whose subscription holds several messages in flight                              |
 | `miss_limit`       | 3       | A subscription that missed this many deliveries in a row is no longer waited for                         |
-| `shutdown_timeout` | 5 s     | Members have this long to exit before they are killed                                                    |
 | `gate_hold`        | 0.002 s | Longest stay of an executor in its wait with ready work and no grant                                     |
 | `take_timeout`     | 2 s     | A take waits this long for a message in flight                                                           |
 | `process_grants`   | 4       | Threads of a process that hold a grant at once                                                           |

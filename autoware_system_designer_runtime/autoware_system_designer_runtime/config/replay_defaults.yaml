@@ -21,8 +21,6 @@ driver:
   burst_settle: 0.005
   # Count: a subscription that missed this many deliveries in a row is no longer waited for.
   miss_limit: 3
-  # Members have this long to exit before they are killed.
-  shutdown_timeout: 5.0
   # Longest stay of an executor in its wait with ready work and no grant.
   gate_hold: 0.002
   # A take waits this long for a message in flight.

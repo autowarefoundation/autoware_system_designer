@@ -512,9 +512,7 @@ async def _run_scope(plan: _Plan, options: ReplayOptions, socket_path: Path, out
 
     bag, config, out_dir = plan.bag, plan.config, plan.out_dir
     middleware = replay_middleware()
-    actor_config = ActorConfig(
-        respawn_enabled=False, output_dir=plan.out_root, graceful_shutdown_timeout=config.driver["shutdown_timeout"]
-    )
+    actor_config = ActorConfig(respawn_enabled=False, output_dir=plan.out_root)
     builder, worker = populate_builder(plan.structure, ecu=None, config=actor_config)
     TracerArming(locate_tracer(), plan.out_root / TRACE_SUBDIR).install(builder)
     member_names: list[str] = []

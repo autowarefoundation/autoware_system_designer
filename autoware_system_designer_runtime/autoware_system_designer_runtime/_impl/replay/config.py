@@ -93,7 +93,6 @@ DRIVER_SETTINGS = (
     DriverSetting(
         "miss_limit", COUNT, "A subscription that missed this many deliveries in a row is no longer waited for."
     ),
-    DriverSetting("shutdown_timeout", SECONDS, "Members have this long to exit before they are killed."),
     DriverSetting("gate_hold", SECONDS, "Longest stay of an executor in its wait with ready work and no grant."),
     DriverSetting("take_timeout", SECONDS, "A take waits this long for a message in flight."),
     DriverSetting("process_grants", COUNT, "Threads of a process that hold a grant at once."),
