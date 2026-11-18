@@ -7,6 +7,8 @@
 #   [5] autoware_system_designer_runtime/setup.py
 #   [6] autoware_system_designer_meta/package.xml
 #   [7] autoware_system_designer_tracer/package.xml
+#   [8] autoware_system_designer_studio/package.xml
+#   [9] autoware_system_designer_studio/setup.py
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -52,6 +54,9 @@ runtime_xml_version = extract_xml_version(runtime_root / "package.xml")  # [4]
 runtime_setup_version = extract_setup_py_version(runtime_root / "setup.py")  # [5]
 meta_xml_version = extract_xml_version(repo_root / "autoware_system_designer_meta" / "package.xml")  # [6]
 tracer_xml_version = extract_xml_version(repo_root / "autoware_system_designer_tracer" / "package.xml")  # [7]
+studio_root = repo_root / "autoware_system_designer_studio"
+studio_xml_version = extract_xml_version(studio_root / "package.xml")  # [8]
+studio_setup_version = extract_setup_py_version(studio_root / "setup.py")  # [9]
 
 sources = [
     ("[1] autoware_system_designer/pyproject.toml         ", inner_version),
@@ -61,6 +66,8 @@ sources = [
     ("[5] autoware_system_designer_runtime/setup.py       ", runtime_setup_version),
     ("[6] autoware_system_designer_meta/package.xml       ", meta_xml_version),
     ("[7] autoware_system_designer_tracer/package.xml     ", tracer_xml_version),
+    ("[8] autoware_system_designer_studio/package.xml     ", studio_xml_version),
+    ("[9] autoware_system_designer_studio/setup.py        ", studio_setup_version),
 ]
 
 versions = {v for _, v in sources}

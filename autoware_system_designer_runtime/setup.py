@@ -19,7 +19,7 @@ package_name = "autoware_system_designer_runtime"
 
 setup(
     name=package_name,
-    version="0.5.0",
+    version="0.6.0",
     packages=find_packages(exclude=["test"]),
     # Default configuration files read from the package directory.
     package_data={package_name: ["config/*.yaml"]},
