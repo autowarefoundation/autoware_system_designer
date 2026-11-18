@@ -13,9 +13,12 @@
 # limitations under the License.
 
 import json
+from pathlib import Path
+
+import pytest
 
 from autoware_system_designer_runtime._impl.replay import reference as ref
-from autoware_system_designer_runtime.replay import _save_reference
+from autoware_system_designer_runtime.replay import ReferenceSaveError, _save_reference
 
 
 def _run_outputs(tmp_path, name, content):
@@ -44,3 +47,33 @@ def test_a_saved_reference_replaces_the_one_in_its_place(tmp_path):
     assert (reference_dir / ref.OUTPUTS_DIR / "data").read_text() == "second"
     assert sorted(p.name for p in reference_dir.parent.iterdir()) == ["key"]
     assert not (reference_dir / "stale").exists()
+
+
+def test_a_directory_that_is_not_a_reference_is_not_replaced(tmp_path):
+    reference_dir = tmp_path / "project"
+    reference_dir.mkdir()
+    (reference_dir / "keep.txt").write_text("mine")
+
+    with pytest.raises(ReferenceSaveError):
+        _save_reference(_run_outputs(tmp_path, "run", "first"), reference_dir, {})
+
+    assert (reference_dir / "keep.txt").read_text() == "mine"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["project", "run"]
+
+
+def test_a_sibling_that_is_not_a_reference_is_not_removed(tmp_path):
+    reference_dir = tmp_path / "key"
+    retired = tmp_path / "key.old"
+    retired.mkdir()
+    (retired / "keep.txt").write_text("mine")
+
+    with pytest.raises(ReferenceSaveError):
+        _save_reference(_run_outputs(tmp_path, "run", "first"), reference_dir, {})
+
+    assert (retired / "keep.txt").read_text() == "mine"
+    assert not reference_dir.exists()
+
+
+def test_a_file_system_root_is_not_a_reference(tmp_path):
+    with pytest.raises(ReferenceSaveError):
+        _save_reference(_run_outputs(tmp_path, "run", "first"), Path("/"), {})

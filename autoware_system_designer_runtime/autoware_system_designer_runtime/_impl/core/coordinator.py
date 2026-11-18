@@ -167,6 +167,8 @@ class Coordinator:
         self._actor_pids: dict[str, int] = {}
         self._had_failure: bool = False
         self._started_count: int = 0
+        # Signal that started the shutdown, None when the run ended by itself or by request.
+        self.stopped_by: Optional[int] = None
 
     # ---- public control surface ------------------------------------------
 
@@ -341,6 +343,7 @@ class Coordinator:
 
     def _on_signal(self, sig: int) -> None:
         if not self._shutdown.is_set():
+            self.stopped_by = sig
             logger.info("received %s, shutting down actors", _signame(sig))
             print(
                 f"\nReceived {_signame(sig)} — graceful shutdown in progress. " "Press Ctrl+C again to force quit.",

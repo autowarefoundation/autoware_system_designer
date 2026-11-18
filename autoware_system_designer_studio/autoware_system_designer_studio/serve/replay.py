@@ -289,10 +289,12 @@ def plan_replay(
 
 
 def write_config(plan: ReplayPlan) -> None:
-    """The plan's configuration in its run directory."""
+    """The plan's configuration in its run directory, which this call creates; FileExistsError when
+    another run holds the directory."""
     import yaml
 
-    plan.run_dir.mkdir(parents=True, exist_ok=True)
+    plan.run_dir.parent.mkdir(parents=True, exist_ok=True)
+    plan.run_dir.mkdir()
     (plan.run_dir / REPLAY_CONFIG_FILE).write_text(yaml.safe_dump(plan.config, sort_keys=False))
 
 
@@ -487,6 +489,9 @@ def register(daemon: "ServeDaemon") -> None:
         return {"driver": await asyncio.to_thread(driver_settings)}
 
     async def start(params: dict[str, Any]) -> dict[str, Any]:
+        running = daemon.jobs.active_for(REPLAY_JOB_KIND)
+        if running is not None:
+            raise api.ApiError(api.CONFLICT, f"job {running.id} is still running", {"job": running.id})
         system = await daemon.find_system(api.str_param(params, "system", required=True))
         mode = api.str_param(params, "mode") or system.manifest.get("default_mode")
         if not isinstance(mode, str) or mode not in system.mode_keys():
@@ -540,7 +545,10 @@ def register(daemon: "ServeDaemon") -> None:
             on_line=on_line,
             on_exit=on_exit,
         )
-        await asyncio.to_thread(write_config, plan)
+        try:
+            await asyncio.to_thread(write_config, plan)
+        except FileExistsError as exc:
+            raise api.ApiError(api.CONFLICT, f"run directory {plan.run_dir} is held by another run") from exc
         try:
             return (await daemon.jobs.start(spec)).to_view()
         except api.ApiError:

@@ -863,6 +863,50 @@ static int is_rclcpp(struct dl_phdr_info * info, size_t size, void * found)
   return 0;
 }
 
+static int find_rclcpp(struct dl_phdr_info * info, size_t size, void * path)
+{
+  (void)size;
+  if (info->dlpi_name != NULL && strstr(info->dlpi_name, RCLCPP_LIBRARY) != NULL) {
+    *(const char **)path = info->dlpi_name;
+    return 1;
+  }
+  return 0;
+}
+
+// Real definition of an rclcpp hook: the next one in the global scope, else the one of the loaded
+// rclcpp library, which RTLD_NEXT does not reach when the library is loaded RTLD_LOCAL.
+static void * rclcpp_real(const char * symbol)
+{
+  void * real = dlsym(RTLD_NEXT, symbol);
+  if (real != NULL) {
+    return real;
+  }
+  const char * path = NULL;
+  dl_iterate_phdr(find_rclcpp, &path);
+  if (path == NULL) {
+    return NULL;
+  }
+  void * library = dlopen(path, RTLD_LAZY | RTLD_NOLOAD);
+  if (library == NULL) {
+    return NULL;
+  }
+  real = dlsym(library, symbol);
+  // The loaded library keeps its own reference; this one only came from RTLD_NOLOAD.
+  dlclose(library);
+  return real;
+}
+
+// A hook without its real definition cannot keep the process's behavior, so the process stops.
+static void * rclcpp_real_or_abort(const char * symbol)
+{
+  void * real = rclcpp_real(symbol);
+  if (real == NULL) {
+    fprintf(stderr, "[asd_tracer] no definition of %s beside the tracer; aborting\n", symbol);
+    abort();
+  }
+  return real;
+}
+
 void asd_replay_hook_state(char * text, size_t size)
 {
   bool rclcpp = false;
@@ -874,7 +918,7 @@ void asd_replay_hook_state(char * text, size_t size)
   size_t used = 0;
   text[0] = '\0';
   for (size_t i = 0; i < sizeof(RCLCPP_HOOKS) / sizeof(RCLCPP_HOOKS[0]); ++i) {
-    if (dlsym(RTLD_NEXT, RCLCPP_HOOKS[i].symbol) == NULL && used < size) {
+    if (rclcpp_real(RCLCPP_HOOKS[i].symbol) == NULL && used < size) {
       used += (size_t)snprintf(text + used, size - used, "%s%s", used > 0 ? "," : "", RCLCPP_HOOKS[i].name);
     }
   }
@@ -895,10 +939,7 @@ bool RCLCPP_INTRA_PROCESS(const void * self)
   }
   node_option_fn real = __atomic_load_n(&real_slot, __ATOMIC_ACQUIRE);
   if (real == NULL) {
-    real = (node_option_fn)dlsym(RTLD_NEXT, SYMBOL_TEXT(RCLCPP_INTRA_PROCESS));
-    if (real == NULL) {
-      return false;
-    }
+    real = (node_option_fn)rclcpp_real_or_abort(SYMBOL_TEXT(RCLCPP_INTRA_PROCESS));
     __atomic_store_n(&real_slot, real, __ATOMIC_RELEASE);
   }
   return real(self);
@@ -920,10 +961,7 @@ void RCLCPP_EXECUTE(void * executor, void * any_executable)
   static execute_fn real_slot = NULL;
   execute_fn real = __atomic_load_n(&real_slot, __ATOMIC_ACQUIRE);
   if (real == NULL) {
-    real = (execute_fn)dlsym(RTLD_NEXT, SYMBOL_TEXT(RCLCPP_EXECUTE));
-    if (real == NULL) {
-      return;
-    }
+    real = (execute_fn)rclcpp_real_or_abort(SYMBOL_TEXT(RCLCPP_EXECUTE));
     __atomic_store_n(&real_slot, real, __ATOMIC_RELEASE);
   }
   bool entered __attribute__((cleanup(callback_exit))) = asd_replay_armed();

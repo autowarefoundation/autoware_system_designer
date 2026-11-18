@@ -394,3 +394,17 @@ def test_directories_are_listed_for_the_path_selectors(served, tmp_path):
     ]
     assert _call(served, "fs.list", {"path": str(root / "bags" / "run_0")})["result"]["bag"] is True
     assert _call(served, "fs.list", {"path": "relative"})["error"]["code"] == "invalid_params"
+
+
+def test_a_run_directory_held_by_another_run_is_not_written(tmp_path):
+    from autoware_system_designer_studio.serve.replay import ReplayPlan, write_config
+
+    run_dir = tmp_path / "replay" / "20260101_000000"
+    run_dir.mkdir(parents=True)
+    (run_dir / "result.json").write_text("{}")
+    plan = ReplayPlan(argv=(), run_dir=run_dir, config={"scope": ["/a"]}, title="t", params={})
+
+    with pytest.raises(FileExistsError):
+        write_config(plan)
+
+    assert sorted(p.name for p in run_dir.iterdir()) == ["result.json"]

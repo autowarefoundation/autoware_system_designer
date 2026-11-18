@@ -139,13 +139,27 @@ class CompareRule:
         rule = value.get("rule", RULE_FIELDS if len(value) > 0 and "rule" not in value else RULE_EXACT)
         if rule not in RULES:
             raise ConfigError(f"{where}: rule {rule!r} is not one of {', '.join(RULES)}")
+        ignore_fields = value.get("ignore_fields") or []
+        if isinstance(ignore_fields, str):
+            ignore_fields = [ignore_fields]
+        if not isinstance(ignore_fields, list) or not all(isinstance(item, str) for item in ignore_fields):
+            raise ConfigError(f"{where}.ignore_fields: expected a field pattern or a list of them")
+        uuid_order = value.get("uuid_order", False)
+        if not isinstance(uuid_order, bool):
+            raise ConfigError(f"{where}.uuid_order: expected true or false")
         return cls(
             rule=rule,
-            abs_tolerance=float(value.get("abs_tolerance", 0.0)),
-            rel_tolerance=float(value.get("rel_tolerance", 0.0)),
-            ignore_fields=[str(item) for item in value.get("ignore_fields", [])],
-            uuid_order=bool(value.get("uuid_order", False)),
+            abs_tolerance=_tolerance(value.get("abs_tolerance", 0.0), f"{where}.abs_tolerance"),
+            rel_tolerance=_tolerance(value.get("rel_tolerance", 0.0), f"{where}.rel_tolerance"),
+            ignore_fields=list(ignore_fields),
+            uuid_order=uuid_order,
         )
+
+
+def _tolerance(value: Any, where: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not value >= 0:
+        raise ConfigError(f"{where}: expected a number, zero or more")
+    return float(value)
 
 
 @dataclass

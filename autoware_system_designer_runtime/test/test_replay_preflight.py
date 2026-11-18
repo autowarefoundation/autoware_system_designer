@@ -415,6 +415,21 @@ def test_config_reads_rules_and_rejects_unknown_keys():
         ReplayConfig.from_mapping({"compare": {"topics": {"/out": {"rule": "close"}}}})
 
 
+def test_a_compare_rule_checks_its_values():
+    def rule(value):
+        return ReplayConfig.from_mapping({"compare": {"topics": {"/out": value}}}).rule_for("/out")
+
+    assert rule({"ignore_fields": "header.stamp"}).ignore_fields == ["header.stamp"]
+    with pytest.raises(ConfigError, match="ignore_fields"):
+        rule({"ignore_fields": {"header": "stamp"}})
+    with pytest.raises(ConfigError, match="uuid_order"):
+        rule({"uuid_order": "false"})
+    with pytest.raises(ConfigError, match="abs_tolerance"):
+        rule({"abs_tolerance": -1e-6})
+    with pytest.raises(ConfigError, match="rel_tolerance"):
+        rule({"rel_tolerance": "0.1"})
+
+
 def _recorded(topics: dict):
     return info_from_metadata(bag(topics), "bag")
 

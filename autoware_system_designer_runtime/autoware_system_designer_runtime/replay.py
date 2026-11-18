@@ -222,10 +222,35 @@ def _compare(
     return compare_outputs(expected, recorded, types, config, ros_deserialize)
 
 
+# Entries a reference directory is made of; a partly written one holds no others.
+_REFERENCE_ENTRIES = frozenset({ref.OUTPUTS_DIR, ref.REFERENCE_FILE})
+
+
+class ReferenceSaveError(Exception):
+    pass
+
+
+def _replaceable(path: Path) -> bool:
+    """Whether *path* is absent, a saved reference, or a directory holding nothing but a reference's
+    entries."""
+    if not path.exists() and not path.is_symlink():
+        return True
+    if path.is_symlink() or not path.is_dir():
+        return False
+    if (path / ref.REFERENCE_FILE).is_file():
+        return True
+    return all(entry.name in _REFERENCE_ENTRIES for entry in path.iterdir())
+
+
 def _save_reference(out_dir: Path, reference_dir: Path, inputs: Mapping[str, Any]) -> None:
+    if not reference_dir.name or not _replaceable(reference_dir):
+        raise ReferenceSaveError(f"{reference_dir} holds files other than a reference; not replaced")
     # Built beside its place and renamed into it: a reference is whole or absent.
     staging = reference_dir.with_name(reference_dir.name + ".new")
     retired = reference_dir.with_name(reference_dir.name + ".old")
+    for path in (staging, retired):
+        if not _replaceable(path):
+            raise ReferenceSaveError(f"{path} holds files other than a reference; not replaced")
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True)
     shutil.copytree(out_dir / ref.OUTPUTS_DIR, staging / ref.OUTPUTS_DIR)
@@ -291,6 +316,8 @@ class _Outcome:
     error: Optional[str] = None
     # Member the error names, None when it names none.
     error_member: Optional[str] = None
+    # A signal stopped the run.
+    interrupted: bool = False
     # Members launched, by path.
     members: list[str] = field(default_factory=list)
     endpoint_problems: list[dict[str, Any]] = field(default_factory=list)
@@ -414,7 +441,8 @@ def _prepare(json_path: str, options: ReplayOptions) -> _Plan:
     structure = replay_structure(payload["data"], scope)
     mode = full_graph.mode or Path(json_path).stem
     key_inputs: dict[str, Any] = {}
-    reference_dir = options.reference
+    # Absolute, so the directory has a name its siblings are made from.
+    reference_dir = options.reference.expanduser().resolve() if options.reference is not None else None
     clock_topic = _clock_topic(bag) if bag is not None else None
     if bag is not None:
         key_inputs = ref.key_inputs(
@@ -649,6 +677,9 @@ async def _run_scope(plan: _Plan, options: ReplayOptions, socket_path: Path, out
                 outcome.error = str(exc)
                 outcome.error_member = exc.member
                 logger.error("replay: %s", exc)
+            except asyncio.CancelledError:
+                outcome.error = outcome.error or "the driver was cancelled before the replay ended"
+                raise
             except Exception as exc:  # noqa: BLE001
                 outcome.error = f"{type(exc).__name__}: {exc}"
                 logger.exception("replay driver failed")
@@ -679,7 +710,10 @@ async def _run_scope(plan: _Plan, options: ReplayOptions, socket_path: Path, out
         await server.start()
         try:
             await worker.start()
-            return await coord.run()
+            try:
+                return await coord.run()
+            finally:
+                outcome.interrupted = coord.stopped_by is not None
         finally:
             await server.close()
             await worker.stop()
@@ -701,7 +735,9 @@ def _run(plan: _Plan, options: ReplayOptions) -> _Outcome:
         run_code = asyncio.run(_run_scope(plan, options, socket_dir / SOCKET_FILE, outcome))
     finally:
         shutil.rmtree(socket_dir, ignore_errors=True)
-    if outcome.error is None and not outcome.driven:
+    if outcome.interrupted:
+        outcome.error = "interrupted by a signal"
+    elif outcome.error is None and not outcome.driven:
         outcome.error = "the scope stopped before the replay started"
     elif outcome.error is None and run_code != 0:
         outcome.error = "a member of the scope failed"
@@ -721,7 +757,12 @@ def _judge(plan: _Plan, options: ReplayOptions, result: ReplayResult, summary: d
         if reference_dir is None:
             logger.error("replay: no export to key the reference by; give --reference DIR")
             return EXIT_FAILED
-        _save_reference(out_dir, reference_dir, plan.key_inputs)
+        try:
+            _save_reference(out_dir, reference_dir, plan.key_inputs)
+        except ReferenceSaveError as exc:
+            summary["reference"] = {"path": str(reference_dir), "saved": False, "error": str(exc)}
+            logger.error("replay: %s", exc)
+            return EXIT_FAILED
         summary["reference"] = {"path": str(reference_dir), "saved": True}
         logger.info("replay: reference saved to %s", reference_dir)
     elif reference_dir is not None and (reference_dir / ref.OUTPUTS_DIR).is_dir():
@@ -771,8 +812,8 @@ def _conclude(plan: _Plan, options: ReplayOptions, outcome: _Outcome) -> int:
         "endpoint_problems": outcome.endpoint_problems,
         **result.as_dict(),
     }
-    code = EXIT_OK if outcome.error is None else EXIT_FAILED
-    if outcome.error is not None:
+    code = EXIT_OK if outcome.error is None else EXIT_INTERRUPTED if outcome.interrupted else EXIT_FAILED
+    if outcome.error is not None and not outcome.interrupted:
         summary["member_logs"] = _member_logs(plan, outcome)
         for log in summary["member_logs"]:
             logger.error("replay: last stderr lines of %s (%s):", log["member"], log["path"])
@@ -806,15 +847,19 @@ def _conclude(plan: _Plan, options: ReplayOptions, outcome: _Outcome) -> int:
 
 
 def replay_from_json(json_path: str, options: ReplayOptions) -> int:
+    """Runs a replay; every way it ends maps to an exit code, and only a judged difference is EXIT_DIFFERS."""
     try:
         plan = _prepare(json_path, options)
         outcome = _run(plan, options)
+        return _conclude(plan, options, outcome)
     except _Stop as stop:
         return stop.code
     except KeyboardInterrupt:
         logger.info("replay interrupted")
         return EXIT_INTERRUPTED
-    return _conclude(plan, options, outcome)
+    except Exception:  # noqa: BLE001
+        logger.exception("replay failed")
+        return EXIT_FAILED
 
 
 def _build_parser() -> argparse.ArgumentParser:
