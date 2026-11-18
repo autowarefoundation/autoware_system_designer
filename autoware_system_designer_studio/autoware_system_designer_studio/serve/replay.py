@@ -341,6 +341,7 @@ def summary(run_dir: Path) -> dict[str, Any]:
         }
         found["result"]["violations"] = list(result.get("violations") or [])[:SUMMARY_ITEMS]
         found["result"]["endpoint_problems"] = list(result.get("endpoint_problems") or [])[:SUMMARY_ITEMS]
+        found["result"]["member_logs"] = list(result.get("member_logs") or [])[:SUMMARY_ITEMS]
     verdict = read_replay_file(run_dir, VERDICT_FILE)
     if verdict is not None:
         found["verdict"] = {

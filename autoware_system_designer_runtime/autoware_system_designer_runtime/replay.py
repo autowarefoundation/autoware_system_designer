@@ -112,7 +112,7 @@ from .replay_record import (
     VERDICT_FILE,
     progress_message,
 )
-from .run_log import LOG_BASE, REPLAY_LOGS, write_run_manifest
+from .run_log import LOG_BASE, REPLAY_LOGS, member_dir_name, tail_lines, write_run_manifest
 from .special_topics import special_topics
 from .system_runner import bind_deploy_arguments, parse_arg_overrides, setup_logging
 
@@ -120,6 +120,9 @@ logger = logging.getLogger("autoware_system_designer")
 
 SOCKET_FILE = "driver.sock"
 RESULT_FORMAT = "autoware_system_designer/replay_result/1"
+# Stream of a member a failed run quotes, and the lines it quotes at most.
+MEMBER_LOG_STREAM = "err"
+MEMBER_LOG_LINES = 20
 
 _VIOLATION_NOUNS = {"publish": "publishes", "take": "takes", "timer": "timer fires"}
 
@@ -278,6 +281,10 @@ class _Outcome:
     # The driver ran, to its end or to an error.
     driven: bool = False
     error: Optional[str] = None
+    # Member the error names, None when it names none.
+    error_member: Optional[str] = None
+    # Members launched, by path.
+    members: list[str] = field(default_factory=list)
     endpoint_problems: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -603,6 +610,7 @@ async def _run_scope(plan: _Plan, options: ReplayOptions, socket_path: Path, out
                     _progress(PHASE_REPLAY, "the bag is stepped through", 1.0)
             except ReplayError as exc:
                 outcome.error = str(exc)
+                outcome.error_member = exc.member
                 logger.error("replay: %s", exc)
             except Exception as exc:  # noqa: BLE001
                 outcome.error = f"{type(exc).__name__}: {exc}"
@@ -618,6 +626,7 @@ async def _run_scope(plan: _Plan, options: ReplayOptions, socket_path: Path, out
         builder.add_pre_start_hook(pre_start)
         builder.add_post_start_hook(post_start)
         coord = builder.build()
+        outcome.members = list(coord.names())
         try:
             write_run_manifest(
                 plan.out_root,
@@ -699,6 +708,18 @@ def _judge(plan: _Plan, options: ReplayOptions, result: ReplayResult, summary: d
     return code
 
 
+def _member_logs(plan: _Plan, outcome: _Outcome) -> list[dict[str, Any]]:
+    """Last stderr lines of the member a failed run's error names, else of every member that wrote some."""
+    members = [outcome.error_member] if outcome.error_member in outcome.members else outcome.members
+    logs = []
+    for member in members:
+        path = plan.out_root / member_dir_name(member) / MEMBER_LOG_STREAM
+        lines, _ = tail_lines(path)
+        if lines:
+            logs.append({"member": member, "path": str(path), "lines": lines[-MEMBER_LOG_LINES:]})
+    return logs
+
+
 def _conclude(plan: _Plan, options: ReplayOptions, outcome: _Outcome) -> int:
     """Logs the run's counts, judges its outputs and writes the result file; returns the exit code."""
     result, bag = outcome.result, plan.bag
@@ -714,6 +735,12 @@ def _conclude(plan: _Plan, options: ReplayOptions, outcome: _Outcome) -> int:
         **result.as_dict(),
     }
     code = EXIT_OK if outcome.error is None else EXIT_FAILED
+    if outcome.error is not None:
+        summary["member_logs"] = _member_logs(plan, outcome)
+        for log in summary["member_logs"]:
+            logger.error("replay: last stderr lines of %s (%s):", log["member"], log["path"])
+            for line in log["lines"]:
+                logger.error("replay:   %s", line)
     if outcome.error is None and bag is not None:
         logger.info(
             "replay: %.3f s of ROS time in %.1f s: %d messages in, %d callbacks, %d timer fires, %d outputs",

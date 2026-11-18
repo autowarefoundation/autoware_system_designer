@@ -348,7 +348,7 @@ test("a replay job's outcome follows its pre-flight, result and verdict", () => 
     "ok",
   );
   assert.match(
-    outcome(job("failed", {}, { result: { error: "scope not up" } })).text,
+    outcome(job("failed", {}, { result: { error: "scope not up" } })).error,
     /scope not up/,
   );
   assert.equal(level("cancelled", {}, {}), "warning");

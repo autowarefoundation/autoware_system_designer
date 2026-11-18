@@ -572,7 +572,7 @@ A publish, take or timer fire by a thread that holds no grant (a worker thread, 
 ├── options.json    command options and the replay configuration of the run
 ├── boundary.json   scope, boundary inputs and outputs, services, fed and recorded topics, pre-flight problems
 ├── outputs/        rosbag of the recorded outputs, stamped with the driver time of their publish
-├── result.json     counts (lost_outputs: recorded publishes never heard), violations, anomalies, endpoint problems, digest of the outputs, verdict summary
+├── result.json     counts (lost_outputs: recorded publishes never heard), violations, anomalies, endpoint problems, last stderr lines of the member at fault (member_logs, failed runs), digest of the outputs, verdict summary
 ├── verdict.json    per topic: rule, counts, first difference (written when a reference exists)
 └── steps.log       every step and every tracer event, with --step-log
 ```

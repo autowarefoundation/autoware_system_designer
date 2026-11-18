@@ -19,7 +19,8 @@
       grow: PHASE_GROW[index] ?? 1,
     }));
 
-  // What a replay job came to, as { level: ok | warning | failed | running, text }.
+  // What a replay job came to, as { level: ok | warning | failed | running, text },
+  // with the `error` that stopped a replay short of its end.
   function outcome(job) {
     const detail = job.detail || {};
     const errors = (detail.problems || []).filter((p) => p.level === "error");
@@ -43,7 +44,8 @@
     if (!result || !result.completed)
       return {
         level: "failed",
-        text: `Replay did not run to its end${result?.error ? `: ${result.error}` : ""}`,
+        text: "Replay did not run to its end",
+        error: result?.error || "",
       };
     if (detail.verdict)
       return detail.verdict.passed
@@ -93,6 +95,22 @@
         }),
       );
     return lines;
+  }
+
+  // Last stderr lines of the members a failed replay quotes, one fold a member,
+  // open when it is the only one.
+  function memberLogs(logs) {
+    return logs.map((log) => {
+      const fold = element("details", "replay-run-member-log");
+      fold.open = logs.length === 1;
+      const summary = element("summary", "", `stderr of ${log.member}`);
+      summary.title = log.path;
+      fold.append(
+        summary,
+        element("pre", "replay-run-member-lines", log.lines.join("\n")),
+      );
+      return fold;
+    });
   }
 
   // State of each phase segment of a job, as { phase, state, width (0..1) or
@@ -546,6 +564,9 @@
 
     const status = element("div", "replay-run-outcome");
     const progress = progressBar();
+    const failure = element("div", "replay-run-error");
+    failure.hidden = true;
+    const memberLogList = element("div", "replay-run-member-logs");
     const counts = element("div", "replay-run-counts");
     const runDir = element("div", "replay-run-dir");
     const findingList = element("ul", "replay-run-findings");
@@ -554,6 +575,8 @@
     report.append(
       status,
       progress.element,
+      failure,
+      memberLogList,
       counts,
       runDir,
       findingList,
@@ -608,6 +631,8 @@
       if (!jobs.length) {
         follow(null);
         status.textContent = counts.textContent = runDir.textContent = "";
+        failure.hidden = true;
+        memberLogList.replaceChildren();
         progress.render(null);
         findingList.replaceChildren();
         return;
@@ -620,10 +645,19 @@
       );
       jobSelect.value = followed.id;
       const job = jobs.find((entry) => entry.id === followed.id);
-      const { level, text } = outcome(job);
+      const { level, text, error: stopped } = outcome(job);
       status.className = `replay-run-outcome ${level}`;
       status.textContent = text;
       progress.render(job);
+      failure.textContent = stopped || "";
+      failure.hidden = !stopped;
+      const logs = job.detail?.result?.member_logs || [];
+      // Folds are kept while the quoted logs stay the same.
+      const logKey = `${job.id} ${JSON.stringify(logs)}`;
+      if (memberLogList.dataset.key !== logKey) {
+        memberLogList.dataset.key = logKey;
+        memberLogList.replaceChildren(...memberLogs(logs));
+      }
       counts.textContent = countsLine(job.detail?.result);
       runDir.textContent = job.detail?.run_dir || "";
       findingList.replaceChildren(

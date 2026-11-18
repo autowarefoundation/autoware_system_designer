@@ -1171,6 +1171,52 @@ select.replay-selector-source {
   min-height: 1em;
 }
 
+/* Error that stopped the replay, and the stderr tails of the members it quotes */
+.replay-run-error {
+  padding: 6px 10px;
+  border-left: 3px solid var(--state-failed);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--state-failed) 10%, transparent);
+  font-size: 13px;
+  color: var(--state-failed);
+  overflow-wrap: anywhere;
+}
+
+.replay-run-error[hidden] {
+  display: none;
+}
+
+.replay-run-member-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.replay-run-member-logs:empty {
+  display: none;
+}
+
+.replay-run-member-log > summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.replay-run-member-lines {
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: var(--mono-font);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .replay-run-counts,
 .replay-run-dir {
   font-size: 12px;

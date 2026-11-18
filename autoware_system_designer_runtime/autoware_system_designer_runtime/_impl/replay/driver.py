@@ -68,7 +68,11 @@ DRIVER_OPTION_NAMES = (
 
 
 class ReplayError(RuntimeError):
-    """The replay cannot continue."""
+    """The replay cannot continue; ``member`` names the scope member at fault, where one is."""
+
+    def __init__(self, message: str, member: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.member = member
 
 
 class Source(Protocol):
@@ -367,11 +371,12 @@ class ReplayDriver:
             assert isinstance(subject, Endpoint)
             raise ReplayError(
                 f"the callback of {subject.label()} did not return within {self._options.callback_timeout:g} s; "
-                "a call that waits on ROS time or on another callback blocks while the driver holds both"
+                "a call that waits on ROS time or on another callback blocks while the driver holds both",
+                member=subject.link.member or None,
             )
         if kind == "clock":
             assert isinstance(subject, ProcessLink)
-            raise ReplayError(f"{subject.label()} did not apply the clock step")
+            raise ReplayError(f"{subject.label()} did not apply the clock step", member=subject.member or None)
         if kind == "delivery":
             assert isinstance(subject, Endpoint)
             subject.outstanding = 0
@@ -481,7 +486,8 @@ class ReplayDriver:
             if granted > self._options.max_callbacks_per_instant:
                 raise ReplayError(
                     f"{granted} callbacks ran at ROS time {self._now} without the scope settling; "
-                    f"last: {ep.label()}"
+                    f"last: {ep.label()}",
+                    member=ep.link.member or None,
                 )
 
     def _set_time(self, ns: int) -> None:
