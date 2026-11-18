@@ -8,6 +8,9 @@
     return;
   }
   SD.processTopics = deploymentConfig.processTopics || [];
+  SD.ambientTopics = deploymentConfig.ambientTopics || [];
+  SD.companionTopics = deploymentConfig.companionTopics || {};
+  SD.replayRuntime = deploymentConfig.replayRuntime || {};
   SD.editor.setDefaultScheme(deploymentConfig.editorScheme || "vscode");
 
   window.addEventListener("load", () => {

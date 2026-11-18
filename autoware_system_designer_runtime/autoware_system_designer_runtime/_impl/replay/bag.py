@@ -24,10 +24,14 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Collection, Iterator, Mapping, Optional, Sequence
 
-from .link import DURABILITY_TRANSIENT_LOCAL, DURABILITY_VOLATILE
+from .link import DURABILITY_TRANSIENT_LOCAL
+from .middleware import replay_middleware
 
 METADATA_FILE = "metadata.yaml"
-_STORAGE_BY_SUFFIX = {".db3": "sqlite3", ".mcap": "mcap"}
+# Storage of a bag file, by its suffix.
+STORAGE_BY_SUFFIX = {".db3": "sqlite3", ".mcap": "mcap"}
+# Suffix a storage file compressed as a whole carries after its own.
+COMPRESSED_SUFFIX = ".zstd"
 
 
 class BagError(ValueError):
@@ -39,8 +43,8 @@ class BagTopic:
     name: str
     msg_type: str
     count: int
-    # Durability the recorded publishers offered, as rmw enum values.
-    durabilities: list[int] = field(default_factory=list)
+    # Durability the recorded publishers offered, by rmw name.
+    durabilities: list[str] = field(default_factory=list)
     # Name the bag recorded it under, when a remap gave it another one.
     recorded_name: str = ""
 
@@ -77,9 +81,8 @@ def bag_directory(path: Path) -> Path:
     return path.parent if path.is_file() else path
 
 
-def _durabilities(profiles: Any) -> list[int]:
-    """Durability of each offered profile, as rmw enum values; a name other than transient local
-    counts as volatile."""
+def _durabilities(profiles: Any) -> list[str]:
+    """Durability of each offered profile, by rmw name; a number is named by the middleware settings."""
     if isinstance(profiles, str):
         import yaml
 
@@ -87,13 +90,14 @@ def _durabilities(profiles: Any) -> list[int]:
             profiles = yaml.safe_load(profiles) if profiles.strip() else []
         except yaml.YAMLError:
             return []
+    numbered = replay_middleware().qos_value_names.get("durability", {})
     found = []
     for profile in profiles or []:
         value = profile.get("durability") if isinstance(profile, Mapping) else None
-        if isinstance(value, int):
-            found.append(value)
+        if isinstance(value, int) and not isinstance(value, bool):
+            found.append(numbered.get(value, ""))
         elif isinstance(value, str):
-            found.append(DURABILITY_TRANSIENT_LOCAL if "transient" in value.lower() else DURABILITY_VOLATILE)
+            found.append(value.lower())
     return found
 
 
@@ -155,7 +159,7 @@ def _storage_of_files(info: Mapping[str, Any], directory: Path) -> str:
     """Storage of a bag whose metadata names none: the suffix of its listed files, else of the files
     in *directory*."""
     for name in info.get("relative_file_paths") or []:
-        storage_id = _STORAGE_BY_SUFFIX.get(Path(str(name)).suffix)
+        storage_id = STORAGE_BY_SUFFIX.get(Path(str(name)).suffix)
         if storage_id:
             return storage_id
     return _storage_id(directory) if directory.is_dir() else ""
@@ -163,7 +167,7 @@ def _storage_of_files(info: Mapping[str, Any], directory: Path) -> str:
 
 def _storage_id(directory: Path) -> str:
     """Storage of the bag files in *directory*; empty when it holds none."""
-    for suffix, storage_id in _STORAGE_BY_SUFFIX.items():
+    for suffix, storage_id in STORAGE_BY_SUFFIX.items():
         if any(directory.glob(f"*{suffix}")):
             return storage_id
     return ""
@@ -194,8 +198,8 @@ def read_bag_info(path: Path) -> BagInfo:
 def _info_from_storage(path: Path) -> BagInfo:
     """A bag without metadata, read through rosbag2 from its storage file, or from the split files of
     its directory."""
-    files = [path] if path.is_file() else sorted(p for suffix in _STORAGE_BY_SUFFIX for p in path.glob(f"*{suffix}"))
-    storages = {_STORAGE_BY_SUFFIX.get(file.suffix) for file in files}
+    files = [path] if path.is_file() else sorted(p for suffix in STORAGE_BY_SUFFIX for p in path.glob(f"*{suffix}"))
+    storages = {STORAGE_BY_SUFFIX.get(file.suffix) for file in files}
     if len(storages) != 1 or None in storages:
         raise BagError(f"{path}: no {METADATA_FILE} and not a .db3 or .mcap file, or a directory of either")
     (storage_id,) = storages

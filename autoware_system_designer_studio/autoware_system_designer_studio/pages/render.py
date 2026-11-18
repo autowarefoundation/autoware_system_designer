@@ -37,13 +37,21 @@ from typing import Any, Iterator, Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from autoware_system_designer_runtime.replay_record import (
+    COMPRESSED_SUFFIX,
+    METADATA_FILE,
+    PHASES,
+    REPLAY_COMMAND,
+    REPLAY_CONFIG_FILE,
+    STORAGE_SUFFIXES,
+)
 from autoware_system_designer_runtime.special_topics import special_topics
 
 from .. import latency
 from ..exports import SystemExport
 from ..vis_guide import inject_vis_guides
 from . import assets, system_icon
-from .launch_commands import launch_command_records
+from .launch_commands import launch_command_records, structure_path_arg
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +187,7 @@ class Site:
         default_mode = export.manifest.get("default_mode")
         if default_mode not in modes:
             default_mode = modes[0] if modes else ""
+        special = special_topics()
         return self._env.get_template("data/deployment_config.js.jinja2").render(
             deployment_name=export.name,
             package_name=export.package,
@@ -205,7 +214,20 @@ class Site:
             editor_scheme=EDITOR_SCHEME,
             system_definition_file=export.system_file,
             compute_units=export.compute_units(),
-            process_topics=sorted(special_topics().process),
+            process_topics=sorted(special.process),
+            ambient_topics=list(special.ambient_inputs),
+            companion_topics={topic: list(companions) for topic, companions in special.companions.items()},
+            replay_runtime={
+                "command": REPLAY_COMMAND,
+                "configFile": REPLAY_CONFIG_FILE,
+                "phases": list(PHASES),
+                "structurePaths": {mode: structure_path_arg(export.package, export.name, mode) for mode in modes},
+                "bagFiles": {
+                    "metadata": METADATA_FILE,
+                    "storage": list(STORAGE_SUFFIXES),
+                    "compressed": COMPRESSED_SUFFIX,
+                },
+            },
             deploy_names=[v["name"] for v in export.deploy_variants()],
             launch_commands=launch_command_records(export),
         )

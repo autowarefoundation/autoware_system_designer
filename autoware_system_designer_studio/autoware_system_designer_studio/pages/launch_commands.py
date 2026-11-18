@@ -76,6 +76,11 @@ def _export_path_arg(package_name: str, system_name: str, subdir: str, relative_
     return f"install/{package_name}/share/{package_name}/exports/{system_name}/{subdir}/{relative_path}"
 
 
+def structure_path_arg(package_name: str, system_name: str, mode: str) -> str:
+    """Workspace-relative path of a mode's system structure in an isolated install."""
+    return _export_path_arg(package_name, system_name, STRUCTURE_SUBDIR, f"{mode}{STRUCTURE_FILE_SUFFIX}")
+
+
 def _build_commands(
     system_name: str,
     package_name: str,
@@ -104,8 +109,7 @@ def _build_commands(
     commands: list[Command] = []
     for mode_key in mode_keys:
         mode_entries: list[Command] = []
-        structure_file = f"{mode_key}{STRUCTURE_FILE_SUFFIX}"
-        has_structure = (structure_root / structure_file).is_file()
+        has_structure = (structure_root / f"{mode_key}{STRUCTURE_FILE_SUFFIX}").is_file()
         for deploy_name in deploy_names:
             prefix = f"{DEPLOYMENTS_SUBDIR}/{deploy_name}/" if deploy_name else ""
             mode_dir = launcher_root / f"{prefix}{mode_key}"
@@ -116,7 +120,7 @@ def _build_commands(
                 )
                 native_cmd = ""
                 if has_structure:
-                    structure_path = _export_path_arg(package_name, system_name, STRUCTURE_SUBDIR, structure_file)
+                    structure_path = structure_path_arg(package_name, system_name, mode_key)
                     deploy_arg = f" --deploy {deploy_name}" if deploy_name else ""
                     native_cmd = (
                         f"ros2 run {RUNTIME_PACKAGE} {RUNTIME_EXECUTABLE} {structure_path}"

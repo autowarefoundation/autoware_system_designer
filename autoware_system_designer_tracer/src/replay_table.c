@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include <rcl/publisher.h>
+#include <rmw/qos_string_conversions.h>
 
 #include "replay_state.h"
 
@@ -240,6 +241,12 @@ void asd_replay_node(const rcl_node_t * node)
   pthread_mutex_unlock(&asd_r_lock);
 }
 
+// A policy value rmw has no name for is sent as "?".
+static const char * policy_name(const char * name)
+{
+  return name != NULL ? name : "?";
+}
+
 void asd_replay_endpoint(
   char kind, const void * handle, const rcl_node_t * node, const char * topic, const rmw_qos_profile_t * qos)
 {
@@ -252,19 +259,19 @@ void asd_replay_endpoint(
   if (e != NULL) {
     e->gated = kind == 's';
     size_t depth = 0;
-    int reliability = 0, durability = 0, history = 0;
+    const char * reliability = NULL, * durability = NULL, * history = NULL;
     if (qos != NULL) {
-      reliability = (int)qos->reliability;
-      durability = (int)qos->durability;
-      history = (int)qos->history;
+      reliability = rmw_qos_reliability_policy_to_str(qos->reliability);
+      durability = rmw_qos_durability_policy_to_str(qos->durability);
+      history = rmw_qos_history_policy_to_str(qos->history);
       depth = qos->depth;
       if (qos->history != RMW_QOS_POLICY_HISTORY_KEEP_ALL) {
         e->depth = depth > 0 ? (uint32_t)depth : 1;
       }
     }
     rp_send(
-      "ep\t%u\t%c\t%s\t%s\t%d\t%d\t%d\t%zu", e->id, kind, fqn, topic != NULL ? topic : "?", reliability,
-      durability, history, depth);
+      "ep\t%u\t%c\t%s\t%s\t%s\t%s\t%s\t%zu", e->id, kind, fqn, topic != NULL ? topic : "?",
+      policy_name(reliability), policy_name(durability), policy_name(history), depth);
   }
   pthread_mutex_unlock(&asd_r_lock);
 }

@@ -1,8 +1,8 @@
 // Replay: the topics of a bag handed to the page as files, and what a drop
-// carries. A `metadata.yaml` is read as text, MCAP files from their summary
-// sections, the splits of a bag as one; a `.db3` file and a file compressed as
-// a whole (`.zstd`) are read by the daemon. A path or `file://` URI dropped as
-// text names the bag for the daemon.
+// carries. The metadata file is read as text, MCAP files from their summary
+// sections, the splits of a bag as one; another storage file and a file
+// compressed as a whole are read by the daemon. A path or `file://` URI
+// dropped as text names the bag for the daemon.
 (function () {
   const SD = window.SD;
   const replay = ((SD.activities ||= {}).replay ||= {});
@@ -19,10 +19,37 @@
   // Statistics record: offset of the per-channel message counts.
   const MCAP_STATISTICS_COUNTS = 42;
 
-  const isMetadata = (name) => /\.ya?ml$/i.test(name);
-  const isMcap = (name) => /\.mcap$/i.test(name);
-  // Storage files the page does not read: SQLite, and any file compressed as a whole.
-  const isOpaque = (name) => /\.db3$|\.(mcap|db3)\.zstd$/i.test(name);
+  // File names of a bag, from the page configuration: its `metadata` file,
+  // the suffixes of its `storage` files and the suffix a file `compressed`
+  // as a whole adds.
+  const names = () => ({
+    metadata: "",
+    storage: [],
+    compressed: "",
+    ...(SD.replayRuntime || {}).bagFiles,
+  });
+  // Storage whose summary the page reads.
+  const MCAP_SUFFIX = ".mcap";
+  const lower = (name) => String(name).toLowerCase();
+  const isMetadata = (name) => lower(name) === names().metadata;
+  const isStorage = (name) =>
+    names().storage.some((suffix) => lower(name).endsWith(suffix));
+  const isCompressed = (name) =>
+    !!names().compressed && lower(name).endsWith(names().compressed);
+  const isMcap = (name) => lower(name).endsWith(MCAP_SUFFIX);
+  // Storage files the page does not read: another storage, and any file compressed as a whole.
+  const isOpaque = (name) =>
+    isCompressed(name)
+      ? isStorage(name.slice(0, -names().compressed.length))
+      : isStorage(name) && !isMcap(name);
+  // A file that names a bag: its metadata or one of its storage files.
+  const isBagFile = (name) => isMetadata(name) || isStorage(name);
+  const suffixOf = (name) => name.slice(name.lastIndexOf("."));
+  // Suffixes of the files a bag is read from, for a file chooser.
+  const fileSuffixes = () =>
+    [suffixOf(names().metadata), ...names().storage, names().compressed].filter(
+      Boolean,
+    );
   const isAbsolute = (path) => /^(\/|~(\/|$)|file:\/\/)/i.test(path);
   const plural = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -137,8 +164,8 @@
     if (!chosen)
       throw new Error(
         files.length === 1
-          ? `${files[0].name}: not a metadata.yaml or bag file`
-          : "no metadata.yaml or bag file among the files",
+          ? `${files[0].name}: not a ${names().metadata} or bag file`
+          : `no ${names().metadata} or bag file among the files`,
       );
     if (chosen.metadata)
       return {
@@ -168,8 +195,10 @@
 
   // Why the page does not read the storage file `name` itself.
   function opaqueNote(name) {
-    const kind = /\.zstd$/i.test(name) ? "compressed bag file" : ".db3 file";
-    return `${name}: a ${kind} is not read in the page; drop its metadata.yaml, or connect the studio daemon and give the bag's path`;
+    const kind = isCompressed(name)
+      ? "compressed bag file"
+      : `${suffixOf(name)} file`;
+    return `${name}: a ${kind} is not read in the page; drop its ${names().metadata}, or connect the studio daemon and give the bag's path`;
   }
 
   // Path a dropped text names: a `file://` URI or an absolute path, else "".
@@ -238,7 +267,22 @@
     return { files: found.flat().filter(Boolean), path };
   }
 
+  // Directory that holds the bag at `path` beside others: the parent of the
+  // bag directory, which a path of one of its files names by that file.
+  function bagCollection(path) {
+    const parts = String(path || "")
+      .split("/")
+      .filter(Boolean);
+    if (isBagFile(parts[parts.length - 1] || "")) parts.pop();
+    parts.pop();
+    return parts.length ? `/${parts.join("/")}` : "";
+  }
+
   replay.bagFile = {
+    metadataName: () => names().metadata,
+    isBagFile,
+    fileSuffixes,
+    bagCollection,
     mcapTopics,
     choose,
     readTopics,

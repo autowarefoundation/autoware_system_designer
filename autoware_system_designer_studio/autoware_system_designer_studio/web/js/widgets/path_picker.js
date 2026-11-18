@@ -4,7 +4,6 @@
 (function () {
   const SD = window.SD;
   const { element, popup } = SD.widgets;
-  const BAG_FILE = /\.(mcap|db3)$|^metadata\.ya?ml$/i;
 
   function formatSize(bytes) {
     const units = ["B", "KB", "MB", "GB", "TB"];
@@ -17,10 +16,11 @@
     return `${value.toFixed(unit ? 1 : 0)} ${units[unit]}`;
   }
 
-  // `kind` is "dir" or "bag"; `open(start, onPick)` shows the directory at
-  // `start` (its nearest existing one, else home) and calls `onPick(path)`
-  // with the path selected.
-  function pathPicker({ title, kind = "dir" }) {
+  // `kind` is "dir" or "bag"; `isBagFile(name)` tells the files a "bag"
+  // picker lists. `open(start, onPick)` shows the directory at `start` (its
+  // nearest existing one, else home) and calls `onPick(path)` with the path
+  // selected.
+  function pathPicker({ title, kind = "dir", isBagFile = () => false }) {
     const box = popup(title);
     box.element.classList.add("path-picker-overlay");
     const up = element("button", "panel-button", "Up");
@@ -68,7 +68,7 @@
       path.value = listing.path;
       up.disabled = !listing.parent;
       const rows = listing.entries
-        .filter((entry) => entry.dir || BAG_FILE.test(entry.name))
+        .filter((entry) => entry.dir || isBagFile(entry.name))
         .map((entry) => {
           const full = join(listing.path, entry.name);
           const row = element(

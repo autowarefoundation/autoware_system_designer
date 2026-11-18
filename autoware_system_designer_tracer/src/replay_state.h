@@ -29,7 +29,7 @@
 #define ASD_LOCAL __attribute__((visibility("hidden")))
 
 // Version of the lines both sides speak; PROTOCOL of the driver's link.py.
-#define REPLAY_PROTOCOL 2
+#define REPLAY_PROTOCOL 3
 
 enum { STATE_UNSET = 0, STATE_OFF = 1, STATE_ON = 2 };
 enum { KIND_PUBLISHER = 0, KIND_SUBSCRIPTION = 1, KIND_TIMER = 2, KIND_COUNT = 3 };

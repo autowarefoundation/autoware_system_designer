@@ -21,6 +21,7 @@
 #define AUTOWARE_SYSTEM_DESIGNER_TRACER__REPLAY_H_
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <rcl/node.h>
@@ -33,6 +34,9 @@ typedef rcl_ret_t (*asd_wait_fn)(rcl_wait_set_t *, int64_t);
 // The process is linked to a replay driver; connects on the first call.
 bool asd_replay_armed(void);
 void asd_replay_at_fork_child(void);
+// The rclcpp hooks of the process, as its hello tells them: "ok", the names of those whose
+// function did not resolve, or "-" for a process without rclcpp.
+void asd_replay_hook_state(char * text, size_t size);
 
 // ---- endpoints ------------------------------------------------------------------
 

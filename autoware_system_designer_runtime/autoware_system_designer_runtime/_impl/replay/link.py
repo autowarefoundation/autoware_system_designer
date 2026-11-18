@@ -30,7 +30,7 @@ from typing import Callable, Optional
 logger = logging.getLogger(__name__)
 
 # Version of the lines both sides speak; a process of another version is refused.
-PROTOCOL = 2
+PROTOCOL = 3
 
 SOCKET_ENV = "ASD_REPLAY_SOCKET"
 START_ENV = "ASD_REPLAY_START_NS"
@@ -41,11 +41,14 @@ GATE_HOLD_ENV = "ASD_REPLAY_GATE_HOLD_NS"
 TAKE_TIMEOUT_ENV = "ASD_REPLAY_TAKE_TIMEOUT_NS"
 GRANTS_ENV = "ASD_REPLAY_GRANTS"
 
-# rmw_qos_*_policy_t values.
-RELIABILITY_BEST_EFFORT = 2
-DURABILITY_TRANSIENT_LOCAL = 1
-DURABILITY_VOLATILE = 2
-HISTORY_KEEP_ALL = 2
+# Quality of service policies by their rmw names (rmw_qos_*_policy_to_str).
+RELIABILITY_BEST_EFFORT = "best_effort"
+DURABILITY_TRANSIENT_LOCAL = "transient_local"
+HISTORY_KEEP_ALL = "keep_all"
+
+# Hook state of a hello: every rclcpp hook resolved, or the process has no rclcpp.
+HOOKS_OK = "ok"
+HOOKS_NONE = "-"
 
 PUBLISHER = "p"
 SUBSCRIPTION = "s"
@@ -63,8 +66,8 @@ class Endpoint:
     kind: str
     node: str
     topic: str = ""
-    reliability: int = 0
-    durability: int = 0
+    reliability: str = ""
+    durability: str = ""
     # Keep-last depth of a subscription; 0 without a bound.
     depth: int = 0
     period_ns: int = 0
@@ -108,6 +111,8 @@ class ProcessLink:
     member: str
     # Process id in the process's own pid namespace.
     pid: int
+    # rclcpp hooks of its tracer that did not resolve.
+    missing_hooks: tuple[str, ...]
     writer: asyncio.StreamWriter = field(repr=False)
     endpoints: dict[int, Endpoint] = field(default_factory=dict)
     nodes: list[str] = field(default_factory=list)
@@ -199,7 +204,15 @@ class LinkServer:
             protocol, member, pid = int(fields[0]), fields[1], int(fields[2])
         except (ValueError, IndexError):
             protocol, member, pid = 0, "", 0
-        return ProcessLink(id=len(self.links) + 1, protocol=protocol, member=member, pid=pid, writer=writer)
+        hooks = fields[3] if len(fields) > 3 else HOOKS_OK
+        return ProcessLink(
+            id=len(self.links) + 1,
+            protocol=protocol,
+            member=member,
+            pid=pid,
+            missing_hooks=() if hooks in (HOOKS_OK, HOOKS_NONE) else tuple(hooks.split(",")),
+            writer=writer,
+        )
 
     @staticmethod
     def _register(link: ProcessLink, kind: str, fields: list[str]) -> None:
@@ -213,9 +226,9 @@ class LinkServer:
                 kind=ep_kind,
                 node=node,
                 topic=topic,
-                reliability=int(reliability),
-                durability=int(durability),
-                depth=0 if int(history) == HISTORY_KEEP_ALL else max(int(depth), 1),
+                reliability=reliability,
+                durability=durability,
+                depth=0 if history == HISTORY_KEEP_ALL else max(int(depth), 1),
             )
         elif kind == "timer":
             ident, node, period, clock, next_ns = fields[:5]

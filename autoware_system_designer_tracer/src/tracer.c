@@ -44,6 +44,7 @@
 //             rclcpp::Executor::execute_any_executable(rclcpp::AnyExecutable &)
 
 #include <dlfcn.h>
+#include <link.h>
 #include <errno.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -835,11 +836,58 @@ rcl_ret_t rcl_node_init(
 
 // ---- rclcpp hook -----------------------------------------------------------------------
 
+// rclcpp functions hooked by their mangled names.
+#define RCLCPP_INTRA_PROCESS _ZNK6rclcpp11NodeOptions23use_intra_process_commsEv
+#define RCLCPP_EXECUTE _ZN6rclcpp8Executor22execute_any_executableERNS_13AnyExecutableE
+#define SYMBOL_TEXT_(symbol) #symbol
+#define SYMBOL_TEXT(symbol) SYMBOL_TEXT_(symbol)
+// Library whose presence makes the process one of rclcpp.
+#define RCLCPP_LIBRARY "librclcpp.so"
+
+static const struct
+{
+  const char * name;
+  const char * symbol;
+} RCLCPP_HOOKS[] = {
+  {"intra_process", SYMBOL_TEXT(RCLCPP_INTRA_PROCESS)},
+  {"execute", SYMBOL_TEXT(RCLCPP_EXECUTE)},
+};
+
+static int is_rclcpp(struct dl_phdr_info * info, size_t size, void * found)
+{
+  (void)size;
+  if (info->dlpi_name != NULL && strstr(info->dlpi_name, RCLCPP_LIBRARY) != NULL) {
+    *(bool *)found = true;
+    return 1;
+  }
+  return 0;
+}
+
+void asd_replay_hook_state(char * text, size_t size)
+{
+  bool rclcpp = false;
+  dl_iterate_phdr(is_rclcpp, &rclcpp);
+  if (!rclcpp) {
+    snprintf(text, size, "-");
+    return;
+  }
+  size_t used = 0;
+  text[0] = '\0';
+  for (size_t i = 0; i < sizeof(RCLCPP_HOOKS) / sizeof(RCLCPP_HOOKS[0]); ++i) {
+    if (dlsym(RTLD_NEXT, RCLCPP_HOOKS[i].symbol) == NULL && used < size) {
+      used += (size_t)snprintf(text + used, size - used, "%s%s", used > 0 ? "," : "", RCLCPP_HOOKS[i].name);
+    }
+  }
+  if (used == 0) {
+    snprintf(text, size, "ok");
+  }
+}
+
 typedef bool (*node_option_fn)(const void *);
 
 // rclcpp::NodeOptions::use_intra_process_comms() const. An intra-process delivery makes no
 // rcl call, so under replay every node is created without it.
-bool _ZNK6rclcpp11NodeOptions23use_intra_process_commsEv(const void * self)
+bool RCLCPP_INTRA_PROCESS(const void * self)
 {
   static node_option_fn real_slot = NULL;
   if (asd_replay_armed()) {
@@ -847,7 +895,7 @@ bool _ZNK6rclcpp11NodeOptions23use_intra_process_commsEv(const void * self)
   }
   node_option_fn real = __atomic_load_n(&real_slot, __ATOMIC_ACQUIRE);
   if (real == NULL) {
-    real = (node_option_fn)dlsym(RTLD_NEXT, "_ZNK6rclcpp11NodeOptions23use_intra_process_commsEv");
+    real = (node_option_fn)dlsym(RTLD_NEXT, SYMBOL_TEXT(RCLCPP_INTRA_PROCESS));
     if (real == NULL) {
       return false;
     }
@@ -867,12 +915,12 @@ static void callback_exit(const bool * entered)
 
 // rclcpp::Executor::execute_any_executable(rclcpp::AnyExecutable &): its return is the end of
 // one callback, also when the callback throws.
-void _ZN6rclcpp8Executor22execute_any_executableERNS_13AnyExecutableE(void * executor, void * any_executable)
+void RCLCPP_EXECUTE(void * executor, void * any_executable)
 {
   static execute_fn real_slot = NULL;
   execute_fn real = __atomic_load_n(&real_slot, __ATOMIC_ACQUIRE);
   if (real == NULL) {
-    real = (execute_fn)dlsym(RTLD_NEXT, "_ZN6rclcpp8Executor22execute_any_executableERNS_13AnyExecutableE");
+    real = (execute_fn)dlsym(RTLD_NEXT, SYMBOL_TEXT(RCLCPP_EXECUTE));
     if (real == NULL) {
       return;
     }

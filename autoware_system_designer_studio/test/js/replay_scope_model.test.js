@@ -6,7 +6,18 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 
 global.window = {
-  SD: { processTopics: ["/rosout", "/parameter_events", "/clock"] },
+  SD: {
+    processTopics: ["/rosout", "/parameter_events", "/clock"],
+    replayRuntime: {
+      command: "autoware-system-designer-replay",
+      configFile: "replay.yaml",
+      phases: ["pre-process", "replay", "post-process"],
+      structurePaths: {
+        default:
+          "install/pkg/share/pkg/exports/Sys/system_structure/default.json",
+      },
+    },
+  },
 };
 require(
   path.join(
@@ -80,17 +91,6 @@ test("a scope path selects the nodes under it with their container", () => {
   assert.deepEqual(scope.containers, ["/cc"]);
   assert.deepEqual(scope.unmatched, ["/nothing"]);
   assert.deepEqual(model.selectScope(nodes, ["/mo"]).nodes, []);
-});
-
-test("a bag path names the directory that holds its bag directory", () => {
-  assert.equal(model.bagCollection("/data/bags/run"), "/data/bags");
-  assert.equal(model.bagCollection("/data/bags/run/run_0.mcap"), "/data/bags");
-  assert.equal(
-    model.bagCollection("/data/bags/run/metadata.yaml"),
-    "/data/bags",
-  );
-  assert.equal(model.bagCollection("/run"), "");
-  assert.equal(model.bagCollection(""), "");
 });
 
 test("the fewest paths name a selection", () => {
@@ -215,6 +215,36 @@ test("inputs match the bag by name, remap and accepted names", () => {
   );
 });
 
+test("ambient topics and companions of the bag are fed beside the inputs", () => {
+  const SD = global.window.SD;
+  SD.ambientTopics = ["/tf", "/tf_static"];
+  SD.companionTopics = { "/in": ["/in_info"] };
+  try {
+    const bound = model.boundary(model.nodes(design()), ["/mod/a"]);
+    assert.deepEqual(
+      bound.ambient.map((entry) => entry.topic),
+      ["/in_info", "/tf", "/tf_static"],
+    );
+    const bag = new Map([
+      ["/in", { type: STRING, count: 7 }],
+      ["/tf", { type: "tf2_msgs/msg/TFMessage", count: 3 }],
+    ]);
+    const matched = model.matchInputs(bound, bag, {}, new Set());
+    assert.deepEqual(
+      matched.map((input) => [input.topic, input.status]),
+      [
+        ["/in", "fed"],
+        ["/lonely", "unpublished"],
+        ["/tf", "ambient"],
+      ],
+    );
+    assert.deepEqual(model.inputChoices(matched[2], bag), []);
+  } finally {
+    delete SD.ambientTopics;
+    delete SD.companionTopics;
+  }
+});
+
 test("an input of no design type takes any free bag topic", () => {
   const bag = new Map([
     ["/raw", { type: STRING, count: 7 }],
@@ -237,11 +267,13 @@ test("an input of no design type takes any free bag topic", () => {
 test("the configuration and command name the scope, remap and bag", () => {
   assert.equal(
     model.configYaml({
-      patterns: ["/mod"],
+      scope: ["/mod"],
       remap: { "/raw": "/in" },
-      accept: ["/srv/get", "/lonely"],
+      accept: ["/lonely", "/srv/get"],
       outputs: ["/mid"],
       skip_outputs: ["/out"],
+      lead_in: 0.5,
+      driver: { callback_timeout: 60 },
     }),
     [
       "scope:",
@@ -255,13 +287,13 @@ test("the configuration and command name the scope, remap and bag", () => {
       "  - /mid",
       "skip_outputs:",
       "  - /out",
+      "lead_in: 0.5",
+      "driver:",
+      "  callback_timeout: 60",
       "",
     ].join("\n"),
   );
-  const structure = model.structurePath(
-    { packageName: "pkg", deploymentName: "Sys" },
-    "default",
-  );
+  const structure = model.structurePath("default");
   assert.equal(
     model.command({
       structure,

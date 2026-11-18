@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import asyncio
 import itertools
-import json
 import os
 import re
 import shutil
@@ -42,6 +41,7 @@ from urllib.parse import unquote, urlsplit
 from autoware_system_designer_runtime.replay_record import (
     BOUNDARY_FILE,
     REPLAY_COMMAND,
+    REPLAY_CONFIG_FILE,
     RESULT_FILE,
     VERDICT_FILE,
     BagError,
@@ -60,7 +60,6 @@ if TYPE_CHECKING:
 
 REPLAY_JOB_KIND = "replay"
 RUNTIME_PACKAGE = "autoware_system_designer_runtime"
-CONFIG_FILE = "replay_config.json"
 # ROS_DOMAIN_ID range of the default DDS port mapping.
 DOMAIN_ID_MAX = 232
 # Pre-flight problems and differing topics kept in a job's summary.
@@ -250,7 +249,7 @@ def plan_replay(
         str(command),
         str(system.structure_path(mode)),
         "--config",
-        str(run_dir / CONFIG_FILE),
+        str(run_dir / REPLAY_CONFIG_FILE),
         "--bag",
         str(bag_path(bag)),
         "--log-dir",
@@ -286,9 +285,11 @@ def plan_replay(
 
 
 def write_config(plan: ReplayPlan) -> None:
-    """The plan's configuration in its run directory; JSON, which the runtime reads as YAML."""
+    """The plan's configuration in its run directory."""
+    import yaml
+
     plan.run_dir.mkdir(parents=True, exist_ok=True)
-    (plan.run_dir / CONFIG_FILE).write_text(json.dumps(plan.config, indent=2) + "\n")
+    (plan.run_dir / REPLAY_CONFIG_FILE).write_text(yaml.safe_dump(plan.config, sort_keys=False))
 
 
 def discard_config(plan: ReplayPlan) -> None:

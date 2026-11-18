@@ -14,6 +14,9 @@ const deploymentConfig = {
     systemDefinitionFile: {{ system_definition_file | tojson }},
     computeUnits: {{ compute_units | tojson }},
     processTopics: {{ process_topics | tojson }},
+    ambientTopics: {{ ambient_topics | tojson }},
+    companionTopics: {{ companion_topics | tojson }},
+    replayRuntime: {{ replay_runtime | tojson }},
     deployNames: {{ deploy_names | tojson }},
     launchCommands: {{ launch_commands | tojson }}
 };

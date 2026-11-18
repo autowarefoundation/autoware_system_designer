@@ -39,6 +39,7 @@ def test_the_package_file_gives_the_replay_settings():
     assert middleware.isolation({"ROS_DISTRO": "jazzy"}) == {"ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST"}
     assert middleware.isolation({}) == {"ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST"}
     assert middleware.domain_id_variable == "ROS_DOMAIN_ID"
+    assert middleware.qos_value_names == {"durability": {1: "transient_local", 2: "volatile"}}
     assert middleware.identifier_field(UUID()) == "uuid"
     assert middleware.identifier_field(Header()) is None
 

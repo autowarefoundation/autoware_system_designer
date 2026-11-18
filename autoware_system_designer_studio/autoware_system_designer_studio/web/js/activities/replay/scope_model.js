@@ -8,8 +8,9 @@
 
   // Topics every process carries, from the page configuration; no boundary holds them.
   const isProcessTopic = (topic) => (SD.processTopics || []).includes(topic);
-  const REPLAY_COMMAND = "autoware-system-designer-replay";
-  const CONFIG_FILE = "replay.yaml";
+  // Names of the runtime's replay, from the page configuration: its command,
+  // configuration file and the structure file of each mode.
+  const runtime = () => SD.replayRuntime || {};
   // Choice of an input that accepts it unfed; no topic bears the name.
   const ACCEPT = "\u0000accept";
   // Note of each status an input takes against the bag.
@@ -21,6 +22,7 @@
     unpublished: "no publisher, not in the bag",
     missing: "not in the bag",
     unknown: "no bag read",
+    ambient: "fed beside the inputs",
   };
 
   function resolveTopic(port) {
@@ -179,6 +181,8 @@
 
   // Where the scope meets the rest of the system: inputs a node outside
   // publishes (or none does), the scope's outputs, and its service ports.
+  // `ambient` holds the topics a replay feeds beside the inputs: the
+  // companions of the inputs and the ambient topics of the page configuration.
   function boundary(nodeList, scopePaths) {
     const inside = new Set(scopePaths);
     const publishers = new Map();
@@ -232,6 +236,31 @@
       });
     });
 
+    const ambient = new Map();
+    const feedBeside = (topic) => {
+      if (inputs.has(topic) || ambient.has(topic)) return;
+      const declaring = nodeList.find(
+        (node) => node.inputs.has(topic) || node.outputs.has(topic),
+      );
+      ambient.set(topic, {
+        topic,
+        type: declaring
+          ? declaring.inputs.get(topic) || declaring.outputs.get(topic)
+          : "",
+        subscribers: scoped
+          .filter((node) => node.inputs.has(topic))
+          .map((node) => node.path),
+        publishers: [],
+        scopePublishers: (publishers.get(topic) || []).filter((path) =>
+          inside.has(path),
+        ),
+      });
+    };
+    [...inputs.keys()].forEach((topic) =>
+      ((SD.companionTopics || {})[topic] || []).forEach(feedBeside),
+    );
+    (SD.ambientTopics || []).forEach(feedBeside);
+
     const services = [];
     scoped.forEach((node) => {
       node.services.forEach(({ name, type, role }) => {
@@ -254,6 +283,7 @@
     const byTopic = (a, b) => a.topic.localeCompare(b.topic);
     return {
       inputs: [...inputs.values()].sort(byTopic),
+      ambient: [...ambient.values()],
       outputs: [...outputs.values()].sort(byTopic),
       services: services.sort(
         (a, b) => a.name.localeCompare(b.name) || a.node.localeCompare(b.node),
@@ -301,13 +331,30 @@
   //   fed | remapped | accepted | type (recorded with another type) |
   //   unpublished (no publisher in the design, not in the bag) | missing | unknown (no bag)
   // with the bag topics of the input's type that no input takes as `candidates`;
-  // an input of no design type takes any of them.
+  // an input of no design type takes any of them. The ambient topics the bag
+  // holds follow, as `ambient`.
   function matchInputs(bound, bag, remap, accept) {
     const source = new Map(
       Object.entries(remap).map(([recorded, fed]) => [fed, recorded]),
     );
     const taken = new Set(bound.inputs.map((input) => input.topic));
-    return bound.inputs.map((input) => {
+    const ambient = (bound.ambient || []).flatMap((entry) => {
+      const recordedName = source.get(entry.topic) || entry.topic;
+      const recorded = bag ? bag.get(recordedName) : null;
+      return recorded
+        ? [
+            {
+              ...entry,
+              status: "ambient",
+              recordedName,
+              recordedType: recorded.type,
+              count: recorded.count,
+              candidates: [],
+            },
+          ]
+        : [];
+    });
+    const matched = bound.inputs.map((input) => {
       const recordedName = source.get(input.topic) || input.topic;
       const recorded = bag ? bag.get(recordedName) : null;
       const candidates = bag
@@ -339,12 +386,15 @@
         candidates,
       };
     });
+    return [...matched, ...ambient];
   }
 
   // Sources the viewer picks among for a matched input: the bag topics of its
   // type, the topic recorded with another type, and where the bag lacks the
   // topic, leaving it unfed or accepting it unfed. One entry is `current`.
+  // An ambient topic has no choice.
   function inputChoices(input, bag) {
+    if (input.status === "ambient") return [];
     const choices = [];
     if (bag) {
       input.candidates.forEach((name) =>
@@ -523,30 +573,31 @@
     };
   }
 
-  function yamlList(key, items) {
-    return items.length
-      ? [`${key}:`, ...items.map((item) => `  - ${item}`)]
-      : [];
+  // One key of a replay configuration as YAML lines: a list of names, a
+  // mapping of names or numbers, or a number; none for an empty value.
+  function yamlEntry(key, value) {
+    if (Array.isArray(value))
+      return value.length
+        ? [`${key}:`, ...value.map((item) => `  - ${item}`)]
+        : [];
+    if (value && typeof value === "object") {
+      const pairs = Object.entries(value).sort(([a], [b]) =>
+        a.localeCompare(b),
+      );
+      return pairs.length
+        ? [`${key}:`, ...pairs.map(([name, item]) => `  ${name}: ${item}`)]
+        : [];
+    }
+    return value === undefined || value === null ? [] : [`${key}: ${value}`];
   }
 
-  // Replay configuration of the runtime: scope, remap, accepted names,
-  // internal outputs to record and boundary outputs to leave unrecorded.
-  function configYaml({
-    patterns,
-    remap = {},
-    accept = [],
-    outputs = [],
-    skip_outputs: skipped = [],
-  }) {
-    const pairs = Object.entries(remap).sort(([a], [b]) => a.localeCompare(b));
+  // The replay configuration a request to the daemon carries, as the file
+  // the runtime reads.
+  function configYaml(configuration) {
     return [
-      ...yamlList("scope", patterns),
-      ...(pairs.length
-        ? ["remap:", ...pairs.map(([from, to]) => `  ${from}: ${to}`)]
-        : []),
-      ...yamlList("accept", [...accept].sort()),
-      ...yamlList("outputs", [...outputs].sort()),
-      ...yamlList("skip_outputs", [...skipped].sort()),
+      ...Object.entries(configuration).flatMap(([key, value]) =>
+        yamlEntry(key, value),
+      ),
       "",
     ].join("\n");
   }
@@ -558,36 +609,23 @@
   }
 
   // Structure file of a mode, relative to the workspace of an isolated install.
-  function structurePath(config, mode) {
-    const pkg = config.packageName;
-    return `install/${pkg}/share/${pkg}/exports/${config.deploymentName}/system_structure/${mode}.json`;
+  function structurePath(mode) {
+    return (runtime().structurePaths || {})[mode] || "";
   }
 
   function command({ structure, bag, deploy, check }) {
     return [
-      REPLAY_COMMAND,
+      runtime().command,
       shellQuote(structure),
-      `--config ${CONFIG_FILE}`,
+      `--config ${runtime().configFile}`,
       `--bag ${bag ? shellQuote(bag) : "<bag>"}`,
       ...(deploy ? [`--deploy ${shellQuote(deploy)}`] : []),
       ...(check ? ["--check"] : []),
     ].join(" ");
   }
 
-  // Directory that holds the bag at `path` beside others: the parent of the
-  // bag directory, which a path of one of its files names by that file.
-  function bagCollection(path) {
-    const parts = String(path || "")
-      .split("/")
-      .filter(Boolean);
-    if (/\.(mcap|db3|ya?ml)$/i.test(parts[parts.length - 1] || "")) parts.pop();
-    parts.pop();
-    return parts.length ? `/${parts.join("/")}` : "";
-  }
-
   replay.model = {
-    CONFIG_FILE,
-    bagCollection,
+    configFile: () => runtime().configFile,
     ACCEPT,
     INPUT_NOTE,
     nodes,

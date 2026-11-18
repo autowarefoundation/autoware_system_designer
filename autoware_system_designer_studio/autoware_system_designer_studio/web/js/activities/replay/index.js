@@ -211,6 +211,9 @@
     members,
   }) {
     const skipped = new Set(kept.skip_outputs);
+    const ambient = matched.filter(
+      (input) => input.status === "ambient",
+    ).length;
     const unfed = matched.filter((input) =>
       ["missing", "type"].includes(input.status),
     ).length;
@@ -236,8 +239,9 @@
         : "no bag read: drop one on the view",
       scopeTitle: `Replay boundary: ${members}`,
       summary:
-        plural(matched.length, "input") +
+        plural(matched.length - ambient, "input") +
         (bag ? `, ${unfed} unfed` : "") +
+        (ambient ? `, ${ambient} ambient` : "") +
         (remapped ? `, ${remapped} remapped` : "") +
         `, ${recorded} of ${bound.outputs.length} outputs recorded`,
       blocked: unfed > 0,
@@ -252,6 +256,7 @@
     );
     const inputs = {};
     matched.forEach((input) => {
+      if (input.status === "ambient") return;
       if (accepted.has(input.topic)) inputs[input.topic] = null;
       else if (input.recordedName) inputs[input.topic] = input.recordedName;
       else if (sourceOf[input.topic])
@@ -275,6 +280,9 @@
     let shownBound = { inputs: [], outputs: [] };
     // Parameters of a replay of the shown choices, or what it still lacks.
     let request = { blocker: NO_SCOPE };
+    // Scope and choices of the shown replay as keys of the replay
+    // configuration, and the arguments of its command.
+    let shown = { configuration: {}, args: {} };
     // The activity's slots are visible from mount until another activity takes over.
     let visible = true;
 
@@ -381,8 +389,11 @@
     boundaryLists.append(selectorBlock, services.element);
     boundaryZone.body.appendChild(boundaryLists);
 
-    const commands = commandsPopup();
     const panel = runPanel(daemon, () => request);
+    const commands = commandsPopup(() => ({
+      configuration: configuration(),
+      args: shown.args,
+    }));
     runZone.actions.appendChild(commands.button);
     // Without the daemon's replay, the popup's commands run the replay.
     const runNote = element(
@@ -395,6 +406,16 @@
     setupSlot.replaceWith(setupBar.element);
     // Parts a scope fills.
     const scopeBlocks = [selectorBlock, services.element, commands.button];
+
+    // The replay configuration of the shown choices and run options.
+    function configuration() {
+      const { leadIn, driver } = panel.getOptions();
+      return {
+        ...shown.configuration,
+        ...(leadIn === null ? {} : { lead_in: leadIn }),
+        ...(Object.keys(driver).length ? { driver } : {}),
+      };
+    }
 
     function refreshRun() {
       panel.refresh();
@@ -462,11 +483,11 @@
       services.set(bound);
 
       const args = {
-        structure: model.structurePath(config, store.get("mode")),
+        structure: model.structurePath(store.get("mode")),
         bag: bag.path(),
         deploy: store.get("deploy") || "",
       };
-      commands.set({ patterns: patterns(), ...kept }, args);
+      shown = { configuration: { scope: patterns(), ...kept }, args };
       const blocker = bag.blocker();
       request = blocker
         ? { blocker }
@@ -476,8 +497,7 @@
               mode: store.get("mode"),
               bag: args.bag,
               deploy: args.deploy,
-              scope: patterns(),
-              ...kept,
+              ...shown.configuration,
             },
           };
       refreshRun();
@@ -495,19 +515,14 @@
           .map((o) => o.topic),
         ...kept.outputs,
       ].sort();
-      const { run, leadIn, driver } = panel.getOptions();
+      const { run } = panel.getOptions();
       return {
         setup: {
           system: config.systemId,
           mode: store.get("mode"),
           ...(store.get("deploy") ? { deploy: store.get("deploy") } : {}),
           ...(bag.path() ? { bag: bag.path() } : {}),
-          config: {
-            scope: patterns(),
-            ...kept,
-            ...(leadIn === null ? {} : { lead_in: leadIn }),
-            ...(Object.keys(driver).length ? { driver } : {}),
-          },
+          config: configuration(),
           inputs: inputSources(matched, kept),
           recorded,
           run,

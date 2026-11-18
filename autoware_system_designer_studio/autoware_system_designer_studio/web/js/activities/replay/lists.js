@@ -95,6 +95,7 @@
     "accepted",
     "remapped",
     "fed",
+    "ambient",
   ];
   // Statuses the head's action accepts unfed.
   const UNRESOLVED = ["missing", "unpublished"];
@@ -114,14 +115,19 @@
       entry("in the bag", [input.recordedType], "replay-input-conflict");
     else if (input.status === "remapped")
       entry("in the bag", [input.recordedName]);
+    if (input.status !== "ambient")
+      entry(
+        "published by",
+        input.publishers.length
+          ? input.publishers
+          : ["no publisher in the design"],
+        input.publishers.length ? "" : "replay-input-none",
+      );
     entry(
-      "published by",
-      input.publishers.length
-        ? input.publishers
-        : ["no publisher in the design"],
-      input.publishers.length ? "" : "replay-input-none",
+      "subscribed by",
+      input.subscribers.length ? input.subscribers : ["no port in the scope"],
+      input.subscribers.length ? "" : "replay-input-none",
     );
-    entry("subscribed by", input.subscribers);
     return node;
   }
 

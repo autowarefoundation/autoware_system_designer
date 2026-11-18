@@ -17,9 +17,13 @@
 // _impl/replay/link.py).
 //
 //   process -> driver
-//     hello  protocol member pid  member: ASD_REPLAY_MEMBER, the member that started the process
+//     hello  protocol member pid hooks
+//                               member: ASD_REPLAY_MEMBER, the member that started the process;
+//                               hooks: ok, the rclcpp hooks that did not resolve
+//                               (intra_process, execute), or - without rclcpp
 //     node   fqn
 //     ep     id kind(p|s) node topic reliability durability history depth
+//                               the policies by their rmw names (rmw/qos_string_conversions.h)
 //     timer  id node period_ns clock(r: ROS, w: swapped from a wall clock, f: free wall clock) next_ns
 //     fini   id
 //     waited id                 the endpoint sits in a wait set: its callbacks are gated
@@ -229,8 +233,10 @@ static void say_hello(void)
       *c = ' ';
     }
   }
+  char hooks[64];
+  asd_replay_hook_state(hooks, sizeof(hooks));
   pthread_mutex_lock(&asd_r_lock);
-  rp_send("hello\t%d\t%s\t%d", REPLAY_PROTOCOL, member, (int)getpid());
+  rp_send("hello\t%d\t%s\t%d\t%s", REPLAY_PROTOCOL, member, (int)getpid(), hooks);
   pthread_mutex_unlock(&asd_r_lock);
 }
 

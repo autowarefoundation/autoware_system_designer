@@ -72,11 +72,9 @@ class ReplayError(RuntimeError):
 
 
 class Source(Protocol):
-    def peek(self) -> Optional[tuple[int, str, bytes]]:
-        ...
+    def peek(self) -> Optional[tuple[int, str, bytes]]: ...
 
-    def pop(self) -> tuple[int, str, bytes]:
-        ...
+    def pop(self) -> tuple[int, str, bytes]: ...
 
 
 class ReplayIO(Protocol):
@@ -85,14 +83,11 @@ class ReplayIO(Protocol):
     # Topic and message type of every bag topic the driver publishes.
     fed_topics: Mapping[str, str]
 
-    async def prepare(self, driver: "ReplayDriver") -> None:
-        ...
+    async def prepare(self, driver: "ReplayDriver") -> None: ...
 
-    async def publish(self, topic: str, data: bytes) -> None:
-        ...
+    async def publish(self, topic: str, data: bytes) -> None: ...
 
-    async def subscription_count(self, topic: str) -> int:
-        ...
+    async def subscription_count(self, topic: str) -> int: ...
 
 
 @dataclass
@@ -236,7 +231,13 @@ class ReplayDriver:
                 f"{link.label()} speaks link protocol {link.protocol}, the driver {PROTOCOL}: "
                 "the tracer and the runtime are of different builds"
             )
-        elif self._time_seq:
+            return
+        if link.missing_hooks:
+            self._anomaly(
+                f"{link.label()}: rclcpp hook(s) {', '.join(link.missing_hooks)} did not resolve; "
+                "its callbacks end at the next wait of their thread and intra-process delivery may stay on"
+            )
+        if self._time_seq:
             link.send(f"time\t{self._time_seq}\t{self._now}")
 
     def _on_node(self, link: ProcessLink, fields: list[str]) -> None:

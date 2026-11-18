@@ -543,10 +543,14 @@
         replay.model.INPUT_NOTE[input.status],
         input.status === "remapped" ? `recorded as ${input.recordedName}` : "",
         input.status === "type" ? `recorded as ${input.recordedType}` : "",
-        input.publishers.length
-          ? `published by ${input.publishers.join(", ")}`
-          : "no publisher in the design",
-        `subscribed by ${input.subscribers.join(", ")}`,
+        input.status === "ambient"
+          ? ""
+          : input.publishers.length
+            ? `published by ${input.publishers.join(", ")}`
+            : "no publisher in the design",
+        input.subscribers.length
+          ? `subscribed by ${input.subscribers.join(", ")}`
+          : "no port in the scope",
       ]);
       this.ofTopic(chip, input.topic);
       return this.clickable(chip, (event) => this.handlers.input(input, event));
@@ -725,7 +729,7 @@
     const graph = new ScopeGraph(canvas, {
       input(input, event) {
         handlers.select(input.topic);
-        openMenu(input, event);
+        if (handlers.choices(input).length) openMenu(input, event);
       },
       record: handlers.record,
     });

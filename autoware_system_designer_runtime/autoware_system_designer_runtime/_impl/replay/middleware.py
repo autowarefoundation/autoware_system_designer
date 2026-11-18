@@ -28,6 +28,8 @@ Read from ``config/replay_middleware.yaml`` of the package, layered with the use
     domain_id_variable: ROS_DOMAIN_ID                   # carries the domain of the replay
     identifier_types:                                   # type: field holding the identifier's bytes
       unique_identifier_msgs/msg/UUID: uuid
+    qos_value_names:                                    # policy: rmw name of each value written as a number
+      durability: {1: transient_local, 2: volatile}
 
 Plain Python with no ROS import.
 """
@@ -48,6 +50,7 @@ _KEYS = (
     "isolation_environment",
     "domain_id_variable",
     "identifier_types",
+    "qos_value_names",
 )
 # Entry of isolation_environment for a distribution without one of its own.
 DEFAULT_DISTRO = "default"
@@ -68,6 +71,8 @@ class ReplayMiddleware:
     isolation_environment: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     domain_id_variable: str = ""
     identifier_types: Mapping[str, str] = field(default_factory=dict)
+    # Policy to the rmw name of each of its values a bag's metadata writes as a number.
+    qos_value_names: Mapping[str, Mapping[int, str]] = field(default_factory=dict)
 
     def parameter_entries(self) -> list[dict[str, Any]]:
         """The node parameters as parameter entries of a system structure."""
@@ -125,6 +130,7 @@ class ReplayMiddleware:
             isolation_environment={distro: _strings(isolation, distro) for distro in isolation},
             **variables,
             identifier_types=_strings(payload, "identifier_types"),
+            qos_value_names=_value_names(payload, "qos_value_names"),
         )
 
 
@@ -140,6 +146,17 @@ def _strings(payload: Mapping[str, Any], key: str) -> dict[str, str]:
     if not all(isinstance(item, str) for item in value.values()):
         raise ReplayMiddlewareError(f"{key}: expected a mapping of names to strings")
     return value
+
+
+def _value_names(payload: Mapping[str, Any], key: str) -> dict[str, dict[int, str]]:
+    policies = _mapping(payload, key)
+    for policy, names in policies.items():
+        if not isinstance(names, Mapping) or not all(
+            isinstance(value, int) and not isinstance(value, bool) and isinstance(name, str)
+            for value, name in names.items()
+        ):
+            raise ReplayMiddlewareError(f"{key}.{policy}: expected a mapping of numbers to names")
+    return {policy: dict(names) for policy, names in policies.items()}
 
 
 def replay_middleware() -> ReplayMiddleware:

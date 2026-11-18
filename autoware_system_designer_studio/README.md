@@ -303,7 +303,9 @@ Then comes the **Inputs and outputs** block, one scrolled column of inputs, outp
 with the same choices as the diagram:
 
 - **Inputs**: the boundary inputs with their match against the bag, those not fed (not in the bag,
-  recorded with another type, without publisher) first. Each input has a pulldown of its sources:
+  recorded with another type, without publisher) first, and after them the topics of the bag a
+  replay feeds beside the inputs (the runtime's `ambient_inputs` and the `companions` of the
+  inputs), which have no source to pick. Each input has a pulldown of its sources:
   the bag topics of its type (any bag topic for an input of no design type), one recorded under
   another name remapping it, and for an input the bag lacks, leaving it unfed or accepting it unfed.
   "Accept unfed" at the head accepts every input not in the bag.
@@ -313,7 +315,8 @@ with the same choices as the diagram:
 - **Services leaving the scope**: service ports whose other side is outside, unaccepted clients
   first, each accepted once checked.
 
-Below them are the replay configuration these choices give (`scope`, `remap`, `accept`, `outputs`, `skip_outputs`),
+Below them are the replay configuration these choices and the run options give (`scope`, `remap`,
+`accept`, `outputs`, `skip_outputs`, `lead_in`, `driver`), the one a run through the daemon gets,
 to copy or download as `replay.yaml`, and the pre-flight and replay commands on the mode's structure
 file with the bag path typed in the Bag field and the deploy of the top bar.
 

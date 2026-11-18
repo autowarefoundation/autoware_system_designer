@@ -34,10 +34,20 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from ._impl.replay.bag import METADATA_FILE, BagError, bag_directory, read_bag_info
+from ._impl.replay.bag import (
+    COMPRESSED_SUFFIX,
+    METADATA_FILE,
+    STORAGE_BY_SUFFIX,
+    BagError,
+    bag_directory,
+    read_bag_info,
+)
 from ._impl.replay.config import driver_settings
 
 REPLAY_COMMAND = "autoware-system-designer-replay"
+# Name a tool gives the replay configuration file it writes.
+REPLAY_CONFIG_FILE = "replay.yaml"
+STORAGE_SUFFIXES = tuple(STORAGE_BY_SUFFIX)
 REPLAY_SUBDIR = "replay"
 BOUNDARY_FILE = "boundary.json"
 OPTIONS_FILE = "options.json"
@@ -58,6 +68,8 @@ PHASES = (PHASE_PRE, PHASE_REPLAY, PHASE_POST)
 
 __all__ = [
     "BOUNDARY_FILE",
+    "COMPRESSED_SUFFIX",
+    "METADATA_FILE",
     "OPTIONS_FILE",
     "BagError",
     "EXIT_DIFFERS",
@@ -69,9 +81,11 @@ __all__ = [
     "PHASE_REPLAY",
     "PROGRESS_MARK",
     "REPLAY_COMMAND",
+    "REPLAY_CONFIG_FILE",
     "REPLAY_SUBDIR",
     "RESULT_FILE",
     "STEP_LOG_FILE",
+    "STORAGE_SUFFIXES",
     "VERDICT_FILE",
     "bag_topics",
     "driver_settings",

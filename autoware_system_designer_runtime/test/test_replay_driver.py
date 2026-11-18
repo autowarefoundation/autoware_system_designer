@@ -41,10 +41,10 @@ class FakeProcess:
     A message published to a subscription makes it ready; a clock step makes the timers due ready.
     """
 
-    def __init__(self, pid: int, world: "World", protocol: int = PROTOCOL) -> None:
+    def __init__(self, pid: int, world: "World", protocol: int = PROTOCOL, hooks: str = "ok") -> None:
         self.pid = pid
         self._world = world
-        self._lines: list[str] = [f"hello\t{protocol}\tmember{pid}\t{pid}"]
+        self._lines: list[str] = [f"hello\t{protocol}\tmember{pid}\t{pid}\t{hooks}"]
         self._subs: dict[int, dict] = {}
         self._timers: dict[int, dict] = {}
         self._pubs: dict[int, str] = {}
@@ -70,13 +70,13 @@ class FakeProcess:
     def pub(self, topic: str) -> int:
         ident = self._id()
         self._pubs[ident] = topic
-        self._lines.append(f"ep\t{ident}\tp\t{self._node}\t{topic}\t1\t2\t1\t10")
+        self._lines.append(f"ep\t{ident}\tp\t{self._node}\t{topic}\treliable\tvolatile\tkeep_last\t10")
         return ident
 
     def sub(self, topic: str, publishes: tuple = (), depth: int = 10) -> int:
         ident = self._id()
         self._subs[ident] = {"topic": topic, "publishes": publishes, "queued": 0, "depth": depth}
-        self._lines.append(f"ep\t{ident}\ts\t{self._node}\t{topic}\t1\t2\t1\t{depth}")
+        self._lines.append(f"ep\t{ident}\ts\t{self._node}\t{topic}\treliable\tvolatile\tkeep_last\t{depth}")
         self._lines.append(f"waited\t{ident}")
         return ident
 
@@ -414,6 +414,17 @@ def test_a_process_of_another_link_protocol_fails_the_replay():
     a.sub("/in")
     with pytest.raises(ReplayError, match="link protocol"):
         replay(world, [a], node_order={"/a": 0})
+
+
+def test_a_process_with_an_unresolved_rclcpp_hook_is_an_anomaly():
+    world = World([(T0 + 50 * MS, "/in", b"1")], ["/out"])
+    a = FakeProcess(1, world, hooks="execute").node("/a")
+    a.sub("/in", publishes=(a.pub("/out"),))
+
+    result = replay(world, [a], node_order={"/a": 0})
+
+    assert result.callbacks == 1
+    assert len(result.anomalies) == 1 and "rclcpp hook(s) execute" in result.anomalies[0]
 
 
 def test_infrastructure_subscriptions_pass_the_gate_until_the_first_step():

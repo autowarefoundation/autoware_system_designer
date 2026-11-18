@@ -387,6 +387,7 @@
 }
 
 .replay-g-chip.fed > rect,
+.replay-g-chip.ambient > rect,
 .replay-g-chip.remapped > rect {
   fill: var(--flow-in-bg);
   stroke: var(--flow-in);
@@ -694,6 +695,7 @@
 }
 
 .replay-selector-item.fed .replay-selector-note,
+.replay-selector-item.ambient .replay-selector-note,
 .replay-selector-item.remapped .replay-selector-note {
   color: var(--state-ok);
 }

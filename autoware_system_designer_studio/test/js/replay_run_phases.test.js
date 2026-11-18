@@ -5,7 +5,13 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-global.window = { SD: { widgets: {}, activities: {} } };
+global.window = {
+  SD: {
+    widgets: {},
+    activities: {},
+    replayRuntime: { phases: ["pre-process", "replay", "post-process"] },
+  },
+};
 require(
   path.join(
     __dirname,

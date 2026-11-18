@@ -43,7 +43,9 @@ A process started with `ASD_REPLAY_SOCKET` connects to the replay driver of `aut
 - `rcl_wait` reports the subscriptions and timers that have work, hides them from the executor and returns the one the driver granted. The grant ends when `rclcpp::Executor::execute_any_executable` returns, else at the thread's next `rcl_wait`.
 - Publishes, takes and timer calls are reported with whether their thread holds the grant; a take that finds nothing while a published message is in flight waits for it.
 - ROS time is the driver's: every ROS clock has its override enabled from `rcl_clock_init` on and set by the link's reader thread, `rcl_set_ros_time_override` from elsewhere and `rcl_disable_ros_time_override` do nothing, and `rcl_timer_init` puts a timer of a steady or system clock on a driver-timed clock of the tracer. Each timer's next call time is reported after every call, cancel, reset and clock step.
-- `rclcpp::NodeOptions::use_intra_process_comms()` returns false: an intra-process delivery makes no rcl call.
+- `rclcpp::NodeOptions::use_intra_process_comms()` returns false: an intra-process delivery makes no rcl call. An endpoint whose own options enable it is not covered.
+- The two rclcpp functions are hooked by their mangled names. The `hello` of a process names the hooks whose function did not resolve in its rclcpp (`intra_process`, `execute`), `ok` when both did, `-` for a process without rclcpp.
+- Quality of service policies of an endpoint are sent by the names of `rmw/qos_string_conversions.h`.
 
 Without the socket these hooks only forward. When the driver closes the link or sends `free`, the process runs ungated on the clocks as they stand.
 

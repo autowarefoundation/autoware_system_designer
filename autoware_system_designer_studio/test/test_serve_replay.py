@@ -21,6 +21,7 @@ import sys
 import time
 
 import pytest
+import yaml
 
 from .test_serve import PKG, SYSTEM, UNITS, _install_tree, _Running
 
@@ -30,12 +31,13 @@ SYSTEM_ID = f"{PKG}:{SYSTEM}"
 FAKE_REPLAY = f"""#!{sys.executable}
 import json, os, sys
 from pathlib import Path
+import yaml
 
 args = sys.argv[1:]
 run = Path(args[args.index("--log-dir") + 1])
 out = run / "replay"
 out.mkdir(parents=True, exist_ok=True)
-config = json.loads(Path(args[args.index("--config") + 1]).read_text())
+config = yaml.safe_load(Path(args[args.index("--config") + 1]).read_text())
 (out / "boundary.json").write_text(json.dumps({{"fed": {{"/in": "t"}}, "recorded": {{"/out": "t"}}, "problems": []}}))
 if "--check" not in args:
     (out / "result.json").write_text(json.dumps({{"completed": True, "outputs": 3, "violations": [], "ignored": 1}}))
@@ -185,7 +187,7 @@ def test_replay_runs_as_a_job_with_its_configuration_and_summary(served, tmp_pat
     assert argv[argv.index("--duration") + 1] == "2.5" and argv[argv.index("--domain-id") + 1] == "7"
     assert "--save-reference" in argv and "--check" not in argv
     run_dir = tmp_path / "logs" / "replay" / os.path.basename(job["detail"]["run_dir"])
-    assert json.loads((run_dir / "replay_config.json").read_text()) == {
+    assert yaml.safe_load((run_dir / "replay.yaml").read_text()) == {
         "scope": ["/perception"],
         "remap": {"/raw": "/in"},
         "accept": ["/map"],

@@ -24,7 +24,7 @@
   }
 
   function rememberBagDir(path) {
-    const dir = model.bagCollection(path);
+    const dir = bagFile.bagCollection(path);
     if (!dir) return;
     SD.storage.set(
       BAG_DIRS_KEY,
@@ -58,21 +58,23 @@
     const fileInput = document.createElement("input");
     fileInput.type = "file";
     fileInput.multiple = true;
-    fileInput.accept = ".yaml,.yml,.mcap,.db3,.zstd";
+    fileInput.accept = bagFile.fileSuffixes().join(",");
     fileInput.hidden = true;
     const open = element("button", "panel-button", "Open file");
     open.type = "button";
-    open.title =
-      "Read the topics of a metadata.yaml, or of the .mcap files of one bag";
+    open.title = `Read the topics of a ${bagFile.metadataName()}, or of the storage files of one bag`;
     const read = element("button", "panel-button", "Read");
     read.type = "button";
-    read.title =
-      "Read the topics of the bag at this path through the daemon, from its metadata.yaml or its storage file";
+    read.title = `Read the topics of the bag at this path through the daemon, from its ${bagFile.metadataName()} or its storage file`;
     const browse = element("button", "panel-button", "Browse");
     browse.type = "button";
     browse.title =
       "Choose a bag directory or file on the daemon's host, then read it";
-    const picker = SD.widgets.pathPicker({ title: "Rosbag", kind: "bag" });
+    const picker = SD.widgets.pathPicker({
+      title: "Rosbag",
+      kind: "bag",
+      isBagFile: bagFile.isBagFile,
+    });
     const state = element("span", "replay-bag-state");
     const row = element("div", "replay-bag-row");
     row.append(browse, read, open, fileInput);
@@ -196,7 +198,8 @@
       }
       if (drop.files.length) await readFiles(drop.files);
       else if (drop.path) changed();
-      else failed("the drop holds no bag file, metadata.yaml or path");
+      else
+        failed(`the drop holds no bag file, ${bagFile.metadataName()} or path`);
     }
 
     function render() {

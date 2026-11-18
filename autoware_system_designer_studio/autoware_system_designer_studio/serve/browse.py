@@ -21,19 +21,18 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+from autoware_system_designer_runtime.replay_record import METADATA_FILE, STORAGE_SUFFIXES
+
 from . import api
 
 # Entries a listing gives at most.
 MAX_ENTRIES = 2000
-# Files that make a directory a rosbag.
-BAG_MARKERS = ("metadata.yaml",)
-BAG_SUFFIXES = (".mcap", ".db3")
 
 
 def _is_bag(directory: Path) -> bool:
     try:
         with os.scandir(directory) as entries:
-            return any(e.is_file() and (e.name in BAG_MARKERS or e.name.endswith(BAG_SUFFIXES)) for e in entries)
+            return any(e.is_file() and (e.name == METADATA_FILE or e.name.endswith(STORAGE_SUFFIXES)) for e in entries)
     except OSError:
         return False
 

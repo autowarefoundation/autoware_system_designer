@@ -5,7 +5,17 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-global.window = { SD: {} };
+global.window = {
+  SD: {
+    replayRuntime: {
+      bagFiles: {
+        metadata: "metadata.yaml",
+        storage: [".db3", ".mcap"],
+        compressed: ".zstd",
+      },
+    },
+  },
+};
 require(
   path.join(
     __dirname,
@@ -223,4 +233,18 @@ test("droppedPath takes a file URI or an absolute path", () => {
   assert.equal(bagFile.droppedPath("https://example.com/bag"), "");
   assert.equal(bagFile.droppedPath("some text"), "");
   assert.equal(bagFile.droppedPath(""), "");
+});
+
+test("a bag path names the directory that holds its bag directory", () => {
+  assert.equal(bagFile.bagCollection("/data/bags/run"), "/data/bags");
+  assert.equal(
+    bagFile.bagCollection("/data/bags/run/run_0.mcap"),
+    "/data/bags",
+  );
+  assert.equal(
+    bagFile.bagCollection("/data/bags/run/metadata.yaml"),
+    "/data/bags",
+  );
+  assert.equal(bagFile.bagCollection("/run"), "");
+  assert.equal(bagFile.bagCollection(""), "");
 });

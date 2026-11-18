@@ -24,3 +24,9 @@ domain_id_variable: ROS_DOMAIN_ID
 # Identifier message types, each with the field that holds the identifier's bytes.
 identifier_types:
   unique_identifier_msgs/msg/UUID: uuid
+
+# Quality of service values a bag's metadata writes as numbers (rosbag2 before Iron), each with its rmw name.
+qos_value_names:
+  durability:
+    1: transient_local
+    2: volatile
