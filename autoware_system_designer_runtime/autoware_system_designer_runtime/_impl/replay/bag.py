@@ -167,6 +167,24 @@ def _storage_of_files(info: Mapping[str, Any], directory: Path) -> str:
     return _storage_id(directory) if directory.is_dir() else ""
 
 
+def _listed_files(directory: Path) -> list[Path]:
+    """Storage files the metadata of the bag in *directory* lists, in recorded order; empty when it lists
+    none, or when the bag is compressed and its files cannot be read on their own."""
+    metadata = directory / METADATA_FILE
+    if not metadata.is_file():
+        return []
+    import yaml
+
+    try:
+        info = (yaml.safe_load(metadata.read_text()) or {}).get("rosbag2_bagfile_information") or {}
+    except (yaml.YAMLError, AttributeError):
+        return []
+    if info.get("compression_format") or info.get("compression_mode"):
+        return []
+    files = [directory / str(name) for name in info.get("relative_file_paths") or []]
+    return files if files and all(file.is_file() for file in files) else []
+
+
 def _storage_id(directory: Path) -> str:
     """Storage of the bag files in *directory*; empty when it holds none."""
     for suffix, storage_id in STORAGE_BY_SUFFIX.items():
@@ -250,12 +268,27 @@ class BagMessages:
     def _open(self, uri: str) -> None:
         import rosbag2_py
 
-        self._reader = rosbag2_py.SequentialReader()
-        self._reader.open(
+        try:
+            self._reader = self._reader_of(uri)
+        except RuntimeError:
+            # Metadata this rosbag2 cannot parse, as of a bag another distro recorded: its storage files
+            # carry their own.
+            files = _listed_files(Path(uri))
+            if not files:
+                raise
+            self._reader = self._reader_of(str(files[0]))
+            self._uris[:0] = [str(file) for file in files[1:]]
+        self._reader.set_filter(rosbag2_py.StorageFilter(topics=list(self._names)))
+
+    def _reader_of(self, uri: str):
+        import rosbag2_py
+
+        reader = rosbag2_py.SequentialReader()
+        reader.open(
             rosbag2_py.StorageOptions(uri=uri, storage_id=self._storage_id),
             rosbag2_py.ConverterOptions(input_serialization_format="", output_serialization_format=""),
         )
-        self._reader.set_filter(rosbag2_py.StorageFilter(topics=list(self._names)))
+        return reader
 
     def _advance(self) -> None:
         while self._reader is None or not self._reader.has_next():
