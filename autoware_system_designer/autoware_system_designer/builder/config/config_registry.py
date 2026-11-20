@@ -45,7 +45,7 @@ from autoware_system_designer.model.config import (
     SystemConfig,
 )
 from autoware_system_designer.parser.data_parser import ConfigParser
-from autoware_system_designer.parser.data_validator import entity_name_decode
+from autoware_system_designer.parser.data_validator import entity_name_decode, split_package_qualifier
 from autoware_system_designer.schema.format_version import check_format_version
 
 logger = logging.getLogger(__name__)
@@ -116,13 +116,18 @@ class SelectionPolicy:
 
 @dataclass
 class EntityGroup:
-    """Every config declaring one full_name, in load order. Selection is memoized on first use."""
+    """Every config declaring one full_name, in load order. Selection is memoized on first use.
+
+    A bare reference shares one ranked selection; a package-qualified reference picks within
+    that package, memoized per package.
+    """
 
     full_name: str
     name: str
     entity_type: str
     candidates: List[Config] = field(default_factory=list)
     _selected: Optional[Config] = None
+    _pinned: Dict[str, Config] = field(default_factory=dict)
 
     @property
     def is_duplicated(self) -> bool:
@@ -130,32 +135,62 @@ class EntityGroup:
 
     @property
     def used(self) -> bool:
-        return self._selected is not None
+        return self._selected is not None or bool(self._pinned)
 
     @property
     def selected(self) -> Optional[Config]:
         """Memoized selection; None until the group is resolved."""
         return self._selected
 
-    def choose(self, policy: SelectionPolicy) -> Config:
-        """Best candidate under *policy*, load order breaking ties. Leaves the group unused."""
-        if self._selected is not None:
-            return self._selected
-        best = min(range(len(self.candidates)), key=lambda i: (policy.rank(self.candidates[i]), i))
-        return self.candidates[best]
+    def in_use(self) -> List[Config]:
+        """Every memoized pick, bare selection first, without repeats."""
+        picks: List[Config] = []
+        for config in (self._selected, *self._pinned.values()):
+            if config is not None and not any(config is pick for pick in picks):
+                picks.append(config)
+        return picks
 
-    def resolve(self, policy: SelectionPolicy) -> Tuple[Config, bool]:
+    def _package_candidates(self, package: str) -> List[Config]:
+        matches = [candidate for candidate in self.candidates if candidate.package == package]
+        if not matches:
+            declaring = sorted({candidate.package for candidate in self.candidates if candidate.package})
+            raise ValidationError(
+                f"Entity '{self.full_name}' is not declared in package '{package}'. "
+                f"Packages declaring it: {declaring}"
+            )
+        return matches
+
+    def choose(self, policy: SelectionPolicy, package: Optional[str] = None) -> Config:
+        """Best candidate under *policy*, load order breaking ties; *package* restricts the
+        candidates to that package. Leaves the group unused."""
+        if package is not None:
+            if package in self._pinned:
+                return self._pinned[package]
+            candidates = self._package_candidates(package)
+        else:
+            if self._selected is not None:
+                return self._selected
+            candidates = self.candidates
+        best = min(range(len(candidates)), key=lambda i: (policy.rank(candidates[i]), i))
+        return candidates[best]
+
+    def resolve(self, policy: SelectionPolicy, package: Optional[str] = None) -> Tuple[Config, bool]:
         """Select and memoize; the flag marks the first resolution, which gates reporting."""
+        if package is not None:
+            if package in self._pinned:
+                return self._pinned[package], False
+            self._pinned[package] = self.choose(policy, package)
+            return self._pinned[package], True
         if self._selected is not None:
             return self._selected, False
         self._selected = self.choose(policy)
         return self._selected, True
 
     def describe(self) -> str:
-        """Candidate list with '->' on the selection."""
-        chosen = self._selected
+        """Candidate list with '->' on every pick in use."""
+        picks = self.in_use()
         return "\n".join(
-            f"  {'->' if candidate is chosen else '  '} {candidate.file_path}"
+            f"  {'->' if any(candidate is pick for pick in picks) else '  '} {candidate.file_path}"
             + (f"  [{candidate.package}]" if candidate.package else "")
             for candidate in self.candidates
         )
@@ -282,8 +317,7 @@ class ConfigRegistry:
     def iter_used_configs(self) -> Iterator[Config]:
         """The memoized selection of every group this deployment resolved."""
         for group in self.entities.values():
-            if group.selected is not None:
-                yield group.selected
+            yield from group.in_use()
 
     def all_duplicates(self) -> List[EntityGroup]:
         """Every duplicated name in the scan, whether the deployment reaches it or not."""
@@ -314,7 +348,8 @@ class ConfigRegistry:
         logger.warning(f"{message}{format_source(source_from_config(chosen, '/name'))}")
 
     def _find_group(self, name: str, config_type: str) -> Optional[EntityGroup]:
-        """Group registered under name.config_type; the name may already carry the type suffix."""
+        """Group registered under name.config_type; the name may carry a package qualifier and the type suffix."""
+        _, name = split_package_qualifier(name)
         group = self.entities.get(f"{name}.{config_type}")
         if group is None and "." in name:
             try:
@@ -346,8 +381,12 @@ class ConfigRegistry:
             available = [g.name for g in self.entities.values() if g.entity_type == config_type]
             raise error_cls(f"{config_type.capitalize()} '{name}' not found. Available {config_type}s: {available}")
 
-        entity, first_use = group.resolve(self.selection_policy)
-        if first_use and group.is_duplicated:
+        package, _ = split_package_qualifier(name)
+        try:
+            entity, first_use = group.resolve(self.selection_policy, package)
+        except ValidationError as e:
+            raise error_cls(str(e)) from e
+        if first_use and group.is_duplicated and package is None:
             self._report_duplicate(group, entity)
 
         if entity.sub_type == ConfigSubType.VARIANT:

@@ -28,8 +28,8 @@ class HoverProvider:
 
         # Check if it's an entity name
         word = get_word_at_position(line, character)
-        if word in self.registry_manager.entity_registry:
-            config = self.registry_manager.entity_registry[word]
+        config = self.registry_manager.get_entity(word)
+        if config is not None:
             return self._create_entity_hover(config)
 
         return None

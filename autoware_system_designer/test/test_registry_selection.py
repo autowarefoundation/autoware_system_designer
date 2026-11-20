@@ -14,11 +14,14 @@
 
 from pathlib import Path
 
+import pytest
 from conftest import write_system
 
 from autoware_system_designer.builder.config.config_registry import ConfigRegistry, _package_distance
+from autoware_system_designer.common.exceptions import NodeConfigurationError
 from autoware_system_designer.common.path_utils import canonical_path
 from autoware_system_designer.deploy import DeploymentBuilder
+from autoware_system_designer.parser.deployment_parser import _normalize_system_name
 
 
 def _registry(workspace, anchor_dir=None):
@@ -129,3 +132,34 @@ def test_finalize_selection_policy_prefers_the_deployment_package_system(duplica
     DeploymentBuilder._finalize_selection_policy("Tiny.system", registry, file_package_map)
     assert registry.anchor_dir == str(Path(canonical_path(str(system_b))).parent)
     assert str(registry.get_system("Tiny").file_path) == str(system_b)
+
+
+def test_package_qualified_reference_overrides_ranking(duplicate_workspace):
+    registry = _registry(duplicate_workspace, anchor_dir=str(duplicate_workspace["pkg_b"]))
+    assert str(registry.get_node("pkg_a/Demo").file_path) == str(duplicate_workspace["files"]["node_a"])
+    assert str(registry.get_node("pkg_a/Demo.node").file_path) == str(duplicate_workspace["files"]["node_a"])
+    assert str(registry.get_node("Demo").file_path) == str(duplicate_workspace["files"]["node_b"])
+    used = sorted(str(config.file_path) for config in registry.iter_used_configs())
+    assert used == sorted(str(duplicate_workspace["files"][key]) for key in ("node_a", "node_b"))
+
+
+def test_package_qualified_reference_to_undeclaring_package_fails(duplicate_workspace):
+    registry = _registry(duplicate_workspace)
+    with pytest.raises(NodeConfigurationError, match="pkg_a"):
+        registry.get_node("pkg_c/Demo.node")
+
+
+def test_finalize_selection_policy_follows_a_package_qualified_target(duplicate_workspace):
+    system_b = write_system(duplicate_workspace["pkg_b"], "Tiny", "Demo")
+    file_package_map = {**duplicate_workspace["file_package_map"], str(system_b): "pkg_b"}
+    registry = ConfigRegistry(duplicate_workspace["file_paths"] + [str(system_b)], file_package_map=file_package_map)
+    DeploymentBuilder._finalize_selection_policy("pkg_b/Tiny.system", registry, file_package_map)
+    assert registry.deployment_package_name == "pkg_b"
+    assert str(registry.get_system("pkg_b/Tiny").file_path) == str(system_b)
+
+
+def test_normalize_system_name_keeps_the_package_qualifier():
+    assert _normalize_system_name("pkg_b/Tiny.system") == "pkg_b/Tiny"
+    assert _normalize_system_name("Tiny.system") == "Tiny"
+    assert _normalize_system_name("/abs/design/Tiny.system.yaml") == "Tiny"
+    assert _normalize_system_name("design/Tiny.system.yaml") == "Tiny"

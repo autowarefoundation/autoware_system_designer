@@ -20,7 +20,7 @@ from typing import Any, Dict
 
 from autoware_system_designer.linter.report import LintResult
 from autoware_system_designer.model.config import ConfigType
-from autoware_system_designer.parser.data_validator import entity_name_decode
+from autoware_system_designer.parser.data_validator import entity_name_decode, split_package_qualifier
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
 
@@ -214,7 +214,7 @@ class NamingLinter:
         if not isinstance(base_ref, str):
             return ""
         try:
-            base_name, _ = entity_name_decode(base_ref)
+            base_name, _ = entity_name_decode(split_package_qualifier(base_ref)[1])
             return base_name
         except Exception:
             return ""

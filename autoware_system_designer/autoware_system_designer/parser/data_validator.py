@@ -14,12 +14,24 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.model.config import ConfigType
 from autoware_system_designer.schema.yaml_schema import get_semantic_checks, validate_against_schema
+
+# Package-qualified entity reference: '<package>/<Name>.<type>'.
+_PACKAGE_QUALIFIED_REF = re.compile(r"^([a-z][a-z0-9_]*)/([^/]+)$")
+
+
+def split_package_qualifier(entity_ref: str) -> Tuple[Optional[str], str]:
+    """Split an entity reference into its package qualifier (None when bare) and the bare reference."""
+    match = _PACKAGE_QUALIFIED_REF.match(entity_ref) if isinstance(entity_ref, str) else None
+    if match is None:
+        return None, entity_ref
+    return match.group(1), match.group(2)
 
 
 def entity_name_decode(entity_name: str) -> Tuple[str, str]:

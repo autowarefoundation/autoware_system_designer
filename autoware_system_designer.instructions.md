@@ -308,6 +308,7 @@ Removals are applied **before** overrides to ensure removed items don't interfer
    - Use `$(find-pkg-share <package_name>)` for absolute ROS paths.
    - Relative paths are resolved relative to the package defining them.
 5. **Required Fields**: See Section 5.1 for details on required fields when using or not using `base`.
+6. **Entity References**: `entity`, `base`, `parameter_set` and the deployment target name an entity as `Name.type`. When several packages declare the same name, a bare reference resolves to the definition in the deployment package, then the one in the nearest package. Prefix the package to name one definition: `<package_name>/Name.type` (e.g., `entity: my_sensor_kit_description/SampleSensorKit.module`); the reference fails when that package does not declare the name.
 
 ## 7. Examples
 
