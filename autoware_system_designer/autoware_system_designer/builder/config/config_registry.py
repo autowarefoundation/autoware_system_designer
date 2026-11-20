@@ -324,8 +324,8 @@ class ConfigRegistry:
         return [group for group in self.entities.values() if group.is_duplicated]
 
     def used_duplicates(self) -> List[EntityGroup]:
-        """Duplicated names this deployment actually resolved."""
-        return [group for group in self.entities.values() if group.is_duplicated and group.used]
+        """Duplicated names this deployment resolved by a bare reference; package-qualified picks are explicit."""
+        return [group for group in self.entities.values() if group.is_duplicated and group.selected is not None]
 
     def _log_duplicate_scan(self) -> None:
         """Workspace-wide collision summary; the deployment-relevant subset is reported on use."""

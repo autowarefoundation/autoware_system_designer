@@ -143,6 +143,14 @@ def test_package_qualified_reference_overrides_ranking(duplicate_workspace):
     assert used == sorted(str(duplicate_workspace["files"][key]) for key in ("node_a", "node_b"))
 
 
+def test_package_qualified_reference_is_not_a_used_duplicate(duplicate_workspace):
+    registry = _registry(duplicate_workspace)
+    registry.get_node("pkg_a/Demo.node")
+    assert registry.used_duplicates() == []
+    registry.get_node("Demo.node")
+    assert [group.full_name for group in registry.used_duplicates()] == ["Demo.node"]
+
+
 def test_package_qualified_reference_to_undeclaring_package_fails(duplicate_workspace):
     registry = _registry(duplicate_workspace)
     with pytest.raises(NodeConfigurationError, match="pkg_a"):
