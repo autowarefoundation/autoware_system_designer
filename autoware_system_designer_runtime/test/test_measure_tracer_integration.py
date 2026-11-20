@@ -296,3 +296,46 @@ def test_counters_give_live_rates_and_events_follow_the_control_file(tmp_path, r
     assert len(trace_set.processes) == 2
     publishes = [p for proc in trace_set.processes.values() for p in proc.publishes]
     assert publishes and min(p.t_in for p in publishes) > before.t_ns + 3_000_000_000
+
+
+def test_sizes_and_cpu_time_follow_their_switches(tmp_path, ros_domain_id):
+    trace_dir = tmp_path / "trace"
+    control = TraceControl(trace_dir)
+    control.create(events=False)
+    env = tracer_env(_tracer(), trace_dir)
+    env["ROS_DOMAIN_ID"] = str(ros_domain_id)
+    procs = [
+        subprocess.Popen(
+            [str(_demo(name))], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+        )
+        for name in ("talker", "listener")
+    ]
+    monitor = RateMonitor(trace_dir)
+    try:
+        started = monitor.read()
+        _wait_until(
+            lambda: any(row["hz"] > 0 for row in _rows(monitor.rates(started, monitor.read()), "/listener", "inputs"))
+        )
+        before = monitor.read()
+        time.sleep(2.5)
+        off = monitor.rates(before, monitor.read())
+        control.set_flag("sizes", True)
+        control.set_flag("cpu", True)
+        before = monitor.read()
+        time.sleep(3.5)
+        on = monitor.rates(before, monitor.read())
+    finally:
+        _terminate(procs)
+        monitor.close()
+
+    (out,) = _rows(off, "/talker", "outputs")
+    assert "size_b" not in out
+    (inp,) = _rows(off, "/listener", "inputs")
+    assert "cpu" not in inp
+    (out,) = _rows(on, "/talker", "outputs")
+    # "Hello World: <n>" in a CDR string: a 4-byte encapsulation, a 4-byte length and the text.
+    assert 20 <= out["size_b"] <= 40 and out["bps"] > 0
+    (inp,) = _rows(on, "/listener", "inputs")
+    assert 0 < inp["cpu"] < 0.5
+    (listener,) = [n for n in on["nodes"] if n["node"] == "/listener"]
+    assert listener["cpu"] == inp["cpu"]

@@ -54,7 +54,11 @@ with open(os.path.join(log_dir, "demo_talker", "out"), "w") as f:
 with open(os.path.join(log_dir, "demo_talker", "err"), "w") as f:
     f.write("bye")
 METHODS = ["status", "stop", "restart", "kill", "measure.start", "measure.stop", "measure.status",
-           "monitor.sample", "monitor.follow", "monitor.unfollow", "shutdown"]
+           "monitor.sample", "monitor.follow", "monitor.unfollow", "monitor.options",
+           "resources.sample", "resources.follow", "resources.unfollow", "shutdown"]
+USAGE = {"time_ns": 1, "interval_s": 1.0, "host": {"cpus": 4, "cpu": 0.5, "mem_total_kb": 1024, "mem_used_kb": 512},
+         "gpu": {"source": None, "per_process": False, "note": "", "devices": []},
+         "members": {"/demo/talker": {"pid": 1, "procs": 1, "threads": 2, "rss_kb": 100, "cpu": 0.25}}}
 RATES = {"time_ns": 1, "interval_s": 2.0, "processes": 1, "untracked_endpoints": 0,
          "nodes": [{"node": "/demo/talker", "pids": [1], "inputs": [],
                     "outputs": [{"topic": "/chatter", "hz": 1.0, "callback_ms": 0.1}], "timers": []}]}
@@ -77,7 +81,8 @@ async def main():
             writer.write((json.dumps(obj) + "\\n").encode())
 
         send({"event": "hello", "pid": os.getpid(), "methods": METHODS, "policy": "guard",
-              "measure_armed": "--measure" in args, "monitor": True, "members": members, "launch_ready": True,
+              "measure_armed": "--measure" in args, "monitor": True, "resources": True,
+              "tracer_options": {"sizes": False, "cpu": False}, "members": members, "launch_ready": True,
               "shutting_down": False, "log_dir": log_dir})
         send({"event": "member", "path": "/demo/talker", "state": "running", "detail": {"pid": 1}, "time": 1.0})
         send({"event": "member.activity", "window": 2.0, "rates": {"/demo/talker": 5120}})
@@ -120,6 +125,18 @@ async def main():
                     node = RATES["nodes"][0]
                     rates = {**RATES, "nodes": [{**node, "node": f"/n{i:05d}"} for i in range(3000)]}
                 send({"event": "monitor", **rates})
+            elif method == "monitor.options":
+                result = {"sizes": bool(params.get("sizes")), "cpu": bool(params.get("cpu"))}
+                with open(log_dir + "/options", "a") as f:
+                    f.write(json.dumps(params) + "\\n")
+                send({"event": "monitor.options", **result})
+            elif method == "resources.sample":
+                result = USAGE
+            elif method == "resources.follow":
+                result = {"interval_s": 1.0}
+                send({"event": "resources", **USAGE})
+            elif method == "resources.unfollow":
+                result = {"released": True}
             elif method == "monitor.unfollow":
                 result = {"released": True}
                 with open(log_dir + "/unfollowed", "a") as f:
@@ -471,6 +488,55 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     while time.time() < deadline and not (unfollowed.exists() and unfollowed.read_text()):
         time.sleep(0.02)
     assert launching.daemon.launch.session("main_ecu").monitors == set() and unfollowed.read_text() == "x"
+
+    # Tracer switches: the runtime gets the union of the callers' wants, all dropped with the last stream.
+    assert session["control"]["tracer_options"] == {"sizes": False, "cpu": False}
+    options_log = Path(session["log_dir"]) / "options"
+    for client, wants in (("a", {"sizes": True}), ("b", {"cpu": True}), ("a", {"sizes": False})):
+        status, body = launching.rpc(
+            {"method": "monitor.options", "params": {"compute_unit": "main_ecu", "client": client, **wants}}
+        )
+        assert status == 200
+    assert body["result"] == {"sizes": False, "cpu": True}
+    asked = [json.loads(line) for line in options_log.read_text().splitlines()]
+    assert asked == [{"sizes": True, "cpu": False}, {"sizes": True, "cpu": True}, {"sizes": False, "cpu": True}]
+    status, body = launching.rpc({"method": "monitor.options", "params": {"compute_unit": "main_ecu", "cpu": 1}})
+    assert status == 400
+    deadline = time.time() + 5
+    while (
+        time.time() < deadline
+        and launching.daemon.launch.session("main_ecu").control["tracer_options"]["cpu"] is not True
+    ):
+        time.sleep(0.02)
+    launching.loop.call_soon_threadsafe(launching.daemon.launch.release_follows)
+    deadline = time.time() + 5
+    while time.time() < deadline and len(options_log.read_text().splitlines()) < 4:
+        time.sleep(0.02)
+    assert json.loads(options_log.read_text().splitlines()[-1]) == {"sizes": False, "cpu": False}
+
+    # Resource use: sampled once, or followed and forwarded as the resources topic.
+    assert session["control"]["resources"] is True
+    status, body = launching.rpc({"method": "resources.sample", "params": {"compute_unit": "main_ecu"}})
+    assert status == 200 and body["result"]["members"]["/demo/talker"]["cpu"] == 0.25
+    status, body = launching.rpc({"method": "resources.follow", "params": {"compute_unit": "main_ecu", "client": "a"}})
+    assert status == 200 and body["result"] == {"interval_s": 1.0}
+    deadline = time.time() + 5
+    while time.time() < deadline and not launching.events.of(launch.TOPIC_RESOURCES):
+        time.sleep(0.02)
+    usage_event = launching.events.of(launch.TOPIC_RESOURCES)[0]
+    assert usage_event["compute_unit"] == "main_ecu" and usage_event["members"]["/demo/talker"]["rss_kb"] == 100
+    assert launching.daemon.launch.session("main_ecu").feeds[launch.TOPIC_RESOURCES] == {"a"}
+    status, body = launching.rpc(
+        {"method": "resources.unfollow", "params": {"compute_unit": "main_ecu", "client": "a"}}
+    )
+    assert body["result"] == {"released": True}
+    # The last event stream gone, every feed is released.
+    launching.rpc({"method": "resources.follow", "params": {"compute_unit": "main_ecu", "client": "b"}})
+    launching.loop.call_soon_threadsafe(launching.daemon.launch.release_follows)
+    deadline = time.time() + 5
+    while time.time() < deadline and launching.daemon.launch.session("main_ecu").feeds[launch.TOPIC_RESOURCES]:
+        time.sleep(0.02)
+    assert launching.daemon.launch.session("main_ecu").feeds[launch.TOPIC_RESOURCES] == set()
 
     status, body = launching.rpc({"method": "launch.shutdown", "params": {"compute_unit": "main_ecu"}})
     assert status == 200 and body["result"] == {"shutting_down": True}

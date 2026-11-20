@@ -127,6 +127,20 @@ def _status_page(status: HTTPStatus, title: str, message: str, *, reload_s: Opti
     return Response(status, headers, body.encode())
 
 
+def _sample_interval(params: dict[str, Any]) -> float:
+    """The ``interval`` of a ``*.sample`` request, seconds within the request timeout."""
+    interval = params.get("interval", 1.0)
+    if (
+        not isinstance(interval, (int, float))
+        or isinstance(interval, bool)
+        or not 0.1 <= interval <= launch.MONITOR_SAMPLE_MAX_S
+    ):
+        raise api.ApiError(
+            api.INVALID_PARAMS, f"interval must be a number of seconds in [0.1, {launch.MONITOR_SAMPLE_MAX_S:g}]"
+        )
+    return interval
+
+
 def _is_page(site_path: str) -> bool:
     return site_path.endswith(".html")
 
@@ -210,6 +224,10 @@ class ServeDaemon:
         self._register_of_unit("monitor.follow", self._monitor_follow)
         self._register_of_unit("monitor.unfollow", self._monitor_unfollow)
         self._register_of_unit("monitor.sample", self._monitor_sample)
+        self._register_of_unit("monitor.options", self._monitor_options)
+        self._register_of_unit("resources.follow", self._resources_follow)
+        self._register_of_unit("resources.unfollow", self._resources_unfollow)
+        self._register_of_unit("resources.sample", self._resources_sample)
         self.methods.register("rviz.start", self._rviz_start)
         self.methods.register("settings.set", self._settings_set)
         self.methods.register("fs.list", self._fs_list)
@@ -513,6 +531,8 @@ class ServeDaemon:
             measure=api.bool_param(params, "measure"),
             respawn=api.bool_param(params, "respawn"),
             launch_id=params["launch"],
+            trace_sizes=api.bool_param(params, "trace_sizes"),
+            trace_cpu=api.bool_param(params, "trace_cpu"),
         )
         return session.to_view()
 
@@ -609,16 +629,32 @@ class ServeDaemon:
 
     async def _monitor_sample(self, params: dict[str, Any]) -> dict[str, Any]:
         compute_unit = api.str_param(params, "compute_unit", required=True)
-        interval = params.get("interval", 1.0)
-        if (
-            not isinstance(interval, (int, float))
-            or isinstance(interval, bool)
-            or not 0.1 <= interval <= launch.MONITOR_SAMPLE_MAX_S
-        ):
-            raise api.ApiError(
-                api.INVALID_PARAMS, f"interval must be a number of seconds in [0.1, {launch.MONITOR_SAMPLE_MAX_S:g}]"
-            )
-        return await self.launch.call(compute_unit, "monitor.sample", {"interval": interval})
+        return await self.launch.call(compute_unit, "monitor.sample", {"interval": _sample_interval(params)})
+
+    async def _monitor_options(self, params: dict[str, Any]) -> dict[str, Any]:
+        compute_unit = api.str_param(params, "compute_unit", required=True)
+        client = api.str_param(params, "client") or ""
+        wants = {}
+        for name in launch.TRACER_OPTIONS:
+            if name in params:
+                if not isinstance(params[name], bool):
+                    raise api.ApiError(api.INVALID_PARAMS, f"{name} must be a boolean")
+                wants[name] = params[name]
+        return await self.launch.tracer_options(compute_unit, client, wants)
+
+    async def _resources_follow(self, params: dict[str, Any]) -> dict[str, Any]:
+        compute_unit = api.str_param(params, "compute_unit", required=True)
+        client = api.str_param(params, "client") or ""
+        return await self.launch.feed_follow(launch.TOPIC_RESOURCES, compute_unit, client)
+
+    async def _resources_unfollow(self, params: dict[str, Any]) -> dict[str, Any]:
+        compute_unit = api.str_param(params, "compute_unit", required=True)
+        client = api.str_param(params, "client") or ""
+        return await self.launch.feed_unfollow(launch.TOPIC_RESOURCES, compute_unit, client)
+
+    async def _resources_sample(self, params: dict[str, Any]) -> dict[str, Any]:
+        compute_unit = api.str_param(params, "compute_unit", required=True)
+        return await self.launch.call(compute_unit, "resources.sample", {"interval": _sample_interval(params)})
 
     async def _rviz_start(self, params: dict[str, Any]) -> dict[str, Any]:
         return (await self.launch.start_rviz()).to_view()

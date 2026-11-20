@@ -17,13 +17,17 @@
 One object per line. The runtime sends events ``{"event": ...}``: ``hello`` on connect, ``member``
 on every state change, ``member.log`` for new stdout/stderr lines of a member the client follows,
 ``member.activity`` with the output growth rate of every member whose files grew in the last window,
-``monitor`` with per-node topic and timer rates from the tracer's counters to the clients that follow them.
+``monitor`` with per-node topic and timer rates from the tracer's counters to the clients that follow them,
+``resources`` with the CPU, memory and GPU use of every running member to the clients that follow it,
+``monitor.options`` with the state of the tracer's size and CPU-time switches whenever it changes.
 A client sends requests ``{"id", "method", "params"}`` and receives ``{"id", "ok", "result" | "error"}``.
 
 Member output stays in the per-member ``out``/``err`` files the actors write; the channel tails a
 file only while some client follows that member, so an idle channel costs nothing per member. The
 activity scan sizes every member's files once per window while a client is connected; the counters
-are read only while some client follows the rates.
+are read only while some client follows the rates, and ``/proc`` and the GPU only while some client
+follows the resources. A switch is on while the launch fixed it or a connected client wants it, so
+it goes off with the last client that wanted it.
 """
 
 from __future__ import annotations
@@ -52,10 +56,14 @@ METHODS = (
     "monitor.sample",
     "monitor.follow",
     "monitor.unfollow",
+    "monitor.options",
+    "resources.sample",
+    "resources.follow",
+    "resources.unfollow",
     "shutdown",
 )
 # Methods that wait: answered from a task of their own, so the requests behind them are not held up.
-DETACHED_METHODS = ("monitor.sample",)
+DETACHED_METHODS = ("monitor.sample", "resources.sample")
 MAX_LINE = 64 * 1024
 LOG_POLL_S = 0.2
 LOG_READ_MAX = 1 << 20
@@ -65,6 +73,8 @@ ACTIVITY_POLL_S = 2.0
 QUEUE_BYTES = 8 << 20
 # Interval of the ``monitor`` rates sent to following clients.
 MONITOR_POLL_S = 2.0
+# Interval of the ``resources`` readings sent to following clients.
+RESOURCES_POLL_S = 1.0
 
 
 def _error(request_id: Any, code: str, message: str) -> dict[str, Any]:
@@ -85,6 +95,7 @@ class _Client:
         self.dropped = False
         self.follows: set[str] = set()
         self.follows_rates = False
+        self.follows_resources = False
 
     def send(self, obj: dict[str, Any]) -> None:
         self.send_bytes(_encode(obj))
@@ -142,6 +153,7 @@ class ControlChannel:
         self._tail_task: Optional[asyncio.Task] = None
         self._activity_task: Optional[asyncio.Task] = None
         self._monitor_task: Optional[asyncio.Task] = None
+        self._resources_task: Optional[asyncio.Task] = None
         self._unsubscribe = None
         # Read position and the unterminated tail per followed (member, stream).
         self._offsets: dict[tuple[str, str], int] = {}
@@ -166,11 +178,12 @@ class ControlChannel:
         self._activity_task = asyncio.ensure_future(self._scan_activity())
         if self._commands.monitor is not None:
             self._monitor_task = asyncio.ensure_future(self._report_rates())
+        self._resources_task = asyncio.ensure_future(self._report_resources())
         logger.info("control channel: %s", self._path)
 
     async def close(self) -> None:
-        await cancel_and_wait(self._tail_task, self._activity_task, self._monitor_task)
-        self._tail_task = self._activity_task = self._monitor_task = None
+        await cancel_and_wait(self._tail_task, self._activity_task, self._monitor_task, self._resources_task)
+        self._tail_task = self._activity_task = self._monitor_task = self._resources_task = None
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
@@ -222,6 +235,8 @@ class ControlChannel:
             self._clients.discard(client)
             client.close()
             self._prune_follows()
+            if self._commands.release_tracer_options(client):
+                self._broadcast_options()
 
     def _hello(self) -> dict[str, Any]:
         status = self._commands.status()
@@ -232,6 +247,8 @@ class ControlChannel:
             "policy": self._policy,
             "measure_armed": self._commands.measure_armed,
             "monitor": self._commands.monitor is not None,
+            "resources": True,
+            "tracer_options": self._commands.tracer_options(),
             "log_dir": str(self._log_dir),
             **status,
         }
@@ -240,6 +257,9 @@ class ControlChannel:
         data = _encode(obj)
         for client in list(self._clients):
             client.send_bytes(data)
+
+    def _broadcast_options(self) -> None:
+        self._broadcast({"event": "monitor.options", **(self._commands.tracer_options() or {})})
 
     def _on_state(self, record: MemberRecord) -> None:
         self._broadcast({"event": "member", **record.as_dict()})
@@ -305,6 +325,20 @@ class ControlChannel:
         if method == "monitor.unfollow":
             released = client.follows_rates
             client.follows_rates = False
+            return {"released": released}
+        if method == "monitor.options":
+            state, changed = self._commands.want_tracer_options(client, params)
+            if changed:
+                self._broadcast_options()
+            return state
+        if method == "resources.sample":
+            return await self._commands.resource_usage(params.get("interval", 1.0))
+        if method == "resources.follow":
+            client.follows_resources = True
+            return {"interval_s": RESOURCES_POLL_S}
+        if method == "resources.unfollow":
+            released = client.follows_resources
+            client.follows_resources = False
             return {"released": released}
         if method == "shutdown":
             self._commands.shutdown()
@@ -475,3 +509,25 @@ class ControlChannel:
                 previous = reading
             except Exception:  # noqa: BLE001
                 logger.exception("reading the tracer counters failed")
+
+    # ---- resources ---------------------------------------------------------------
+
+    async def _report_resources(self) -> None:
+        """Sends the members' resource use to the clients following it, one reading per interval;
+        nothing is read while no client follows."""
+        previous = None
+        while True:
+            await asyncio.sleep(RESOURCES_POLL_S)
+            followers = [client for client in self._clients if client.follows_resources]
+            if not followers:
+                previous = None
+                continue
+            try:
+                monitor = self._commands.resources
+                reading = monitor.read()
+                data = _encode({"event": "resources", **monitor.usage(previous, reading)})
+                for client in followers:
+                    client.send_bytes(data)
+                previous = reading
+            except Exception:  # noqa: BLE001
+                logger.exception("reading the resource use failed")

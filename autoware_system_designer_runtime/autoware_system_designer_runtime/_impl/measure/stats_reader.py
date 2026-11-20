@@ -22,7 +22,10 @@ stopped.
 A slot serves one endpoint after another: its counters run on, and each
 name-table line carries the counters its endpoint started from. The counts of an
 endpoint are the slot's counters minus that base while it holds the slot, and
-the next endpoint's base minus its own once it ended.
+the next endpoint's base minus its own once it ended. The last two words start
+from zero with each endpoint: a publisher's measured bytes and publishes, a
+take's or timer's link to its latest publish and callback CPU time. Version 1
+files hold zeros where version 2 counts bytes and CPU time.
 """
 
 from __future__ import annotations
@@ -41,7 +44,7 @@ from .trace_reader import Endpoint, TimerInfo, parse_name_line
 logger = logging.getLogger(__name__)
 
 STATS_MAGIC = b"ASDSTATS"
-STATS_VERSION = 1
+STATS_VERSIONS = (1, 2)
 HEADER_SIZE = 64
 _HEADER = struct.Struct("<8sIIIIIIQ24s")
 _SLOT = struct.Struct("<B7sQQQQQQQ")
@@ -62,7 +65,10 @@ class SlotCounters:
     last_ns: int
     lat_sum_ns: int
     lat_count: int
-    next_slot: Optional[int]  # slot of the latest publish this trigger led to
+    next_slot: Optional[int]  # take/timer: slot of the latest publish this trigger led to
+    bytes_sum: int = 0  # publish: measured bytes
+    bytes_count: int = 0  # publish: publishes measured
+    cpu_ns: int = 0  # take/timer: callback thread CPU time
 
 
 @dataclass
@@ -96,7 +102,7 @@ class ProcessStats:
                 raise ValueError(f"{self.path}: truncated header")
             self._map = mmap.mmap(handle.fileno(), size, prot=mmap.PROT_READ)
         magic, version, slot_size, _pid, header_size, capacity, _claimed, start_ns, _ = _HEADER.unpack_from(self._map)
-        if magic != STATS_MAGIC or version != STATS_VERSION or slot_size != SLOT_SIZE:
+        if magic != STATS_MAGIC or version not in STATS_VERSIONS or slot_size != SLOT_SIZE:
             self._map.close()
             raise ValueError(f"{self.path}: unsupported counters version {version} / slot size {slot_size}")
         if header_size != HEADER_SIZE or capacity == 0 or size < header_size + capacity * SLOT_SIZE:
@@ -115,14 +121,19 @@ class ProcessStats:
         counters = ProcessCounters(self.pid, self._start_ns, self._capacity, claimed)
         start = self._header_size
         data = self._map[start : start + used * SLOT_SIZE]
-        for index, (kind, _pad, handle, count, last_ns, lat_sum, lat_count, next_slot, _) in enumerate(
+        for index, (kind, _pad, handle, count, last_ns, lat_sum, lat_count, word_a, word_b) in enumerate(
             _SLOT.iter_unpack(data)
         ):
             if kind == 0:
                 continue  # claimed, not yet published
-            counters.slots[index] = SlotCounters(
-                kind, handle, count, last_ns, lat_sum, lat_count, next_slot - 1 if next_slot else None
-            )
+            if kind == SLOT_PUB:
+                counters.slots[index] = SlotCounters(
+                    kind, handle, count, last_ns, lat_sum, lat_count, None, bytes_sum=word_a, bytes_count=word_b
+                )
+            else:
+                counters.slots[index] = SlotCounters(
+                    kind, handle, count, last_ns, lat_sum, lat_count, word_a - 1 if word_a else None, cpu_ns=word_b
+                )
         return counters
 
     def read_names(self) -> dict[int, Union[Endpoint, TimerInfo]]:

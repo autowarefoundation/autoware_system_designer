@@ -16,10 +16,17 @@
 // function through dlsym(RTLD_NEXT) and hands what it saw to one observe_*
 // function. Two tiers sit behind them:
 //   counters  always on: atomic adds on the endpoint's slot of <pid>.stats;
+//             a serialized publish adds its size;
 //   events    while the control file says so: one fixed record in <pid>.trace.
+// Two more counters follow the control file, both off by default:
+//   sizes     one publish per publisher and ASD_SIZE_SAMPLE_NS is serialized
+//             with rmw_serialize and its size added to the publisher's slot;
+//   cpu       the thread CPU time from a take or timer fire to the thread's next
+//             take, fire, service take or rcl_wait is added to the take's or
+//             timer's slot.
 // Init hooks register the endpoint's slot and append a name-table line; fini
-// hooks release the slot. No hook inspects a message or takes a lock on the
-// per-message path. The tracer is armed by ASD_TRACE_DIR; without it every hook
+// hooks release the slot. No hook takes a lock on the per-message path, and
+// only a sampled publish inspects its message. The tracer is armed by ASD_TRACE_DIR; without it every hook
 // is a plain forward. The files open on the first hook, so a process that never
 // reaches rcl leaves none.
 //
@@ -32,9 +39,11 @@
 //             rcl_timer_init2 (Jazzy+, also reached from rcl_timer_init)
 //   fini      rcl_publisher_fini, rcl_subscription_fini, rcl_timer_fini
 //   clock     rcl_set_ros_time_override
+//   service   rcl_take_request, rcl_take_request_with_info, rcl_take_response,
+//             rcl_take_response_with_info (end a CPU-time window)
 // A process linked to a replay driver (ASD_REPLAY_SOCKET, see replay_link.c) is gated
 // through the same hooks and these:
-//   wait      rcl_wait
+//   wait      rcl_wait (also ends a CPU-time window)
 //   node      rcl_node_init
 //   timer     rcl_timer_cancel, rcl_timer_reset
 //   clock     rcl_clock_init, rcl_clock_fini, rcl_ros_clock_fini, rcl_enable_ros_time_override,
@@ -53,14 +62,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <time.h>
 #include <unistd.h>
 
+#include <rcl/client.h>
 #include <rcl/node.h>
 #include <rcl/publisher.h>
+#include <rcl/service.h>
 #include <rcl/subscription.h>
 #include <rcl/time.h>
 #include <rcl/timer.h>
+#include <rcutils/allocator.h>
 #include <rmw/rmw.h>
+#include <rmw/serialized_message.h>
 
 #include "replay.h"
 #include "writer.h"
@@ -68,6 +82,12 @@
 // ---- state -------------------------------------------------------------------
 
 enum tracer_state { TRACER_UNSET = 0, TRACER_OFF = 1, TRACER_ON = 2 };
+
+// Per stats slot of a publisher: its message type and the time its next size is due.
+typedef struct publisher_info {
+  const rosidl_message_type_support_t * type;
+  uint64_t next_size_ns;
+} publisher_info_t;
 
 // One process's tracer. `events` opens on the first record the control file lets through.
 typedef struct tracer {
@@ -78,6 +98,7 @@ typedef struct tracer {
   const asd_control_t * control;
   asd_names_t names;
   asd_stats_t stats;
+  publisher_info_t * publishers;  // one per stats slot
   asd_events_t events;
 } tracer_t;
 
@@ -88,6 +109,9 @@ static __thread uint32_t tls_tid = 0;
 // This thread's latest take or timer fire: the start of a publish's callback time.
 static __thread uint64_t tls_trigger_ns = 0;
 static __thread asd_stats_slot_t * tls_trigger_slot = NULL;
+// This thread's open CPU-time window: the slot it counts for and the thread CPU time at its start.
+static __thread asd_stats_slot_t * tls_cpu_slot = NULL;
+static __thread uint64_t tls_cpu_start_ns = 0;
 // Set while a timer hook forwards to rcl; Jazzy's rcl_timer_call and rcl_timer_init reach the
 // hooked rcl_timer_call_with_info and rcl_timer_init2, which then only forward.
 static __thread bool tls_in_timer_hook = false;
@@ -123,6 +147,7 @@ static void on_fork_child(void)
   tls_tid = 0;
   tls_trigger_ns = 0;
   tls_trigger_slot = NULL;
+  tls_cpu_slot = NULL;
   asd_replay_at_fork_child();
 }
 
@@ -162,6 +187,8 @@ static int open_locked(void)
   }
   if (asd_stats_open(&g.stats, dir, pid, slots) != 0) {
     fprintf(stderr, "[asd_tracer] cannot open counters in %s; counters disabled\n", dir);
+  } else {
+    g.publishers = calloc(g.stats.capacity, sizeof(publisher_info_t));
   }
   strcpy(g.dir, dir);
   g.events_capacity = env_count(ASD_TRACE_CAPACITY_ENV, ASD_TRACE_DEFAULT_CAPACITY, ASD_TRACE_MAX_CAPACITY);
@@ -204,6 +231,54 @@ static inline bool recording(void)
     pthread_mutex_unlock(&g_state_lock);
   }
   return state == TRACER_ON;
+}
+
+static inline bool sizes_on(void)
+{
+  return g.control != NULL && __atomic_load_n(&g.control->sizes, __ATOMIC_RELAXED) != 0;
+}
+
+static inline bool cpu_on(void)
+{
+  return g.control != NULL && __atomic_load_n(&g.control->cpu, __ATOMIC_RELAXED) != 0;
+}
+
+static inline uint64_t thread_cpu_ns(void)
+{
+  struct timespec ts;
+  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+  return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+// Closes this thread's CPU-time window; its time counts while CPU time is on.
+static void cpu_window_end(void)
+{
+  asd_stats_slot_t * slot = tls_cpu_slot;
+  if (slot == NULL) {
+    return;
+  }
+  tls_cpu_slot = NULL;
+  if (cpu_on()) {
+    uint64_t now = thread_cpu_ns();
+    if (now > tls_cpu_start_ns) {
+      asd_stats_cpu(slot, now - tls_cpu_start_ns);
+    }
+  }
+}
+
+// Closes this thread's window and, while CPU time is on, opens one for `slot`.
+static void cpu_window_start(asd_stats_slot_t * slot)
+{
+  if (slot == NULL || !cpu_on()) {
+    cpu_window_end();
+    return;
+  }
+  uint64_t now = thread_cpu_ns();
+  if (tls_cpu_slot != NULL && now > tls_cpu_start_ns) {
+    asd_stats_cpu(tls_cpu_slot, now - tls_cpu_start_ns);
+  }
+  tls_cpu_slot = slot;
+  tls_cpu_start_ns = now;
 }
 
 __attribute__((constructor)) static void tracer_init(void)
@@ -258,15 +333,50 @@ static uint64_t observe_trigger(const void * handle, asd_stats_slot_t ** slot_ou
   if (slot != NULL) {
     asd_stats_count(slot, t_ns);
   }
+  cpu_window_start(slot);
   *slot_out = slot;
   return t_ns;
 }
 
-static void observe_publish(const void * publisher, uint64_t t_in, uint8_t flags)
+// Serializes the message of a publish when its publisher's next size is due; one
+// caller claims each due time.
+static void sample_size(asd_stats_slot_t * slot, const void * ros_message, uint64_t t_ns)
+{
+  if (g.publishers == NULL) {
+    return;
+  }
+  publisher_info_t * info = &g.publishers[slot - g.stats.slots];
+  const rosidl_message_type_support_t * type = __atomic_load_n(&info->type, __ATOMIC_ACQUIRE);
+  uint64_t due = __atomic_load_n(&info->next_size_ns, __ATOMIC_RELAXED);
+  if (type == NULL || t_ns < due ||
+      !__atomic_compare_exchange_n(
+        &info->next_size_ns, &due, t_ns + ASD_SIZE_SAMPLE_NS, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+  {
+    return;
+  }
+  rcutils_allocator_t allocator = rcutils_get_default_allocator();
+  rmw_serialized_message_t serialized = rmw_get_zero_initialized_serialized_message();
+  if (rmw_serialized_message_init(&serialized, 0, &allocator) != RMW_RET_OK) {
+    return;
+  }
+  if (rmw_serialize(ros_message, type, &serialized) == RMW_RET_OK) {
+    asd_stats_bytes(slot, serialized.buffer_length);
+  }
+  rmw_serialized_message_fini(&serialized);
+}
+
+// `ros_message` is the message of a plain publish, `bytes` the size of a serialized one.
+static void observe_publish(
+  const void * publisher, uint64_t t_in, uint8_t flags, const void * ros_message, uint64_t bytes)
 {
   asd_stats_slot_t * slot = asd_stats_find(&g.stats, publisher);
   if (slot != NULL) {
     asd_stats_count(slot, t_in);
+    if (flags & ASD_FLAG_SERIALIZED) {
+      asd_stats_bytes(slot, bytes);
+    } else if (ros_message != NULL && sizes_on()) {
+      sample_size(slot, ros_message, t_in);
+    }
     if (tls_trigger_ns != 0 && t_in >= tls_trigger_ns && t_in - tls_trigger_ns <= ASD_STATS_LATENCY_LIMIT_NS) {
       asd_stats_latency(slot, (int64_t)(t_in - tls_trigger_ns));
       if (tls_trigger_slot != NULL) {
@@ -386,8 +496,8 @@ static void slot_base(int64_t slot, char out[96])
 }
 
 // Name-table line: time, kind, handle, node, topic, publisher gid, stats slot (-1: none),
-// the slot's counters.
-static void register_endpoint(
+// the slot's counters. Returns the slot.
+static int64_t register_endpoint(
   const char * kind, uint8_t slot_kind, const void * handle, const rcl_node_t * node, const char * topic,
   const rmw_gid_t * gid)
 {
@@ -405,6 +515,7 @@ static void register_endpoint(
     (unsigned long long)(uintptr_t)handle, fqn != NULL ? fqn : "?", topic != NULL ? topic : "?", gid_text,
     (long long)slot, base);
   asd_names_line(&g.names, line);
+  return slot;
 }
 
 // Name-table line: time, "timer", handle, period, stats slot (-1: none), the slot's counters.
@@ -442,10 +553,11 @@ typedef rcl_ret_t (*publish_serialized_fn)(
   const rcl_publisher_t *, const rcl_serialized_message_t *, rmw_publisher_allocation_t *);
 typedef rcl_ret_t (*publish_loaned_fn)(const rcl_publisher_t *, void *, rmw_publisher_allocation_t *);
 
-static void after_publish(const rcl_publisher_t * publisher, uint64_t t_in, uint8_t flags)
+static void after_publish(
+  const rcl_publisher_t * publisher, uint64_t t_in, uint8_t flags, const void * ros_message, uint64_t bytes)
 {
   if (tracing()) {
-    observe_publish(publisher, t_in, flags);
+    observe_publish(publisher, t_in, flags, ros_message, bytes);
   }
   if (asd_replay_armed()) {
     asd_replay_publish(publisher);
@@ -462,7 +574,7 @@ rcl_ret_t rcl_publish(
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, ros_message, allocation);
   if (ret == RCL_RET_OK) {
-    after_publish(publisher, t_in, 0);
+    after_publish(publisher, t_in, 0, ros_message, 0);
   }
   return ret;
 }
@@ -478,7 +590,7 @@ rcl_ret_t rcl_publish_serialized_message(
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, serialized_message, allocation);
   if (ret == RCL_RET_OK) {
-    after_publish(publisher, t_in, ASD_FLAG_SERIALIZED);
+    after_publish(publisher, t_in, ASD_FLAG_SERIALIZED, NULL, serialized_message->buffer_length);
   }
   return ret;
 }
@@ -493,7 +605,7 @@ rcl_ret_t rcl_publish_loaned_message(
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, ros_message, allocation);
   if (ret == RCL_RET_OK) {
-    after_publish(publisher, t_in, ASD_FLAG_LOANED);
+    after_publish(publisher, t_in, ASD_FLAG_LOANED, NULL, 0);
   }
   return ret;
 }
@@ -589,11 +701,31 @@ rcl_ret_t rcl_take_loaned_message(
 rcl_ret_t rcl_wait(rcl_wait_set_t * wait_set, int64_t timeout)
 {
   FORWARD(asd_wait_fn, "rcl_wait");
+  cpu_window_end();
   if (!asd_replay_armed()) {
     return real(wait_set, timeout);
   }
   return asd_replay_wait(real, wait_set, timeout);
 }
+
+// ---- service hooks ---------------------------------------------------------------------
+
+// A service or client callback follows these takes; they end the CPU-time window of the
+// callback before it, which has no slot of its own.
+typedef rcl_ret_t (*take_service_fn)(const void *, void *, void *);
+
+#define SERVICE_TAKE(name, endpoint_type, header_type, body)                       \
+  rcl_ret_t name(const endpoint_type * endpoint, header_type * header, void * body) \
+  {                                                                               \
+    FORWARD(take_service_fn, #name);                                              \
+    cpu_window_end();                                                             \
+    return real(endpoint, header, body);                                          \
+  }
+
+SERVICE_TAKE(rcl_take_request, rcl_service_t, rmw_request_id_t, ros_request)
+SERVICE_TAKE(rcl_take_request_with_info, rcl_service_t, rmw_service_info_t, ros_request)
+SERVICE_TAKE(rcl_take_response, rcl_client_t, rmw_request_id_t, ros_response)
+SERVICE_TAKE(rcl_take_response_with_info, rcl_client_t, rmw_service_info_t, ros_response)
 
 // ---- timer hooks ----------------------------------------------------------------------
 
@@ -994,7 +1126,13 @@ rcl_ret_t rcl_publisher_init(
     if (rmw_pub != NULL && rmw_get_gid_for_publisher(rmw_pub, &gid) == RMW_RET_OK) {
       gid_ptr = &gid;
     }
-    register_endpoint("pub", ASD_SLOT_PUB, publisher, node, rcl_publisher_get_topic_name(publisher), gid_ptr);
+    int64_t slot =
+      register_endpoint("pub", ASD_SLOT_PUB, publisher, node, rcl_publisher_get_topic_name(publisher), gid_ptr);
+    if (slot >= 0 && g.publishers != NULL) {
+      publisher_info_t * info = &g.publishers[slot];
+      __atomic_store_n(&info->next_size_ns, 0, __ATOMIC_RELAXED);
+      __atomic_store_n(&info->type, type_support, __ATOMIC_RELEASE);
+    }
   }
   if (ret == RCL_RET_OK && asd_replay_armed()) {
     asd_replay_endpoint(
@@ -1036,6 +1174,9 @@ static void release_endpoint(const void * handle)
     const asd_stats_slot_t * released = asd_stats_unregister(&g.stats, handle);
     if (released != NULL && released == tls_trigger_slot) {
       tls_trigger_slot = NULL;
+    }
+    if (released != NULL && released == tls_cpu_slot) {
+      tls_cpu_slot = NULL;
     }
   }
   if (asd_replay_armed()) {

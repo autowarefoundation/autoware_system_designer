@@ -25,6 +25,18 @@
         "without it a window opens on Start measure.",
     ],
     ["respawn", "Respawn exited processes", ""],
+    [
+      "trace_sizes",
+      "Message sizes for the whole run",
+      "Sample the serialized size of one message per publisher and second " +
+        "from launch on, recorded with the rates; serializes inside the nodes.",
+    ],
+    [
+      "trace_cpu",
+      "Callback CPU for the whole run",
+      "Count the thread CPU time of every callback from launch on, so " +
+        "containers split by node; two clock reads per callback.",
+    ],
   ];
   const DRAWER_ICON = "M4 7l6 6 6-6";
   const COMMANDS_ICON =

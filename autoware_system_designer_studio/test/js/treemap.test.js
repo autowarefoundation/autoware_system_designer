@@ -360,3 +360,20 @@ test("a long name wraps at its separators and ends in an ellipsis past the last 
   assert.deepEqual(wrap("pointcloud", 3, 3, measure), []);
   assert.deepEqual(wrap("", 10, 3, measure), []);
 });
+
+test("a weighed layout sizes the blocks by their nodes' weights", () => {
+  const sections = unitSections(structure());
+  const main = sections.find((section) => section.name === "main_ecu");
+  const weights = { "/control/control": 3, "/vehicle/vehicle": 1 };
+  const weigh = (instance) => weights[instance.path] || 0;
+  const { boxes } = layout([main], 800, 400, Infinity, undefined, weigh);
+  const area = (name) => {
+    const box = boxes.find(
+      (b) => b.kind === "node" && b.instance.name === name,
+    );
+    return box ? box.w * box.h : 0;
+  };
+  // Zero-weight nodes get no block; the others' areas keep their ratio.
+  assert.equal(area("driver"), 0);
+  assert.ok(area("control") > 0 && area("vehicle") > 0);
+});

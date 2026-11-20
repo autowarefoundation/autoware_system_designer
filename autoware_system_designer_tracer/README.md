@@ -7,15 +7,20 @@ Two tiers share the hooks:
 - **Counters**, always on: one 64-byte slot per publisher, subscription and timer, bumped with atomic adds; the hook finds the slot through a lock-free map from the rcl handle. A few tens of nanoseconds per call, no message is copied and nothing subscribes.
 - **Events**, while the control file says so: one 64-byte record per publish, take, timer fire and ROS time override, for the measurement window's analysis.
 
+Two more counters load the nodes and follow the control file, off by default:
+
+- **Sizes**: the first publish of each publisher and then one per second is serialized with `rmw_serialize` on the publishing thread and its size added to the publisher's slot. A serialized publish (`rcl_publish_serialized_message`, bridges and bag players) adds its exact size on every call, switch or not.
+- **CPU time**: a take or timer fire opens a window on its thread (`CLOCK_THREAD_CPUTIME_ID`), closed by the thread's next take, timer fire, service or client take (`rcl_take_request*`, `rcl_take_response*`) or `rcl_wait`; the thread CPU time in between is added to the take's or timer's slot. Two clock reads per callback.
+
 ## Files
 
 Per traced process, in `$ASD_TRACE_DIR`, opened on the first rcl call it makes (a process that never reaches rcl leaves no file):
 
-- `<pid>.stats`: a 64-byte header followed by fixed 64-byte counter slots in a `MAP_SHARED` mmap. A slot holds the count, the wall time of the latest call and a latency sum and count: for a take, take time minus `message_info.source_timestamp` (communication); for a publish, publish entry minus the thread's latest take or timer fire (callback time). A take or timer slot also holds the slot of the latest publish it led to on its thread, which places a timer under the node that publishes from it. The slot of a finalized endpoint serves the next one created, with its counters as they stand.
+- `<pid>.stats`: a 64-byte header followed by fixed 64-byte counter slots in a `MAP_SHARED` mmap. A slot holds the count, the wall time of the latest call and a latency sum and count: for a take, take time minus `message_info.source_timestamp` (communication); for a publish, publish entry minus the thread's latest take or timer fire (callback time). A take or timer slot also holds the slot of the latest publish it led to on its thread, which places a timer under the node that publishes from it, and its callbacks' CPU time; a publisher slot holds the measured bytes and the publishes they were measured on. The slot of a finalized endpoint serves the next one created, with its counters as they stand and the bytes and CPU time back at zero.
 - `<pid>.names`: tab-separated lines joining handles and counter slots to node names, topics, publisher gids and timer periods. A line ends with the counters its slot held when the endpoint was created, the base of that endpoint's own counts.
 - `<pid>.trace`, created on the first event: a 64-byte header followed by fixed 64-byte records, written into a `MAP_SHARED` mmap with an atomic index and no locks, so the file survives `SIGKILL`. The records are a ring: past the capacity the oldest record is overwritten, so the file holds the latest ones and never grows. Times are `CLOCK_REALTIME` nanoseconds and compare with DDS source timestamps. A take records the thread, the subscription handle, `message_info.source_timestamp`, the publisher gid and `from_intra_process`; a timer fire the thread and timer handle; a publish the thread, the publisher handle and the entry and exit time of the call (the DDS source timestamp lies in between); a clock record the wall time at which a ROS time override was set and the ROS time it was set to, one per distinct value plus the last sighting of a value held longer than twice the gap before it (a paused `/clock` keeps publishing its frozen value), so a process on `/clock` (`use_sim_time`) leaves the wall→ROS mapping, plateaus included, in its trace.
 
-In the directory itself, `control` (written by the runtime, mapped read-only by every traced process) switches event recording; without it events are always recorded.
+In the directory itself, `control` (written by the runtime, mapped read-only by every traced process) switches event recording, size sampling and CPU time; without it events are always recorded and the other two are off.
 
 The layout is `include/autoware_system_designer_tracer/trace_format.h`; the Python readers mirror it field for field.
 

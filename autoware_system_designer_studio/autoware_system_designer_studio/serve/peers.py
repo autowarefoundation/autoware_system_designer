@@ -22,13 +22,13 @@ under ``mismatch`` where the peer differs from this daemon (version, method set,
 exported systems); a mismatch is reported, never enforced.
 
 While connected the link relays the peer's ``launch``, ``member``, ``member.log``,
-``member.activity`` and ``monitor`` events of its units, and the ``job`` and ``job.log`` events of
+``member.activity``, ``monitor`` and ``resources`` events of its units, and the ``job`` and ``job.log`` events of
 their launch jobs, to this daemon's event stream. Job and run ids of a peer are published as
 ``<unit>/<id>``, which is also how requests name them.
 
-Requests naming a peer's unit are forwarded to it. Log and rate follows made through this daemon
-are released on the peer once this daemon's last event stream closes; rate follows are made again
-after a reconnect.
+Requests naming a peer's unit are forwarded to it. Log, rate and resource follows made through this daemon
+are released on the peer once this daemon's last event stream closes; rate and resource follows are made again
+after a reconnect. Tracer switches asked for through this daemon (``monitor.options``) are held the same way.
 
 The sessions a peer last reported hold their system to their mode while it does not answer, and
 are listed ``stale``; ``launch.forget`` drops those of a unit.
@@ -76,7 +76,9 @@ PEER_CONNECTED = "connected"
 PEER_UNREACHABLE = "unreachable"
 
 # Peer topics relayed as they are for the units of the link.
-UNIT_TOPICS = (launch.TOPIC_MEMBER, launch.TOPIC_MEMBER_LOG, launch.TOPIC_MEMBER_ACTIVITY, launch.TOPIC_MONITOR)
+_FEED_FOLLOWS = {f"{feed}.follow": feed for feed in launch.FEEDS}
+_FEED_UNFOLLOWS = {f"{feed}.unfollow": feed for feed in launch.FEEDS}
+UNIT_TOPICS = (launch.TOPIC_MEMBER, launch.TOPIC_MEMBER_LOG, launch.TOPIC_MEMBER_ACTIVITY, *launch.FEEDS)
 
 CLIENT_NAME = "peer"
 ID_SEPARATOR = "/"
@@ -436,7 +438,10 @@ class PeerLink:
         # Peer job id -> unit of the launch jobs relayed.
         self._job_units: dict[str, str] = {}
         self._follows: set[str] = set()
-        self._monitors: dict[str, set[str]] = {}
+        # (feed, unit) -> callers following it through this daemon.
+        self._feeds: dict[tuple[str, str], set[str]] = {}
+        # (unit, caller) -> the tracer switches it asked for.
+        self._options: dict[tuple[str, str], dict[str, bool]] = {}
         self._stream: Optional[asyncio.StreamWriter] = None
         self._tasks = TaskSet()
         self._closed = False
@@ -514,9 +519,11 @@ class PeerLink:
             self._job_view(job)
         # The peer dropped every follow with the stream it lost.
         self._follows.clear()
-        for unit, clients in self._monitors.items():
+        for (feed, unit), clients in self._feeds.items():
             for client in clients:
-                self._request("monitor.follow", {"compute_unit": unit, "client": client})
+                self._request(f"{feed}.follow", {"compute_unit": unit, "client": client})
+        for (unit, client), wants in self._options.items():
+            self._request("monitor.options", {"compute_unit": unit, "client": client, **wants})
 
     async def _sync_systems(self) -> None:
         listed = await self.client.rpc("systems.list", timeout=AGGREGATE_TIMEOUT_S)
@@ -678,10 +685,17 @@ class PeerLink:
             self._follows.add(unit)
         elif method == "launch.unfollow" and params.get("path") is None:
             self._follows.discard(unit)
-        elif method == "monitor.follow":
-            self._monitors.setdefault(unit, set()).add(params.get("client") or "")
-        elif method == "monitor.unfollow":
-            self._monitors.get(unit, set()).discard(params.get("client") or "")
+        elif method in _FEED_FOLLOWS:
+            self._feeds.setdefault((_FEED_FOLLOWS[method], unit), set()).add(params.get("client") or "")
+        elif method in _FEED_UNFOLLOWS:
+            self._feeds.get((_FEED_UNFOLLOWS[method], unit), set()).discard(params.get("client") or "")
+        elif method == "monitor.options":
+            key = (unit, params.get("client") or "")
+            wants = {**self._options.get(key, {}), **{n: params[n] for n in launch.TRACER_OPTIONS if n in params}}
+            if any(wants.values()):
+                self._options[key] = wants
+            else:
+                self._options.pop(key, None)
         return result
 
     def _status_views(self, status: Any) -> list[dict[str, Any]]:
@@ -759,14 +773,18 @@ class PeerLink:
     def release_follows(self) -> None:
         """Drops every follow made through this daemon on the peer."""
         follows, self._follows = self._follows, set()
-        monitors, self._monitors = self._monitors, {}
+        feeds, self._feeds = self._feeds, {}
+        options, self._options = self._options, {}
         if self.state != PEER_CONNECTED:
             return
         for unit in follows:
             self._request("launch.unfollow", {"compute_unit": unit})
-        for unit, clients in monitors.items():
+        for (feed, unit), clients in feeds.items():
             for client in clients:
-                self._request("monitor.unfollow", {"compute_unit": unit, "client": client})
+                self._request(f"{feed}.unfollow", {"compute_unit": unit, "client": client})
+        for unit, client in options:
+            off = {name: False for name in launch.TRACER_OPTIONS}
+            self._request("monitor.options", {"compute_unit": unit, "client": client, **off})
 
     def _request(self, method: str, params: dict[str, Any]) -> None:
         """Sends a request whose answer nobody waits for; a failure is logged."""

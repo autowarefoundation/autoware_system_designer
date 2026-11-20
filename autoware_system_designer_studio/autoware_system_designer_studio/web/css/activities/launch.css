@@ -266,6 +266,12 @@
   color: var(--text-primary);
 }
 
+.resource-glyph {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 /* Meaning of the marks on the map, in the Control view head */
 .control-legend {
   display: flex;
@@ -1446,4 +1452,36 @@ td.topic-num.muted,
   border: 1px solid var(--border-color);
   border-radius: 3px;
   cursor: pointer;
+}
+
+/* Resources view */
+.resource-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.resource-pane > .diagram-container {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.resource-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.resource-toolbar-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.resource-note {
+  font-size: 12px;
+  color: var(--text-muted);
 }

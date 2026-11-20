@@ -88,6 +88,8 @@
     declared: (row) => row.declaredHz,
     callback: (row) => row.callbackMs,
     comm: (row) => row.commMs,
+    size: (row) => row.sizeB,
+    bandwidth: (row) => row.bps,
     publisher: (row) => row.origin,
     subs: (row) => row.subscribers.length,
   };
@@ -258,6 +260,17 @@
     return { hz: 0, from: null };
   }
 
+  // Mean message size and bandwidth of a topic over its publishers with
+  // measured sizes: the bandwidth is their sum, the size the bandwidth over
+  // their rate, else the mean of their sizes; null where none measured.
+  function topicTraffic(publishers) {
+    const sized = publishers.filter((p) => p.size_b !== undefined);
+    if (!sized.length) return { sizeB: null, bps: null };
+    const bps = sum(sized.map((p) => p.bps || 0));
+    const hz = sum(sized.map((p) => p.hz || 0));
+    return { sizeB: hz > 0 ? bps / hz : mean(sized.map((p) => p.size_b)), bps };
+  }
+
   function statusOf(row, design, runningUnits) {
     const observed = row.publishers.length + row.subscribers.length;
     if (!observed) {
@@ -348,6 +361,7 @@
         ),
         silentS:
           Math.max(0, ...seen.publishers.map((p) => p.silent_s || 0)) || null,
+        ...topicTraffic(seen.publishers),
       };
       row.origin = row.designPublishers[0] || seen.publishers[0]?.node || null;
       row.status = row.service
@@ -622,6 +636,18 @@
     return hz >= 10 ? hz.toFixed(1) : hz.toFixed(2);
   }
 
+  function sizeLabel(bytes) {
+    if (bytes === null || bytes === undefined) return "";
+    if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${Math.round(bytes)} B`;
+  }
+
+  function bandwidthLabel(bps) {
+    if (bps === null || bps === undefined) return "";
+    return `${sizeLabel(bps)}/s`;
+  }
+
   function msLabel(ms) {
     if (ms === null || ms === undefined) return "";
     return ms >= 10 ? `${ms.toFixed(1)} ms` : `${ms.toFixed(2)} ms`;
@@ -718,6 +744,9 @@
     flowMarks,
     hzLabel,
     msLabel,
+    sizeLabel,
+    bandwidthLabel,
+    topicTraffic,
     shortNode,
     timeShare,
     sampleAtShare,

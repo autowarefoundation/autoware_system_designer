@@ -104,6 +104,10 @@ void asd_stats_count(asd_stats_slot_t * slot, uint64_t t_ns);
 void asd_stats_latency(asd_stats_slot_t * slot, int64_t latency_ns);
 // Notes that `trigger` led to a publish on `output`.
 void asd_stats_link(const asd_stats_t * s, asd_stats_slot_t * trigger, const asd_stats_slot_t * output);
+// Adds one measured publish of `bytes` to a publisher's slot.
+void asd_stats_bytes(asd_stats_slot_t * slot, uint64_t bytes);
+// Adds thread CPU time to a take or timer slot.
+void asd_stats_cpu(asd_stats_slot_t * slot, uint64_t cpu_ns);
 
 // ---- control: <dir>/control -------------------------------------------------------
 

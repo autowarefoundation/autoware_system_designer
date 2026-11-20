@@ -126,6 +126,28 @@ static int check_stats_churn(const char * dir)
   return 0;
 }
 
+// Sizes and CPU time add up per endpoint and start from zero when a slot goes to the next one.
+static int check_stats_extras(const char * dir)
+{
+  asd_stats_t s;
+  CHECK(asd_stats_open(&s, dir, 79, 2) == 0);
+  int pub = 0;
+  int sub = 0;
+  CHECK(asd_stats_register(&s, ASD_SLOT_PUB, &pub) == 0);
+  CHECK(asd_stats_register(&s, ASD_SLOT_SUB, &sub) == 1);
+  asd_stats_bytes(&s.slots[0], 100);
+  asd_stats_bytes(&s.slots[0], 300);
+  asd_stats_cpu(&s.slots[1], 7);
+  asd_stats_cpu(&s.slots[1], 5);
+  CHECK(s.slots[0].bytes_sum == 400 && s.slots[0].bytes_count == 2);
+  CHECK(s.slots[1].cpu_ns == 12);
+  CHECK(asd_stats_unregister(&s, &sub) == &s.slots[1]);
+  CHECK(asd_stats_register(&s, ASD_SLOT_PUB, &sub) == 1);
+  CHECK(s.slots[1].bytes_sum == 0 && s.slots[1].bytes_count == 0);
+  asd_stats_close(&s);
+  return 0;
+}
+
 // The control file maps only with its magic and version.
 static int check_control(const char * dir)
 {
@@ -142,7 +164,7 @@ static int check_control(const char * dir)
   CHECK(fwrite(&control, sizeof(control), 1, f) == 1);
   fclose(f);
   const asd_control_t * mapped = asd_control_map(dir);
-  CHECK(mapped != NULL && mapped->events == 1);
+  CHECK(mapped != NULL && mapped->events == 1 && mapped->sizes == 0 && mapped->cpu == 0);
   return 0;
 }
 
@@ -233,6 +255,7 @@ int main(void)
   CHECK(sizeof(asd_control_t) == ASD_CONTROL_SIZE);
   CHECK(check_stats(dir) == 0);
   CHECK(check_stats_churn(dir) == 0);
+  CHECK(check_stats_extras(dir) == 0);
   CHECK(check_control(dir) == 0);
 
   snprintf(path, sizeof(path), "rm -rf %s", dir);

@@ -21,7 +21,7 @@
 //   <pid>.trace  while event recording is on: a 64-byte header followed by fixed
 //                64-byte event records.
 // <dir>/control is written by the runtime and read by every traced process; it
-// switches event recording. The Python readers (autoware_system_designer_runtime/
+// switches event recording, message-size sampling and callback CPU time. The Python readers (autoware_system_designer_runtime/
 // _impl/measure/trace_reader.py, stats_reader.py) mirror these files field for field.
 
 #ifndef AUTOWARE_SYSTEM_DESIGNER_TRACER__TRACE_FORMAT_H_
@@ -93,7 +93,7 @@ typedef struct asd_trace_record {
 // ---- counters ----------------------------------------------------------------
 
 #define ASD_STATS_MAGIC "ASDSTATS"
-#define ASD_STATS_VERSION 1u
+#define ASD_STATS_VERSION 2u
 #define ASD_STATS_HEADER_SIZE 64u
 #define ASD_STATS_SLOT_SIZE 64u
 #define ASD_STATS_SLOTS_ENV "ASD_STATS_SLOTS"
@@ -130,6 +130,13 @@ typedef struct asd_stats_header {
 // Latency: take, wall time of the take minus the source timestamp (communication);
 // publish, entry of the publish minus the thread's latest take or timer fire
 // (callback time up to the publish); timer, none.
+// The last two words differ per kind and start from zero with each endpoint:
+//   publish     serialized bytes and the publishes they were measured on, every
+//               serialized publish and, while size sampling is on, one sampled
+//               publish per ASD_SIZE_SAMPLE_NS;
+//   take/timer  the link to the latest publish, and, while CPU time is on, the
+//               thread CPU time from the take or fire to the thread's next take,
+//               fire, service take or wait.
 typedef struct asd_stats_slot {
   uint8_t kind;
   uint8_t reserved[7];
@@ -138,9 +145,18 @@ typedef struct asd_stats_slot {
   uint64_t last_ns;     // wall time of the latest one
   uint64_t lat_sum_ns;
   uint64_t lat_count;
-  uint64_t next_slot;   // take/timer: 1 + slot of the latest publish it led to on its thread; 0: none yet
-  uint64_t reserved2;
+  union {
+    uint64_t next_slot;   // take/timer: 1 + slot of the latest publish it led to on its thread; 0: none yet
+    uint64_t bytes_sum;   // publish: sum of the measured sizes
+  };
+  union {
+    uint64_t cpu_ns;      // take/timer: thread CPU time of the callbacks
+    uint64_t bytes_count; // publish: publishes measured
+  };
 } asd_stats_slot_t;
+
+// Interval between two sampled sizes of one publisher.
+#define ASD_SIZE_SAMPLE_NS 1000000000ull
 
 // ---- control -----------------------------------------------------------------
 
@@ -149,12 +165,15 @@ typedef struct asd_stats_slot {
 #define ASD_CONTROL_VERSION 1u
 #define ASD_CONTROL_SIZE 64u
 
-// Without a control file in the trace directory, event recording is always on.
+// Without a control file in the trace directory, event recording is always on and
+// size sampling and CPU time are off.
 typedef struct asd_control {
   char magic[8];
   uint32_t version;
   uint32_t events;  // nonzero: hooks append event records
-  uint64_t reserved[6];
+  uint32_t sizes;   // nonzero: publishers' message sizes are sampled
+  uint32_t cpu;     // nonzero: callbacks' thread CPU time is counted
+  uint64_t reserved[5];
 } asd_control_t;
 
 #ifdef __cplusplus

@@ -10,7 +10,12 @@
 // with no launched member within stays neutral and unmarked. A click
 // selects a block or a unit, and search locates one. The `unitControls`
 // option puts the host's controls of a unit in the section head, after its
-// name.
+// name, and `setUnitNotes` a note per unit after its kind. A live state with
+// `levels` adds resource marks to a block: one per resource from level 1 up,
+// its letter and three bars, as many filled as the level. The `weigh(node)`
+// option sizes the blocks by weight instead of an equal area per node,
+// `transform(sections)` reshapes the sections before each layout, and
+// `nameOf(instance)` names the blocks.
 (function () {
   const SD = window.SD;
   const SVG_NS = "http://www.w3.org/2000/svg";
@@ -19,6 +24,7 @@
     G,
     TOKENS,
     BUSY_BARS,
+    RESOURCE_MARKS,
     restartCount,
     unitSections,
     wrap,
@@ -49,9 +55,20 @@
           ? options.unitControls
           : null;
       this.unitHead = options.unitHead || G.unitHead;
+      this.weigh = typeof options.weigh === "function" ? options.weigh : null;
+      this.transform =
+        typeof options.transform === "function" ? options.transform : null;
+      this.nameOf =
+        typeof options.nameOf === "function"
+          ? options.nameOf
+          : (instance) => instance.name || "";
+      // Unit name -> note after the kind in its section head.
+      this.unitNotes = new Map();
       // Unit name -> the slot over its section head holding the host's controls.
       this.controlSlots = new Map();
       this.structureRoot = null;
+      // Sections of the structure, and those of the current layout after the transform.
+      this.baseSections = [];
       this.sections = [];
       // Instance and parent id of every entity in the structure, drawn or not.
       this.instanceById = new Map();
@@ -71,7 +88,8 @@
         const data = await this.loadModeData(this.options.mode);
         this.structureRoot = data;
         this._index(data);
-        this.sections = unitSections(data);
+        this.baseSections = unitSections(data);
+        this.sections = this.baseSections;
         this.render();
       } catch (error) {
         console.error("Error loading treemap:", error);
@@ -104,6 +122,9 @@
       const width = this.container.clientWidth;
       const height = this.container.clientHeight;
       if (!width || !height) return;
+      this.sections = this.transform
+        ? this.transform(this.baseSections)
+        : this.baseSections;
       if (!this.sections.length) {
         this.showError("No node of this mode is placed on a compute unit.");
         return;
@@ -114,6 +135,7 @@
         height,
         this.depthLimit,
         this.unitHead,
+        this.weigh,
       );
       this.boxes = laid.boxes;
       const svg = svgElement("svg", {
@@ -165,9 +187,7 @@
           "text-anchor": "end",
         });
         kind.style.fontSize = `${G.font.kind}px`;
-        kind.textContent = section.kind
-          ? `${section.kind} · ${section.nodes} nodes`
-          : `${section.nodes} nodes`;
+        kind.textContent = this._kindText(section);
         g.appendChild(kind);
         g.appendChild(svgElement("title")).textContent =
           section.description || section.name || "unassigned";
@@ -226,7 +246,12 @@
     _dress(g, box, info) {
       const count = info && box.kind === "node" ? restartCount(info) : 0;
       const busy = !!info?.busy;
-      const key = info ? `${info.token}|${busy}|${count}` : "";
+      const name = this.nameOf(box.instance);
+      const levels =
+        box.kind === "node" && info?.levels
+          ? RESOURCE_MARKS.map(([key]) => info.levels[key] || 0)
+          : [];
+      const key = `${info ? `${info.token}|${busy}|${count}` : ""}|${levels.join("")}|${name}`;
       if (box.dressKey === key) return;
       box.dressKey = key;
       g.querySelector(":scope > .tm-dress")?.remove();
@@ -234,7 +259,6 @@
       g.appendChild(dress);
 
       const size = G.font.block;
-      const name = box.instance.name || "";
       const addName = (text, attributes) => {
         const label = svgElement("text", attributes);
         label.style.fontSize = `${size}px`;
@@ -285,6 +309,14 @@
           ]);
         }
       }
+      RESOURCE_MARKS.forEach(([, letter], i) => {
+        const level = levels[i];
+        if (!level) return;
+        marks.push([
+          G.resource,
+          (x, y) => this._resourceMark(dress, letter, level, x, y),
+        ]);
+      });
       const gap = 3;
       // The leading marks that fit in `room`, and their width.
       const fitMarks = (room) => {
@@ -360,6 +392,28 @@
       );
     }
 
+    // A resource mark at left edge `x` and middle `y`: the letter, then three
+    // rising bars with the first `level` filled.
+    _resourceMark(parent, letter, level, x, y) {
+      const group = svgElement("g", { class: "tm-resource" });
+      const text = svgElement("text", { class: "tm-resource-letter", x, y });
+      text.style.fontSize = `${G.font.restarts}px`;
+      text.textContent = letter;
+      group.appendChild(text);
+      BUSY_BARS.forEach(([dx, height], i) =>
+        group.appendChild(
+          svgElement("rect", {
+            class: i < level ? "tm-resource-bar on" : "tm-resource-bar",
+            x: x + G.resourceLetter + dx,
+            y: y + G.busy / 2 - height,
+            width: 2,
+            height,
+          }),
+        ),
+      );
+      parent.appendChild(group);
+    }
+
     // `text` within `maxWidth`, shortened with an ellipsis down to a few
     // characters; empty when even that does not fit.
     _fit(text, maxWidth, fontSize) {
@@ -408,6 +462,32 @@
       });
       this.container.appendChild(layer);
       this.renderUnitControls();
+    }
+
+    _kindText(section) {
+      const base = section.kind
+        ? `${section.kind} · ${section.nodes} nodes`
+        : `${section.nodes} nodes`;
+      const note = this.unitNotes.get(section.name);
+      return note ? `${note} · ${base}` : base;
+    }
+
+    // Sets the note of each unit by name (none for a unit left out) and
+    // narrows the control slots to the new kind text.
+    setUnitNotes(notes) {
+      this.unitNotes = new Map(notes);
+      if (!this.svg) return;
+      this.boxes.forEach((box, index) => {
+        if (box.kind !== "unit") return;
+        const section = this.sections[box.section];
+        const kind = this.svg.childNodes[index].querySelector(".tm-kind");
+        const text = this._kindText(section);
+        if (!kind || kind.textContent === text) return;
+        kind.textContent = text;
+        const slot = this.controlSlots.get(section.name);
+        if (slot)
+          slot.style.right = `${2 * G.pad + (kind.getComputedTextLength?.() || 0)}px`;
+      });
     }
 
     // Refills every slot from the host; called by the host when its controls changed.
@@ -545,10 +625,11 @@
     }
 
     _title(box, info) {
-      const path = box.instance.path || box.instance.name || "";
+      const path =
+        box.instance.title || box.instance.path || box.instance.name || "";
       if (!info) return path;
       const restarts = box.kind === "node" ? restartCount(info) : 0;
-      return [
+      const head = [
         path,
         info.dead ? `${info.label} · down` : info.label,
         info.busy,
@@ -556,6 +637,9 @@
       ]
         .filter(Boolean)
         .join(" · ");
+      return box.kind === "node" && info.usage?.length
+        ? [head, ...info.usage].join("\n")
+        : head;
     }
 
     destroy() {

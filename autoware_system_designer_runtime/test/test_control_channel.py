@@ -626,3 +626,48 @@ def test_operation_mode_guard_trusts_a_latched_report_published_long_ago():
     guard = OperationModeGuard(worker=None)
     guard._on_message(_state(MODE_AUTONOMOUS, published), {"source_timestamp": published})
     assert guard.check("stop") == "stop refused: operation mode is autonomous"
+
+
+class _Resources:
+    def __init__(self):
+        self.reads = 0
+
+    def read(self):
+        self.reads += 1
+        return self.reads
+
+    def usage(self, before, after):
+        return {"interval_s": None if before is None else 1.0, "members": {"/n": {"rss_kb": after}}}
+
+
+def test_resources_are_read_only_while_a_client_follows_them(tmp_path, monkeypatch):
+    monkeypatch.setattr(cc, "RESOURCES_POLL_S", 0.05)
+
+    async def scenario():
+        resources = _Resources()
+        coord, commands = _commands(resources=resources)
+        async with _Channel(commands, commands._states, tmp_path) as c:
+            assert (await c.event())["resources"] is True
+            await asyncio.sleep(0.2)
+            assert resources.reads == 0
+            assert (await c.call("resources.follow"))["result"] == {"interval_s": 0.05}
+            first = await c.event()
+            second = await c.event()
+            assert first["event"] == second["event"] == "resources"
+            assert first["interval_s"] is None and second["interval_s"] == 1.0
+            assert (await c.call("resources.unfollow"))["result"] == {"released": True}
+            await asyncio.sleep(0.1)
+            reads = resources.reads
+            await asyncio.sleep(0.2)
+            assert resources.reads == reads
+
+    _run(scenario())
+
+
+def test_running_pids_are_the_leaders_of_the_running_members():
+    coord, commands = _commands()
+    commands._states.on_event(ev.Started(name="/perception/detector", pid=5))
+    commands._states.on_event(ev.Started(name="/pointcloud_container", pid=6))
+    commands._states.on_event(ev.Exited(name="/pointcloud_container", exit_code=0))
+    commands._states.on_event(ev.LoadSucceeded(name="/pointcloud_container/filter", full_node_name="/f", unique_id=1))
+    assert commands.running_pids() == {"/perception/detector": 5}
