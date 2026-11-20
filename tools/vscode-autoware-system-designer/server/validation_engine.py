@@ -652,7 +652,7 @@ class ValidationEngine:
 
     def _is_valid_entity_reference(self, entity_name: str) -> bool:
         """Check if an entity reference is valid."""
-        return entity_name in self.registry_manager.entity_registry
+        return self.registry_manager.get_entity(entity_name) is not None
 
     def _is_valid_message_type(self, msg_type: str) -> bool:
         """Check if a message type looks valid (basic check)."""

@@ -65,6 +65,7 @@ from autoware_system_designer.generator.ros2_launcher.generate_module_launcher i
 from autoware_system_designer.model import serde
 from autoware_system_designer.model.config import NodeConfig, SystemConfig
 from autoware_system_designer.model.export_schema import SCHEMA_VERSION
+from autoware_system_designer.parser.data_validator import split_package_qualifier
 from autoware_system_designer.parser.deployment_parser import peek_target_system_name, resolve_input_target
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
@@ -218,12 +219,17 @@ class DeploymentBuilder:
         if group is None:
             # resolve_input_target raises the canonical not-found error.
             return
-        picked = group.choose(config_registry.selection_policy)
+        package, _ = split_package_qualifier(system_name)
+        try:
+            picked = group.choose(config_registry.selection_policy, package)
+        except ValidationError:
+            # resolve_input_target raises the canonical error for a package lacking the system.
+            return
         picked_path = canonical_path(str(picked.file_path))
         if config_registry.deployment_package_name is None:
             config_registry.deployment_package_name = file_package_map.get(picked_path) or picked.package
         if config_registry.anchor_dir is None:
-            if group.is_duplicated:
+            if group.is_duplicated and package is None:
                 logger.warning(
                     f"Deployment target '{system_name}' is a bare entity name with duplicated definitions; "
                     f"the anchor comes from the load-order pick:\n{group.describe()}"

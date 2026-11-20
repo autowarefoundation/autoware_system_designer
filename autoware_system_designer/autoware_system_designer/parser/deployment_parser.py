@@ -21,18 +21,20 @@ from typing import Any, Dict, List, Optional, Tuple
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.path_utils import canonical_path
 from autoware_system_designer.model.config import SystemConfig
-from autoware_system_designer.parser.data_validator import entity_name_decode
+from autoware_system_designer.parser.data_validator import entity_name_decode, split_package_qualifier
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
 
 def _normalize_system_name(system_ref: str) -> str:
-    system_name = os.path.basename(system_ref)
-    if system_name.endswith(".yaml"):
-        system_name = system_name[:-5]
-    if "." in system_name:
-        decoded_name, _ = entity_name_decode(system_name)
-        return decoded_name
-    return system_name
+    """System name of a target; a package-qualified entity reference keeps its qualifier."""
+    package, bare_ref = split_package_qualifier(system_ref)
+    if package is None or bare_ref.endswith(".yaml"):
+        package, bare_ref = None, os.path.basename(system_ref)
+    if bare_ref.endswith(".yaml"):
+        bare_ref = bare_ref[:-5]
+    if "." in bare_ref:
+        bare_ref, _ = entity_name_decode(bare_ref)
+    return f"{package}/{bare_ref}" if package else bare_ref
 
 
 def _resolve_deployments_path(input_path: str) -> str:

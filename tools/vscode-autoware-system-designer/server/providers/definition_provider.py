@@ -28,8 +28,9 @@ class DefinitionProvider:
         word = get_word_at_position(line, params.position.character)
 
         # Check if it's an entity name
-        if word in self.registry_manager.entity_registry:
-            return self._entity_location(self.registry_manager.entity_registry[word])
+        target = self.registry_manager.get_entity(word)
+        if target is not None:
+            return self._entity_location(target)
 
         # Check if it's a connection reference that points to another entity
         current_file_path = uri_to_path(params.text_document.uri)
@@ -71,8 +72,9 @@ class DefinitionProvider:
                     for instance in instances:
                         if instance.get("name") == instance_name:
                             entity_name = instance.get("entity")
-                            if entity_name in self.registry_manager.entity_registry:
-                                return self._entity_location(self.registry_manager.entity_registry[entity_name])
+                            target = self.registry_manager.get_entity(entity_name)
+                            if target is not None:
+                                return self._entity_location(target)
 
             elif config.entity_type == ConfigType.SYSTEM:
                 # Handle system connections: component.direction.port_name
@@ -84,7 +86,8 @@ class DefinitionProvider:
                     for component in components:
                         if component.get("name") == component_name:
                             component_entity = component.get("entity")
-                            if component_entity in self.registry_manager.entity_registry:
-                                return self._entity_location(self.registry_manager.entity_registry[component_entity])
+                            target = self.registry_manager.get_entity(component_entity)
+                            if target is not None:
+                                return self._entity_location(target)
 
         return None
