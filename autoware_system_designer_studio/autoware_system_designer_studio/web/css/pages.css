@@ -76,6 +76,34 @@ body.index-page .page-container {
   max-width: 560px;
 }
 
+/* Opening a system: only the studio mark and title, centred on the page */
+html.opening body.index-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+html.opening body.index-page .page-container {
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+html.opening body.index-page .page-container > :not(.brand-title) {
+  display: none;
+}
+
+html.opening body.index-page h1.brand-title {
+  flex-direction: column;
+  gap: 24px;
+  margin: 0;
+}
+
+html.opening body.index-page .brand-icon {
+  height: 128px;
+}
+
 .system-list {
   list-style: none;
   margin: 0;

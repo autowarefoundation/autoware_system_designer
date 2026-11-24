@@ -10,12 +10,23 @@
     {% for src in scripts %}
     <script src="{{ src }}"></script>
     {% endfor %}
+    {% if systems %}
+    <script>
+        // The site opens on a system, showing only the studio mark meanwhile; the list
+        // stays with ?list and when reached by Back or Forward.
+        (function () {
+            const navigation = performance.getEntriesByType('navigation')[0];
+            if (new URLSearchParams(location.search).has('list')) return;
+            if (navigation && navigation.type === 'back_forward') return;
+            document.documentElement.classList.add('opening');
+        })();
+    </script>
+    {% endif %}
 </head>
 <body class="simple-page index-page">
     <div class="page-container">
         <h1 class="brand-title"><img class="brand-icon" src="{{ brand_icon }}" alt="">Autoware System Designer Studio</h1>
         {% if systems %}
-        <p id="opening" class="description" hidden></p>
         <ul class="system-list">
             {% for system in systems %}
             <li class="system-row">
@@ -33,20 +44,13 @@
     </div>
     <script>
         SD.theme.init();
-        // The site opens on the system shown last, else on its first one; the
-        // list stays with ?list and when reached by Back or Forward.
+        // The opened system is the one shown last, else the first one.
         (function () {
+            if (!document.documentElement.classList.contains('opening')) return;
             const entries = Array.from(document.querySelectorAll('.system-entry'));
-            if (!entries.length) return;
-            if (new URLSearchParams(location.search).has('list')) return;
-            const navigation = performance.getEntriesByType('navigation')[0];
-            if (navigation && navigation.type === 'back_forward') return;
             const last = SD.storage.get(SD.LAST_SYSTEM_KEY);
             const target = entries.find(function (entry) { return entry.dataset.system === last; }) || entries[0];
-            const opening = document.getElementById('opening');
-            opening.textContent = 'Opening ' + target.querySelector('.system-name').textContent + '…';
-            opening.hidden = false;
-            location.replace(target.href);
+            setTimeout(function () { location.replace(target.href); }, 1000);
         })();
     </script>
 </body>
