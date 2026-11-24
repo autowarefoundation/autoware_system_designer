@@ -499,7 +499,6 @@
     restartCount,
     slotOf,
     nodeCount,
-    weightOf,
     unitSections,
     slotRows,
     proportional,

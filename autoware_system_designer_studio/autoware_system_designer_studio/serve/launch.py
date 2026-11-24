@@ -282,10 +282,6 @@ class LaunchSession:
         self.started_at = time.time()
         self.updated_at = self.started_at
 
-    @property
-    def monitors(self) -> set[str]:
-        return self.feeds[TOPIC_MONITOR]
-
     @staticmethod
     def count(record: dict[str, Any]) -> dict[str, Any]:
         """``record`` with the runtime's ``restarts`` and ``respawns``, 0 where it reports none."""
@@ -584,12 +580,6 @@ class LaunchManager:
         else:
             session.follows.discard(path)
         return result
-
-    async def monitor_follow(self, compute_unit: str, client: str = "") -> dict[str, Any]:
-        return await self.feed_follow(TOPIC_MONITOR, compute_unit, client)
-
-    async def monitor_unfollow(self, compute_unit: str, client: str = "") -> dict[str, Any]:
-        return await self.feed_unfollow(TOPIC_MONITOR, compute_unit, client)
 
     async def feed_follow(self, feed: str, compute_unit: str, client: str = "") -> dict[str, Any]:
         """Makes ``client`` a follower of a feed of the unit; following twice is following once."""

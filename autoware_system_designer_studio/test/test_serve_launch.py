@@ -481,13 +481,13 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     unfollowed = Path(session["log_dir"]) / "unfollowed"
     status, body = launching.rpc({"method": "monitor.unfollow", "params": {"compute_unit": "main_ecu", "client": "a"}})
     assert body["result"] == {"released": False}  # one follower is left
-    assert launching.daemon.launch.session("main_ecu").monitors == {"b"}
+    assert launching.daemon.launch.session("main_ecu").feeds["monitor"] == {"b"}
     launching.loop.call_soon_threadsafe(launching.daemon.launch.release_follows)
     deadline = time.time() + 5
     # The file exists before its content is written.
     while time.time() < deadline and not (unfollowed.exists() and unfollowed.read_text()):
         time.sleep(0.02)
-    assert launching.daemon.launch.session("main_ecu").monitors == set() and unfollowed.read_text() == "x"
+    assert launching.daemon.launch.session("main_ecu").feeds["monitor"] == set() and unfollowed.read_text() == "x"
 
     # Tracer switches: the runtime gets the union of the callers' wants, all dropped with the last stream.
     assert session["control"]["tracer_options"] == {"sizes": False, "cpu": False}

@@ -62,8 +62,7 @@
     const pss = entries
       .map((entry) => entry.pss_kb)
       .filter((value) => value !== undefined);
-    const usage = {
-      pid: latest.pid,
+    return {
       procs: latest.procs,
       threads: latest.threads,
       cpu: weightedMean(
@@ -85,9 +84,7 @@
         ones,
       ),
       span_s: (held[held.length - 1].time_ns - held[0].time_ns) / 1e9,
-      readings: held.length,
     };
-    return usage;
   }
 
   // Host and GPU use of one unit over `readings`: null without any.
@@ -426,10 +423,6 @@
       units() {
         return [...units.keys()];
       },
-      // Whether any unit has readings.
-      has() {
-        return units.size > 0;
-      },
       // Use of the member at `path` over the window, with its unit; null when no unit reads it.
       usage(path) {
         for (const unit of units.keys()) {
@@ -451,8 +444,6 @@
     return shared;
   };
   launch.resourceUsage = {
-    WINDOWS,
-    LEVELS,
     within,
     memberUsage,
     hostUsage,

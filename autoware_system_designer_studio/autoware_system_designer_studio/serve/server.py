@@ -221,12 +221,12 @@ class ServeDaemon:
         self.methods.register("launch.forget", self._launch_forget)
         for verb in MEASURE_VERBS:
             self._register_of_unit(f"measure.{verb}", self._measure(verb))
-        self._register_of_unit("monitor.follow", self._monitor_follow)
-        self._register_of_unit("monitor.unfollow", self._monitor_unfollow)
+        self._register_of_unit("monitor.follow", self._feed_handler(launch.TOPIC_MONITOR, follow=True))
+        self._register_of_unit("monitor.unfollow", self._feed_handler(launch.TOPIC_MONITOR, follow=False))
         self._register_of_unit("monitor.sample", self._monitor_sample)
         self._register_of_unit("monitor.options", self._monitor_options)
-        self._register_of_unit("resources.follow", self._resources_follow)
-        self._register_of_unit("resources.unfollow", self._resources_unfollow)
+        self._register_of_unit("resources.follow", self._feed_handler(launch.TOPIC_RESOURCES, follow=True))
+        self._register_of_unit("resources.unfollow", self._feed_handler(launch.TOPIC_RESOURCES, follow=False))
         self._register_of_unit("resources.sample", self._resources_sample)
         self.methods.register("rviz.start", self._rviz_start)
         self.methods.register("settings.set", self._settings_set)
@@ -619,13 +619,16 @@ class ServeDaemon:
 
         return handler
 
-    async def _monitor_follow(self, params: dict[str, Any]) -> dict[str, Any]:
-        compute_unit = api.str_param(params, "compute_unit", required=True)
-        return await self.launch.monitor_follow(compute_unit, api.str_param(params, "client") or "")
+    def _feed_handler(self, feed: str, *, follow: bool):
+        """Handler that makes the calling client a follower of ``feed`` of a unit, or releases it."""
 
-    async def _monitor_unfollow(self, params: dict[str, Any]) -> dict[str, Any]:
-        compute_unit = api.str_param(params, "compute_unit", required=True)
-        return await self.launch.monitor_unfollow(compute_unit, api.str_param(params, "client") or "")
+        async def handler(params: dict[str, Any]) -> dict[str, Any]:
+            compute_unit = api.str_param(params, "compute_unit", required=True)
+            client = api.str_param(params, "client") or ""
+            call = self.launch.feed_follow if follow else self.launch.feed_unfollow
+            return await call(feed, compute_unit, client)
+
+        return handler
 
     async def _monitor_sample(self, params: dict[str, Any]) -> dict[str, Any]:
         compute_unit = api.str_param(params, "compute_unit", required=True)
@@ -641,16 +644,6 @@ class ServeDaemon:
                     raise api.ApiError(api.INVALID_PARAMS, f"{name} must be a boolean")
                 wants[name] = params[name]
         return await self.launch.tracer_options(compute_unit, client, wants)
-
-    async def _resources_follow(self, params: dict[str, Any]) -> dict[str, Any]:
-        compute_unit = api.str_param(params, "compute_unit", required=True)
-        client = api.str_param(params, "client") or ""
-        return await self.launch.feed_follow(launch.TOPIC_RESOURCES, compute_unit, client)
-
-    async def _resources_unfollow(self, params: dict[str, Any]) -> dict[str, Any]:
-        compute_unit = api.str_param(params, "compute_unit", required=True)
-        client = api.str_param(params, "client") or ""
-        return await self.launch.feed_unfollow(launch.TOPIC_RESOURCES, compute_unit, client)
 
     async def _resources_sample(self, params: dict[str, Any]) -> dict[str, Any]:
         compute_unit = api.str_param(params, "compute_unit", required=True)

@@ -746,7 +746,6 @@
     msLabel,
     sizeLabel,
     bandwidthLabel,
-    topicTraffic,
     shortNode,
     timeShare,
     sampleAtShare,

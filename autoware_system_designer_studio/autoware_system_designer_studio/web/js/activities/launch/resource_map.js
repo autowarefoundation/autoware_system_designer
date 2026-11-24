@@ -617,8 +617,5 @@
   launch.resourceMapRules = {
     nestContainers,
     groupLow,
-    LOW_SHARE,
-    LOW_KEEP_SHARE,
-    LOW_AREA,
   };
 })();
