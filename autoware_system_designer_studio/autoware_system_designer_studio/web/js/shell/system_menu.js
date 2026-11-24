@@ -44,6 +44,8 @@
 
     SD.popover(button, menu, {
       onOpen() {
+        // The menu hangs below the system button, whatever precedes it in the bar.
+        menu.style.left = `${button.getBoundingClientRect().left}px`;
         const activity = SD.store.get("activity");
         links.forEach(([link, system]) => {
           link.href = `${config.siteRoot}${system.page}?activity=${encodeURIComponent(activity)}`;

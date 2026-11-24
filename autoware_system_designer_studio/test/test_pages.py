@@ -172,10 +172,19 @@ def test_pages_link_the_bundle_relative_to_the_site_root(tmp_path):
     index = site.render("index.html")
     assert f'href="{SITE}/index.html"' in index
     assert f'src="{SITE}/icon.svg"' in index
-    assert '<link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">' in index
+    assert (
+        '<link rel="icon" type="image/svg+xml" href="assets/img/favicon_dark.svg" media="(prefers-color-scheme: dark)">'
+        in index
+    )
+    assert 'src="assets/img/awsd_icon_light.svg"' in index
+    assert 'src="assets/img/awsd_icon_dark.svg"' in index
     workbench = site.render(f"{SITE}/index.html")
-    assert '<link rel="icon" type="image/svg+xml" href="../../../assets/img/favicon.svg" />' in workbench
+    assert (
+        '<link rel="icon" type="image/svg+xml" href="../../../assets/img/favicon_light.svg" media="(prefers-color-scheme: light)" />'
+        in workbench
+    )
     assert 'src="../../../assets/js/core/sd.js"' in workbench
+    assert 'src="../../../assets/img/awsd_icon_dark.svg"' in workbench
     assert 'src="../../../assets/js/pages/workbench_page.js"' in workbench
 
 
