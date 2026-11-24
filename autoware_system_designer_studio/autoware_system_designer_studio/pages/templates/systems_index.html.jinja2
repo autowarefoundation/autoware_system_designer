@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>Autoware System Designer Studio</title>
-    <link rel="icon" type="image/svg+xml" href="{{ icon }}">
+    {% for scheme, href in icons.items() %}
+    <link rel="icon" type="image/svg+xml" href="{{ href }}" media="(prefers-color-scheme: {{ scheme }})">
+    {% endfor %}
     {% for href in stylesheets %}
     <link rel="stylesheet" href="{{ href }}">
     {% endfor %}
@@ -25,7 +27,7 @@
 </head>
 <body class="simple-page index-page">
     <div class="page-container">
-        <h1 class="brand-title"><img class="brand-icon" src="{{ brand_icon }}" alt="">Autoware System Designer Studio</h1>
+        <h1 class="brand-title">{% for theme, href in brand_icons.items() %}<img class="brand-icon theme-{{ theme }}-only" src="{{ href }}" alt="">{% endfor %}Autoware System Designer Studio</h1>
         {% if systems %}
         <ul class="system-list">
             {% for system in systems %}

@@ -111,9 +111,10 @@ def _package_version() -> Optional[str]:
 def _status_page(status: HTTPStatus, title: str, message: str, *, reload_s: Optional[int] = None) -> Response:
     """HTML answer to a page navigation that has no page; it reloads itself when the cause is transient."""
     refresh = f'<meta http-equiv="refresh" content="{reload_s}">' if reload_s else ""
-    links = f'<link rel="icon" type="image/svg+xml" href="/{assets.BUNDLE_DIR}/{assets.FAVICON}">' + "".join(
-        f'<link rel="stylesheet" href="/{assets.BUNDLE_DIR}/{css}">' for css in assets.PAGE_STYLESHEETS
-    )
+    links = "".join(
+        f'<link rel="icon" type="image/svg+xml" href="/{assets.BUNDLE_DIR}/{path}" media="(prefers-color-scheme: {scheme})">'
+        for scheme, path in assets.FAVICONS.items()
+    ) + "".join(f'<link rel="stylesheet" href="/{assets.BUNDLE_DIR}/{css}">' for css in assets.PAGE_STYLESHEETS)
     body = (
         '<!DOCTYPE html><html><head><meta charset="UTF-8">'
         f"<title>{html.escape(title)}</title>{refresh}{links}"
@@ -703,7 +704,7 @@ class ServeDaemon:
             raise api.ApiError(api.METHOD_NOT_ALLOWED, "static files accept GET")
         if request.path == "/favicon.ico":
             # Browsers ask here when a page names no icon; every page does, but not every client reads it.
-            return await self._file_response(request, assets.web_file(assets.FAVICON))
+            return await self._file_response(request, assets.web_file(assets.FAVICONS["light"]))
         if request.path.startswith(BUNDLE_PREFIX):
             relative = request.path[len(BUNDLE_PREFIX) :]
             path = assets.web_file(relative) if relative.split("/")[0] in assets.BUNDLE_SUBDIRS else None

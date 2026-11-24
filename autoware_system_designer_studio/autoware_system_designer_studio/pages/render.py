@@ -102,6 +102,10 @@ def _bundle_links(root: str, paths: tuple[str, ...]) -> list[str]:
     return [f"{root}{assets.BUNDLE_DIR}/{path}" for path in paths]
 
 
+def _scheme_links(root: str, paths: dict[str, str]) -> dict[str, str]:
+    return {scheme: f"{root}{assets.BUNDLE_DIR}/{path}" for scheme, path in paths.items()}
+
+
 def data_script_text(global_name: str, mode: str, data: Any) -> str:
     """Script assigning one mode's object under a page global, loadable from file://."""
     key = json.dumps(mode)
@@ -168,8 +172,8 @@ class Site:
     def _index(self) -> str:
         return self._env.get_template("systems_index.html.jinja2").render(
             systems=self._system_entries(),
-            icon=_bundle_links("", (assets.FAVICON,))[0],
-            brand_icon=_bundle_links("", (assets.BRAND_ICON,))[0],
+            icons=_scheme_links("", assets.FAVICONS),
+            brand_icons=_scheme_links("", assets.BRAND_ICONS),
             stylesheets=_bundle_links("", assets.PAGE_STYLESHEETS),
             scripts=_bundle_links("", assets.PAGE_SCRIPTS),
         )
@@ -177,8 +181,8 @@ class Site:
     def _workbench(self, export: SystemExport) -> str:
         return self._env.get_template("workbench.html.jinja2").render(
             deployment_name=export.name,
-            icon=_bundle_links(SYSTEM_PAGE_ROOT, (assets.FAVICON,))[0],
-            brand_icon=_bundle_links(SYSTEM_PAGE_ROOT, (assets.BRAND_ICON,))[0],
+            icons=_scheme_links(SYSTEM_PAGE_ROOT, assets.FAVICONS),
+            brand_icons=_scheme_links(SYSTEM_PAGE_ROOT, assets.BRAND_ICONS),
             stylesheets=_bundle_links(SYSTEM_PAGE_ROOT, assets.WORKBENCH_STYLESHEETS),
             scripts=_bundle_links(SYSTEM_PAGE_ROOT, assets.WORKBENCH_SCRIPTS),
             entry_script=f"{SYSTEM_PAGE_ROOT}{assets.BUNDLE_DIR}/{assets.WORKBENCH_ENTRY}",

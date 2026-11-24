@@ -13,6 +13,12 @@ body {
   color: var(--text-primary);
 }
 
+/* Images drawn for one theme, shown only under it */
+:root[data-theme="dark"] .theme-light-only,
+:root:not([data-theme="dark"]) .theme-dark-only {
+  display: none;
+}
+
 /* Loading overlay */
 .diagram-loading {
   position: absolute;

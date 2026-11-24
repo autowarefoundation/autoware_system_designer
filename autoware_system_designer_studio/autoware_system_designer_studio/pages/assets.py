@@ -26,10 +26,10 @@ BUNDLE_DIR = "assets"
 # Bundle subdirectories a site carries.
 BUNDLE_SUBDIRS = ("css", "js", "img")
 
-# Tab icon of every page.
-FAVICON = "img/favicon.svg"
-# Studio mark beside the studio title on the systems index and the workbench top bar.
-BRAND_ICON = "img/awsd_icon.svg"
+# Tab icon of every page, per colour scheme of the browser.
+FAVICONS = {"light": "img/favicon_light.svg", "dark": "img/favicon_dark.svg"}
+# Studio mark beside the studio title on the systems index and the workbench top bar, per studio theme.
+BRAND_ICONS = {"light": "img/awsd_icon_light.svg", "dark": "img/awsd_icon_dark.svg"}
 
 # Window variable a mode's data script fills: the exported system structure, keyed by mode.
 DATA_GLOBAL = "systemStructureData"

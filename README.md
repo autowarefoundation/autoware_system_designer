@@ -1,4 +1,7 @@
-<img src="autoware_system_designer_studio/autoware_system_designer_studio/web/img/awsd_icon.svg" alt="AWSD" height="96">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="autoware_system_designer_studio/autoware_system_designer_studio/web/img/awsd_icon_dark.svg">
+  <img src="autoware_system_designer_studio/autoware_system_designer_studio/web/img/awsd_icon_light.svg" alt="AWSD" height="96">
+</picture>
 
 # Autoware System Designer
 
