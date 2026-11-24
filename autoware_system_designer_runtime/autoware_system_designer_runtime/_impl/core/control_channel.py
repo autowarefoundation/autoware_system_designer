@@ -19,7 +19,7 @@ on every state change, ``member.log`` for new stdout/stderr lines of a member th
 ``member.activity`` with the output growth rate of every member whose files grew in the last window,
 ``monitor`` with per-node topic and timer rates from the tracer's counters to the clients that follow them,
 ``resources`` with the CPU, memory and GPU use of every running member to the clients that follow it,
-``monitor.options`` with the state of the tracer's size and CPU-time switches whenever it changes.
+``monitor.options`` with the state of the tracer's size switch whenever it changes.
 A client sends requests ``{"id", "method", "params"}`` and receives ``{"id", "ok", "result" | "error"}``.
 
 Member output stays in the per-member ``out``/``err`` files the actors write; the channel tails a

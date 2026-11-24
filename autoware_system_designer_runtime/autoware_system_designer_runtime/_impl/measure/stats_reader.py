@@ -24,8 +24,8 @@ name-table line carries the counters its endpoint started from. The counts of an
 endpoint are the slot's counters minus that base while it holds the slot, and
 the next endpoint's base minus its own once it ended. The last two words start
 from zero with each endpoint: a publisher's measured bytes and publishes, a
-take's or timer's link to its latest publish and callback CPU time. Version 1
-files hold zeros where version 2 counts bytes and CPU time.
+take's or timer's link to its latest publish. Version 1 files hold zeros where
+version 2 counts bytes.
 """
 
 from __future__ import annotations
@@ -68,7 +68,6 @@ class SlotCounters:
     next_slot: Optional[int]  # take/timer: slot of the latest publish this trigger led to
     bytes_sum: int = 0  # publish: measured bytes
     bytes_count: int = 0  # publish: publishes measured
-    cpu_ns: int = 0  # take/timer: callback thread CPU time
 
 
 @dataclass
@@ -132,7 +131,7 @@ class ProcessStats:
                 )
             else:
                 counters.slots[index] = SlotCounters(
-                    kind, handle, count, last_ns, lat_sum, lat_count, word_a - 1 if word_a else None, cpu_ns=word_b
+                    kind, handle, count, last_ns, lat_sum, lat_count, word_a - 1 if word_a else None
                 )
         return counters
 

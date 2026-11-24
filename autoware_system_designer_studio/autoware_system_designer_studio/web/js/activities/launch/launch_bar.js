@@ -29,13 +29,7 @@
       "trace_sizes",
       "Message sizes for the whole run",
       "Sample the serialized size of one message per publisher and second " +
-        "from launch on, recorded with the rates; serializes inside the nodes.",
-    ],
-    [
-      "trace_cpu",
-      "Callback CPU for the whole run",
-      "Count the thread CPU time of every callback from launch on, so " +
-        "containers split by node; two clock reads per callback.",
+        "from launch on, recorded with the rates; computed inside the nodes.",
     ],
   ];
   const DRAWER_ICON = "M4 7l6 6 6-6";

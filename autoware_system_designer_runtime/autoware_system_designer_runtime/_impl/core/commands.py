@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
 
 from ...control_protocol import MEASURE_VERBS, MEMBER_ACTIONS
+from ..measure.tracer import FLAGS
 from . import events as ev
 
 if TYPE_CHECKING:
@@ -174,7 +175,7 @@ class RuntimeCommands:
         return self._monitor
 
     def tracer_options(self) -> Optional[dict[str, bool]]:
-        """State of the tracer's size and CPU-time switches; None without the tracer."""
+        """State of the tracer's size switch; None without the tracer."""
         return self._switches.state() if self._switches is not None else None
 
     def want_tracer_options(self, owner: object, params: dict[str, Any]) -> tuple[dict[str, bool], bool]:
@@ -183,7 +184,7 @@ class RuntimeCommands:
         if self._switches is None:
             raise CommandError("unavailable", "tracer options need the tracer, which this launch did not preload")
         wants: dict[str, bool] = {}
-        for name in ("sizes", "cpu"):
+        for name in FLAGS:
             if name in params:
                 if not isinstance(params[name], bool):
                     raise CommandError("invalid_params", f"{name} must be a boolean")

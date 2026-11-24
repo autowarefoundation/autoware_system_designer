@@ -34,8 +34,7 @@
     // Live states of the mode's nodes, each with the growth of its own output
     // (`rate`) and, from the busy threshold up, a note of it (`busy`), and the
     // `levels` and `usage` lines of its process's resource use; a composable
-    // node's output and process are its container's, and its CPU level that
-    // of its callbacks while the container split is on.
+    // node's output and process are its container's.
     function liveStates() {
       const { logRate } = launch.scope(config.systemId, () => entitiesMode);
       const states = launch.memberStates(
@@ -46,20 +45,7 @@
       entities.forEach((entity) => {
         const state = states.get(entity.member_path);
         if (!state) return;
-        if (entity.container_path) {
-          const cpu = resources?.nodeCpu(entity.member_path);
-          if (cpu !== null && cpu !== undefined) {
-            const usage = resources.usage(entity.container_path);
-            state.levels = levels(
-              { cpu, rss_kb: 0, gpu_mem_kb: 0 },
-              usage && resources.host(usage.unit),
-            );
-            state.usage = [
-              `callbacks ${launch.resourceUsage.cpuLabel(cpu)} of a core`,
-            ];
-          }
-          return;
-        }
+        if (entity.container_path) return;
         const rate = logRate(entity.member_path);
         state.rate = rate;
         state.busy = launch.busyLog(rate)

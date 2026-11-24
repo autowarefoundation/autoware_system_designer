@@ -21,7 +21,7 @@
 //   <pid>.trace  while event recording is on: a 64-byte header followed by fixed
 //                64-byte event records.
 // <dir>/control is written by the runtime and read by every traced process; it
-// switches event recording, message-size sampling and callback CPU time. The Python readers (autoware_system_designer_runtime/
+// switches event recording and message-size sampling. The Python readers (autoware_system_designer_runtime/
 // _impl/measure/trace_reader.py, stats_reader.py) mirror these files field for field.
 
 #ifndef AUTOWARE_SYSTEM_DESIGNER_TRACER__TRACE_FORMAT_H_
@@ -134,9 +134,7 @@ typedef struct asd_stats_header {
 //   publish     serialized bytes and the publishes they were measured on, every
 //               serialized publish and, while size sampling is on, one publish
 //               per ASD_SIZE_SAMPLE_NS sized from its type's introspection;
-//   take/timer  the link to the latest publish, and, while CPU time is on, the
-//               thread CPU time from the take or fire to the thread's next take,
-//               fire, service take or wait.
+//   take/timer  the link to the latest publish, and zero.
 typedef struct asd_stats_slot {
   uint8_t kind;
   uint8_t reserved[7];
@@ -149,10 +147,7 @@ typedef struct asd_stats_slot {
     uint64_t next_slot;   // take/timer: 1 + slot of the latest publish it led to on its thread; 0: none yet
     uint64_t bytes_sum;   // publish: sum of the measured sizes
   };
-  union {
-    uint64_t cpu_ns;      // take/timer: thread CPU time of the callbacks
-    uint64_t bytes_count; // publish: publishes measured
-  };
+  uint64_t bytes_count;   // publish: publishes measured
 } asd_stats_slot_t;
 
 // Interval between two sampled sizes of one publisher.
@@ -166,13 +161,13 @@ typedef struct asd_stats_slot {
 #define ASD_CONTROL_SIZE 64u
 
 // Without a control file in the trace directory, event recording is always on and
-// size sampling and CPU time are off.
+// size sampling is off.
 typedef struct asd_control {
   char magic[8];
   uint32_t version;
   uint32_t events;  // nonzero: hooks append event records
   uint32_t sizes;   // nonzero: publishers' message sizes are sampled
-  uint32_t cpu;     // nonzero: callbacks' thread CPU time is counted
+  uint32_t reserved0;
   uint64_t reserved[5];
 } asd_control_t;
 

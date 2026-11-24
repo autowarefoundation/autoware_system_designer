@@ -19,10 +19,9 @@ last_ns)`` accumulated over the run, processes that ended included, so the rates
 the difference of two samples. ``kind`` is ``in`` (takes of a topic), ``out`` (publishes of a topic)
 or ``timer`` (fires of a timer, ``label`` its period in ns and its rank among the owner's timers of
 that period); the latency is the communication time of a take and the callback time of a publish.
-A sample also holds, per key whose tracer measured them, two more totals: for ``out`` the measured
-message bytes and the publishes they were measured on, for ``in`` and ``timer`` the callbacks'
-thread CPU time in ns and 0. Their rates give the mean message size and bandwidth of a topic and
-the CPU time of a node's callbacks.
+A sample also holds, per ``out`` key whose tracer measured them, two more totals: the measured
+message bytes and the publishes they were measured on. Their rates give the mean message size and
+bandwidth of a topic.
 
 ``<log-dir>/rates.jsonl`` records the samples of a run, one JSON object per line: a header
 ``{"schema", "interval_s"}``, then per sample ``{"t", "processes", "untracked", "keys"?, "c"}`` where
@@ -50,7 +49,7 @@ NS_PER_MS = 1_000_000
 Key = tuple[str, str, Any]
 # count, lat_sum_ns, lat_count, last_ns
 Counters = tuple[int, int, int, int]
-# out: bytes, publishes measured; in and timer: CPU ns, 0
+# out: bytes, publishes measured
 Extras = tuple[int, int]
 
 DIRECTIONS = {"in": "inputs", "out": "outputs", "timer": "timers"}
@@ -72,8 +71,7 @@ def rates_between(before: Sample, after: Sample) -> dict[str, Any]:
     counts from zero; a key without a message in the span carries ``silent_s``, the time since its
     last one. An output with measured sizes carries ``size_b``, the mean size over the publishes
     measured in the span (over the whole run when none was), and ``bps``, its rate times that
-    size; an input or timer with CPU time carries ``cpu``, the cores its callbacks used over the
-    span, and a node with any carries their sum.
+    size.
     """
     interval_ns = max(after.t_ns - before.t_ns, 1)
     nodes: dict[str, dict[str, Any]] = {}
@@ -94,18 +92,13 @@ def rates_between(before: Sample, after: Sample) -> dict[str, Any]:
             record["silent_s"] = round((after.t_ns - last_ns) / NS_PER_S, 1)
         entry = nodes.setdefault(node, {"node": node, "inputs": [], "outputs": [], "timers": []})
         extra = after.extras.get(key)
-        if extra is not None:
+        if kind == "out" and extra is not None and extra[1] > 0:
             earlier_extra = before.extras.get(key, (0, 0))
-            if kind == "out" and extra[1] > 0:
-                measured = extra[1] - earlier_extra[1]
-                total = extra[0] - earlier_extra[0]
-                size = total / measured if measured > 0 and total >= 0 else extra[0] / extra[1]
-                record["size_b"] = round(size, 1)
-                record["bps"] = round(record["hz"] * size, 1)
-            elif kind != "out":
-                cpu = max(extra[0] - earlier_extra[0], 0) / interval_ns
-                record["cpu"] = round(cpu, 4)
-                entry["cpu"] = round(entry.get("cpu", 0.0) + cpu, 4)
+            measured = extra[1] - earlier_extra[1]
+            total = extra[0] - earlier_extra[0]
+            size = total / measured if measured > 0 and total >= 0 else extra[0] / extra[1]
+            record["size_b"] = round(size, 1)
+            record["bps"] = round(record["hz"] * size, 1)
         entry[DIRECTIONS[kind]].append(record)
     return {
         "time_ns": after.t_ns,
@@ -316,7 +309,7 @@ def format_rates(snapshot: dict[str, Any], pattern: Optional[str] = None) -> lis
     for node in snapshot["nodes"]:
         if pattern and pattern not in node["node"]:
             continue
-        lines.append(node["node"] + (f"  callbacks {node['cpu'] * 100:.1f} % CPU" if "cpu" in node else ""))
+        lines.append(node["node"])
         for direction, arrow in (("inputs", "<-"), ("outputs", "->")):
             for row in node[direction]:
                 extra = ""

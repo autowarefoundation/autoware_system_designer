@@ -532,7 +532,6 @@ class ServeDaemon:
             respawn=api.bool_param(params, "respawn"),
             launch_id=params["launch"],
             trace_sizes=api.bool_param(params, "trace_sizes"),
-            trace_cpu=api.bool_param(params, "trace_cpu"),
         )
         return session.to_view()
 

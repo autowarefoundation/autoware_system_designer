@@ -18,14 +18,10 @@
 //   counters  always on: atomic adds on the endpoint's slot of <pid>.stats;
 //             a serialized publish adds its size;
 //   events    while the control file says so: one fixed record in <pid>.trace.
-// Two more counters follow the control file, both off by default:
+// One more counter follows the control file, off by default:
 //   sizes     one publish per publisher and ASD_SIZE_SAMPLE_NS has its serialized
 //             size computed from the type's introspection (size_probe.h, no
-//             serialization or copy) and added to the publisher's slot;
-//   cpu       the thread CPU time from a take or timer fire to the thread's next
-//             take, fire, service take or rcl_wait is added to the take's or
-//             timer's slot; a take of a subscription no executor waits on (a
-//             poll inside a callback) leaves the window of that callback open.
+//             serialization or copy) and added to the publisher's slot.
 // Init hooks register the endpoint's slot and append a name-table line; fini
 // hooks release the slot. No hook takes a lock on the per-message path, and
 // only a sampled publish reads its message's lengths. The tracer is armed by
@@ -41,12 +37,9 @@
 //             rcl_timer_init2 (Jazzy+, also reached from rcl_timer_init)
 //   fini      rcl_publisher_fini, rcl_subscription_fini, rcl_timer_fini
 //   clock     rcl_set_ros_time_override
-//   service   rcl_take_request, rcl_take_request_with_info, rcl_take_response,
-//             rcl_take_response_with_info (end a CPU-time window)
-//   wait set  rcl_wait_set_add_subscription (marks the subscriptions executors wait on)
 // A process linked to a replay driver (ASD_REPLAY_SOCKET, see replay_link.c) is gated
 // through the same hooks and these:
-//   wait      rcl_wait (also ends a CPU-time window)
+//   wait      rcl_wait
 //   node      rcl_node_init
 //   timer     rcl_timer_cancel, rcl_timer_reset
 //   clock     rcl_clock_init, rcl_clock_fini, rcl_ros_clock_fini, rcl_enable_ros_time_override,
@@ -65,13 +58,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
-#include <time.h>
 #include <unistd.h>
 
-#include <rcl/client.h>
 #include <rcl/node.h>
 #include <rcl/publisher.h>
-#include <rcl/service.h>
 #include <rcl/subscription.h>
 #include <rcl/time.h>
 #include <rcl/timer.h>
@@ -87,15 +77,13 @@ enum tracer_state { TRACER_UNSET = 0, TRACER_OFF = 1, TRACER_ON = 2 };
 
 enum layout_state { LAYOUT_UNSET = 0, LAYOUT_PENDING = 1, LAYOUT_READY = 2 };
 
-// Per stats slot. A publisher: its message type, the type's size layout once a sample
-// looked it up, and the time its next size is due. A subscription: whether an executor
-// waited on it; a take of one it never waited on is a poll from inside a callback.
+// Per publisher slot: its message type, the type's size layout once a sample looked it
+// up, and the time its next size is due.
 typedef struct slot_info {
   const rosidl_message_type_support_t * type;
   asd_size_layout_t layout;
   int layout_state;
   uint64_t next_size_ns;
-  uint8_t waited;
 } slot_info_t;
 
 // One process's tracer. `events` opens on the first record the control file lets through.
@@ -118,9 +106,6 @@ static __thread uint32_t tls_tid = 0;
 // This thread's latest take or timer fire: the start of a publish's callback time.
 static __thread uint64_t tls_trigger_ns = 0;
 static __thread asd_stats_slot_t * tls_trigger_slot = NULL;
-// This thread's open CPU-time window: the slot it counts for and the thread CPU time at its start.
-static __thread asd_stats_slot_t * tls_cpu_slot = NULL;
-static __thread uint64_t tls_cpu_start_ns = 0;
 // Set while a timer hook forwards to rcl; Jazzy's rcl_timer_call and rcl_timer_init reach the
 // hooked rcl_timer_call_with_info and rcl_timer_init2, which then only forward.
 static __thread bool tls_in_timer_hook = false;
@@ -156,7 +141,6 @@ static void on_fork_child(void)
   tls_tid = 0;
   tls_trigger_ns = 0;
   tls_trigger_slot = NULL;
-  tls_cpu_slot = NULL;
   asd_replay_at_fork_child();
 }
 
@@ -247,49 +231,6 @@ static inline bool sizes_on(void)
   return g.control != NULL && __atomic_load_n(&g.control->sizes, __ATOMIC_RELAXED) != 0;
 }
 
-static inline bool cpu_on(void)
-{
-  return g.control != NULL && __atomic_load_n(&g.control->cpu, __ATOMIC_RELAXED) != 0;
-}
-
-static inline uint64_t thread_cpu_ns(void)
-{
-  struct timespec ts;
-  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
-  return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
-}
-
-// Closes this thread's CPU-time window; its time counts while CPU time is on.
-static void cpu_window_end(void)
-{
-  asd_stats_slot_t * slot = tls_cpu_slot;
-  if (slot == NULL) {
-    return;
-  }
-  tls_cpu_slot = NULL;
-  if (cpu_on()) {
-    uint64_t now = thread_cpu_ns();
-    if (now > tls_cpu_start_ns) {
-      asd_stats_cpu(slot, now - tls_cpu_start_ns);
-    }
-  }
-}
-
-// Closes this thread's window and, while CPU time is on, opens one for `slot`.
-static void cpu_window_start(asd_stats_slot_t * slot)
-{
-  if (slot == NULL || !cpu_on()) {
-    cpu_window_end();
-    return;
-  }
-  uint64_t now = thread_cpu_ns();
-  if (tls_cpu_slot != NULL && now > tls_cpu_start_ns) {
-    asd_stats_cpu(tls_cpu_slot, now - tls_cpu_start_ns);
-  }
-  tls_cpu_slot = slot;
-  tls_cpu_start_ns = now;
-}
-
 __attribute__((constructor)) static void tracer_init(void)
 {
   pthread_atfork(on_fork_prepare, on_fork_parent, on_fork_child);
@@ -332,9 +273,8 @@ static void write_clock_record(const rcl_clock_t * clock, uint64_t t_ns, int64_t
 
 // ---- observers ----------------------------------------------------------------------
 
-// Counts a take or timer fire on its slot and makes it this thread's trigger; `callback`
-// says whether a callback follows it, which opens a CPU-time window. Returns the time.
-static uint64_t observe_trigger(const void * handle, bool callback, asd_stats_slot_t ** slot_out)
+// Counts a take or timer fire on its slot and makes it this thread's trigger. Returns the time.
+static uint64_t observe_trigger(const void * handle, asd_stats_slot_t ** slot_out)
 {
   uint64_t t_ns = asd_now_realtime_ns();
   asd_stats_slot_t * slot = asd_stats_find(&g.stats, handle);
@@ -342,9 +282,6 @@ static uint64_t observe_trigger(const void * handle, bool callback, asd_stats_sl
   tls_trigger_slot = slot;
   if (slot != NULL) {
     asd_stats_count(slot, t_ns);
-  }
-  if (callback) {
-    cpu_window_start(slot);
   }
   *slot_out = slot;
   return t_ns;
@@ -420,18 +357,10 @@ static void observe_publish(
   }
 }
 
-// Whether an executor waited on a subscription since its slot was registered.
-static bool waited_on(const void * subscription)
-{
-  asd_stats_slot_t * slot = asd_stats_find(&g.stats, subscription);
-  return slot != NULL && g.slot_info != NULL &&
-         __atomic_load_n(&g.slot_info[slot - g.stats.slots].waited, __ATOMIC_RELAXED) != 0;
-}
-
 static void observe_take(const void * subscription, const rmw_message_info_t * info, uint8_t flags)
 {
   asd_stats_slot_t * slot;
-  uint64_t t_ns = observe_trigger(subscription, cpu_on() && waited_on(subscription), &slot);
+  uint64_t t_ns = observe_trigger(subscription, &slot);
   if (slot != NULL && info->source_timestamp > 0) {
     asd_stats_latency(slot, (int64_t)t_ns - (int64_t)info->source_timestamp);
   }
@@ -454,7 +383,7 @@ static void observe_take(const void * subscription, const rmw_message_info_t * i
 static void observe_timer(const void * timer)
 {
   asd_stats_slot_t * slot;
-  uint64_t t_ns = observe_trigger(timer, true, &slot);
+  uint64_t t_ns = observe_trigger(timer, &slot);
   if (recording()) {
     asd_trace_record_t * r = claim_record((uint64_t)(uintptr_t)timer, t_ns, 0, 0);
     if (r != NULL) {
@@ -732,55 +661,16 @@ rcl_ret_t rcl_take_loaned_message(
   return ret;
 }
 
-// ---- wait hooks ------------------------------------------------------------------------
-
-// While CPU time is on, marks the subscriptions an executor waits on.
-typedef rcl_ret_t (*wait_set_add_subscription_fn)(rcl_wait_set_t *, const rcl_subscription_t *, size_t *);
-
-rcl_ret_t rcl_wait_set_add_subscription(
-  rcl_wait_set_t * wait_set, const rcl_subscription_t * subscription, size_t * index)
-{
-  FORWARD(wait_set_add_subscription_fn, "rcl_wait_set_add_subscription");
-  if (tracing() && cpu_on() && g.slot_info != NULL) {
-    asd_stats_slot_t * slot = asd_stats_find(&g.stats, subscription);
-    if (slot != NULL) {
-      uint8_t * waited = &g.slot_info[slot - g.stats.slots].waited;
-      if (__atomic_load_n(waited, __ATOMIC_RELAXED) == 0) {
-        __atomic_store_n(waited, 1, __ATOMIC_RELAXED);
-      }
-    }
-  }
-  return real(wait_set, subscription, index);
-}
+// ---- wait hook -------------------------------------------------------------------------
 
 rcl_ret_t rcl_wait(rcl_wait_set_t * wait_set, int64_t timeout)
 {
   FORWARD(asd_wait_fn, "rcl_wait");
-  cpu_window_end();
   if (!asd_replay_armed()) {
     return real(wait_set, timeout);
   }
   return asd_replay_wait(real, wait_set, timeout);
 }
-
-// ---- service hooks ---------------------------------------------------------------------
-
-// A service or client callback follows these takes; they end the CPU-time window of the
-// callback before it, which has no slot of its own.
-typedef rcl_ret_t (*take_service_fn)(const void *, void *, void *);
-
-#define SERVICE_TAKE(name, endpoint_type, header_type, body)                       \
-  rcl_ret_t name(const endpoint_type * endpoint, header_type * header, void * body) \
-  {                                                                               \
-    FORWARD(take_service_fn, #name);                                              \
-    cpu_window_end();                                                             \
-    return real(endpoint, header, body);                                          \
-  }
-
-SERVICE_TAKE(rcl_take_request, rcl_service_t, rmw_request_id_t, ros_request)
-SERVICE_TAKE(rcl_take_request_with_info, rcl_service_t, rmw_service_info_t, ros_request)
-SERVICE_TAKE(rcl_take_response, rcl_client_t, rmw_request_id_t, ros_response)
-SERVICE_TAKE(rcl_take_response_with_info, rcl_client_t, rmw_service_info_t, ros_response)
 
 // ---- timer hooks ----------------------------------------------------------------------
 
@@ -1205,11 +1095,8 @@ rcl_ret_t rcl_subscription_init(
   FORWARD(subscription_init_fn, "rcl_subscription_init");
   rcl_ret_t ret = real(subscription, node, type_support, topic_name, options);
   if (ret == RCL_RET_OK && tracing()) {
-    int64_t slot = register_endpoint(
+    register_endpoint(
       "sub", ASD_SLOT_SUB, subscription, node, rcl_subscription_get_topic_name(subscription), NULL);
-    if (slot >= 0 && g.slot_info != NULL) {
-      __atomic_store_n(&g.slot_info[slot].waited, 0, __ATOMIC_RELAXED);
-    }
   }
   if (ret == RCL_RET_OK && asd_replay_armed()) {
     asd_replay_endpoint(
@@ -1233,9 +1120,6 @@ static void release_endpoint(const void * handle)
     const asd_stats_slot_t * released = asd_stats_unregister(&g.stats, handle);
     if (released != NULL && released == tls_trigger_slot) {
       tls_trigger_slot = NULL;
-    }
-    if (released != NULL && released == tls_cpu_slot) {
-      tls_cpu_slot = NULL;
     }
   }
   if (asd_replay_armed()) {

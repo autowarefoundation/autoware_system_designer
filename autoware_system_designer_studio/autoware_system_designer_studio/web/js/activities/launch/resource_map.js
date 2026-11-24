@@ -2,12 +2,8 @@
 // nesting are the Control map's; a node's area is its process's CPU, memory
 // or GPU memory over the feed's window, and its colour its live state. A
 // composable node has no process of its own: its container's block holds the
-// use of all its nodes, unless the container split is on, which sizes each
-// composable node by its callbacks' CPU and leaves the container the rest
-// (executor, DDS and the nodes' own threads). The split is off unless
-// switched on, since it counts inside the nodes; without it the composable
-// nodes have no block. A node container sits in the module of its
-// namespace. Nodes under 0.2 % of their unit's total gather in one low block
+// use of all its nodes, and the composable nodes have no block. A node
+// container sits in the module of its namespace. Nodes under 0.2 % of their unit's total gather in one low block
 // per module; a node keeps its block until it falls under 0.1 %.
 // The blocks are laid out again once per window, at most every
 // RELAYOUT_MAX_S, and at once when the resource or the window changes or a
@@ -163,25 +159,12 @@
       },
     );
     windowSwitch.mark(String(resources.window));
-    const splitWrapper = element("label", "topic-toggle");
-    splitWrapper.title =
-      "Size each composable node by its callbacks' CPU time (counted inside " +
-      "the nodes: two clock reads per callback; off when the view is left)";
-    const splitInput = element("input");
-    splitInput.type = "checkbox";
-    splitInput.addEventListener("change", () => {
-      resources.setSplit(splitInput.checked);
-      shown = new Set();
-      relayout();
-    });
-    splitWrapper.append(splitInput, element("span", "", "Split containers"));
     const note = element("span", "resource-note");
     toolbar.append(
       element("span", "resource-toolbar-label", "Size by"),
       metricSwitch.element,
       element("span", "resource-toolbar-label", "over"),
       windowSwitch.element,
-      splitWrapper,
       note,
     );
     container.appendChild(toolbar);
@@ -205,7 +188,6 @@
     // Node path -> value, captured at each layout, and the units holding one.
     let values = new Map();
     let laidUnits = new Set();
-    let laidSplit = false;
     // Paths of the nodes holding a block of their own at the last layout, and
     // the low blocks of that layout by id.
     let shown = new Set();
@@ -238,9 +220,6 @@
       return units;
     }
 
-    // Whether composable nodes are sized by their callbacks now.
-    const splitting = () => metric === "cpu" && resources.splitting;
-
     // Composable entities by their container's member path.
     function composablesOf() {
       const held = new Map();
@@ -256,30 +235,17 @@
     function capture() {
       values = new Map();
       laidUnits = new Set();
-      const split = splitting();
-      laidSplit = split;
-      const composables = split ? composablesOf() : new Map();
       entities.forEach((entity) => {
         if (entity.entity_type !== "node" || entity.container_path) return;
         const usage = resources.usage(entity.member_path);
-        let value = valueOfUsage(usage);
-        const inside = composables.get(entity.member_path) || [];
-        if (split && inside.length) {
-          let callbacks = 0;
-          inside.forEach((node) => {
-            const cpu = resources.nodeCpu(node.member_path) || 0;
-            callbacks += cpu;
-            if (cpu > 0) values.set(node.member_path, cpu);
-          });
-          value = Math.max(value - callbacks, 0);
-        }
+        const value = valueOfUsage(usage);
         if (usage) laidUnits.add(usage.unit);
         if (value > 0) values.set(entity.member_path, value);
       });
     }
 
     const valueOf = (node) =>
-      isComposable(node) && !splitting() ? 0 : values.get(node.path) || 0;
+      isComposable(node) ? 0 : values.get(node.path) || 0;
 
     function liveStates() {
       const states = launch.memberStates(
@@ -287,30 +253,12 @@
         config.systemId,
         entitiesMode,
       );
-      const containers = splitting() ? composablesOf() : new Map();
       entities.forEach((entity) => {
         const state = states.get(entity.member_path);
         if (!state) return;
-        if (entity.container_path) {
-          const cpu = splitting()
-            ? resources.nodeCpu(entity.member_path)
-            : null;
-          state.usage =
-            cpu !== null
-              ? [`callbacks ${cpuLabel(cpu)} of a core`]
-              : [
-                  "no process of its own: its use counts in its container's block",
-                ];
-          return;
-        }
-        state.usage = usageLines(resources.usage(entity.member_path));
-        if (
-          containers.has(entity.member_path) &&
-          values.has(entity.member_path)
-        )
-          state.usage.unshift(
-            `other ${cpuLabel(values.get(entity.member_path))} of a core outside its nodes' callbacks`,
-          );
+        state.usage = entity.container_path
+          ? ["no process of its own: its use counts in its container's block"]
+          : usageLines(resources.usage(entity.member_path));
       });
       return states;
     }
@@ -331,12 +279,8 @@
       note.textContent = parts.join(" · ");
     }
 
-    // Value of the member at `path` over the window now; a composable node's
-    // is its callbacks' CPU while split.
-    function liveValue(path, composable = false) {
-      if (!composable) return valueOfUsage(resources.usage(path));
-      return splitting() ? resources.nodeCpu(path) || 0 : 0;
-    }
+    // Value of the member at `path` over the window now.
+    const liveValue = (path) => valueOfUsage(resources.usage(path));
 
     // One row of the detail list: a node path with its value, selecting the
     // node on click.
@@ -385,10 +329,7 @@
           detailList(
             `${low.members.length} node${low.members.length === 1 ? "" : "s"}`,
             low.members
-              .map((node) => [
-                node.path,
-                liveValue(node.path, isComposable(node)),
-              ])
+              .map((node) => [node.path, liveValue(node.path)])
               .sort((a, b) => b[1] - a[1])
               .map(([path, value]) =>
                 detailRow(path, value > 0 ? valueLabel(value) : "–"),
@@ -398,16 +339,11 @@
       } else if (entity?.entity_type === "node") {
         parts.push(detailTitle(entity.member_path));
         if (entity.container_path) {
-          const cpu = splitting()
-            ? resources.nodeCpu(entity.member_path)
-            : null;
           parts.push(
             element(
               "div",
               "resource-detail-line",
-              cpu !== null
-                ? `callbacks ${cpuLabel(cpu)} of a core`
-                : "no process of its own: its use counts in its container",
+              "no process of its own: its use counts in its container",
             ),
           );
           lists.push(
@@ -427,15 +363,7 @@
             lists.push(
               detailList(
                 `holds ${inside.length} node${inside.length === 1 ? "" : "s"}`,
-                inside.map((node) => {
-                  const cpu = splitting()
-                    ? resources.nodeCpu(node.member_path)
-                    : null;
-                  return detailRow(
-                    node.member_path,
-                    cpu !== null ? cpuLabel(cpu) : "",
-                  );
-                }),
+                inside.map((node) => detailRow(node.member_path, "")),
               ),
             );
         }
@@ -470,14 +398,9 @@
             launch.resourceUsage.hostLabel(resources.host(unit)),
           ]),
       );
-      splitInput.checked = resources.split;
       renderNote();
       renderDetail();
-      if (
-        splitting() !== laidSplit ||
-        [...valuedUnits()].some((unit) => !laidUnits.has(unit))
-      )
-        relayout();
+      if ([...valuedUnits()].some((unit) => !laidUnits.has(unit))) relayout();
     }
 
     function scheduleApply() {
@@ -522,10 +445,9 @@
           weigh: (node) => (node.low ? node.weight : valueOf(node)),
           transform(sections) {
             const kept = new Set();
-            const held = (node) => isComposable(node) && !splitting();
             const grouped = sections.map((section) =>
               groupLow(nestContainers(section), valueOf, {
-                held,
+                held: isComposable,
                 shown,
                 kept,
               }),

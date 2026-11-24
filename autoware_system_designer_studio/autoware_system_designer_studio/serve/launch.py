@@ -39,9 +39,9 @@ same name, and ``monitor.unfollow`` and ``resources.unfollow`` release them. A f
 followed while any caller, told apart by its ``client`` name, follows it; all are released together
 once the last event stream closes.
 
-The tracer's size sampling and callback CPU time load the nodes, so they are off unless asked for:
-``trace_sizes`` / ``trace_cpu`` of ``launch.start`` keep them on for the whole run, and
-``monitor.options`` switches them for a caller while it wants them. The daemon asks the runtime for
+The tracer's size sampling loads the nodes, so it is off unless asked for: ``trace_sizes`` of
+``launch.start`` keeps it on for the whole run, and ``monitor.options`` switches it for a caller
+while it wants it. The daemon asks the runtime for
 the union of its callers' wants, and drops them all with the last event stream; the session's
 ``control.tracer_options`` holds the state the runtime reports.
 
@@ -420,7 +420,6 @@ class LaunchManager:
         respawn: bool = False,
         launch_id: Optional[str] = None,
         trace_sizes: bool = False,
-        trace_cpu: bool = False,
     ) -> LaunchSession:
         if self.launcher is None:
             raise api.ApiError(api.UNAVAILABLE, f"{LAUNCHER} not found on the launch PATH or under the install tree")
@@ -454,8 +453,6 @@ class LaunchManager:
             argv.append("--respawn")
         if trace_sizes:
             argv.append("--trace-sizes")
-        if trace_cpu:
-            argv.append("--trace-cpu")
         try:
             run_dir = await asyncio.to_thread(new_run_dir, self.storage.launch_logs)
         except OSError as exc:
@@ -481,7 +478,6 @@ class LaunchManager:
                 "measure": measure,
                 "respawn": respawn,
                 "trace_sizes": trace_sizes,
-                "trace_cpu": trace_cpu,
             },
             detail={"socket": str(socket)},
             on_exit=lambda job: self._on_exit(session),
@@ -752,7 +748,7 @@ class LaunchManager:
         self._hub.publish(TOPIC_LAUNCH, session.to_view())
 
 
-TRACER_OPTIONS = ("sizes", "cpu")
+TRACER_OPTIONS = ("sizes",)
 
 
 def _options(value: Any) -> Optional[dict[str, bool]]:

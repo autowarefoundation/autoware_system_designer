@@ -5,10 +5,8 @@
 // mean and peak RSS, the latest PSS and, where the GPU reports processes, the
 // mean GPU memory and utilization; per unit the same for the host and its GPU
 // devices. Readings of an earlier launch of a unit are dropped once it is
-// launched again. The container split asks the tracer for callback CPU time
-// and follows the topic-rate monitor for it, under a caller name of its own;
-// it is off unless switched on, and goes off once no view wants the feed.
-// Page event: "launch.resources" after every reading and split change.
+// launched again.
+// Page event: "launch.resources" after every reading.
 (function () {
   const SD = window.SD;
   const launch = (SD.activities.launch ||= {});
@@ -211,11 +209,6 @@
     const units = new Map();
     let windowS = storedWindow();
     let syncQueued = false;
-    // Container split: wanted, the units it holds, and unit -> { job, snapshots } of the monitor.
-    const SPLIT_CLIENT = `${daemon?.clientId}/resources`;
-    let split = false;
-    const splitting = new Set();
-    const monitors = new Map();
 
     function rpc(unit, method) {
       const request = (requests.get(unit) || Promise.resolve()).then(() =>
@@ -226,54 +219,6 @@
         request.catch(() => {}),
       );
       return request;
-    }
-
-    function splitRpc(unit, method, params = {}) {
-      const key = `split:${unit}`;
-      const request = (requests.get(key) || Promise.resolve()).then(() =>
-        daemon.rpc(method, {
-          ...params,
-          compute_unit: unit,
-          client: SPLIT_CLIENT,
-        }),
-      );
-      requests.set(
-        key,
-        request.catch(() => {}),
-      );
-      return request;
-    }
-
-    // Holds the split on the followed units that trace, while it is wanted.
-    function syncSplit() {
-      if (!wanters.size && split) {
-        split = false;
-        SD.emit("launch.resources");
-      }
-      const wanted = new Set();
-      if (split && daemon?.offers("monitor.options"))
-        followed.forEach((unit) => {
-          const session = ofMode.sessions.get(unit);
-          if (session?.control?.monitor && session.control.tracer_options)
-            wanted.add(unit);
-        });
-      wanted.forEach((unit) => {
-        if (splitting.has(unit)) return;
-        splitting.add(unit);
-        splitRpc(unit, "monitor.follow")
-          .then(() => splitRpc(unit, "monitor.options", { cpu: true }))
-          .catch((error) => {
-            splitting.delete(unit);
-            console.warn("container split:", error);
-          });
-      });
-      splitting.forEach((unit) => {
-        if (wanted.has(unit)) return;
-        splitting.delete(unit);
-        monitors.delete(unit);
-        splitRpc(unit, "monitor.options", { cpu: false }).catch(() => {});
-        splitRpc(unit, "monitor.unfollow").catch(() => {});
-      });
     }
 
     function sync() {
@@ -301,7 +246,6 @@
         units.delete(unit);
         rpc(unit, "resources.unfollow").catch(() => {});
       });
-      syncSplit();
     }
 
     function accept(event) {
@@ -320,30 +264,6 @@
       SD.emit("launch.resources");
     }
 
-    SD.on("daemon.monitor", (event) => {
-      const unit = event.compute_unit;
-      if (
-        event.system !== config.systemId ||
-        event.mode !== store.get("mode") ||
-        !splitting.has(unit)
-      )
-        return;
-      const job = ofMode.sessions.get(unit)?.job;
-      let held = monitors.get(unit);
-      if (!held || held.job !== job) {
-        held = { job, snapshots: [] };
-        monitors.set(unit, held);
-      }
-      const cpu = new Map();
-      (event.nodes || []).forEach((node) => {
-        if (node.cpu !== undefined) cpu.set(node.node, node.cpu);
-      });
-      held.snapshots.push({ time_ns: event.time_ns, cpu });
-      const from = event.time_ns - HISTORY_MS * 1e6;
-      while (held.snapshots.length && held.snapshots[0].time_ns < from)
-        held.snapshots.shift();
-      SD.emit("launch.resources");
-    });
     SD.on("daemon.resources", (event) => {
       if (event.system !== config.systemId || event.mode !== store.get("mode"))
         return;
@@ -354,7 +274,6 @@
     SD.on("daemon.connection", ({ connected }) => {
       if (!connected) return;
       followed.clear();
-      splitting.clear();
       sync();
     });
     store.onChange("mode", () => {
@@ -366,19 +285,6 @@
       sync();
       SD.emit("launch.resources");
     });
-
-    // CPU of the callbacks of the node at `path` over the window, in cores; null
-    // without the split or a reading of it.
-    function nodeCpu(path) {
-      for (const held of monitors.values()) {
-        const values = within(held.snapshots, windowS)
-          .map((snapshot) => snapshot.cpu.get(path))
-          .filter((value) => value !== undefined);
-        if (values.length)
-          return values.reduce((a, b) => a + b, 0) / values.length;
-      }
-      return null;
-    }
 
     // The windowed readings of `unit`.
     const windowed = (unit) => within(units.get(unit)?.readings || [], windowS);
@@ -406,19 +312,6 @@
         SD.storage.set(WINDOW_KEY, String(seconds));
         SD.emit("launch.resources");
       },
-      // Whether the container split is wanted, and whether any unit splits now.
-      get split() {
-        return split;
-      },
-      get splitting() {
-        return monitors.size > 0;
-      },
-      setSplit(on) {
-        split = !!on;
-        syncSplit();
-        SD.emit("launch.resources");
-      },
-      nodeCpu,
       // Units with readings.
       units() {
         return [...units.keys()];

@@ -82,7 +82,7 @@ async def main():
 
         send({"event": "hello", "pid": os.getpid(), "methods": METHODS, "policy": "guard",
               "measure_armed": "--measure" in args, "monitor": True, "resources": True,
-              "tracer_options": {"sizes": False, "cpu": False}, "members": members, "launch_ready": True,
+              "tracer_options": {"sizes": False}, "members": members, "launch_ready": True,
               "shutting_down": False, "log_dir": log_dir})
         send({"event": "member", "path": "/demo/talker", "state": "running", "detail": {"pid": 1}, "time": 1.0})
         send({"event": "member.activity", "window": 2.0, "rates": {"/demo/talker": 5120}})
@@ -126,7 +126,7 @@ async def main():
                     rates = {**RATES, "nodes": [{**node, "node": f"/n{i:05d}"} for i in range(3000)]}
                 send({"event": "monitor", **rates})
             elif method == "monitor.options":
-                result = {"sizes": bool(params.get("sizes")), "cpu": bool(params.get("cpu"))}
+                result = {"sizes": bool(params.get("sizes"))}
                 with open(log_dir + "/options", "a") as f:
                     f.write(json.dumps(params) + "\\n")
                 send({"event": "monitor.options", **result})
@@ -490,29 +490,29 @@ def test_launch_runs_the_launcher_and_follows_its_control_channel(launching):
     assert launching.daemon.launch.session("main_ecu").feeds["monitor"] == set() and unfollowed.read_text() == "x"
 
     # Tracer switches: the runtime gets the union of the callers' wants, all dropped with the last stream.
-    assert session["control"]["tracer_options"] == {"sizes": False, "cpu": False}
+    assert session["control"]["tracer_options"] == {"sizes": False}
     options_log = Path(session["log_dir"]) / "options"
-    for client, wants in (("a", {"sizes": True}), ("b", {"cpu": True}), ("a", {"sizes": False})):
+    for client, wants in (("a", {"sizes": True}), ("b", {"sizes": True}), ("a", {"sizes": False})):
         status, body = launching.rpc(
             {"method": "monitor.options", "params": {"compute_unit": "main_ecu", "client": client, **wants}}
         )
         assert status == 200
-    assert body["result"] == {"sizes": False, "cpu": True}
+    assert body["result"] == {"sizes": True}
     asked = [json.loads(line) for line in options_log.read_text().splitlines()]
-    assert asked == [{"sizes": True, "cpu": False}, {"sizes": True, "cpu": True}, {"sizes": False, "cpu": True}]
-    status, body = launching.rpc({"method": "monitor.options", "params": {"compute_unit": "main_ecu", "cpu": 1}})
+    assert asked == [{"sizes": True}] * 3
+    status, body = launching.rpc({"method": "monitor.options", "params": {"compute_unit": "main_ecu", "sizes": 1}})
     assert status == 400
     deadline = time.time() + 5
     while (
         time.time() < deadline
-        and launching.daemon.launch.session("main_ecu").control["tracer_options"]["cpu"] is not True
+        and launching.daemon.launch.session("main_ecu").control["tracer_options"]["sizes"] is not True
     ):
         time.sleep(0.02)
     launching.loop.call_soon_threadsafe(launching.daemon.launch.release_follows)
     deadline = time.time() + 5
     while time.time() < deadline and len(options_log.read_text().splitlines()) < 4:
         time.sleep(0.02)
-    assert json.loads(options_log.read_text().splitlines()[-1]) == {"sizes": False, "cpu": False}
+    assert json.loads(options_log.read_text().splitlines()[-1]) == {"sizes": False}
 
     # Resource use: sampled once, or followed and forwarded as the resources topic.
     assert session["control"]["resources"] is True

@@ -123,16 +123,15 @@ Topics title shows a past run of the mode instead, from the rates record in its 
 a span brushed on a strip of the run's event density (counted events per second per 10 s sample
 interval, scaled to the peak): the whole run at first, then any span between two samples. The Sizes
 switch of the Topics toolbar adds the mean message size and bandwidth columns; it asks the runtimes
-for size sampling, which serializes inside the nodes, only while it is on and the view shows the
+for size sampling, which runs inside the nodes, only while it is on and the view shows the
 live sessions, and is never remembered. Resources is the map sized by each process's CPU, memory or
 GPU memory over a window of 5, 10, 30 or 60 s (CPU in cores, memory as RSS with the peak and PSS in
-the tooltip), laid out again once per window (at most every 10 s); nodes under 1 % of their unit
-gather in one idle block, and a unit's head carries its host's CPU, RAM and GPU load. A composable
-node has no process of its own, so its container's block holds its use; the Split containers switch
-asks the runtimes for callback CPU time and sizes each composable node by its callbacks, the
-container keeping the rest. The switch goes off once no Launch view is shown. The Control map marks
-each process's block with its resource levels: a letter (C, M, G) and up to three bars, from 0.25 /
-0.5 / 1 core of CPU and 2 / 5 / 10 % of the device's memory or GPU memory, none below the first.
+the tooltip), laid out again once per window (at most every 10 s); nodes under 0.2 % of their unit
+gather in one low block per module, and a unit's head carries its host's CPU, RAM and GPU load.
+A composable node has no process of its own, so its container's block holds its use. The Control
+map marks each process's block with its resource levels: a letter (C, M, G) and up to three bars,
+from 0.25 / 0.5 / 1 core of CPU and 2 / 5 / 10 % of the device's memory or GPU memory, none below
+the first.
 The resource readings run only while the Control or Resources view is shown. All four select the
 store's `entity`, and a double click on a node of the map opens it in Logs.
 
@@ -185,31 +184,31 @@ starts, follows and cancels builds. Nothing else of the install tree is served.
 | `GET /api/events`  | Server-Sent Events with daemon-wide sequence numbers as event ids (topics below)                             |
 | `POST /api/rpc`    | Request envelope `{"id", "method", "params"}` for any method below                                           |
 
-| Method                                            | Params                                                                                                                   | Result                                                  |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| `health`                                          | -                                                                                                                        | Daemon status                                           |
-| `systems.list`                                    | -                                                                                                                        | Exported systems                                        |
-| `jobs.list`                                       | -                                                                                                                        | `{"jobs": [job]}`                                       |
-| `jobs.get`                                        | `job`, `since` (log seq, default 0), `limit`                                                                             | `{"job", "log": {"first_seq", "lines"}}`                |
-| `jobs.cancel`                                     | `job`                                                                                                                    | job                                                     |
-| `build.start`                                     | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit`                                                              | job                                                     |
-| `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn`, `launch`, `trace_sizes`, `trace_cpu` | session                                                 |
-| `launch.status`                                   | `compute_unit` (optional)                                                                                                | `{"sessions": [session]}`, members included             |
-| `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`, `exact` (optional: the member named `pattern` only)                                           | `{"members": [path]}` acted on                          |
-| `launch.follow`                                   | `compute_unit`, `path`, `system` and `mode` (optional: the session of that mode)                                         | `{"path", "out": [lines], "err": [lines]}`              |
-| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow), `system` and `mode` (optional)                                          | `{"released": [path]}`                                  |
-| `launch.runs`                                     | `system` (optional)                                                                                                      | `{"runs": [run]}`, newest first                         |
-| `launch.run`                                      | `run`                                                                                                                    | run with `members: [{"path", "slug"}]`                  |
-| `launch.run_tail`                                 | `run`, `member` (its directory name)                                                                                     | `{"run", "member", "out", "err"}`                       |
-| `launch.run_rates`                                | `run`, `start`, `sample`, `span_s` (optional: the span between two sample numbers)                                       | run with `times`, `density` and the rates over the span |
-| `launch.shutdown`                                 | `compute_unit`                                                                                                           | `{"shutting_down": true}`                               |
-| `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                                                           | `{"state", "message"}` of the window                    |
-| `monitor.follow`, `monitor.unfollow`              | `compute_unit`, `client` (optional: the caller's name)                                                                   | `{"interval_s"}`, `{"released"}`                        |
-| `monitor.sample`                                  | `compute_unit`, `interval` (seconds, default 1, at most 20)                                                              | rates over the interval                                 |
-| `monitor.options`                                 | `compute_unit`, `client` (optional), `sizes`, `cpu` (optional booleans)                                                  | `{"sizes", "cpu"}` the runtime reports                  |
-| `resources.follow`, `resources.unfollow`          | `compute_unit`, `client` (optional: the caller's name)                                                                   | `{"interval_s"}`, `{"released"}`                        |
-| `resources.sample`                                | `compute_unit`, `interval` (seconds, default 1, at most 20)                                                              | resource use over the interval                          |
-| `rviz.start`                                      | -                                                                                                                        | job                                                     |
+| Method                                            | Params                                                                                                      | Result                                                  |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `health`                                          | -                                                                                                           | Daemon status                                           |
+| `systems.list`                                    | -                                                                                                           | Exported systems                                        |
+| `jobs.list`                                       | -                                                                                                           | `{"jobs": [job]}`                                       |
+| `jobs.get`                                        | `job`, `since` (log seq, default 0), `limit`                                                                | `{"job", "log": {"first_seq", "lines"}}`                |
+| `jobs.cancel`                                     | `job`                                                                                                       | job                                                     |
+| `build.start`                                     | `system` (`<pkg>:<name>`), `target`, `mode`, `compute_unit`                                                 | job                                                     |
+| `launch.start`                                    | `system`, `compute_unit`, `mode`, `deploy`, `args`, `policy`, `measure`, `respawn`, `launch`, `trace_sizes` | session                                                 |
+| `launch.status`                                   | `compute_unit` (optional)                                                                                   | `{"sessions": [session]}`, members included             |
+| `launch.stop`, `launch.restart`, `launch.kill`    | `compute_unit`, `pattern`, `exact` (optional: the member named `pattern` only)                              | `{"members": [path]}` acted on                          |
+| `launch.follow`                                   | `compute_unit`, `path`, `system` and `mode` (optional: the session of that mode)                            | `{"path", "out": [lines], "err": [lines]}`              |
+| `launch.unfollow`                                 | `compute_unit`, `path` (optional: every follow), `system` and `mode` (optional)                             | `{"released": [path]}`                                  |
+| `launch.runs`                                     | `system` (optional)                                                                                         | `{"runs": [run]}`, newest first                         |
+| `launch.run`                                      | `run`                                                                                                       | run with `members: [{"path", "slug"}]`                  |
+| `launch.run_tail`                                 | `run`, `member` (its directory name)                                                                        | `{"run", "member", "out", "err"}`                       |
+| `launch.run_rates`                                | `run`, `start`, `sample`, `span_s` (optional: the span between two sample numbers)                          | run with `times`, `density` and the rates over the span |
+| `launch.shutdown`                                 | `compute_unit`                                                                                              | `{"shutting_down": true}`                               |
+| `measure.start`, `measure.stop`, `measure.status` | `compute_unit`                                                                                              | `{"state", "message"}` of the window                    |
+| `monitor.follow`, `monitor.unfollow`              | `compute_unit`, `client` (optional: the caller's name)                                                      | `{"interval_s"}`, `{"released"}`                        |
+| `monitor.sample`                                  | `compute_unit`, `interval` (seconds, default 1, at most 20)                                                 | rates over the interval                                 |
+| `monitor.options`                                 | `compute_unit`, `client` (optional), `sizes` (optional boolean)                                             | `{"sizes"}` the runtime reports                         |
+| `resources.follow`, `resources.unfollow`          | `compute_unit`, `client` (optional: the caller's name)                                                      | `{"interval_s"}`, `{"released"}`                        |
+| `resources.sample`                                | `compute_unit`, `interval` (seconds, default 1, at most 20)                                                 | resource use over the interval                          |
+| `rviz.start`                                      | -                                                                                                           | job                                                     |
 
 | Event topic       | Data                                                                                                   |
 | ----------------- | ------------------------------------------------------------------------------------------------------ |
@@ -442,10 +441,10 @@ arrive as `monitor` events every 2 s; `monitor.unfollow` ends that client's foll
 releases them. Following twice under one name is following once, so a page follows again after its
 event stream reconnected. Every follow ends with the last event stream, and a reconnected channel is
 followed again. `resources.follow` does the same for the runtime's resource use (`resources` events
-every second). `monitor.options` sets the tracer switches a client wants (`sizes`, `cpu`); the daemon
+every second). `monitor.options` sets the tracer switch a client wants (`sizes`); the daemon
 asks the runtime for the union over its clients, drops every want with the last event stream, and
-the session's `control.tracer_options` holds the state the runtime reports. `trace_sizes` and
-`trace_cpu` of `launch.start` keep a switch on for the whole run.
+the session's `control.tracer_options` holds the state the runtime reports. `trace_sizes` of
+`launch.start` keeps it on for the whole run.
 
 The Logs view follows the selected node (a composable node through its container) while
 it is shown, keeps the followed log once the launcher ended and marks where it ended.

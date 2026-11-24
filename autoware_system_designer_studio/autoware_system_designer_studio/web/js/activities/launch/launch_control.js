@@ -16,7 +16,6 @@
     measure: "workbench.launchMeasure",
     respawn: "workbench.launchRespawn",
     trace_sizes: "workbench.launchTraceSizes",
-    trace_cpu: "workbench.launchTraceCpu",
   };
   const METHODS = [
     ["native", "Runtime"],
@@ -154,7 +153,6 @@
         measure: option("measure"),
         respawn: option("respawn"),
         trace_sizes: option("trace_sizes"),
-        trace_cpu: option("trace_cpu"),
       };
       if (row.deploy) params.deploy = row.deploy;
       errors.delete(unit);

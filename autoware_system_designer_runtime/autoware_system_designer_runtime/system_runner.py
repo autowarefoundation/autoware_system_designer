@@ -360,12 +360,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "switchable while running).",
     )
     measure_group.add_argument(
-        "--trace-cpu",
-        action="store_true",
-        help="Count the thread CPU time of every callback for the whole run, so a container's CPU "
-        "splits by node (two clock reads per callback; off by default, switchable while running).",
-    )
-    measure_group.add_argument(
         "--measure",
         action="store_true",
         help="Open the measurement window once every actor has started; without it the window opens "
@@ -456,6 +450,6 @@ def main() -> None:
             control_policy=args.control_policy,
             tracer=not args.no_tracer,
             launch_id=args.launch_id,
-            tracer_flags={"sizes": args.trace_sizes, "cpu": args.trace_cpu},
+            tracer_flags={"sizes": args.trace_sizes},
         )
     )

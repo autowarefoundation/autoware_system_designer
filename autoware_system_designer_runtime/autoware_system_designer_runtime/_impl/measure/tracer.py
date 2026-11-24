@@ -16,9 +16,8 @@
 
 An armed process keeps counters per endpoint from its first rcl call on; event
 records follow the control file in the trace directory, which the runtime
-switches on for a measurement window only. Two more switches of the file add
-load inside the nodes and are off unless asked for: message-size sampling and
-callback CPU time.
+switches on for a measurement window only. One more switch of the file adds
+load inside the nodes and is off unless asked for: message-size sampling.
 """
 
 from __future__ import annotations
@@ -44,11 +43,11 @@ STATS_SLOTS_ENV = "ASD_STATS_SLOTS"
 CONTROL_FILE = "control"
 CONTROL_MAGIC = b"ASDCTRL\0"
 CONTROL_VERSION = 1
-_CONTROL = struct.Struct("<8sIIII40s")
+_CONTROL = struct.Struct("<8sIII44s")
 _EVENTS_OFFSET = 12
 # Switches after the events word, in order.
-FLAGS = ("sizes", "cpu")
-_FLAG_OFFSETS = {"sizes": 16, "cpu": 20}
+FLAGS = ("sizes",)
+_FLAG_OFFSETS = {"sizes": 16}
 
 
 def locate_tracer() -> Path:
@@ -97,13 +96,11 @@ class TraceControl:
     def path(self) -> Path:
         return self._path
 
-    def create(self, events: bool = False, *, sizes: bool = False, cpu: bool = False) -> None:
+    def create(self, events: bool = False, *, sizes: bool = False) -> None:
         """Writes a fresh control file; it must exist before the first traced process starts."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
         partial = self._path.with_name(f".{CONTROL_FILE}.part")
-        partial.write_bytes(
-            _CONTROL.pack(CONTROL_MAGIC, CONTROL_VERSION, int(events), int(sizes), int(cpu), b"\0" * 40)
-        )
+        partial.write_bytes(_CONTROL.pack(CONTROL_MAGIC, CONTROL_VERSION, int(events), int(sizes), b"\0" * 44))
         os.replace(partial, self._path)
 
     def set_events(self, on: bool) -> None:
@@ -111,7 +108,7 @@ class TraceControl:
         self._write_word(_EVENTS_OFFSET, on)
 
     def set_flag(self, name: str, on: bool) -> None:
-        """Switches size sampling (``sizes``) or callback CPU time (``cpu``) in every traced process."""
+        """Switches size sampling (``sizes``) in every traced process."""
         self._write_word(_FLAG_OFFSETS[name], on)
 
     def flags(self) -> dict[str, bool]:
@@ -121,9 +118,9 @@ class TraceControl:
             return {name: False for name in FLAGS}
         if len(data) < _CONTROL.size:
             return {name: False for name in FLAGS}
-        magic, version, _events, sizes, cpu, _ = _CONTROL.unpack_from(data)
+        magic, version, _events, sizes, _ = _CONTROL.unpack_from(data)
         valid = magic == CONTROL_MAGIC and version == CONTROL_VERSION
-        return {"sizes": valid and sizes != 0, "cpu": valid and cpu != 0}
+        return {"sizes": valid and sizes != 0}
 
     def _write_word(self, offset: int, on: bool) -> None:
         fd = os.open(self._path, os.O_WRONLY)
@@ -139,13 +136,13 @@ class TraceControl:
             return False
         if len(data) < _CONTROL.size:
             return False
-        magic, version, events, _sizes, _cpu, _ = _CONTROL.unpack_from(data)
+        magic, version, events, _sizes, _ = _CONTROL.unpack_from(data)
         return magic == CONTROL_MAGIC and version == CONTROL_VERSION and events != 0
 
 
 class TracerArming:
     """Preloads the tracer into every process the coordinator spawns, with event recording off and
-    the switches of ``flags`` (``sizes``, ``cpu``) as given; those given stay on for the whole run."""
+    the switches of ``flags`` (``sizes``) as given; those given stay on for the whole run."""
 
     def __init__(self, tracer: Path, trace_dir: Path, *, flags: Optional[dict[str, bool]] = None) -> None:
         self.tracer = Path(tracer)
@@ -165,7 +162,7 @@ class TracerArming:
 
 
 class TracerSwitches:
-    """The size and CPU-time switches of a run: each is on while it is fixed for the run or any owner
+    """The size switch of a run: it is on while it is fixed for the run or any owner
     wants it; the control file follows every change."""
 
     def __init__(self, control: TraceControl, fixed: Optional[dict[str, bool]] = None) -> None:

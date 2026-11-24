@@ -52,7 +52,7 @@ COMMANDS = (
     ("measure start|stop|status", "control the latency measurement window"),
     ("rates   [name]", "topic and timer rates per node over one second"),
     ("resources [name]", "CPU, memory and GPU use per member over one second"),
-    ("trace sizes|cpu on|off", "message-size sampling or callback CPU time in the nodes"),
+    ("trace sizes on|off", "message-size sampling in the nodes"),
     ("quit", "request graceful shutdown"),
     ("help / ?", "show this message"),
 )
@@ -190,8 +190,8 @@ async def _dispatch(commands: RuntimeCommands, line: str) -> None:
             print("\n".join(format_rates(await commands.rates(), arg)))
         elif op == "trace":
             name, value = (parts[1:] + ["", ""])[:2]
-            if name not in ("sizes", "cpu") or value not in ("on", "off"):
-                print("[console] trace needs sizes|cpu and on|off")
+            if name != "sizes" or value not in ("on", "off"):
+                print("[console] trace needs sizes and on|off")
                 return
             state, _ = commands.want_tracer_options("console", {name: value == "on"})
             print(f"[console] tracer options: {state}")

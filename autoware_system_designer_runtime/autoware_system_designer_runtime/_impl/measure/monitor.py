@@ -29,9 +29,8 @@ of it leads to a publish, from then on under the node of that publish with the
 fires since. Each timer has a key of its own: its label is its period and its
 rank among the timers of that period under the same owner.
 
-A publisher's measured bytes and a take's or timer's callback CPU time start from
-zero with each endpoint; a reading sums them the same way, those of ended
-endpoints at their last reading.
+A publisher's measured bytes start from zero with each endpoint; a reading sums
+them the same way, those of ended endpoints at their last reading.
 
 The recorder appends a reading to the run's ``rates.jsonl`` at a fixed
 interval and once more at shutdown, so a past run's rates can be read back.
@@ -63,12 +62,6 @@ def _add_extras(totals: dict[Key, Extras], key: Key, values: Extras) -> None:
         return
     held = totals.get(key)
     totals[key] = values if held is None else (held[0] + values[0], held[1] + values[1])
-
-
-def _extras_of(slot: SlotCounters) -> Extras:
-    if slot.kind == SLOT_PUB:
-        return (slot.bytes_sum, slot.bytes_count)
-    return (slot.cpu_ns, 0)
 
 
 def _add(totals: dict[Key, Counters], key: Key, count: int, lat_sum: int, lat_count: int, last_ns: int) -> None:
@@ -177,19 +170,19 @@ class RateMonitor:
                 timer.seen = counts[0]
                 key = self._timer_key(timer, entry)
                 _add(totals, key, *self._timer_counts(timer, counts))
-                self._note_extras(state, index, entry, slot, extras, key)
                 continue
             key = self._endpoint_key(entry)
             if key is not None:
                 _add(totals, key, *counts)
-                self._note_extras(state, index, entry, slot, extras, key)
+                if slot.kind == SLOT_PUB:
+                    self._note_extras(state, index, entry, slot, extras, key)
         return counters.dropped
 
     @staticmethod
     def _note_extras(
         state: _Process, index: int, entry: Any, slot: SlotCounters, extras: dict[Key, Extras], key: Key
     ) -> None:
-        values = _extras_of(slot)
+        values = (slot.bytes_sum, slot.bytes_count)
         state.seen_extras[index] = (entry, values)
         _add_extras(extras, key, values)
 
@@ -206,7 +199,6 @@ class RateMonitor:
             timer = self._timer(pid, state, entry)
             key = self._timer_key(timer, entry)
             _add(state.retired, key, *self._timer_counts(timer, counts))
-            self._end_extras(state, entry, key)
             self._release(timer, entry.period_ns)
             del state.timers[entry.slot]
             return
