@@ -40,7 +40,7 @@ from ._impl.measure.clock import CLOCK_AUTO, CLOCK_CHOICES
 from ._impl.measure.monitor import RateMonitor, RatesRecorder
 from ._impl.measure.node_graph import NodeGraph
 from ._impl.measure.session import TRACE_SUBDIR, MeasureOptions, MeasureSession, default_latency_out
-from ._impl.measure.tracer import TracerArming, locate_tracer
+from ._impl.measure.tracer import TracerArming, TracerSwitches, locate_tracer
 from ._impl.ros2.builder import populate_builder
 from ._impl.ros2.common.substitutions import bind_variables, resolve_argument_values, unresolved_var_names
 from ._impl.ros2.operation_mode import OperationModeGuard
@@ -140,6 +140,7 @@ def launch_from_json(
     control_policy: str = DEFAULT_POLICY,
     tracer: bool = True,
     launch_id: Optional[str] = None,
+    tracer_flags: Optional[dict[str, bool]] = None,
 ) -> int:
     with open(json_path) as f:
         data = json.load(f)
@@ -153,7 +154,7 @@ def launch_from_json(
     arming: Optional[TracerArming] = None
     if tracer or measure is not None:
         try:
-            arming = TracerArming(locate_tracer(), out_dir / TRACE_SUBDIR)
+            arming = TracerArming(locate_tracer(), out_dir / TRACE_SUBDIR, flags=tracer_flags)
         except FileNotFoundError as exc:
             if measure is not None:
                 raise
@@ -218,7 +219,8 @@ def launch_from_json(
             if (interactive or control is not None) and control_policy == GUARD_POLICY:
                 guard = OperationModeGuard(worker)
                 await guard.install()
-            commands = RuntimeCommands(coord, states, measure=session, monitor=monitor, guard=guard)
+            switches = TracerSwitches(arming.control, arming.fixed) if arming is not None else None
+            commands = RuntimeCommands(coord, states, measure=session, monitor=monitor, guard=guard, switches=switches)
             if control is not None:
                 channel = ControlChannel(commands, states, socket_path=control, log_dir=out_dir, policy=control_policy)
                 await channel.start()
@@ -351,6 +353,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Do not preload the tracer: no live rates and no measurement window.",
     )
     measure_group.add_argument(
+        "--trace-sizes",
+        action="store_true",
+        help="Sample the serialized size of one message per publisher and second for the whole run "
+        "(computed from the message type inside the nodes, without serializing; off by default, "
+        "switchable while running).",
+    )
+    measure_group.add_argument(
         "--measure",
         action="store_true",
         help="Open the measurement window once every actor has started; without it the window opens "
@@ -441,5 +450,6 @@ def main() -> None:
             control_policy=args.control_policy,
             tracer=not args.no_tracer,
             launch_id=args.launch_id,
+            tracer_flags={"sizes": args.trace_sizes},
         )
     )

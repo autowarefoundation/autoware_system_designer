@@ -33,10 +33,17 @@ is one runtime client, so follows are shared by every event stream and released 
 last stream closes. Once the channel is gone, a follow answers the tails read from the runtime's log
 directory, with no lines to come.
 
-Topic rates flow only while followed: ``monitor.follow`` asks the runtime for a ``monitor`` event per
-interval, forwarded as the ``monitor`` topic, and ``monitor.unfollow`` releases it. A unit is followed
-while any caller, told apart by its ``client`` name, follows it; all are released together once the
-last event stream closes.
+Topic rates and resource use flow only while followed: ``monitor.follow`` and ``resources.follow``
+ask the runtime for a ``monitor`` or ``resources`` event per interval, forwarded as the topic of the
+same name, and ``monitor.unfollow`` and ``resources.unfollow`` release them. A feed of a unit is
+followed while any caller, told apart by its ``client`` name, follows it; all are released together
+once the last event stream closes.
+
+The tracer's size sampling loads the nodes, so it is off unless asked for: ``trace_sizes`` of
+``launch.start`` keeps it on for the whole run, and ``monitor.options`` switches it for a caller
+while it wants it. The daemon asks the runtime for
+the union of its callers' wants, and drops them all with the last event stream; the session's
+``control.tracer_options`` holds the state the runtime reports.
 
 RViz is a job of its own (``rviz2``, one per daemon) in the same launch environment.
 """
@@ -74,6 +81,9 @@ TOPIC_MEMBER = "member"
 TOPIC_MEMBER_LOG = "member.log"
 TOPIC_MEMBER_ACTIVITY = "member.activity"
 TOPIC_MONITOR = "monitor"
+TOPIC_RESOURCES = "resources"
+# Feeds a caller follows per unit; each is also its SSE topic and its flag in the runtime's hello.
+FEEDS = (TOPIC_MONITOR, TOPIC_RESOURCES)
 TOPIC_LAUNCH = "launch"
 
 LAUNCH_JOB_KIND = "launch"
@@ -253,14 +263,18 @@ class LaunchSession:
         self.client: Optional[ControlClient] = None
         self.members: dict[str, dict[str, Any]] = {}
         self.follows: set[str] = set()
-        # Callers following the unit's topic rates; the runtime sends them while any does.
-        self.monitors: set[str] = set()
+        # Callers following each feed of the unit; the runtime sends a feed while any caller follows it.
+        self.feeds: dict[str, set[str]] = {feed: set() for feed in FEEDS}
+        # Caller -> the tracer switches it wants on.
+        self.tracer_wants: dict[str, set[str]] = {}
         self.control: dict[str, Any] = {
             "pid": None,
             "policy": None,
             "methods": [],
             "measure_armed": False,
             "monitor": False,
+            "resources": False,
+            "tracer_options": None,
         }
         self.log_dir: Optional[Path] = None
         self.launch_ready = False
@@ -405,6 +419,7 @@ class LaunchManager:
         measure: bool = False,
         respawn: bool = False,
         launch_id: Optional[str] = None,
+        trace_sizes: bool = False,
     ) -> LaunchSession:
         if self.launcher is None:
             raise api.ApiError(api.UNAVAILABLE, f"{LAUNCHER} not found on the launch PATH or under the install tree")
@@ -436,6 +451,8 @@ class LaunchManager:
             argv.append("--measure")
         if respawn:
             argv.append("--respawn")
+        if trace_sizes:
+            argv.append("--trace-sizes")
         try:
             run_dir = await asyncio.to_thread(new_run_dir, self.storage.launch_logs)
         except OSError as exc:
@@ -460,6 +477,7 @@ class LaunchManager:
                 "policy": policy,
                 "measure": measure,
                 "respawn": respawn,
+                "trace_sizes": trace_sizes,
             },
             detail={"socket": str(socket)},
             on_exit=lambda job: self._on_exit(session),
@@ -559,25 +577,43 @@ class LaunchManager:
             session.follows.discard(path)
         return result
 
-    async def monitor_follow(self, compute_unit: str, client: str = "") -> dict[str, Any]:
-        """Makes ``client`` a follower of the unit's topic rates; following twice is following once."""
+    async def feed_follow(self, feed: str, compute_unit: str, client: str = "") -> dict[str, Any]:
+        """Makes ``client`` a follower of a feed of the unit; following twice is following once."""
         session = self.connected_session(compute_unit)
-        known = client in session.monitors
-        session.monitors.add(client)
+        followers = session.feeds[feed]
+        known = client in followers
+        followers.add(client)
         try:
-            return await session.client.call("monitor.follow", {})
+            return await session.client.call(f"{feed}.follow", {})
         except Exception:
             if not known:
-                session.monitors.discard(client)
+                followers.discard(client)
             raise
 
-    async def monitor_unfollow(self, compute_unit: str, client: str = "") -> dict[str, Any]:
-        """Ends the follow of ``client``; the last follower releases the runtime's rates."""
+    async def feed_unfollow(self, feed: str, compute_unit: str, client: str = "") -> dict[str, Any]:
+        """Ends the follow of ``client``; the last follower releases the runtime's feed."""
         session = self.active_session(compute_unit)
-        session.monitors.discard(client)
-        if session.monitors or session.client is None:
+        followers = session.feeds[feed]
+        followers.discard(client)
+        if followers or session.client is None:
             return {"released": False}
-        return await session.client.call("monitor.unfollow", {})
+        return await session.client.call(f"{feed}.unfollow", {})
+
+    async def tracer_options(self, compute_unit: str, client: str, wants: Mapping[str, bool]) -> dict[str, Any]:
+        """Sets the tracer switches ``client`` wants among those in ``wants``; the runtime gets the
+        union over the callers. Returns the state the runtime reports."""
+        session = self.connected_session(compute_unit)
+        held = set(session.tracer_wants.get(client, set()))
+        for name, on in wants.items():
+            if on:
+                held.add(name)
+            else:
+                held.discard(name)
+        if held:
+            session.tracer_wants[client] = held
+        else:
+            session.tracer_wants.pop(client, None)
+        return await session.client.call("monitor.options", _union(session.tracer_wants))
 
     def _log_dirs(self) -> list[tuple[Path, bool]]:
         return [(session.log_dir, session.active) for session in self.sessions.values() if session.log_dir]
@@ -590,13 +626,17 @@ class LaunchManager:
             if session.follows:
                 session.follows.clear()
                 self._request(session, "log.unfollow")
-            if session.monitors:
-                session.monitors.clear()
-                self._request(session, "monitor.unfollow")
+            for feed, followers in session.feeds.items():
+                if followers:
+                    followers.clear()
+                    self._request(session, f"{feed}.unfollow")
+            if session.tracer_wants:
+                session.tracer_wants.clear()
+                self._request(session, "monitor.options", _union({}))
 
-    def _request(self, session: LaunchSession, method: str) -> None:
+    def _request(self, session: LaunchSession, method: str, params: Optional[dict[str, Any]] = None) -> None:
         """Sends a request whose answer nobody waits for; a failure is logged."""
-        self._tasks.spawn(session.client.call(method, {}), failure="control request")
+        self._tasks.spawn(session.client.call(method, params or {}), failure="control request")
 
     async def shutdown(self, compute_unit: str) -> dict[str, Any]:
         """Shutdown through the runtime; a launch without a channel yet is cancelled as a job."""
@@ -652,6 +692,8 @@ class LaunchManager:
                 "methods": obj.get("methods") or [],
                 "measure_armed": bool(obj.get("measure_armed")),
                 "monitor": bool(obj.get("monitor")),
+                "resources": bool(obj.get("resources")),
+                "tracer_options": _options(obj.get("tracer_options")),
             }
             log_dir = obj.get("log_dir")
             session.log_dir = Path(log_dir) if isinstance(log_dir, str) and log_dir else None
@@ -661,9 +703,12 @@ class LaunchManager:
             listed = [r for r in records if isinstance(r, dict) and isinstance(r.get("path"), str)]
             session.members = {r["path"]: session.count(r) for r in listed}
             session.follows.clear()
-            # A reconnected channel is a new runtime client: the followers keep their rates.
-            if session.monitors and session.control["monitor"]:
-                self._request(session, "monitor.follow")
+            # A reconnected channel is a new runtime client: the followers keep their feeds.
+            for feed, followers in session.feeds.items():
+                if followers and session.control[feed]:
+                    self._request(session, f"{feed}.follow")
+            if session.tracer_wants and session.control["tracer_options"] is not None:
+                self._request(session, "monitor.options", _union(session.tracer_wants))
             self._publish(session)
         elif kind == "member" and isinstance(obj.get("path"), str):
             record = session.count({k: v for k, v in obj.items() if k != "event"})
@@ -685,6 +730,11 @@ class LaunchManager:
             )
         elif kind == "monitor" and isinstance(obj.get("nodes"), list):
             self._hub.publish(TOPIC_MONITOR, {**session.scope, **{k: v for k, v in obj.items() if k != "event"}})
+        elif kind == "monitor.options":
+            session.control["tracer_options"] = _options(obj)
+            self._publish(session)
+        elif kind == "resources" and isinstance(obj.get("members"), dict):
+            self._hub.publish(TOPIC_RESOURCES, {**session.scope, **{k: v for k, v in obj.items() if k != "event"}})
 
     def _on_exit(self, session: LaunchSession) -> None:
         if session.client is not None:
@@ -696,6 +746,20 @@ class LaunchManager:
     def _publish(self, session: LaunchSession) -> None:
         session.updated_at = time.time()
         self._hub.publish(TOPIC_LAUNCH, session.to_view())
+
+
+TRACER_OPTIONS = ("sizes",)
+
+
+def _options(value: Any) -> Optional[dict[str, bool]]:
+    """The tracer switches a runtime reports; None from a runtime without the tracer."""
+    if not isinstance(value, dict):
+        return None
+    return {name: bool(value.get(name)) for name in TRACER_OPTIONS}
+
+
+def _union(wants: Mapping[str, set[str]]) -> dict[str, bool]:
+    return {name: any(name in held for held in wants.values()) for name in TRACER_OPTIONS}
 
 
 def _exited(compute_unit: str) -> api.ApiError:

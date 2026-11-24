@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 from ..exports import KIND_ONBOARD, SystemExport
 
@@ -47,27 +47,14 @@ class Command(NamedTuple):
     native: str
 
 
-def _discover_compute_units_in_dir(mode_dir: Path) -> list[str]:
-    """Discover compute units by listing subdirs of mode_dir that contain a .launch.xml file."""
-    if not mode_dir.is_dir():
-        return []
-    return [
-        entry.name
-        for entry in sorted(mode_dir.iterdir())
-        if entry.is_dir() and list(entry.glob(f"*{LAUNCH_FILE_SUFFIX}"))
-    ]
-
-
-def _compute_units_in_dir(mode_dir: Path, declared: list[str] | None) -> list[str]:
-    """Units listed for one mode directory: the declared ones that have a launcher, else the discovered ones."""
-    if declared is None:
-        return _discover_compute_units_in_dir(mode_dir)
+def _compute_units_in_dir(mode_dir: Path, launched: list[str]) -> list[str]:
+    """Units listed for one mode directory: the launched ones that have a launcher."""
     units = []
-    for compute_unit in declared:
+    for compute_unit in launched:
         if (mode_dir / compute_unit / f"{compute_unit.lower()}{LAUNCH_FILE_SUFFIX}").is_file():
             units.append(compute_unit)
         else:
-            logger.warning("No launcher for declared compute unit '%s' under %s; row omitted", compute_unit, mode_dir)
+            logger.warning("No launcher for compute unit '%s' under %s; row omitted", compute_unit, mode_dir)
     return units
 
 
@@ -86,17 +73,16 @@ def _build_commands(
     package_name: str,
     launcher_dir: Path,
     system_structure_dir: Path,
-    mode_keys: list[str],
+    launch_units: dict[str, list[str]],
     deploy_variants: list[dict[str, Any]],
-    declared_units: Optional[list[str]],
+    unit_names: list[str],
 ) -> list[Command]:
-    """Launch commands ordered by mode > ECU > deploy, the ECUs as declared, else by name.
+    """Launch commands ordered by mode > ECU > deploy, the ECUs in ``unit_names`` order.
 
     Without deploy variants the launchers sit directly under launcher/<mode>/<ecu>/; with them
     each variant has its own tree under launcher/deployments/<deploy>/<mode>/<ecu>/. The runtime
     method reads system_structure/<mode>.json and binds the variant's arguments via --deploy.
-    ECUs come from the declared onboard compute units when there are any, otherwise from the
-    launcher directories present.
+    ECUs of a mode are the ones ``launch_units`` records for it.
     """
     launcher_root = launcher_dir.resolve()
     structure_root = system_structure_dir.resolve()
@@ -105,15 +91,15 @@ def _build_commands(
         logger.warning("No deployment launchers under %s; no launch commands listed", launcher_root)
         return []
 
-    unit_order = {name: index for index, name in enumerate(declared_units or [])}
+    unit_order = {name: index for index, name in enumerate(unit_names)}
     commands: list[Command] = []
-    for mode_key in mode_keys:
+    for mode_key, mode_units in launch_units.items():
         mode_entries: list[Command] = []
         has_structure = (structure_root / f"{mode_key}{STRUCTURE_FILE_SUFFIX}").is_file()
         for deploy_name in deploy_names:
             prefix = f"{DEPLOYMENTS_SUBDIR}/{deploy_name}/" if deploy_name else ""
             mode_dir = launcher_root / f"{prefix}{mode_key}"
-            for compute_unit in _compute_units_in_dir(mode_dir, declared_units):
+            for compute_unit in _compute_units_in_dir(mode_dir, mode_units):
                 launch_filename = f"{compute_unit.lower()}{LAUNCH_FILE_SUFFIX}"
                 xml_path = _export_path_arg(
                     package_name, system_name, LAUNCHER_SUBDIR, f"{prefix}{mode_key}/{compute_unit}/{launch_filename}"
@@ -133,20 +119,14 @@ def _build_commands(
 
 
 def _export_commands(export: SystemExport) -> list[Command]:
-    declared = export.manifest.get("compute_units")
-    declared_units = (
-        [u["name"] for u in export.compute_units() if u["kind"] == KIND_ONBOARD]
-        if isinstance(declared, list) and declared
-        else None
-    )
     return _build_commands(
         export.name,
         export.package,
         export.export_dir / LAUNCHER_SUBDIR,
         export.export_dir / STRUCTURE_SUBDIR,
-        export.mode_keys(),
+        {mode: export.launch_units(mode) for mode in export.mode_keys()},
         export.deploy_variants(),
-        declared_units,
+        [u["name"] for u in export.compute_units() if u["kind"] == KIND_ONBOARD],
     )
 
 

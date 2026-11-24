@@ -23,11 +23,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
 
 from ...control_protocol import MEASURE_VERBS, MEMBER_ACTIONS
+from ..measure.tracer import FLAGS
 from . import events as ev
 
 if TYPE_CHECKING:
     from ..measure.monitor import RateMonitor
+    from ..measure.resources import ResourceMonitor
     from ..measure.session import MeasureSession
+    from ..measure.tracer import TracerSwitches
     from .coordinator import Coordinator, CoordinatorBuilder
 
 
@@ -148,12 +151,16 @@ class RuntimeCommands:
         measure: "Optional[MeasureSession]" = None,
         monitor: "Optional[RateMonitor]" = None,
         guard: Optional[Guard] = None,
+        resources: "Optional[ResourceMonitor]" = None,
+        switches: "Optional[TracerSwitches]" = None,
     ) -> None:
         self._coord = coord
         self._states = states
         self._measure = measure
         self._monitor = monitor
         self._guard = guard
+        self._resources = resources
+        self._switches = switches
 
     @property
     def coord(self) -> "Coordinator":
@@ -166,6 +173,45 @@ class RuntimeCommands:
     @property
     def monitor(self) -> "Optional[RateMonitor]":
         return self._monitor
+
+    def tracer_options(self) -> Optional[dict[str, bool]]:
+        """State of the tracer's size switch; None without the tracer."""
+        return self._switches.state() if self._switches is not None else None
+
+    def want_tracer_options(self, owner: object, params: dict[str, Any]) -> tuple[dict[str, bool], bool]:
+        """Sets what ``owner`` wants of the switches named in ``params``; returns the state and whether
+        it changed."""
+        if self._switches is None:
+            raise CommandError("unavailable", "tracer options need the tracer, which this launch did not preload")
+        wants: dict[str, bool] = {}
+        for name in FLAGS:
+            if name in params:
+                if not isinstance(params[name], bool):
+                    raise CommandError("invalid_params", f"{name} must be a boolean")
+                wants[name] = params[name]
+        changed = self._switches.want(owner, wants)
+        return self._switches.state(), changed
+
+    def release_tracer_options(self, owner: object) -> bool:
+        return self._switches.release(owner) if self._switches is not None else False
+
+    @property
+    def resources(self) -> "ResourceMonitor":
+        """CPU, memory and GPU use of the running members; created on first use."""
+        if self._resources is None:
+            from ..measure.resources import ResourceMonitor
+
+            self._resources = ResourceMonitor(self.running_pids)
+        return self._resources
+
+    def running_pids(self) -> dict[str, int]:
+        """Leader pid of every member process that runs."""
+        pids: dict[str, int] = {}
+        for record in self._states.records():
+            pid = record.detail.get("pid")
+            if record.state == "running" and isinstance(pid, int):
+                pids[record.path] = pid
+        return pids
 
     def status(self) -> dict[str, Any]:
         known = {record.path: record for record in self._states.records()}
@@ -247,6 +293,16 @@ class RuntimeCommands:
         before = self._monitor.read()
         await asyncio.sleep(interval)
         return self._monitor.rates(before, self._monitor.read())
+
+    async def resource_usage(self, interval: float = 1.0) -> dict[str, Any]:
+        """CPU, memory and GPU use of the running members over *interval* seconds."""
+        if not isinstance(interval, (int, float)) or isinstance(interval, bool) or not 0.1 <= interval <= 60:
+            raise CommandError("invalid_params", "interval must be a number of seconds in [0.1, 60]")
+        monitor = self.resources
+        loop = asyncio.get_running_loop()
+        before = await loop.run_in_executor(None, monitor.read)
+        await asyncio.sleep(interval)
+        return monitor.usage(before, await loop.run_in_executor(None, monitor.read))
 
     def shutdown(self) -> None:
         self._guard_check("shutdown")

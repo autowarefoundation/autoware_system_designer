@@ -289,6 +289,7 @@ int64_t asd_stats_register(asd_stats_t * s, uint8_t kind, const void * handle)
     asd_stats_slot_t * target = &s->slots[slot];
     target->handle = key;
     __atomic_store_n(&target->next_slot, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&target->bytes_count, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&target->kind, kind, __ATOMIC_RELEASE);
     table_put(table, s->mask, key, (uint32_t)slot);
   } else {
@@ -353,6 +354,12 @@ void asd_stats_link(const asd_stats_t * s, asd_stats_slot_t * trigger, const asd
   if (__atomic_load_n(&trigger->next_slot, __ATOMIC_RELAXED) != next) {
     __atomic_store_n(&trigger->next_slot, next, __ATOMIC_RELAXED);
   }
+}
+
+void asd_stats_bytes(asd_stats_slot_t * slot, uint64_t bytes)
+{
+  __atomic_fetch_add(&slot->bytes_sum, bytes, __ATOMIC_RELAXED);
+  __atomic_fetch_add(&slot->bytes_count, 1, __ATOMIC_RELAXED);
 }
 
 // ---- control --------------------------------------------------------------------------

@@ -35,6 +35,7 @@ from typing import Optional
 
 from ...control_protocol import MEMBER_ACTIONS
 from ...rates_record import format_rates
+from ..measure.resources import format_resources
 from .aio import first_completed, resolve
 from .commands import CommandError, RuntimeCommands
 from .coordinator import Coordinator
@@ -50,6 +51,8 @@ COMMANDS = (
     ("kill    <name>", "send SIGKILL to matching members"),
     ("measure start|stop|status", "control the latency measurement window"),
     ("rates   [name]", "topic and timer rates per node over one second"),
+    ("resources [name]", "CPU, memory and GPU use per member over one second"),
+    ("trace sizes on|off", "message-size sampling in the nodes"),
     ("quit", "request graceful shutdown"),
     ("help / ?", "show this message"),
 )
@@ -185,6 +188,15 @@ async def _dispatch(commands: RuntimeCommands, line: str) -> None:
             print(f"[console] {(await commands.measure((arg or 'status').lower()))['message']}")
         elif op == "rates":
             print("\n".join(format_rates(await commands.rates(), arg)))
+        elif op == "trace":
+            name, value = (parts[1:] + ["", ""])[:2]
+            if name != "sizes" or value not in ("on", "off"):
+                print("[console] trace needs sizes and on|off")
+                return
+            state, _ = commands.want_tracer_options("console", {name: value == "on"})
+            print(f"[console] tracer options: {state}")
+        elif op == "resources":
+            print("\n".join(format_resources(await commands.resource_usage(), arg)))
         elif op in MEMBER_ACTIONS:
             if not arg:
                 print(f"[console] {op} needs a name or prefix")

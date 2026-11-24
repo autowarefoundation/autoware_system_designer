@@ -1,7 +1,8 @@
 // Launch: live topic rates of a mode. One row per topic, joining the design
 // (publishing and subscribing nodes, the rate and the warn and error rates
 // its output port declares) with the runtimes' counters of every compute unit
-// running the mode (publish and take rates, callback and communication times).
+// running the mode (publish and take rates, callback and communication times,
+// and, while the Sizes switch is on, mean message sizes and bandwidth).
 // The list is one of three: the nodes in their namespace tree, the topics in
 // the topic namespace tree with the services in a group of their own, or the
 // flat topic table; each sorts by a column
@@ -48,6 +49,8 @@
     flowMarks,
     hzLabel,
     msLabel,
+    sizeLabel,
+    bandwidthLabel,
     shortNode,
     timeShare,
     sampleAtShare,
@@ -79,6 +82,12 @@
       "mean publish time after the thread's latest take or timer fire",
     ],
     ["Comm", "comm", "mean take time after the DDS source timestamp"],
+    [
+      "Size",
+      "size",
+      "mean serialized message size, one sampled publish per publisher and second (Sizes switch)",
+    ],
+    ["Bandwidth", "bandwidth", "publish rate times the mean size"],
     ["Publisher", "publisher", "the publishing node"],
     ["Subs", "subs", "subscribers seen, of the declared ones"],
   ];
@@ -97,6 +106,8 @@
     "declared",
     "callback",
     "comm",
+    "size",
+    "bandwidth",
     "subs",
     "ins",
     "outs",
@@ -212,11 +223,26 @@
       () => undeclared,
       (v) => (undeclared = v),
     );
+    // Size sampling serializes inside the nodes: on only while this switch is
+    // on and the view shows the live sessions; never remembered.
+    let sizes = false;
+    const sizesWrapper = element("label", "topic-toggle");
+    sizesWrapper.title =
+      "Sample the serialized size of one message per publisher and second " +
+      "(adds load inside the nodes; off when the view is left)";
+    const sizesInput = element("input");
+    sizesInput.type = "checkbox";
+    sizesInput.addEventListener("change", () => {
+      sizes = sizesInput.checked;
+      syncSizes();
+    });
+    sizesWrapper.append(sizesInput, element("span", "", "Sizes"));
     toolbar.append(
       element("span", "topic-toolbar-label", "List"),
       listSwitch.element,
       filter,
       undeclaredToggle.element,
+      sizesWrapper,
     );
     // -- past runs: the selector beside the title, and the span brushed over the run's density
     const unitsOf = launch.modeUnits(config.launchCommands);
@@ -645,15 +671,42 @@
       render();
     }
 
-    function monitorRpc(unit, method) {
+    function monitorRpc(unit, method, params = {}) {
       const request = (requests.get(unit) || Promise.resolve()).then(() =>
-        daemon.rpc(method, { compute_unit: unit, client: daemon.clientId }),
+        daemon.rpc(method, {
+          ...params,
+          compute_unit: unit,
+          client: daemon.clientId,
+        }),
       );
       requests.set(
         unit,
         request.catch(() => {}),
       );
       return request;
+    }
+
+    // Units whose size sampling this view asked for.
+    const sizing = new Set();
+
+    // Asks for size sampling on every followed unit while the switch is on, and
+    // releases it everywhere else.
+    function syncSizes() {
+      const offered = daemon.offers("monitor.options");
+      followed.forEach((unit) => {
+        const want = sizes && offered;
+        if (want === sizing.has(unit)) return;
+        if (want) sizing.add(unit);
+        else sizing.delete(unit);
+        monitorRpc(unit, "monitor.options", { sizes: want }).catch((error) =>
+          console.warn("topic sizes:", error),
+        );
+      });
+      sizing.forEach((unit) => {
+        if (followed.has(unit)) return;
+        sizing.delete(unit);
+        monitorRpc(unit, "monitor.options", { sizes: false }).catch(() => {});
+      });
     }
 
     // Follows the monitor of every connected session of the mode that offers one while the live
@@ -687,6 +740,7 @@
         followed.delete(unit);
         monitorRpc(unit, "monitor.unfollow").catch(() => {});
       });
+      syncSizes();
       schedule();
     }
 
@@ -860,6 +914,8 @@
         declaredCell(row),
         element("td", "topic-num", msLabel(row.callbackMs)),
         element("td", "topic-num", msLabel(row.commMs)),
+        element("td", "topic-num", sizeLabel(row.sizeB)),
+        element("td", "topic-num", bandwidthLabel(row.bps)),
         pubCell,
         subsCell,
       );
@@ -1243,6 +1299,7 @@
     SD.on("daemon.connection", ({ connected }) => {
       if (!connected) return;
       followed.clear();
+      sizing.clear();
       syncFollows();
     });
     // An entity selected elsewhere drops the selected topic and moves the selected node.
@@ -1282,6 +1339,7 @@
         monitorRpc(unit, "monitor.unfollow").catch(() => {}),
       );
       followed.clear();
+      syncSizes();
       if (shown) {
         loadDesign().catch((error) => console.error("topic rates:", error));
         syncFollows();

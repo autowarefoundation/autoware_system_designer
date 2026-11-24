@@ -6,7 +6,7 @@
 // "daemon.connection" {connected}, "daemon.health" (health result),
 // "daemon.jobs" (job list), and "daemon.<topic>" for every event-stream topic
 // (job, job.log, systems.changed, daemon, launch, member, member.log,
-// member.activity, monitor, records.changed).
+// member.activity, monitor, resources, records.changed).
 (function () {
   const SD = window.SD;
   const CLIENT_HEADER = "X-System-Designer-Client";
@@ -20,6 +20,7 @@
     "member.log",
     "member.activity",
     "monitor",
+    "resources",
     "records.changed",
   ];
 

@@ -16,7 +16,8 @@
 
 An armed process keeps counters per endpoint from its first rcl call on; event
 records follow the control file in the trace directory, which the runtime
-switches on for a measurement window only.
+switches on for a measurement window only. One more switch of the file adds
+load inside the nodes and is off unless asked for: message-size sampling.
 """
 
 from __future__ import annotations
@@ -42,8 +43,11 @@ STATS_SLOTS_ENV = "ASD_STATS_SLOTS"
 CONTROL_FILE = "control"
 CONTROL_MAGIC = b"ASDCTRL\0"
 CONTROL_VERSION = 1
-_CONTROL = struct.Struct("<8sII48s")
+_CONTROL = struct.Struct("<8sIII44s")
 _EVENTS_OFFSET = 12
+# Switches after the events word, in order.
+FLAGS = ("sizes",)
+_FLAG_OFFSETS = {"sizes": 16}
 
 
 def locate_tracer() -> Path:
@@ -92,18 +96,36 @@ class TraceControl:
     def path(self) -> Path:
         return self._path
 
-    def create(self, events: bool = False) -> None:
+    def create(self, events: bool = False, *, sizes: bool = False) -> None:
         """Writes a fresh control file; it must exist before the first traced process starts."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
         partial = self._path.with_name(f".{CONTROL_FILE}.part")
-        partial.write_bytes(_CONTROL.pack(CONTROL_MAGIC, CONTROL_VERSION, int(events), b"\0" * 48))
+        partial.write_bytes(_CONTROL.pack(CONTROL_MAGIC, CONTROL_VERSION, int(events), int(sizes), b"\0" * 44))
         os.replace(partial, self._path)
 
     def set_events(self, on: bool) -> None:
         """Switches event recording in every process that mapped the file; takes effect on the next record."""
+        self._write_word(_EVENTS_OFFSET, on)
+
+    def set_flag(self, name: str, on: bool) -> None:
+        """Switches size sampling (``sizes``) in every traced process."""
+        self._write_word(_FLAG_OFFSETS[name], on)
+
+    def flags(self) -> dict[str, bool]:
+        try:
+            data = self._path.read_bytes()
+        except OSError:
+            return {name: False for name in FLAGS}
+        if len(data) < _CONTROL.size:
+            return {name: False for name in FLAGS}
+        magic, version, _events, sizes, _ = _CONTROL.unpack_from(data)
+        valid = magic == CONTROL_MAGIC and version == CONTROL_VERSION
+        return {"sizes": valid and sizes != 0}
+
+    def _write_word(self, offset: int, on: bool) -> None:
         fd = os.open(self._path, os.O_WRONLY)
         try:
-            os.pwrite(fd, struct.pack("<I", int(on)), _EVENTS_OFFSET)
+            os.pwrite(fd, struct.pack("<I", int(on)), offset)
         finally:
             os.close(fd)
 
@@ -114,24 +136,69 @@ class TraceControl:
             return False
         if len(data) < _CONTROL.size:
             return False
-        magic, version, events, _ = _CONTROL.unpack_from(data)
+        magic, version, events, _sizes, _ = _CONTROL.unpack_from(data)
         return magic == CONTROL_MAGIC and version == CONTROL_VERSION and events != 0
 
 
 class TracerArming:
-    """Preloads the tracer into every process the coordinator spawns, with event recording off."""
+    """Preloads the tracer into every process the coordinator spawns, with event recording off and
+    the switches of ``flags`` (``sizes``) as given; those given stay on for the whole run."""
 
-    def __init__(self, tracer: Path, trace_dir: Path) -> None:
+    def __init__(self, tracer: Path, trace_dir: Path, *, flags: Optional[dict[str, bool]] = None) -> None:
         self.tracer = Path(tracer)
         self.trace_dir = Path(trace_dir)
         self.control = TraceControl(self.trace_dir)
+        self.fixed = {name: bool((flags or {}).get(name)) for name in FLAGS}
 
     def install(self, builder: "CoordinatorBuilder") -> None:
         builder.add_pre_start_hook(self._pre_start)
 
     async def _pre_start(self, coord: "Coordinator") -> None:
         self.trace_dir.mkdir(parents=True, exist_ok=True)
-        self.control.create(events=False)
+        self.control.create(events=False, **self.fixed)
         for spec in coord.specs():
             spec.env = tracer_env(self.tracer, self.trace_dir, spec.env)
         logger.info("tracer %s armed, counters in %s", self.tracer, self.trace_dir)
+
+
+class TracerSwitches:
+    """The size switch of a run: it is on while it is fixed for the run or any owner
+    wants it; the control file follows every change."""
+
+    def __init__(self, control: TraceControl, fixed: Optional[dict[str, bool]] = None) -> None:
+        self._control = control
+        self._fixed = {name: bool((fixed or {}).get(name)) for name in FLAGS}
+        self._wants: dict[object, dict[str, bool]] = {}
+        self._state = dict(self._fixed)
+
+    def state(self) -> dict[str, bool]:
+        return dict(self._state)
+
+    def want(self, owner: object, wants: dict[str, bool]) -> bool:
+        """Sets what ``owner`` wants of the switches it names; returns whether the state changed."""
+        held = dict(self._wants.get(owner, {}))
+        held.update({name: bool(on) for name, on in wants.items() if name in FLAGS})
+        if any(held.values()):
+            self._wants[owner] = held
+        else:
+            self._wants.pop(owner, None)
+        return self._apply()
+
+    def release(self, owner: object) -> bool:
+        """Drops every want of ``owner``; returns whether the state changed."""
+        if self._wants.pop(owner, None) is None:
+            return False
+        return self._apply()
+
+    def _apply(self) -> bool:
+        state = {name: self._fixed[name] or any(wants.get(name) for wants in self._wants.values()) for name in FLAGS}
+        changed = state != self._state
+        for name in FLAGS:
+            if state[name] != self._state[name]:
+                try:
+                    self._control.set_flag(name, state[name])
+                except OSError as exc:
+                    logger.warning("cannot switch %s: %s", name, exc)
+                    state[name] = self._state[name]
+        self._state = state
+        return changed

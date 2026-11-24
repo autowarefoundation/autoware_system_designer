@@ -12,6 +12,21 @@
 
   <depend>rcl</depend>
   <depend>rmw</depend>
+  <depend>rosidl_runtime_c</depend>
+  <build_depend>rosidl_runtime_cpp</build_depend>
+  <build_depend>rosidl_typesupport_introspection_c</build_depend>
+  <build_depend>rosidl_typesupport_introspection_cpp</build_depend>
+
+  <test_depend>diagnostic_msgs</test_depend>
+  <test_depend>geometry_msgs</test_depend>
+  <test_depend>rmw_cyclonedds_cpp</test_depend>
+  <test_depend>rmw_fastrtps_cpp</test_depend>
+  <test_depend>rmw_implementation</test_depend>
+  <test_depend>rosidl_typesupport_cpp</test_depend>
+  <test_depend>sensor_msgs</test_depend>
+  <test_depend>std_msgs</test_depend>
+  <test_depend>tf2_msgs</test_depend>
+  <test_depend>visualization_msgs</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

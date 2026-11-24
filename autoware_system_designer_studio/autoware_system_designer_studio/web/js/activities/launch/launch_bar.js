@@ -25,6 +25,12 @@
         "without it a window opens on Start measure.",
     ],
     ["respawn", "Respawn exited processes", ""],
+    [
+      "trace_sizes",
+      "Message sizes for the whole run",
+      "Sample the serialized size of one message per publisher and second " +
+        "from launch on, recorded with the rates; computed inside the nodes.",
+    ],
   ];
   const DRAWER_ICON = "M4 7l6 6 6-6";
   const COMMANDS_ICON =

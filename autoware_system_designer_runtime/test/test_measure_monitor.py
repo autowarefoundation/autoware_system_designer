@@ -22,7 +22,14 @@ from autoware_system_designer_runtime._impl.measure.node_graph import NodeGraph
 from autoware_system_designer_runtime._impl.measure.stats_reader import SLOT_PUB, SLOT_SUB, SLOT_TIMER
 from autoware_system_designer_runtime._impl.measure.trace_reader import read_trace_dir
 from autoware_system_designer_runtime._impl.measure.tracer import TraceControl
-from autoware_system_designer_runtime.rates_record import RATES_FILE, RatesRecord, RatesWriter, Sample, format_rates
+from autoware_system_designer_runtime.rates_record import (
+    RATES_FILE,
+    RatesRecord,
+    RatesWriter,
+    Sample,
+    format_rates,
+    rates_between,
+)
 
 from .measure_fixtures import node, out_port, system
 
@@ -324,3 +331,42 @@ def test_the_control_file_switches_events_in_place(tmp_path):
     assert control.events() and control.path.stat().st_ino == inode  # mapped by every traced process
     control.set_events(False)
     assert not control.events()
+
+
+def test_sizes_give_bandwidth():
+    out = ("/talker", "out", "/chatter")
+    before = Sample(0, {out: (0, 0, 0, 0)}, extras={out: (1000, 10)})
+    after = Sample(2 * S, {out: (20, 0, 0, 2 * S)}, extras={out: (3000, 12)})
+    snapshot = rates_between(before, after)
+    (talker_out,) = _node(snapshot, "/talker")["outputs"]
+    assert talker_out["size_b"] == 1000.0 and talker_out["bps"] == 10_000.0
+    assert any("kB/s" in line for line in format_rates(snapshot))
+
+
+def test_a_record_keeps_sizes(tmp_path):
+    out = ("/talker", "out", "/chatter")
+    writer = RatesWriter(tmp_path / RATES_FILE, interval_s=1.0)
+    writer.write(Sample(0, {out: (0, 0, 0, 0)}, extras={out: (100, 1)}))
+    writer.write(Sample(S, {out: (10, 0, 0, S)}, extras={out: (300, 3)}))
+    writer.close()
+    record = RatesRecord.load(tmp_path / RATES_FILE)
+    assert record.samples(1)[0].extras == {out: (300, 3)}
+    (row,) = _node(record.rates(), "/talker")["outputs"]
+    assert row["size_b"] == 100.0
+
+
+def test_tracer_switches_are_on_while_fixed_or_wanted(tmp_path):
+    from autoware_system_designer_runtime._impl.measure.tracer import TracerSwitches
+
+    control = TraceControl(tmp_path)
+    control.create(events=False)
+    switches = TracerSwitches(control)
+    assert control.flags() == {"sizes": False}
+    assert switches.want("a", {"sizes": True}) is True
+    assert switches.want("b", {"sizes": True}) is False
+    assert control.flags() == {"sizes": True}
+    assert switches.release("a") is False
+    assert switches.release("b") is True
+    assert control.flags() == {"sizes": False}
+    fixed = TracerSwitches(control, {"sizes": True})
+    assert fixed.want("a", {"sizes": False}) is False and fixed.state() == {"sizes": True}

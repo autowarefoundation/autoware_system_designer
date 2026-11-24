@@ -187,3 +187,19 @@
   fill: var(--text-primary);
   font-weight: 600;
 }
+
+/* Resource marks: a letter and three bars, the filled ones up to the level */
+.treemap .tm-resource-letter {
+  fill: var(--text-primary);
+  font-weight: 600;
+}
+
+.tm-resource-bar {
+  fill: var(--text-muted);
+  fill-opacity: 0.35;
+}
+
+.tm-resource-bar.on {
+  fill: var(--text-primary);
+  fill-opacity: 1;
+}

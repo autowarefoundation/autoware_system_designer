@@ -282,13 +282,21 @@ def test_systems_lists_modes_units_and_deploy_variants(served):
     assert served.request("GET", system["pages"]["workbench"])[0].status == 200
 
 
-def test_undeclared_units_fall_back_to_launcher_directories(tmp_path):
+def test_undeclared_units_are_the_recorded_launch_units(tmp_path):
     install = _install_tree(tmp_path, compute_units=[])
+    export = install / PKG / "share" / PKG / "exports" / SYSTEM
+    manifest = json.loads((export / "deployment.json").read_text())
+    manifest["launch_units"] = {"Runtime": ["main_ecu"], "Simulation": ["main_ecu", "dummy_ecu"]}
+    (export / "deployment.json").write_text(json.dumps(manifest))
+    # A launcher left by an earlier build of a unit no longer in the design.
+    (export / "launcher" / "Runtime" / "old_ecu").mkdir(parents=True)
+    (export / "launcher" / "Runtime" / "old_ecu" / "old_ecu.launch.xml").write_text("<launch/>")
     (system,), errors = exports.discover_systems(install)
     assert not errors
     view = system.to_view(None, {})
     assert [(u["name"], u["kind"], u["status"]) for u in view["compute_units"]] == [
-        ("main_ecu", "onboard", "available")
+        ("main_ecu", "onboard", "available"),
+        ("dummy_ecu", "onboard", "available"),
     ]
 
 

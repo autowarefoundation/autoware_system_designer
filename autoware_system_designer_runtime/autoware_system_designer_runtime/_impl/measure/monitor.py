@@ -29,6 +29,9 @@ of it leads to a publish, from then on under the node of that publish with the
 fires since. Each timer has a key of its own: its label is its period and its
 rank among the timers of that period under the same owner.
 
+A publisher's measured bytes start from zero with each endpoint; a reading sums
+them the same way, those of ended endpoints at their last reading.
+
 The recorder appends a reading to the run's ``rates.jsonl`` at a fixed
 interval and once more at shutdown, so a past run's rates can be read back.
 """
@@ -42,16 +45,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ...rates_record import Counters, Key, RatesWriter, Sample, rates_between
+from ...rates_record import Counters, Extras, Key, RatesWriter, Sample, rates_between
 from ...special_topics import special_topics
 from .node_graph import NodeGraph
-from .stats_reader import ProcessStats, StatsDir, counts_since
+from .stats_reader import SLOT_PUB, ProcessStats, SlotCounters, StatsDir, counts_since
 from .trace_reader import Endpoint, TimerInfo
 
 logger = logging.getLogger(__name__)
 
 # Interval of the samples in a run's rates record.
 RECORD_INTERVAL_S = 10.0
+
+
+def _add_extras(totals: dict[Key, Extras], key: Key, values: Extras) -> None:
+    if values == (0, 0):
+        return
+    held = totals.get(key)
+    totals[key] = values if held is None else (held[0] + values[0], held[1] + values[1])
 
 
 def _add(totals: dict[Key, Counters], key: Key, count: int, lat_sum: int, lat_count: int, last_ns: int) -> None:
@@ -78,6 +88,9 @@ class _Timer:
 class _Process:
     # Totals of the endpoints that ended, per key.
     retired: dict[Key, Counters] = field(default_factory=dict)
+    retired_extras: dict[Key, Extras] = field(default_factory=dict)
+    # Per slot, the endpoint and its extras at the latest reading.
+    seen_extras: dict[int, tuple[Any, Extras]] = field(default_factory=dict)
     # Live timers by slot.
     timers: dict[int, _Timer] = field(default_factory=dict)
 
@@ -91,6 +104,7 @@ class RateMonitor:
         self._paths: dict[str, str] = {}
         # Final totals of the processes that ended.
         self._ended: dict[Key, Counters] = {}
+        self._ended_extras: dict[Key, Extras] = {}
         self._untracked_ended = 0
         self._processes: dict[int, _Process] = {}
         # Ranks in use per (owner, period).
@@ -101,9 +115,14 @@ class RateMonitor:
 
     def read(self) -> Sample:
         procs = self._dir.refresh(self._retire)
-        sample = Sample(t_ns=time.time_ns(), totals=dict(self._ended), untracked=self._untracked_ended)
+        sample = Sample(
+            t_ns=time.time_ns(),
+            totals=dict(self._ended),
+            untracked=self._untracked_ended,
+            extras=dict(self._ended_extras),
+        )
         for proc in procs.values():
-            sample.untracked += self._accumulate(proc, sample.totals)
+            sample.untracked += self._accumulate(proc, sample.totals, sample.extras)
         sample.processes = len(procs)
         return sample
 
@@ -120,15 +139,15 @@ class RateMonitor:
         return key
 
     def _retire(self, proc: ProcessStats) -> None:
-        self._untracked_ended += self._accumulate(proc, self._ended)
+        self._untracked_ended += self._accumulate(proc, self._ended, self._ended_extras)
         state = self._processes.pop(proc.pid, None)
         for slot, timer in (state.timers if state is not None else {}).items():
             entry = proc.names.get(slot)
             if isinstance(entry, TimerInfo):
                 self._release(timer, entry.period_ns)
 
-    def _accumulate(self, proc: ProcessStats, totals: dict[Key, Counters]) -> int:
-        """Adds one process's endpoints to ``totals``; returns its endpoints without counters."""
+    def _accumulate(self, proc: ProcessStats, totals: dict[Key, Counters], extras: dict[Key, Extras]) -> int:
+        """Adds one process's endpoints to ``totals`` and ``extras``; returns its endpoints without counters."""
         state = self._processes.setdefault(proc.pid, _Process())
         counters = proc.read()
         names = proc.read_names()
@@ -136,6 +155,8 @@ class RateMonitor:
             self._end(proc.pid, state, entry, counts)
         for key, counts in state.retired.items():
             _add(totals, key, *counts)
+        for key, values in state.retired_extras.items():
+            _add_extras(extras, key, values)
         for index, slot in counters.slots.items():
             entry = names.get(index)
             if entry is None:
@@ -147,24 +168,44 @@ class RateMonitor:
                 if not timer.pinned and isinstance(output, Endpoint) and output.kind == "pub":
                     self._pin(timer, entry.period_ns, self.node_key(output.fqn))
                 timer.seen = counts[0]
-                _add(totals, self._timer_key(timer, entry), *self._timer_counts(timer, counts))
+                key = self._timer_key(timer, entry)
+                _add(totals, key, *self._timer_counts(timer, counts))
                 continue
             key = self._endpoint_key(entry)
             if key is not None:
                 _add(totals, key, *counts)
+                if slot.kind == SLOT_PUB:
+                    self._note_extras(state, index, entry, slot, extras, key)
         return counters.dropped
+
+    @staticmethod
+    def _note_extras(
+        state: _Process, index: int, entry: Any, slot: SlotCounters, extras: dict[Key, Extras], key: Key
+    ) -> None:
+        values = (slot.bytes_sum, slot.bytes_count)
+        state.seen_extras[index] = (entry, values)
+        _add_extras(extras, key, values)
+
+    def _end_extras(self, state: _Process, entry: Any, key: Key) -> None:
+        """Keeps the extras an ended endpoint had at the latest reading."""
+        seen = state.seen_extras.get(entry.slot)
+        if seen is not None and seen[0] is entry:
+            _add_extras(state.retired_extras, key, seen[1])
+            del state.seen_extras[entry.slot]
 
     def _end(self, pid: int, state: _Process, entry: Union[Endpoint, TimerInfo], counts: Counters) -> None:
         """Moves the counts of an endpoint whose slot went to another one to the retired totals."""
         if isinstance(entry, TimerInfo):
             timer = self._timer(pid, state, entry)
-            _add(state.retired, self._timer_key(timer, entry), *self._timer_counts(timer, counts))
+            key = self._timer_key(timer, entry)
+            _add(state.retired, key, *self._timer_counts(timer, counts))
             self._release(timer, entry.period_ns)
             del state.timers[entry.slot]
             return
         key = self._endpoint_key(entry)
         if key is not None:
             _add(state.retired, key, *counts)
+            self._end_extras(state, entry, key)
 
     def _endpoint_key(self, entry: Endpoint) -> Optional[Key]:
         if entry.topic in special_topics().process:

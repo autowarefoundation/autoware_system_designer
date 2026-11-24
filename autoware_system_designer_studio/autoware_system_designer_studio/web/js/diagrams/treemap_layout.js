@@ -1,6 +1,7 @@
 // Treemap layout: the sections of a mode's compute units, the slots of their
 // top-level components in fixed rows, and the nested blocks of every node at
-// an equal area, as boxes in canvas coordinates.
+// an equal area, or at the area of a weight per node, as boxes in canvas
+// coordinates.
 (function () {
   const SD = window.SD;
 
@@ -41,6 +42,9 @@
     blockMark: 7,
     // Busy-log mark: its width and height.
     busy: 8,
+    // Resource mark: its width, and the width of its letter.
+    resource: 15,
+    resourceLetter: 6,
   };
 
   const TOKENS = ["running", "ok", "warning", "failed", "idle"];
@@ -49,6 +53,13 @@
     [0, 3],
     [3, 5.5],
     [6, 8],
+  ];
+
+  // Resource marks of a block in order: [levels key, letter].
+  const RESOURCE_MARKS = [
+    ["cpu", "C"],
+    ["mem", "M"],
+    ["gpu", "G"],
   ];
 
   // Times the member of a live state was started again, respawns among them.
@@ -83,8 +94,16 @@
     );
   }
 
-  // Block weight: the nodes within, one for an empty module.
-  function weightOf(instance) {
+  // Block weight: the nodes within, one for an empty module; with `weigh`,
+  // the sum of weigh(node) over the nodes within.
+  function weightOf(instance, weigh) {
+    if (weigh) {
+      if (isNode(instance)) return Math.max(0, weigh(instance) || 0);
+      return (instance.children || []).reduce(
+        (sum, child) => sum + weightOf(child, weigh),
+        0,
+      );
+    }
     return Math.max(1, nodeCount(instance));
   }
 
@@ -153,7 +172,7 @@
   // Rows of slots of a section's components: each row's slots in their fixed
   // order, the last row's other segments after the containers in design
   // order; empty slots and rows are left out.
-  function slotRows(components) {
+  function slotRows(components, weigh) {
     const bySlot = new Map();
     components.forEach((component) => {
       const slot = slotOf(component);
@@ -174,7 +193,7 @@
             components: bySlot.get(slot),
             weight: bySlot
               .get(slot)
-              .reduce((sum, component) => sum + weightOf(component), 0),
+              .reduce((sum, component) => sum + weightOf(component, weigh), 0),
           })),
       )
       .filter((row) => row.length);
@@ -307,7 +326,8 @@
   // Boxes of the sections laid over `width` x `height`: an empty section is
   // its head alone, the others are their own height, so the layout may run
   // past `height`; height left over is shared among them in proportion to
-  // their nodes. `unitHead` is the height of a section's head. A box carries
+  // their nodes. `unitHead` is the height of a section's head; `weigh(node)`,
+  // when given, sizes the slots and blocks within a section. A box carries
   // its kind (unit, slot, module or node), rect, and the section or instance
   // it draws; a module box is `open` when its children are laid inside it.
   function layout(
@@ -316,6 +336,7 @@
     height,
     depthLimit = Infinity,
     unitHead = G.unitHead,
+    weigh = null,
   ) {
     const boxes = [];
     const filled = sections.filter((section) => section.children.length);
@@ -348,7 +369,7 @@
         h,
       });
       layoutRows(
-        slotRows(section.children),
+        slotRows(section.children, weigh),
         {
           x: G.pad,
           y: y + unitHead,
@@ -358,13 +379,14 @@
         index,
         depthLimit,
         boxes,
+        weigh,
       );
       y += h;
     });
     return { height: free > 0 ? height : y, boxes };
   }
 
-  function layoutRows(rows, rect, section, depthLimit, boxes) {
+  function layoutRows(rows, rect, section, depthLimit, boxes, weigh) {
     const heights = proportional(
       rows.map((row) => row.reduce((sum, slot) => sum + slot.weight, 0)),
       rect.h - G.gap * (rows.length - 1),
@@ -396,7 +418,10 @@
           h: heights[i] - G.slotHead - G.pad,
         };
         squarify(
-          slot.components.map((c) => ({ weight: weightOf(c), instance: c })),
+          slot.components.map((c) => ({
+            weight: weightOf(c, weigh),
+            instance: c,
+          })),
           inner,
         ).forEach((cell) =>
           layoutInstance(
@@ -406,6 +431,7 @@
             section,
             depthLimit,
             boxes,
+            weigh,
           ),
         );
         x += widths[j] + G.gap;
@@ -414,7 +440,15 @@
     });
   }
 
-  function layoutInstance(instance, rect, depth, section, depthLimit, boxes) {
+  function layoutInstance(
+    instance,
+    rect,
+    depth,
+    section,
+    depthLimit,
+    boxes,
+    weigh,
+  ) {
     if (rect.w <= 0 || rect.h <= 0) return;
     const children = isNode(instance) ? [] : instance.children || [];
     let inner = null;
@@ -439,7 +473,7 @@
     });
     if (!inner) return;
     squarify(
-      children.map((c) => ({ weight: weightOf(c), instance: c })),
+      children.map((c) => ({ weight: weightOf(c, weigh), instance: c })),
       inner,
     ).forEach((cell) =>
       layoutInstance(
@@ -449,6 +483,7 @@
         section,
         depthLimit,
         boxes,
+        weigh,
       ),
     );
   }
@@ -460,6 +495,7 @@
     G,
     TOKENS,
     BUSY_BARS,
+    RESOURCE_MARKS,
     restartCount,
     slotOf,
     nodeCount,

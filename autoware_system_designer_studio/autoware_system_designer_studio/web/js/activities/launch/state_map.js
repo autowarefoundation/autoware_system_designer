@@ -1,6 +1,8 @@
 // Launch: the treemap of the mode, coloured and marked by the live states of
-// the system's launched members, their busy logs and restart counts, with
-// the caller's controls of each compute unit in its section head. A click on
+// the system's launched members, their busy logs, restart counts and the
+// levels of their CPU, memory and GPU use, with the caller's controls of each
+// compute unit and its totals in its section head. The resource feed is
+// wanted while the map is shown. A click on
 // a block selects its node or module as the store's `entity`, shared with
 // the log view and Explore, and a unit's head clears it; the map marks the
 // store's entity, none once it is cleared. A double click on a node opens it
@@ -15,7 +17,8 @@
   const APPLY_DELAY_MS = 80;
 
   function stateMap(container, config, store, hooks = {}) {
-    const { unitControls, onOpen, onLoad } = hooks;
+    const { unitControls, onOpen, onLoad, resources } = hooks;
+    const { levels, usageLines, hostLabel } = launch.resourceUsage;
     const host = element("div", "diagram-container");
     container.appendChild(host);
     let module = null;
@@ -29,8 +32,9 @@
     let timer = null;
 
     // Live states of the mode's nodes, each with the growth of its own output
-    // (`rate`) and, from the busy threshold up, a note of it (`busy`); a
-    // composable node's output is its container's.
+    // (`rate`) and, from the busy threshold up, a note of it (`busy`), and the
+    // `levels` and `usage` lines of its process's resource use; a composable
+    // node's output and process are its container's.
     function liveStates() {
       const { logRate } = launch.scope(config.systemId, () => entitiesMode);
       const states = launch.memberStates(
@@ -40,12 +44,18 @@
       );
       entities.forEach((entity) => {
         const state = states.get(entity.member_path);
-        if (!state || entity.container_path) return;
+        if (!state) return;
+        if (entity.container_path) return;
         const rate = logRate(entity.member_path);
         state.rate = rate;
         state.busy = launch.busyLog(rate)
           ? `log ${launch.rateLabel(rate)}`
           : "";
+        const usage = resources?.usage(entity.member_path);
+        if (usage) {
+          state.levels = levels(usage, resources.host(usage.unit));
+          state.usage = usageLines(usage);
+        }
       });
       return states;
     }
@@ -53,6 +63,12 @@
     function applyStates() {
       timer = null;
       module?.setLiveStates(liveStates());
+      module?.setUnitNotes(
+        (resources?.units() || []).map((unit) => [
+          unit,
+          hostLabel(resources.host(unit)),
+        ]),
+      );
     }
 
     function schedule() {
@@ -122,6 +138,7 @@
     SD.on("launch.member", schedule);
     SD.on("launch.sessions", schedule);
     SD.on("launch.activity", schedule);
+    SD.on("launch.resources", schedule);
     store.onChange("entity", () => {
       if (!hidden) followEntity();
     });
@@ -133,6 +150,7 @@
     return {
       show() {
         hidden = false;
+        resources?.want("control", true);
         if (stale) load();
         else {
           applyStates();
@@ -141,6 +159,7 @@
       },
       hide() {
         hidden = true;
+        resources?.want("control", false);
       },
       // Refills the unit controls on the map.
       renderControls() {

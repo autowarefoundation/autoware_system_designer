@@ -19,13 +19,16 @@ last_ns)`` accumulated over the run, processes that ended included, so the rates
 the difference of two samples. ``kind`` is ``in`` (takes of a topic), ``out`` (publishes of a topic)
 or ``timer`` (fires of a timer, ``label`` its period in ns and its rank among the owner's timers of
 that period); the latency is the communication time of a take and the callback time of a publish.
+A sample also holds, per ``out`` key whose tracer measured them, two more totals: the measured
+message bytes and the publishes they were measured on. Their rates give the mean message size and
+bandwidth of a topic.
 
 ``<log-dir>/rates.jsonl`` records the samples of a run, one JSON object per line: a header
 ``{"schema", "interval_s"}``, then per sample ``{"t", "processes", "untracked", "keys"?, "c"}`` where
 ``keys`` names the keys new since the previous sample (``{id: [node, kind, label]}``) and ``c`` lists
 ``[id, count, lat_sum_ns, lat_count, last_ns]`` of the keys whose counters changed; the others keep
-their values, except those listed by id in ``d``, which the sample no longer holds. The module
-imports no ROS package.
+their values, except those listed by id in ``d``, which the sample no longer holds; ``x`` lists
+``[id, a, b]`` of the keys whose two more totals changed. The module imports no ROS package.
 """
 
 from __future__ import annotations
@@ -46,6 +49,8 @@ NS_PER_MS = 1_000_000
 Key = tuple[str, str, Any]
 # count, lat_sum_ns, lat_count, last_ns
 Counters = tuple[int, int, int, int]
+# out: bytes, publishes measured
+Extras = tuple[int, int]
 
 DIRECTIONS = {"in": "inputs", "out": "outputs", "timer": "timers"}
 
@@ -56,6 +61,7 @@ class Sample:
     totals: dict[Key, Counters] = field(default_factory=dict)
     processes: int = 0
     untracked: int = 0
+    extras: dict[Key, Extras] = field(default_factory=dict)
 
 
 def rates_between(before: Sample, after: Sample) -> dict[str, Any]:
@@ -63,7 +69,9 @@ def rates_between(before: Sample, after: Sample) -> dict[str, Any]:
 
     Counters start at zero when their endpoint is created, so a key absent from the earlier sample
     counts from zero; a key without a message in the span carries ``silent_s``, the time since its
-    last one.
+    last one. An output with measured sizes carries ``size_b``, the mean size over the publishes
+    measured in the span (over the whole run when none was), and ``bps``, its rate times that
+    size.
     """
     interval_ns = max(after.t_ns - before.t_ns, 1)
     nodes: dict[str, dict[str, Any]] = {}
@@ -83,6 +91,14 @@ def rates_between(before: Sample, after: Sample) -> dict[str, Any]:
         if moved == 0 and last_ns > 0:
             record["silent_s"] = round((after.t_ns - last_ns) / NS_PER_S, 1)
         entry = nodes.setdefault(node, {"node": node, "inputs": [], "outputs": [], "timers": []})
+        extra = after.extras.get(key)
+        if kind == "out" and extra is not None and extra[1] > 0:
+            earlier_extra = before.extras.get(key, (0, 0))
+            measured = extra[1] - earlier_extra[1]
+            total = extra[0] - earlier_extra[0]
+            size = total / measured if measured > 0 and total >= 0 else extra[0] / extra[1]
+            record["size_b"] = round(size, 1)
+            record["bps"] = round(record["hz"] * size, 1)
         entry[DIRECTIONS[kind]].append(record)
     return {
         "time_ns": after.t_ns,
@@ -111,6 +127,7 @@ class RatesWriter:
         self.path = Path(path)
         self._ids: dict[Key, int] = {}
         self._last: dict[Key, Counters] = {}
+        self._last_extras: dict[Key, Extras] = {}
         self._max_bytes = max_bytes
         self._written = 0
         self._full = False
@@ -134,9 +151,17 @@ class RatesWriter:
         gone = [key for key in self._last if key not in sample.totals]
         for key in gone:
             del self._last[key]
+            self._last_extras.pop(key, None)
+        extras = []
+        for key, values in sample.extras.items():
+            if key in self._ids and self._last_extras.get(key) != values:
+                self._last_extras[key] = values
+                extras.append([self._ids[key], *values])
         if new:
             line["keys"] = new
         line["c"] = changed
+        if extras:
+            line["x"] = extras
         if gone:
             line["d"] = [self._ids[key] for key in gone]
         self._line(line)
@@ -204,6 +229,7 @@ class RatesRecord:
         wanted = sorted(set(indices))
         out: dict[int, Sample] = {}
         totals: dict[Key, Counters] = {}
+        extras: dict[Key, Extras] = {}
         for index, line in enumerate(self._lines):
             if index > wanted[-1]:
                 break
@@ -211,10 +237,17 @@ class RatesRecord:
                 key = self._keys.get(key_id)
                 if key is not None:
                     totals[key] = (count, lat_sum, lat_count, last_ns)
+            for key_id, first, second in line.get("x", []):
+                key = self._keys.get(key_id)
+                if key is not None:
+                    extras[key] = (first, second)
             for key_id in line.get("d", []):
                 totals.pop(self._keys.get(key_id), None)
+                extras.pop(self._keys.get(key_id), None)
             if index in wanted:
-                out[index] = Sample(line["t"], dict(totals), line.get("processes", 0), line.get("untracked", 0))
+                out[index] = Sample(
+                    line["t"], dict(totals), line.get("processes", 0), line.get("untracked", 0), dict(extras)
+                )
         return [out[index] for index in indices]
 
     def density(self) -> list[float]:
@@ -284,6 +317,8 @@ def format_rates(snapshot: dict[str, Any], pattern: Optional[str] = None) -> lis
                     extra = f"  comm {row['comm_ms']:.3f} ms"
                 elif "callback_ms" in row:
                     extra = f"  callback {row['callback_ms']:.3f} ms"
+                if "size_b" in row:
+                    extra += f"  {row['size_b']:.0f} B  {row['bps'] / 1000:.1f} kB/s"
                 if "silent_s" in row:
                     extra += f"  silent {row['silent_s']:g} s"
                 lines.append(f"  {arrow} {row['topic']:<60} {_hz(row['hz'])}{extra}")

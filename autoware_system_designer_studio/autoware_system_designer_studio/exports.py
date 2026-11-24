@@ -40,11 +40,8 @@ logger = logging.getLogger(__name__)
 INSTALL_DIR_NAME = "install"
 MANIFEST_FILENAME = "deployment.json"
 STRUCTURE_SUBDIR = "system_structure"
-LAUNCHER_SUBDIR = "launcher"
 BUILD_SCRIPTS_SUBDIR = "build_scripts"
-DEPLOYMENTS_SUBDIR = "deployments"
 LATENCY_SUBDIR = "latency"
-LAUNCH_FILE_SUFFIX = ".launch.xml"
 # A system's icon sits beside its design file: ``<System>.icon.svg``.
 ICON_FILE_SUFFIX = ".icon.svg"
 ICON_MAX_BYTES = 256 * 1024
@@ -164,41 +161,42 @@ class SystemExport:
         return [m for m in modes if isinstance(m, str)] if isinstance(modes, list) else []
 
     def compute_units(self) -> list[dict[str, str]]:
-        """Declared units (name, kind, description only); without a declaration, the units that have launchers."""
-        declared = self.manifest.get("compute_units")
-        if isinstance(declared, list) and declared:
-            return [
-                {
-                    "name": unit["name"],
-                    "kind": str(unit.get("kind") or KIND_ONBOARD),
-                    "description": str(unit.get("description") or ""),
-                }
-                for unit in declared
-                if isinstance(unit, dict) and isinstance(unit.get("name"), str)
-            ]
-        return [{"name": name, "kind": KIND_ONBOARD, "description": ""} for name in self._launcher_units()]
+        """Declared units (name, kind, description only); without a declaration, the units any mode launches."""
+        declared = self._declared_units()
+        if declared:
+            return declared
+        names = dict.fromkeys(name for mode in self.mode_keys() for name in self.launch_units(mode))
+        return [{"name": name, "kind": KIND_ONBOARD, "description": ""} for name in names]
 
-    def _launcher_units(self) -> list[str]:
-        launcher_root = self.export_dir / LAUNCHER_SUBDIR
-        mode_dirs: list[Path] = [launcher_root / mode for mode in self.mode_keys()]
-        deployments = launcher_root / DEPLOYMENTS_SUBDIR
-        if deployments.is_dir():
-            mode_dirs += [d / mode for d in deployments.iterdir() for mode in self.mode_keys()]
-        found = {
-            unit_dir.name
-            for mode_dir in mode_dirs
-            if mode_dir.is_dir()
-            for unit_dir in mode_dir.iterdir()
-            if unit_dir.is_dir() and any(unit_dir.glob(f"*{LAUNCH_FILE_SUFFIX}"))
-        }
-        return sorted(found)
+    def launch_units(self, mode: str) -> list[str]:
+        """Units the manifest records as launched in ``mode``; without the record, the declared onboard units.
+
+        The launcher tree is not listed: files left by an earlier build would pass for units.
+        """
+        recorded = self.manifest.get("launch_units")
+        if isinstance(recorded, dict):
+            units = recorded.get(mode)
+            return [name for name in units if isinstance(name, str) and name] if isinstance(units, list) else []
+        return [unit["name"] for unit in self._declared_units() if unit["kind"] == KIND_ONBOARD]
+
+    def _declared_units(self) -> list[dict[str, str]]:
+        declared = self.manifest.get("compute_units")
+        if not isinstance(declared, list):
+            return []
+        return [
+            {
+                "name": unit["name"],
+                "kind": str(unit.get("kind") or KIND_ONBOARD),
+                "description": str(unit.get("description") or ""),
+            }
+            for unit in declared
+            if isinstance(unit, dict) and isinstance(unit.get("name"), str)
+        ]
 
     def build_script_units(self, mode: str) -> list[str]:
-        """Compute units with a generated build script in ``mode``; a unit without packages has none."""
+        """Launched units of ``mode`` with a generated build script; a unit without packages has none."""
         scripts_dir = self.export_dir / BUILD_SCRIPTS_SUBDIR / mode
-        if not scripts_dir.is_dir():
-            return []
-        return sorted(p.name[len("build_") : -len(".sh")] for p in scripts_dir.glob("build_*.sh") if p.is_file())
+        return sorted(unit for unit in self.launch_units(mode) if (scripts_dir / f"build_{unit}.sh").is_file())
 
     def deploy_variants(self) -> list[dict[str, Any]]:
         variants = self.manifest.get("deploy_variants")

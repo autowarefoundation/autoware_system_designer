@@ -417,9 +417,9 @@ def test_a_peer_unit_is_launched_followed_and_shut_down_through_this_daemon(unit
     assert main.call("monitor.follow", compute_unit="sub_ecu", client="page-1") == {"interval_s": 2.0}
     _until(lambda: main.events.of(launch.TOPIC_MONITOR), "relayed monitor")
     peer_session = sub.daemon.launch.session("sub_ecu")
-    assert peer_session.follows == {"/demo/talker"} and peer_session.monitors == {"page-1"}
+    assert peer_session.follows == {"/demo/talker"} and peer_session.feeds["monitor"] == {"page-1"}
     main.loop.call_soon_threadsafe(main.daemon.peers.release_follows)
-    _until(lambda: not peer_session.follows and not peer_session.monitors, "released follows")
+    _until(lambda: not peer_session.follows and not peer_session.feeds["monitor"], "released follows")
 
     assert main.call("launch.shutdown", compute_unit="sub_ecu") == {"shutting_down": True}
     _until(lambda: main.unit("sub_ecu")["status"] == "available", "exit of the peer's launch")
@@ -617,7 +617,7 @@ def test_a_reconnected_peer_keeps_its_launch_and_the_rate_followers(units, monke
     main.call("monitor.follow", compute_unit="sub_ecu", client="page-1")
     main.call("launch.follow", compute_unit="sub_ecu", path="/demo/talker")
     peer_session = sub.daemon.launch.session("sub_ecu")
-    assert peer_session.monitors == {"page-1"}
+    assert peer_session.feeds["monitor"] == {"page-1"}
 
     # The peer loses the stream of this daemon and with it every follow.
     link = main.daemon.peers.links[0]
@@ -625,7 +625,7 @@ def test_a_reconnected_peer_keeps_its_launch_and_the_rate_followers(units, monke
     units.wait_peer(peers.PEER_UNREACHABLE)
     _until(lambda: not peer_session.follows, "follows dropped by the peer")
     units.wait_peer(peers.PEER_CONNECTED)
-    _until(lambda: peer_session.monitors == {"page-1"}, "rate follow made again")
+    _until(lambda: peer_session.feeds["monitor"] == {"page-1"}, "rate follow made again")
     assert peer_session.follows == set()
     assert main.unit("sub_ecu")["status"] == "running"
     assert main.call("launch.status")["sessions"][0]["job"] == "sub_ecu/launch-1"

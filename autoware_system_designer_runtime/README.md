@@ -72,6 +72,7 @@ autoware-system-designer-launch SYSTEM.json \
     --control /run/user/1000/asd.sock \ # control channel on a Unix socket (see below)
     --control-policy guard \            # guard (default) | open: interlock on the operation mode
     --no-tracer \                       # no rate counters and no measurement (see Live rates)
+    --trace-sizes \                     # sample message sizes for the whole run (see Live rates)
     --log-level DEBUG
 ```
 
@@ -92,8 +93,8 @@ autoware runtime [? for help] > quit
 ```
 
 Commands: `status`, `stop <name>`, `restart <name>`, `kill <name>`, `measure start|stop|status`
-(see [Latency measurement](#latency-measurement)), `rates [name]` (see [Live rates](#live-rates)),
-`quit`, `help` / `?`.
+(see [Latency measurement](#latency-measurement)), `rates [name]`, `trace sizes on|off` (see
+[Live rates](#live-rates)), `resources [name]` (see [Resource use](#resource-use)), `quit`, `help` / `?`.
 
 A member is named by its structural path in the design; a node without one is named
 `<fully qualified name>#<launch state>`.
@@ -134,6 +135,10 @@ requests and gets one response each:
 | `monitor.sample`                                  | `interval`?         | rates over `interval` seconds (default 1), the `monitor` event's body        |
 | `monitor.follow`                                  | -                   | `{"interval_s"}`; `monitor` events every interval until unfollowed           |
 | `monitor.unfollow`                                | -                   | `{"released": bool}`                                                         |
+| `monitor.options`                                 | `sizes`?            | `{"sizes"}`, the switch this client wants on; on while any wants             |
+| `resources.sample`                                | `interval`?         | resource use over `interval` seconds (default 1), the `resources` body       |
+| `resources.follow`                                | -                   | `{"interval_s"}`; `resources` events every second until unfollowed           |
+| `resources.unfollow`                              | -                   | `{"released": bool}`                                                         |
 | `shutdown`                                        | -                   | `{"shutting_down": true}`                                                    |
 
 A member record is `{"path", "state", "detail", "time", "restarts", "respawns"}`; `path` is the
@@ -371,7 +376,13 @@ rates over 1 s, 12 traced processes
 
 Over the control channel: `monitor.sample` once, `monitor.follow` for a `monitor` event every 2 s. A sample is answered after its interval; the requests behind it are answered meanwhile.
 
+Message sizes count inside the nodes and are off unless asked for: `--trace-sizes` keeps them on for the whole run, `monitor.options {"sizes": true}` switches them for one control client while it wants them (the hello's `tracer_options` and the `monitor.options` event give the state). With sizes on, an output row gains `size_b`, the mean serialized size of one sampled publish per second (computed from the message type, nothing is serialized), and `bps`, rate times size; serialized publishes always carry their size.
+
 Every run also keeps its rates: `<log-dir>/rates.jsonl` records the counters per node and topic every 10 s and once more at shutdown, cumulative over the run (a process that ends or respawns keeps its counts), so the rates over any span of a past run are the difference of two samples. A sample line lists only the counters that changed since the previous one. `autoware_system_designer_runtime.rates_record` (no ROS import) reads it back: `RatesRecord.load(path).rates(until_ns=..., span_s=...)`, or `rates(start=..., sample=...)` between two sample numbers, the whole run by default; `density()` gives the counted events per second over each sample interval. A publish whose every matched reader is intra-process does not reach `rcl_publish`, so it is not counted; the measurement window's probe subscriptions cover that case.
+
+## Resource use
+
+The runtime reads the CPU, memory and GPU use of its running members from `/proc` and the GPU driver, only while a control client follows it (`resources.follow`, a `resources` event every second) or asks once (`resources.sample`); nothing runs inside the nodes. A member is its whole process group, so a `ros2 run` leader and its node add up. Per member: `cpu` in cores over the interval, `rss_kb` every reading, `pss_kb` every 10 s, `threads`, `procs`, and, where the GPU reports processes, `gpu_mem_kb` and `gpu_util`. Per unit: `host` (`cpus`, `cpu`, `mem_total_kb`, `mem_used_kb`) and `gpu` (`source` `nvml` | `sysfs` | null, `per_process`, `note`, `devices`). NVML (`libnvidia-ml.so.1` through ctypes) gives device load and memory and per-process use; it reports host pids, so in a nested pid namespace only the device totals are shown. A Jetson has no NVML: its device load comes from sysfs and its GPU memory is the unified RAM in each process's RSS. A composable node shares its container's process, so its use is the container's.
 
 ## Latency measurement
 

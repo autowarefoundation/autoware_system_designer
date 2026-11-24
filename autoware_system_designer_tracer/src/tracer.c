@@ -16,11 +16,16 @@
 // function through dlsym(RTLD_NEXT) and hands what it saw to one observe_*
 // function. Two tiers sit behind them:
 //   counters  always on: atomic adds on the endpoint's slot of <pid>.stats;
+//             a serialized publish adds its size;
 //   events    while the control file says so: one fixed record in <pid>.trace.
+// One more counter follows the control file, off by default:
+//   sizes     one publish per publisher and ASD_SIZE_SAMPLE_NS has its serialized
+//             size computed from the type's introspection (size_probe.h, no
+//             serialization or copy) and added to the publisher's slot.
 // Init hooks register the endpoint's slot and append a name-table line; fini
-// hooks release the slot. No hook inspects a message or takes a lock on the
-// per-message path. The tracer is armed by ASD_TRACE_DIR; without it every hook
-// is a plain forward. The files open on the first hook, so a process that never
+// hooks release the slot. No hook takes a lock on the per-message path, and
+// only a sampled publish reads its message's lengths. The tracer is armed by
+// ASD_TRACE_DIR; without it every hook is a plain forward. The files open on the first hook, so a process that never
 // reaches rcl leaves none.
 //
 // Entry points per ROS distribution (add a row and a hook for a new one):
@@ -63,11 +68,23 @@
 #include <rmw/rmw.h>
 
 #include "replay.h"
+#include "size_probe.h"
 #include "writer.h"
 
 // ---- state -------------------------------------------------------------------
 
 enum tracer_state { TRACER_UNSET = 0, TRACER_OFF = 1, TRACER_ON = 2 };
+
+enum layout_state { LAYOUT_UNSET = 0, LAYOUT_PENDING = 1, LAYOUT_READY = 2 };
+
+// Per publisher slot: its message type, the type's size layout once a sample looked it
+// up, and the time its next size is due.
+typedef struct slot_info {
+  const rosidl_message_type_support_t * type;
+  asd_size_layout_t layout;
+  int layout_state;
+  uint64_t next_size_ns;
+} slot_info_t;
 
 // One process's tracer. `events` opens on the first record the control file lets through.
 typedef struct tracer {
@@ -78,6 +95,7 @@ typedef struct tracer {
   const asd_control_t * control;
   asd_names_t names;
   asd_stats_t stats;
+  slot_info_t * slot_info;  // one per stats slot
   asd_events_t events;
 } tracer_t;
 
@@ -162,6 +180,8 @@ static int open_locked(void)
   }
   if (asd_stats_open(&g.stats, dir, pid, slots) != 0) {
     fprintf(stderr, "[asd_tracer] cannot open counters in %s; counters disabled\n", dir);
+  } else {
+    g.slot_info = calloc(g.stats.capacity, sizeof(slot_info_t));
   }
   strcpy(g.dir, dir);
   g.events_capacity = env_count(ASD_TRACE_CAPACITY_ENV, ASD_TRACE_DEFAULT_CAPACITY, ASD_TRACE_MAX_CAPACITY);
@@ -204,6 +224,11 @@ static inline bool recording(void)
     pthread_mutex_unlock(&g_state_lock);
   }
   return state == TRACER_ON;
+}
+
+static inline bool sizes_on(void)
+{
+  return g.control != NULL && __atomic_load_n(&g.control->sizes, __ATOMIC_RELAXED) != 0;
 }
 
 __attribute__((constructor)) static void tracer_init(void)
@@ -262,11 +287,61 @@ static uint64_t observe_trigger(const void * handle, asd_stats_slot_t ** slot_ou
   return t_ns;
 }
 
-static void observe_publish(const void * publisher, uint64_t t_in, uint8_t flags)
+// The size layout of a publisher's type, looked up by the first sample, which may load
+// the type's introspection library; NULL members while it is unknown or absent.
+static asd_size_layout_t publisher_layout(slot_info_t * info, const rosidl_message_type_support_t * type)
+{
+  int state = __atomic_load_n(&info->layout_state, __ATOMIC_ACQUIRE);
+  if (state == LAYOUT_READY) {
+    return info->layout;
+  }
+  asd_size_layout_t none = {NULL, 0, 0};
+  int unset = LAYOUT_UNSET;
+  if (state != LAYOUT_UNSET ||
+      !__atomic_compare_exchange_n(
+        &info->layout_state, &unset, LAYOUT_PENDING, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+  {
+    return none;
+  }
+  info->layout = asd_size_layout(type);
+  __atomic_store_n(&info->layout_state, LAYOUT_READY, __ATOMIC_RELEASE);
+  return info->layout;
+}
+
+// Adds the serialized size of a publish's message when its publisher's next size is
+// due; one caller claims each due time.
+static void sample_size(asd_stats_slot_t * slot, const void * ros_message, uint64_t t_ns)
+{
+  if (g.slot_info == NULL) {
+    return;
+  }
+  slot_info_t * info = &g.slot_info[slot - g.stats.slots];
+  const rosidl_message_type_support_t * type = __atomic_load_n(&info->type, __ATOMIC_ACQUIRE);
+  uint64_t due = __atomic_load_n(&info->next_size_ns, __ATOMIC_RELAXED);
+  if (type == NULL || t_ns < due ||
+      !__atomic_compare_exchange_n(
+        &info->next_size_ns, &due, t_ns + ASD_SIZE_SAMPLE_NS, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+  {
+    return;
+  }
+  asd_size_layout_t layout = publisher_layout(info, type);
+  if (layout.members != NULL) {
+    asd_stats_bytes(slot, asd_size_of(layout, ros_message));
+  }
+}
+
+// `ros_message` is the message of a plain publish, `bytes` the size of a serialized one.
+static void observe_publish(
+  const void * publisher, uint64_t t_in, uint8_t flags, const void * ros_message, uint64_t bytes)
 {
   asd_stats_slot_t * slot = asd_stats_find(&g.stats, publisher);
   if (slot != NULL) {
     asd_stats_count(slot, t_in);
+    if (flags & ASD_FLAG_SERIALIZED) {
+      asd_stats_bytes(slot, bytes);
+    } else if (ros_message != NULL && sizes_on()) {
+      sample_size(slot, ros_message, t_in);
+    }
     if (tls_trigger_ns != 0 && t_in >= tls_trigger_ns && t_in - tls_trigger_ns <= ASD_STATS_LATENCY_LIMIT_NS) {
       asd_stats_latency(slot, (int64_t)(t_in - tls_trigger_ns));
       if (tls_trigger_slot != NULL) {
@@ -386,8 +461,8 @@ static void slot_base(int64_t slot, char out[96])
 }
 
 // Name-table line: time, kind, handle, node, topic, publisher gid, stats slot (-1: none),
-// the slot's counters.
-static void register_endpoint(
+// the slot's counters. Returns the slot.
+static int64_t register_endpoint(
   const char * kind, uint8_t slot_kind, const void * handle, const rcl_node_t * node, const char * topic,
   const rmw_gid_t * gid)
 {
@@ -405,6 +480,7 @@ static void register_endpoint(
     (unsigned long long)(uintptr_t)handle, fqn != NULL ? fqn : "?", topic != NULL ? topic : "?", gid_text,
     (long long)slot, base);
   asd_names_line(&g.names, line);
+  return slot;
 }
 
 // Name-table line: time, "timer", handle, period, stats slot (-1: none), the slot's counters.
@@ -442,10 +518,11 @@ typedef rcl_ret_t (*publish_serialized_fn)(
   const rcl_publisher_t *, const rcl_serialized_message_t *, rmw_publisher_allocation_t *);
 typedef rcl_ret_t (*publish_loaned_fn)(const rcl_publisher_t *, void *, rmw_publisher_allocation_t *);
 
-static void after_publish(const rcl_publisher_t * publisher, uint64_t t_in, uint8_t flags)
+static void after_publish(
+  const rcl_publisher_t * publisher, uint64_t t_in, uint8_t flags, const void * ros_message, uint64_t bytes)
 {
   if (tracing()) {
-    observe_publish(publisher, t_in, flags);
+    observe_publish(publisher, t_in, flags, ros_message, bytes);
   }
   if (asd_replay_armed()) {
     asd_replay_publish(publisher);
@@ -462,7 +539,7 @@ rcl_ret_t rcl_publish(
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, ros_message, allocation);
   if (ret == RCL_RET_OK) {
-    after_publish(publisher, t_in, 0);
+    after_publish(publisher, t_in, 0, ros_message, 0);
   }
   return ret;
 }
@@ -478,7 +555,7 @@ rcl_ret_t rcl_publish_serialized_message(
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, serialized_message, allocation);
   if (ret == RCL_RET_OK) {
-    after_publish(publisher, t_in, ASD_FLAG_SERIALIZED);
+    after_publish(publisher, t_in, ASD_FLAG_SERIALIZED, NULL, serialized_message->buffer_length);
   }
   return ret;
 }
@@ -493,7 +570,7 @@ rcl_ret_t rcl_publish_loaned_message(
   uint64_t t_in = asd_now_realtime_ns();
   rcl_ret_t ret = real(publisher, ros_message, allocation);
   if (ret == RCL_RET_OK) {
-    after_publish(publisher, t_in, ASD_FLAG_LOANED);
+    after_publish(publisher, t_in, ASD_FLAG_LOANED, NULL, 0);
   }
   return ret;
 }
@@ -994,7 +1071,14 @@ rcl_ret_t rcl_publisher_init(
     if (rmw_pub != NULL && rmw_get_gid_for_publisher(rmw_pub, &gid) == RMW_RET_OK) {
       gid_ptr = &gid;
     }
-    register_endpoint("pub", ASD_SLOT_PUB, publisher, node, rcl_publisher_get_topic_name(publisher), gid_ptr);
+    int64_t slot =
+      register_endpoint("pub", ASD_SLOT_PUB, publisher, node, rcl_publisher_get_topic_name(publisher), gid_ptr);
+    if (slot >= 0 && g.slot_info != NULL) {
+      slot_info_t * info = &g.slot_info[slot];
+      __atomic_store_n(&info->next_size_ns, 0, __ATOMIC_RELAXED);
+      __atomic_store_n(&info->layout_state, LAYOUT_UNSET, __ATOMIC_RELAXED);
+      __atomic_store_n(&info->type, type_support, __ATOMIC_RELEASE);
+    }
   }
   if (ret == RCL_RET_OK && asd_replay_armed()) {
     asd_replay_endpoint(

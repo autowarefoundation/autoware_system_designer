@@ -15,6 +15,7 @@
   const OPTION_KEYS = {
     measure: "workbench.launchMeasure",
     respawn: "workbench.launchRespawn",
+    trace_sizes: "workbench.launchTraceSizes",
   };
   const METHODS = [
     ["native", "Runtime"],
@@ -151,6 +152,7 @@
         compute_unit: unit,
         measure: option("measure"),
         respawn: option("respawn"),
+        trace_sizes: option("trace_sizes"),
       };
       if (row.deploy) params.deploy = row.deploy;
       errors.delete(unit);
