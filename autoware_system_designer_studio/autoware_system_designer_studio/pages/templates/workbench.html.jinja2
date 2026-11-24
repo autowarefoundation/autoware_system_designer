@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <title>{{ deployment_name }} - Autoware System Designer Studio</title>
-    <link rel="icon" type="image/svg+xml" href="{{ icon }}" />
+    {% for scheme, href in icons.items() %}
+    <link rel="icon" type="image/svg+xml" href="{{ href }}" media="(prefers-color-scheme: {{ scheme }})" />
+    {% endfor %}
     {% for href in stylesheets %}
     <link rel="stylesheet" href="{{ href }}" />
     {% endfor %}
@@ -19,6 +21,12 @@
   </head>
   <body class="workbench">
     <header id="topbar">
+      <div id="studio-brand">
+        {% for theme, href in brand_icons.items() %}
+        <img class="studio-brand-icon theme-{{ theme }}-only" src="{{ href }}" alt="" />
+        {% endfor %}
+        <span class="studio-brand-title">Autoware System Designer</span>
+      </div>
       <div id="system-identity">
         <button
           id="system-menu-button"
