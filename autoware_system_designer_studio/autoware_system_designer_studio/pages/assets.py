@@ -28,6 +28,8 @@ BUNDLE_SUBDIRS = ("css", "js", "img")
 
 # Tab icon of every page.
 FAVICON = "img/favicon.svg"
+# Studio mark beside the systems index title.
+BRAND_ICON = "img/awsd_icon.svg"
 
 # Window variable a mode's data script fills: the exported system structure, keyed by mode.
 DATA_GLOBAL = "systemStructureData"

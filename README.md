@@ -1,3 +1,5 @@
+<img src="autoware_system_designer_studio/autoware_system_designer_studio/web/img/awsd_icon.svg" alt="AWSD" height="96">
+
 # Autoware System Designer
 
 **Autoware System Designer** is a comprehensive toolset designed to define, build, and deploy Autoware systems in a modular and structured way. It allows developers to describe the software architecture using configuration files (YAML) and automatically generates system artifacts such as ROS 2 launch files and parameter templates, which the studio visualizes.

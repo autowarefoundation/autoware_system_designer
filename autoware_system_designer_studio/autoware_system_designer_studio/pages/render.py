@@ -169,6 +169,7 @@ class Site:
         return self._env.get_template("systems_index.html.jinja2").render(
             systems=self._system_entries(),
             icon=_bundle_links("", (assets.FAVICON,))[0],
+            brand_icon=_bundle_links("", (assets.BRAND_ICON,))[0],
             stylesheets=_bundle_links("", assets.PAGE_STYLESHEETS),
             scripts=_bundle_links("", assets.PAGE_SCRIPTS),
         )

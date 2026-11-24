@@ -23,6 +23,16 @@ body.simple-page h1 {
   margin-top: 0;
 }
 
+body.simple-page h1.brand-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+body.simple-page .brand-icon {
+  height: 44px;
+}
+
 body.simple-page .nav-links {
   margin-bottom: 20px;
 }
