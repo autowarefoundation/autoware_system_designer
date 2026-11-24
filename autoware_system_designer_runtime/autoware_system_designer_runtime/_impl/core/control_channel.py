@@ -524,7 +524,7 @@ class ControlChannel:
                 continue
             try:
                 monitor = self._commands.resources
-                reading = monitor.read()
+                reading = await asyncio.get_running_loop().run_in_executor(None, monitor.read)
                 data = _encode({"event": "resources", **monitor.usage(previous, reading)})
                 for client in followers:
                     client.send_bytes(data)

@@ -69,3 +69,18 @@ def test_a_gone_member_is_left_out():
     proc.wait()
     monitor = _monitor({"/gone": proc.pid})
     assert monitor.usage(None, monitor.read())["members"] == {}
+
+
+def test_pss_reads_are_spread_over_the_readings(group, monkeypatch):
+    from autoware_system_designer_runtime._impl.measure import resources
+
+    reads = []
+    monkeypatch.setattr(resources, "_read_pss_kb", lambda pid: reads.append(pid) or 100)
+    monkeypatch.setattr(resources, "PSS_SHARES", 2)
+    monitor = _monitor({"/spin": group.pid})
+    first = monitor.read()
+    assert len(reads) == 1 and "pss_kb" not in monitor.usage(None, first)["members"]["/spin"]
+    second = monitor.read()
+    assert len(set(reads)) == 2 and monitor.usage(first, second)["members"]["/spin"]["pss_kb"] == 200
+    monitor.read()
+    assert len(reads) == 2

@@ -18,8 +18,11 @@ A member is its whole process group (a ``ros2 run`` leader and the node it start
 memory are the sums over the processes of the group. CPU is in cores (1.0 = one core busy over the
 span), from the difference of two readings; memory is the resident set (RSS) of every reading and
 the proportional set (PSS, shared pages split among their users) at a slower interval, since
-``smaps_rollup`` walks the whole address space. Nothing runs inside the nodes: the readings come
-from this process, and only while someone asks for them.
+``smaps_rollup`` walks the whole address space under the process's memory map lock; each reading
+refreshes only a share of the processes, so every one is read once per interval and no reading
+walks them all. Nothing runs inside the nodes: the readings come from this process, and only while
+someone asks for them. A reading blocks on file and driver calls, so callers on an event loop take
+it in a worker thread; readings are serialized.
 
 GPU: per device load and memory through NVML (``libnvidia-ml.so.1``) when the driver has it, per
 process memory and utilization where NVML reports the members' pids; NVML reports host pids, so in
@@ -32,7 +35,9 @@ from __future__ import annotations
 import ctypes
 import glob
 import logging
+import math
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -41,8 +46,10 @@ logger = logging.getLogger(__name__)
 
 _TICK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
 _PAGE_KB = (os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096) // 1024
-# Interval of the PSS reads, and of the scans for the processes of each group.
+# Interval of the PSS reads of one process, and of the scans for the processes of each group.
 PSS_INTERVAL_S = 10.0
+# Readings expected per PSS interval; each refreshes the stalest share of the processes.
+PSS_SHARES = 10
 GROUP_SCAN_S = 5.0
 # Device load files of Jetson GPUs, per mille.
 _SYSFS_GPU_LOAD = (
@@ -75,6 +82,8 @@ class Reading:
     mem_total_kb: int = 0
     mem_available_kb: int = 0
     gpu: Optional[dict[str, Any]] = None
+    # PSS in KB of the processes read so far, by (pid, start).
+    pss: dict[tuple[int, int], int] = field(default_factory=dict)
 
 
 def _read_stat(pid: int) -> Optional[tuple[int, _Proc]]:
@@ -347,7 +356,7 @@ class ResourceMonitor:
     """Reads the CPU, memory and GPU use of the members whose leader pids ``leaders()`` returns.
 
     ``read`` takes a reading, ``usage`` turns two readings into the use over the span between them,
-    so concurrent callers keep readings of their own.
+    so concurrent callers keep readings of their own; ``read`` may run in any thread.
     """
 
     def __init__(self, leaders: Callable[[], dict[str, int]], *, gpu: Optional[GpuReader] = None) -> None:
@@ -359,6 +368,7 @@ class ResourceMonitor:
         self._scanned = 0.0
         # (pid, start) -> (PSS in KB, monotonic time of the read).
         self._pss: dict[tuple[int, int], tuple[int, float]] = {}
+        self._lock = threading.Lock()
 
     @property
     def gpu(self) -> GpuReader:
@@ -369,6 +379,10 @@ class ResourceMonitor:
         return self._gpu
 
     def read(self) -> Reading:
+        with self._lock:
+            return self._read()
+
+    def _read(self) -> Reading:
         now = time.monotonic()
         leaders = self._leaders()
         reading = Reading(t=now, leaders=dict(leaders))
@@ -408,9 +422,9 @@ class ResourceMonitor:
             if span is not None and earlier is not None:
                 ticks = sum(proc.ticks - earlier[key].ticks for key, proc in procs.items() if key in earlier)
                 entry["cpu"] = round(max(ticks, 0) / _TICK / span, 3)
-            pss = [self._pss.get(key) for key in procs]
+            pss = [after.pss.get(key) for key in procs]
             if pss and all(value is not None for value in pss):
-                entry["pss_kb"] = sum(value[0] for value in pss)
+                entry["pss_kb"] = sum(pss)
             if self._gpu is not None and self._gpu.per_process:
                 used = [gpu_procs[pid] for pid, _ in procs if pid in gpu_procs]
                 if used:
@@ -468,17 +482,16 @@ class ResourceMonitor:
         return groups
 
     def _refresh_pss(self, reading: Reading, now: float) -> None:
-        live: set[tuple[int, int]] = set()
-        for procs in reading.members.values():
-            for key in procs:
-                live.add(key)
-                held = self._pss.get(key)
-                if held is None or now - held[1] >= PSS_INTERVAL_S:
-                    value = _read_pss_kb(key[0])
-                    if value is not None:
-                        self._pss[key] = (value, now)
+        live = {key for procs in reading.members.values() for key in procs}
         for key in [key for key in self._pss if key not in live]:
             del self._pss[key]
+        stale = [key for key in live if key not in self._pss or now - self._pss[key][1] >= PSS_INTERVAL_S]
+        stale.sort(key=lambda key: self._pss[key][1] if key in self._pss else -math.inf)
+        for key in stale[: math.ceil(len(live) / PSS_SHARES)]:
+            value = _read_pss_kb(key[0])
+            if value is not None:
+                self._pss[key] = (value, now)
+        reading.pss = {key: held[0] for key, held in self._pss.items()}
 
 
 def format_resources(usage: dict[str, Any], pattern: Optional[str] = None) -> list[str]:

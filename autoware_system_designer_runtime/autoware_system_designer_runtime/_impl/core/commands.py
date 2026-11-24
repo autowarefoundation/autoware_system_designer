@@ -298,9 +298,10 @@ class RuntimeCommands:
         if not isinstance(interval, (int, float)) or isinstance(interval, bool) or not 0.1 <= interval <= 60:
             raise CommandError("invalid_params", "interval must be a number of seconds in [0.1, 60]")
         monitor = self.resources
-        before = monitor.read()
+        loop = asyncio.get_running_loop()
+        before = await loop.run_in_executor(None, monitor.read)
         await asyncio.sleep(interval)
-        return monitor.usage(before, monitor.read())
+        return monitor.usage(before, await loop.run_in_executor(None, monitor.read))
 
     def shutdown(self) -> None:
         self._guard_check("shutdown")
