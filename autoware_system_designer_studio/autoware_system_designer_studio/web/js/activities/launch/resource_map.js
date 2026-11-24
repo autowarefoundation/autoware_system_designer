@@ -5,12 +5,14 @@
 // use of all its nodes, unless the container split is on, which sizes each
 // composable node by its callbacks' CPU and leaves the container the rest
 // (executor, DDS and the nodes' own threads). The split is off unless
-// switched on, since it counts inside the nodes. Nodes under 1 % of their unit's total gather in one
-// idle block per unit. The blocks are laid out again once per window, at most
-// every RELAYOUT_MAX_S, and at once when the resource or the window changes
-// or a unit has its first values;
-// colours and tooltips follow every reading. A click selects a node as the
-// store's `entity`, shared with the other views.
+// switched on, since it counts inside the nodes; without it the composable
+// nodes have no block. Nodes under 0.2 % of their unit's total gather in one
+// low block per module; a node keeps its block until it falls under 0.1 %.
+// The blocks are laid out again once per window, at most every
+// RELAYOUT_MAX_S, and at once when the resource or the window changes or a
+// unit has its first values; colours and the detail panel follow every
+// reading. A click selects a node as the store's `entity`, shared with the
+// other views, and lists the clicked block's nodes in the detail panel.
 (function () {
   const SD = window.SD;
   const { element, segmented } = SD.widgets;
@@ -23,52 +25,75 @@
   ];
   const METRIC_KEY = "launch.resources.metric";
   const RELAYOUT_MAX_S = 10;
-  // Share of a unit's total under which a node goes to the idle block, and
-  // the share of the idle block.
-  const IDLE_SHARE = 0.01;
-  const IDLE_AREA = 0.03;
+  // Share of a unit's total under which a node goes to its module's low
+  // block, the share under which a node holding a block of its own does, and
+  // the least share of a low block.
+  const LOW_SHARE = 0.002;
+  const LOW_KEEP_SHARE = 0.001;
+  const LOW_AREA = 0.002;
   const APPLY_DELAY_MS = 80;
-  const IDLE_PREFIX = "__idle__";
+  const LOW_PREFIX = "__low__";
 
   function isComposable(instance) {
     return instance.launcher?.launch_state === "composable_node";
   }
 
-  // `section` with the nodes valued under the cut moved into one idle node;
-  // `valueOf(node)` gives a node's value. A module left without nodes is
-  // dropped.
-  function groupIdle(section, valueOf) {
+  // `section` with the nodes valued under the cut moved into one low node
+  // per module; `valueOf(node)` gives a node's value, a node path in `shown`
+  // holds its block down to the keep cut, and nodes for which `held(node)`
+  // holds are left out, their use counted in another block. The paths of the
+  // nodes keeping a block are added to `kept`. A module left without nodes
+  // is dropped.
+  function groupLow(
+    section,
+    valueOf,
+    { held = () => false, shown = new Set(), kept = new Set() } = {},
+  ) {
     let total = 0;
     const visitTotal = (instance) => {
-      if (instance.entity_type === "node") total += valueOf(instance);
-      else (instance.children || []).forEach(visitTotal);
+      if (instance.entity_type === "node") {
+        if (!held(instance)) total += valueOf(instance);
+      } else (instance.children || []).forEach(visitTotal);
     };
     section.children.forEach(visitTotal);
-    const cut = total * IDLE_SHARE;
-    const idle = [];
-    const keep = (instance) => {
-      if (instance.entity_type === "node") {
-        const value = valueOf(instance);
-        if (value > 0 && value >= cut) return instance;
-        idle.push(instance);
-        return null;
-      }
-      const children = (instance.children || []).map(keep).filter(Boolean);
-      return children.length ? { ...instance, children } : null;
-    };
-    const children = section.children.map(keep).filter(Boolean);
-    if (idle.length)
-      children.push({
-        entity_type: "node",
-        idle: true,
-        name: "idle",
-        unique_id: `${IDLE_PREFIX}${section.name}`,
-        compute_unit: section.name,
-        members: idle,
-        weight: total > 0 ? total * IDLE_AREA : 1,
-        title: `${idle.length} node${idle.length === 1 ? "" : "s"} under ${Math.round(IDLE_SHARE * 100)} % of the unit, or without a process of their own`,
+    const cut = total * LOW_SHARE;
+    const keepCut = total * LOW_KEEP_SHARE;
+    const ownsBlock = (node, value) =>
+      value > 0 && (value >= cut || (shown.has(node.path) && value >= keepCut));
+    // `children` with the low nodes gathered in one block after the others.
+    const group = (children, owner) => {
+      const low = [];
+      const out = [];
+      children.forEach((child) => {
+        if (child.entity_type !== "node") {
+          const module = group(child.children || [], child);
+          if (module.length) out.push({ ...child, children: module });
+          return;
+        }
+        if (held(child)) return;
+        const value = valueOf(child);
+        if (ownsBlock(child, value)) {
+          kept.add(child.path);
+          out.push(child);
+        } else low.push(child);
       });
-    return { ...section, children };
+      if (low.length) {
+        const sum = low.reduce((acc, node) => acc + valueOf(node), 0);
+        out.push({
+          entity_type: "node",
+          low: true,
+          name: "low",
+          unique_id: `${LOW_PREFIX}${section.name}/${owner?.unique_id ?? ""}`,
+          compute_unit: section.name,
+          owner: owner?.path || owner?.name || section.name,
+          members: low,
+          weight: total > 0 ? Math.max(sum, total * LOW_AREA) : 1,
+          title: `${low.length} node${low.length === 1 ? "" : "s"} under ${LOW_SHARE * 100} % of the unit, or without readings`,
+        });
+      }
+      return out;
+    };
+    return { ...section, children: group(section.children, null) };
   }
 
   function resourceMap(container, config, store, resources) {
@@ -82,6 +107,7 @@
       metric = value;
       SD.storage.set(METRIC_KEY, value);
       metricSwitch.mark(value);
+      shown = new Set();
       relayout();
     });
     metricSwitch.mark(metric);
@@ -102,6 +128,7 @@
     splitInput.type = "checkbox";
     splitInput.addEventListener("change", () => {
       resources.setSplit(splitInput.checked);
+      shown = new Set();
       relayout();
     });
     splitWrapper.append(splitInput, element("span", "", "Split containers"));
@@ -115,8 +142,11 @@
       note,
     );
     container.appendChild(toolbar);
+    const body = element("div", "resource-body");
     const host = element("div", "diagram-container");
-    container.appendChild(host);
+    const detail = element("div", "resource-detail");
+    body.append(host, detail);
+    container.appendChild(body);
 
     let module = null;
     let entities = [];
@@ -130,6 +160,12 @@
     let values = new Map();
     let laidUnits = new Set();
     let laidSplit = false;
+    // Paths of the nodes holding a block of their own at the last layout, and
+    // the low blocks of that layout by id.
+    let shown = new Set();
+    let lowBlocks = new Map();
+    // Id of the low block shown in the detail panel; null for the store's entity.
+    let selectedLow = null;
 
     function valueOfUsage(usage) {
       if (!usage) return 0;
@@ -246,6 +282,112 @@
       note.textContent = parts.join(" · ");
     }
 
+    // Value of the member at `path` over the window now; a composable node's
+    // is its callbacks' CPU while split.
+    function liveValue(path, composable = false) {
+      if (!composable) return valueOfUsage(resources.usage(path));
+      return splitting() ? resources.nodeCpu(path) || 0 : 0;
+    }
+
+    // One row of the detail list: a node path with its value, selecting the
+    // node on click.
+    function detailRow(path, value) {
+      const row = element("li", "resource-detail-row");
+      const name = element("span", "resource-detail-path", path);
+      name.title = path;
+      row.append(name, element("span", "resource-detail-value", value));
+      const entity = entities.find((e) => e.member_path === path);
+      if (entity)
+        row.addEventListener("click", () => store.set("entity", entity.key));
+      return row;
+    }
+
+    function detailList(heading, rows) {
+      const section = element("div", "resource-detail-section");
+      section.append(element("div", "resource-detail-heading", heading));
+      const list = element("ul", "resource-detail-list");
+      list.append(...rows);
+      section.append(list);
+      return section;
+    }
+
+    // The detail panel: the clicked block's use and the nodes it holds.
+    function renderDetail() {
+      if (hidden) return;
+      const parts = [];
+      const low = selectedLow && lowBlocks.get(selectedLow);
+      const key = store.get("entity");
+      const entity = !low && key && entities.find((e) => e.key === key);
+      if (low) {
+        parts.push(
+          element("div", "resource-detail-title", `low · ${low.owner}`),
+          element("div", "resource-detail-line", low.title),
+          detailList(
+            `${low.members.length} node${low.members.length === 1 ? "" : "s"}`,
+            low.members
+              .map((node) => [
+                node.path,
+                liveValue(node.path, isComposable(node)),
+              ])
+              .sort((a, b) => b[1] - a[1])
+              .map(([path, value]) =>
+                detailRow(path, value > 0 ? valueLabel(value) : "–"),
+              ),
+          ),
+        );
+      } else if (entity?.entity_type === "node") {
+        parts.push(element("div", "resource-detail-title", entity.member_path));
+        if (entity.container_path) {
+          const cpu = splitting()
+            ? resources.nodeCpu(entity.member_path)
+            : null;
+          parts.push(
+            element(
+              "div",
+              "resource-detail-line",
+              cpu !== null
+                ? `callbacks ${cpuLabel(cpu)} of a core`
+                : "no process of its own: its use counts in its container",
+            ),
+            detailList("container", [
+              detailRow(
+                entity.container_path,
+                valueLabel(liveValue(entity.container_path)),
+              ),
+            ]),
+          );
+        } else {
+          usageLines(resources.usage(entity.member_path)).forEach((line) =>
+            parts.push(element("div", "resource-detail-line", line)),
+          );
+          const inside = composablesOf().get(entity.member_path) || [];
+          if (inside.length)
+            parts.push(
+              detailList(
+                `holds ${inside.length} node${inside.length === 1 ? "" : "s"}`,
+                inside.map((node) => {
+                  const cpu = splitting()
+                    ? resources.nodeCpu(node.member_path)
+                    : null;
+                  return detailRow(
+                    node.member_path,
+                    cpu !== null ? cpuLabel(cpu) : "",
+                  );
+                }),
+              ),
+            );
+        }
+      } else
+        parts.push(
+          element(
+            "div",
+            "resource-detail-line",
+            "Click a block to list its nodes.",
+          ),
+        );
+      detail.replaceChildren(...parts);
+    }
+
     function applyStates() {
       applyTimer = null;
       if (!module) return;
@@ -260,6 +402,7 @@
       );
       splitInput.checked = resources.split;
       renderNote();
+      renderDetail();
       if (
         splitting() !== laidSplit ||
         [...valuedUnits()].some((unit) => !laidUnits.has(unit))
@@ -290,6 +433,9 @@
       const seq = ++loadSeq;
       stale = false;
       laidUnits = new Set();
+      shown = new Set();
+      lowBlocks = new Map();
+      selectedLow = null;
       module?.destroy();
       module = null;
       const canvas = element("div", "diagram-canvas");
@@ -303,23 +449,38 @@
         const created = new (SD.diagrams.get("treemap"))(canvas, {
           mode,
           dataBase: config.dataBase,
-          weigh: (node) => (node.idle ? node.weight : valueOf(node)),
-          transform: (sections) =>
-            sections.map((section) => groupIdle(section, valueOf)),
+          weigh: (node) => (node.low ? node.weight : valueOf(node)),
+          transform(sections) {
+            const kept = new Set();
+            const held = (node) => isComposable(node) && !splitting();
+            const grouped = sections.map((section) =>
+              groupLow(section, valueOf, { held, shown, kept }),
+            );
+            shown = kept;
+            lowBlocks = new Map();
+            const visit = (instance) => {
+              if (instance.low) lowBlocks.set(instance.unique_id, instance);
+              (instance.children || []).forEach(visit);
+            };
+            grouped.forEach(visit);
+            return grouped;
+          },
           nameOf(instance) {
-            if (instance.idle) return `idle · ${instance.members.length}`;
+            if (instance.low) return `low · ${instance.members.length}`;
             const value = instance.entity_type === "node" && valueOf(instance);
             return value
               ? `${instance.name} · ${valueLabel(value)}`
               : instance.name || "";
           },
           onInfoUpdate(_data, _type, entity) {
+            selectedLow = entity?.low ? entity.unique_id : null;
             store.set(
               "entity",
-              entity?.path && !entity.idle
+              entity?.path && !entity.low
                 ? SD.NamespaceTree.entityKey(entity)
                 : "",
             );
+            renderDetail();
           },
         });
         await created.ready;
@@ -345,14 +506,17 @@
       const key = store.get("entity");
       const entity = key && entities.find((e) => e.key === key);
       if (entity) module?.focusEntity(String(entity.unique_id));
-      else module?.clearSelection();
+      else if (!selectedLow) module?.clearSelection();
     }
 
     SD.on("launch.member", scheduleApply);
     SD.on("launch.sessions", scheduleApply);
     SD.on("launch.resources", scheduleApply);
     store.onChange("entity", () => {
-      if (!hidden) followEntity();
+      if (store.get("entity")) selectedLow = null;
+      if (hidden) return;
+      followEntity();
+      renderDetail();
     });
     store.onChange("mode", () => {
       if (hidden) stale = true;
@@ -376,5 +540,10 @@
   }
 
   launch.resourceMap = resourceMap;
-  launch.resourceMapRules = { groupIdle, IDLE_SHARE, IDLE_AREA };
+  launch.resourceMapRules = {
+    groupLow,
+    LOW_SHARE,
+    LOW_KEEP_SHARE,
+    LOW_AREA,
+  };
 })();

@@ -1,5 +1,5 @@
 // Unit tests for the resource feed's rules: window filter, member and host
-// use over a window, icon levels, and the idle block of the Resources view.
+// use over a window, icon levels, and the low blocks of the Resources view.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -24,7 +24,7 @@ require(path.join(JS_DIR, "activities", "launch", "resources.js"));
 require(path.join(JS_DIR, "activities", "launch", "resource_map.js"));
 const { within, memberUsage, hostUsage, levels, hostLabel } =
   global.window.SD.activities.launch.resourceUsage;
-const { groupIdle } = global.window.SD.activities.launch.resourceMapRules;
+const { groupLow } = global.window.SD.activities.launch.resourceMapRules;
 
 function reading(second, members, host = {}) {
   return {
@@ -84,48 +84,83 @@ test("a unit's label sums up its host and GPU", () => {
   assert.equal(hostLabel(host), "CPU 2.5/8 · RAM 0.5/1.0 GB · GPU 20 %");
 });
 
-test("nodes under a share of their unit gather in one idle block", () => {
-  const node = (name, extra = {}) => ({
+test("nodes under a share of their unit gather in one low block per module", () => {
+  const node = (name, module = "m") => ({
     entity_type: "node",
     name,
-    path: `/m/${name}`,
+    path: `/${module}/${name}`,
     unique_id: name,
-    ...extra,
   });
   const section = {
     name: "main_ecu",
-    nodes: 4,
+    nodes: 5,
     children: [
       {
         entity_type: "module",
         name: "m",
+        path: "/m",
         unique_id: "m",
         children: [node("busy"), node("quiet"), node("zero")],
       },
       {
         entity_type: "module",
         name: "q",
+        path: "/q",
         unique_id: "q",
-        children: [node("lone")],
+        children: [node("lone", "q"), node("near", "q")],
       },
     ],
   };
-  const values = { "/m/busy": 100, "/m/quiet": 0.5, "/m/lone": 2 };
-  const grouped = groupIdle(section, (n) => values[n.path] || 0);
-  const [kept, lone, idle] = grouped.children;
+  // Total 100: cut 0.2, keep cut 0.1.
+  const values = {
+    "/m/busy": 96.9,
+    "/m/quiet": 0.15,
+    "/q/lone": 2.8,
+    "/q/near": 0.15,
+  };
+  const valueOf = (n) => values[n.path] || 0;
+  const kept = new Set();
+  const grouped = groupLow(section, valueOf, { kept });
+  const [m, q] = grouped.children;
   assert.deepEqual(
-    kept.children.map((child) => child.name),
-    ["busy"],
+    m.children.map((child) => child.name),
+    ["busy", "low"],
   );
-  assert.equal(lone.children[0].name, "lone");
-  assert.equal(idle.idle, true);
   assert.deepEqual(
-    idle.members.map((member) => member.name),
+    m.children[1].members.map((member) => member.name),
     ["quiet", "zero"],
   );
-  assert.ok(idle.weight > 0);
-  // Without any value the whole unit is idle.
-  const empty = groupIdle(section, () => 0);
-  assert.equal(empty.children.length, 1);
-  assert.equal(empty.children[0].members.length, 4);
+  assert.equal(m.children[1].owner, "/m");
+  assert.ok(m.children[1].weight > 0);
+  assert.deepEqual(
+    q.children.map((child) => child.name),
+    ["lone", "low"],
+  );
+  assert.deepEqual([...kept].sort(), ["/m/busy", "/q/lone"]);
+  // A node holding a block keeps it down to the keep cut, a zero never.
+  const again = groupLow(section, valueOf, {
+    shown: new Set(["/q/near", "/m/zero"]),
+  });
+  assert.deepEqual(
+    again.children[1].children.map((child) => child.name),
+    ["lone", "near"],
+  );
+  assert.deepEqual(
+    again.children[0].children[1].members.map((member) => member.name),
+    ["quiet", "zero"],
+  );
+  // Without any value every module holds one low block.
+  const empty = groupLow(section, () => 0);
+  assert.deepEqual(
+    empty.children.map((child) => child.children.map((c) => c.members.length)),
+    [[3], [2]],
+  );
+  // Held nodes have no block, low or not, and do not count in the total.
+  const held = groupLow(section, valueOf, {
+    held: (n) => n.name === "quiet" || n.name === "zero",
+  });
+  assert.deepEqual(
+    held.children[0].children.map((child) => child.name),
+    ["busy"],
+  );
 });
