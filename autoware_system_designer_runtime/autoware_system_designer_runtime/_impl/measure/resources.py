@@ -217,7 +217,7 @@ class Nvml:
     def _process_call(self) -> tuple[list[Callable], type]:
         for suffix, info in (("_v3", _ProcessInfoV2), ("_v2", _ProcessInfoV2), ("", _ProcessInfoV1)):
             calls = [
-                getattr(self._lib, f"nvmlDevice{kind}RunningProcesses{suffix}", None)
+                getattr(self._lib, f"nvmlDeviceGet{kind}RunningProcesses{suffix}", None)
                 for kind in ("Compute", "Graphics")
             ]
             if all(calls):
