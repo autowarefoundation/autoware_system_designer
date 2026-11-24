@@ -24,7 +24,8 @@ require(path.join(JS_DIR, "activities", "launch", "resources.js"));
 require(path.join(JS_DIR, "activities", "launch", "resource_map.js"));
 const { within, memberUsage, hostUsage, levels, hostLabel } =
   global.window.SD.activities.launch.resourceUsage;
-const { groupLow } = global.window.SD.activities.launch.resourceMapRules;
+const { groupLow, nestContainers } =
+  global.window.SD.activities.launch.resourceMapRules;
 
 function reading(second, members, host = {}) {
   return {
@@ -73,7 +74,11 @@ test("levels count cores of CPU and shares of the device's memory", () => {
   const host = hostUsage([reading(1, {})]);
   assert.deepEqual(
     levels({ cpu: 0.6, rss_kb: 100000, gpu_mem_kb: 1000 }, host),
-    { cpu: 2, mem: 3, gpu: 0 },
+    {
+      cpu: 2,
+      mem: 3,
+      gpu: 0,
+    },
   );
   assert.deepEqual(levels(null, host), { cpu: 0, mem: 0, gpu: 0 });
   assert.equal(levels({ cpu: 2, rss_kb: 0, gpu_mem_kb: 5000 }, host).gpu, 2);
@@ -163,4 +168,50 @@ test("nodes under a share of their unit gather in one low block per module", () 
     held.children[0].children.map((child) => child.name),
     ["busy"],
   );
+});
+
+test("a node container moves into the deepest module of its namespace", () => {
+  const container = (name, namespace) => ({
+    entity_type: "node",
+    name,
+    path: `${namespace.replace(/\/$/, "")}/${name}`,
+    namespace,
+    launcher: { launch_state: "node_container" },
+  });
+  const section = {
+    name: "ecu",
+    children: [
+      {
+        entity_type: "module",
+        name: "planning",
+        path: "/planning",
+        children: [
+          {
+            entity_type: "module",
+            name: "mission_planning",
+            path: "/planning/mission_planning",
+            children: [{ entity_type: "node", name: "planner" }],
+          },
+        ],
+      },
+      container("mission_container", "/planning/mission_planning"),
+      container("planning_container", "/planning/other"),
+      container("root_container", "/"),
+    ],
+  };
+  const nested = nestContainers(section);
+  assert.deepEqual(
+    nested.children.map((child) => child.name),
+    ["planning", "root_container"],
+  );
+  const [planning] = nested.children;
+  assert.deepEqual(
+    planning.children.map((child) => child.name),
+    ["mission_planning", "planning_container"],
+  );
+  assert.deepEqual(
+    planning.children[0].children.map((child) => child.name),
+    ["planner", "mission_container"],
+  );
+  assert.equal(section.children.length, 4);
 });

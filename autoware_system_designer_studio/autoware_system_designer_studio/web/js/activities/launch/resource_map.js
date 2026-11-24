@@ -6,8 +6,9 @@
 // composable node by its callbacks' CPU and leaves the container the rest
 // (executor, DDS and the nodes' own threads). The split is off unless
 // switched on, since it counts inside the nodes; without it the composable
-// nodes have no block. Nodes under 0.2 % of their unit's total gather in one
-// low block per module; a node keeps its block until it falls under 0.1 %.
+// nodes have no block. A node container sits in the module of its
+// namespace. Nodes under 0.2 % of their unit's total gather in one low block
+// per module; a node keeps its block until it falls under 0.1 %.
 // The blocks are laid out again once per window, at most every
 // RELAYOUT_MAX_S, and at once when the resource or the window changes or a
 // unit has its first values; colours and the detail panel follow every
@@ -36,6 +37,48 @@
 
   function isComposable(instance) {
     return instance.launcher?.launch_state === "composable_node";
+  }
+
+  function isContainer(instance) {
+    return instance.launcher?.launch_state === "node_container";
+  }
+
+  // `section` with each top-level node container moved into the deepest
+  // module of the section whose path holds the container's namespace; a
+  // container without such a module stays at the top level.
+  function nestContainers(section) {
+    const inNamespace = (module, namespace) =>
+      !!module.path &&
+      (namespace === module.path || namespace.startsWith(`${module.path}/`));
+    // `children` with `container` placed in the deepest module holding its
+    // namespace, null when none does.
+    const place = (children, container, namespace) => {
+      const index = children.findIndex(
+        (child) =>
+          child.entity_type !== "node" && inNamespace(child, namespace),
+      );
+      if (index < 0) return null;
+      const module = children[index];
+      const inner = module.children || [];
+      const out = [...children];
+      out[index] = {
+        ...module,
+        children: place(inner, container, namespace) || [...inner, container],
+      };
+      return out;
+    };
+    let children = section.children.filter(
+      (child) => !(child.entity_type === "node" && isContainer(child)),
+    );
+    const top = [];
+    section.children.forEach((child) => {
+      if (child.entity_type !== "node" || !isContainer(child)) return;
+      const namespace = String(child.namespace || "").replace(/\/+$/, "");
+      const placed = namespace && place(children, child, namespace);
+      if (placed) children = placed;
+      else top.push(child);
+    });
+    return { ...section, children: [...children, ...top] };
   }
 
   // `section` with the nodes valued under the cut moved into one low node
@@ -145,6 +188,9 @@
     const body = element("div", "resource-body");
     const host = element("div", "diagram-container");
     const detail = element("div", "resource-detail");
+    const detailInfo = element("div", "resource-detail-info");
+    const detailNodes = element("div", "resource-detail-nodes");
+    detail.append(detailInfo, detailNodes);
     body.append(host, detail);
     container.appendChild(body);
 
@@ -166,6 +212,9 @@
     let lowBlocks = new Map();
     // Id of the low block shown in the detail panel; null for the store's entity.
     let selectedLow = null;
+    // Block shown in the detail panel; its columns keep their scroll while
+    // the same block is shown.
+    let detailShown = null;
 
     function valueOfUsage(usage) {
       if (!usage) return 0;
@@ -302,6 +351,13 @@
       return row;
     }
 
+    // Title line of the detail panel, its full text on hover.
+    function detailTitle(text) {
+      const title = element("div", "resource-detail-title", text);
+      title.title = text;
+      return title;
+    }
+
     function detailList(heading, rows) {
       const section = element("div", "resource-detail-section");
       section.append(element("div", "resource-detail-heading", heading));
@@ -311,17 +367,21 @@
       return section;
     }
 
-    // The detail panel: the clicked block's use and the nodes it holds.
+    // The detail panel: the clicked block's use in one column and the nodes
+    // it holds in a second.
     function renderDetail() {
       if (hidden) return;
       const parts = [];
+      const lists = [];
       const low = selectedLow && lowBlocks.get(selectedLow);
       const key = store.get("entity");
       const entity = !low && key && entities.find((e) => e.key === key);
       if (low) {
         parts.push(
-          element("div", "resource-detail-title", `low · ${low.owner}`),
+          detailTitle(`low · ${low.owner}`),
           element("div", "resource-detail-line", low.title),
+        );
+        lists.push(
           detailList(
             `${low.members.length} node${low.members.length === 1 ? "" : "s"}`,
             low.members
@@ -336,7 +396,7 @@
           ),
         );
       } else if (entity?.entity_type === "node") {
-        parts.push(element("div", "resource-detail-title", entity.member_path));
+        parts.push(detailTitle(entity.member_path));
         if (entity.container_path) {
           const cpu = splitting()
             ? resources.nodeCpu(entity.member_path)
@@ -349,6 +409,8 @@
                 ? `callbacks ${cpuLabel(cpu)} of a core`
                 : "no process of its own: its use counts in its container",
             ),
+          );
+          lists.push(
             detailList("container", [
               detailRow(
                 entity.container_path,
@@ -362,7 +424,7 @@
           );
           const inside = composablesOf().get(entity.member_path) || [];
           if (inside.length)
-            parts.push(
+            lists.push(
               detailList(
                 `holds ${inside.length} node${inside.length === 1 ? "" : "s"}`,
                 inside.map((node) => {
@@ -385,7 +447,15 @@
             "Click a block to list its nodes.",
           ),
         );
-      detail.replaceChildren(...parts);
+      const shown = low ? `low:${selectedLow}` : entity ? `entity:${key}` : "";
+      const scrolls =
+        shown === detailShown
+          ? [detailInfo.scrollTop, detailNodes.scrollTop]
+          : [0, 0];
+      detailShown = shown;
+      detailInfo.replaceChildren(...parts);
+      detailNodes.replaceChildren(...lists);
+      [detailInfo.scrollTop, detailNodes.scrollTop] = scrolls;
     }
 
     function applyStates() {
@@ -454,7 +524,11 @@
             const kept = new Set();
             const held = (node) => isComposable(node) && !splitting();
             const grouped = sections.map((section) =>
-              groupLow(section, valueOf, { held, shown, kept }),
+              groupLow(nestContainers(section), valueOf, {
+                held,
+                shown,
+                kept,
+              }),
             );
             shown = kept;
             lowBlocks = new Map();
@@ -541,6 +615,7 @@
 
   launch.resourceMap = resourceMap;
   launch.resourceMapRules = {
+    nestContainers,
     groupLow,
     LOW_SHARE,
     LOW_KEEP_SHARE,
