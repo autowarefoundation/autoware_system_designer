@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -34,8 +35,9 @@ from autoware_system_designer.builder.deployment_instance import DeploymentInsta
 from autoware_system_designer.builder.export.instance_to_json import collect_system_structure
 from autoware_system_designer.builder.export.json_io import (
     iter_mode_data,
+    extract_system_structure_data,
     iter_mode_payloads,
-    launch_target_compute_units,
+    launcher_compute_units,
     save_system_structure,
     save_system_structure_snapshot,
 )
@@ -86,6 +88,8 @@ class BuildArtifacts:
     mode_keys: List[str] = field(default_factory=list)
     # Compute units declared by the system; empty for designs that only tag components.
     compute_units: List[Dict[str, Any]] = field(default_factory=list)
+    # Units each mode gets launchers for; the launchable set export consumers list.
+    launch_units: Dict[str, List[str]] = field(default_factory=dict)
     file_package_map: Dict[str, str] = field(default_factory=dict)
     package_resolution_by_name: Dict[str, Optional[str]] = field(default_factory=dict)
     packages_without_provider: List[str] = field(default_factory=list)
@@ -136,6 +140,7 @@ def load_build_artifacts(output_root_dir: str, system_name: str) -> BuildArtifac
         default_mode=payload.get("default_mode", "default"),
         mode_keys=payload.get("mode_keys", []),
         compute_units=payload.get("compute_units", []),
+        launch_units=payload.get("launch_units", {}),
         file_package_map=payload.get("file_package_map", {}),
         package_resolution_by_name=payload.get("package_resolution_by_name", {}),
         packages_without_provider=payload.get("packages_without_provider", []),
@@ -457,6 +462,9 @@ class DeploymentBuilder:
                         self._undefined_variables[mode_key] = reached
 
                 artifacts.mode_keys.append(mode_key)
+                artifacts.launch_units[mode_key] = launcher_compute_units(
+                    *extract_system_structure_data(structure_payload)
+                )
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
                 artifacts.system_structure_snapshots[mode_key] = snapshot_store
 
@@ -660,11 +668,12 @@ def generate_build_scripts(artifacts: BuildArtifacts) -> None:
 def generate_launchers(artifacts: BuildArtifacts) -> None:
     """Generate ROS 2 launch files from the exported JSON."""
     deploy_variable_names = _collect_deploy_variable_names(artifacts)
+    # The launcher tree is wholly generated; launchers of units, modes or variants gone from the design go with it.
+    shutil.rmtree(artifacts.layout.launcher_dir, ignore_errors=True)
     for mode_key, data, metadata in _iter_mode_payloads(artifacts):
         mode_launcher_dir = export_path(artifacts.layout.launcher_dir, mode_key)
-        # Launchable units (None: undeclared, derived from the components); a mode may
-        # declare units no component of it uses, and offboard units get no launcher.
-        compute_units = launch_target_compute_units(metadata)
+        # A mode may declare units no component of it uses, and offboard units get no launcher.
+        compute_units = launcher_compute_units(data, metadata)
 
         generate_module_launch_file(
             data,

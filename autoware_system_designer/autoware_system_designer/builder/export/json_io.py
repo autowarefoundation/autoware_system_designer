@@ -146,3 +146,12 @@ def launch_target_compute_units(metadata: SystemStructureMetadata) -> List[str] 
         for unit in units
         if isinstance(unit, dict) and unit.get("name") and unit.get("kind", "onboard") == "onboard"
     ]
+
+
+def launcher_compute_units(data: InstanceData, metadata: SystemStructureMetadata) -> List[str]:
+    """Units a mode gets launchers for: the declared ``onboard`` units, else the units its components reference."""
+
+    declared = launch_target_compute_units(metadata)
+    if declared is not None:
+        return declared
+    return sorted({child.get("compute_unit") for child in data.get("children", []) if child.get("compute_unit")})

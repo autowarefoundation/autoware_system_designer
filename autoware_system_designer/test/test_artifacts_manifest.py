@@ -115,3 +115,21 @@ def test_export_outside_workspace_stays_absolute(tmp_path):
         generate_launchers(artifacts)
     finally:
         shutil.rmtree(out_root, ignore_errors=True)
+
+
+def test_manifest_records_launch_units_and_launchers_drop_stale_units(tmp_path):
+    """The manifest lists each mode's launched units; regeneration leaves no launcher of a unit outside them."""
+    workspace = stage_case("deployments_table", tmp_path)
+    run = run_pipeline(workspace, "fleet_pkg/deployment/fleet.deployments.yaml", tmp_path)
+
+    artifacts = load_build_artifacts(str(run.out_root), run.system_name)
+    units = artifacts.launch_units["default"]
+    assert units
+    mode_dir = run.exports_dir / "launcher" / "default"
+    assert sorted(p.name for p in mode_dir.iterdir() if p.is_dir()) == sorted(units)
+
+    stale = mode_dir / "old_ecu"
+    stale.mkdir()
+    (stale / "old_ecu.launch.xml").write_text("<launch/>")
+    generate_launchers(artifacts)
+    assert not stale.exists()
