@@ -164,10 +164,22 @@ def find_source_root(start_path):
     return str(path)
 
 
-def scan_roots(start_path, workspace_root):
+def layer_root(start_path, workspace_root):
+    """Top-level workspace directory holding start_path; None outside the workspace or at its root."""
+    if not workspace_root:
+        return None
+    rel = os.path.relpath(os.path.realpath(start_path), os.path.realpath(workspace_root))
+    if rel in (os.curdir, os.pardir) or rel.startswith(os.pardir + os.sep):
+        return None
+    return os.path.join(os.path.realpath(workspace_root), rel.split(os.sep)[0])
+
+
+def scan_roots(start_path, *more_roots):
     """Directories to scan, the deploying package first; a root nested in an earlier one is dropped."""
     roots = []
-    for root in (start_path, workspace_root):
+    for root in (start_path, *more_roots):
+        if not root:
+            continue
         root = os.path.realpath(root)
         if any(root == prev or root.startswith(prev + os.sep) for prev in roots):
             continue
@@ -213,14 +225,34 @@ def main():
             "'workspace_root' in _package_map.yaml. Absolute paths are written when omitted."
         ),
     )
+    parser.add_argument(
+        "--workspace-root",
+        default=None,
+        help=(
+            "Colcon workspace root. The scan covers the deploying package, the top-level workspace "
+            "directory holding it, and <workspace-root>/src. Derived from start_path when omitted."
+        ),
+    )
+    parser.add_argument(
+        "--include-installed",
+        action="store_true",
+        help=(
+            "Also map installed packages outside the scan roots (workspace install, then "
+            "AMENT_PREFIX_PATH). Ignored in source mode."
+        ),
+    )
     args = parser.parse_args()
 
     anchor = os.path.realpath(args.anchor) if args.anchor else None
 
-    # The deploying package is scanned first so its designs are collected even when it
-    # lies outside the workspace source root.
-    workspace_root = find_source_root(args.start_path)
-    roots = scan_roots(args.start_path, workspace_root)
+    if args.workspace_root:
+        workspace_root = os.path.realpath(args.workspace_root)
+        source_root = os.path.join(workspace_root, "src")
+    else:
+        source_root = find_source_root(args.start_path)
+        workspace_root = os.path.dirname(source_root) if os.path.basename(source_root) == "src" else None
+    # Scope of the build: the deploying package, the workspace layer holding it, and the source root.
+    roots = scan_roots(args.start_path, layer_root(args.start_path, workspace_root), source_root)
     output_dir = os.path.abspath(args.output_dir)
 
     pkg_paths = {}
@@ -298,7 +330,9 @@ def main():
 
     # 1. Generate package_map for ALL workspace packages
     package_map = {}
+    source_map = {}
     for pkg_src_path, pkg_name in pkg_paths.items():
+        source_map.setdefault(pkg_name, to_manifest_path(pkg_src_path, anchor))
         if is_source_mode:
             pkg_path = pkg_src_path
         elif is_isolated:
@@ -309,16 +343,17 @@ def main():
             pkg_path = os.path.join(args.install_prefix, "share", pkg_name)
         package_map[pkg_name] = to_manifest_path(pkg_path, anchor)
 
-    # Installed packages outside the scan roots (workspace siblings, underlays) resolve through the
-    # ament index, workspace install first, then AMENT_PREFIX_PATH in overlay order.
-    if not is_source_mode:
+    # Opt-in: installed packages outside the scan roots resolve through the ament index,
+    # workspace install first, then AMENT_PREFIX_PATH in overlay order.
+    if args.include_installed and not is_source_mode:
         prefixes = install_prefixes(install_base, is_isolated)
         prefixes += [p for p in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep) if p]
         for pkg_name, pkg_path in indexed_packages(prefixes).items():
             package_map.setdefault(pkg_name, to_manifest_path(pkg_path, anchor))
 
     package_map_path = os.path.join(output_dir, "_package_map.yaml")
-    package_map_data = {"package_map": package_map}
+    # source_map: source directory of each scanned package, read when its install share lacks a file.
+    package_map_data = {"package_map": package_map, "source_map": source_map}
     if anchor:
         package_map_data["workspace_root"] = anchor
     with open(package_map_path, "w") as manifest_file:

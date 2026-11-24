@@ -855,18 +855,6 @@ class ParameterManager:
                 items[new_key] = v
         return items
 
-    def _infer_package_from_share_path(self, absolute_path: str) -> Optional[str]:
-        if not absolute_path or not os.path.isabs(absolute_path):
-            return None
-        parts = absolute_path.split(os.sep)
-        if "share" not in parts:
-            return None
-        # Pick the last 'share/<pkg>/' segment (works for merged and isolated installs).
-        share_idx = len(parts) - 1 - parts[::-1].index("share")
-        if share_idx + 1 >= len(parts):
-            return None
-        return parts[share_idx + 1]
-
     def _resolve_existing_parameter_file_path(
         self,
         file_path: str,
@@ -896,27 +884,11 @@ class ParameterManager:
         if os.path.exists(resolved_path):
             return resolved_path
 
-        deployment_pkg = getattr(config_registry, "deployment_package_name", None)
-        if not deployment_pkg:
-            logger.warning(f"Parameter file not found: {resolved_path}{format_source(source)}")
-            return None
-
-        # Build-time fallback (deployment build only): install/share may not be populated yet.
-        inferred_pkg = package_name or self._infer_package_from_share_path(resolved_path)
-        if inferred_pkg != deployment_pkg:
-            logger.warning(f"Parameter file not found: {resolved_path}{format_source(source)}")
-            return None
-
-        if inferred_pkg:
-            marker = os.path.join(os.sep, "share", inferred_pkg, "")
-            idx = resolved_path.find(marker)
-            if idx != -1:
-                rel = resolved_path[idx + len(marker) :]
-                src_pkg = config_registry.get_package_source_path(inferred_pkg)
-                if src_pkg:
-                    candidate = os.path.join(src_pkg, rel)
-                    if os.path.exists(candidate):
-                        return candidate
+        # Install share not populated yet: the same file in the package source.
+        candidate = config_registry.source_counterpart(resolved_path)
+        if candidate and os.path.exists(candidate):
+            logger.debug(f"Resolved parameter file in the package source: {candidate}")
+            return candidate
 
         logger.warning(f"Parameter file not found: {resolved_path}{format_source(source)}")
         return None

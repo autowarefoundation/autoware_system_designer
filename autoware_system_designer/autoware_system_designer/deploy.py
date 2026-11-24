@@ -34,8 +34,8 @@ from autoware_system_designer.builder.config.config_registry import ConfigRegist
 from autoware_system_designer.builder.deployment_instance import DeploymentInstance
 from autoware_system_designer.builder.export.instance_to_json import collect_system_structure
 from autoware_system_designer.builder.export.json_io import (
-    iter_mode_data,
     extract_system_structure_data,
+    iter_mode_data,
     iter_mode_payloads,
     launcher_compute_units,
     save_system_structure,
@@ -155,6 +155,7 @@ class DeploymentBuilder:
         self.config_registry: Optional[ConfigRegistry] = None
         self._package_paths: Dict[str, str] = {}
         self._workspace_root: Optional[str] = None
+        self._package_source_paths: Dict[str, str] = {}
         # Undefined $(var ...) references per mode: name -> source locations.
         self._undefined_variables: Dict[str, Dict[str, List[str]]] = {}
 
@@ -182,6 +183,7 @@ class DeploymentBuilder:
             system_yaml_list,
             package_paths,
             file_package_map,
+            package_source_paths=self._package_source_paths,
             workspace_config=deploy_config.workspace_config,
             strict=deploy_config.strict,
             anchor_dir=deploy_config.anchor_dir or self._anchor_from_input(deploy_config.deployment_file),
@@ -325,6 +327,7 @@ class DeploymentBuilder:
             raise ValidationError(f"System design manifest directory not found or not a directory: {manifest_dir}")
 
         self._workspace_root = self._read_workspace_root(manifest_dir)
+        self._package_source_paths = {}
         anchor = self._workspace_root or manifest_dir
 
         for entry in sorted(os.listdir(manifest_dir)):
@@ -340,6 +343,13 @@ class DeploymentBuilder:
                         {
                             name: resolve_manifest_path(path, anchor)
                             for name, path in manifest_yaml["package_map"].items()
+                        }
+                    )
+                if manifest_yaml.get("source_map"):
+                    self._package_source_paths.update(
+                        {
+                            name: resolve_manifest_path(path, anchor)
+                            for name, path in manifest_yaml["source_map"].items()
                         }
                     )
 

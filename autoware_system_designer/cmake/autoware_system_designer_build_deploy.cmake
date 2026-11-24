@@ -104,6 +104,13 @@ macro(autoware_system_designer_build_deploy project_name)
   else()
     set(_MANIFEST_ANCHOR "${WORKSPACE_ROOT}")
   endif()
+  # Installed packages outside the scan scope (package, its workspace layer, src) are mapped only on request.
+  set(AUTOWARE_SYSTEM_DESIGNER_INCLUDE_INSTALLED_PACKAGES OFF CACHE BOOL
+    "Map installed packages outside the system designer scan scope through the ament index")
+  set(_COLLECT_EXTRA_ARGS "")
+  if(AUTOWARE_SYSTEM_DESIGNER_INCLUDE_INSTALLED_PACKAGES)
+    list(APPEND _COLLECT_EXTRA_ARGS --include-installed)
+  endif()
   set(LOG_DIR "${WORKSPACE_ROOT}/log/latest_build/${CMAKE_PROJECT_NAME}")
   set(LOG_FILE "${LOG_DIR}/build_${_INPUT_NAME}.log")
   # If OFF (default), deployment failures are reported but do not fail package build.
@@ -145,6 +152,8 @@ macro(autoware_system_designer_build_deploy project_name)
           ${SYSTEM_DESIGNER_RESOURCE_DIR}
           ${CMAKE_INSTALL_PREFIX}
           --anchor ${_MANIFEST_ANCHOR}
+          --workspace-root ${WORKSPACE_ROOT}
+          ${_COLLECT_EXTRA_ARGS}
       COMMENT "Collecting system design manifests; full log: ${LOG_DIR}/collect_system_design_manifests.log"
     )
   endif()

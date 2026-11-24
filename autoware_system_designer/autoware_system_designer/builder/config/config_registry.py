@@ -14,6 +14,7 @@
 
 import copy
 import logging
+import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -210,6 +211,7 @@ class ConfigRegistry:
         config_yaml_file_paths: List[str],
         package_paths: Dict[str, str] = None,
         file_package_map: Dict[str, str] = None,
+        package_source_paths: Dict[str, str] = None,
         workspace_config: List[Dict[str, Any]] = None,
         strict: bool = False,
         anchor_dir: Optional[str] = None,
@@ -219,9 +221,9 @@ class ConfigRegistry:
         self.entities: Dict[str, EntityGroup] = {}
         self.package_paths = package_paths or {}
         self.file_package_map = file_package_map or {}
-        self._package_source_paths: Dict[str, Optional[str]] = {}
+        self._package_source_paths: Dict[str, Optional[str]] = dict(package_source_paths or {})
+        self._canonical_package_paths: Optional[Dict[str, str]] = None
         # Name of the package currently being built/exported (deployment package).
-        # When set, build-time source fallbacks should be restricted to this package only.
         self.deployment_package_name: Optional[str] = None
 
         # Workspace provider resolution map: provider -> "source" | "installed"
@@ -502,6 +504,24 @@ class ConfigRegistry:
         # Cache negative result to avoid repeated scans.
         self._package_source_paths[package_name] = None
         return None
+
+    def source_counterpart(self, path: str) -> Optional[str]:
+        """Source-tree path of a file under a mapped package directory; None when unmapped or unknown."""
+        if self._canonical_package_paths is None:
+            self._canonical_package_paths = {
+                name: canonical_path(package_path) for name, package_path in self.package_paths.items() if package_path
+            }
+        target = canonical_path(path)
+        owner, owner_dir = None, ""
+        for package_name, package_path in self._canonical_package_paths.items():
+            if len(package_path) > len(owner_dir) and target.startswith(package_path + os.sep):
+                owner, owner_dir = package_name, package_path
+        if owner is None:
+            return None
+        source_dir = self.get_package_source_path(owner)
+        if not source_dir:
+            return None
+        return os.path.join(source_dir, os.path.relpath(target, owner_dir))
 
     def get_provider_resolution(self, provider: str) -> Optional[str]:
         """Get the resolution type for a given provider.
