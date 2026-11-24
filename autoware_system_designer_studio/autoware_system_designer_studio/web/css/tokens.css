@@ -1,6 +1,8 @@
 /* Design tokens: colours and fonts for the light theme and their dark overrides. Every other stylesheet reads these. */
 
 :root {
+  /* Native scrollbars and form controls follow the theme */
+  color-scheme: light;
   /* Light theme colors: content white, side panels a step of grey darker, chrome darkest */
   --bg-primary: #f8f9fa;
   --bg-secondary: #ffffff;
@@ -51,6 +53,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   /* Dark theme colors: content darkest, side panels a step lighter, chrome lightest */
   --bg-primary: #1a1a1a;
   --bg-secondary: #1e1e1e;
