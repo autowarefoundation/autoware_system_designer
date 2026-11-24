@@ -356,7 +356,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--trace-sizes",
         action="store_true",
         help="Sample the serialized size of one message per publisher and second for the whole run "
-        "(serializes inside the nodes; off by default, switchable while running).",
+        "(computed from the message type inside the nodes, without serializing; off by default, "
+        "switchable while running).",
     )
     measure_group.add_argument(
         "--trace-cpu",

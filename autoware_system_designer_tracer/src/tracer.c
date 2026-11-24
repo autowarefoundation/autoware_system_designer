@@ -19,15 +19,17 @@
 //             a serialized publish adds its size;
 //   events    while the control file says so: one fixed record in <pid>.trace.
 // Two more counters follow the control file, both off by default:
-//   sizes     one publish per publisher and ASD_SIZE_SAMPLE_NS is serialized
-//             with rmw_serialize and its size added to the publisher's slot;
+//   sizes     one publish per publisher and ASD_SIZE_SAMPLE_NS has its serialized
+//             size computed from the type's introspection (size_probe.h, no
+//             serialization or copy) and added to the publisher's slot;
 //   cpu       the thread CPU time from a take or timer fire to the thread's next
 //             take, fire, service take or rcl_wait is added to the take's or
-//             timer's slot.
+//             timer's slot; a take of a subscription no executor waits on (a
+//             poll inside a callback) leaves the window of that callback open.
 // Init hooks register the endpoint's slot and append a name-table line; fini
 // hooks release the slot. No hook takes a lock on the per-message path, and
-// only a sampled publish inspects its message. The tracer is armed by ASD_TRACE_DIR; without it every hook
-// is a plain forward. The files open on the first hook, so a process that never
+// only a sampled publish reads its message's lengths. The tracer is armed by
+// ASD_TRACE_DIR; without it every hook is a plain forward. The files open on the first hook, so a process that never
 // reaches rcl leaves none.
 //
 // Entry points per ROS distribution (add a row and a hook for a new one):
@@ -41,6 +43,7 @@
 //   clock     rcl_set_ros_time_override
 //   service   rcl_take_request, rcl_take_request_with_info, rcl_take_response,
 //             rcl_take_response_with_info (end a CPU-time window)
+//   wait set  rcl_wait_set_add_subscription (marks the subscriptions executors wait on)
 // A process linked to a replay driver (ASD_REPLAY_SOCKET, see replay_link.c) is gated
 // through the same hooks and these:
 //   wait      rcl_wait (also ends a CPU-time window)
@@ -72,22 +75,28 @@
 #include <rcl/subscription.h>
 #include <rcl/time.h>
 #include <rcl/timer.h>
-#include <rcutils/allocator.h>
 #include <rmw/rmw.h>
-#include <rmw/serialized_message.h>
 
 #include "replay.h"
+#include "size_probe.h"
 #include "writer.h"
 
 // ---- state -------------------------------------------------------------------
 
 enum tracer_state { TRACER_UNSET = 0, TRACER_OFF = 1, TRACER_ON = 2 };
 
-// Per stats slot of a publisher: its message type and the time its next size is due.
-typedef struct publisher_info {
+enum layout_state { LAYOUT_UNSET = 0, LAYOUT_PENDING = 1, LAYOUT_READY = 2 };
+
+// Per stats slot. A publisher: its message type, the type's size layout once a sample
+// looked it up, and the time its next size is due. A subscription: whether an executor
+// waited on it; a take of one it never waited on is a poll from inside a callback.
+typedef struct slot_info {
   const rosidl_message_type_support_t * type;
+  asd_size_layout_t layout;
+  int layout_state;
   uint64_t next_size_ns;
-} publisher_info_t;
+  uint8_t waited;
+} slot_info_t;
 
 // One process's tracer. `events` opens on the first record the control file lets through.
 typedef struct tracer {
@@ -98,7 +107,7 @@ typedef struct tracer {
   const asd_control_t * control;
   asd_names_t names;
   asd_stats_t stats;
-  publisher_info_t * publishers;  // one per stats slot
+  slot_info_t * slot_info;  // one per stats slot
   asd_events_t events;
 } tracer_t;
 
@@ -188,7 +197,7 @@ static int open_locked(void)
   if (asd_stats_open(&g.stats, dir, pid, slots) != 0) {
     fprintf(stderr, "[asd_tracer] cannot open counters in %s; counters disabled\n", dir);
   } else {
-    g.publishers = calloc(g.stats.capacity, sizeof(publisher_info_t));
+    g.slot_info = calloc(g.stats.capacity, sizeof(slot_info_t));
   }
   strcpy(g.dir, dir);
   g.events_capacity = env_count(ASD_TRACE_CAPACITY_ENV, ASD_TRACE_DEFAULT_CAPACITY, ASD_TRACE_MAX_CAPACITY);
@@ -323,8 +332,9 @@ static void write_clock_record(const rcl_clock_t * clock, uint64_t t_ns, int64_t
 
 // ---- observers ----------------------------------------------------------------------
 
-// Counts a take or timer fire on its slot and makes it this thread's trigger. Returns the time.
-static uint64_t observe_trigger(const void * handle, asd_stats_slot_t ** slot_out)
+// Counts a take or timer fire on its slot and makes it this thread's trigger; `callback`
+// says whether a callback follows it, which opens a CPU-time window. Returns the time.
+static uint64_t observe_trigger(const void * handle, bool callback, asd_stats_slot_t ** slot_out)
 {
   uint64_t t_ns = asd_now_realtime_ns();
   asd_stats_slot_t * slot = asd_stats_find(&g.stats, handle);
@@ -333,19 +343,42 @@ static uint64_t observe_trigger(const void * handle, asd_stats_slot_t ** slot_ou
   if (slot != NULL) {
     asd_stats_count(slot, t_ns);
   }
-  cpu_window_start(slot);
+  if (callback) {
+    cpu_window_start(slot);
+  }
   *slot_out = slot;
   return t_ns;
 }
 
-// Serializes the message of a publish when its publisher's next size is due; one
-// caller claims each due time.
+// The size layout of a publisher's type, looked up by the first sample, which may load
+// the type's introspection library; NULL members while it is unknown or absent.
+static asd_size_layout_t publisher_layout(slot_info_t * info, const rosidl_message_type_support_t * type)
+{
+  int state = __atomic_load_n(&info->layout_state, __ATOMIC_ACQUIRE);
+  if (state == LAYOUT_READY) {
+    return info->layout;
+  }
+  asd_size_layout_t none = {NULL, 0, 0};
+  int unset = LAYOUT_UNSET;
+  if (state != LAYOUT_UNSET ||
+      !__atomic_compare_exchange_n(
+        &info->layout_state, &unset, LAYOUT_PENDING, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+  {
+    return none;
+  }
+  info->layout = asd_size_layout(type);
+  __atomic_store_n(&info->layout_state, LAYOUT_READY, __ATOMIC_RELEASE);
+  return info->layout;
+}
+
+// Adds the serialized size of a publish's message when its publisher's next size is
+// due; one caller claims each due time.
 static void sample_size(asd_stats_slot_t * slot, const void * ros_message, uint64_t t_ns)
 {
-  if (g.publishers == NULL) {
+  if (g.slot_info == NULL) {
     return;
   }
-  publisher_info_t * info = &g.publishers[slot - g.stats.slots];
+  slot_info_t * info = &g.slot_info[slot - g.stats.slots];
   const rosidl_message_type_support_t * type = __atomic_load_n(&info->type, __ATOMIC_ACQUIRE);
   uint64_t due = __atomic_load_n(&info->next_size_ns, __ATOMIC_RELAXED);
   if (type == NULL || t_ns < due ||
@@ -354,15 +387,10 @@ static void sample_size(asd_stats_slot_t * slot, const void * ros_message, uint6
   {
     return;
   }
-  rcutils_allocator_t allocator = rcutils_get_default_allocator();
-  rmw_serialized_message_t serialized = rmw_get_zero_initialized_serialized_message();
-  if (rmw_serialized_message_init(&serialized, 0, &allocator) != RMW_RET_OK) {
-    return;
+  asd_size_layout_t layout = publisher_layout(info, type);
+  if (layout.members != NULL) {
+    asd_stats_bytes(slot, asd_size_of(layout, ros_message));
   }
-  if (rmw_serialize(ros_message, type, &serialized) == RMW_RET_OK) {
-    asd_stats_bytes(slot, serialized.buffer_length);
-  }
-  rmw_serialized_message_fini(&serialized);
 }
 
 // `ros_message` is the message of a plain publish, `bytes` the size of a serialized one.
@@ -392,10 +420,18 @@ static void observe_publish(
   }
 }
 
+// Whether an executor waited on a subscription since its slot was registered.
+static bool waited_on(const void * subscription)
+{
+  asd_stats_slot_t * slot = asd_stats_find(&g.stats, subscription);
+  return slot != NULL && g.slot_info != NULL &&
+         __atomic_load_n(&g.slot_info[slot - g.stats.slots].waited, __ATOMIC_RELAXED) != 0;
+}
+
 static void observe_take(const void * subscription, const rmw_message_info_t * info, uint8_t flags)
 {
   asd_stats_slot_t * slot;
-  uint64_t t_ns = observe_trigger(subscription, &slot);
+  uint64_t t_ns = observe_trigger(subscription, cpu_on() && waited_on(subscription), &slot);
   if (slot != NULL && info->source_timestamp > 0) {
     asd_stats_latency(slot, (int64_t)t_ns - (int64_t)info->source_timestamp);
   }
@@ -418,7 +454,7 @@ static void observe_take(const void * subscription, const rmw_message_info_t * i
 static void observe_timer(const void * timer)
 {
   asd_stats_slot_t * slot;
-  uint64_t t_ns = observe_trigger(timer, &slot);
+  uint64_t t_ns = observe_trigger(timer, true, &slot);
   if (recording()) {
     asd_trace_record_t * r = claim_record((uint64_t)(uintptr_t)timer, t_ns, 0, 0);
     if (r != NULL) {
@@ -696,7 +732,26 @@ rcl_ret_t rcl_take_loaned_message(
   return ret;
 }
 
-// ---- wait hook -------------------------------------------------------------------------
+// ---- wait hooks ------------------------------------------------------------------------
+
+// While CPU time is on, marks the subscriptions an executor waits on.
+typedef rcl_ret_t (*wait_set_add_subscription_fn)(rcl_wait_set_t *, const rcl_subscription_t *, size_t *);
+
+rcl_ret_t rcl_wait_set_add_subscription(
+  rcl_wait_set_t * wait_set, const rcl_subscription_t * subscription, size_t * index)
+{
+  FORWARD(wait_set_add_subscription_fn, "rcl_wait_set_add_subscription");
+  if (tracing() && cpu_on() && g.slot_info != NULL) {
+    asd_stats_slot_t * slot = asd_stats_find(&g.stats, subscription);
+    if (slot != NULL) {
+      uint8_t * waited = &g.slot_info[slot - g.stats.slots].waited;
+      if (__atomic_load_n(waited, __ATOMIC_RELAXED) == 0) {
+        __atomic_store_n(waited, 1, __ATOMIC_RELAXED);
+      }
+    }
+  }
+  return real(wait_set, subscription, index);
+}
 
 rcl_ret_t rcl_wait(rcl_wait_set_t * wait_set, int64_t timeout)
 {
@@ -1128,9 +1183,10 @@ rcl_ret_t rcl_publisher_init(
     }
     int64_t slot =
       register_endpoint("pub", ASD_SLOT_PUB, publisher, node, rcl_publisher_get_topic_name(publisher), gid_ptr);
-    if (slot >= 0 && g.publishers != NULL) {
-      publisher_info_t * info = &g.publishers[slot];
+    if (slot >= 0 && g.slot_info != NULL) {
+      slot_info_t * info = &g.slot_info[slot];
       __atomic_store_n(&info->next_size_ns, 0, __ATOMIC_RELAXED);
+      __atomic_store_n(&info->layout_state, LAYOUT_UNSET, __ATOMIC_RELAXED);
       __atomic_store_n(&info->type, type_support, __ATOMIC_RELEASE);
     }
   }
@@ -1149,8 +1205,11 @@ rcl_ret_t rcl_subscription_init(
   FORWARD(subscription_init_fn, "rcl_subscription_init");
   rcl_ret_t ret = real(subscription, node, type_support, topic_name, options);
   if (ret == RCL_RET_OK && tracing()) {
-    register_endpoint(
+    int64_t slot = register_endpoint(
       "sub", ASD_SLOT_SUB, subscription, node, rcl_subscription_get_topic_name(subscription), NULL);
+    if (slot >= 0 && g.slot_info != NULL) {
+      __atomic_store_n(&g.slot_info[slot].waited, 0, __ATOMIC_RELAXED);
+    }
   }
   if (ret == RCL_RET_OK && asd_replay_armed()) {
     asd_replay_endpoint(

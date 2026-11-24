@@ -132,8 +132,8 @@ typedef struct asd_stats_header {
 // (callback time up to the publish); timer, none.
 // The last two words differ per kind and start from zero with each endpoint:
 //   publish     serialized bytes and the publishes they were measured on, every
-//               serialized publish and, while size sampling is on, one sampled
-//               publish per ASD_SIZE_SAMPLE_NS;
+//               serialized publish and, while size sampling is on, one publish
+//               per ASD_SIZE_SAMPLE_NS sized from its type's introspection;
 //   take/timer  the link to the latest publish, and, while CPU time is on, the
 //               thread CPU time from the take or fire to the thread's next take,
 //               fire, service take or wait.
