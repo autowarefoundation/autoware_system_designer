@@ -175,7 +175,8 @@ def _index_package(prefix: Path, name: str) -> None:
     (prefix / "share" / name).mkdir(parents=True, exist_ok=True)
 
 
-def test_collector_maps_installed_packages_outside_the_scan_roots(tmp_path, monkeypatch):
+def _scoped_workspace(tmp_path: Path) -> dict:
+    """Deploying package in a non-src workspace layer, with packages in, beside and outside the scope."""
     ws = tmp_path / "ws"
     install = ws / "install"
     (ws / "build").mkdir(parents=True)
@@ -183,24 +184,75 @@ def test_collector_maps_installed_packages_outside_the_scan_roots(tmp_path, monk
     deploying = ws / "launcher" / "pkg_launcher"
     _write_package(deploying, "pkg_launcher")
     write_system(deploying / "design", "Tiny", "Demo")
-    # Workspace sibling outside src/, and an underlay package; both are only known by their install.
     _write_package(ws / "launcher" / "vehicle" / "pkg_vehicle", "pkg_vehicle")
-    _index_package(install / "pkg_vehicle", "pkg_vehicle")
+    # Another workspace layer and an underlay, both outside the scope; only known by their install.
+    _write_package(ws / "other" / "pkg_other", "pkg_other")
+    _index_package(install / "pkg_other", "pkg_other")
     _index_package(install / "pkg_launcher", "pkg_launcher")
     underlay = tmp_path / "underlay"
     _index_package(underlay, "pkg_underlay")
     _index_package(underlay, "pkg_src")
-    monkeypatch.setenv("AMENT_PREFIX_PATH", str(underlay))
+    return {"ws": ws, "install": install, "deploying": deploying, "underlay": underlay}
 
-    out = tmp_path / "manifests"
-    monkeypatch.setattr("sys.argv", ["collector", str(deploying), str(out), str(install / "pkg_launcher")])
+
+def _run_collector(monkeypatch, out: Path, deploying: Path, install_prefix: Path, *extra: str) -> dict:
+    monkeypatch.setattr("sys.argv", ["collector", str(deploying), str(out), str(install_prefix), *extra])
     collector.main()
+    return yaml.safe_load((out / "_package_map.yaml").read_text())
 
-    package_map = yaml.safe_load((out / "_package_map.yaml").read_text())["package_map"]
-    assert package_map["pkg_vehicle"] == str(install / "pkg_vehicle" / "share" / "pkg_vehicle")
-    assert package_map["pkg_underlay"] == str(underlay / "share" / "pkg_underlay")
+
+def test_collector_scope_is_the_package_its_workspace_layer_and_src(tmp_path, monkeypatch):
+    ws = _scoped_workspace(tmp_path)
+    monkeypatch.setenv("AMENT_PREFIX_PATH", str(ws["underlay"]))
+
+    data = _run_collector(monkeypatch, tmp_path / "manifests", ws["deploying"], ws["install"] / "pkg_launcher")
+
+    install = ws["install"]
+    assert data["package_map"] == {
+        "pkg_launcher": str(install / "pkg_launcher" / "share" / "pkg_launcher"),
+        "pkg_vehicle": str(install / "pkg_vehicle" / "share" / "pkg_vehicle"),
+        "pkg_src": str(install / "pkg_src" / "share" / "pkg_src"),
+    }
+    assert data["source_map"] == {
+        "pkg_launcher": os.path.realpath(ws["deploying"]),
+        "pkg_vehicle": os.path.realpath(ws["ws"] / "launcher" / "vehicle" / "pkg_vehicle"),
+        "pkg_src": os.path.realpath(ws["ws"] / "src" / "pkg_src"),
+    }
+
+
+def test_collector_scope_follows_the_given_workspace_root(tmp_path, monkeypatch):
+    ws = _scoped_workspace(tmp_path)
+    # Without build/install markers the layer is only known through the given root.
+    (ws["ws"] / "build").rmdir()
+
+    data = _run_collector(
+        monkeypatch,
+        tmp_path / "manifests",
+        ws["deploying"],
+        tmp_path / "elsewhere" / "pkg_launcher",
+        "--workspace-root",
+        str(ws["ws"]),
+    )
+
+    assert set(data["package_map"]) == {"pkg_launcher", "pkg_vehicle", "pkg_src"}
+
+
+def test_collector_maps_installed_packages_outside_the_scope_on_request(tmp_path, monkeypatch):
+    ws = _scoped_workspace(tmp_path)
+    monkeypatch.setenv("AMENT_PREFIX_PATH", str(ws["underlay"]))
+
+    data = _run_collector(
+        monkeypatch, tmp_path / "manifests", ws["deploying"], ws["install"] / "pkg_launcher", "--include-installed"
+    )
+
+    package_map = data["package_map"]
+    install = ws["install"]
+    assert package_map["pkg_other"] == str(install / "pkg_other" / "share" / "pkg_other")
+    assert package_map["pkg_underlay"] == str(ws["underlay"] / "share" / "pkg_underlay")
     # A workspace package keeps its workspace install over an underlay of the same name.
     assert package_map["pkg_src"] == str(install / "pkg_src" / "share" / "pkg_src")
+    # Installed packages carry no source directory.
+    assert "pkg_other" not in data["source_map"]
 
 
 def test_collector_source_mode_ignores_installed_packages(tmp_path, monkeypatch):
