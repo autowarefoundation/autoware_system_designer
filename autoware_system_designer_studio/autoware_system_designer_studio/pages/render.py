@@ -178,6 +178,7 @@ class Site:
         return self._env.get_template("workbench.html.jinja2").render(
             deployment_name=export.name,
             icon=_bundle_links(SYSTEM_PAGE_ROOT, (assets.FAVICON,))[0],
+            header_icon=_bundle_links(SYSTEM_PAGE_ROOT, (assets.HEADER_ICON,))[0],
             stylesheets=_bundle_links(SYSTEM_PAGE_ROOT, assets.WORKBENCH_STYLESHEETS),
             scripts=_bundle_links(SYSTEM_PAGE_ROOT, assets.WORKBENCH_SCRIPTS),
             entry_script=f"{SYSTEM_PAGE_ROOT}{assets.BUNDLE_DIR}/{assets.WORKBENCH_ENTRY}",

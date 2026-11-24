@@ -177,6 +177,7 @@ def test_pages_link_the_bundle_relative_to_the_site_root(tmp_path):
     workbench = site.render(f"{SITE}/index.html")
     assert '<link rel="icon" type="image/svg+xml" href="../../../assets/img/favicon.svg" />' in workbench
     assert 'src="../../../assets/js/core/sd.js"' in workbench
+    assert 'src="../../../assets/img/awsd_mark.svg"' in workbench
     assert 'src="../../../assets/js/pages/workbench_page.js"' in workbench
 
 

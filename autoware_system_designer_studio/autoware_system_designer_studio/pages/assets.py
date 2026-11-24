@@ -30,6 +30,8 @@ BUNDLE_SUBDIRS = ("css", "js", "img")
 FAVICON = "img/favicon.svg"
 # Studio mark beside the systems index title.
 BRAND_ICON = "img/awsd_icon.svg"
+# Studio mark of the workbench top bar, drawn without letters for its height.
+HEADER_ICON = "img/awsd_mark.svg"
 
 # Window variable a mode's data script fills: the exported system structure, keyed by mode.
 DATA_GLOBAL = "systemStructureData"

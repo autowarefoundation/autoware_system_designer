@@ -22,6 +22,33 @@ body.resizing-panel {
   z-index: 3;
 }
 
+/* Studio mark and title; the system selector follows after a divider */
+#studio-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-right: 20px;
+  border-right: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.studio-brand-icon {
+  height: 22px;
+}
+
+.studio-brand-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+@media (max-width: 1100px) {
+  .studio-brand-title {
+    display: none;
+  }
+}
+
 #system-identity {
   display: flex;
   align-items: center;
