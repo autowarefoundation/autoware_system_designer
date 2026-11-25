@@ -1,0 +1,84 @@
+{# Nodes of a launcher: one entry per node; `nodes` and `forward_args` come from the including template. #}
+{# A node without a namespace, or with an empty one, takes the one of its enclosing group. #}
+{% macro namespace_attr(node) %}{% if node.namespace is not none %} namespace="{{ node.namespace }}"{% endif %}{% endmacro %}
+{# One priority tier: values expanded from files, files loaded at launch time, then direct values. #}
+{% macro param_tier(node, file_value_types, file_type, value_types) %}
+{% for param in node.param_values if param.parameter_type in file_value_types %}
+<param name="{{ param.name }}" value="{{ param.value | launch_param_attr }}"/>
+{% endfor %}
+{% for param_file in node.launch_time_param_files|default([]) if param_file.parameter_type == file_type %}
+<param from="{{ param_file.path }}" allow_substs="{{ param_file.allow_substs | lower }}"/>
+{% endfor %}
+{% for param in node.param_values if param.parameter_type in value_types %}
+<param name="{{ param.name }}" value="{{ param.value | launch_param_attr }}"/>
+{% endfor %}
+{% endmacro %}
+{% macro node_configuration(node) %}
+<!-- Remap input and output topics -->
+{% for port in node.ports %}
+<remap from="{{ port.remap_target }}" to="{{ port.topic }}"/>
+{% endfor %}
+
+<!-- Parameters - Non-Override Parameters -->
+{{ param_tier(node, ['GLOBAL', 'DEFAULT_FILE'], 'DEFAULT_FILE', ['DEFAULT']) }}
+<!-- Parameters - Overrides -->
+{{ param_tier(node, ['OVERRIDE_FILE'], 'OVERRIDE_FILE', ['OVERRIDE']) }}
+<!-- Parameters - Mode Overrides (highest priority) -->
+{{ param_tier(node, ['MODE_FILE'], 'MODE_FILE', ['MODE']) -}}
+{% endmacro %}
+
+{% for node in nodes %}
+  <!-- Node: {{ node.node_path }} -->
+{% if node.launch_state == 'ros2_launch_file' %}
+  <include file="$(find-pkg-share {{node.package}})/launch/{{node.ros2_launch_file}}">
+{% for param_file in node.param_files %}
+    <arg name="{{ param_file.name }}" value="{{ param_file.path }}"/>
+{% endfor %}
+{% for param in node.param_values %}
+{% if param.parameter_type == 'DEFAULT' or param.parameter_type == 'DEFAULT_FILE' %}
+{% if param.name in forward_args %}
+    <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% else %}
+    <arg name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
+{% endif %}
+{% endfor %}
+{% for param in node.param_values %}
+{% if param.parameter_type == 'MODE' %}
+{% if param.name in forward_args %}
+    <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% else %}
+    <arg name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
+{% endif %}
+{% endfor %}
+{% for param in node.param_values %}
+{% if param.parameter_type == 'OVERRIDE' %}
+{% if param.name in forward_args %}
+    <arg name="{{ param.name }}" value="$(var {{ param.name }})"/>
+{% else %}
+    <arg name="{{ param.name }}" value="{{ param.value }}"/>
+{% endif %}
+{% endif %}
+{% endfor %}
+  </include>
+{% elif node.launch_state == 'composable_node' %}
+  <load_composable_node target="{{ node.container_target }}">
+    <composable_node pkg="{{ node.package }}" plugin="{{ node.plugin }}" name="{{ node.name }}"{{ namespace_attr(node) }}>
+      {{ node_configuration(node)|indent(6) }}
+{% if node.use_intra_process_comms|default(false) %}
+      <extra_arg name="use_intra_process_comms" value="true"/>
+{% endif %}
+    </composable_node>
+  </load_composable_node>
+{% elif node.launch_state == 'node_container' %}
+  <node_container pkg="{{ node.package }}" exec="{{ node.executable }}" name="{{ node.name }}"{{ namespace_attr(node) }} output="{{ node.node_output }}">
+    <composable_node pkg="autoware_glog_component" plugin="autoware::glog_component::GlogComponent" name="glog_component_{{ node.name }}"{{ namespace_attr(node) }}/>
+  </node_container>
+{% else %}
+  <node pkg="{{ node.package }}" exec="{{ node.executable }}" name="{{ node.name }}"{{ namespace_attr(node) }} output="{{ node.node_output }}"{% if node.args %} args="{{ node.args }}"{% endif %}>
+    {{ node_configuration(node)|indent(4) }}
+  </node>
+{% endif %}
+
+{% endfor %}

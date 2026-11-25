@@ -25,7 +25,7 @@ macro(autoware_system_designer_build_deploy project_name)
   #   AUTO: follow AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT (default)
   #   ON:   fail build when deployment generation fails
   #   OFF:  warn and continue local build
-  # A border target reads design/<name>.border.yaml and writes its entry launch file to
+  # A border target reads <name>.border.yaml under design/ and writes its entry launch file to
   # share/<project>/<BORDER_OUTPUT> (default: launch/<name>.launch.xml).
   # Full logs are still written to the per-target log file.
   # Valid levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
@@ -141,10 +141,16 @@ macro(autoware_system_designer_build_deploy project_name)
   elseif(_INPUT_NAME MATCHES "^([a-z][a-z0-9_]*)\\.border$")
     # Border: one entity behind the launch file it generates.
     set(_BORDER_NAME "${CMAKE_MATCH_1}")
-    set(_DEPLOYMENT_FILE "${CMAKE_SOURCE_DIR}/design/${_INPUT_NAME}.yaml")
-    if(NOT EXISTS "${_DEPLOYMENT_FILE}")
-      message(FATAL_ERROR "autoware_system_designer_build_deploy: border file not found: ${_DEPLOYMENT_FILE}")
+    file(GLOB_RECURSE _BORDER_FILES "${CMAKE_SOURCE_DIR}/design/*${_INPUT_NAME}.yaml")
+    list(FILTER _BORDER_FILES INCLUDE REGEX "/${_BORDER_NAME}\\.border\\.yaml$")
+    list(LENGTH _BORDER_FILES _BORDER_FILE_COUNT)
+    if(NOT _BORDER_FILE_COUNT EQUAL 1)
+      message(FATAL_ERROR
+        "autoware_system_designer_build_deploy: expected one ${_INPUT_NAME}.yaml under ${CMAKE_SOURCE_DIR}/design, "
+        "found ${_BORDER_FILE_COUNT}: ${_BORDER_FILES}"
+      )
     endif()
+    list(GET _BORDER_FILES 0 _DEPLOYMENT_FILE)
     if(NOT _BORDER_OUTPUT)
       set(_BORDER_OUTPUT "launch/${_BORDER_NAME}.launch.xml")
     endif()

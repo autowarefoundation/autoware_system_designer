@@ -17,7 +17,8 @@
 A ``*.border.yaml`` file is a local build input, like a deployments table: plain YAML
 without a format declaration or schema. It describes components as a system does,
 the launch arguments of the generated launch file, its external interface (ports bound
-to topics), node groups and connections. Connections reach the interface as a module's
+to topics), the launch files included ahead of the components (system launches), node
+groups and connections. Connections reach the interface as a module's
 do, through ``subscriber.<port>`` and ``publisher.<port>``. The border builds as a system
 whose interface connections become topic bindings of the component ports.
 """
@@ -52,11 +53,13 @@ _KNOWN_KEYS = (
     "variables",
     "subscribers",
     "publishers",
+    "system_launches",
     "node_groups",
     "connections",
 )
 _COMPONENT_KEYS = ("name", "entity", "path", "parameter_set")
 _INTERFACE_ROLES = ("subscriber", "publisher")
+_SYSTEM_LAUNCH_KEYS = ("package", "file", "scoped", "arguments")
 
 
 def is_border_file(path: str) -> bool:
@@ -77,6 +80,16 @@ class BorderArgument:
 
 
 @dataclass
+class BorderSystemLaunch:
+    """Launch file included ahead of the components, e.g. the global parameter loader."""
+
+    package: str
+    file: str
+    scoped: bool = True
+    arguments: List[Tuple[str, str]] = field(default_factory=list)
+
+
+@dataclass
 class BorderConfig:
     """Parsed border file."""
 
@@ -87,6 +100,7 @@ class BorderConfig:
     variables: List[Dict[str, Any]] = field(default_factory=list)
     subscribers: List[BorderPort] = field(default_factory=list)
     publishers: List[BorderPort] = field(default_factory=list)
+    system_launches: List[BorderSystemLaunch] = field(default_factory=list)
     node_groups: List[Dict[str, Any]] = field(default_factory=list)
     connections: List[List[str]] = field(default_factory=list)
     source_map: Optional[Dict[str, Dict[str, int]]] = None
@@ -217,6 +231,42 @@ def _parse_ports(reader: _Reader, data: Dict[str, Any], key: str) -> List[Border
     return ports
 
 
+def _parse_system_launches(reader: _Reader, data: Dict[str, Any]) -> List[BorderSystemLaunch]:
+    launches: List[BorderSystemLaunch] = []
+    for idx, item in enumerate(reader.items(data, "system_launches")):
+        yaml_path = f"/system_launches/{idx}"
+        unknown = sorted(set(item) - set(_SYSTEM_LAUNCH_KEYS))
+        if unknown:
+            raise reader.error(f"{yaml_path}/{unknown[0]}", f"unknown system launch key(s) {unknown}")
+        scoped = item.get("scoped", True)
+        if not isinstance(scoped, bool):
+            raise reader.error(f"{yaml_path}/scoped", "'scoped' must be a boolean")
+        arguments: List[Tuple[str, str]] = []
+        raw_arguments = item.get("arguments", [])
+        if not isinstance(raw_arguments, list):
+            raise reader.error(f"{yaml_path}/arguments", "'arguments' must be a list")
+        for arg_idx, argument in enumerate(raw_arguments):
+            arg_path = f"{yaml_path}/arguments/{arg_idx}"
+            if not isinstance(argument, dict):
+                raise reader.error(arg_path, "a system launch argument is a mapping of 'name' and 'value'")
+            name = reader.string(argument, "name", arg_path)
+            value = argument.get("value")
+            if isinstance(value, bool):
+                value = "true" if value else "false"
+            elif value is None:
+                raise reader.error(f"{arg_path}/value", f"system launch argument '{name}' requires 'value'")
+            arguments.append((name, str(value)))
+        launches.append(
+            BorderSystemLaunch(
+                package=reader.string(item, "package", yaml_path),
+                file=reader.string(item, "file", yaml_path),
+                scoped=scoped,
+                arguments=arguments,
+            )
+        )
+    return launches
+
+
 def _parse_connections(reader: _Reader, data: Dict[str, Any]) -> List[List[str]]:
     connections = reader.items(data, "connections", kind=list)
     for idx, item in enumerate(connections):
@@ -255,6 +305,7 @@ def parse_border(border_path: str) -> BorderConfig:
         variables=_parse_variables(reader, data, {a.name for a in arguments}),
         subscribers=_parse_ports(reader, data, "subscribers"),
         publishers=_parse_ports(reader, data, "publishers"),
+        system_launches=_parse_system_launches(reader, data),
         node_groups=reader.items(data, "node_groups"),
         connections=_parse_connections(reader, data),
         source_map=source_map,

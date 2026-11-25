@@ -87,9 +87,8 @@ def build(
         artifacts = build_deployment(deploy_config)
 
         if is_border_file(deployment_file):
-            # A border yields launchers only; it has no deployment of its own to script or template.
-            logger.info("Autoware System Designer: Generating border launch files...")
-            generate_launchers(artifacts)
+            # A border yields one flat launch file; it has no deployment of its own to script or template.
+            logger.info("Autoware System Designer: Generating the border launch file...")
             generate_border_launch_file(artifacts, deployment_file, border_output)
             logger.info("Autoware System Designer: Done!")
             return

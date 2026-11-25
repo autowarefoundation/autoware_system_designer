@@ -70,7 +70,7 @@ src/<package_name>/
 │   ├── module/         # *.module.yaml
 │   ├── system/         # *.system.yaml
 │   ├── parameter_set/  # *.parameter_set.yaml
-│   └── <name>.border.yaml  # Border (one entity behind a generated launch file)
+│   └── border/         # <name>.border.yaml (components behind a generated launch file)
 ├── deployment/         # *.deployment.yaml (System instantiation)
 ├── schema/             # *.schema.json (Parameter schemas)
 ├── CMakeLists.txt
@@ -104,7 +104,7 @@ autoware_system_designer_build_deploy(
 )
 
 # 4. Build a border (Optional)
-# Generates share/<package>/launch/sensing.launch.xml from design/sensing.border.yaml.
+# Generates share/<package>/launch/sensing.launch.xml from sensing.border.yaml under design/.
 autoware_system_designer_build_deploy(
   ${PROJECT_NAME}
   sensing.border
@@ -145,6 +145,14 @@ publishers:
   - name: objects
     topic: /perception/object_recognition/objects
 
+system_launches: # launch files included ahead of the components, e.g. the global parameter loader
+  - package: autoware_global_parameter_loader
+    file: launch/global_params.launch.py
+    scoped: false # default true; false applies its parameters to the whole launch file
+    arguments:
+      - name: use_sim_time
+        value: $(var use_sim_time)
+
 node_groups: # as in a system; `external` loads into a container the caller starts
   - name: $(var pointcloud_container_name)
     type: ros2_component_container_mt
@@ -162,7 +170,17 @@ connections: # as in a system; the interface is reached as in a module
     - publisher.objects
 ```
 
-The border builds as a system on one compute unit. An interface connection binds the component port to the interface topic; a `*` at the end of both ends connects every interface port with a matching component port. Every interface port needs a connection. The generated entry file declares the arguments with their defaults and includes the compute-unit launcher under `share/<package>/exports/<name>/`.
+The border builds as a system on one compute unit. An interface connection binds the component port to the interface topic; a `*` at the end of both ends connects every interface port with a matching component port. Every interface port needs a connection. A container that holds nodes of more than one component is `external`.
+
+The generated launch file follows the layout of a hand-written entry launch file:
+
+1. arguments, with their defaults
+2. external interfaces as arguments: `input/<subscriber>` and `output/<publisher>`, defaulting to their topics
+3. internal interfaces as lets: `<component>/<port>` for each component publisher another component subscribes to
+4. system launches
+5. the nodes, in groups that push one namespace segment each; containers come first in their group
+
+Node remaps reach interface topics through these variables, so overriding an interface argument rewires every node on that topic.
 
 ## Use as an independent workspace
 

@@ -15,6 +15,8 @@ arguments:
   - name: pointcloud_container_name
     default: pointcloud_container
     description: container started by the caller
+  - name: use_sim_time
+    default: false
 
 subscribers:
   - name: pointcloud
@@ -23,6 +25,14 @@ subscribers:
 publishers:
   - name: objects
     topic: /perception/objects
+
+system_launches:
+  - package: autoware_global_parameter_loader
+    file: launch/global_params.launch.py
+    scoped: false
+    arguments:
+      - name: use_sim_time
+        value: $(var use_sim_time)
 
 node_groups:
   - name: $(var pointcloud_container_name)

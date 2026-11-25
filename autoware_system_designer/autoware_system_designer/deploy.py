@@ -739,10 +739,13 @@ def export_parameter_set_templates(artifacts: BuildArtifacts) -> Dict[str, List[
 
 
 def generate_border_launch_file(artifacts: BuildArtifacts, border_file: str, output_file: Optional[str] = None) -> str:
-    """Generate the border entry launch file; defaults to launch/<name>.launch.xml under the output root."""
+    """Generate the border launch file; defaults to launch/<name>.launch.xml under the output root."""
     border = parse_border(border_file)
     if output_file is None:
         output_file = os.path.join(artifacts.layout.output_root_dir, "launch", f"{border.name}.launch.xml")
     elif not os.path.isabs(output_file):
         output_file = os.path.join(artifacts.layout.output_root_dir, output_file)
-    return generate_border_launcher(border, artifacts.layout.launcher_dir, artifacts.default_mode, output_file)
+    # A border has one mode; layered launchers left by an earlier build go with it.
+    shutil.rmtree(artifacts.layout.launcher_dir, ignore_errors=True)
+    _, data, _ = next(iter(_iter_mode_payloads(artifacts)))
+    return generate_border_launcher(border, data, output_file)
