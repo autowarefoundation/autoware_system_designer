@@ -110,7 +110,6 @@ autoware_system_designer_build_deploy(
 autoware_system_designer_build_deploy(
   ${PROJECT_NAME}
   sensing.border
-  BORDER_OUTPUT=launch/sensing.launch.xml  # default: launch/<name>.launch.xml
 )
 ```
 

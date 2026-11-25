@@ -106,10 +106,6 @@ class BorderConfig:
     source_map: Optional[Dict[str, Dict[str, int]]] = None
     raw: Dict[str, Any] = field(default_factory=dict)
 
-    @property
-    def system_name(self) -> str:
-        return self.name
-
     def ports(self, role: str) -> List[BorderPort]:
         return self.subscribers if role == "subscriber" else self.publishers
 

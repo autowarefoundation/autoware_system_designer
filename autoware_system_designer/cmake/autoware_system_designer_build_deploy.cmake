@@ -16,7 +16,7 @@ macro(autoware_system_designer_build_deploy project_name)
   # Supported invocation patterns:
   #   autoware_system_designer_build_deploy(<project> <deployment_name>.deployments)
   #   autoware_system_designer_build_deploy(<project> <design_file>)
-  #   autoware_system_designer_build_deploy(<project> <name>.border [BORDER_OUTPUT=<path>])
+  #   autoware_system_designer_build_deploy(<project> <name>.border)
   #   autoware_system_designer_build_deploy(<project> <deployment_or_system_target> PRINT_LEVEL=<LEVEL>)
   #   autoware_system_designer_build_deploy(<project> <deployment_or_system_target> STRICT=<AUTO|ON|OFF>)
   #   autoware_system_designer_build_deploy(<project> <deployment_or_system_target> PRINT_LEVEL=<LEVEL> STRICT=<AUTO|ON|OFF>)
@@ -26,7 +26,7 @@ macro(autoware_system_designer_build_deploy project_name)
   #   ON:   fail build when deployment generation fails
   #   OFF:  warn and continue local build
   # A border target reads <name>.border.yaml under design/ and writes its entry launch file to
-  # share/<project>/<BORDER_OUTPUT> (default: launch/<name>.launch.xml).
+  # share/<project>/launch/<name>.launch.xml.
   # Full logs are still written to the per-target log file.
   # Valid levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
   set(_EXTRA_ARGS ${ARGN})
@@ -39,7 +39,6 @@ macro(autoware_system_designer_build_deploy project_name)
   # Defaults
   set(_PRINT_LEVEL "ERROR")
   set(_STRICT_MODE "AUTO")
-  set(_BORDER_OUTPUT "")
 
   # Parse optional args: PRINT_LEVEL=<LEVEL>, STRICT=<AUTO|ON|OFF>
   if(_EXTRA_LEN GREATER 1)
@@ -56,10 +55,8 @@ macro(autoware_system_designer_build_deploy project_name)
         if(NOT _STRICT_MODE STREQUAL "AUTO" AND NOT _STRICT_MODE STREQUAL "ON" AND NOT _STRICT_MODE STREQUAL "OFF")
           message(FATAL_ERROR "autoware_system_designer_build_deploy: STRICT must be AUTO, ON, or OFF. Got: ${_OPT}")
         endif()
-      elseif(_OPT MATCHES "^BORDER_OUTPUT=.+$")
-        string(REGEX REPLACE "^BORDER_OUTPUT=" "" _BORDER_OUTPUT "${_OPT}")
       else()
-        message(FATAL_ERROR "autoware_system_designer_build_deploy: supported optional args are PRINT_LEVEL=<LEVEL>, STRICT=<AUTO|ON|OFF> and BORDER_OUTPUT=<path>. Got: ${_OPT}")
+        message(FATAL_ERROR "autoware_system_designer_build_deploy: supported optional args are PRINT_LEVEL=<LEVEL> and STRICT=<AUTO|ON|OFF>. Got: ${_OPT}")
       endif()
     endforeach()
   endif()
@@ -151,14 +148,12 @@ macro(autoware_system_designer_build_deploy project_name)
       )
     endif()
     list(GET _BORDER_FILES 0 _DEPLOYMENT_FILE)
-    if(NOT _BORDER_OUTPUT)
-      set(_BORDER_OUTPUT "launch/${_BORDER_NAME}.launch.xml")
-    endif()
+    set(_BORDER_OUTPUT "launch/${_BORDER_NAME}.launch.xml")
     # A source file at the same path would be installed over the generated one.
     if(EXISTS "${CMAKE_SOURCE_DIR}/${_BORDER_OUTPUT}")
       message(FATAL_ERROR
         "autoware_system_designer_build_deploy: ${_BORDER_OUTPUT} exists in the package source and would be "
-        "installed over the border launch file; remove it or set BORDER_OUTPUT=<path>."
+        "installed over the border launch file; remove it."
       )
     endif()
     set(_LOG_DESC "(border=${_INPUT_NAME}, output=${_BORDER_OUTPUT})")
@@ -167,13 +162,6 @@ macro(autoware_system_designer_build_deploy project_name)
       "autoware_system_designer_build_deploy: unsupported target '${_INPUT_NAME}'. "
       "Use '<name>.deployments', '<name>.border' or '*.system'."
     )
-  endif()
-  if(_BORDER_OUTPUT AND NOT _INPUT_NAME MATCHES "\\.border$")
-    message(FATAL_ERROR "autoware_system_designer_build_deploy: BORDER_OUTPUT applies to '<name>.border' targets only")
-  endif()
-  set(_BORDER_ARGS "")
-  if(_BORDER_OUTPUT)
-    list(APPEND _BORDER_ARGS --border-output ${_BORDER_OUTPUT})
   endif()
 
   # The manifest tree is shared by every deploy target of the package and collected once per build.
@@ -205,7 +193,6 @@ macro(autoware_system_designer_build_deploy project_name)
         --print-level ${_PRINT_LEVEL}
         --strict ${_STRICT_MODE_CLI}
         --package ${CMAKE_PROJECT_NAME}
-        ${_BORDER_ARGS}
         ${BUILD_PY_SCRIPT}
         ${_DEPLOYMENT_FILE}
         ${SYSTEM_DESIGNER_RESOURCE_DIR}

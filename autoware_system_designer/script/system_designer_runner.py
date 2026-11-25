@@ -78,11 +78,6 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
         default=None,
         help="Package that owns the deployment; forwarded to deployment_process.py",
     )
-    deploy_parser.add_argument(
-        "--border-output",
-        default=None,
-        help="Border entry launch file relative to the output root; forwarded to deployment_process.py",
-    )
     deploy_parser.add_argument("deployment_process_script", help="Path to deployment_process.py")
     deploy_parser.add_argument("deployment_file", help="Input deployment/design/system target")
     deploy_parser.add_argument("resource_dir", help="System designer resource directory")
@@ -240,8 +235,6 @@ def main(argv: List[str]) -> int:
         command.append(args.workspace_yaml)
     if args.package:
         command.extend(["--package", args.package])
-    if args.border_output:
-        command.extend(["--border-output", args.border_output])
 
     return_code = _run_with_tee(
         command,

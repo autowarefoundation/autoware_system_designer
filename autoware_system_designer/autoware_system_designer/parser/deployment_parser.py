@@ -89,7 +89,7 @@ def _parse_deployments_list(deployments_path: str) -> Tuple[str, List[Dict[str, 
 def peek_target_system_name(input_path: str) -> str:
     """System entity name the build target designates."""
     if is_border_file(input_path):
-        return parse_border(input_path).system_name
+        return parse_border(input_path).name
     if input_path.endswith(".deployments") or input_path.endswith(".deployments.yaml"):
         table_path = _resolve_deployments_path(input_path)
         base_name, _ = _parse_deployments_list(table_path)

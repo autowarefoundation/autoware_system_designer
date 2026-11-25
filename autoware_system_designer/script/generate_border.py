@@ -16,7 +16,7 @@
 """Generate a border launch file and its parameter files outside a package build.
 
 Collects the workspace design manifests, builds the border, and places
-launch/<name>.launch.xml (or --border-output) and config/<name>/ under the output root, by
+launch/<name>.launch.xml and config/<name>/ under the output root, by
 default the source directory of the package owning the border file. The system structure
 export stays in a temporary directory unless --exports-dir is given.
 
@@ -24,7 +24,7 @@ Design and parameter files resolve against the workspace install when one exists
 parameter files are read from there), otherwise against the source packages.
 
 Usage:
-    generate_border.py <border.yaml> [--output-root DIR] [--package NAME] [--border-output PATH]
+    generate_border.py <border.yaml> [--output-root DIR] [--package NAME]
         [--workspace-root DIR] [--source-only] [--exports-dir DIR]
 """
 
@@ -118,7 +118,6 @@ def main() -> int:
     parser.add_argument("border_file", help="<name>.border.yaml")
     parser.add_argument("--output-root", default=None, help="Default: source directory of the owning package")
     parser.add_argument("--package", default=None, help="Package installing the output; default: owning package")
-    parser.add_argument("--border-output", default=None, help="Launch file relative to the output root")
     parser.add_argument("--workspace-root", default=None, help="Default: the directory holding 'src'")
     parser.add_argument("--source-only", action="store_true", help="Resolve packages from sources only")
     parser.add_argument("--exports-dir", default=None, help="Keep the build output (system structure) here")
@@ -134,7 +133,7 @@ def main() -> int:
     if workspace_root is None:
         raise SystemExit("generate_border.py: the workspace root is unknown; pass --workspace-root")
     output_root = Path(args.output_root).resolve() if args.output_root else package_dir
-    border_output = args.border_output or f"launch/{border.name}.launch.xml"
+    border_output = f"launch/{border.name}.launch.xml"
 
     os.environ.setdefault("AUTOWARE_SYSTEM_DESIGNER_STRICT", "1")
     with tempfile.TemporaryDirectory(prefix="border_") as tmp:
@@ -142,7 +141,7 @@ def main() -> int:
         build_root = Path(args.exports_dir).resolve() if args.exports_dir else Path(tmp) / "out"
         _collect_manifests(package_dir, manifest_dir, workspace_root, package, args.source_only)
         try:
-            deployment_process.build(str(border_file), str(manifest_dir), str(build_root), None, package, border_output)
+            deployment_process.build(str(border_file), str(manifest_dir), str(build_root), None, package)
         except SystemDesignerError:
             return 1
         launch_file = _place(build_root, output_root, border_output)

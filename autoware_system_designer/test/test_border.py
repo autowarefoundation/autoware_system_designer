@@ -158,18 +158,6 @@ def test_border_wildcard_interface(tmp_path):
     assert nodes["node_merger"][1]["~/output/objects"] == "$(var output/objects)"
 
 
-def test_border_output_path(tmp_path):
-    workspace = stage_case("border", tmp_path)
-    out = tmp_path / "out"
-    from pipeline_harness import _load_deployment_process, write_manifests
-
-    write_manifests(workspace, tmp_path / "manifests")
-    _load_deployment_process().build(
-        str(workspace / BORDER), str(tmp_path / "manifests"), str(out), border_output="border/x.launch.xml"
-    )
-    assert "filter_primary" in _nodes(out / "border" / "x.launch.xml")
-
-
 @pytest.mark.parametrize(
     "changes, message",
     [
