@@ -1,5 +1,9 @@
 import logging
+from functools import lru_cache
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import yaml
 
 from autoware_system_designer.builder.config.launch_manager import LaunchManager
 from autoware_system_designer.common.exceptions import ValidationError
@@ -12,43 +16,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Extensible registry: add a new node-group container type here.
-NODE_GROUP_CONTAINER_SPECS = {
-    "ros2_component_container_mt": {
-        "package_name": "rclcpp_components",
-        "package_provider": "ros2",
-        "launch": {
-            "executable": "component_container_mt",
-            "type": "node_container",
-        },
-    },
-    "ros2_component_container": {
-        "package_name": "rclcpp_components",
-        "package_provider": "ros2",
-        "launch": {
-            "executable": "component_container",
-            "type": "node_container",
-        },
-    },
-    "ros2_component_container_mt_ipc": {
-        "package_name": "rclcpp_components",
-        "package_provider": "ros2",
-        "launch": {
-            "executable": "component_container_mt",
-            "type": "node_container",
-            "use_intra_process_comms": True,
-        },
-    },
-    "ros2_component_container_ipc": {
-        "package_name": "rclcpp_components",
-        "package_provider": "ros2",
-        "launch": {
-            "executable": "component_container",
-            "type": "node_container",
-            "use_intra_process_comms": True,
-        },
-    },
-}
+NODE_GROUP_TYPES_FILE = Path(__file__).resolve().parents[2] / "config" / "node_group_types.yaml"
+
+
+@lru_cache(maxsize=None)
+def node_group_types() -> dict[str, dict[str, Any]]:
+    """Container spec of each node group type, as declared in the node group types file."""
+    with open(NODE_GROUP_TYPES_FILE) as f:
+        types = yaml.safe_load(f) or {}
+    for type_name, spec in types.items():
+        if not isinstance(spec, dict) or not spec.get("package") or not spec.get("executable"):
+            raise ValidationError(
+                f"Node group type '{type_name}' in {NODE_GROUP_TYPES_FILE} needs 'package' and 'executable'"
+            )
+    return types
 
 
 def apply_node_groups(instance: "Instance") -> None:
@@ -110,7 +91,7 @@ def apply_node_groups(instance: "Instance") -> None:
         )
         container_target_path = container_instance.path
 
-        use_ipc = NODE_GROUP_CONTAINER_SPECS[group_type]["launch"].get("use_intra_process_comms", False)
+        use_ipc = bool(node_group_types()[group_type].get("use_intra_process_comms", False))
 
         for node_instance in matched_nodes:
             previous_target = node_instance.launch_manager.launch_config.container_target
@@ -163,8 +144,8 @@ def _validate_node_groups(node_groups: list[dict[str, Any]]) -> list[dict[str, A
 
         if not isinstance(group_type, str) or not group_type:
             raise ValidationError(f"Node group '{group_name}' has invalid 'type': {group_type!r}")
-        if group_type not in NODE_GROUP_CONTAINER_SPECS:
-            supported_types = ", ".join(sorted(NODE_GROUP_CONTAINER_SPECS.keys()))
+        if group_type not in node_group_types():
+            supported_types = ", ".join(sorted(node_group_types()))
             raise ValidationError(
                 f"Node group '{group_name}' uses unsupported type '{group_type}'. Supported types: {supported_types}"
             )
@@ -214,8 +195,7 @@ def _create_container_node_instance(
 ) -> "Instance":
     from autoware_system_designer.builder.instances.instances import Instance
 
-    container_spec = NODE_GROUP_CONTAINER_SPECS[group_type]
-    launch_spec = container_spec["launch"]
+    container_spec = node_group_types()[group_type]
 
     container_instance = Instance(
         name=group_name,
@@ -227,10 +207,9 @@ def _create_container_node_instance(
     container_instance.entity_type = "node"
     container_instance.launch_manager = LaunchManager(
         launch_config=LaunchConfig(
-            package_name=container_spec["package_name"],
-            node_output=launch_spec.get("node_output", "both"),
-            plugin=launch_spec.get("plugin", ""),
-            executable=launch_spec.get("executable", ""),
+            package_name=container_spec["package"],
+            node_output="both",
+            executable=container_spec["executable"],
             launch_state=LaunchState.NODE_CONTAINER,
         )
     )
