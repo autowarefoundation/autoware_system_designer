@@ -237,6 +237,28 @@ def test_collector_scope_follows_the_given_workspace_root(tmp_path, monkeypatch)
     assert set(data["package_map"]) == {"pkg_launcher", "pkg_vehicle", "pkg_src"}
 
 
+def test_collector_ignores_a_workspace_root_that_does_not_hold_the_package(tmp_path, monkeypatch):
+    # colcon run from another directory: the root that CMake derives from the build tree holds no sources.
+    sources = tmp_path / "autoware" / "src" / "core"
+    deploying = sources / "demo" / "pkg_systems"
+    _write_package(deploying, "pkg_systems")
+    write_system(deploying / "design", "Tiny", "Demo")
+    _write_package(sources / "demo" / "pkg_nodes", "pkg_nodes")
+    build_cwd = tmp_path / "home"
+    (build_cwd / "build").mkdir(parents=True)
+
+    data = _run_collector(
+        monkeypatch,
+        tmp_path / "manifests",
+        deploying,
+        tmp_path / "install" / "pkg_systems",
+        "--workspace-root",
+        str(build_cwd),
+    )
+
+    assert set(data["package_map"]) == {"pkg_systems", "pkg_nodes"}
+
+
 def test_collector_maps_installed_packages_outside_the_scope_on_request(tmp_path, monkeypatch):
     ws = _scoped_workspace(tmp_path)
     monkeypatch.setenv("AMENT_PREFIX_PATH", str(ws["underlay"]))
