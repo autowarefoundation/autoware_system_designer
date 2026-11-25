@@ -27,7 +27,6 @@ from autoware_system_designer.deploy import (
     _collect_deploy_variable_names,
     generate_build_scripts,
     generate_launchers,
-    generate_system_monitor_config,
     load_build_artifacts,
 )
 
@@ -47,19 +46,16 @@ def test_generators_rerun_from_manifest_alone(tmp_path):
     assert "vehicle_id" in _collect_deploy_variable_names(artifacts)
 
     launcher_dir = run.exports_dir / "launcher"
-    monitor_dir = run.exports_dir / "system_monitor"
     scripts_dir = run.exports_dir / "build_scripts"
-    before = {name: _tree(d) for name, d in (("l", launcher_dir), ("m", monitor_dir), ("s", scripts_dir))}
+    before = {name: _tree(d) for name, d in (("l", launcher_dir), ("s", scripts_dir))}
 
     shutil.rmtree(launcher_dir)
-    shutil.rmtree(monitor_dir)
     shutil.rmtree(scripts_dir)
 
     generate_launchers(artifacts)
-    generate_system_monitor_config(artifacts)
     generate_build_scripts(artifacts)
 
-    after = {name: _tree(d) for name, d in (("l", launcher_dir), ("m", monitor_dir), ("s", scripts_dir))}
+    after = {name: _tree(d) for name, d in (("l", launcher_dir), ("s", scripts_dir))}
     assert after == before
 
 

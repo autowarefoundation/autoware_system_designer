@@ -48,7 +48,6 @@ TEXT_ARTIFACTS = {
     "single_node": [
         "launcher/{mode}/main_ecu/main_ecu.launch.xml",
         "launcher/{mode}/main_ecu/talker/talker.launch.xml",
-        "system_monitor/{mode}/component_state_monitor/topics.yaml",
         "parameter_set/{mode}/Solo__talker.parameter_set.yaml",
     ],
     "module_pipeline": [

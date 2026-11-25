@@ -1,0 +1,21 @@
+# Container process of each node group type.
+#   package, executable: the container executable
+#   use_intra_process_comms: set on every member loaded into the container (default false)
+
+ros2_component_container:
+  package: rclcpp_components
+  executable: component_container
+
+ros2_component_container_mt:
+  package: rclcpp_components
+  executable: component_container_mt
+
+ros2_component_container_ipc:
+  package: rclcpp_components
+  executable: component_container
+  use_intra_process_comms: true
+
+ros2_component_container_mt_ipc:
+  package: rclcpp_components
+  executable: component_container_mt
+  use_intra_process_comms: true

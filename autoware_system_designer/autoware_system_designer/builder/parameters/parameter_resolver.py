@@ -211,6 +211,8 @@ class ParameterResolver:
         # undefined references, which the deployment build reports once per system mode.
         self.argument_names: Set[str] = set()
         self.undefined_variables: Dict[str, List[str]] = {}
+        # Values holding $(command ...), by source location; shared by copies.
+        self.command_uses: Dict[str, str] = {}
 
         # Optional location context for improved warning messages
         self._source_context: Optional[SourceLocation] = None
@@ -234,6 +236,7 @@ class ParameterResolver:
         new_resolver.variable_map = self.variable_map.copy()
         new_resolver.argument_names = self.argument_names
         new_resolver.undefined_variables = self.undefined_variables
+        new_resolver.command_uses = self.command_uses
         return new_resolver
 
     def declare_arguments(self, names: List[str]):
@@ -279,6 +282,9 @@ class ParameterResolver:
         prev_source = self._source_context
         if source is not None:
             self._source_context = source
+
+        if "$(command" in input_string:
+            self.command_uses.setdefault(format_source(self._source_context).strip() or input_string, input_string)
 
         try:
             result = input_string

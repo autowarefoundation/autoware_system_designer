@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -158,6 +159,8 @@ class DeploymentBuilder:
         self._package_source_paths: Dict[str, str] = {}
         # Undefined $(var ...) references per mode: name -> source locations.
         self._undefined_variables: Dict[str, Dict[str, List[str]]] = {}
+        # Values holding $(command ...), by source location, over every mode.
+        self._command_uses: Dict[str, str] = {}
 
     def build(self) -> BuildArtifacts:
         try:
@@ -167,6 +170,7 @@ class DeploymentBuilder:
             self._build_modes(system_config, artifacts)
             self._check_used_duplicates()
             self._check_undefined_variables(artifacts)
+            self._report_command_substitutions()
             self._collect_package_resolution(artifacts)
             save_artifacts_manifest(artifacts)
             return artifacts
@@ -463,6 +467,8 @@ class DeploymentBuilder:
                 )
                 structure_payload = self._export_mode_structure(mode_key, deploy_instance, artifacts)
                 resolver = deploy_instance.parameter_resolver
+                for location, value in (resolver.command_uses if resolver else {}).items():
+                    self._command_uses.setdefault(location, value)
                 undefined = resolver.undefined_variables if resolver else {}
                 if undefined:
                     # A reference overridden before it reaches a launcher binds nothing at launch time.
@@ -518,6 +524,20 @@ class DeploymentBuilder:
         raise ValidationError(
             "Undefined $(var ...) references; declare each name as a system variable or argument:\n" + "\n".join(lines)
         )
+
+    def _report_command_substitutions(self) -> None:
+        """Announce the deprecation of every $(command ...) value on stderr, which the build shows at any print level."""
+        if not self._command_uses:
+            return
+        lines = [
+            "[autoware_system_designer] WARNING: $(command ...) is deprecated and will be removed. "
+            "It runs a process at launch, so the design does not hold the value; generate it at build time:"
+        ]
+        for location, value in self._command_uses.items():
+            lines.append(f"  {value}")
+            if location != value:
+                lines.append(f"      {location}")
+        sys.stderr.write("\n".join(lines) + "\n")
 
     @staticmethod
     def _check_deploy_arguments(artifacts: BuildArtifacts) -> None:
@@ -645,19 +665,6 @@ def export_reference_latency(artifacts: BuildArtifacts) -> List[str]:
                 logger.info(f"Exported reference latency: {source.name}")
                 break
     return copied
-
-
-def generate_system_monitor_config(artifacts: BuildArtifacts) -> None:
-    """Generate system monitor configuration from the exported JSON."""
-    template_name = "sys_monitor_topics.yaml.jinja2"
-
-    renderer = TemplateRenderer()
-    for mode_key, data in _iter_mode_data(artifacts):
-        mode_monitor_dir = export_path(artifacts.layout.system_monitor_dir, mode_key, "component_state_monitor")
-        output_path = os.path.join(mode_monitor_dir, "topics.yaml")
-        renderer.render_template_to_file(template_name, output_path, **data)
-
-        logger.info(f"Generated system monitor for mode: {mode_key}")
 
 
 def generate_build_scripts(artifacts: BuildArtifacts) -> None:

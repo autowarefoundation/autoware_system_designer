@@ -50,6 +50,7 @@ include = ["autoware_system_designer*"]
 [tool.setuptools.package-data]
 autoware_system_designer = [
     "schema/**/*.json",
+    "config/*.yaml",
     "generator/templates/**/*",
     "generator/ros2_launcher/templates/**/*",
 ]

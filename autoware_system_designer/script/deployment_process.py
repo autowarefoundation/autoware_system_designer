@@ -26,7 +26,6 @@ from autoware_system_designer.deploy import (
     export_reference_latency,
     generate_build_scripts,
     generate_launchers,
-    generate_system_monitor_config,
 )
 
 # Stable name whether imported or executed as a script.
@@ -92,9 +91,6 @@ def build(
 
         logger.info("Autoware System Designer: Generating launch files...")
         generate_launchers(artifacts)
-
-        logger.info("Autoware System Designer: Generating system monitor configuration...")
-        generate_system_monitor_config(artifacts)
 
         logger.info("Autoware System Designer: Generating build scripts...")
         generate_build_scripts(artifacts)
