@@ -1,0 +1,44 @@
+autoware_system_design_format: 0.5.0
+
+name: Global.system
+
+description: System whose global parameters reach a plugin node and a launch file wrapper.
+
+variables:
+  - name: vehicle_model
+    value: sample_vehicle
+
+modes:
+  - name: default
+    description: Default mode
+    default: true
+  - name: simulation
+    description: Simulation mode
+
+global_parameters:
+  param_files:
+    - $(find-pkg-share $(var vehicle_model)_description)/config/vehicle_info.param.yaml
+  param_values:
+    - name: use_sim_time
+      type: bool
+      value: false
+
+components:
+  - name: map
+    entity: MapWrapper.node
+    compute_unit: main_ecu
+  - name: user
+    entity: MapUser.node
+    compute_unit: main_ecu
+
+connections:
+  - - user.subscriber.vector_map
+    - map.publisher.vector_map
+
+simulation:
+  override:
+    global_parameters:
+      param_values:
+        - name: use_sim_time
+          type: bool
+          value: true

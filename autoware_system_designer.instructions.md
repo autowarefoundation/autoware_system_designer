@@ -222,6 +222,11 @@ Top-level entry point defining the complete system.
   - `namespace`: ROS namespace prefix.
   - `compute_unit`: Compute unit the component runs on (e.g., `main_ecu`).
   - `parameter_set`: (Optional) Parameter set file name(s) to apply. Can be a string or an array of strings.
+- `global_parameters`: (Optional) Parameters every node of the system receives at the lowest priority; a node's own value of the same name wins.
+  - `param_files`: Parameter files resolved at build time; the values under `/**` are applied in order.
+  - `param_values`: List of `name`, `value` and optional `type`; they win over the file values.
+  - A node launched from a ROS 2 launch file receives them as parameters set on the nodes that launch file starts, not as launch arguments.
+  - A mode overrides them under `override.global_parameters`: files are appended, values replace by name.
 - `node_groups`: (Optional) Group nodes into a ROS 2 component container (synthetic container node).
   - `name`: Unique group name. It will be used as the component name for the container.
   - `type`: Node group execution type. select `ros2_component_container_mt` or `ros2_component_container`.

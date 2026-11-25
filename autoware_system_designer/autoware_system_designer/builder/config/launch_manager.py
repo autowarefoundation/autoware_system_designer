@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from autoware_system_designer.model.execution import LaunchConfig, LaunchState
 
@@ -30,6 +30,8 @@ class LaunchManager:
 
     def __init__(self, *, launch_config: LaunchConfig):
         self.launch_config = launch_config
+        # Global parameters of a launch-file node, set on the nodes its launch file starts.
+        self.global_parameters: List[Dict[str, Any]] = []
 
     @classmethod
     def from_config(cls, config: Any) -> "LaunchManager":
@@ -67,6 +69,8 @@ class LaunchManager:
         match cfg.launch_state:
             case LaunchState.ROS2_LAUNCH_FILE:
                 launcher_data["ros2_launch_file"] = cfg.ros2_launch_file
+                if self.global_parameters:
+                    launcher_data["global_parameters"] = list(self.global_parameters)
             case LaunchState.NODE_CONTAINER:
                 launcher_data["executable"] = cfg.executable
             case LaunchState.COMPOSABLE_NODE:

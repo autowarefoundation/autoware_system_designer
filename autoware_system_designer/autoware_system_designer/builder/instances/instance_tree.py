@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Optional
 
 from autoware_system_designer.builder.config.launch_manager import LaunchManager
 from autoware_system_designer.builder.instances.node_groups import apply_node_groups
+from autoware_system_designer.builder.parameters.global_parameters import apply_global_parameters
 from autoware_system_designer.builder.parameters.parameter_set_applier import apply_parameter_set
 from autoware_system_designer.common.exceptions import ValidationError, error_context
 from autoware_system_designer.common.source_location import SourceLocation, format_source, source_from_config
@@ -125,6 +126,8 @@ def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry"
         instance_name = cfg_component.get("name")
         child_instance = instance.children[instance_name]
         apply_parameter_set(instance, child_instance, cfg_component, config_registry)
+
+    apply_global_parameters(instance, config_registry)
 
     # Third pass: set node groups.
     apply_node_groups(instance)

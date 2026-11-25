@@ -37,6 +37,12 @@
 {% for node in nodes %}
   <!-- Node: {{ node.node_path }} -->
 {% if node.launch_state == 'ros2_launch_file' %}
+{% if node.global_parameters %}
+  <group>
+{% for param in node.global_parameters %}
+    <set_parameter name="{{ param.name }}" value="{{ param.value | launch_param_attr }}"/>
+{% endfor %}
+{% endif %}
   <include file="$(find-pkg-share {{node.package}})/launch/{{node.ros2_launch_file}}">
 {% for param_file in node.param_files %}
     <arg name="{{ param_file.name }}" value="{{ param_file.path }}"/>
@@ -69,6 +75,9 @@
 {% endif %}
 {% endfor %}
   </include>
+{% if node.global_parameters %}
+  </group>
+{% endif %}
 {% elif node.launch_state == 'composable_node' %}
   <load_composable_node target="{{ node.container_target }}">
     <composable_node pkg="{{ node.package }}" plugin="{{ node.plugin }}" name="{{ node.name }}" namespace="{{ node.namespace }}">

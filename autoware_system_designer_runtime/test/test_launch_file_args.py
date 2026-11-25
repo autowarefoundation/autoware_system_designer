@@ -35,3 +35,23 @@ def test_boolean_launch_args_are_lowercase():
 def test_list_and_scalar_launch_args():
     args = _launch_args([{"name": "items", "value": [1, 2]}, {"name": "rate", "value": 10}])
     assert args == ["items:=[1, 2]", "rate:=10"]
+
+
+def test_global_parameters_are_typed_json_apart_from_launch_args():
+    spec = {
+        "launcher": {
+            "package": "pkg",
+            "ros2_launch_file": "a.launch.xml",
+            "global_parameters": [
+                {"name": "wheel_base", "value": "2.79", "type": "double"},
+                {"name": "use_sim_time", "value": False, "type": "bool"},
+            ],
+        },
+        "parameters": [],
+    }
+    cmd = include_cmdline(spec)
+    assert "--launch-arg" not in cmd
+    assert [cmd[i + 1] for i, token in enumerate(cmd) if token == "--global-param"] == [
+        "wheel_base:=2.79",
+        "use_sim_time:=false",
+    ]

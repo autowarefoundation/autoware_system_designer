@@ -1,0 +1,4 @@
+/**:
+  ros__parameters:
+    wheel_base: 2.79
+    max_steer_angle: 0.7

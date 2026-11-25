@@ -222,3 +222,5 @@ class SystemConfig(Config):
     variable_files: Optional[List[VariableFileDict]] = None
     node_groups: Optional[List[NodeGroupDict]] = None
     remaps: Optional[List[RemapEntry]] = None
+    # Parameters every node receives at the lowest priority: {"param_files": [...], "param_values": [...]}
+    global_parameters: Optional[Dict[str, Any]] = None
