@@ -18,7 +18,7 @@ import math
 import operator
 import os
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.parser.yaml_parser import yaml_parser
@@ -211,8 +211,8 @@ class ParameterResolver:
         # undefined references, which the deployment build reports once per system mode.
         self.argument_names: Set[str] = set()
         self.undefined_variables: Dict[str, List[str]] = {}
-        # $(command ...) uses already warned about, shared by copies.
-        self.reported_commands: Set[Tuple[str, str]] = set()
+        # Values holding $(command ...), by source location; shared by copies.
+        self.command_uses: Dict[str, str] = {}
 
         # Optional location context for improved warning messages
         self._source_context: Optional[SourceLocation] = None
@@ -236,7 +236,7 @@ class ParameterResolver:
         new_resolver.variable_map = self.variable_map.copy()
         new_resolver.argument_names = self.argument_names
         new_resolver.undefined_variables = self.undefined_variables
-        new_resolver.reported_commands = self.reported_commands
+        new_resolver.command_uses = self.command_uses
         return new_resolver
 
     def declare_arguments(self, names: List[str]):
@@ -284,7 +284,7 @@ class ParameterResolver:
             self._source_context = source
 
         if "$(command" in input_string:
-            self._warn_command_substitution(input_string)
+            self.command_uses.setdefault(format_source(self._source_context).strip() or input_string, input_string)
 
         try:
             result = input_string
@@ -321,18 +321,6 @@ class ParameterResolver:
             return result
         finally:
             self._source_context = prev_source
-
-    def _warn_command_substitution(self, text: str) -> None:
-        """Warn once per use that $(command ...) defers a value to a process run at launch."""
-        location = format_source(self._source_context)
-        key = (text, location)
-        if key in self.reported_commands:
-            return
-        self.reported_commands.add(key)
-        logger.warning(
-            "$(command ...) runs a process at launch, so the design does not hold the value; "
-            f"generate it at build time: {text}{location}"
-        )
 
     def _resolve_env_match(self, match) -> str:
         """Resolve a single $(env ENV_VAR) match."""

@@ -12,19 +12,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest import mock
-
-from autoware_system_designer.builder.parameters import parameter_resolver
 from autoware_system_designer.builder.parameters.parameter_resolver import ParameterResolver
 
 
-def test_command_substitution_warns_once_per_use():
+def test_command_substitution_is_recorded_once_and_shared_by_copies():
     resolver = ParameterResolver([], {})
     value = "$(command 'xacro model.xacro')"
 
-    with mock.patch.object(parameter_resolver.logger, "warning") as warning:
-        assert resolver.resolve_string(value) == value
-        resolver.copy().resolve_string(value)
+    assert resolver.resolve_string(value) == value
+    resolver.copy().resolve_string(value)
 
-    assert warning.call_count == 1
-    assert value in warning.call_args.args[0]
+    assert resolver.command_uses == {value: value}
+
+
+def test_build_names_each_command_value_once_on_stderr(tmp_path, capsys):
+    from pipeline_harness import run_pipeline, stage_case
+
+    workspace = stage_case("single_node", tmp_path)
+    node_file = next((workspace / "demo_pkg").glob("*.node.yaml"))
+    text = node_file.read_text()
+    marker = "param_values:\n"
+    assert marker in text
+    node_file.write_text(
+        text.replace(
+            marker,
+            marker
+            + "  - name: robot_description\n"
+            + "    type: string\n"
+            + "    default: $(command 'xacro $(find-pkg-share demo_pkg)/model.xacro')\n",
+            1,
+        )
+    )
+
+    run_pipeline(workspace, "demo_pkg/Solo.system.yaml", tmp_path)
+
+    err = capsys.readouterr().err
+    assert err.count("WARNING: $(command ...) is deprecated") == 1
+    assert err.count("model.xacro") == 1
+    assert str(node_file.name) in err
