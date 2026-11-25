@@ -647,19 +647,6 @@ def export_reference_latency(artifacts: BuildArtifacts) -> List[str]:
     return copied
 
 
-def generate_system_monitor_config(artifacts: BuildArtifacts) -> None:
-    """Generate system monitor configuration from the exported JSON."""
-    template_name = "sys_monitor_topics.yaml.jinja2"
-
-    renderer = TemplateRenderer()
-    for mode_key, data in _iter_mode_data(artifacts):
-        mode_monitor_dir = export_path(artifacts.layout.system_monitor_dir, mode_key, "component_state_monitor")
-        output_path = os.path.join(mode_monitor_dir, "topics.yaml")
-        renderer.render_template_to_file(template_name, output_path, **data)
-
-        logger.info(f"Generated system monitor for mode: {mode_key}")
-
-
 def generate_build_scripts(artifacts: BuildArtifacts) -> None:
     """Generate shell build scripts from the exported JSON and package resolutions."""
     deploy_data = {mode_key: data for mode_key, data in _iter_mode_data(artifacts)}
