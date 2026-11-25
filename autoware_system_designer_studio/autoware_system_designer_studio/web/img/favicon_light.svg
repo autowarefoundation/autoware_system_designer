@@ -1,15 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -20 99.8 99.8">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
   <title>Autoware System Designer</title>
-  <rect x="28.27" y="2.4" width="26" height="26" rx="4.5" fill="#ffffff" stroke="#16181a" stroke-width="4.4"/>
-  <rect x="2.4" y="31.4" width="26" height="26" rx="4.5" fill="#ffffff" stroke="#16181a" stroke-width="4.4"/>
-  <rect x="36.9" y="31.4" width="26" height="26" rx="4.5" fill="#ffffff" stroke="#16181a" stroke-width="4.4"/>
-  <rect x="71.4" y="31.4" width="26" height="26" rx="4.5" fill="#ffffff" stroke="#16181a" stroke-width="4.4"/>
-  <rect x="24.65" y="40.65" width="7.5" height="7.5" fill="#fd7e14" stroke="#6c757d" stroke-width="1.2"/>
-  <rect x="50.52" y="16.85" width="7.5" height="7.5" fill="#fd7e14" stroke="#6c757d" stroke-width="1.2"/>
-  <rect x="59.15" y="40.65" width="7.5" height="7.5" fill="#fd7e14" stroke="#6c757d" stroke-width="1.2"/>
-  <rect x="50.52" y="6.45" width="7.5" height="7.5" fill="#fd7e14" stroke="#6c757d" stroke-width="1.2"/>
-  <rect x="24.52" y="11.65" width="7.5" height="7.5" fill="#28a745" stroke="#6c757d" stroke-width="1.2"/>
-  <rect x="33.15" y="34.67" width="7.5" height="7.5" fill="#28a745" stroke="#6c757d" stroke-width="1.2"/>
-  <rect x="33.15" y="46.63" width="7.5" height="7.5" fill="#28a745" stroke="#6c757d" stroke-width="1.2"/>
-  <rect x="67.65" y="40.65" width="7.5" height="7.5" fill="#28a745" stroke="#6c757d" stroke-width="1.2"/>
+  <rect x="14" y="14" width="72" height="72" rx="8" fill="#ffffff" stroke="#16181a" stroke-width="10"/>
+  <path fill="#212529" d="M62.16 71.67 58.3 60.56H41.8L37.95 71.67H28.88L44.66 28.33H55.39L71.12 71.67ZM50.05 35.04 49.84 35.7Q49.56 36.8 49.12 38.23Q48.68 39.6 43.84 53.74H56.27L51.98 41.31L50.66 37.13Z"/>
+  <rect x="4" y="24" width="20" height="20" fill="#28a745"/>
+  <rect x="4" y="56" width="20" height="20" fill="#28a745"/>
+  <rect x="76" y="40" width="20" height="20" fill="#fd7e14"/>
 </svg>
