@@ -59,6 +59,8 @@ The top-level description of a complete autonomous driving system. It defines:
 
 A collection of parameter overrides that can be applied to specific nodes in a system, allowing for flexible configuration management without modifying the core node definitions.
 
+A parameter file is read at build time when its path resolves to a file: system variables resolve, and `$(find-pkg-share <package>)` resolves for a package among the collected designs. A path that keeps a launch argument, including inside a package name such as `$(find-pkg-share $(var vehicle_model)_description)`, or names a package outside the collected designs, is loaded by the launcher at launch time.
+
 ## Project Structure
 
 To use Autoware System Designer in your ROS 2 package, organize your files as follows:

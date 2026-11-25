@@ -191,3 +191,20 @@ def test_strict_build_rejects_a_reference_reaching_the_launcher(tmp_path):
     (pkg / "config" / "defaults.param.yaml").write_text(_DEFAULTS + "    model: $(var model_path)/model.onnx\n")
     with pytest.raises(ValidationError, match=r"\$\(var model_path\)"):
         run_pipeline(workspace, "lt_pkg/Probed.system.yaml", tmp_path, strict=True)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # The package name holds a launch argument.
+        "$(find-pkg-share $(var params_dir)_description)/config/vehicle.param.yaml",
+        # The package is outside the collected designs.
+        "$(find-pkg-share unmapped_pkg)/config/vehicle.param.yaml",
+    ],
+)
+def test_unresolved_find_pkg_share_files_load_at_launch(tmp_path, path):
+    workspace = _stage(tmp_path)
+    node_file = workspace / "lt_pkg" / "Probe.node.yaml"
+    node_file.write_text(node_file.read_text().replace("$(var params_dir)/vehicle.param.yaml", path))
+    run = run_pipeline(workspace, "lt_pkg/Probed.system.yaml", tmp_path)
+    assert _node_params(run) == ["gain", path, "$(var params_dir)/override.param.yaml", "rate_hz"]

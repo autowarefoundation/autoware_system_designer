@@ -15,7 +15,7 @@
 import logging
 import os
 import re
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Collection, Dict, List, Optional
 
 from autoware_system_designer.common.exceptions import ParameterConfigurationError, ValidationError
 from autoware_system_designer.common.parameter_types import coerce_numeric_value, normalize_type_name
@@ -43,7 +43,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _SYSTEM_ARG_PATTERN = re.compile(r"\$\(var\s+([^)]+)\)")
-_FIND_PKG_SHARE_PATTERN = re.compile(r"\$\(find-pkg-share\s+[^)]+\)")
+# $(find-pkg-share <name>) with a plain package name; a nested substitution in the name is resolved at launch.
+_FIND_PKG_SHARE_PATTERN = re.compile(r"\$\(find-pkg-share\s+([^()$\s]+)\s*\)")
 
 
 def _has_substitution(path: Optional[str]) -> bool:
@@ -51,9 +52,17 @@ def _has_substitution(path: Optional[str]) -> bool:
     return bool(path) and "$(" in path
 
 
-def _has_launch_time_substitution(path: Optional[str]) -> bool:
-    """Whether a resolved path carries a substitution the build cannot expand (find-pkg-share is expandable)."""
-    return _has_substitution(_FIND_PKG_SHARE_PATTERN.sub("", path or ""))
+def _has_launch_time_substitution(path: Optional[str], known_packages: Optional[Collection[str]] = None) -> bool:
+    """Whether a resolved path carries a substitution the build cannot expand.
+
+    find-pkg-share of a plain name is expandable when the package is known; without a package
+    list every plain name counts as known.
+    """
+
+    def expandable(match: "re.Match[str]") -> str:
+        return "" if known_packages is None or match.group(1) in known_packages else match.group(0)
+
+    return _has_substitution(_FIND_PKG_SHARE_PATTERN.sub(expandable, path or ""))
 
 
 class ParameterManager:
@@ -231,9 +240,7 @@ class ParameterManager:
                 param_file.path, self._get_package_name(), param_file.is_override
             )
             # Default files are expanded into individual values, except those only resolvable at launch time.
-            if param_file.parameter_type == ParameterType.DEFAULT_FILE and not _has_launch_time_substitution(
-                resolved_path
-            ):
+            if param_file.parameter_type == ParameterType.DEFAULT_FILE and not self._is_launch_time_path(resolved_path):
                 continue
             result.append(
                 {
@@ -245,6 +252,11 @@ class ParameterManager:
             )
         return result
 
+    def _is_launch_time_path(self, path: Optional[str]) -> bool:
+        """Whether a parameter file is loaded at launch: its path keeps a substitution the build cannot expand."""
+        known = self.parameter_resolver.package_paths if self.parameter_resolver else None
+        return _has_launch_time_substitution(path, known)
+
     def get_launch_time_parameter_files(self) -> List[LauncherParamFileData]:
         """Get parameter files whose path keeps launch-time substitutions, in priority order.
 
@@ -255,7 +267,7 @@ class ParameterManager:
             resolved_path = self._resolve_parameter_file_path(
                 param_file.path, self._get_package_name(), param_file.is_override
             )
-            if not _has_launch_time_substitution(resolved_path):
+            if not self._is_launch_time_path(resolved_path):
                 continue
             result.append(
                 {
