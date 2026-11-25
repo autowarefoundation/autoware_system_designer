@@ -1,0 +1,36 @@
+autoware_system_design_format: 0.4.0
+
+name: Merger.node
+
+description: Dummy merger fusing two object streams.
+
+package:
+  name: pipeline_pkg
+  provider: dummy
+
+launch:
+  plugin: pipeline::Merger
+  executable: merger_node
+  node_output: screen
+
+subscribers:
+  - name: objects1
+    message_type: autoware_perception_msgs/msg/DetectedObjects
+  - name: objects2
+    message_type: autoware_perception_msgs/msg/DetectedObjects
+
+publishers:
+  - name: objects
+    message_type: autoware_perception_msgs/msg/DetectedObjects
+
+param_files: []
+param_values: []
+
+processes:
+  - name: merge
+    trigger_conditions:
+      - or:
+          - on_input: objects1
+          - on_input: objects2
+    outcomes:
+      - to_output: objects

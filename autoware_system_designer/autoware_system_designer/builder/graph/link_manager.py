@@ -508,7 +508,13 @@ class LinkManager:
             src = source_from_config(self.instance.configuration, f"/connections/{idx}")
             connection_list.append(Connection(cfg, source=src))
         if len(connection_list) == 0:
-            cfg_src = source_from_config(self.instance.configuration, "/connections")
+            configuration = self.instance.configuration
+            if getattr(configuration, "remaps", None) or getattr(configuration, "input_topics", None):
+                # A lone component still gets its topics.
+                self.apply_remaps()
+                self.apply_input_topics()
+                return
+            cfg_src = source_from_config(configuration, "/connections")
             logger.warning(f"Module '{self.instance.name}' has no connections configured{format_source(cfg_src)}")
             return
 
@@ -622,6 +628,8 @@ class LinkManager:
                     continue
                 self._create_link_from_ports(from_port, to_port, connection.type)
 
+        self.apply_input_topics()
+
         # Create external ports after links are set
         self._create_external_ports()
 
@@ -688,6 +696,41 @@ class LinkManager:
                     "must be a valid absolute ROS topic (e.g. '/foo/bar')"
                 )
             self._force_remap_port(port, topic_parts)
+
+    def apply_input_topics(self):
+        """Set the topics of unconnected child subscribers from ``input_topics``.
+
+        Runs after the links, so a subscriber a connection feeds is rejected. The topic
+        is set on every node port the subscriber stands for.
+        """
+        entries = getattr(self.instance.configuration, "input_topics", None)
+        if not entries:
+            return
+        for entry in entries:
+            instance_name, port_type, port_name = entry.source.split(".", 2)
+            child_instance = self.instance.children.get(instance_name)
+            if child_instance is None:
+                raise ValidationError(f"[E_INPUT_TOPIC] Instance '{instance_name}' of '{entry.source}' not found")
+            port = child_instance.link_manager.in_ports.get(port_name)
+            if port is None or (port.role is not None and port.role != port_type):
+                available = sorted(
+                    name for name, p in child_instance.link_manager.in_ports.items() if p.role in (None, port_type)
+                )
+                raise ValidationError(
+                    f"[E_INPUT_TOPIC] '{instance_name}' has no {port_type} '{port_name}'. Available: {available}"
+                )
+            if port.servers:
+                raise ValidationError(
+                    f"[E_INPUT_TOPIC] '{entry.source}' is connected; its topic comes from the publisher"
+                )
+            topic_parts = entry.topic.lstrip("/").split("/")
+            for leaf in port.get_chain_list():
+                if leaf.is_global:
+                    raise ValidationError(
+                        f"[E_INPUT_TOPIC] '{entry.source}' reaches global subscriber '{leaf.port_path}'"
+                    )
+                leaf.is_remapped = True
+                leaf.set_topic(topic_parts[:-1], topic_parts[-1])
 
     @staticmethod
     def _force_remap_port(port: OutPort, topic_parts: list[str]):

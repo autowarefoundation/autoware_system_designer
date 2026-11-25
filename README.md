@@ -69,7 +69,8 @@ src/<package_name>/
 │   ├── node/           # *.node.yaml
 │   ├── module/         # *.module.yaml
 │   ├── system/         # *.system.yaml
-│   └── parameter_set/  # *.parameter_set.yaml
+│   ├── parameter_set/  # *.parameter_set.yaml
+│   └── <name>.border.yaml  # Border (one entity behind a generated launch file)
 ├── deployment/         # *.deployment.yaml (System instantiation)
 ├── schema/             # *.schema.json (Parameter schemas)
 ├── CMakeLists.txt
@@ -101,7 +102,67 @@ autoware_system_designer_build_deploy(
   PRINT_LEVEL=WARNING
   STRICT=AUTO  # AUTO|ON|OFF (AUTO follows AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT)
 )
+
+# 4. Build a border (Optional)
+# Generates share/<package>/launch/sensing.launch.xml from design/sensing.border.yaml.
+autoware_system_designer_build_deploy(
+  ${PROJECT_NAME}
+  sensing.border
+  BORDER_OUTPUT=launch/sensing.launch.xml  # default: launch/<name>.launch.xml
+)
 ```
+
+### Border (`*.border.yaml`)
+
+A border launches components behind a fixed launch-file interface, so a hand-written entry launch file can be replaced by a generated one at the same path. It is a local build input like a deployments table: plain YAML, no format declaration, no schema. It is not part of any system.
+
+```yaml
+name: sensing_perception # launch file stem; equals the file name stem
+
+components: # as in a system, without compute units
+  - name: sensing
+    entity: SampleSensorKit.module
+    path: /sensing
+    parameter_set: [sample_system_sensing.parameter_set]
+  - name: perception
+    entity: Perception.module
+    path: /perception
+    parameter_set: [sample_system_perception.parameter_set]
+
+arguments: # launch arguments of the generated file; $(var name) in parameter sets
+  - name: data_path
+    default: $(env HOME)/autoware_data/ml_models
+variables: # build-time values, as in a system
+  - name: sensor_model
+    value: sample_sensor_kit
+
+subscribers: # external interface: ports bound to topics
+  - name: velocity_status
+    topic: /vehicle/status/velocity_status
+  - name: vector_map
+    topic: /map/vector_map
+publishers:
+  - name: objects
+    topic: /perception/object_recognition/objects
+
+node_groups: # as in a system; `external` loads into a container the caller starts
+  - name: $(var pointcloud_container_name)
+    type: ros2_component_container_mt
+    external: true # holds nodes of both components
+    nodes: [/sensing/lidar/*, /perception/obstacle_segmentation/*]
+
+connections: # as in a system; the interface is reached as in a module
+  - - subscriber.velocity_status
+    - sensing.subscriber.velocity_status
+  - - subscriber.vector_map
+    - perception.subscriber.vector_map
+  - - sensing.publisher.lidar/concatenated/pointcloud
+    - perception.subscriber.concatenated_pointcloud
+  - - perception.publisher.object_recognition/objects
+    - publisher.objects
+```
+
+The border builds as a system on one compute unit. An interface connection binds the component port to the interface topic; a `*` at the end of both ends connects every interface port with a matching component port. Every interface port needs a connection. The generated entry file declares the arguments with their defaults and includes the compute-unit launcher under `share/<package>/exports/<name>/`.
 
 ## Use as an independent workspace
 
@@ -151,4 +212,5 @@ xdg-open ~/studio_view/index.html
 ### Instantiation
 
 - **Deployment**: A specific instance of a System tailored for an environment/vehicle.
+- **Border**: Components launched behind a generated entry launch file with fixed topics and launch arguments.
 - **Component**: A top-level instance within a System.

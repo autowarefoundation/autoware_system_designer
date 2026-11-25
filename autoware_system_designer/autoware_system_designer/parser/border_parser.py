@@ -1,0 +1,386 @@
+# Copyright 2026 TIER IV, inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Border: components launched behind a fixed launch-file interface.
+
+A ``*.border.yaml`` file is a local build input, like a deployments table: plain YAML
+without a format declaration or schema. It describes components as a system does,
+the launch arguments of the generated launch file, its external interface (ports bound
+to topics), node groups and connections. Connections reach the interface as a module's
+do, through ``subscriber.<port>`` and ``publisher.<port>``. The border builds as a system
+whose interface connections become topic bindings of the component ports.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from autoware_system_designer.common.exceptions import ValidationError
+from autoware_system_designer.common.path_utils import canonical_path
+from autoware_system_designer.common.source_location import format_source, source_from_source_map
+from autoware_system_designer.model.config import RemapEntry, SystemConfig
+from autoware_system_designer.parser.data_validator import entity_name_decode, split_package_qualifier
+from autoware_system_designer.parser.yaml_parser import yaml_parser
+
+logger = logging.getLogger(__name__)
+
+BORDER_SUFFIX = ".border.yaml"
+
+# The border name becomes the launch file stem, the export directory and the compute unit name.
+_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+_ARGUMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_/]*$")
+
+_KNOWN_KEYS = (
+    "name",
+    "components",
+    "arguments",
+    "variables",
+    "subscribers",
+    "publishers",
+    "node_groups",
+    "connections",
+)
+_COMPONENT_KEYS = ("name", "entity", "path", "parameter_set")
+_INTERFACE_ROLES = ("subscriber", "publisher")
+
+
+def is_border_file(path: str) -> bool:
+    return isinstance(path, str) and path.endswith(BORDER_SUFFIX)
+
+
+@dataclass
+class BorderPort:
+    name: str
+    topic: str
+
+
+@dataclass
+class BorderArgument:
+    name: str
+    default: Optional[str] = None
+    description: str = ""
+
+
+@dataclass
+class BorderConfig:
+    """Parsed border file."""
+
+    name: str
+    file_path: Path
+    components: List[Dict[str, Any]] = field(default_factory=list)
+    arguments: List[BorderArgument] = field(default_factory=list)
+    variables: List[Dict[str, Any]] = field(default_factory=list)
+    subscribers: List[BorderPort] = field(default_factory=list)
+    publishers: List[BorderPort] = field(default_factory=list)
+    node_groups: List[Dict[str, Any]] = field(default_factory=list)
+    connections: List[List[str]] = field(default_factory=list)
+    source_map: Optional[Dict[str, Dict[str, int]]] = None
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def system_name(self) -> str:
+        return self.name
+
+    def ports(self, role: str) -> List[BorderPort]:
+        return self.subscribers if role == "subscriber" else self.publishers
+
+
+class _Reader:
+    """Field access over the border YAML; every error names the file and the field."""
+
+    def __init__(self, file_path: Path, source_map: Optional[Dict[str, Dict[str, int]]]):
+        self.file_path = file_path
+        self.source_map = source_map
+
+    def error(self, yaml_path: str, message: str) -> ValidationError:
+        source = source_from_source_map(self.source_map, self.file_path, yaml_path)
+        return ValidationError(f"Border {self.file_path.name}: {message}{format_source(source)}", source=source)
+
+    def string(self, data: Dict[str, Any], key: str, yaml_path: str, required: bool = True) -> Optional[str]:
+        value = data.get(key)
+        if value is None and not required:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise self.error(f"{yaml_path}/{key}", f"'{key}' must be a non-empty string")
+        return value.strip()
+
+    def items(self, data: Dict[str, Any], key: str, kind: type = dict) -> List[Any]:
+        value = data.get(key)
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise self.error(f"/{key}", f"'{key}' must be a list")
+        for idx, item in enumerate(value):
+            if not isinstance(item, kind):
+                raise self.error(f"/{key}/{idx}", f"'{key}[{idx}]' must be a {'mapping' if kind is dict else 'list'}")
+        return value
+
+
+def _parse_components(reader: _Reader, data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    components = reader.items(data, "components")
+    if not components:
+        raise reader.error("/components", "'components' must list at least one component")
+    seen = set()
+    for idx, item in enumerate(components):
+        yaml_path = f"/components/{idx}"
+        unknown = sorted(set(item) - set(_COMPONENT_KEYS))
+        if unknown:
+            raise reader.error(f"{yaml_path}/{unknown[0]}", f"unknown component key(s) {unknown}")
+        name = reader.string(item, "name", yaml_path)
+        if name in seen:
+            raise reader.error(f"{yaml_path}/name", f"component '{name}' is declared twice")
+        seen.add(name)
+        entity = reader.string(item, "entity", yaml_path)
+        try:
+            _, entity_type = entity_name_decode(split_package_qualifier(entity)[1])
+        except ValidationError as exc:
+            raise reader.error(f"{yaml_path}/entity", exc.message) from exc
+        if entity_type not in ("module", "node"):
+            raise reader.error(f"{yaml_path}/entity", f"entity '{entity}' must be a module or a node")
+        path = reader.string(item, "path", yaml_path, required=False)
+        if path is not None and not path.startswith("/"):
+            raise reader.error(f"{yaml_path}/path", f"path '{path}' must be absolute")
+        sets = item.get("parameter_set", [])
+        if not isinstance(sets, list) or not all(isinstance(s, str) and s for s in sets):
+            raise reader.error(f"{yaml_path}/parameter_set", "'parameter_set' must be a list of parameter set names")
+    return components
+
+
+def _parse_arguments(reader: _Reader, data: Dict[str, Any]) -> List[BorderArgument]:
+    arguments: List[BorderArgument] = []
+    seen = set()
+    for idx, item in enumerate(reader.items(data, "arguments")):
+        yaml_path = f"/arguments/{idx}"
+        name = reader.string(item, "name", yaml_path)
+        if not _ARGUMENT_NAME.match(name):
+            raise reader.error(f"{yaml_path}/name", f"argument name '{name}' is not a valid launch argument name")
+        if name in seen:
+            raise reader.error(f"{yaml_path}/name", f"argument '{name}' is declared twice")
+        seen.add(name)
+        default = item.get("default")
+        if isinstance(default, bool):
+            default = "true" if default else "false"
+        elif default is not None and not isinstance(default, str):
+            default = str(default)
+        description = item.get("description", "")
+        if not isinstance(description, str):
+            raise reader.error(f"{yaml_path}/description", "'description' must be a string")
+        arguments.append(BorderArgument(name=name, default=default, description=description))
+    return arguments
+
+
+def _parse_variables(reader: _Reader, data: Dict[str, Any], argument_names: set) -> List[Dict[str, Any]]:
+    variables = reader.items(data, "variables")
+    seen = set()
+    for idx, item in enumerate(variables):
+        yaml_path = f"/variables/{idx}"
+        name = reader.string(item, "name", yaml_path)
+        if name in seen:
+            raise reader.error(f"{yaml_path}/name", f"variable '{name}' is declared twice")
+        if name in argument_names:
+            raise reader.error(f"{yaml_path}/name", f"'{name}' is declared as both an argument and a variable")
+        if item.get("value") is None:
+            raise reader.error(f"{yaml_path}/value", f"variable '{name}' requires 'value'")
+        seen.add(name)
+    return variables
+
+
+def _parse_ports(reader: _Reader, data: Dict[str, Any], key: str) -> List[BorderPort]:
+    ports: List[BorderPort] = []
+    seen = set()
+    for idx, item in enumerate(reader.items(data, key)):
+        yaml_path = f"/{key}/{idx}"
+        name = reader.string(item, "name", yaml_path)
+        topic = reader.string(item, "topic", yaml_path)
+        if name in seen:
+            raise reader.error(f"{yaml_path}/name", f"{key} port '{name}' is declared twice")
+        segments = topic.lstrip("/").split("/")
+        if not topic.startswith("/") or not all(segments):
+            raise reader.error(f"{yaml_path}/topic", f"topic '{topic}' must be an absolute ROS topic, e.g. '/foo/bar'")
+        seen.add(name)
+        ports.append(BorderPort(name=name, topic=topic))
+    return ports
+
+
+def _parse_connections(reader: _Reader, data: Dict[str, Any]) -> List[List[str]]:
+    connections = reader.items(data, "connections", kind=list)
+    for idx, item in enumerate(connections):
+        if len(item) != 2 or not all(isinstance(end, str) and end for end in item):
+            raise reader.error(f"/connections/{idx}", "a connection is a pair of port references")
+    return connections
+
+
+def parse_border(border_path: str) -> BorderConfig:
+    """Parse and validate a border file; checks against the entities need the registry (see border_system_config)."""
+    file_path = Path(canonical_path(border_path))
+    if not file_path.is_file():
+        raise ValidationError(f"Border file not found: {border_path}")
+    data, source_map = yaml_parser.load_config_with_source(file_path)
+    reader = _Reader(file_path, source_map)
+    if not isinstance(data, dict):
+        raise reader.error("", "top level must be a mapping")
+
+    unknown = sorted(set(data) - set(_KNOWN_KEYS))
+    if unknown:
+        raise reader.error(f"/{unknown[0]}", f"unknown key(s) {unknown}; supported: {list(_KNOWN_KEYS)}")
+
+    name = reader.string(data, "name", "")
+    if not _NAME.match(name):
+        raise reader.error("/name", f"name '{name}' must match {_NAME.pattern}")
+    expected_stem = file_path.name[: -len(BORDER_SUFFIX)]
+    if name != expected_stem:
+        raise reader.error("/name", f"name '{name}' differs from the file name '{expected_stem}{BORDER_SUFFIX}'")
+
+    arguments = _parse_arguments(reader, data)
+    return BorderConfig(
+        name=name,
+        file_path=file_path,
+        components=_parse_components(reader, data),
+        arguments=arguments,
+        variables=_parse_variables(reader, data, {a.name for a in arguments}),
+        subscribers=_parse_ports(reader, data, "subscribers"),
+        publishers=_parse_ports(reader, data, "publishers"),
+        node_groups=reader.items(data, "node_groups"),
+        connections=_parse_connections(reader, data),
+        source_map=source_map,
+        raw=data,
+    )
+
+
+def _interface_ref(end: str) -> Optional[Tuple[str, str]]:
+    """(role, port pattern) of a reference to the border interface; None for a component port."""
+    role, _, port = end.partition(".")
+    if role in _INTERFACE_ROLES and port:
+        return role, port
+    return None
+
+
+def _match(pattern: str, names: List[str]) -> List[Tuple[str, str]]:
+    """(name, suffix) of each name the pattern selects; a trailing '*' matches any suffix."""
+    if pattern.endswith("*"):
+        prefix = pattern[:-1]
+        return [(name, name[len(prefix) :]) for name in names if name.startswith(prefix) and len(name) > len(prefix)]
+    return [(pattern, "")] if pattern in names else []
+
+
+class _BorderResolver:
+    """Splits border connections into system connections and topic bindings of component ports."""
+
+    def __init__(self, border: BorderConfig, config_registry: Any):
+        self.border = border
+        self.reader = _Reader(border.file_path, border.source_map)
+        self.component_ports: Dict[str, Dict[str, List[str]]] = {}
+        for component in border.components:
+            entity = component["entity"]
+            _, entity_type = entity_name_decode(split_package_qualifier(entity)[1])
+            config = config_registry.get_entity_by_type(entity, entity_type)
+            ports: Dict[str, List[str]] = {role: [] for role in _INTERFACE_ROLES}
+            for port in list(config.inputs or []) + list(config.outputs or []):
+                if port.port_role in ports:
+                    ports[port.port_role].append(port.name)
+            self.component_ports[component["name"]] = ports
+
+    def _component_end(self, idx: int, end: str, role: str) -> Tuple[str, str]:
+        component, _, rest = end.partition(".")
+        port_role, _, port = rest.partition(".")
+        if component not in self.component_ports:
+            raise self.reader.error(
+                f"/connections/{idx}", f"'{end}' names no component; components: {sorted(self.component_ports)}"
+            )
+        if port_role != role or not port:
+            raise self.reader.error(
+                f"/connections/{idx}", f"'{end}' must be '<component>.{role}.<port>' to meet the {role} interface"
+            )
+        return component, port
+
+    def resolve(self) -> Tuple[List[List[str]], List[RemapEntry], List[RemapEntry]]:
+        connections: List[List[str]] = []
+        bindings: Dict[str, List[RemapEntry]] = {role: [] for role in _INTERFACE_ROLES}
+        bound: Dict[str, str] = {}
+        used = {role: set() for role in _INTERFACE_ROLES}
+        topics = {role: {p.name: p.topic for p in self.border.ports(role)} for role in _INTERFACE_ROLES}
+
+        for idx, (first, second) in enumerate(self.border.connections):
+            interface = [_interface_ref(end) for end in (first, second)]
+            if interface == [None, None]:
+                connections.append([first, second])
+                continue
+            if all(interface):
+                raise self.reader.error(f"/connections/{idx}", "a connection cannot join two interface ports")
+            (role, pattern), other = (interface[0], second) if interface[0] else (interface[1], first)
+            component, port_pattern = self._component_end(idx, other, role)
+
+            matched = _match(pattern, list(topics[role]))
+            if not matched:
+                raise self.reader.error(
+                    f"/connections/{idx}",
+                    f"no {role} interface port matches '{pattern}'; declared: {sorted(topics[role])}",
+                )
+            component_ports = self.component_ports[component][role]
+            for name, suffix in matched:
+                port = port_pattern[:-1] + suffix if port_pattern.endswith("*") else port_pattern
+                if port not in component_ports:
+                    if pattern.endswith("*"):
+                        continue
+                    raise self.reader.error(
+                        f"/connections/{idx}",
+                        f"component '{component}' has no {role} '{port}'; {role}s: {sorted(component_ports)}",
+                    )
+                source = f"{component}.{role}.{port}"
+                if source in bound:
+                    raise self.reader.error(f"/connections/{idx}", f"'{source}' is bound twice")
+                if role == "publisher" and name in used[role]:
+                    raise self.reader.error(
+                        f"/connections/{idx}", f"publisher interface port '{name}' has two publishers"
+                    )
+                bound[source] = name
+                used[role].add(name)
+                bindings[role].append(RemapEntry(source=source, topic=topics[role][name]))
+
+        for role in _INTERFACE_ROLES:
+            unused = sorted(set(topics[role]) - used[role])
+            if unused:
+                raise self.reader.error(f"/{role}s", f"{role} interface port(s) without a connection: {unused}")
+        return connections, bindings["publisher"], bindings["subscriber"]
+
+
+def border_system_config(border: BorderConfig, config_registry: Any) -> SystemConfig:
+    """System the deployment build runs for the border; all components share one compute unit."""
+    connections, remaps, input_topics = _BorderResolver(border, config_registry).resolve()
+    components = []
+    for component in border.components:
+        entry = {key: component[key] for key in _COMPONENT_KEYS if key in component}
+        entry["compute_unit"] = border.name
+        components.append(entry)
+
+    return SystemConfig(
+        name=border.name,
+        full_name=f"{border.name}.system",
+        entity_type="system",
+        config=border.raw,
+        file_path=border.file_path,
+        source_map=border.source_map,
+        package=config_registry.deployment_package_name,
+        arguments=[{"name": argument.name} for argument in border.arguments],
+        components=components,
+        connections=connections,
+        variables=border.variables or None,
+        node_groups=border.node_groups or None,
+        remaps=remaps,
+        input_topics=input_topics,
+    )

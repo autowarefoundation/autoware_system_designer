@@ -24,9 +24,11 @@ from autoware_system_designer.deploy import (
     build_deployment,
     export_parameter_set_templates,
     export_reference_latency,
+    generate_border_launch_file,
     generate_build_scripts,
     generate_launchers,
 )
+from autoware_system_designer.parser.border_parser import is_border_file
 
 # Stable name whether imported or executed as a script.
 _logger = logging.getLogger("autoware_system_designer.deployment_process")
@@ -57,12 +59,14 @@ def build(
     output_root_dir: str,
     workspace_yaml: str | None = None,
     package_name: str | None = None,
+    border_output: str | None = None,
 ):
     # Inputs:
     #   deployment_file: YAML deployment configuration
     #   manifest_dir: directory containing per-package manifest YAML files (each lists deploy_config_files)
     #   output_root_dir: root directory for generated exports
     #   package_name: package that owns the deployment; its entities are searched first
+    #   border_output: entry launch file of a border target, relative to output_root_dir
 
     # configure the autoware system design format files
     # Start from env defaults so callers (e.g. CMake) can control terminal verbosity.
@@ -81,6 +85,14 @@ def build(
         # build stage: parse, build every mode, export system structure + manifest
         logger.info("Autoware System Designer: Building deployment...")
         artifacts = build_deployment(deploy_config)
+
+        if is_border_file(deployment_file):
+            # A border yields launchers only; it has no deployment of its own to script or template.
+            logger.info("Autoware System Designer: Generating border launch files...")
+            generate_launchers(artifacts)
+            generate_border_launch_file(artifacts, deployment_file, border_output)
+            logger.info("Autoware System Designer: Done!")
+            return
 
         # generators: consumers of the build artifacts
         logger.info("Autoware System Designer: Exporting parameter set template...")
@@ -149,13 +161,21 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("output_root_dir", help="Root directory for generated exports")
     parser.add_argument("workspace_yaml", nargs="?", default=None, help="Optional workspace.yaml path")
     parser.add_argument("--package", default=None, help="Package that owns the deployment")
+    parser.add_argument("--border-output", default=None, help="Border entry launch file, relative to output_root_dir")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_args()
     try:
-        build(args.deployment_file, args.manifest_dir, args.output_root_dir, args.workspace_yaml, args.package)
+        build(
+            args.deployment_file,
+            args.manifest_dir,
+            args.output_root_dir,
+            args.workspace_yaml,
+            args.package,
+            args.border_output,
+        )
     except SystemDesignerError:
         # Already rendered by the boundary handler; a traceback would repeat it.
         raise SystemExit(1)

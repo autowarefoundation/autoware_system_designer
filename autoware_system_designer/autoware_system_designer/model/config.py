@@ -119,6 +119,7 @@ class NodeGroupDict(TypedDict, total=False):
     name: str
     type: str
     nodes: List[str]
+    external: bool
 
 
 class ParameterSetItemDict(TypedDict, total=False):
@@ -222,3 +223,5 @@ class SystemConfig(Config):
     variable_files: Optional[List[VariableFileDict]] = None
     node_groups: Optional[List[NodeGroupDict]] = None
     remaps: Optional[List[RemapEntry]] = None
+    # Topics of unconnected component subscribers; set by a border, absent from system files.
+    input_topics: Optional[List[RemapEntry]] = None

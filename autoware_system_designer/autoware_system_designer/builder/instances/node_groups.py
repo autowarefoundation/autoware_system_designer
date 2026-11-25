@@ -41,6 +41,8 @@ def apply_node_groups(instance: "Instance") -> None:
             that path are registered.
       - Strictly validates node-group name uniqueness and supported type.
       - Creates container nodes only when at least one node is matched.
+      - An ``external`` group creates no container; its nodes load into the container
+            named by the group, started outside the generated launchers.
     """
     node_groups = getattr(instance.configuration, "node_groups", None)
     if not node_groups:
@@ -82,14 +84,18 @@ def apply_node_groups(instance: "Instance") -> None:
             matched_nodes=matched_nodes,
         )
 
-        container_instance = _create_group_container_node(
-            instance=instance,
-            group_name=group_name,
-            group_type=group_type,
-            compute_unit=group_compute_unit,
-            node_patterns=node_patterns,
-        )
-        container_target_path = container_instance.path
+        if group.get("external"):
+            # The launching side starts the container; the group name is its target as written.
+            container_target_path = group_name
+        else:
+            container_instance = _create_group_container_node(
+                instance=instance,
+                group_name=group_name,
+                group_type=group_type,
+                compute_unit=group_compute_unit,
+                node_patterns=node_patterns,
+            )
+            container_target_path = container_instance.path
 
         use_ipc = bool(node_group_types()[group_type].get("use_intra_process_comms", False))
 
@@ -152,6 +158,8 @@ def _validate_node_groups(node_groups: list[dict[str, Any]]) -> list[dict[str, A
 
         if not isinstance(node_patterns, list):
             raise ValidationError(f"Node group '{group_name}' has invalid 'nodes' field (expected list)")
+        if not isinstance(group.get("external", False), bool):
+            raise ValidationError(f"Node group '{group_name}' has invalid 'external' field (expected bool)")
 
         validated_groups.append(group)
 

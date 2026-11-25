@@ -1,0 +1,45 @@
+name: pipeline
+
+components:
+  - name: pipeline
+    entity: Pipeline.module
+    path: /perception/pipeline
+    parameter_set: [Pipeline.parameter_set]
+  - name: sink
+    entity: Sink.node
+    path: /perception/sink
+
+arguments:
+  - name: score_threshold
+    default: 0.3
+  - name: pointcloud_container_name
+    default: pointcloud_container
+    description: container started by the caller
+
+subscribers:
+  - name: pointcloud
+    topic: /sensing/lidar/concatenated/pointcloud
+
+publishers:
+  - name: objects
+    topic: /perception/objects
+
+node_groups:
+  - name: $(var pointcloud_container_name)
+    type: ros2_component_container_mt
+    external: true
+    nodes:
+      - /perception/pipeline/filter_primary
+  - name: pipeline_container
+    type: ros2_component_container_mt
+    nodes:
+      - /perception/pipeline/filter_secondary
+      - /perception/pipeline/node_merger
+
+connections:
+  - - subscriber.pointcloud
+    - pipeline.subscriber.pointcloud
+  - - pipeline.publisher.objects
+    - sink.subscriber.objects
+  - - pipeline.publisher.objects
+    - publisher.objects

@@ -62,12 +62,14 @@ from autoware_system_designer.common.path_utils import (
 from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.generator import build_script_generator
+from autoware_system_designer.generator.border_launcher import generate_border_launcher
 from autoware_system_designer.generator.deploy_launchers import generate_deploy_launchers
 from autoware_system_designer.generator.parameter_template_generator import ParameterTemplateGenerator
 from autoware_system_designer.generator.ros2_launcher.generate_module_launcher import generate_module_launch_file
 from autoware_system_designer.model import serde
 from autoware_system_designer.model.config import NodeConfig, SystemConfig
 from autoware_system_designer.model.export_schema import SCHEMA_VERSION
+from autoware_system_designer.parser.border_parser import parse_border
 from autoware_system_designer.parser.data_validator import split_package_qualifier
 from autoware_system_designer.parser.deployment_parser import peek_target_system_name, resolve_input_target
 from autoware_system_designer.parser.yaml_parser import yaml_parser
@@ -734,3 +736,13 @@ def export_parameter_set_templates(artifacts: BuildArtifacts) -> Dict[str, List[
         logger.info(f"Generated {len(output_path_list)} parameter set templates for mode: {mode_key}")
 
     return output_paths
+
+
+def generate_border_launch_file(artifacts: BuildArtifacts, border_file: str, output_file: Optional[str] = None) -> str:
+    """Generate the border entry launch file; defaults to launch/<name>.launch.xml under the output root."""
+    border = parse_border(border_file)
+    if output_file is None:
+        output_file = os.path.join(artifacts.layout.output_root_dir, "launch", f"{border.name}.launch.xml")
+    elif not os.path.isabs(output_file):
+        output_file = os.path.join(artifacts.layout.output_root_dir, output_file)
+    return generate_border_launcher(border, artifacts.layout.launcher_dir, artifacts.default_mode, output_file)
