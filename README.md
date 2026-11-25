@@ -182,6 +182,18 @@ The generated launch file follows the layout of a hand-written entry launch file
 
 Node remaps reach interface topics through these variables, so overriding an interface argument rewires every node on that topic.
 
+Node parameters resolved at build time are written to `config/<name>/<node path>.param.yaml` beside the launch file and loaded with `$(find-pkg-share <package>)`. Values carrying a substitution (`$(var ...)`) stay inline, and parameter files whose path is only known at launch time are loaded in place, keeping the launch order of default, override and mode parameters. Paths under a package directory are written as `$(find-pkg-share <package>)/...`, so the output does not depend on the workspace it was generated in.
+
+A border can also be generated outside a package build:
+
+```bash
+# Writes launch/sensing.launch.xml and config/sensing/ into the package owning the border file.
+python3 <autoware_system_designer>/script/generate_border.py <pkg>/design/sensing.border.yaml \
+  [--output-root <dir>] [--source-only]
+```
+
+Packages resolve against the workspace install when it exists, otherwise against the sources (`--source-only` forces this). Parameter files generated during a package build exist only in the install.
+
 ## Use as an independent workspace
 
 ```sh

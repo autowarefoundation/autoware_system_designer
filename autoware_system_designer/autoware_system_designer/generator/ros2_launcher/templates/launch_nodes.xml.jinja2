@@ -19,12 +19,23 @@
 <remap from="{{ port.remap_target }}" to="{{ port.topic }}"/>
 {% endfor %}
 
+{% if node.param_entries is defined %}
+<!-- Parameters -->
+{% for entry in node.param_entries %}
+{% if entry.path is defined %}
+<param from="{{ entry.path }}" allow_substs="{{ entry.allow_substs | lower }}"/>
+{% else %}
+<param name="{{ entry.name }}" value="{{ entry.value | launch_param_attr }}"/>
+{% endif %}
+{% endfor %}
+{% else %}
 <!-- Parameters - Non-Override Parameters -->
 {{ param_tier(node, ['GLOBAL', 'DEFAULT_FILE'], 'DEFAULT_FILE', ['DEFAULT']) }}
 <!-- Parameters - Overrides -->
 {{ param_tier(node, ['OVERRIDE_FILE'], 'OVERRIDE_FILE', ['OVERRIDE']) }}
 <!-- Parameters - Mode Overrides (highest priority) -->
 {{ param_tier(node, ['MODE_FILE'], 'MODE_FILE', ['MODE']) -}}
+{% endif %}
 {% endmacro %}
 
 {% for node in nodes %}

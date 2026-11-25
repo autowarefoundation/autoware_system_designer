@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import sys
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -63,6 +64,7 @@ from autoware_system_designer.common.source_location import SourceLocation, form
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.generator import build_script_generator
 from autoware_system_designer.generator.border_launcher import generate_border_launcher
+from autoware_system_designer.generator.border_parameters import PackagePaths
 from autoware_system_designer.generator.deploy_launchers import generate_deploy_launchers
 from autoware_system_designer.generator.parameter_template_generator import ParameterTemplateGenerator
 from autoware_system_designer.generator.ros2_launcher.generate_module_launcher import generate_module_launch_file
@@ -748,4 +750,32 @@ def generate_border_launch_file(artifacts: BuildArtifacts, border_file: str, out
     # A border has one mode; layered launchers left by an earlier build go with it.
     shutil.rmtree(artifacts.layout.launcher_dir, ignore_errors=True)
     _, data, _ = next(iter(_iter_mode_payloads(artifacts)))
-    return generate_border_launcher(border, data, output_file)
+    package = artifacts.deployment_package_name or _owning_package_name(border_file)
+    if not package:
+        raise ValidationError(f"Border {border.file_path.name}: the package that installs its launch file is unknown")
+    return generate_border_launcher(
+        border, data, output_file, package, artifacts.layout.output_root_dir, _package_paths(artifacts)
+    )
+
+
+def _owning_package_name(path: str) -> Optional[str]:
+    """Name in the nearest package.xml above path."""
+    current = Path(path).resolve().parent
+    for directory in (current, *current.parents):
+        package_xml = directory / "package.xml"
+        if package_xml.is_file():
+            name = ET.parse(package_xml).getroot().findtext("name")
+            return name.strip() if name else None
+    return None
+
+
+def _package_paths(artifacts: BuildArtifacts) -> PackagePaths:
+    """Share and source directories of every mapped package."""
+    registry = artifacts.config_registry
+    if registry is None:
+        return PackagePaths([])
+    dirs = []
+    for name, share_dir in registry.package_paths.items():
+        dirs.append((share_dir, name))
+        dirs.append((registry.get_package_source_path(name), name))
+    return PackagePaths(dirs)

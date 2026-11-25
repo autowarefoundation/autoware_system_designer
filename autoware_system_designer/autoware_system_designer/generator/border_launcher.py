@@ -16,17 +16,21 @@
 
 Sections in order: launch arguments, external interfaces as arguments, internal interfaces
 as lets, system launches, then the nodes in groups that push one namespace segment each.
-Node remaps reach interface topics through the variables of the interface sections.
+Node remaps reach interface topics through the variables of the interface sections. Node
+parameters load from the parameter files written beside the launch file, and package paths
+resolve through find-pkg-share, so the output does not depend on the workspace it was built in.
 """
 
 import logging
 import os
+import shutil
 import textwrap
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.template_renderer import TemplateRenderer
+from autoware_system_designer.generator.border_parameters import PackagePaths, write_parameter_files
 from autoware_system_designer.generator.ros2_launcher.component_map import collect_component_nodes
 from autoware_system_designer.parser.border_parser import BorderConfig
 
@@ -89,10 +93,7 @@ def _internal_interfaces(
     seen = set(external_topics)
     for component in components:
         consumed = {
-            _topic(port)
-            for other in components
-            if other is not component
-            for port in other.get("in_ports", [])
+            _topic(port) for other in components if other is not component for port in other.get("in_ports", [])
         }
         for port in component.get("out_ports", []):
             topic = _topic(port)
@@ -179,9 +180,23 @@ def _render_group(group: _Group, render_node) -> List[str]:
     return blocks
 
 
-def generate_border_launcher(border: BorderConfig, system_data: Dict[str, Any], output_file: str) -> str:
-    """Write the border launch file."""
+def generate_border_launcher(
+    border: BorderConfig,
+    system_data: Dict[str, Any],
+    output_file: str,
+    package: str,
+    output_root: str,
+    package_paths: PackagePaths,
+) -> str:
+    """Write the border launch file and its parameter files.
+
+    Parameter files go to <output_root>/config/<border name>/, which the package installs to its
+    share directory at the same relative path.
+    """
     output_file = os.path.abspath(output_file)
+    param_dir_in_package = f"config/{border.name}"
+    param_dir = os.path.join(output_root, param_dir_in_package)
+    shutil.rmtree(param_dir, ignore_errors=True)
     renderer = TemplateRenderer()
 
     external = _external_interfaces(border)
@@ -194,8 +209,10 @@ def generate_border_launcher(border: BorderConfig, system_data: Dict[str, Any], 
 
     root, nodes = _build_tree(system_data)
     _check_containers(border, nodes)
-    for _, node in nodes:
-        root.at(node.get("namespace")).entries.append(_with_topic_variables(node, variables))
+    launched = [package_paths.portable(_with_topic_variables(node, variables)) for _, node in nodes]
+    write_parameter_files(launched, param_dir, package, param_dir_in_package)
+    for (_, node), payload in zip(nodes, launched):
+        root.at(node.get("namespace")).entries.append(payload)
 
     forward_args = [argument.name for argument in border.arguments]
 

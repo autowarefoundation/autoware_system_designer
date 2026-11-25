@@ -212,3 +212,91 @@ def test_border_errors(tmp_path, changes, message):
         run_pipeline(workspace, BORDER, tmp_path, strict=True)
     assert message in str(excinfo.value)
     assert "pipeline.border.yaml" in str(excinfo.value)
+
+
+def test_border_parameter_files(tmp_path):
+    workspace = stage_case("border", tmp_path)
+    run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
+    root = ET.parse(run.out_root / "launch" / "pipeline.launch.xml").getroot()
+    params = {
+        node.get("name"): [(p.get("from"), p.get("name"), p.get("value")) for p in node.iter("param")]
+        for node in root.iter("composable_node")
+    }
+    file_ref = "$(find-pkg-share pipeline_pkg)/config/pipeline/perception/pipeline/{}.param.yaml"
+    # Build-time values load from a file; a value with a substitution stays inline after it.
+    assert params["filter_primary"] == [
+        (file_ref.format("filter_primary"), None, None),
+        (None, "score_threshold", "$(var score_threshold)"),
+    ]
+    assert params["filter_secondary"] == [(file_ref.format("filter_secondary"), None, None)]
+    written = yaml.safe_load(
+        (run.out_root / "config/pipeline/perception/pipeline/filter_secondary.param.yaml").read_text()
+    )
+    assert written == {
+        "/**": {
+            "ros__parameters": {
+                # The node default follows its default file in launch order.
+                "score_threshold": 0.5,
+                "max_range": 100.0,
+                "labels": ["car", "truck"],
+                "filter": {"enabled": True},
+            }
+        }
+    }
+
+
+def test_border_parameter_order():
+    from autoware_system_designer.generator.border_parameters import plan_node_parameters
+
+    node = {
+        "param_values": [
+            {"name": "a", "value": "1", "parameter_type": "DEFAULT_FILE"},
+            {"name": "s", "value": "$(var s)", "parameter_type": "GLOBAL"},
+            {"name": "b", "value": "x", "parameter_type": "DEFAULT_FILE"},
+            {"name": "s", "value": "false", "parameter_type": "DEFAULT"},
+            {"name": "s", "value": "true", "parameter_type": "OVERRIDE"},
+            {"name": "a", "value": "2", "parameter_type": "MODE"},
+        ],
+        "launch_time_param_files": [
+            {"path": "$(var dir)/f.yaml", "allow_substs": True, "parameter_type": "OVERRIDE_FILE"}
+        ],
+    }
+    # A later value of an inline name opens a new file; a launch-time file closes the open one.
+    assert plan_node_parameters(node) == [
+        {"values": {"a": 1, "b": "x"}},
+        {"name": "s", "value": "$(var s)"},
+        {"values": {"s": False}},
+        {"path": "$(var dir)/f.yaml", "allow_substs": True},
+        {"values": {"s": True, "a": 2}},
+    ]
+
+
+def test_border_package_paths():
+    from autoware_system_designer.generator.border_parameters import PackagePaths
+
+    paths = PackagePaths([("/ws/install/pkg/share/pkg", "pkg"), ("/ws/src/pkg", "pkg"), ("/ws/src/pkg_b", "pkg_b")])
+    assert paths.portable("/ws/install/pkg/share/pkg/config/a.yaml") == "$(find-pkg-share pkg)/config/a.yaml"
+    assert paths.portable({"v": ["/ws/src/pkg_b/data/x.csv"]}) == {"v": ["$(find-pkg-share pkg_b)/data/x.csv"]}
+    assert paths.portable("/ws/src/pkg_c/x") == "/ws/src/pkg_c/x"
+
+
+def test_generate_border_script(tmp_path):
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from pipeline_harness import FIXTURES_DIR
+
+    package_dir = tmp_path / "src" / "pipeline_pkg"
+    shutil.copytree(FIXTURES_DIR / "border" / "pipeline_pkg", package_dir)
+    script = Path(__file__).resolve().parents[1] / "script" / "generate_border.py"
+    result = subprocess.run(
+        [sys.executable, str(script), str(package_dir / "design" / "pipeline.border.yaml"), "--source-only"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "filter_primary" in _nodes(package_dir / "launch" / "pipeline.launch.xml")
+    assert (package_dir / "config/pipeline/perception/pipeline/filter_secondary.param.yaml").is_file()
+    assert not (package_dir / "exports").exists()
