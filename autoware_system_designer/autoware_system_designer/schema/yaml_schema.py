@@ -320,6 +320,7 @@ def get_semantic_checks(
                     "components",
                     "connections",
                     "node_groups",
+                    "global_parameters",
                     "arguments",
                     "variables",
                     "variable_files",

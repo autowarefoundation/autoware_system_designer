@@ -205,6 +205,7 @@ class SystemVariantResolver(VariantResolver):
             },
         ]
         self._resolve_merges(system_config, config_yaml, merge_specs)
+        self._merge_global_parameters(system_config, override_config.get("global_parameters"))
 
         # Handle mode_configs manual merge from override.modes_config section
         if system_config.modes:
@@ -217,6 +218,20 @@ class SystemVariantResolver(VariantResolver):
             for mode_name in mode_names:
                 if mode_name in override_config:
                     system_config.mode_configs[mode_name] = override_config[mode_name]
+
+    @staticmethod
+    def _merge_global_parameters(system_config: SystemConfig, override: Any) -> None:
+        """Merge overriding global parameters: files are appended, values replace by name."""
+        if not override:
+            return
+        base = system_config.global_parameters or {}
+        files = list(base.get("param_files") or [])
+        files += [path for path in override.get("param_files") or [] if path not in files]
+        values = {entry.get("name"): entry for entry in base.get("param_values") or [] if isinstance(entry, dict)}
+        for entry in override.get("param_values") or []:
+            if isinstance(entry, dict):
+                values[entry.get("name")] = entry
+        system_config.global_parameters = {"param_files": files, "param_values": list(values.values())}
 
     def _apply_removals(self, system_config: SystemConfig, remove_config: Dict[str, Any]):
         if "components" in remove_config:

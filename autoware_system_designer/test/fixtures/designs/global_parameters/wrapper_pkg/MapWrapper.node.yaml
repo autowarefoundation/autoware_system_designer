@@ -1,0 +1,31 @@
+autoware_system_design_format: 0.4.0
+
+name: MapWrapper.node
+
+description: Wrapper around an existing ROS 2 launch file.
+
+package:
+  name: wrapper_pkg
+  provider: dummy
+
+launch:
+  ros2_launch_file: map_loader.launch.xml
+
+subscribers: []
+
+publishers:
+  - name: vector_map
+    message_type: autoware_map_msgs/msg/LaneletMapBin
+
+param_files: []
+
+param_values:
+  - name: map_file
+    type: string
+    default: /opt/maps/lanelet2_map.osm
+
+processes:
+  - name: load
+    trigger_conditions: []
+    outcomes:
+      - to_output: vector_map

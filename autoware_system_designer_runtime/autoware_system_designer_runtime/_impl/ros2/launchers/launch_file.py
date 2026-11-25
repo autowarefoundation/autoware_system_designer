@@ -31,7 +31,8 @@ Invoked as:
     python3 -m autoware_system_designer_runtime._impl.ros2.launchers.launch_file \\
         --pkg <package> --file <launch_file.py> \\
         [--launch-arg key:=value ...] \\
-        [--global-params-file /path/to/vehicle_info.param.yaml ...]
+        [--global-params-file /path/to/vehicle_info.param.yaml ...] \\
+        [--global-param name:=<JSON value> ...]
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ import logging
 import sys
 from typing import Mapping, Optional
 
-from ..common.params import params_dict
+from ..common.params import params_dict, resolve_value
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,8 @@ def include_cmdline(spec: Mapping, global_files: Optional[list[str]] = None) -> 
         cmd += ["--launch-arg", f"{k}:={_launch_arg_str(v)}"]
     for f in global_files or []:
         cmd += ["--global-params-file", f]
+    for p in launcher.get("global_parameters", []):
+        cmd += ["--global-param", f"{p['name']}:={json.dumps(resolve_value(p['value'], p.get('type')))}"]
     return cmd
 
 
@@ -116,6 +119,14 @@ def main() -> None:
         metavar="PATH",
         help="YAML parameter file injected as SetParameter actions before the include (repeatable)",
     )
+    parser.add_argument(
+        "--global-param",
+        action="append",
+        default=[],
+        metavar="NAME:=JSON",
+        type=_parse_kv,
+        help="Parameter injected as a SetParameter action before the include, value as JSON (repeatable)",
+    )
     args = parser.parse_args()
 
     sys.exit(
@@ -124,6 +135,7 @@ def main() -> None:
             launch_file=args.file,
             launch_args=dict(args.launch_arg),
             global_params_files=args.global_params_file,
+            global_params={name: json.loads(value) for name, value in args.global_param},
         )
     )
 
@@ -133,6 +145,7 @@ def _run(
     launch_file: str,
     launch_args: dict[str, str],
     global_params_files: list[str],
+    global_params: Optional[dict[str, object]] = None,
 ) -> int:
     import signal
     from pathlib import Path
@@ -148,6 +161,10 @@ def _run(
     actions = []
     for params_file in global_params_files:
         actions.extend(_set_params_from_yaml(params_file))
+    if global_params:
+        from launch_ros.actions import SetParameter
+
+        actions.extend(SetParameter(name=name, value=value) for name, value in global_params.items())
 
     declared = _declared_args(full_path)
     actions.extend(_undeclared_args_as_set_params(launch_args, declared))
