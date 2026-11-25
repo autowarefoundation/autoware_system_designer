@@ -230,7 +230,8 @@ def main():
         default=None,
         help=(
             "Colcon workspace root. The scan covers the deploying package, the top-level workspace "
-            "directory holding it, and <workspace-root>/src. Derived from start_path when omitted."
+            "directory holding it, and <workspace-root>/src. Derived from start_path when omitted "
+            "or when it does not hold start_path."
         ),
     )
     parser.add_argument(
@@ -245,10 +246,14 @@ def main():
 
     anchor = os.path.realpath(args.anchor) if args.anchor else None
 
-    if args.workspace_root:
+    # colcon run from another directory puts the build tree outside the sources, so the given
+    # root does not hold the package. The root is then derived from the package path.
+    if args.workspace_root and layer_root(args.start_path, args.workspace_root):
         workspace_root = os.path.realpath(args.workspace_root)
         source_root = os.path.join(workspace_root, "src")
     else:
+        if args.workspace_root:
+            print(f"Workspace root {args.workspace_root} does not hold {args.start_path}, deriving it from the package")
         source_root = find_source_root(args.start_path)
         workspace_root = os.path.dirname(source_root) if os.path.basename(source_root) == "src" else None
     # Scope of the build: the deploying package, the workspace layer holding it, and the source root.
