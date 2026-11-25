@@ -259,6 +259,26 @@ def test_collector_ignores_a_workspace_root_that_does_not_hold_the_package(tmp_p
     assert set(data["package_map"]) == {"pkg_systems", "pkg_nodes"}
 
 
+def test_collector_keeps_a_workspace_root_that_holds_a_symlinked_package(tmp_path, monkeypatch):
+    ws = tmp_path / "ws"
+    target = tmp_path / "external" / "pkg_linked"
+    _write_package(target, "pkg_linked")
+    write_system(target / "design", "Tiny", "Demo")
+    _write_package(ws / "src" / "pkg_nodes", "pkg_nodes")
+    (ws / "src" / "pkg_linked").symlink_to(target)
+
+    data = _run_collector(
+        monkeypatch,
+        tmp_path / "manifests",
+        ws / "src" / "pkg_linked",
+        tmp_path / "install" / "pkg_linked",
+        "--workspace-root",
+        str(ws),
+    )
+
+    assert set(data["package_map"]) == {"pkg_linked", "pkg_nodes"}
+
+
 def test_collector_maps_installed_packages_outside_the_scope_on_request(tmp_path, monkeypatch):
     ws = _scoped_workspace(tmp_path)
     monkeypatch.setenv("AMENT_PREFIX_PATH", str(ws["underlay"]))

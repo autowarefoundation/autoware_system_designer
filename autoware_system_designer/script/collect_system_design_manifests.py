@@ -174,6 +174,18 @@ def layer_root(start_path, workspace_root):
     return os.path.join(os.path.realpath(workspace_root), rel.split(os.sep)[0])
 
 
+def holds(root, path):
+    """True when path is root or inside it, as written or with symbolic links resolved.
+
+    A package linked into src resolves to a target outside the workspace, so the path as written counts too.
+    """
+    for resolve in (os.path.abspath, os.path.realpath):
+        rel = os.path.relpath(resolve(path), resolve(root))
+        if rel != os.pardir and not rel.startswith(os.pardir + os.sep):
+            return True
+    return False
+
+
 def scan_roots(start_path, *more_roots):
     """Directories to scan, the deploying package first; a root nested in an earlier one is dropped."""
     roots = []
@@ -248,7 +260,7 @@ def main():
 
     # colcon run from another directory puts the build tree outside the sources, so the given
     # root does not hold the package. The root is then derived from the package path.
-    if args.workspace_root and layer_root(args.start_path, args.workspace_root):
+    if args.workspace_root and holds(args.workspace_root, args.start_path):
         workspace_root = os.path.realpath(args.workspace_root)
         source_root = os.path.join(workspace_root, "src")
     else:
