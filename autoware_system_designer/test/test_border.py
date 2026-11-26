@@ -14,6 +14,7 @@
 
 """Border targets: components behind a generated entry launch file."""
 
+import json
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -109,6 +110,37 @@ def test_border_generates_one_launch_file(tmp_path):
     assert tags.index("node_container") < tags.index("load_composable_node")
     primary = next(n for n in root.iter("composable_node") if n.get("name") == "filter_primary")
     assert {p.get("name"): p.get("value") for p in primary.iter("param")}["score_threshold"] == "$(var score_threshold)"
+
+
+def test_border_manifest_records_the_launch_file_interface(tmp_path):
+    workspace = stage_case("border", tmp_path)
+    run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
+
+    manifest = json.loads((run.exports_dir / "deployment.json").read_text())
+    assert manifest["kind"] == "border"
+    assert manifest["launch_units"] == {"default": []}
+    border = manifest["border"]
+    assert border["launch_file"] == "launch/pipeline.launch.xml"
+    assert (run.out_root / border["launch_file"]).is_file()
+    assert border["arguments"] == [
+        {"name": "score_threshold", "default": "0.3", "description": ""},
+        {
+            "name": "pointcloud_container_name",
+            "default": "pointcloud_container",
+            "description": "container started by the caller",
+        },
+        {"name": "use_sim_time", "default": "false", "description": ""},
+    ]
+    assert border["subscribers"] == [{"name": "pointcloud", "topic": "/sensing/lidar/concatenated/pointcloud"}]
+    assert border["publishers"] == [{"name": "objects", "topic": "/perception/objects"}]
+    assert border["system_launches"] == [
+        {
+            "package": "autoware_global_parameter_loader",
+            "file": "launch/global_params.launch.py",
+            "scoped": False,
+            "arguments": [{"name": "use_sim_time", "value": "$(var use_sim_time)"}],
+        }
+    ]
 
 
 def test_border_internal_interface(tmp_path):

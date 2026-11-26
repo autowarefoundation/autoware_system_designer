@@ -43,6 +43,10 @@ logger = logging.getLogger(__name__)
 
 BORDER_SUFFIX = ".border.yaml"
 
+# Kind of a built target, as the artifacts manifest records it.
+KIND_SYSTEM = "system"
+KIND_BORDER = "border"
+
 # The border name becomes the launch file stem, the export directory and the compute unit name.
 _NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 _ARGUMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_/]*$")
@@ -310,6 +314,30 @@ def parse_border(border_path: str) -> BorderConfig:
         source_map=source_map,
         raw=data,
     )
+
+
+def border_launch_file(name: str) -> str:
+    """Launch file of a border, relative to the share directory of the package installing it."""
+    return f"launch/{name}.launch.xml"
+
+
+def border_record(border: BorderConfig) -> Dict[str, Any]:
+    """Launch-file interface of a border as the artifacts manifest carries it."""
+    return {
+        "launch_file": border_launch_file(border.name),
+        "arguments": [{"name": a.name, "default": a.default, "description": a.description} for a in border.arguments],
+        "subscribers": [{"name": p.name, "topic": p.topic} for p in border.subscribers],
+        "publishers": [{"name": p.name, "topic": p.topic} for p in border.publishers],
+        "system_launches": [
+            {
+                "package": launch.package,
+                "file": launch.file,
+                "scoped": launch.scoped,
+                "arguments": [{"name": name, "value": value} for name, value in launch.arguments],
+            }
+            for launch in border.system_launches
+        ],
+    }
 
 
 def _interface_ports(border: BorderConfig, role: str) -> List[PortDefinition]:

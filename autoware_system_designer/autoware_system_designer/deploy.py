@@ -71,7 +71,14 @@ from autoware_system_designer.generator.ros2_launcher.generate_module_launcher i
 from autoware_system_designer.model import serde
 from autoware_system_designer.model.config import NodeConfig, SystemConfig
 from autoware_system_designer.model.export_schema import SCHEMA_VERSION
-from autoware_system_designer.parser.border_parser import parse_border
+from autoware_system_designer.parser.border_parser import (
+    KIND_BORDER,
+    KIND_SYSTEM,
+    border_launch_file,
+    border_record,
+    is_border_file,
+    parse_border,
+)
 from autoware_system_designer.parser.data_validator import split_package_qualifier
 from autoware_system_designer.parser.deployment_parser import peek_target_system_name, resolve_input_target
 from autoware_system_designer.parser.yaml_parser import yaml_parser
@@ -98,6 +105,9 @@ class BuildArtifacts:
     file_package_map: Dict[str, str] = field(default_factory=dict)
     package_resolution_by_name: Dict[str, Optional[str]] = field(default_factory=dict)
     packages_without_provider: List[str] = field(default_factory=list)
+    # A system, or a border; the border record is its launch-file interface.
+    kind: str = KIND_SYSTEM
+    border: Optional[Dict[str, Any]] = None
     # Base for tokenized paths in the export files; kept out of the manifest and
     # re-derived on load so exports stay machine-independent.
     workspace_root: Optional[str] = field(default=None, metadata={"exclude": True})
@@ -149,6 +159,8 @@ def load_build_artifacts(output_root_dir: str, system_name: str) -> BuildArtifac
         file_package_map=payload.get("file_package_map", {}),
         package_resolution_by_name=payload.get("package_resolution_by_name", {}),
         packages_without_provider=payload.get("packages_without_provider", []),
+        kind=payload.get("kind", KIND_SYSTEM),
+        border=payload.get("border"),
     )
 
 
@@ -253,7 +265,10 @@ class DeploymentBuilder:
 
     def _init_artifacts(self, system_config: SystemConfig, deploy_variants: List[Dict[str, Any]]) -> BuildArtifacts:
         layout = ExportLayout(self.deploy_config.output_root_dir, system_config.name)
+        is_border = is_border_file(self.deploy_config.deployment_file)
         return BuildArtifacts(
+            kind=KIND_BORDER if is_border else KIND_SYSTEM,
+            border=border_record(parse_border(self.deploy_config.deployment_file)) if is_border else None,
             layout=layout,
             workspace_root=self._export_workspace_root(),
             system_file=str(system_config.file_path),
@@ -482,8 +497,11 @@ class DeploymentBuilder:
                         self._undefined_variables[mode_key] = reached
 
                 artifacts.mode_keys.append(mode_key)
-                artifacts.launch_units[mode_key] = launcher_compute_units(
-                    *extract_system_structure_data(structure_payload)
+                # A border is launched through its entry launch file; it has no unit launchers.
+                artifacts.launch_units[mode_key] = (
+                    []
+                    if artifacts.kind == KIND_BORDER
+                    else launcher_compute_units(*extract_system_structure_data(structure_payload))
                 )
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
                 artifacts.system_structure_snapshots[mode_key] = snapshot_store
@@ -743,7 +761,7 @@ def export_parameter_set_templates(artifacts: BuildArtifacts) -> Dict[str, List[
 def generate_border_launch_file(artifacts: BuildArtifacts, border_file: str) -> str:
     """Generate the border launch file at launch/<name>.launch.xml under the output root."""
     border = parse_border(border_file)
-    output_file = os.path.join(artifacts.layout.output_root_dir, "launch", f"{border.name}.launch.xml")
+    output_file = os.path.join(artifacts.layout.output_root_dir, border_launch_file(border.name))
     _, data, _ = next(iter(_iter_mode_payloads(artifacts)))
     package = artifacts.deployment_package_name or _owning_package_name(border_file)
     if not package:
