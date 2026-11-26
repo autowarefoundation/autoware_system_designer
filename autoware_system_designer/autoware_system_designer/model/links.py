@@ -18,7 +18,7 @@ from typing import ClassVar, List, Optional
 
 from autoware_system_designer.common.exceptions import DeploymentError, ValidationError
 from autoware_system_designer.common.naming import generate_unique_id
-from autoware_system_designer.common.source_location import SourceLocation
+from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.model.ports import InPort, OutPort, Port
 
 
@@ -46,13 +46,13 @@ class Link:
         msg_type: str,
         from_port: Port,
         to_port: Port,
-        namespace: List[str] = [],
+        namespace: Optional[List[str]] = None,
         connection_type: ConnectionType = ConnectionType.UNDEFINED,
     ):
         self.msg_type = msg_type
         self.from_port = from_port
         self.to_port = to_port
-        self.namespace = namespace
+        self.namespace = [] if namespace is None else namespace
         self.connection_type = connection_type
         # early validation to avoid AttributeError later and provide clearer configuration error
         if self.from_port is None or self.to_port is None:
@@ -179,9 +179,13 @@ class Connection:
     # Connection is a connection between two entities
     # In other words, it is a configuration to create link(s)
     def __init__(self, connection_dict: list | dict, source: Optional[SourceLocation] = None):
-
         self.source = source
+        try:
+            self._parse(connection_dict)
+        except DeploymentError as exc:
+            raise DeploymentError(f"{exc.message}{format_source(source)}", source=source) from exc
 
+    def _parse(self, connection_dict: list | dict) -> None:
         # connection type
         self.type: ConnectionType = ConnectionType.UNDEFINED
 
@@ -225,8 +229,14 @@ class Connection:
         self.to_port_name: str = to_port[1]
         self.to_is_external: bool = not to_port[0]
         self.to_port_type: str = port1_type if port0_is_from else port0_type
+        self.has_wildcard: bool = any(
+            char in text
+            for text in (self.from_instance, self.from_port_name, self.to_instance, self.to_port_name)
+            for char in self.WILDCARDS
+        )
 
     PORT_TYPES: ClassVar[tuple] = ("publisher", "subscriber", "server", "client")
+    WILDCARDS: ClassVar[str] = "*^+"
 
     @staticmethod
     def _parse_port_name(port_name: str) -> tuple[str, str, str]:  # (instance_name, port_type, port_name)
@@ -281,7 +291,7 @@ class Connection:
                 return ConnectionType.EXTERNAL_TO_INTERNAL
 
         # Neither port has an instance: invalid
-        raise DeploymentError(f"Invalid connection scope combination: {connection_dict}")
+        raise DeploymentError(f"[E_CONN_SCOPE] A connection cannot join two boundary ports: {connection_dict}")
 
     @staticmethod
     def _determine_direction(
@@ -302,11 +312,15 @@ class Connection:
             # Valid pairs: (subscriber, publisher) or (client, server) -> port1 is from
             if (port0_type, port1_type) in [("subscriber", "publisher"), ("client", "server")]:
                 return False
-            raise DeploymentError(f"Invalid internal connection type: {connection_dict}")
+            raise DeploymentError(
+                "[E_CONN_KIND] A publisher connects to a subscriber and a server to a client: " f"{connection_dict}"
+            )
 
         # External connections: port types must match
         if port0_type != port1_type:
-            raise DeploymentError(f"Invalid external connection type: {connection_dict}")
+            raise DeploymentError(
+                f"[E_CONN_KIND] A boundary port connects to a child port of its own kind: {connection_dict}"
+            )
 
         # For INTERNAL_TO_EXTERNAL: internal port (with instance) is output type and is the 'from' port
         if connection_type == ConnectionType.INTERNAL_TO_EXTERNAL:

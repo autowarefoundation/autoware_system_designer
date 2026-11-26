@@ -226,8 +226,6 @@ def _create_container_node_instance(
         )
     )
 
-    container_instance.is_initialized = True
-
     return container_instance
 
 

@@ -20,7 +20,7 @@ the launch arguments of the generated launch file, its external interface (ports
 to topics), the launch files included ahead of the components (system launches), node
 groups and connections. Connections reach the interface as a module's
 do, through ``subscriber.<port>`` and ``publisher.<port>``. The border builds as a system
-whose interface connections become topic bindings of the component ports.
+whose boundary ports are the interface ports, each bound to its topic.
 """
 
 from __future__ import annotations
@@ -34,7 +34,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.path_utils import canonical_path
 from autoware_system_designer.common.source_location import format_source, source_from_source_map
-from autoware_system_designer.model.config import RemapEntry, SystemConfig
+from autoware_system_designer.model.config import SystemConfig
+from autoware_system_designer.model.domain import PortDefinition
 from autoware_system_designer.parser.data_validator import entity_name_decode, split_package_qualifier
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
@@ -274,7 +275,7 @@ def _parse_connections(reader: _Reader, data: Dict[str, Any]) -> List[List[str]]
 
 
 def parse_border(border_path: str) -> BorderConfig:
-    """Parse and validate a border file; checks against the entities need the registry (see border_system_config)."""
+    """Parse and validate a border file; connections are checked against the entities when the system is linked."""
     file_path = Path(canonical_path(border_path))
     if not file_path.is_file():
         raise ValidationError(f"Border file not found: {border_path}")
@@ -311,106 +312,16 @@ def parse_border(border_path: str) -> BorderConfig:
     )
 
 
-def _interface_ref(end: str) -> Optional[Tuple[str, str]]:
-    """(role, port pattern) of a reference to the border interface; None for a component port."""
-    role, _, port = end.partition(".")
-    if role in _INTERFACE_ROLES and port:
-        return role, port
-    return None
-
-
-def _match(pattern: str, names: List[str]) -> List[Tuple[str, str]]:
-    """(name, suffix) of each name the pattern selects; a trailing '*' matches any suffix."""
-    if pattern.endswith("*"):
-        prefix = pattern[:-1]
-        return [(name, name[len(prefix) :]) for name in names if name.startswith(prefix) and len(name) > len(prefix)]
-    return [(pattern, "")] if pattern in names else []
-
-
-class _BorderResolver:
-    """Splits border connections into system connections and topic bindings of component ports."""
-
-    def __init__(self, border: BorderConfig, config_registry: Any):
-        self.border = border
-        self.reader = _Reader(border.file_path, border.source_map)
-        self.component_ports: Dict[str, Dict[str, List[str]]] = {}
-        for component in border.components:
-            entity = component["entity"]
-            _, entity_type = entity_name_decode(split_package_qualifier(entity)[1])
-            config = config_registry.get_entity_by_type(entity, entity_type)
-            ports: Dict[str, List[str]] = {role: [] for role in _INTERFACE_ROLES}
-            for port in list(config.inputs or []) + list(config.outputs or []):
-                if port.port_role in ports:
-                    ports[port.port_role].append(port.name)
-            self.component_ports[component["name"]] = ports
-
-    def _component_end(self, idx: int, end: str, role: str) -> Tuple[str, str]:
-        component, _, rest = end.partition(".")
-        port_role, _, port = rest.partition(".")
-        if component not in self.component_ports:
-            raise self.reader.error(
-                f"/connections/{idx}", f"'{end}' names no component; components: {sorted(self.component_ports)}"
-            )
-        if port_role != role or not port:
-            raise self.reader.error(
-                f"/connections/{idx}", f"'{end}' must be '<component>.{role}.<port>' to meet the {role} interface"
-            )
-        return component, port
-
-    def resolve(self) -> Tuple[List[List[str]], List[RemapEntry], List[RemapEntry]]:
-        connections: List[List[str]] = []
-        bindings: Dict[str, List[RemapEntry]] = {role: [] for role in _INTERFACE_ROLES}
-        bound: Dict[str, str] = {}
-        used = {role: set() for role in _INTERFACE_ROLES}
-        topics = {role: {p.name: p.topic for p in self.border.ports(role)} for role in _INTERFACE_ROLES}
-
-        for idx, (first, second) in enumerate(self.border.connections):
-            interface = [_interface_ref(end) for end in (first, second)]
-            if interface == [None, None]:
-                connections.append([first, second])
-                continue
-            if all(interface):
-                raise self.reader.error(f"/connections/{idx}", "a connection cannot join two interface ports")
-            (role, pattern), other = (interface[0], second) if interface[0] else (interface[1], first)
-            component, port_pattern = self._component_end(idx, other, role)
-
-            matched = _match(pattern, list(topics[role]))
-            if not matched:
-                raise self.reader.error(
-                    f"/connections/{idx}",
-                    f"no {role} interface port matches '{pattern}'; declared: {sorted(topics[role])}",
-                )
-            component_ports = self.component_ports[component][role]
-            for name, suffix in matched:
-                port = port_pattern[:-1] + suffix if port_pattern.endswith("*") else port_pattern
-                if port not in component_ports:
-                    if pattern.endswith("*"):
-                        continue
-                    raise self.reader.error(
-                        f"/connections/{idx}",
-                        f"component '{component}' has no {role} '{port}'; {role}s: {sorted(component_ports)}",
-                    )
-                source = f"{component}.{role}.{port}"
-                if source in bound:
-                    raise self.reader.error(f"/connections/{idx}", f"'{source}' is bound twice")
-                if role == "publisher" and name in used[role]:
-                    raise self.reader.error(
-                        f"/connections/{idx}", f"publisher interface port '{name}' has two publishers"
-                    )
-                bound[source] = name
-                used[role].add(name)
-                bindings[role].append(RemapEntry(source=source, topic=topics[role][name]))
-
-        for role in _INTERFACE_ROLES:
-            unused = sorted(set(topics[role]) - used[role])
-            if unused:
-                raise self.reader.error(f"/{role}s", f"{role} interface port(s) without a connection: {unused}")
-        return connections, bindings["publisher"], bindings["subscriber"]
+def _interface_ports(border: BorderConfig, role: str) -> List[PortDefinition]:
+    return [PortDefinition(name=port.name, port_role=role, topic=port.topic) for port in border.ports(role)]
 
 
 def border_system_config(border: BorderConfig, config_registry: Any) -> SystemConfig:
-    """System the deployment build runs for the border; all components share one compute unit."""
-    connections, remaps, input_topics = _BorderResolver(border, config_registry).resolve()
+    """System the deployment build runs for the border; all components share one compute unit.
+
+    The interface ports are the boundary ports of the system, each bound to its topic;
+    connections reach them as a module's connections reach its ports.
+    """
     components = []
     for component in border.components:
         entry = {key: component[key] for key in _COMPONENT_KEYS if key in component}
@@ -427,9 +338,9 @@ def border_system_config(border: BorderConfig, config_registry: Any) -> SystemCo
         package=config_registry.deployment_package_name,
         arguments=[{"name": argument.name} for argument in border.arguments],
         components=components,
-        connections=connections,
+        connections=border.connections,
         variables=border.variables or None,
         node_groups=border.node_groups or None,
-        remaps=remaps,
-        input_topics=input_topics,
+        inputs=_interface_ports(border, "subscriber"),
+        outputs=_interface_ports(border, "publisher"),
     )

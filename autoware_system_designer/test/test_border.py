@@ -131,6 +131,78 @@ def test_border_internal_interface(tmp_path):
     assert nodes["node_merger"][1]["~/output/objects"] == "$(var pipeline/objects)"
 
 
+def test_border_interface_is_the_system_boundary(tmp_path):
+    workspace = stage_case("border", tmp_path)
+    run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
+    root = run.structure("default")["data"]
+    assert {p["name"]: "/" + "/".join(p["topic"]) for p in root["in_ports"]} == {
+        "pointcloud": "/sensing/lidar/concatenated/pointcloud"
+    }
+    assert {p["name"]: "/" + "/".join(p["topic"]) for p in root["out_ports"]} == {"objects": "/perception/objects"}
+    boundary = {port["unique_id"] for port in root["in_ports"] + root["out_ports"]}
+    linked = {link[end]["unique_id"] for link in root["links"] for end in ("from_port", "to_port")}
+    assert boundary <= linked
+
+
+@pytest.mark.parametrize(
+    "changes, message",
+    [
+        # A subscriber fed by a component and bound to an interface topic.
+        (
+            {
+                "subscribers": [
+                    {"name": "pointcloud", "topic": "/sensing/lidar/concatenated/pointcloud"},
+                    {"name": "objects", "topic": "/external/objects"},
+                ],
+                "connections": [
+                    ["subscriber.pointcloud", "pipeline.subscriber.pointcloud"],
+                    ["pipeline.publisher.objects", "sink.subscriber.objects"],
+                    ["pipeline.publisher.objects", "publisher.objects"],
+                    ["subscriber.objects", "sink.subscriber.objects"],
+                ],
+            },
+            "E_TOPIC_CONFLICT",
+        ),
+        # A publisher bound to two interface topics.
+        (
+            {
+                "publishers": [
+                    {"name": "objects", "topic": "/perception/objects"},
+                    {"name": "objects_copy", "topic": "/perception/objects_copy"},
+                ],
+                "connections": [
+                    ["subscriber.pointcloud", "pipeline.subscriber.pointcloud"],
+                    ["pipeline.publisher.objects", "publisher.objects"],
+                    ["pipeline.publisher.objects", "publisher.objects_copy"],
+                ],
+            },
+            "E_EXPORT_TWICE",
+        ),
+        # A subscriber bound to two interface topics.
+        (
+            {
+                "subscribers": [
+                    {"name": "pointcloud", "topic": "/sensing/lidar/concatenated/pointcloud"},
+                    {"name": "pointcloud_copy", "topic": "/sensing/lidar/pointcloud_copy"},
+                ],
+                "connections": [
+                    ["subscriber.pointcloud", "pipeline.subscriber.pointcloud"],
+                    ["subscriber.pointcloud_copy", "pipeline.subscriber.pointcloud"],
+                    ["pipeline.publisher.objects", "publisher.objects"],
+                ],
+            },
+            "E_INTERFACE_TOPIC",
+        ),
+    ],
+)
+def test_border_binding_conflicts(tmp_path, changes, message):
+    workspace = stage_case("border", tmp_path)
+    _rewrite_border(workspace, **changes)
+    with pytest.raises(SystemDesignerError) as excinfo:
+        run_pipeline(workspace, BORDER, tmp_path, strict=True)
+    assert message in str(excinfo.value)
+
+
 def test_border_shared_container_is_external(tmp_path):
     workspace = stage_case("border", tmp_path)
     data = yaml.safe_load((workspace / BORDER).read_text())
@@ -203,13 +275,13 @@ def test_border_wildcard_interface(tmp_path):
         ),
         (
             {"connections": [["subscriber.pointcloud", "pipeline.publisher.objects"]]},
-            "must be '<component>.subscriber.<port>'",
+            "E_CONN_KIND",
         ),
         (
             {"connections": [["subscriber.pointcloud", "pipeline.subscriber.lidar"]]},
-            "component 'pipeline' has no subscriber 'lidar'",
+            "input port 'lidar' not in 'pipeline'",
         ),
-        ({"connections": [["subscriber.pointcloud", "publisher.objects"]]}, "cannot join two interface ports"),
+        ({"connections": [["subscriber.pointcloud", "publisher.objects"]]}, "E_CONN_SCOPE"),
         ({"system_launches": [{"package": "p", "file": "f", "scoped": "no"}]}, "'scoped' must be a boolean"),
         ({"system_launches": [{"package": "p", "file": "f", "arguments": [{"name": "a"}]}]}, "requires 'value'"),
     ],

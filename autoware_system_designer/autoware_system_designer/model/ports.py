@@ -14,13 +14,24 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import ClassVar, List, Optional
+from typing import ClassVar, Iterable, List, Optional, Set
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.naming import generate_unique_id
 from autoware_system_designer.model.events import Event
 
 logger = logging.getLogger(__name__)
+
+
+def _append_new(ports: List["Port"], seen: Set[int], candidates: Iterable["Port"]) -> List["Port"]:
+    """Append the candidates absent from the list, by object identity; returns the ports added."""
+    added = []
+    for port in candidates:
+        if id(port) not in seen:
+            seen.add(id(port))
+            ports.append(port)
+            added.append(port)
+    return added
 
 
 def generate_port_path(namespace: List[str], name: str) -> str:
@@ -75,11 +86,19 @@ class Port:
         ("port_path", "port_path"),
     )
 
-    def __init__(self, name: str, msg_type: str, namespace: List[str] = [], remap_target: str = None, role: str = None):
+    def __init__(
+        self,
+        name: str,
+        msg_type: str,
+        namespace: Optional[List[str]] = None,
+        remap_target: Optional[str] = None,
+        role: Optional[str] = None,
+    ):
         self.name = name
         self.msg_type = msg_type
-        self.namespace = namespace
+        self.namespace = [] if namespace is None else namespace
         self.reference = []
+        self._reference_ids: Set[int] = set()
         self.own_topic = []
         self.event = None
         self.is_global = False
@@ -96,16 +115,11 @@ class Port:
         return generate_port_path(self.namespace, self.name)
 
     def set_references(self, port_list: List["Port"]):
-        reference_name_list = [p.port_path for p in self.reference]
-        added = []
-        for port in port_list:
-            if port.port_path not in reference_name_list:
-                self.reference.append(port)
-                added.append(port.port_path)
+        added = _append_new(self.reference, self._reference_ids, port_list)
         # an interface port holds no topic of its own
         self.own_topic = []
         if added:
-            logger.debug(f"Port '{self.port_path}' added references: {added}")
+            logger.debug(f"Port '{self.port_path}' added references: {[p.port_path for p in added]}")
 
     def get_chain_list(self):
         """This port and every port below it in the reference chain."""
@@ -143,16 +157,22 @@ class Port:
 
 @dataclass(init=False, eq=False, repr=False)
 class InPort(Port):
-    is_required: bool = field(default=True, metadata={"exclude": True})
     # Servers list: ports that this port is subscribed to (for hierarchical port connections).
     # InPort (subscriber) can have multiple servers (one topic subscribed by multiple nodes).
     servers: List[Port] = field(default_factory=list, metadata={"ref": True, "alias": "connected_ids"})
 
-    def __init__(self, name, msg_type, namespace: List[str] = [], remap_target: str = None, role: str = None):
+    def __init__(
+        self,
+        name: str,
+        msg_type: str,
+        namespace: Optional[List[str]] = None,
+        remap_target: Optional[str] = None,
+        role: Optional[str] = None,
+    ):
         super().__init__(name, msg_type, namespace, remap_target, role)
-        self.is_required = True
         self.servers = []
-        self.event = PortEvent("input_" + name, namespace, "input", name)
+        self._server_ids: Set[int] = set()
+        self.event = PortEvent("input_" + name, self.namespace, "input", name)
         self.event.set_type("on_input")
 
         if self.remap_target is None:
@@ -167,14 +187,9 @@ class InPort(Port):
         return generate_port_path(self.namespace, "input/" + self.name)
 
     def set_servers(self, port_list: List[Port]):
-        server_name_list = [p.port_path for p in self.servers]
-        added = []
-        for port in port_list:
-            if port.port_path not in server_name_list:
-                self.servers.append(port)
-                added.append(port.port_path)
+        added = _append_new(self.servers, self._server_ids, port_list)
         if added:
-            logger.debug(f"InPort '{self.port_path}' added servers: {added}")
+            logger.debug(f"InPort '{self.port_path}' added servers: {[p.port_path for p in added]}")
 
     @property
     def topic(self) -> List[str]:
@@ -186,18 +201,22 @@ class InPort(Port):
 
 @dataclass(init=False, eq=False, repr=False)
 class OutPort(Port):
-    frequency: float = field(default=0.0, metadata={"exclude": True})
-    is_monitored: bool = field(default=False, metadata={"exclude": True})
     # Users list: ports subscribed to this port (for hierarchical port connections).
     # OutPort (publisher) can have multiple users (one topic subscribed by multiple nodes).
     users: List[Port] = field(default_factory=list, metadata={"ref": True, "alias": "connected_ids"})
 
-    def __init__(self, name, msg_type, namespace: List[str] = [], remap_target: str = None, role: str = None):
+    def __init__(
+        self,
+        name: str,
+        msg_type: str,
+        namespace: Optional[List[str]] = None,
+        remap_target: Optional[str] = None,
+        role: Optional[str] = None,
+    ):
         super().__init__(name, msg_type, namespace, remap_target, role)
-        self.frequency = 0.0
-        self.is_monitored = False
         self.users = []
-        self.event = PortEvent("output_" + name, namespace, "output", name)
+        self._user_ids: Set[int] = set()
+        self.event = PortEvent("output_" + name, self.namespace, "output", name)
         self.event.set_type("to_output")
 
         # node-local default; a module output exposing the port renames it
@@ -215,14 +234,9 @@ class OutPort(Port):
         return generate_port_path(self.namespace, "output/" + self.name)
 
     def set_users(self, port_list: List[Port]):
-        user_name_list = [p.port_path for p in self.users]
-        added = []
-        for port in port_list:
-            if port.port_path not in user_name_list:
-                self.users.append(port)
-                added.append(port.port_path)
+        added = _append_new(self.users, self._user_ids, port_list)
         if added:
-            logger.debug(f"OutPort '{self.port_path}' added users: {added}")
+            logger.debug(f"OutPort '{self.port_path}' added users: {[p.port_path for p in added]}")
 
     @property
     def topic(self) -> List[str]:

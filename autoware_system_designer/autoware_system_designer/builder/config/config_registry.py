@@ -223,6 +223,8 @@ class ConfigRegistry:
         self.file_package_map = file_package_map or {}
         self._package_source_paths: Dict[str, Optional[str]] = dict(package_source_paths or {})
         self._canonical_package_paths: Optional[Dict[str, str]] = None
+        # Variant configs merged onto their base, by identity of the variant's own config.
+        self._resolved_variants: Dict[int, Config] = {}
         # Name of the package currently being built/exported (deployment package).
         self.deployment_package_name: Optional[str] = None
 
@@ -402,6 +404,10 @@ class ConfigRegistry:
                 # Should have been validated, but fallback
                 return entity
 
+            resolved_entity = self._resolved_variants.get(id(entity))
+            if resolved_entity is not None:
+                return resolved_entity
+
             # Resolve parent (recursive)
             parent = recursive_getter(base_target)
 
@@ -421,6 +427,7 @@ class ConfigRegistry:
             resolver = resolver_cls()
             resolver.resolve(resolved_entity, entity.config)
 
+            self._resolved_variants[id(entity)] = resolved_entity
             return resolved_entity
 
         return entity

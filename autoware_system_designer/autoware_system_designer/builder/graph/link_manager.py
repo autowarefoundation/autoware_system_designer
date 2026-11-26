@@ -16,13 +16,14 @@ import difflib
 import logging
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, List, Optional
+from functools import lru_cache
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.source_location import format_source, source_from_config
 from autoware_system_designer.model.export_schema import LauncherPortData
 from autoware_system_designer.model.links import Connection, ConnectionType, Link
-from autoware_system_designer.model.ports import InPort, OutPort
+from autoware_system_designer.model.ports import InPort, OutPort, Port
 
 if TYPE_CHECKING:
     from autoware_system_designer.builder.instances.instances import Instance
@@ -41,6 +42,29 @@ class _PortInfo:
 logger = logging.getLogger(__name__)
 
 
+WILDCARDS = Connection.WILDCARDS
+
+
+def has_wildcard(text: str) -> bool:
+    return any(c in text for c in WILDCARDS)
+
+
+@lru_cache(maxsize=None)
+def _compile_pattern(pattern: str) -> Tuple[re.Pattern, Tuple[str, ...]]:
+    """Regex of a pattern and the wildcard character of each capture group, in order."""
+    parts: List[str] = []
+    kinds: List[str] = []
+    literal_start = 0
+    for idx, char in enumerate(pattern):
+        if char in WILDCARDS:
+            parts.append(re.escape(pattern[literal_start:idx]))
+            parts.append("(.*?)")
+            kinds.append(char)
+            literal_start = idx + 1
+    parts.append(re.escape(pattern[literal_start:]))
+    return re.compile("".join(parts)), tuple(kinds)
+
+
 def match_and_pair_wildcard_ports(
     source_pattern: str,
     target_pattern: str,
@@ -50,63 +74,32 @@ def match_and_pair_wildcard_ports(
     """Return (source_key, target_key) pairs honoring wildcard usage.
 
     Rules:
-    - Both '*' => intersect identical keys.
-    - One side has '*' => cartesian with other side's concrete match(es).
-    - Both sides have '*' (not both '*') => substitute source captures into target pattern.
+    - One side has a wildcard => every match of that side pairs with the other side's port.
+    - Both sides have wildcards => source captures are substituted into the target pattern.
+
+    The wildcards *, ^ and + all match any character sequence; distinct characters
+    let a target pattern place each capture of the source pattern.
     """
-
-    def _match(pattern: str, keys: List[str]) -> List[str]:
-        """Match keys against a pattern that may contain wildcards (*, ^, +).
-
-        This treats * ^ + as distinct wildcards, but functionally they all match
-        sequences of characters. Using different wildcards allows for specific
-        multi-capture matching in the substitution phase.
-        """
-        # Create regex where each wildcard type captures a group
-        regex_pattern = re.escape(pattern)
-        regex_pattern = regex_pattern.replace(r"\*", "(.*?)")
-        regex_pattern = regex_pattern.replace(r"\^", "(.*?)")
-        regex_pattern = regex_pattern.replace(r"\+", "(.*?)")
-
-        matches = []
-        for key in keys:
-            if re.match(f"^{regex_pattern}$", key):
-                matches.append(key)
-        return matches
-
-    src_matches = _match(source_pattern, list(source_ports.keys()))
-    tgt_matches = _match(target_pattern, list(target_ports.keys()))
+    source_regex, _ = _compile_pattern(source_pattern)
+    target_regex, _ = _compile_pattern(target_pattern)
+    src_matches = [key for key in source_ports if source_regex.fullmatch(key)]
+    tgt_matches = [key for key in target_ports if target_regex.fullmatch(key)]
     if not src_matches or not tgt_matches:
         return []
 
-    # Check for wildcard presence
-    src_wc = any(c in source_pattern for c in "*^+")
-    tgt_wc = any(c in target_pattern for c in "*^+")
+    src_wc = has_wildcard(source_pattern)
+    tgt_wc = has_wildcard(target_pattern)
 
-    # Simple case: both patterns are purely just one wildcard character (e.g. both "*")
-    if source_pattern in ["*", "^", "+"] and target_pattern in ["*", "^", "+"]:
-        common = sorted(set(src_matches) & set(tgt_matches))
-        return [(k, k) for k in common]
+    if src_wc and not tgt_wc:
+        return [(s, t) for s in sorted(src_matches) for t in tgt_matches]
+    if tgt_wc and not src_wc:
+        return [(s, t) for s in src_matches for t in sorted(tgt_matches)]
 
+    targets = set(tgt_matches)
     pairs: List[tuple[str, str]] = []
-
-    if src_wc and not tgt_wc:  # replicate target across each source expansion
-        for s in sorted(src_matches):
-            for t in tgt_matches:
-                if s != t:
-                    pairs.append((s, t))
-        return pairs
-    if tgt_wc and not src_wc:  # replicate source across each target expansion
-        for s in src_matches:
-            for t in sorted(tgt_matches):
-                if s != t:
-                    pairs.append((s, t))
-        return pairs
-
-    # Both sides have wildcards (non-trivial); use substitution logic.
     for s in src_matches:
         t = _apply_wildcard_substitution(source_pattern, target_pattern, s)
-        if t in tgt_matches:
+        if t in targets:
             pairs.append((s, t))
     return pairs
 
@@ -114,93 +107,40 @@ def match_and_pair_wildcard_ports(
 def _apply_wildcard_substitution(source_pattern: str, target_pattern: str, matched_name: str) -> str:
     """Substitute wildcard captures from a matched source key into target pattern.
 
-    Wildcards (*, ^, +) are treated as distinct placeholders. Captures from
-    wildcards in the source pattern are mapped to the corresponding wildcard
-    type in the target pattern.
+    Each capture of the source pattern fills the next wildcard of the same character
+    in the target pattern; a target wildcard without a capture stays as written.
 
-    Example 1:
-      source: "input.*_^" matched against "input.foo_bar"
-      target: "^.input.*"
-      result: "bar.input.foo"
-
-    Example 2:
+    Example:
       source: "input.*_^" matched against "input.pcl_upper_right"
       target: "^.input.*"
       result: "upper_right.input.pcl"
     """
-    # 1. Extract captures from source pattern
-    # Convert wildcards to named groups to track which type matched what
-    # We use a simple sequential extraction since regex groups are ordered
-
-    # Build source regex
-    source_regex_parts = []
-    wildcard_order = []  # stores type of wildcard encountered: '*', '^', or '+'
-
-    last_idx = 0
-    # Iterate through pattern to find wildcards
-    # Using a simple parser loop because we need to preserve order and type
-    i = 0
-    while i < len(source_pattern):
-        if source_pattern[i] in "*^+":
-            # Add preceding literal text
-            if i > last_idx:
-                source_regex_parts.append(re.escape(source_pattern[last_idx:i]))
-            # Add capture group
-            source_regex_parts.append("(.*?)")
-            wildcard_order.append(source_pattern[i])
-            last_idx = i + 1
-        i += 1
-    if last_idx < len(source_pattern):
-        source_regex_parts.append(re.escape(source_pattern[last_idx:]))
-
-    source_regex = "^" + "".join(source_regex_parts) + "$"
-    match = re.match(source_regex, matched_name)
-
+    source_regex, kinds = _compile_pattern(source_pattern)
+    match = source_regex.fullmatch(matched_name)
     if not match:
         return matched_name
 
-    captures = match.groups()
-    if len(captures) != len(wildcard_order):
-        return matched_name  # Should match if regex worked
+    captures: Dict[str, List[str]] = {char: [] for char in WILDCARDS}
+    for kind, value in zip(kinds, match.groups()):
+        captures[kind].append(value)
 
-    # Map wildcard type to its captured value(s)
-    # Since a type can appear multiple times, we use a list/iterator approach
-    wildcard_captures = {"*": [], "^": [], "+": []}
-    for wc_type, captured_val in zip(wildcard_order, captures):
-        wildcard_captures[wc_type].append(captured_val)
+    used = {char: 0 for char in WILDCARDS}
+    result: List[str] = []
+    for char in target_pattern:
+        if char in WILDCARDS and used[char] < len(captures[char]):
+            result.append(captures[char][used[char]])
+            used[char] += 1
+        else:
+            result.append(char)
+    return "".join(result)
 
-    # 2. Substitute into target pattern
-    result_parts = []
-    last_idx = 0
-    i = 0
 
-    # We need to track index for each wildcard type in target to consume correct capture
-    wc_indices = {"*": 0, "^": 0, "+": 0}
-
-    while i < len(target_pattern):
-        char = target_pattern[i]
-        if char in "*^+":
-            # Add preceding literal text
-            if i > last_idx:
-                result_parts.append(target_pattern[last_idx:i])
-
-            # Find substitution value
-            if wc_indices[char] < len(wildcard_captures[char]):
-                result_parts.append(wildcard_captures[char][wc_indices[char]])
-                wc_indices[char] += 1
-            else:
-                # If target has more wildcards of a type than source, leave it as is?
-                # Or simplistic behavior: reuse last or empty?
-                # Standard behavior: leave the wildcard char if no capture available (unlikely if patterns align)
-                result_parts.append(char)
-
-            last_idx = i + 1
-        i += 1
-
-    if last_idx < len(target_pattern):
-        result_parts.append(target_pattern[last_idx:])
-
-    return "".join(result_parts)
+def _topic_segments(topic: str) -> Optional[List[str]]:
+    """Segments of an absolute ROS topic; None when the topic is relative or has an empty segment."""
+    if not isinstance(topic, str) or not topic.startswith("/"):
+        return None
+    segments = topic[1:].split("/")
+    return segments if all(segments) else None
 
 
 class LinkManager:
@@ -211,6 +151,8 @@ class LinkManager:
         self.in_ports: Dict[str, InPort] = {}
         self.out_ports: Dict[str, OutPort] = {}
         self.links: List[Link] = []
+        # Boundary output each publishing node port is exported through, by node port identity.
+        self._exports: Dict[int, OutPort] = {}
 
     def get_in_port(self, name: str) -> InPort:
         if name in self.in_ports:
@@ -234,138 +176,99 @@ class LinkManager:
             f"Available: {available if available else '(none)'}; Suggest: {suggestions}."
         )
 
-    # ------------------------------------------------------------------
-    # Centralized error helpers
-    # ------------------------------------------------------------------
     @staticmethod
     def _suggest(target: str, pool: List[str], n: int = 5) -> str:
         """Return comma list of close matches or a clear placeholder if none."""
         m = difflib.get_close_matches(target, pool, n=n, cutoff=0.6)
         return ", ".join(m) if m else "(no close matches)"
 
-    def _err_external_decl(self, kind: str, name: str, declared: List[str]):
+    @staticmethod
+    def _describe(connection: Connection) -> str:
+        def end(instance: str, kind: str, name: str) -> str:
+            return f"{instance}.{kind}.{name}" if instance else f"{kind}.{name}"
+
         return (
-            f"[E_EXT_DECL] External {kind} '{name}' not declared. Declared: {declared if declared else '(none)'}; "
-            f"Suggest: {self._suggest(name, declared)}"
+            f"{end(connection.from_instance, connection.from_port_type, connection.from_port_name)} -> "
+            f"{end(connection.to_instance, connection.to_port_type, connection.to_port_name)}"
+        )
+
+    def _connection_error(self, connection: Connection, message: str) -> ValidationError:
+        return ValidationError(
+            f"{message}; Connection: {self._describe(connection)}{format_source(connection.source)}",
+            source=connection.source,
         )
 
     def _err_type_mismatch(self, port: InPort | OutPort, attempted_type: str):
         return f"[E_TYPE_MISMATCH] External port '{port.port_path}' type clash: existing={port.msg_type}, new={attempted_type}"
 
-    def _err_wildcard_no_matches(self, connection: Connection):
+    def _err_missing_port(self, connection: Connection, is_source: bool, candidates: Dict[str, _PortInfo]) -> str:
+        """Missing endpoint of an explicit connection, with the ports the endpoint could name."""
+        kind = "output" if is_source else "input"
+        instance_name = connection.from_instance if is_source else connection.to_instance
+        port_name = connection.from_port_name if is_source else connection.to_port_name
+        available = sorted(key.split(".", 1)[1] for key in candidates if key.split(".", 1)[0] == instance_name)
+        listed = available if available else "(none)"
+        if not instance_name:
+            return (
+                f"[E_EXT_{kind.upper()}_MISSING] External {kind} '{port_name}' not found. Available: {listed}; "
+                f"Suggest: {self._suggest(port_name, available)}"
+            )
+        child = self.instance.children.get(instance_name)
+        if child is None:
+            children = sorted(self.instance.children)
+            return (
+                f"[E_INSTANCE_MISSING] Instance '{instance_name}' not found. Available: {children}; "
+                f"Suggest: {self._suggest(instance_name, children)}"
+            )
+        declared = getattr(child.configuration, "inputs" if kind == "input" else "outputs", None) or []
+        if child.entity_type == "module" and any(definition.name == port_name for definition in declared):
+            return (
+                f"[E_PORT_UNCONNECTED] {kind} port '{port_name}' is declared by '{instance_name}' "
+                f"but no connection inside the module reaches it"
+                f"{format_source(source_from_config(child.configuration, '/connections'))}"
+            )
         return (
-            "[E_WILDCARD_EMPTY] No ports matched wildcard patterns. "
-            f"From='{connection.from_instance}.{connection.from_port_type}.{connection.from_port_name}' "
-            f"To='{connection.to_instance}.{connection.to_port_type}.{connection.to_port_name}'"
-            f"{format_source(getattr(connection, 'source', None))}"
-        )
-
-    def _err_missing_external_io(self, kind: str, name: str, available: List[str]):
-        return (
-            f"[E_EXT_{kind.upper()}_MISSING] External {kind} '{name}' not found. Available: {available if available else '(none)'}; "
-            f"Suggest: {self._suggest(name, available)}"
-        )
-
-    def _err_missing_internal(self, role: str, instance_name: str, port_name: str, available: List[str]):
-        return (
-            f"[E_PORT_MISSING] {role} port '{port_name}' not in '{instance_name}'. Available: {available if available else '(none)'}; "
+            f"[E_PORT_MISSING] {kind} port '{port_name}' not in '{instance_name}'. Available: {listed}; "
             f"Suggest: {self._suggest(port_name, available)}"
         )
 
-    def _register_external_port(self, port_dict: Dict[str, InPort | OutPort], port_obj: InPort | OutPort, kind: str):
-        """Generic logic for adding/updating an external port.
-
-        kind: 'input' or 'output'.
-        """
-        # Systems do not define external ports by design.
-        if self.instance.entity_type == "system":
-            return
-
-        if kind == "input":
-            cfg_list = getattr(self.instance.configuration, "inputs", []) or []
-        else:
-            cfg_list = getattr(self.instance.configuration, "outputs", []) or []
-
-        declared_names = [item.name for item in cfg_list]
-        if port_obj.name not in declared_names:
-            raise ValidationError(self._err_external_decl(kind, port_obj.name, sorted(declared_names)))
-
-        existing = port_dict.get(port_obj.name)
-        if existing:
-            if existing.msg_type != port_obj.msg_type:
-                raise ValidationError(self._err_type_mismatch(existing, port_obj.msg_type))
-            existing.set_references(port_obj.reference)
-        else:
-            port_dict[port_obj.name] = port_obj
-
-    def set_in_port(self, in_port: InPort):  # external interface only
-        self._register_external_port(self.in_ports, in_port, "input")
-
-    def set_out_port(self, out_port: OutPort):  # external interface only
-        self._register_external_port(self.out_ports, out_port, "output")
-
-    def _create_link_from_ports(self, from_port, to_port, connection_type: ConnectionType):
-        """Create and append a link between two ports.
-
-        Args:
-            from_port: Source port (InPort or OutPort)
-            to_port: Destination port (InPort or OutPort)
-            connection_type: Type of connection
-        """
-        link = Link(from_port.msg_type, from_port, to_port, self.instance.resolved_path, connection_type)
-        self.links.append(link)
-
+    # ------------------------------------------------------------------
+    # Connection resolution
+    # ------------------------------------------------------------------
     def _resolve_ports_for_connection(
         self,
         connection: Connection,
-        from_info: _PortInfo | None,
-        to_info: _PortInfo | None,
+        from_info: _PortInfo,
+        to_info: _PortInfo,
     ) -> tuple[OutPort | InPort, OutPort | InPort]:
-        """Resolve concrete port objects for a connection, creating externals when needed."""
+        """Concrete port objects of a matched connection; a boundary port is created on first use.
 
-        def _existing_port(info: _PortInfo | None, accessor) -> OutPort | InPort | None:
-            if not info:
-                return None
-            if info.port is not None:
-                return info.port
-            if info.instance is None:
-                return None
-            return accessor(info.instance.link_manager, info.port_name)
+        A boundary port is one object shared by every connection that names it.
+        """
+        from_port = from_info.port
+        to_port = to_info.port
 
-        from_port = _existing_port(from_info, lambda lm, name: lm.get_out_port(name))
-        to_port = _existing_port(to_info, lambda lm, name: lm.get_in_port(name))
-
-        # An external port is one object shared by every connection that names it.
         if connection.type == ConnectionType.EXTERNAL_TO_INTERNAL:
             if to_port is None:
-                raise ValidationError(
-                    f"[E_CONN_TARGET_MISSING] EXTERNAL_TO_INTERNAL {connection.from_port_type}.{connection.from_port_name} -> {connection.to_instance}.{connection.to_port_type}.{connection.to_port_name}"
-                )
+                raise self._connection_error(connection, "[E_CONN_TARGET_MISSING] Target port is not resolved")
             if from_port is None:
-                port_name = from_info.port_name if from_info else connection.from_port_name
                 from_port = InPort(
-                    port_name, to_port.msg_type, self.instance.resolved_path, role=connection.from_port_type
+                    from_info.port_name, to_port.msg_type, self.instance.resolved_path, role=connection.from_port_type
                 )
             elif from_port.msg_type != to_port.msg_type:
-                raise ValidationError(self._err_type_mismatch(from_port, to_port.msg_type))
+                raise self._connection_error(connection, self._err_type_mismatch(from_port, to_port.msg_type))
         elif connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
             if from_port is None:
-                raise ValidationError(
-                    f"[E_CONN_SOURCE_MISSING] INTERNAL_TO_EXTERNAL {connection.from_instance}.{connection.from_port_type}.{connection.from_port_name} -> {connection.to_port_type}.{connection.to_port_name}"
-                )
+                raise self._connection_error(connection, "[E_CONN_SOURCE_MISSING] Source port is not resolved")
             if to_port is None:
-                port_name = to_info.port_name if to_info else connection.to_port_name
                 to_port = OutPort(
-                    port_name, from_port.msg_type, self.instance.resolved_path, role=connection.to_port_type
+                    to_info.port_name, from_port.msg_type, self.instance.resolved_path, role=connection.to_port_type
                 )
             elif to_port.msg_type != from_port.msg_type:
-                raise ValidationError(self._err_type_mismatch(to_port, from_port.msg_type))
+                raise self._connection_error(connection, self._err_type_mismatch(to_port, from_port.msg_type))
 
-        if from_info is not None:
-            from_info.port = from_port
-        if to_info is not None:
-            to_info.port = to_port
-
+        from_info.port = from_port
+        to_info.port = to_port
         return from_port, to_port
 
     @staticmethod
@@ -377,8 +280,6 @@ class LinkManager:
                 continue
             if info.role is not None and info.role != declared_kind:
                 continue
-            if info.role is None:
-                logger.debug(f"Port '{key}' has no role; kind filter '{declared_kind}' not applied")
             filtered[key] = info
         return filtered
 
@@ -387,263 +288,150 @@ class LinkManager:
         if info.role is not None and info.role != declared_kind:
             raise ValidationError(
                 f"[E_PORT_KIND] Connection declares '{declared_kind}' but port '{key}' is a {info.role}"
-                f"{format_source(getattr(connection, 'source', None))}"
+                f"{format_source(connection.source)}",
+                source=connection.source,
             )
 
-    def _create_wildcard_links(
+    def _match_connection(
         self,
         connection: Connection,
-        port_list_from: Dict[str, _PortInfo],
-        port_list_to: Dict[str, _PortInfo],
-    ):
-        """Create links for wildcard connections.
+        sources: Dict[str, _PortInfo],
+        targets: Dict[str, _PortInfo],
+    ) -> List[Tuple[_PortInfo, _PortInfo]]:
+        """Port pairs a connection selects; an explicit endpoint or a wildcard matching nothing is an error."""
+        from_key = f"{connection.from_instance}.{connection.from_port_name}"
+        to_key = f"{connection.to_instance}.{connection.to_port_name}"
 
-        Args:
-            connection: Connection configuration
-            port_list_from: Mapping of source port keys to metadata dictionaries
-            port_list_to: Mapping of target port keys to metadata dictionaries
-        """
-        # filter the port name lists only for target instance
-        from_idx = f"{connection.from_instance}.{connection.from_port_name}"
-        to_idx = f"{connection.to_instance}.{connection.to_port_name}"
+        if connection.has_wildcard:
+            pairs = match_and_pair_wildcard_ports(
+                from_key,
+                to_key,
+                self._filter_candidates(sources, connection.from_port_type, connection.from_is_external),
+                self._filter_candidates(targets, connection.to_port_type, connection.to_is_external),
+            )
+            if not pairs:
+                raise self._connection_error(connection, "[E_WILDCARD_EMPTY] No ports matched wildcard patterns")
+            return [(sources[s], targets[t]) for s, t in pairs]
 
-        # Match and pair ports based on wildcard patterns, per declared side and kind
-        port_pairs = match_and_pair_wildcard_ports(
-            from_idx,
-            to_idx,
-            self._filter_candidates(port_list_from, connection.from_port_type, connection.from_is_external),
-            self._filter_candidates(port_list_to, connection.to_port_type, connection.to_is_external),
-        )
+        from_info = sources.get(from_key)
+        if from_info is None:
+            raise self._connection_error(connection, self._err_missing_port(connection, True, sources))
+        to_info = targets.get(to_key)
+        if to_info is None:
+            raise self._connection_error(connection, self._err_missing_port(connection, False, targets))
+        self._check_port_kind(connection, from_info, connection.from_port_type, from_key)
+        self._check_port_kind(connection, to_info, connection.to_port_type, to_key)
+        return [(from_info, to_info)]
 
-        # Validate matched ports
-        if not port_pairs:
-            msg = self._err_wildcard_no_matches(connection)
-            if self.instance.entity_type in ("module", "system"):
-                raise ValidationError(msg)
-
-            logger.warning(msg)
-            return
-
-        # Create links for each matched pair
-        for from_key, to_key in port_pairs:
-            from_info = port_list_from.get(from_key)
-            to_info = port_list_to.get(to_key)
-
-            if from_info is None or to_info is None:
-                raise ValidationError(f"[E_WILDCARD_META] Missing metadata for {from_key} -> {to_key} (internal bug)")
-
+    def _link_connection(
+        self,
+        connection: Connection,
+        sources: Dict[str, _PortInfo],
+        targets: Dict[str, _PortInfo],
+    ) -> None:
+        """Create the links of one connection."""
+        for from_info, to_info in self._match_connection(connection, sources, targets):
             from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
 
+            # A global subscriber keeps its topic; a connection cannot feed it.
             if isinstance(to_port, InPort) and to_port.is_global:
-                msg = (
-                    "[E_WILDCARD_PRESET_INPUT] Wildcard connection targets a global input port "
-                    "and cannot create a link: "
-                    f"'{connection.from_instance}.{connection.from_port_name}' -> "
-                    f"'{connection.to_instance}.{connection.to_port_name}' "
-                    f"(resolved target port: '{to_port.port_path}')"
+                message = (
+                    f"Skipping connection targeting global input port '{to_port.port_path}'; "
+                    f"Connection: {self._describe(connection)}{format_source(connection.source)}"
                 )
-                if self.instance.entity_type in ("module", "system"):
-                    raise ValidationError(msg)
-
-                logger.warning(msg)
+                if connection.has_wildcard:
+                    logger.debug(message)
+                else:
+                    logger.warning(message)
                 continue
 
-            self._create_link_from_ports(from_port, to_port, connection.type)
+            if connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
+                self._claim_export(connection, from_port, to_port)
 
-    def _check_and_deduplicate_connections(self, connection_list: List[Connection]) -> List[Connection]:
-        """Check for duplicate connections and deduplicate if identical, error if conflicting.
+            self.links.append(
+                Link(from_port.msg_type, from_port, to_port, self.instance.resolved_path, connection.type)
+            )
+            if connection.type == ConnectionType.EXTERNAL_TO_INTERNAL:
+                self.in_ports.setdefault(from_port.name, from_port)
+            elif connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
+                self.out_ports.setdefault(to_port.name, to_port)
 
-        Args:
-            connection_list: List of Connection objects to check
-
-        Returns:
-            Deduplicated list of Connection objects
-
-        Raises:
-            ValidationError: If duplicate connections are found that differ in some way
-        """
-
-        def _format_connection_string(conn: Connection) -> str:
-            """Format connection for display in error messages."""
-            if conn.from_instance == "":
-                from_str = f"{conn.from_port_type}.{conn.from_port_name}"
-            else:
-                from_str = f"{conn.from_instance}.{conn.from_port_type}.{conn.from_port_name}"
-
-            if conn.to_instance == "":
-                to_str = f"{conn.to_port_type}.{conn.to_port_name}"
-            else:
-                to_str = f"{conn.to_instance}.{conn.to_port_type}.{conn.to_port_name}"
-
-            return f"{from_str} -> {to_str}"
-
-        seen_connections: Dict[str, Connection] = {}  # key: connection signature, value: first occurrence
-        duplicate_indices: List[int] = []  # indices of duplicates to remove
-
-        for idx, conn in enumerate(connection_list):
-            # Create a signature for the connection (endpoints with declared kinds)
-            conn_signature = (
-                f"{conn.from_instance}.{conn.from_port_type}.{conn.from_port_name}"
-                f" -> {conn.to_instance}.{conn.to_port_type}.{conn.to_port_name}"
+    def _claim_export(self, connection: Connection, from_port: OutPort, to_port: OutPort) -> None:
+        """A boundary output names the topic of its node port, so a node port leaves through one."""
+        node_port = from_port.get_reference_list()[0]
+        claimed = self._exports.setdefault(id(node_port), to_port)
+        if claimed is not to_port:
+            raise self._connection_error(
+                connection,
+                f"[E_EXPORT_TWICE] '{node_port.port_path}' is already exported as '{claimed.name}'; "
+                f"a publisher has one topic, so it leaves '{self.instance.name}' through one output",
             )
 
-            if conn_signature in seen_connections:
-                conn_str = _format_connection_string(conn)
+    def _check_duplicate_connections(self, connection_list: List[Connection]) -> None:
+        """Each pair of endpoints is connected once."""
+        seen = set()
+        for conn in connection_list:
+            signature = self._describe(conn)
+            if signature in seen:
                 file_path = getattr(self.instance.configuration, "file_path", "unknown")
                 cfg_src = source_from_config(self.instance.configuration, "/connections")
                 raise ValidationError(
-                    f"[E_DUPLICATE_CONNECTION] Duplicate connection found: {conn_str} (type={conn.type.name}). At {file_path}{format_source(cfg_src)}"
+                    f"[E_DUPLICATE_CONNECTION] Duplicate connection found: {signature} (type={conn.type.name}). "
+                    f"At {file_path}{format_source(cfg_src)}"
                 )
-            else:
-                seen_connections[conn_signature] = conn
+            seen.add(signature)
 
-        # Return deduplicated list (keep first occurrence, remove duplicates)
-        return [conn for idx, conn in enumerate(connection_list) if idx not in duplicate_indices]
+    def _collect_candidates(self) -> Tuple[Dict[str, _PortInfo], Dict[str, _PortInfo]]:
+        """Ports a connection can name as source and as target, keyed '<instance>.<port>'.
+
+        A boundary port has an empty instance name and no port object until a connection uses it.
+        """
+        sources: Dict[str, _PortInfo] = {}
+        targets: Dict[str, _PortInfo] = {}
+        for child_key, child in self.instance.children.items():
+            for name, port in child.link_manager.out_ports.items():
+                sources[f"{child_key}.{name}"] = _PortInfo(name, child, port, port.role)
+            for name, port in child.link_manager.in_ports.items():
+                targets[f"{child_key}.{name}"] = _PortInfo(name, child, port, port.role)
+
+        configuration = self.instance.configuration
+        for definition in getattr(configuration, "inputs", None) or []:
+            sources[f".{definition.name}"] = _PortInfo(definition.name, None, None, definition.port_role)
+        for definition in getattr(configuration, "outputs", None) or []:
+            targets[f".{definition.name}"] = _PortInfo(definition.name, None, None, definition.port_role)
+        return sources, targets
 
     def set_links(self):
-        """Set up links based on entity connections."""
-        cfg_connections = self.instance.configuration.connections or []
-        connection_list: List[Connection] = []
-        for idx, cfg in enumerate(cfg_connections):
-            src = source_from_config(self.instance.configuration, f"/connections/{idx}")
-            connection_list.append(Connection(cfg, source=src))
-        if len(connection_list) == 0:
-            configuration = self.instance.configuration
-            if getattr(configuration, "remaps", None) or getattr(configuration, "input_topics", None):
-                # A lone component still gets its topics.
-                self.apply_remaps()
-                self.apply_input_topics()
-                return
+        """Link the children along the entity's connections and create the boundary ports they use."""
+        configuration = self.instance.configuration
+        connection_list = [
+            Connection(cfg, source=source_from_config(configuration, f"/connections/{idx}"))
+            for idx, cfg in enumerate(configuration.connections or [])
+        ]
+        if not connection_list and not getattr(configuration, "remaps", None):
             cfg_src = source_from_config(configuration, "/connections")
-            logger.warning(f"Module '{self.instance.name}' has no connections configured{format_source(cfg_src)}")
-            return
-
-        # Check for and deduplicate duplicate connections
-        connection_list = self._check_and_deduplicate_connections(connection_list)
-
-        port_list_from: Dict[str, _PortInfo] = {}
-        port_list_to: Dict[str, _PortInfo] = {}
-
-        # ports from children instances
-        for child_key, child_instance in self.instance.children.items():
-            for port_name, port in child_instance.link_manager.in_ports.items():
-                idx = f"{child_key}.{port_name}"
-                port_list_to[idx] = _PortInfo(port_name=port_name, instance=child_instance, port=port, role=port.role)
-            for port_name, port in child_instance.link_manager.out_ports.items():
-                idx = f"{child_key}.{port_name}"
-                port_list_from[idx] = _PortInfo(port_name=port_name, instance=child_instance, port=port, role=port.role)
-
-        # ports from external interfaces
-        inputs = getattr(self.instance.configuration, "inputs", []) or []
-        for ext_input in inputs:
-            port_list_from[f".{ext_input.name}"] = _PortInfo(
-                port_name=ext_input.name, instance=None, port=None, role=ext_input.port_role
+            logger.warning(
+                f"{self.instance.entity_type.capitalize()} '{self.instance.name}' has no connections configured"
+                f"{format_source(cfg_src)}"
             )
+        self._check_duplicate_connections(connection_list)
 
-        outputs = getattr(self.instance.configuration, "outputs", []) or []
-        for ext_output in outputs:
-            port_list_to[f".{ext_output.name}"] = _PortInfo(
-                port_name=ext_output.name, instance=None, port=None, role=ext_output.port_role
-            )
+        sources, targets = self._collect_candidates()
 
-        # Apply remap entries before creating links so that link resolution in
-        # links.py sees is_remapped=True and preserves the overridden topic.
+        # A remapped port keeps its topic when a link exports it.
         self.apply_remaps()
 
-        # Establish links based on connection type
         for connection in connection_list:
-            wildcard_fields = [
-                connection.from_port_name or "",
-                connection.to_port_name or "",
-                connection.from_instance or "",
-                connection.to_instance or "",
-            ]
-            has_wildcard = any(c in field for field in wildcard_fields for c in "*^+")
-            if has_wildcard:
-                self._create_wildcard_links(connection, port_list_from, port_list_to)
-            else:
-                # set from_port and to_port
-                from_key = f"{connection.from_instance}.{connection.from_port_name}"
-                to_key = f"{connection.to_instance}.{connection.to_port_name}"
-                from_info = port_list_from.get(from_key)
-                to_info = port_list_to.get(to_key)
+            self._link_connection(connection, sources, targets)
 
-                # intuitive error if missing
-                if from_info is None:
-                    # external input case uses empty instance name
-                    if connection.type == ConnectionType.EXTERNAL_TO_INTERNAL:
-                        missing_name = connection.from_port_name
-                        available = sorted([k.split(".")[1] for k in port_list_from.keys() if k.startswith(".")])
-                        msg = self._err_missing_external_io("input", missing_name, available)
-                    else:
-                        # internal output missing
-                        instance_name = connection.from_instance or "<root>"
-                        available = sorted(
-                            [k.split(".")[1] for k in port_list_from.keys() if k.startswith(f"{instance_name}.")]
-                        )
-                        msg = self._err_missing_internal("output", instance_name, connection.from_port_name, available)
-                    msg = (
-                        msg
-                        + f"; Connection: '{from_key}' -> '{to_key}'"
-                        + format_source(getattr(connection, "source", None))
-                    )
-
-                    if self.instance.entity_type in ("module", "system"):
-                        raise ValidationError(msg)
-                    logger.warning(msg)
-                    continue
-
-                if to_info is None:
-                    if connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
-                        missing_name = connection.to_port_name
-                        available = sorted([k.split(".")[1] for k in port_list_to.keys() if k.startswith(".")])
-                        msg = self._err_missing_external_io("output", missing_name, available)
-                    else:
-                        instance_name = connection.to_instance or "<root>"
-                        available = sorted(
-                            [k.split(".")[1] for k in port_list_to.keys() if k.startswith(f"{instance_name}.")]
-                        )
-                        msg = self._err_missing_internal("input", instance_name, connection.to_port_name, available)
-                    msg = (
-                        msg
-                        + f"; Connection: '{from_key}' -> '{to_key}'"
-                        + format_source(getattr(connection, "source", None))
-                    )
-
-                    if self.instance.entity_type in ("module", "system"):
-                        raise ValidationError(msg)
-                    logger.warning(msg)
-                    continue
-
-                self._check_port_kind(connection, from_info, connection.from_port_type, from_key)
-                self._check_port_kind(connection, to_info, connection.to_port_type, to_key)
-
-                from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
-                if isinstance(to_port, InPort) and to_port.is_global:
-                    logger.warning(
-                        "Skipping connection targeting global input port "
-                        f"'{to_port.port_path}'; Connection: '{from_key}' -> '{to_key}'"
-                        + format_source(getattr(connection, "source", None))
-                    )
-                    continue
-                self._create_link_from_ports(from_port, to_port, connection.type)
-
-        self.apply_input_topics()
-
-        # Create external ports after links are set
-        self._create_external_ports()
+        self._bind_interface_topics()
 
     def apply_remaps(self):
-        """Apply topic remap entries from system config to child out-ports.
+        """Set the topics of child out-ports from the system's remap entries.
 
-        Only out-port types (publisher, server) may be remapped. Remaps override
-        node-level global topics. When a lower (closer to the system root) layer
-        re-declares the same port the lower layer wins, which is achieved naturally
-        because system.set_links() calls this method after module.set_links() has
-        already run.
-
-        Back-propagation through the reference chain ensures that the node's own
-        port (used for launch-file remap args) also reflects the new topic.
+        Only out-port types (publisher, server) may be remapped. A remap overrides a
+        node-level global topic and reaches the publishing node port through the
+        reference chain, so the launch remap of the node carries the topic.
         """
         remaps = getattr(self.instance.configuration, "remaps", None)
         if not remaps:
@@ -684,53 +472,63 @@ class LinkManager:
                     f"but port '{port_name}' is a {port.role}"
                 )
 
-            if not entry.topic.startswith("/"):
+            topic_parts = _topic_segments(entry.topic)
+            if topic_parts is None:
                 raise ValidationError(
-                    f"[E_REMAP_TOPIC] Remap topic '{entry.topic}' must be an absolute ROS topic " f"starting with '/'"
-                )
-            topic = entry.topic.lstrip("/")
-            topic_parts = topic.split("/")
-            if not all(topic_parts):
-                raise ValidationError(
-                    f"[E_REMAP_TOPIC] Remap topic '{entry.topic}' contains empty segments; "
-                    "must be a valid absolute ROS topic (e.g. '/foo/bar')"
+                    f"[E_REMAP_TOPIC] Remap topic '{entry.topic}' must be an absolute ROS topic "
+                    "without empty segments (e.g. '/foo/bar')"
                 )
             self._force_remap_port(port, topic_parts)
 
-    def apply_input_topics(self):
-        """Set the topics of unconnected child subscribers from ``input_topics``.
+    def _bind_interface_topics(self):
+        """Bind the boundary ports that declare a topic; such a port is used by a connection.
 
-        Runs after the links, so a subscriber a connection feeds is rejected. The topic
-        is set on every node port the subscriber stands for.
+        A bound output sets the topic of the node port it exports. A bound input sets the
+        topic of every node subscriber it stands for.
         """
-        entries = getattr(self.instance.configuration, "input_topics", None)
-        if not entries:
-            return
-        for entry in entries:
-            instance_name, port_type, port_name = entry.source.split(".", 2)
-            child_instance = self.instance.children.get(instance_name)
-            if child_instance is None:
-                raise ValidationError(f"[E_INPUT_TOPIC] Instance '{instance_name}' of '{entry.source}' not found")
-            port = child_instance.link_manager.in_ports.get(port_name)
-            if port is None or (port.role is not None and port.role != port_type):
-                available = sorted(
-                    name for name, p in child_instance.link_manager.in_ports.items() if p.role in (None, port_type)
-                )
+        configuration = self.instance.configuration
+        declared = (
+            ("subscriber", getattr(configuration, "inputs", None) or [], self.in_ports),
+            ("publisher", getattr(configuration, "outputs", None) or [], self.out_ports),
+        )
+        for role, definitions, ports in declared:
+            bound = [definition for definition in definitions if definition.topic is not None]
+            unconnected = sorted(definition.name for definition in bound if definition.name not in ports)
+            if unconnected:
+                source = source_from_config(configuration, f"/{role}s")
                 raise ValidationError(
-                    f"[E_INPUT_TOPIC] '{instance_name}' has no {port_type} '{port_name}'. Available: {available}"
+                    f"[E_INTERFACE_UNCONNECTED] {role} interface port(s) without a connection: {unconnected}"
+                    f"{format_source(source)}",
+                    source=source,
                 )
-            if port.servers:
-                raise ValidationError(
-                    f"[E_INPUT_TOPIC] '{entry.source}' is connected; its topic comes from the publisher"
-                )
-            topic_parts = entry.topic.lstrip("/").split("/")
-            for leaf in port.get_chain_list():
-                if leaf.is_global:
+            for definition in bound:
+                topic_parts = _topic_segments(definition.topic)
+                if topic_parts is None:
                     raise ValidationError(
-                        f"[E_INPUT_TOPIC] '{entry.source}' reaches global subscriber '{leaf.port_path}'"
+                        f"[E_INTERFACE_TOPIC] Topic '{definition.topic}' of {role} interface port "
+                        f"'{definition.name}' must be an absolute ROS topic without empty segments"
                     )
-                leaf.is_remapped = True
-                leaf.set_topic(topic_parts[:-1], topic_parts[-1])
+                port = ports[definition.name]
+                if isinstance(port, OutPort):
+                    self._force_remap_port(port, topic_parts)
+                else:
+                    self._bind_input_topic(port, topic_parts)
+
+    @staticmethod
+    def _bind_input_topic(port: InPort, topic_parts: List[str]) -> None:
+        for chained in port.get_chain_list():
+            if chained.is_global:
+                raise ValidationError(
+                    f"[E_INTERFACE_TOPIC] Interface port '{port.name}' reaches global subscriber "
+                    f"'{chained.port_path}', which keeps its own topic"
+                )
+            if chained.is_remapped and chained.own_topic and chained.own_topic != topic_parts:
+                raise ValidationError(
+                    f"[E_INTERFACE_TOPIC] '{chained.port_path}' is bound to '{chained.get_topic()}' and to "
+                    f"'/{'/'.join(topic_parts)}' (interface port '{port.name}'); a subscriber takes one topic"
+                )
+            chained.is_remapped = True
+            chained.set_topic(topic_parts[:-1], topic_parts[-1])
 
     @staticmethod
     def _force_remap_port(port: OutPort, topic_parts: list[str]):
@@ -742,16 +540,6 @@ class LinkManager:
         for ref_port in port.reference:
             LinkManager._force_remap_port(ref_port, topic_parts)
         port.set_topic(topic_parts[:-1], topic_parts[-1])
-
-    def _create_external_ports(self):
-        """Create external ports based on link list."""
-        for link in self.links:
-            if link.connection_type == ConnectionType.EXTERNAL_TO_INTERNAL:
-                if link.from_port.namespace == self.instance.resolved_path:
-                    self.set_in_port(link.from_port)
-            elif link.connection_type == ConnectionType.INTERNAL_TO_EXTERNAL:
-                if link.to_port.namespace == self.instance.resolved_path:
-                    self.set_out_port(link.to_port)
 
     def initialize_node_ports(self):
         """Initialize ports for node entity during node configuration."""
@@ -797,35 +585,44 @@ class LinkManager:
         return [out_port.event for out_port in self.out_ports.values()]
 
     def check_ports(self):
-        """Check and debug port configurations."""
-        # check ports only for node. in case of module, the check is done
+        """A node subscriber or client takes one topic; every port connected to it resolves to that topic."""
         if self.instance.entity_type != "node":
             return
 
-        for out_port in self.out_ports.values():
-            logger.debug(
-                f"[PORT_USER_DEBUG] port path: '{out_port.port_path}' topic: '{out_port.get_topic()}' (users={len(out_port.users)})"
-            )
-
-        # check ports
         for in_port in self.in_ports.values():
-            logger.debug(f"  In port: {in_port.port_path}")
-            logger.debug(f"    Subscribing topic: {in_port.topic}")
-            server_port_list = in_port.servers
-            if server_port_list == []:
-                logger.debug("    Server port not found")
-                continue
-            for server_port in server_port_list:
-                logger.debug(f"    server: {server_port.port_path}, topic: {server_port.topic}")
+            sources: Dict[str, Port] = {}
+            for server_port in in_port.servers:
+                sources.setdefault(server_port.get_topic(), server_port)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"In port '{in_port.port_path}' topic '{in_port.get_topic()}' sources {sorted(sources)}")
+            kind = in_port.role or "input"
+            if in_port.own_topic:
+                # The port holds a topic of its own: a global one, or one bound by a border interface.
+                fixed = "/" + "/".join(in_port.own_topic)
+                others = {topic: port for topic, port in sources.items() if topic != fixed}
+                if not others:
+                    continue
+                listed = self._list_sources(others)
+                if in_port.is_global:
+                    logger.warning(
+                        f"Global {kind} '{in_port.port_path}' keeps topic '{fixed}'; "
+                        f"it does not receive the ports connected to it:{listed}"
+                    )
+                    continue
+                raise ValidationError(
+                    f"[E_TOPIC_CONFLICT] {kind} '{in_port.port_path}' is bound to topic '{fixed}' "
+                    f"and connected to:{listed}"
+                )
+            if len(sources) > 1:
+                raise ValidationError(
+                    f"[E_TOPIC_CONFLICT] {kind} '{in_port.port_path}' is connected on {len(sources)} topics, "
+                    f"and a port takes one topic:{self._list_sources(sources)}\n"
+                    "Connect one source, or give the sources one topic with 'remaps'."
+                )
 
-        for out_port in self.out_ports.values():
-            logger.debug(f"  Out port: {out_port.port_path}")
-            user_port_list = out_port.users
-            if user_port_list == []:
-                logger.debug("    User port not found")
-                continue
-            for user_port in user_port_list:
-                logger.debug(f"    user: {user_port.port_path}")
+    @staticmethod
+    def _list_sources(sources: Dict[str, Port]) -> str:
+        return "".join(f"\n  {port.port_path} on '{topic}'" for topic, port in sorted(sources.items()))
 
     def log_module_configuration(self):
         """Log module configuration details."""

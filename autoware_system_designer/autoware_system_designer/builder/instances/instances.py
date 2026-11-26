@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Optional
+from typing import Dict, Iterator, List, Optional
 
 from autoware_system_designer.builder.config.launch_manager import LaunchManager
 from autoware_system_designer.builder.graph.event_manager import EventManager
@@ -87,9 +87,6 @@ class Instance:
         for child in self.children.values():
             child.set_parameter_resolver(parameter_resolver)
 
-        # status
-        self.is_initialized = False
-
     @property
     def path(self) -> str:
         """Get the full path of this instance in the hierarchy."""
@@ -109,12 +106,15 @@ class Instance:
         raise ValidationError(f"Child not found: child name '{name}', instance of '{self.name}'")
 
     def check_ports(self):
-        # recursive call for children
         for child in self.children.values():
             child.check_ports()
-
-        # delegate to link manager
         self.link_manager.check_ports()
+
+    def iter_tree(self) -> Iterator["Instance"]:
+        """This instance and every instance below it, parents first."""
+        yield self
+        for child in self.children.values():
+            yield from child.iter_tree()
 
     def set_event_tree(self):
         # delegate to event manager; every node's processes exist before any rate propagates

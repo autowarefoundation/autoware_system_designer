@@ -23,6 +23,7 @@ from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.source_location import SourceLocation
 from autoware_system_designer.model.config import SystemConfig
 from autoware_system_designer.model.namespace import Namespace
+from autoware_system_designer.model.ports import InPort
 
 logger = logging.getLogger(__name__)
 
@@ -59,34 +60,32 @@ class DeploymentInstance(Instance):
             self.entity_type = "system"
             self.set_resolved_path([])
 
-            # Apply system variables and variable files to the parameter resolver if available
-            if self.parameter_resolver:
-                if hasattr(system_config, "variables") and system_config.variables:
-                    self.parameter_resolver.load_system_variables(system_config.variables)
+            if system_config.variables:
+                self.parameter_resolver.load_system_variables(system_config.variables)
+            if system_config.variable_files:
+                self.parameter_resolver.load_system_variable_files(system_config.variable_files)
 
-                if hasattr(system_config, "variable_files") and system_config.variable_files:
-                    self.parameter_resolver.load_system_variable_files(system_config.variable_files)
-
-                argument_names = [
-                    argument.get("name")
-                    for argument in system_config.arguments or []
-                    if isinstance(argument, dict) and argument.get("name")
-                ]
-                # One $(var name) cannot be both build-time and launch-time.
-                conflicts = sorted(set(argument_names) & set(self.parameter_resolver.variable_map))
-                if conflicts:
-                    raise ValidationError(
-                        f"System {system_config.full_name} declares {', '.join(conflicts)} as both an argument "
-                        "and a variable; $(var ...) resolves a variable at build time and an argument at "
-                        "launch time, so each name is one or the other",
-                        source=SourceLocation(file_path=system_config.file_path),
-                    )
-                self.parameter_resolver.declare_arguments(argument_names)
+            argument_names = [
+                argument.get("name")
+                for argument in system_config.arguments or []
+                if isinstance(argument, dict) and argument.get("name")
+            ]
+            # One $(var name) cannot be both build-time and launch-time.
+            conflicts = sorted(set(argument_names) & set(self.parameter_resolver.variable_map))
+            if conflicts:
+                raise ValidationError(
+                    f"System {system_config.full_name} declares {', '.join(conflicts)} as both an argument "
+                    "and a variable; $(var ...) resolves a variable at build time and an argument at "
+                    "launch time, so each name is one or the other",
+                    source=SourceLocation(file_path=system_config.file_path),
+                )
+            self.parameter_resolver.declare_arguments(argument_names)
 
             # 1. set component instances
             check_component_compute_units(system_config)
             logger.info(f"Instance '{self.name}': setting component instances")
             set_instances(self, system_config.full_name, config_registry)
+            self.check_duplicate_node_path()
             _snapshot("1_parse")
 
             # Propagate parameter resolver to all instances in the tree (now that they exist)
@@ -96,6 +95,7 @@ class DeploymentInstance(Instance):
             current_step = "connections"
             logger.info(f"Instance '{self.name}': setting connections")
             self.link_manager.set_links()
+            self.check_duplicate_port_path()
             self.check_ports()
             _snapshot("2_connections")
 
@@ -108,10 +108,6 @@ class DeploymentInstance(Instance):
             logger.info(f"Instance '{self.name}': building logical topology")
             self.set_event_tree()
             _snapshot("3_events")
-
-            # 5. validate node namespaces
-            current_step = "validate"
-            self.check_duplicate_node_path()
         except Exception as e:
             _snapshot(current_step, e)
             raise
@@ -122,40 +118,40 @@ class DeploymentInstance(Instance):
         Components/modules may share namespaces. Node instances must have unique
         normalized paths generated from namespace + node name.
         """
-        node_path_map = {}
+        node_path_map: Dict[str, Instance] = {}
+        for inst in self.iter_tree():
+            if inst.entity_type != "node":
+                continue
+            node_path = Namespace(list(Namespace.from_path(inst.namespace)) + ([inst.name] if inst.name else []))
+            normalized_path = node_path.to_string()
+            other = node_path_map.setdefault(normalized_path, inst)
+            if other is not inst:
+                raise ValidationError(
+                    f"Duplicate node path found: '{normalized_path}'. "
+                    f"Conflict between instance '{inst.name}' ({inst.source_file}) "
+                    f"and '{other.name}' ({other.source_file})"
+                )
 
-        def _normalize_namespace_name(namespace, name: str) -> str:
-            namespace_segments = Namespace.from_path(namespace)
-            path_segments = list(namespace_segments)
-            if name:
-                path_segments.append(name)
-            return f"/{'/'.join(path_segments)}" if path_segments else "/"
+    def check_duplicate_port_path(self) -> None:
+        """Every port of the tree has its own path; ids and default topics derive from it.
 
-        def _collect_namespaces(inst):
-            if inst.entity_type == "node":
-                normalized_path = _normalize_namespace_name(inst.namespace, inst.name)
-                if normalized_path in node_path_map:
+        Two instances placed on one path collide here when they define a port of the same name.
+        """
+        owners: Dict[tuple, Instance] = {}
+        for inst in self.iter_tree():
+            manager = inst.link_manager
+            for port in (*manager.in_ports.values(), *manager.out_ports.values()):
+                key = (isinstance(port, InPort), tuple(port.namespace), port.name)
+                other = owners.setdefault(key, inst)
+                if other is not inst:
                     raise ValidationError(
-                        f"Duplicate node path found: '{normalized_path}'. "
-                        f"Conflict between instance '{inst.name}' and '{node_path_map[normalized_path]}'"
+                        f"[E_PORT_PATH_DUPLICATE] Port '{port.port_path}' is defined by both "
+                        f"'{other.name}' ({other.source_file}) and '{inst.name}' ({inst.source_file}); "
+                        "instances sharing a path need distinct port names"
                     )
-                node_path_map[normalized_path] = inst.name
-
-            for child in inst.children.values():
-                _collect_namespaces(child)
-
-        _collect_namespaces(self)
 
     def _finalize_parameters_recursive(self) -> None:
-        """Recursively finalize all parameters in the instance tree."""
-
-        def _finalize(instance) -> None:
-            # If this is a node, resolve all its parameters
-            if instance.entity_type == "node" and hasattr(instance, "parameter_manager"):
+        """Resolve the parameters of every node in the tree."""
+        for instance in self.iter_tree():
+            if instance.entity_type == "node":
                 instance.parameter_manager.resolve_all_parameters()
-
-            # Recursively process children
-            for child in instance.children.values():
-                _finalize(child)
-
-        _finalize(self)

@@ -171,7 +171,7 @@ connections: # as in a system; the interface is reached as in a module
     - publisher.objects
 ```
 
-The border builds as a system on one compute unit. An interface connection binds the component port to the interface topic; a `*` at the end of both ends connects every interface port with a matching component port. Every interface port needs a connection. A container that holds nodes of more than one component is `external`.
+The border builds as a system on one compute unit whose boundary ports are the interface ports. An interface connection binds the component port to the interface topic, and wildcards pair interface ports with component ports as they do in a module. Every interface port needs a connection, a component publisher leaves through one interface port, and a component subscriber takes one topic. A container that holds nodes of more than one component is `external`.
 
 The generated launch file follows the layout of a hand-written entry launch file:
 
