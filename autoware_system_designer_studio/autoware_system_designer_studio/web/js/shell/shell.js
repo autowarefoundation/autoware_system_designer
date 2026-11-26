@@ -42,6 +42,7 @@
    *                 `group` place it apart from its activity's. Without views
    *                 the activity is one rail item
    *   daemon        needs a daemon; `requires` lists the daemon methods it calls
+   *   border        false for an activity a border does not offer
    *   side          false for an activity without side-panel options
    *   inspector     owns an inspector view beside its main view
    *   status(store) strings shown after the mode in the status bar
@@ -87,8 +88,14 @@
     return (def.requires || []).filter((method) => !SD.daemon.offers(method));
   }
 
+  // An activity a border does not offer is absent from a border's workbench.
+  function offered(def) {
+    return !(def.border === false && config?.kind === "border");
+  }
+
   // Static pages hide daemon activities; daemon pages disable those whose methods are missing.
   function availability(def) {
+    if (!offered(def)) return { visible: false, enabled: false, reason: "" };
     if (!def.daemon) return { visible: true, enabled: true, reason: "" };
     if (!daemonHealth) return { visible: false, enabled: false, reason: "" };
     const missing = missingMethods(def);
@@ -309,9 +316,9 @@
       bar: el("topbar-activity-bar"),
       drawer: el("topbar-drawer"),
     };
-    orderedActivities().forEach((activity) =>
-      activity.def.bar?.(slots, context()),
-    );
+    orderedActivities().forEach((activity) => {
+      if (offered(activity.def)) activity.def.bar?.(slots, context());
+    });
   }
 
   function initSettings() {

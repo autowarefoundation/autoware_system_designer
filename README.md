@@ -185,6 +185,8 @@ Node remaps reach interface topics through these variables, so overriding an int
 
 Node parameters resolved at build time are written to `config/<name>/<node path>.param.yaml` beside the launch file and loaded with `$(find-pkg-share <package>)`. Values carrying a substitution (`$(var ...)`) stay inline, and parameter files whose path is only known at launch time are loaded in place, keeping the launch order of default, override and mode parameters. Paths under a package directory are written as `$(find-pkg-share <package>)/...`, so the output does not depend on the workspace it was generated in.
 
+The export manifest (`exports/<name>/deployment.json`) records `kind: border` and the launch-file interface: the launch file, its arguments, the interface ports with their topics and the system launches. The studio lists a border beside the systems of its package. Its node diagram draws the interface ports on the border box, labelled with their topics, and the Interface view lists the launch command, the arguments, the interface and the components. A border is not launched from the studio.
+
 A border can also be generated outside a package build:
 
 ```bash

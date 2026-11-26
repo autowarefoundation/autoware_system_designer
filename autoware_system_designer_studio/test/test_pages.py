@@ -114,7 +114,7 @@ def test_config_quotes_strings_as_json(tmp_path):
         "searchable": True,
         "layered": True,
     }
-    assert [d["type"] for d in diagrams] == list(assets.DIAGRAMS)
+    assert [d["type"] for d in diagrams] == [name for name, d in assets.DIAGRAMS.items() if "kinds" not in d]
     assert "treemap" not in assets.DIAGRAMS
     assert "js/diagrams/treemap.js" in assets.WORKBENCH_SCRIPTS
 
@@ -197,10 +197,94 @@ def test_config_lists_the_systems_of_the_site_for_the_selector(tmp_path):
             "id": system.id,
             "name": SYSTEM,
             "package": PKG,
+            "kind": "system",
             "page": f"{SITE}/index.html",
             "icon": f"{SITE}/icon.svg",
         }
     ]
+
+
+BORDER = "sensing"
+BORDER_RECORD = {
+    "launch_file": "launch/sensing.launch.xml",
+    "arguments": [{"name": "vehicle_id", "default": None, "description": "vehicle"}, {"name": "rate", "default": 10}],
+    "subscribers": [{"name": "velocity", "topic": "/vehicle/status/velocity_status"}],
+    "publishers": [{"name": "pointcloud", "topic": "/sensing/lidar/pointcloud"}],
+    "system_launches": [
+        {"package": "loader", "file": "launch/params.launch.py", "arguments": [{"name": "sim", "value": True}]}
+    ],
+}
+
+
+def _border(install):
+    """A border export beside the system of the install tree."""
+    export = install / PKG / "share" / PKG / "exports" / BORDER
+    (export / "system_structure").mkdir(parents=True)
+    structure = {"schema_version": "1.2", "metadata": {"compute_units": []}, "data": {"path": "/", "in_ports": []}}
+    (export / "system_structure" / "default.json").write_text(json.dumps(structure))
+    manifest = {
+        "kind": "border",
+        "border": BORDER_RECORD,
+        "deployment_package_name": "sensing_designs",
+        "default_mode": "default",
+        "mode_keys": ["default"],
+        "launch_units": {"default": []},
+    }
+    (export / "deployment.json").write_text(json.dumps(manifest))
+    systems, _ = exports.discover_systems(install)
+    return next(s for s in systems if s.name == BORDER), systems
+
+
+def test_border_export_carries_its_launch_file_interface(tmp_path):
+    install, system = _system(tmp_path)
+    border, _ = _border(install)
+    assert system.kind == "system" and system.border() is None
+    assert border.kind == "border"
+    assert border.border() == {
+        "launch_file": "launch/sensing.launch.xml",
+        "launch_command": "ros2 launch sensing_designs sensing.launch.xml",
+        "arguments": [
+            {"name": "vehicle_id", "default": None, "description": "vehicle"},
+            {"name": "rate", "default": "10", "description": ""},
+        ],
+        "subscribers": [{"name": "velocity", "topic": "/vehicle/status/velocity_status"}],
+        "publishers": [{"name": "pointcloud", "topic": "/sensing/lidar/pointcloud"}],
+        "system_launches": [
+            {
+                "package": "loader",
+                "file": "launch/params.launch.py",
+                "scoped": True,
+                "arguments": [{"name": "sim", "value": "True"}],
+            }
+        ],
+    }
+    assert border.to_view(None, {})["kind"] == "border"
+
+
+def test_border_pages_carry_the_kind_and_the_interface_view(tmp_path):
+    install, system = _system(tmp_path)
+    border, systems = _border(install)
+    site = Site(systems)
+    base = f"systems/{PKG}/{BORDER}"
+
+    text = site.render(f"{base}/config.js")
+    assert 'kind: "border"' in text
+    assert json.loads(text.partition("border: ")[2].partition(",\n")[0]) == border.border()
+    diagrams = json.loads(text.partition("diagrams: ")[2].partition(",\n")[0])
+    assert [d["type"] for d in diagrams] == list(assets.DIAGRAMS)
+    assert "kinds" not in diagrams[-1]
+    assert json.loads(text.partition("launchCommands: ")[2].rpartition("\n};")[0]) == []
+    # Systems precede the borders of their package in the selector.
+    listed = json.loads(text.partition("systems: ")[2].partition(",\n")[0])
+    assert [(s["name"], s["kind"]) for s in listed] == [(SYSTEM, "system"), (BORDER, "border")]
+
+    system_config = site.render(f"{SITE}/config.js")
+    assert 'kind: "system"' in system_config and "border: null" in system_config
+    system_diagrams = json.loads(system_config.partition("diagrams: ")[2].partition(",\n")[0])
+    assert "border_interface" not in [d["type"] for d in system_diagrams]
+
+    index = site.render("index.html")
+    assert index.count('class="kind-tag"') == 1
 
 
 def test_system_icon_is_its_own_file_else_a_default_per_system(tmp_path):

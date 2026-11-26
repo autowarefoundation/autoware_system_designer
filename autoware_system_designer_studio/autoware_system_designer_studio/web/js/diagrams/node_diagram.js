@@ -11,6 +11,12 @@
   const FOCUS_VIEW_FRACTION = 0.25;
   const MAX_FOCUS_ZOOM = 5;
 
+  // Layout graph around a root that carries boundary ports; it is not drawn.
+  const CANVAS_ID = "__canvas__";
+
+  const topicName = (port) =>
+    port.topic?.length ? "/" + port.topic.join("/") : "";
+
   class NodeDiagramModule extends ElkCanvas {
     // ── Initialization ──────────────────────────────────────────────────────────
 
@@ -70,11 +76,16 @@
       this._indexParents(root);
       // Layer scales count from the deepest level drawn.
       this.maxDepth = Math.min(this.findMaxDepth(root), this.depthLimit);
+      // A root with boundary ports is a border: its interface ports sit on
+      // its box, labelled outside with the topic each one is bound to.
+      const isBorder =
+        (root.in_ports || []).length + (root.out_ports || []).length > 0;
 
-      const addPorts = (node, ports, side, style) => {
+      const addPorts = (node, ports, side, style, labelOf) => {
         (ports || []).forEach((port) => {
           if (!port.unique_id) return;
           const portId = String(port.unique_id);
+          const text = labelOf(port) || port.name || "Port";
           this.elementData.set(portId, port);
           this.portToNode.set(portId, node.id);
           node.ports.push({
@@ -84,11 +95,8 @@
             properties: { "org.eclipse.elk.port.side": side },
             labels: [
               {
-                text: port.name || "Port",
-                width: this.measureTextWidth(
-                  port.name || "Port",
-                  style.portLabelFontSz,
-                ),
+                text,
+                width: this.measureTextWidth(text, style.portLabelFontSz),
                 height: style.portSize,
               },
             ],
@@ -145,8 +153,12 @@
           },
         };
 
-        addPorts(node, instance.in_ports, "WEST", style);
-        addPorts(node, instance.out_ports, "EAST", style);
+        const interfaceBox = isBorder && depth === 0;
+        if (interfaceBox)
+          node.properties["org.eclipse.elk.portLabels.placement"] = "OUTSIDE";
+        const labelOf = interfaceBox ? topicName : (port) => port.name;
+        addPorts(node, instance.in_ports, "WEST", style, labelOf);
+        addPorts(node, instance.out_ports, "EAST", style, labelOf);
 
         // The inside of an entity at the limit, children and the links joining
         // their ports, stays out of the graph.
@@ -200,8 +212,13 @@
         if (!rootNode.id) rootNode.id = "root";
       }
       this._injectRemapHub(rootNode);
-      this._groupByComputeUnit(rootNode, root);
+      // A border is one launch unit; its components are not clustered.
+      if (!isBorder) this._groupByComputeUnit(rootNode, root);
       this._buildGlobalTopicIndex();
+      // ELK lays out ports of child nodes only, so a root with boundary ports
+      // is placed inside a bare graph.
+      if (rootNode?.ports.length)
+        return { id: CANVAS_ID, children: [rootNode], edges: [] };
       return rootNode;
     }
 
@@ -287,11 +304,22 @@
       const topLevelNodeIds = new Set(
         (rootNode?.children || []).map((c) => c.id),
       );
+      // A port linked to a boundary port of the root shows its topic there.
+      const boundaryIds = new Set((rootNode?.ports || []).map((p) => p.id));
+      const reachesBoundary = (id) =>
+        (this.portToEdges.get(id) || []).some((edgeId) => {
+          const edge = this.elementData.get(edgeId);
+          return (
+            boundaryIds.has(String(edge?.from_port?.unique_id)) ||
+            boundaryIds.has(String(edge?.to_port?.unique_id))
+          );
+        });
       const remappedPortEntries = [];
       for (const [id, data] of this.elementData) {
         if (
           data.is_remapped === true &&
-          topLevelNodeIds.has(this.portToNode.get(id))
+          topLevelNodeIds.has(this.portToNode.get(id)) &&
+          !reachesBoundary(id)
         ) {
           remappedPortEntries.push({ id, data });
         }
@@ -580,7 +608,7 @@
       const { layer: svg } = this.createCanvas();
 
       this.portAbsPos.clear();
-      this.renderNode(graph, svg);
+      this.renderNode(graph.id === CANVAS_ID ? graph.children[0] : graph, svg);
 
       // Topic stars are drawn last so straight lines cross over the boxes they
       // connect; the layer never takes pointer events.

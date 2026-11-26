@@ -37,7 +37,7 @@ DATA_GLOBAL = "systemStructureData"
 # Diagrams of the Explore activity, in rail order: the rail label and icon (SVG path data), the
 # module script loaded when the diagram is first shown, whether the module locates entities
 # (``focusEntity``), which Explore search needs, and whether it draws the design hierarchy cut at
-# a chosen depth (the ``depth`` option).
+# a chosen depth (the ``depth`` option). ``kinds`` limits a diagram to those target kinds.
 DIAGRAMS = {
     "node_diagram": {
         "label": "Node Diagram",
@@ -62,6 +62,15 @@ DIAGRAMS = {
         "script": "js/diagrams/sequence_diagram.js",
         "searchable": False,
         "layered": False,
+    },
+    "border_interface": {
+        "label": "Border Interface",
+        "short": "Interface",
+        "icon": "M7 3H3v14h4M13 3h4v14h-4M1 7h5M1 13h5M14 10h5",
+        "script": "js/diagrams/border_interface.js",
+        "searchable": False,
+        "layered": False,
+        "kinds": ("border",),
     },
 }
 

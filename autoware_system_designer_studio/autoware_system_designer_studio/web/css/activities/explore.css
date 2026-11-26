@@ -31,3 +31,134 @@
   font-size: 11px;
   color: var(--text-muted);
 }
+
+/* Border interface: one scrolling sheet of the launch-file interface */
+.border-sheet {
+  height: 100%;
+  overflow: auto;
+  padding: 20px 24px 32px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.border-header {
+  margin-bottom: 18px;
+}
+
+.border-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.border-title .kind-tag {
+  margin-left: 0;
+}
+
+.border-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.border-command {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.border-sheet code {
+  font-family: var(--mono-font);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.border-launch-file {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.border-section {
+  min-width: 0;
+  margin-bottom: 22px;
+}
+
+.border-section-title {
+  margin: 0 0 6px;
+  padding-left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  border-left: 3px solid var(--border-hover);
+}
+
+.border-input .border-section-title {
+  border-left-color: var(--flow-in);
+}
+
+.border-output .border-section-title {
+  border-left-color: var(--flow-out);
+}
+
+.border-count {
+  margin-left: 8px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.border-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.border-table th {
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.border-table td {
+  padding: 5px 10px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-color);
+  overflow-wrap: break-word;
+}
+
+.border-table tr.selectable {
+  cursor: pointer;
+}
+
+.border-table tr.selectable:hover {
+  background: var(--bg-sidebar);
+}
+
+.border-table tr.selected {
+  background: var(--highlight-bg);
+}
+
+.border-peers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.border-required,
+.border-empty {
+  color: var(--text-muted);
+}
+
+.border-empty {
+  margin: 0;
+  padding: 4px 10px;
+}

@@ -48,7 +48,7 @@ from autoware_system_designer_runtime.replay_record import (
 from autoware_system_designer_runtime.special_topics import special_topics
 
 from .. import latency
-from ..exports import SystemExport
+from ..exports import TARGET_SYSTEM, SystemExport
 from ..vis_guide import inject_vis_guides
 from . import assets, system_icon
 from .launch_commands import launch_command_records, structure_path_arg
@@ -157,16 +157,20 @@ class Site:
     # -- pages -------------------------------------------------------------
 
     def _system_entries(self) -> list[dict[str, str]]:
-        """Every system of the site in selector order, its page and icon relative to the site root."""
+        """Every system of the site in selector order, its page and icon relative to the site root.
+
+        Within a package the systems come first, then its borders.
+        """
         return [
             {
                 "id": e.id,
                 "name": e.name,
                 "package": e.package,
+                "kind": e.kind,
                 "page": f"{system_dir(e)}/{WORKBENCH_PAGE}",
                 "icon": f"{system_dir(e)}/{ICON_FILE}",
             }
-            for e in sorted(self.systems.values(), key=lambda e: (e.package, e.name))
+            for e in sorted(self.systems.values(), key=lambda e: (e.package, e.kind != TARGET_SYSTEM, e.name))
         ]
 
     def _index(self) -> str:
@@ -198,6 +202,8 @@ class Site:
             deployment_name=export.name,
             package_name=export.package,
             system_id=export.id,
+            kind=export.kind,
+            border=export.border(),
             site_root=SYSTEM_PAGE_ROOT,
             systems=self._system_entries(),
             available_modes=modes,
@@ -213,6 +219,7 @@ class Site:
                     "layered": diagram["layered"],
                 }
                 for name, diagram in assets.DIAGRAMS.items()
+                if export.kind in diagram.get("kinds", (export.kind,))
             ],
             data_base=f"{DATA_DIR}/",
             latency_modes=[m for m in modes if export.latency_file(m, self.record_root) is not None],

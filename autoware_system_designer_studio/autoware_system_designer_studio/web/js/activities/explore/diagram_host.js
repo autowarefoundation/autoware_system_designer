@@ -85,6 +85,7 @@
           deployment: config.deploymentName,
           dataBase: config.dataBase,
           latencyModes: config.latencyModes,
+          border: config.border,
           depth: parseInt(store.get("depth"), 10) || null,
           onInfoUpdate(data, type, entity) {
             inspector.show(data, type);
