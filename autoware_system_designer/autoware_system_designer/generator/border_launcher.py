@@ -16,9 +16,9 @@
 
 Sections in order: launch arguments, external interfaces as arguments, system launches,
 then the nodes in groups that push one namespace segment each. Node remaps reach interface
-topics through the interface arguments. Node
-parameters load from the parameter files written beside the launch file, and package paths
-resolve through find-pkg-share, so the output does not depend on the workspace it was built in.
+topics through the interface arguments. Node parameters load from the parameter files written
+beside the launch file, and package paths resolve through find-pkg-share, so the output does not
+depend on the workspace it was built in.
 """
 
 import logging
@@ -70,10 +70,6 @@ class _Group:
         return group
 
 
-def _topic(port: Dict[str, Any]) -> str:
-    return "/" + "/".join(port.get("topic") or [])
-
-
 def _entity_name(data: Dict[str, Any]) -> str:
     source = os.path.basename(data.get("source_file") or "")
     return source[: -len(".yaml")] if source.endswith(".yaml") else source
@@ -117,9 +113,10 @@ def _build_tree(system_data: Dict[str, Any]) -> Tuple[_Group, List[Dict[str, Any
         for child in data.get("children", []):
             label_modules(child)
 
-    for component in system_data.get("children", []):
-        label_modules(component)
-        nodes.extend(collect_component_nodes(component))
+    # Children of the root: the component and the containers of the node groups.
+    for child in system_data.get("children", []):
+        label_modules(child)
+        nodes.extend(collect_component_nodes(child))
     return root, nodes
 
 

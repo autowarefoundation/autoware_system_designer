@@ -44,7 +44,7 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 import deployment_process  # noqa: E402
 
 from autoware_system_designer.common.exceptions import SystemDesignerError  # noqa: E402
-from autoware_system_designer.parser.border_parser import parse_border  # noqa: E402
+from autoware_system_designer.parser.border_parser import border_launch_file, parse_border  # noqa: E402
 
 
 def _owning_package(path: Path) -> Tuple[Optional[str], Optional[Path]]:
@@ -134,7 +134,6 @@ def main() -> int:
     if workspace_root is None:
         raise SystemExit("generate_border.py: the workspace root is unknown; pass --workspace-root")
     output_root = Path(args.output_root).resolve() if args.output_root else package_dir
-    border_output = f"launch/{border.name}.launch.xml"
 
     os.environ.setdefault("AUTOWARE_SYSTEM_DESIGNER_STRICT", "1")
     with tempfile.TemporaryDirectory(prefix="border_") as tmp:
@@ -147,7 +146,7 @@ def main() -> int:
             deployment_process.build(str(border_file), str(manifest_dir), str(build_root), workspace_yaml, package)
         except SystemDesignerError:
             return 1
-        launch_file = _place(build_root, output_root, border_output)
+        launch_file = _place(build_root, output_root, border_launch_file(border.name))
         param_dir = _place(build_root, output_root, f"config/{border.name}")
     print(f"{launch_file}\n{param_dir}/")
     return 0

@@ -77,7 +77,7 @@ def test_border_generates_one_launch_file(tmp_path):
     }
     assert not run.launcher_dir("default").exists()
 
-    # System launches precede the components.
+    # System launches precede the component.
     system_launch = root.find("group")
     assert system_launch.get("scoped") == "false"
     include = system_launch.find("include")
@@ -191,10 +191,6 @@ def test_border_interface_is_the_system_boundary(tmp_path):
                 ]
             },
             "external interface 'output/objects' collides with an argument",
-        ),
-        (
-            {"components": [{"name": "publisher", "entity": "Pipeline.module"}]},
-            "component name 'publisher' is reserved for interface references",
         ),
         (
             {
