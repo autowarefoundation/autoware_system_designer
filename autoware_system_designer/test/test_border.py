@@ -181,6 +181,27 @@ def test_border_wildcard_interface(tmp_path):
         ({"variables": [{"name": "score_threshold", "value": 1}]}, "both an argument and a variable"),
         ({"arguments": [{"name": "a"}, {"name": "a"}]}, "argument 'a' is declared twice"),
         (
+            {
+                "arguments": [
+                    {"name": "score_threshold"},
+                    {"name": "pointcloud_container_name"},
+                    {"name": "use_sim_time"},
+                    {"name": "output/objects"},
+                ]
+            },
+            "external interface 'output/objects' collides with an argument",
+        ),
+        (
+            {"components": [{"name": "publisher", "entity": "Sink.node"}]},
+            "component name 'publisher' is reserved for interface references",
+        ),
+        (
+            {
+                "arguments": [{"name": "score_threshold"}, {"name": "use_sim_time"}],
+            },
+            "$(var pointcloud_container_name)",
+        ),
+        (
             {"connections": [["subscriber.pointcloud", "pipeline.publisher.objects"]]},
             "must be '<component>.subscriber.<port>'",
         ),
@@ -200,6 +221,18 @@ def test_border_errors(tmp_path, changes, message):
         run_pipeline(workspace, BORDER, tmp_path, strict=True)
     assert message in str(excinfo.value)
     assert "pipeline.border.yaml" in str(excinfo.value)
+
+
+def test_border_external_group_name_resolves_variables(tmp_path):
+    workspace = stage_case("border", tmp_path)
+    data = yaml.safe_load((workspace / BORDER).read_text())
+    data["node_groups"][0]["name"] = "$(var container_ns)/$(var pointcloud_container_name)"
+    _rewrite_border(
+        workspace, node_groups=data["node_groups"], variables=[{"name": "container_ns", "value": "/sensing"}]
+    )
+    run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
+    nodes = _nodes(run.out_root / "launch" / "pipeline.launch.xml")
+    assert nodes["filter_primary"][0] == "/sensing/$(var pointcloud_container_name)"
 
 
 def test_border_parameter_files(tmp_path):
@@ -276,7 +309,8 @@ def test_generate_border_script(tmp_path):
 
     from pipeline_harness import FIXTURES_DIR
 
-    package_dir = tmp_path / "src" / "pipeline_pkg"
+    # A workspace nested under another 'src' directory.
+    package_dir = tmp_path / "src" / "ws" / "src" / "pipeline_pkg"
     shutil.copytree(FIXTURES_DIR / "border" / "pipeline_pkg", package_dir)
     script = Path(__file__).resolve().parents[1] / "script" / "generate_border.py"
     result = subprocess.run(

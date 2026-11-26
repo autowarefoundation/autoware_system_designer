@@ -100,13 +100,21 @@ def _internal_interfaces(
             if topic in consumed and topic not in seen:
                 seen.add(topic)
                 interfaces.append(_Interface(f"{component['name']}/{port['name']}", topic))
-    taken = {a.name for a in border.arguments}
-    for interface in interfaces:
-        if interface.name in taken:
-            raise ValidationError(
-                f"Border {border.file_path.name}: internal interface '{interface.name}' collides with an argument"
-            )
     return interfaces
+
+
+def _check_launch_names(border: BorderConfig, external: List[_Interface], internal: List[_Interface]) -> None:
+    """Arguments and interfaces share one launch configuration namespace; each name is declared once."""
+    declared: Dict[str, str] = {}
+    entries = (
+        [(a.name, "argument") for a in border.arguments]
+        + [(i.name, "external interface") for i in external]
+        + [(i.name, "internal interface") for i in internal]
+    )
+    for name, kind in entries:
+        if name in declared:
+            raise ValidationError(f"Border {border.file_path.name}: {kind} '{name}' collides with an {declared[name]}")
+        declared[name] = kind
 
 
 def _check_containers(border: BorderConfig, nodes: List[Tuple[str, Dict[str, Any]]]) -> None:
@@ -201,6 +209,7 @@ def generate_border_launcher(
 
     external = _external_interfaces(border)
     internal = _internal_interfaces(border, system_data.get("children", []), {i.topic for i in external})
+    _check_launch_names(border, external, internal)
     variables: Dict[str, str] = {}
     for interface in external + internal:
         # A topic both subscribed and published at the border is the output it publishes.

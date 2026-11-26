@@ -149,13 +149,15 @@ macro(autoware_system_designer_build_deploy project_name)
     endif()
     list(GET _BORDER_FILES 0 _DEPLOYMENT_FILE)
     set(_BORDER_OUTPUT "launch/${_BORDER_NAME}.launch.xml")
-    # A source file at the same path would be installed over the generated one.
-    if(EXISTS "${CMAKE_SOURCE_DIR}/${_BORDER_OUTPUT}")
-      message(FATAL_ERROR
-        "autoware_system_designer_build_deploy: ${_BORDER_OUTPUT} exists in the package source and would be "
-        "installed over the border launch file; remove it."
-      )
-    endif()
+    # A source file or directory at a generated path would be installed over the generated one.
+    foreach(_BORDER_GENERATED "${_BORDER_OUTPUT}" "config/${_BORDER_NAME}")
+      if(EXISTS "${CMAKE_SOURCE_DIR}/${_BORDER_GENERATED}")
+        message(FATAL_ERROR
+          "autoware_system_designer_build_deploy: ${_BORDER_GENERATED} exists in the package source and would be "
+          "installed over the generated border files; remove it."
+        )
+      endif()
+    endforeach()
     set(_LOG_DESC "(border=${_INPUT_NAME}, output=${_BORDER_OUTPUT})")
   else()
     message(FATAL_ERROR

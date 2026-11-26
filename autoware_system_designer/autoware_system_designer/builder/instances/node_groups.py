@@ -7,6 +7,7 @@ import yaml
 
 from autoware_system_designer.builder.config.launch_manager import LaunchManager
 from autoware_system_designer.common.exceptions import ValidationError
+from autoware_system_designer.common.source_location import SourceLocation
 from autoware_system_designer.model.execution import LaunchConfig, LaunchState
 from autoware_system_designer.model.namespace import node_group_pattern_matches, resolve_common_namespace_from_paths
 
@@ -85,8 +86,11 @@ def apply_node_groups(instance: "Instance") -> None:
         )
 
         if group.get("external"):
-            # The launching side starts the container; the group name is its target as written.
-            container_target_path = group_name
+            # The launching side starts the container; variables resolve now, arguments at launch.
+            resolver = instance.parameter_resolver
+            file_path = getattr(instance.configuration, "file_path", None)
+            source = SourceLocation(file_path=Path(file_path)) if file_path else None
+            container_target_path = resolver.resolve_string(group_name, source=source) if resolver else group_name
         else:
             container_instance = _create_group_container_node(
                 instance=instance,

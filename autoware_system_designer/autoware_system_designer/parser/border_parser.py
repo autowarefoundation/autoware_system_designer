@@ -152,6 +152,8 @@ def _parse_components(reader: _Reader, data: Dict[str, Any]) -> List[Dict[str, A
         if unknown:
             raise reader.error(f"{yaml_path}/{unknown[0]}", f"unknown component key(s) {unknown}")
         name = reader.string(item, "name", yaml_path)
+        if name in _INTERFACE_ROLES:
+            raise reader.error(f"{yaml_path}/name", f"component name '{name}' is reserved for interface references")
         if name in seen:
             raise reader.error(f"{yaml_path}/name", f"component '{name}' is declared twice")
         seen.add(name)

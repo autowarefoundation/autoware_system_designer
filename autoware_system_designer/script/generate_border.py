@@ -57,12 +57,11 @@ def _owning_package(path: Path) -> Tuple[Optional[str], Optional[Path]]:
     return None, None
 
 
-def _workspace_root(path: Path) -> Optional[Path]:
-    """Directory holding the 'src' directory that contains path."""
-    parts = path.resolve().parts
-    if "src" not in parts:
-        return None
-    return Path(*parts[: parts.index("src")])
+def _workspace_root(package_dir: Path) -> Optional[Path]:
+    """Directory holding the nearest 'src' above the package; one with build outputs beside it comes first."""
+    roots = [d.parent for d in package_dir.resolve().parents if d.name == "src"]
+    built = [r for r in roots if any((r / output).is_dir() for output in ("install", "build"))]
+    return (built or roots or [None])[0]
 
 
 def _install_args(workspace_root: Path, package: str, source_only: bool) -> list:
@@ -118,7 +117,9 @@ def main() -> int:
     parser.add_argument("border_file", help="<name>.border.yaml")
     parser.add_argument("--output-root", default=None, help="Default: source directory of the owning package")
     parser.add_argument("--package", default=None, help="Package installing the output; default: owning package")
-    parser.add_argument("--workspace-root", default=None, help="Default: the directory holding 'src'")
+    parser.add_argument(
+        "--workspace-root", default=None, help="Default: the directory holding the nearest 'src' above the package"
+    )
     parser.add_argument("--source-only", action="store_true", help="Resolve packages from sources only")
     parser.add_argument("--exports-dir", default=None, help="Keep the build output (system structure) here")
     args = parser.parse_args()
@@ -127,9 +128,9 @@ def main() -> int:
     border = parse_border(str(border_file))
     owner, package_dir = _owning_package(border_file)
     package = args.package or owner
-    if not package or package_dir is None:
+    if not owner or not package or package_dir is None:
         raise SystemExit(f"generate_border.py: no package.xml above {border_file}")
-    workspace_root = Path(args.workspace_root).resolve() if args.workspace_root else _workspace_root(border_file)
+    workspace_root = Path(args.workspace_root).resolve() if args.workspace_root else _workspace_root(package_dir)
     if workspace_root is None:
         raise SystemExit("generate_border.py: the workspace root is unknown; pass --workspace-root")
     output_root = Path(args.output_root).resolve() if args.output_root else package_dir
@@ -139,9 +140,11 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="border_") as tmp:
         manifest_dir = Path(tmp) / "manifests"
         build_root = Path(args.exports_dir).resolve() if args.exports_dir else Path(tmp) / "out"
-        _collect_manifests(package_dir, manifest_dir, workspace_root, package, args.source_only)
+        _collect_manifests(package_dir, manifest_dir, workspace_root, owner, args.source_only)
+        workspace_yaml = package_dir / "workspace.yaml"
+        workspace_yaml = str(workspace_yaml) if workspace_yaml.is_file() else None
         try:
-            deployment_process.build(str(border_file), str(manifest_dir), str(build_root), None, package)
+            deployment_process.build(str(border_file), str(manifest_dir), str(build_root), workspace_yaml, package)
         except SystemDesignerError:
             return 1
         launch_file = _place(build_root, output_root, border_output)
