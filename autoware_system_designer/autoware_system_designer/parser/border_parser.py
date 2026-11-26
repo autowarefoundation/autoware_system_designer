@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Border: one component launched behind a fixed launch-file interface.
+"""Border: one instance launched behind a fixed launch-file interface.
 
 A ``*.border.yaml`` file is a local build input, like a deployments table: plain YAML
-without a format declaration or schema. It describes the component as a system does,
-the launch arguments of the generated launch file, its external interface (component
-ports bound to topic or service names), the launch files included ahead of the component
-(system launches) and node groups. An interface port carries the name of the component port it
+without a format declaration or schema. It describes the instance (a module or a node),
+the launch arguments of the generated launch file, its external interface (instance
+ports bound to topic or service names), the launch files included ahead of the instance
+(system launches) and node groups. An interface port carries the name of the instance port it
 binds. The border builds as a system whose boundary ports are the interface ports.
 """
 
@@ -49,7 +49,7 @@ _ARGUMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_/]*$")
 
 _KNOWN_KEYS = (
     "name",
-    "components",
+    "instance",
     "arguments",
     "variables",
     "subscribers",
@@ -59,7 +59,7 @@ _KNOWN_KEYS = (
     "system_launches",
     "node_groups",
 )
-_COMPONENT_KEYS = ("name", "entity", "path", "parameter_set")
+_INSTANCE_KEYS = ("name", "entity", "path", "parameter_set")
 # Interface sections by direction, each with the port role of its entries.
 _INPUT_SECTIONS = (("subscribers", "subscriber"), ("clients", "client"))
 _OUTPUT_SECTIONS = (("publishers", "publisher"), ("servers", "server"))
@@ -72,7 +72,7 @@ def is_border_file(path: str) -> bool:
 
 @dataclass
 class BorderPort:
-    """Component port bound to a topic or service name."""
+    """Instance port bound to a topic or service name."""
 
     name: str
     topic: str
@@ -88,7 +88,7 @@ class BorderArgument:
 
 @dataclass
 class BorderSystemLaunch:
-    """Launch file included ahead of the component, e.g. the global parameter loader."""
+    """Launch file included ahead of the instance, e.g. the global parameter loader."""
 
     package: str
     file: str
@@ -102,7 +102,7 @@ class BorderConfig:
 
     name: str
     file_path: Path
-    component: Dict[str, Any] = field(default_factory=dict)
+    instance: Dict[str, Any] = field(default_factory=dict)
     arguments: List[BorderArgument] = field(default_factory=list)
     variables: List[Dict[str, Any]] = field(default_factory=list)
     # Interface ports by direction: subscribers and clients, publishers and servers.
@@ -145,15 +145,14 @@ class _Reader:
         return value
 
 
-def _parse_component(reader: _Reader, data: Dict[str, Any]) -> Dict[str, Any]:
-    components = reader.items(data, "components")
-    if len(components) != 1:
-        raise reader.error("/components", "'components' must list exactly one component")
-    item = components[0]
-    yaml_path = "/components/0"
-    unknown = sorted(set(item) - set(_COMPONENT_KEYS))
+def _parse_instance(reader: _Reader, data: Dict[str, Any]) -> Dict[str, Any]:
+    item = data.get("instance")
+    yaml_path = "/instance"
+    if not isinstance(item, dict):
+        raise reader.error(yaml_path, "'instance' must be a mapping of 'name', 'entity', 'path' and 'parameter_set'")
+    unknown = sorted(set(item) - set(_INSTANCE_KEYS))
     if unknown:
-        raise reader.error(f"{yaml_path}/{unknown[0]}", f"unknown component key(s) {unknown}")
+        raise reader.error(f"{yaml_path}/{unknown[0]}", f"unknown instance key(s) {unknown}")
     reader.string(item, "name", yaml_path)
     entity = reader.string(item, "entity", yaml_path)
     try:
@@ -211,7 +210,7 @@ def _parse_variables(reader: _Reader, data: Dict[str, Any], argument_names: set)
 
 
 def _parse_ports(reader: _Reader, data: Dict[str, Any], sections: Tuple[Tuple[str, str], ...]) -> List[BorderPort]:
-    """Interface ports of one direction; a name is used once per direction, as on the component."""
+    """Interface ports of one direction; a name is used once per direction, as on the instance."""
     ports: List[BorderPort] = []
     seen: Dict[str, str] = {}
     for key, role in sections:
@@ -292,7 +291,7 @@ def parse_border(border_path: str) -> BorderConfig:
     return BorderConfig(
         name=name,
         file_path=file_path,
-        component=_parse_component(reader, data),
+        instance=_parse_instance(reader, data),
         arguments=arguments,
         variables=_parse_variables(reader, data, {a.name for a in arguments}),
         inputs=_parse_ports(reader, data, _INPUT_SECTIONS),
@@ -339,11 +338,11 @@ def border_system_config(border: BorderConfig, config_registry: Any) -> SystemCo
     """System the deployment build runs for the border, on one compute unit.
 
     The interface ports are the boundary ports of the system, each bound to its topic and
-    connected to the component port of the same name.
+    connected to the instance port of the same name.
     """
-    component = border.component["name"]
-    connections = [[f"{p.role}.{p.name}", f"{component}.{p.role}.{p.name}"] for p in border.inputs] + [
-        [f"{component}.{p.role}.{p.name}", f"{p.role}.{p.name}"] for p in border.outputs
+    instance = border.instance["name"]
+    connections = [[f"{p.role}.{p.name}", f"{instance}.{p.role}.{p.name}"] for p in border.inputs] + [
+        [f"{instance}.{p.role}.{p.name}", f"{p.role}.{p.name}"] for p in border.outputs
     ]
 
     return SystemConfig(
@@ -355,7 +354,7 @@ def border_system_config(border: BorderConfig, config_registry: Any) -> SystemCo
         source_map=border.source_map,
         package=config_registry.deployment_package_name,
         arguments=[{"name": argument.name} for argument in border.arguments],
-        components=[{**border.component, "compute_unit": border.name}],
+        components=[{**border.instance, "compute_unit": border.name}],
         connections=connections,
         variables=border.variables or None,
         node_groups=border.node_groups or None,

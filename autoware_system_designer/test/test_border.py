@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Border targets: a component behind a generated entry launch file."""
+"""Border targets: an instance behind a generated entry launch file."""
 
 import json
 import xml.etree.ElementTree as ET
@@ -79,7 +79,7 @@ def test_border_generates_one_launch_file(tmp_path):
     }
     assert not run.launcher_dir("default").exists()
 
-    # System launches precede the component.
+    # System launches precede the instance.
     system_launch = root.find("group")
     assert system_launch.get("scoped") == "false"
     include = system_launch.find("include")
@@ -169,15 +169,8 @@ def test_border_interface_is_the_system_boundary(tmp_path):
     "changes, message",
     [
         ({"connections": []}, "unknown key(s) ['connections']"),
-        (
-            {
-                "components": [
-                    {"name": "pipeline", "entity": "Pipeline.module"},
-                    {"name": "other", "entity": "Pipeline.module"},
-                ]
-            },
-            "must list exactly one component",
-        ),
+        ({"instance": [{"name": "pipeline", "entity": "Pipeline.module"}]}, "'instance' must be a mapping"),
+        ({"instance": None, "components": []}, "unknown key(s) ['components']"),
         ({"publishers": [{"name": "objects", "topic": "relative"}]}, "must be an absolute ROS name"),
         (
             {"clients": [{"name": "pointcloud", "topic": "/api/pointcloud"}]},
@@ -187,12 +180,10 @@ def test_border_interface_is_the_system_boundary(tmp_path):
         ({"name": "other"}, "differs from the file name"),
         ({"name": "pipe.line"}, "must match"),
         ({"entity": "x"}, "unknown key(s) ['entity']"),
-        ({"components": [{"name": "pipeline", "entity": "Pipeline.system"}]}, "must be a module or a node"),
+        ({"instance": {"name": "pipeline", "entity": "Pipeline.system"}}, "must be a module or a node"),
         (
             {
-                "components": [
-                    {"name": "pipeline", "entity": "Pipeline.module", "parameter_set": "Pipeline.parameter_set"}
-                ]
+                "instance": {"name": "pipeline", "entity": "Pipeline.module", "parameter_set": "Pipeline.parameter_set"}
             },
             "must be a list of parameter set names",
         ),

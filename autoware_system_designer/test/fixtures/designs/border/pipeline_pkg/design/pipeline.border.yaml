@@ -1,10 +1,10 @@
 name: pipeline
 
-components:
-  - name: pipeline
-    entity: Pipeline.module
-    path: /perception/pipeline
-    parameter_set: [Pipeline.parameter_set]
+instance:
+  name: pipeline
+  entity: Pipeline.module
+  path: /perception/pipeline
+  parameter_set: [Pipeline.parameter_set]
 
 arguments:
   - name: score_threshold

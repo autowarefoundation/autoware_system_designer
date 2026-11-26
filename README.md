@@ -72,7 +72,7 @@ src/<package_name>/
 │   ├── module/         # *.module.yaml
 │   ├── system/         # *.system.yaml
 │   ├── parameter_set/  # *.parameter_set.yaml
-│   └── border/         # <name>.border.yaml (components behind a generated launch file)
+│   └── border/         # <name>.border.yaml (an instance behind a generated launch file)
 ├── deployment/         # *.deployment.yaml (System instantiation)
 ├── schema/             # *.schema.json (Parameter schemas)
 ├── CMakeLists.txt
@@ -115,16 +115,16 @@ autoware_system_designer_build_deploy(
 
 ### Border (`*.border.yaml`)
 
-A border launches one component behind a fixed launch-file interface, so a hand-written entry launch file can be replaced by a generated one at the same path. It is a local build input like a deployments table: plain YAML, no format declaration, no schema. It is not part of any system; a system instantiates the same module.
+A border launches one instance (a module or a node) behind a fixed launch-file interface, so a hand-written entry launch file can be replaced by a generated one at the same path. It is a local build input like a deployments table: plain YAML, no format declaration, no schema. It is not part of any system; a system instantiates the same module.
 
 ```yaml
 name: perception # launch file stem; equals the file name stem
 
-components: # exactly one, as in a system, without a compute unit
-  - name: perception
-    entity: Perception.module
-    path: /perception
-    parameter_set: [sample_system_perception.parameter_set]
+instance: # the module or node the border launches
+  name: perception
+  entity: Perception.module
+  path: /perception
+  parameter_set: [sample_system_perception.parameter_set]
 
 arguments: # launch arguments of the generated file
   - name: use_sim_time
@@ -135,7 +135,7 @@ variables: # build-time values, as in a system
   - name: sensor_model
     value: sample_sensor_kit
 
-subscribers: # external interface: component ports bound to topics
+subscribers: # external interface: instance ports bound to topics
   - name: concatenated_pointcloud
     topic: /sensing/lidar/concatenated/pointcloud
   - name: vector_map
@@ -143,14 +143,14 @@ subscribers: # external interface: component ports bound to topics
 publishers:
   - name: object_recognition/objects
     topic: /perception/object_recognition/objects
-servers: # services the component offers, bound to service names
+servers: # services the instance offers, bound to service names
   - name: reset
     topic: /perception/reset
-clients: # services the component calls
+clients: # services the instance calls
   - name: get_route
     topic: /api/routing/get_route
 
-system_launches: # launch files included ahead of the component, e.g. the global parameter loader
+system_launches: # launch files included ahead of the instance, e.g. the global parameter loader
   - package: autoware_global_parameter_loader
     file: launch/global_params.launch.py
     scoped: false # default true; false applies its parameters to the whole launch file
@@ -165,7 +165,7 @@ node_groups: # as in a system; `external` loads into a container the caller star
     nodes: [/perception/obstacle_segmentation/*]
 ```
 
-The border builds as a system on one compute unit whose boundary ports are the interface ports. An interface port carries the name of the component port it binds to its topic; component ports left out keep the topic the design gives them.
+The border builds as a system on one compute unit whose boundary ports are the interface ports. An interface port carries the name of the instance port it binds to its topic; instance ports left out keep the topic the design gives them.
 
 The generated launch file follows the layout of a hand-written entry launch file:
 
@@ -178,7 +178,7 @@ Node remaps reach interface topics through the interface arguments, so overridin
 
 Node parameters resolved at build time are written to `config/<name>/<node path>.param.yaml` beside the launch file and loaded with `$(find-pkg-share <package>)`. Values carrying a substitution (`$(var ...)`) stay inline, and parameter files whose path is only known at launch time are loaded in place, keeping the launch order of default, override and mode parameters. Paths under a package directory are written as `$(find-pkg-share <package>)/...`, so the output does not depend on the workspace it was generated in.
 
-The export manifest (`exports/<name>/deployment.json`) records `kind: border` and the launch-file interface: the launch file, its arguments, the interface ports with their topics and the system launches. The studio lists a border beside the systems of its package. Its node diagram draws the interface ports on the border box, labelled with their topics, and the Interface view lists the launch command, the arguments, the interface and the component. A border is not launched from the studio.
+The export manifest (`exports/<name>/deployment.json`) records `kind: border` and the launch-file interface: the launch file, its arguments, the interface ports with their topics and the system launches. The studio lists a border beside the systems of its package. Its node diagram draws the interface ports on the border box, labelled with their topics, and the Interface view lists the launch command, the arguments, the interface and the instance. A border is not launched from the studio.
 
 A border can also be generated outside a package build:
 
@@ -238,5 +238,5 @@ xdg-open ~/studio_view/index.html
 ### Instantiation
 
 - **Deployment**: A specific instance of a System tailored for an environment/vehicle.
-- **Border**: One component launched behind a generated entry launch file with fixed topics and launch arguments.
+- **Border**: One instance launched behind a generated entry launch file with fixed topics and launch arguments.
 - **Component**: A top-level instance within a System.

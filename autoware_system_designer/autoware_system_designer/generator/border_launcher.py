@@ -113,7 +113,7 @@ def _build_tree(system_data: Dict[str, Any]) -> Tuple[_Group, List[Dict[str, Any
         for child in data.get("children", []):
             label_modules(child)
 
-    # Children of the root: the component and the containers of the node groups.
+    # Children of the root: the instance and the containers of the node groups.
     for child in system_data.get("children", []):
         label_modules(child)
         nodes.extend(collect_component_nodes(child))

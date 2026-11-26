@@ -106,7 +106,7 @@ def resolve_input_target(
     Supports:
     - deployments table mode: '*.deployments[.yaml]'
     - legacy system-only mode: input identifies one system entity
-    - border mode: '*.border.yaml', built as a one-component system
+    - border mode: '*.border.yaml', built as a system of its one instance
     """
 
     if is_border_file(input_path):

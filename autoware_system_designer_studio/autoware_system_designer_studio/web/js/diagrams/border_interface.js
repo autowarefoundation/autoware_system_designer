@@ -2,7 +2,7 @@
 // command launching it, its launch arguments with their defaults, the
 // interface ports (subscribers, publishers, clients, servers) with the topic
 // or service name and the launch argument each is reached by, the launch
-// files included ahead of the component, and the component. A port row reports the boundary port of the mode's structure
+// files included ahead of the instance, and the instance. A port row reports the boundary port of the mode's structure
 // as the selected element.
 (function () {
   const SD = window.SD;
@@ -72,7 +72,7 @@
 
   // Declared interface ports of one direction (`input` or `output`), each
   // with the structure's boundary port of its name and the paths of the
-  // component ports linked to it.
+  // instance ports linked to it.
   function portRows(prefix, declared, boundary, links) {
     const byName = new Map(boundary.map((port) => [port.name, port]));
     const peers = new Map();
@@ -166,11 +166,7 @@
           (border.system_launches || []).length,
           this.systemLaunchTable(border.system_launches || []),
         ),
-        section(
-          "Components",
-          (root.children || []).length,
-          this.componentTable(root.children || []),
-        ),
+        section("Instance", (root.children || []).length, this.instanceTable(root.children || [])),
       );
       this.container.replaceChildren(sheet);
     }
@@ -224,7 +220,7 @@
               { title: nameTitle, cell: (r) => code(r.topic) },
               { title: "Type", cell: (r) => code(r.msgType) },
               {
-                title: "Component port",
+                title: "Instance port",
                 cell: (r) => {
                   const list = el("div", "border-peers");
                   r.peers.forEach((path) => list.appendChild(code(path)));
@@ -261,11 +257,11 @@
       );
     }
 
-    componentTable(components) {
-      if (!components.length) return empty("No components.");
+    instanceTable(instances) {
+      if (!instances.length) return empty("No instance.");
       return table(
         [
-          { title: "Component", cell: (c) => c.name },
+          { title: "Instance", cell: (c) => c.name },
           { title: "Path", cell: (c) => code(c.path || "") },
           { title: "Kind", cell: (c) => c.entity_type || "" },
           { title: "Nodes", cell: (c) => String(countNodes(c)) },
@@ -274,8 +270,8 @@
             cell: (c) => (c.source_file ? SD.editor.sourceLink(c.source_file, 1) : ""),
           },
         ],
-        components,
-        (component) => this.updateInfoPanel(component, "Node", component),
+        instances,
+        (instance) => this.updateInfoPanel(instance, "Node", instance),
       );
     }
 

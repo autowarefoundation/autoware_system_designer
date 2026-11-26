@@ -30,7 +30,7 @@ const port = (id, name, portPath, msgType = "") => ({
   msg_type: msgType,
 });
 
-test("port rows carry the boundary port and the component ports linked to it", () => {
+test("port rows carry the boundary port and the instance ports linked to it", () => {
   const cloud = port("b1", "pointcloud", "/input/pointcloud", "pkg/msg/Cloud");
   const objects = port("b2", "objects", "/output/objects", "pkg/msg/Objects");
   const links = [

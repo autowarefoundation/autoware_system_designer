@@ -212,7 +212,7 @@
         if (!rootNode.id) rootNode.id = "root";
       }
       this._injectRemapHub(rootNode);
-      // A border is one launch unit; its components are not clustered.
+      // A border is one launch unit; its instance is not clustered.
       if (!isBorder) this._groupByComputeUnit(rootNode, root);
       this._buildGlobalTopicIndex();
       // ELK lays out ports of child nodes only, so a root with boundary ports
