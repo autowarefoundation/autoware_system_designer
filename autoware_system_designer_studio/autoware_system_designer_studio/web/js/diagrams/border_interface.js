@@ -1,8 +1,8 @@
 // Border interface: the launch-file interface of a border as one sheet. The
 // command launching it, its launch arguments with their defaults, the
-// subscriber and publisher ports with the topic and the launch argument each
-// is reached by, the launch files included ahead of the components, and the
-// components. A port row reports the boundary port of the mode's structure
+// interface ports (subscribers, publishers, clients, servers) with the topic
+// or service name and the launch argument each is reached by, the launch
+// files included ahead of the component, and the component. A port row reports the boundary port of the mode's structure
 // as the selected element.
 (function () {
   const SD = window.SD;
@@ -78,9 +78,7 @@
     const peers = new Map();
     links.forEach((link) => {
       const [own, other] =
-        prefix === "input"
-          ? [link.from_port, link.to_port]
-          : [link.to_port, link.from_port];
+        prefix === "input" ? [link.from_port, link.to_port] : [link.to_port, link.from_port];
       if (!own?.unique_id || !other?.port_path) return;
       const id = String(own.unique_id);
       if (!peers.has(id)) peers.set(id, []);
@@ -138,6 +136,31 @@
           root.out_ports || [],
           root,
         ),
+      );
+      // Service sections appear when the border declares such ports.
+      if ((border.clients || []).length)
+        sheet.appendChild(
+          this.portSection(
+            "Clients",
+            "input",
+            border.clients,
+            root.in_ports || [],
+            root,
+            "Service",
+          ),
+        );
+      if ((border.servers || []).length)
+        sheet.appendChild(
+          this.portSection(
+            "Servers",
+            "output",
+            border.servers,
+            root.out_ports || [],
+            root,
+            "Service",
+          ),
+        );
+      sheet.append(
         section(
           "System launches",
           (border.system_launches || []).length,
@@ -162,19 +185,12 @@
       box.appendChild(title);
       if (border.launch_command) {
         const command = el("div", "border-command");
-        command.append(
-          code(border.launch_command),
-          SD.widgets.copyButton(border.launch_command),
-        );
+        command.append(code(border.launch_command), SD.widgets.copyButton(border.launch_command));
         box.appendChild(command);
       }
       if (border.launch_file)
         box.appendChild(
-          el(
-            "div",
-            "border-launch-file",
-            `Generated launch file: ${border.launch_file}`,
-          ),
+          el("div", "border-launch-file", `Generated launch file: ${border.launch_file}`),
         );
       return box;
     }
@@ -197,15 +213,15 @@
       );
     }
 
-    // Interface ports of one direction; `prefix` names the launch argument
-    // that rebinds the topic.
-    portSection(title, prefix, declared, boundary, root) {
+    // Interface ports of one kind; `prefix` names the launch argument that
+    // rebinds the topic or service name.
+    portSection(title, prefix, declared, boundary, root, nameTitle = "Topic") {
       const rows = portRows(prefix, declared, boundary, root.links || []);
       const content = rows.length
         ? table(
             [
               { title: "Argument", cell: (r) => code(`${prefix}/${r.name}`) },
-              { title: "Topic", cell: (r) => code(r.topic) },
+              { title: nameTitle, cell: (r) => code(r.topic) },
               { title: "Type", cell: (r) => code(r.msgType) },
               {
                 title: "Component port",
@@ -236,9 +252,7 @@
             title: "Arguments",
             cell: (l) => {
               const list = el("div", "border-peers");
-              (l.arguments || []).forEach((a) =>
-                list.appendChild(code(`${a.name}:=${a.value}`)),
-              );
+              (l.arguments || []).forEach((a) => list.appendChild(code(`${a.name}:=${a.value}`)));
               return list;
             },
           },
@@ -257,8 +271,7 @@
           { title: "Nodes", cell: (c) => String(countNodes(c)) },
           {
             title: "Design",
-            cell: (c) =>
-              c.source_file ? SD.editor.sourceLink(c.source_file, 1) : "",
+            cell: (c) => (c.source_file ? SD.editor.sourceLink(c.source_file, 1) : ""),
           },
         ],
         components,

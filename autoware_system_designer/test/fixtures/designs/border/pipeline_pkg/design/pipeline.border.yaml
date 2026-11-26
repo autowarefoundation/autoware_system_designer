@@ -23,6 +23,14 @@ publishers:
   - name: objects
     topic: /perception/objects
 
+servers:
+  - name: reset
+    topic: /perception/pipeline/reset
+
+clients:
+  - name: get_config
+    topic: /api/perception/get_config
+
 system_launches:
   - package: autoware_global_parameter_loader
     file: launch/global_params.launch.py

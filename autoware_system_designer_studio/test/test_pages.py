@@ -210,6 +210,7 @@ BORDER_RECORD = {
     "arguments": [{"name": "vehicle_id", "default": None, "description": "vehicle"}, {"name": "rate", "default": 10}],
     "subscribers": [{"name": "velocity", "topic": "/vehicle/status/velocity_status"}],
     "publishers": [{"name": "pointcloud", "topic": "/sensing/lidar/pointcloud"}],
+    "servers": [{"name": "reset", "topic": "/sensing/reset"}],
     "system_launches": [
         {"package": "loader", "file": "launch/params.launch.py", "arguments": [{"name": "sim", "value": True}]}
     ],
@@ -249,6 +250,8 @@ def test_border_export_carries_its_launch_file_interface(tmp_path):
         ],
         "subscribers": [{"name": "velocity", "topic": "/vehicle/status/velocity_status"}],
         "publishers": [{"name": "pointcloud", "topic": "/sensing/lidar/pointcloud"}],
+        "servers": [{"name": "reset", "topic": "/sensing/reset"}],
+        "clients": [],
         "system_launches": [
             {
                 "package": "loader",

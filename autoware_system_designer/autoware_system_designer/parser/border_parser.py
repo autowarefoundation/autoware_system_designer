@@ -17,8 +17,8 @@
 A ``*.border.yaml`` file is a local build input, like a deployments table: plain YAML
 without a format declaration or schema. It describes the component as a system does,
 the launch arguments of the generated launch file, its external interface (component
-ports bound to topics), the launch files included ahead of the component (system
-launches) and node groups. An interface port carries the name of the component port it
+ports bound to topic or service names), the launch files included ahead of the component
+(system launches) and node groups. An interface port carries the name of the component port it
 binds. The border builds as a system whose boundary ports are the interface ports.
 """
 
@@ -54,10 +54,15 @@ _KNOWN_KEYS = (
     "variables",
     "subscribers",
     "publishers",
+    "servers",
+    "clients",
     "system_launches",
     "node_groups",
 )
 _COMPONENT_KEYS = ("name", "entity", "path", "parameter_set")
+# Interface sections by direction, each with the port role of its entries.
+_INPUT_SECTIONS = (("subscribers", "subscriber"), ("clients", "client"))
+_OUTPUT_SECTIONS = (("publishers", "publisher"), ("servers", "server"))
 _SYSTEM_LAUNCH_KEYS = ("package", "file", "scoped", "arguments")
 
 
@@ -67,8 +72,11 @@ def is_border_file(path: str) -> bool:
 
 @dataclass
 class BorderPort:
+    """Component port bound to a topic or service name."""
+
     name: str
     topic: str
+    role: str
 
 
 @dataclass
@@ -97,8 +105,9 @@ class BorderConfig:
     component: Dict[str, Any] = field(default_factory=dict)
     arguments: List[BorderArgument] = field(default_factory=list)
     variables: List[Dict[str, Any]] = field(default_factory=list)
-    subscribers: List[BorderPort] = field(default_factory=list)
-    publishers: List[BorderPort] = field(default_factory=list)
+    # Interface ports by direction: subscribers and clients, publishers and servers.
+    inputs: List[BorderPort] = field(default_factory=list)
+    outputs: List[BorderPort] = field(default_factory=list)
     system_launches: List[BorderSystemLaunch] = field(default_factory=list)
     node_groups: List[Dict[str, Any]] = field(default_factory=list)
     source_map: Optional[Dict[str, Dict[str, int]]] = None
@@ -201,20 +210,24 @@ def _parse_variables(reader: _Reader, data: Dict[str, Any], argument_names: set)
     return variables
 
 
-def _parse_ports(reader: _Reader, data: Dict[str, Any], key: str) -> List[BorderPort]:
+def _parse_ports(reader: _Reader, data: Dict[str, Any], sections: Tuple[Tuple[str, str], ...]) -> List[BorderPort]:
+    """Interface ports of one direction; a name is used once per direction, as on the component."""
     ports: List[BorderPort] = []
-    seen = set()
-    for idx, item in enumerate(reader.items(data, key)):
-        yaml_path = f"/{key}/{idx}"
-        name = reader.string(item, "name", yaml_path)
-        topic = reader.string(item, "topic", yaml_path)
-        if name in seen:
-            raise reader.error(f"{yaml_path}/name", f"{key} port '{name}' is declared twice")
-        segments = topic.lstrip("/").split("/")
-        if not topic.startswith("/") or not all(segments):
-            raise reader.error(f"{yaml_path}/topic", f"topic '{topic}' must be an absolute ROS topic, e.g. '/foo/bar'")
-        seen.add(name)
-        ports.append(BorderPort(name=name, topic=topic))
+    seen: Dict[str, str] = {}
+    for key, role in sections:
+        for idx, item in enumerate(reader.items(data, key)):
+            yaml_path = f"/{key}/{idx}"
+            name = reader.string(item, "name", yaml_path)
+            topic = reader.string(item, "topic", yaml_path)
+            if name in seen:
+                raise reader.error(f"{yaml_path}/name", f"{role} port '{name}' is already declared in {seen[name]}")
+            segments = topic.lstrip("/").split("/")
+            if not topic.startswith("/") or not all(segments):
+                raise reader.error(
+                    f"{yaml_path}/topic", f"topic '{topic}' must be an absolute ROS name, e.g. '/foo/bar'"
+                )
+            seen[name] = key
+            ports.append(BorderPort(name=name, topic=topic, role=role))
     return ports
 
 
@@ -282,8 +295,8 @@ def parse_border(border_path: str) -> BorderConfig:
         component=_parse_component(reader, data),
         arguments=arguments,
         variables=_parse_variables(reader, data, {a.name for a in arguments}),
-        subscribers=_parse_ports(reader, data, "subscribers"),
-        publishers=_parse_ports(reader, data, "publishers"),
+        inputs=_parse_ports(reader, data, _INPUT_SECTIONS),
+        outputs=_parse_ports(reader, data, _OUTPUT_SECTIONS),
         system_launches=_parse_system_launches(reader, data),
         node_groups=reader.items(data, "node_groups"),
         source_map=source_map,
@@ -301,8 +314,11 @@ def border_record(border: BorderConfig) -> Dict[str, Any]:
     return {
         "launch_file": border_launch_file(border.name),
         "arguments": [{"name": a.name, "default": a.default, "description": a.description} for a in border.arguments],
-        "subscribers": [{"name": p.name, "topic": p.topic} for p in border.subscribers],
-        "publishers": [{"name": p.name, "topic": p.topic} for p in border.publishers],
+        **{
+            key: [{"name": p.name, "topic": p.topic} for p in ports if p.role == role]
+            for sections, ports in ((_INPUT_SECTIONS, border.inputs), (_OUTPUT_SECTIONS, border.outputs))
+            for key, role in sections
+        },
         "system_launches": [
             {
                 "package": launch.package,
@@ -315,8 +331,8 @@ def border_record(border: BorderConfig) -> Dict[str, Any]:
     }
 
 
-def _interface_ports(ports: List[BorderPort], role: str) -> List[PortDefinition]:
-    return [PortDefinition(name=port.name, port_role=role, topic=port.topic) for port in ports]
+def _interface_ports(ports: List[BorderPort]) -> List[PortDefinition]:
+    return [PortDefinition(name=port.name, port_role=port.role, topic=port.topic) for port in ports]
 
 
 def border_system_config(border: BorderConfig, config_registry: Any) -> SystemConfig:
@@ -326,8 +342,8 @@ def border_system_config(border: BorderConfig, config_registry: Any) -> SystemCo
     connected to the component port of the same name.
     """
     component = border.component["name"]
-    connections = [[f"subscriber.{p.name}", f"{component}.subscriber.{p.name}"] for p in border.subscribers] + [
-        [f"{component}.publisher.{p.name}", f"publisher.{p.name}"] for p in border.publishers
+    connections = [[f"{p.role}.{p.name}", f"{component}.{p.role}.{p.name}"] for p in border.inputs] + [
+        [f"{component}.{p.role}.{p.name}", f"{p.role}.{p.name}"] for p in border.outputs
     ]
 
     return SystemConfig(
@@ -343,6 +359,6 @@ def border_system_config(border: BorderConfig, config_registry: Any) -> SystemCo
         connections=connections,
         variables=border.variables or None,
         node_groups=border.node_groups or None,
-        inputs=_interface_ports(border.subscribers, "subscriber"),
-        outputs=_interface_ports(border.publishers, "publisher"),
+        inputs=_interface_ports(border.inputs),
+        outputs=_interface_ports(border.outputs),
     )

@@ -76,8 +76,8 @@ def _entity_name(data: Dict[str, Any]) -> str:
 
 
 def _external_interfaces(border: BorderConfig) -> List[_Interface]:
-    return [_Interface(f"input/{p.name}", p.topic) for p in border.subscribers] + [
-        _Interface(f"output/{p.name}", p.topic) for p in border.publishers
+    return [_Interface(f"input/{p.name}", p.topic) for p in border.inputs] + [
+        _Interface(f"output/{p.name}", p.topic) for p in border.outputs
     ]
 
 

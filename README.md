@@ -143,6 +143,12 @@ subscribers: # external interface: component ports bound to topics
 publishers:
   - name: object_recognition/objects
     topic: /perception/object_recognition/objects
+servers: # services the component offers, bound to service names
+  - name: reset
+    topic: /perception/reset
+clients: # services the component calls
+  - name: get_route
+    topic: /api/routing/get_route
 
 system_launches: # launch files included ahead of the component, e.g. the global parameter loader
   - package: autoware_global_parameter_loader
@@ -164,7 +170,7 @@ The border builds as a system on one compute unit whose boundary ports are the i
 The generated launch file follows the layout of a hand-written entry launch file:
 
 1. arguments, with their defaults
-2. external interfaces as arguments: `input/<subscriber>` and `output/<publisher>`, defaulting to their topics
+2. external interfaces as arguments: `input/<subscriber or client>` and `output/<publisher or server>`, defaulting to their topic or service names
 3. system launches
 4. the nodes, in groups that push one namespace segment each; containers come first in their group
 

@@ -479,27 +479,27 @@ class LinkManager:
     def _bind_interface_topics(self):
         """Bind the boundary ports that declare a topic; such a port is used by a connection.
 
-        A bound output sets the topic of the node port it exports. A bound input sets the
-        topic of every node subscriber it stands for.
+        A bound output (publisher, server) sets the topic of the node port it exports. A bound
+        input (subscriber, client) sets the topic of every node port it stands for.
         """
         configuration = self.instance.configuration
         declared = (
-            ("subscriber", getattr(configuration, "inputs", None) or [], self.in_ports),
-            ("publisher", getattr(configuration, "outputs", None) or [], self.out_ports),
+            (getattr(configuration, "inputs", None) or [], self.in_ports),
+            (getattr(configuration, "outputs", None) or [], self.out_ports),
         )
-        for role, definitions, ports in declared:
-            bound = [definition for definition in definitions if definition.topic is not None]
-            unconnected = sorted(definition.name for definition in bound if definition.name not in ports)
-            if unconnected:
-                source = source_from_config(configuration, f"/{role}s")
-                raise ValidationError(
-                    f"[E_INTERFACE_UNCONNECTED] {role} interface port(s) without a connection: {unconnected}"
-                    f"{format_source(source)}",
-                    source=source,
-                )
-            for definition in bound:
+        for definitions, ports in declared:
+            for definition in definitions:
+                if definition.topic is None:
+                    continue
+                port = ports.get(definition.name)
+                if port is None:
+                    source = source_from_config(configuration, f"/{definition.port_role}s")
+                    raise ValidationError(
+                        f"[E_INTERFACE_UNCONNECTED] {definition.port_role} interface port '{definition.name}' "
+                        f"has no connection{format_source(source)}",
+                        source=source,
+                    )
                 topic_parts = _topic_segments(definition.topic)
-                port = ports[definition.name]
                 if isinstance(port, OutPort):
                     self._force_remap_port(port, topic_parts)
                 else:
@@ -510,13 +510,13 @@ class LinkManager:
         for chained in port.get_chain_list():
             if chained.is_global:
                 raise ValidationError(
-                    f"[E_INTERFACE_TOPIC] Interface port '{port.name}' reaches global subscriber "
+                    f"[E_INTERFACE_TOPIC] Interface port '{port.name}' reaches global port "
                     f"'{chained.port_path}', which keeps its own topic"
                 )
             if chained.is_remapped and chained.own_topic and chained.own_topic != topic_parts:
                 raise ValidationError(
                     f"[E_INTERFACE_TOPIC] '{chained.port_path}' is bound to '{chained.get_topic()}' and to "
-                    f"'/{'/'.join(topic_parts)}' (interface port '{port.name}'); a subscriber takes one topic"
+                    f"'/{'/'.join(topic_parts)}' (interface port '{port.name}'); a port takes one topic"
                 )
             chained.is_remapped = True
             chained.set_topic(topic_parts[:-1], topic_parts[-1])

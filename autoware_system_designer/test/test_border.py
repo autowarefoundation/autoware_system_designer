@@ -73,7 +73,9 @@ def test_border_generates_one_launch_file(tmp_path):
         "pointcloud_container_name": "pointcloud_container",
         "use_sim_time": "false",
         "input/pointcloud": "/sensing/lidar/concatenated/pointcloud",
+        "input/get_config": "/api/perception/get_config",
         "output/objects": "/perception/objects",
+        "output/reset": "/perception/pipeline/reset",
     }
     assert not run.launcher_dir("default").exists()
 
@@ -92,6 +94,10 @@ def test_border_generates_one_launch_file(tmp_path):
     assert nodes["filter_secondary"][1]["~/input/pointcloud"] == "$(var input/pointcloud)"
     assert nodes["node_merger"][0] == "/perception/pipeline/pipeline_container"
     assert nodes["node_merger"][1]["~/output/objects"] == "$(var output/objects)"
+    # Services are bound like topics: a server through its output argument, clients through the input one.
+    assert nodes["node_merger"][1]["~/output/reset"] == "$(var output/reset)"
+    assert remaps["~/input/get_config"] == "$(var input/get_config)"
+    assert nodes["filter_secondary"][1]["~/input/get_config"] == "$(var input/get_config)"
 
     # Nodes sit in the group of their namespace; the external group starts no container.
     groups = _groups(root)
@@ -130,6 +136,8 @@ def test_border_manifest_records_the_launch_file_interface(tmp_path):
     ]
     assert border["subscribers"] == [{"name": "pointcloud", "topic": "/sensing/lidar/concatenated/pointcloud"}]
     assert border["publishers"] == [{"name": "objects", "topic": "/perception/objects"}]
+    assert border["servers"] == [{"name": "reset", "topic": "/perception/pipeline/reset"}]
+    assert border["clients"] == [{"name": "get_config", "topic": "/api/perception/get_config"}]
     assert border["system_launches"] == [
         {
             "package": "autoware_global_parameter_loader",
@@ -144,10 +152,14 @@ def test_border_interface_is_the_system_boundary(tmp_path):
     workspace = stage_case("border", tmp_path)
     run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
     root = run.structure("default")["data"]
-    assert {p["name"]: "/" + "/".join(p["topic"]) for p in root["in_ports"]} == {
-        "pointcloud": "/sensing/lidar/concatenated/pointcloud"
+    assert {p["name"]: (p["role"], "/" + "/".join(p["topic"])) for p in root["in_ports"]} == {
+        "pointcloud": ("subscriber", "/sensing/lidar/concatenated/pointcloud"),
+        "get_config": ("client", "/api/perception/get_config"),
     }
-    assert {p["name"]: "/" + "/".join(p["topic"]) for p in root["out_ports"]} == {"objects": "/perception/objects"}
+    assert {p["name"]: (p["role"], "/" + "/".join(p["topic"])) for p in root["out_ports"]} == {
+        "objects": ("publisher", "/perception/objects"),
+        "reset": ("server", "/perception/pipeline/reset"),
+    }
     boundary = {port["unique_id"] for port in root["in_ports"] + root["out_ports"]}
     linked = {link[end]["unique_id"] for link in root["links"] for end in ("from_port", "to_port")}
     assert boundary <= linked
@@ -166,7 +178,12 @@ def test_border_interface_is_the_system_boundary(tmp_path):
             },
             "must list exactly one component",
         ),
-        ({"publishers": [{"name": "objects", "topic": "relative"}]}, "must be an absolute ROS topic"),
+        ({"publishers": [{"name": "objects", "topic": "relative"}]}, "must be an absolute ROS name"),
+        (
+            {"clients": [{"name": "pointcloud", "topic": "/api/pointcloud"}]},
+            "client port 'pointcloud' is already declared in subscribers",
+        ),
+        ({"servers": [{"name": "restart", "topic": "/perception/restart"}]}, "'restart' not in 'pipeline'"),
         ({"name": "other"}, "differs from the file name"),
         ({"name": "pipe.line"}, "must match"),
         ({"entity": "x"}, "unknown key(s) ['entity']"),

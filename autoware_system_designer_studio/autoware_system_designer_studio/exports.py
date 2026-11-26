@@ -136,6 +136,8 @@ class SystemExport:
             ],
             "subscribers": _interface_ports(record.get("subscribers")),
             "publishers": _interface_ports(record.get("publishers")),
+            "servers": _interface_ports(record.get("servers")),
+            "clients": _interface_ports(record.get("clients")),
             "system_launches": [
                 {
                     "package": str(item.get("package") or ""),
