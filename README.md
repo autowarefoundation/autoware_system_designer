@@ -115,38 +115,36 @@ autoware_system_designer_build_deploy(
 
 ### Border (`*.border.yaml`)
 
-A border launches components behind a fixed launch-file interface, so a hand-written entry launch file can be replaced by a generated one at the same path. It is a local build input like a deployments table: plain YAML, no format declaration, no schema. It is not part of any system.
+A border launches one component behind a fixed launch-file interface, so a hand-written entry launch file can be replaced by a generated one at the same path. It is a local build input like a deployments table: plain YAML, no format declaration, no schema. It is not part of any system; a system instantiates the same module.
 
 ```yaml
-name: sensing_perception # launch file stem; equals the file name stem
+name: perception # launch file stem; equals the file name stem
 
-components: # as in a system, without compute units
-  - name: sensing
-    entity: SampleSensorKit.module
-    path: /sensing
-    parameter_set: [sample_system_sensing.parameter_set]
+components: # exactly one, as in a system, without a compute unit
   - name: perception
     entity: Perception.module
     path: /perception
     parameter_set: [sample_system_perception.parameter_set]
 
-arguments: # launch arguments of the generated file; $(var name) in parameter sets
-  - name: data_path
-    default: $(env HOME)/autoware_data/ml_models
+arguments: # launch arguments of the generated file
+  - name: use_sim_time
+    default: false
+  - name: pointcloud_container_name
+    default: pointcloud_container
 variables: # build-time values, as in a system
   - name: sensor_model
     value: sample_sensor_kit
 
-subscribers: # external interface: ports bound to topics
-  - name: velocity_status
-    topic: /vehicle/status/velocity_status
+subscribers: # external interface: component ports bound to topics
+  - name: concatenated_pointcloud
+    topic: /sensing/lidar/concatenated/pointcloud
   - name: vector_map
     topic: /map/vector_map
 publishers:
-  - name: objects
+  - name: object_recognition/objects
     topic: /perception/object_recognition/objects
 
-system_launches: # launch files included ahead of the components, e.g. the global parameter loader
+system_launches: # launch files included ahead of the component, e.g. the global parameter loader
   - package: autoware_global_parameter_loader
     file: launch/global_params.launch.py
     scoped: false # default true; false applies its parameters to the whole launch file
@@ -157,31 +155,20 @@ system_launches: # launch files included ahead of the components, e.g. the globa
 node_groups: # as in a system; `external` loads into a container the caller starts
   - name: $(var pointcloud_container_name)
     type: ros2_component_container_mt
-    external: true # holds nodes of both components
-    nodes: [/sensing/lidar/*, /perception/obstacle_segmentation/*]
-
-connections: # as in a system; the interface is reached as in a module
-  - - subscriber.velocity_status
-    - sensing.subscriber.velocity_status
-  - - subscriber.vector_map
-    - perception.subscriber.vector_map
-  - - sensing.publisher.lidar/concatenated/pointcloud
-    - perception.subscriber.concatenated_pointcloud
-  - - perception.publisher.object_recognition/objects
-    - publisher.objects
+    external: true
+    nodes: [/perception/obstacle_segmentation/*]
 ```
 
-The border builds as a system on one compute unit whose boundary ports are the interface ports. An interface connection binds the component port to the interface topic, and wildcards pair interface ports with component ports as they do in a module. Every interface port needs a connection, a component publisher leaves through one interface port, and a component subscriber takes one topic. A container that holds nodes of more than one component is `external`.
+The border builds as a system on one compute unit whose boundary ports are the interface ports. An interface port carries the name of the component port it binds to its topic; component ports left out keep the topic the design gives them.
 
 The generated launch file follows the layout of a hand-written entry launch file:
 
 1. arguments, with their defaults
 2. external interfaces as arguments: `input/<subscriber>` and `output/<publisher>`, defaulting to their topics
-3. internal interfaces as lets: `<component>/<port>` for each component publisher another component subscribes to
-4. system launches
-5. the nodes, in groups that push one namespace segment each; containers come first in their group
+3. system launches
+4. the nodes, in groups that push one namespace segment each; containers come first in their group
 
-Node remaps reach interface topics through these variables, so overriding an interface argument rewires every node on that topic.
+Node remaps reach interface topics through the interface arguments, so overriding an interface argument rewires every node on that topic.
 
 Node parameters resolved at build time are written to `config/<name>/<node path>.param.yaml` beside the launch file and loaded with `$(find-pkg-share <package>)`. Values carrying a substitution (`$(var ...)`) stay inline, and parameter files whose path is only known at launch time are loaded in place, keeping the launch order of default, override and mode parameters. Paths under a package directory are written as `$(find-pkg-share <package>)/...`, so the output does not depend on the workspace it was generated in.
 

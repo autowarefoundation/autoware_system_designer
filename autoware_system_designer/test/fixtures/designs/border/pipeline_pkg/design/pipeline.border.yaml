@@ -5,9 +5,6 @@ components:
     entity: Pipeline.module
     path: /perception/pipeline
     parameter_set: [Pipeline.parameter_set]
-  - name: sink
-    entity: Sink.node
-    path: /perception/sink
 
 arguments:
   - name: score_threshold
@@ -45,11 +42,3 @@ node_groups:
     nodes:
       - /perception/pipeline/filter_secondary
       - /perception/pipeline/node_merger
-
-connections:
-  - - subscriber.pointcloud
-    - pipeline.subscriber.pointcloud
-  - - pipeline.publisher.objects
-    - sink.subscriber.objects
-  - - pipeline.publisher.objects
-    - publisher.objects

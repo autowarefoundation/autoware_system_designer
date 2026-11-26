@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Border targets: components behind a generated entry launch file."""
+"""Border targets: a component behind a generated entry launch file."""
 
 import json
 import xml.etree.ElementTree as ET
@@ -92,12 +92,9 @@ def test_border_generates_one_launch_file(tmp_path):
     assert nodes["filter_secondary"][1]["~/input/pointcloud"] == "$(var input/pointcloud)"
     assert nodes["node_merger"][0] == "/perception/pipeline/pipeline_container"
     assert nodes["node_merger"][1]["~/output/objects"] == "$(var output/objects)"
-    sink = next(n for n in root.iter("node") if n.get("name") == "sink")
-    assert {r.get("from"): r.get("to") for r in sink.iter("remap")} == {"~/input/objects": "$(var output/objects)"}
 
     # Nodes sit in the group of their namespace; the external group starts no container.
     groups = _groups(root)
-    assert groups["sink"] == "perception"
     assert groups["filter_primary"] == "pipeline"
     assert groups["pipeline_container"] == "pipeline"
     loaded = [load.find("composable_node") for load in root.iter("load_composable_node")]
@@ -143,26 +140,6 @@ def test_border_manifest_records_the_launch_file_interface(tmp_path):
     ]
 
 
-def test_border_internal_interface(tmp_path):
-    workspace = stage_case("border", tmp_path)
-    _rewrite_border(
-        workspace,
-        publishers=None,
-        connections=[
-            ["subscriber.pointcloud", "pipeline.subscriber.pointcloud"],
-            ["pipeline.publisher.objects", "sink.subscriber.objects"],
-        ],
-    )
-    run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
-    entry = run.out_root / "launch" / "pipeline.launch.xml"
-    root = ET.parse(entry).getroot()
-    assert {let.get("name"): let.get("value") for let in root.findall("let")} == {
-        "pipeline/objects": "/perception/pipeline/objects"
-    }
-    nodes = _nodes(entry)
-    assert nodes["node_merger"][1]["~/output/objects"] == "$(var pipeline/objects)"
-
-
 def test_border_interface_is_the_system_boundary(tmp_path):
     workspace = stage_case("border", tmp_path)
     run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
@@ -179,95 +156,15 @@ def test_border_interface_is_the_system_boundary(tmp_path):
 @pytest.mark.parametrize(
     "changes, message",
     [
-        # A subscriber fed by a component and bound to an interface topic.
+        ({"connections": []}, "unknown key(s) ['connections']"),
         (
             {
-                "subscribers": [
-                    {"name": "pointcloud", "topic": "/sensing/lidar/concatenated/pointcloud"},
-                    {"name": "objects", "topic": "/external/objects"},
-                ],
-                "connections": [
-                    ["subscriber.pointcloud", "pipeline.subscriber.pointcloud"],
-                    ["pipeline.publisher.objects", "sink.subscriber.objects"],
-                    ["pipeline.publisher.objects", "publisher.objects"],
-                    ["subscriber.objects", "sink.subscriber.objects"],
-                ],
+                "components": [
+                    {"name": "pipeline", "entity": "Pipeline.module"},
+                    {"name": "other", "entity": "Pipeline.module"},
+                ]
             },
-            "E_TOPIC_CONFLICT",
-        ),
-        # A publisher bound to two interface topics.
-        (
-            {
-                "publishers": [
-                    {"name": "objects", "topic": "/perception/objects"},
-                    {"name": "objects_copy", "topic": "/perception/objects_copy"},
-                ],
-                "connections": [
-                    ["subscriber.pointcloud", "pipeline.subscriber.pointcloud"],
-                    ["pipeline.publisher.objects", "publisher.objects"],
-                    ["pipeline.publisher.objects", "publisher.objects_copy"],
-                ],
-            },
-            "E_EXPORT_TWICE",
-        ),
-        # A subscriber bound to two interface topics.
-        (
-            {
-                "subscribers": [
-                    {"name": "pointcloud", "topic": "/sensing/lidar/concatenated/pointcloud"},
-                    {"name": "pointcloud_copy", "topic": "/sensing/lidar/pointcloud_copy"},
-                ],
-                "connections": [
-                    ["subscriber.pointcloud", "pipeline.subscriber.pointcloud"],
-                    ["subscriber.pointcloud_copy", "pipeline.subscriber.pointcloud"],
-                    ["pipeline.publisher.objects", "publisher.objects"],
-                ],
-            },
-            "E_INTERFACE_TOPIC",
-        ),
-    ],
-)
-def test_border_binding_conflicts(tmp_path, changes, message):
-    workspace = stage_case("border", tmp_path)
-    _rewrite_border(workspace, **changes)
-    with pytest.raises(SystemDesignerError) as excinfo:
-        run_pipeline(workspace, BORDER, tmp_path, strict=True)
-    assert message in str(excinfo.value)
-
-
-def test_border_shared_container_is_external(tmp_path):
-    workspace = stage_case("border", tmp_path)
-    data = yaml.safe_load((workspace / BORDER).read_text())
-    groups = data["node_groups"]
-    groups[0].pop("external")
-    groups[0]["name"] = "shared_container"
-    groups[0]["nodes"].append("/perception/sink")
-    _rewrite_border(workspace, node_groups=groups)
-    with pytest.raises(SystemDesignerError) as excinfo:
-        run_pipeline(workspace, BORDER, tmp_path, strict=True)
-    assert "a container shared over components is launched externally" in str(excinfo.value)
-
-
-def test_border_wildcard_interface(tmp_path):
-    workspace = stage_case("border", tmp_path)
-    _rewrite_border(
-        workspace,
-        components=[{"name": "pipeline", "entity": "Pipeline.module", "path": "/perception/pipeline"}],
-        arguments=[{"name": "score_threshold", "default": 0.3}, {"name": "pointcloud_container_name"}],
-        connections=[["subscriber.*", "pipeline.subscriber.*"], ["pipeline.publisher.*", "publisher.*"]],
-    )
-    run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
-    nodes = _nodes(run.out_root / "launch" / "pipeline.launch.xml")
-    assert nodes["filter_primary"][1]["~/input/pointcloud"] == "$(var input/pointcloud)"
-    assert nodes["node_merger"][1]["~/output/objects"] == "$(var output/objects)"
-
-
-@pytest.mark.parametrize(
-    "changes, message",
-    [
-        (
-            {"connections": [["pipeline.publisher.objects", "publisher.objects"]]},
-            "without a connection: ['pointcloud']",
+            "must list exactly one component",
         ),
         ({"publishers": [{"name": "objects", "topic": "relative"}]}, "must be an absolute ROS topic"),
         ({"name": "other"}, "differs from the file name"),
@@ -296,7 +193,7 @@ def test_border_wildcard_interface(tmp_path):
             "external interface 'output/objects' collides with an argument",
         ),
         (
-            {"components": [{"name": "publisher", "entity": "Sink.node"}]},
+            {"components": [{"name": "publisher", "entity": "Pipeline.module"}]},
             "component name 'publisher' is reserved for interface references",
         ),
         (
@@ -305,15 +202,8 @@ def test_border_wildcard_interface(tmp_path):
             },
             "$(var pointcloud_container_name)",
         ),
-        (
-            {"connections": [["subscriber.pointcloud", "pipeline.publisher.objects"]]},
-            "E_CONN_KIND",
-        ),
-        (
-            {"connections": [["subscriber.pointcloud", "pipeline.subscriber.lidar"]]},
-            "input port 'lidar' not in 'pipeline'",
-        ),
-        ({"connections": [["subscriber.pointcloud", "publisher.objects"]]}, "E_CONN_SCOPE"),
+        ({"subscribers": [{"name": "lidar", "topic": "/sensing/lidar"}]}, "input port 'lidar' not in 'pipeline'"),
+        ({"publishers": [{"name": "markers", "topic": "/perception/markers"}]}, "'markers' not in 'pipeline'"),
         ({"system_launches": [{"package": "p", "file": "f", "scoped": "no"}]}, "'scoped' must be a boolean"),
         ({"system_launches": [{"package": "p", "file": "f", "arguments": [{"name": "a"}]}]}, "requires 'value'"),
     ],

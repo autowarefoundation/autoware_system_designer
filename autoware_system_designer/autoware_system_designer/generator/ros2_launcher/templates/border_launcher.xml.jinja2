@@ -15,13 +15,6 @@
   <arg name="{{ interface.name }}" default="{{ interface.topic }}"/>
 {% endfor %}
 {% endif %}
-{% if internal_interfaces %}
-
-  <!-- Internal interfaces -->
-{% for interface in internal_interfaces %}
-  <let name="{{ interface.name }}" value="{{ interface.topic }}"/>
-{% endfor %}
-{% endif %}
 {% if system_launches %}
 
   <!-- System launches -->
@@ -36,6 +29,6 @@
 {% endfor %}
 {% endif %}
 
-  <!-- Components -->
+  <!-- Component -->
 {{ body | safe }}
 </launch>

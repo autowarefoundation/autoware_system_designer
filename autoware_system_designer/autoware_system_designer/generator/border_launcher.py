@@ -14,9 +14,9 @@
 
 """Launch file of a border, laid out as a hand-written entry launch file.
 
-Sections in order: launch arguments, external interfaces as arguments, internal interfaces
-as lets, system launches, then the nodes in groups that push one namespace segment each.
-Node remaps reach interface topics through the variables of the interface sections. Node
+Sections in order: launch arguments, external interfaces as arguments, system launches,
+then the nodes in groups that push one namespace segment each. Node remaps reach interface
+topics through the interface arguments. Node
 parameters load from the parameter files written beside the launch file, and package paths
 resolve through find-pkg-share, so the output does not depend on the workspace it was built in.
 """
@@ -85,57 +85,14 @@ def _external_interfaces(border: BorderConfig) -> List[_Interface]:
     ]
 
 
-def _internal_interfaces(
-    border: BorderConfig, components: List[Dict[str, Any]], external_topics: set
-) -> List[_Interface]:
-    """Component publisher topics another component subscribes to, named <component>/<port>."""
-    interfaces: List[_Interface] = []
-    seen = set(external_topics)
-    for component in components:
-        consumed = {
-            _topic(port) for other in components if other is not component for port in other.get("in_ports", [])
-        }
-        for port in component.get("out_ports", []):
-            topic = _topic(port)
-            if topic in consumed and topic not in seen:
-                seen.add(topic)
-                interfaces.append(_Interface(f"{component['name']}/{port['name']}", topic))
-    return interfaces
-
-
-def _check_launch_names(border: BorderConfig, external: List[_Interface], internal: List[_Interface]) -> None:
+def _check_launch_names(border: BorderConfig, external: List[_Interface]) -> None:
     """Arguments and interfaces share one launch configuration namespace; each name is declared once."""
     declared: Dict[str, str] = {}
-    entries = (
-        [(a.name, "argument") for a in border.arguments]
-        + [(i.name, "external interface") for i in external]
-        + [(i.name, "internal interface") for i in internal]
-    )
+    entries = [(a.name, "argument") for a in border.arguments] + [(i.name, "external interface") for i in external]
     for name, kind in entries:
         if name in declared:
             raise ValidationError(f"Border {border.file_path.name}: {kind} '{name}' collides with an {declared[name]}")
         declared[name] = kind
-
-
-def _check_containers(border: BorderConfig, nodes: List[Tuple[str, Dict[str, Any]]]) -> None:
-    """A container launched by the border holds nodes of one component; shared containers are external."""
-    launched = {
-        f"{node.get('namespace', '').rstrip('/')}/{node['name']}"
-        for _, node in nodes
-        if node.get("launch_state") == "node_container"
-    }
-    owners: Dict[str, str] = {}
-    for component, node in nodes:
-        target = node.get("container_target")
-        if node.get("launch_state") != "composable_node" or target not in launched:
-            continue
-        owner = owners.setdefault(target, component)
-        if owner != component:
-            raise ValidationError(
-                f"Border {border.file_path.name}: container '{target}' holds nodes of components "
-                f"'{owner}' and '{component}'; a container shared over components is "
-                "launched externally (node_groups[].external: true)"
-            )
 
 
 def _with_topic_variables(node: Dict[str, Any], variables: Dict[str, str]) -> Dict[str, Any]:
@@ -148,10 +105,10 @@ def _with_topic_variables(node: Dict[str, Any], variables: Dict[str, str]) -> Di
     return {**node, "ports": ports, "namespace": namespace}
 
 
-def _build_tree(system_data: Dict[str, Any]) -> Tuple[_Group, List[Tuple[str, Dict[str, Any]]]]:
-    """Namespace tree labelled with the module instances, and every node with its component name."""
+def _build_tree(system_data: Dict[str, Any]) -> Tuple[_Group, List[Dict[str, Any]]]:
+    """Namespace tree labelled with the module instances, and every node."""
     root = _Group("")
-    nodes: List[Tuple[str, Dict[str, Any]]] = []
+    nodes: List[Dict[str, Any]] = []
 
     def label_modules(data: Dict[str, Any]) -> None:
         if data.get("entity_type") != "module":
@@ -162,7 +119,7 @@ def _build_tree(system_data: Dict[str, Any]) -> Tuple[_Group, List[Tuple[str, Di
 
     for component in system_data.get("children", []):
         label_modules(component)
-        nodes.extend((component["name"], node) for node in collect_component_nodes(component))
+        nodes.extend(collect_component_nodes(component))
     return root, nodes
 
 
@@ -208,19 +165,17 @@ def generate_border_launcher(
     renderer = TemplateRenderer()
 
     external = _external_interfaces(border)
-    internal = _internal_interfaces(border, system_data.get("children", []), {i.topic for i in external})
-    _check_launch_names(border, external, internal)
+    _check_launch_names(border, external)
     variables: Dict[str, str] = {}
-    for interface in external + internal:
+    for interface in external:
         # A topic both subscribed and published at the border is the output it publishes.
         if interface.topic not in variables or interface.name.startswith("output/"):
             variables[interface.topic] = interface.name
 
     root, nodes = _build_tree(system_data)
-    _check_containers(border, nodes)
-    launched = [package_paths.portable(_with_topic_variables(node, variables)) for _, node in nodes]
+    launched = [package_paths.portable(_with_topic_variables(node, variables)) for node in nodes]
     write_parameter_files(launched, param_dir, package, param_dir_in_package)
-    for (_, node), payload in zip(nodes, launched):
+    for node, payload in zip(nodes, launched):
         root.at(node.get("namespace")).entries.append(payload)
 
     forward_args = [argument.name for argument in border.arguments]
@@ -236,7 +191,6 @@ def generate_border_launcher(
         source_file=border.file_path.name,
         arguments=border.arguments,
         external_interfaces=external,
-        internal_interfaces=internal,
         system_launches=border.system_launches,
         body=textwrap.indent(body, _INDENT),
     )

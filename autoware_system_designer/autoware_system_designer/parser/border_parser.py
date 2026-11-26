@@ -12,15 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Border: components launched behind a fixed launch-file interface.
+"""Border: one component launched behind a fixed launch-file interface.
 
 A ``*.border.yaml`` file is a local build input, like a deployments table: plain YAML
-without a format declaration or schema. It describes components as a system does,
-the launch arguments of the generated launch file, its external interface (ports bound
-to topics), the launch files included ahead of the components (system launches), node
-groups and connections. Connections reach the interface as a module's
-do, through ``subscriber.<port>`` and ``publisher.<port>``. The border builds as a system
-whose boundary ports are the interface ports, each bound to its topic.
+without a format declaration or schema. It describes the component as a system does,
+the launch arguments of the generated launch file, its external interface (component
+ports bound to topics), the launch files included ahead of the component (system
+launches) and node groups. An interface port carries the name of the component port it
+binds. The border builds as a system whose boundary ports are the interface ports.
 """
 
 from __future__ import annotations
@@ -60,7 +59,6 @@ _KNOWN_KEYS = (
     "publishers",
     "system_launches",
     "node_groups",
-    "connections",
 )
 _COMPONENT_KEYS = ("name", "entity", "path", "parameter_set")
 _INTERFACE_ROLES = ("subscriber", "publisher")
@@ -107,7 +105,6 @@ class BorderConfig:
     publishers: List[BorderPort] = field(default_factory=list)
     system_launches: List[BorderSystemLaunch] = field(default_factory=list)
     node_groups: List[Dict[str, Any]] = field(default_factory=list)
-    connections: List[List[str]] = field(default_factory=list)
     source_map: Optional[Dict[str, Dict[str, int]]] = None
     raw: Dict[str, Any] = field(default_factory=dict)
 
@@ -148,9 +145,8 @@ class _Reader:
 
 def _parse_components(reader: _Reader, data: Dict[str, Any]) -> List[Dict[str, Any]]:
     components = reader.items(data, "components")
-    if not components:
-        raise reader.error("/components", "'components' must list at least one component")
-    seen = set()
+    if len(components) != 1:
+        raise reader.error("/components", "'components' must list exactly one component")
     for idx, item in enumerate(components):
         yaml_path = f"/components/{idx}"
         unknown = sorted(set(item) - set(_COMPONENT_KEYS))
@@ -159,9 +155,6 @@ def _parse_components(reader: _Reader, data: Dict[str, Any]) -> List[Dict[str, A
         name = reader.string(item, "name", yaml_path)
         if name in _INTERFACE_ROLES:
             raise reader.error(f"{yaml_path}/name", f"component name '{name}' is reserved for interface references")
-        if name in seen:
-            raise reader.error(f"{yaml_path}/name", f"component '{name}' is declared twice")
-        seen.add(name)
         entity = reader.string(item, "entity", yaml_path)
         try:
             _, entity_type = entity_name_decode(split_package_qualifier(entity)[1])
@@ -270,16 +263,8 @@ def _parse_system_launches(reader: _Reader, data: Dict[str, Any]) -> List[Border
     return launches
 
 
-def _parse_connections(reader: _Reader, data: Dict[str, Any]) -> List[List[str]]:
-    connections = reader.items(data, "connections", kind=list)
-    for idx, item in enumerate(connections):
-        if len(item) != 2 or not all(isinstance(end, str) and end for end in item):
-            raise reader.error(f"/connections/{idx}", "a connection is a pair of port references")
-    return connections
-
-
 def parse_border(border_path: str) -> BorderConfig:
-    """Parse and validate a border file; connections are checked against the entities when the system is linked."""
+    """Parse and validate a border file; interface ports are checked against the entity when the system is linked."""
     file_path = Path(canonical_path(border_path))
     if not file_path.is_file():
         raise ValidationError(f"Border file not found: {border_path}")
@@ -310,7 +295,6 @@ def parse_border(border_path: str) -> BorderConfig:
         publishers=_parse_ports(reader, data, "publishers"),
         system_launches=_parse_system_launches(reader, data),
         node_groups=reader.items(data, "node_groups"),
-        connections=_parse_connections(reader, data),
         source_map=source_map,
         raw=data,
     )
@@ -345,16 +329,20 @@ def _interface_ports(border: BorderConfig, role: str) -> List[PortDefinition]:
 
 
 def border_system_config(border: BorderConfig, config_registry: Any) -> SystemConfig:
-    """System the deployment build runs for the border; all components share one compute unit.
+    """System the deployment build runs for the border, on one compute unit.
 
-    The interface ports are the boundary ports of the system, each bound to its topic;
-    connections reach them as a module's connections reach its ports.
+    The interface ports are the boundary ports of the system, each bound to its topic and
+    connected to the component port of the same name.
     """
     components = []
     for component in border.components:
         entry = {key: component[key] for key in _COMPONENT_KEYS if key in component}
         entry["compute_unit"] = border.name
         components.append(entry)
+    component = components[0]["name"]
+    connections = [[f"subscriber.{p.name}", f"{component}.subscriber.{p.name}"] for p in border.subscribers] + [
+        [f"{component}.publisher.{p.name}", f"publisher.{p.name}"] for p in border.publishers
+    ]
 
     return SystemConfig(
         name=border.name,
@@ -366,7 +354,7 @@ def border_system_config(border: BorderConfig, config_registry: Any) -> SystemCo
         package=config_registry.deployment_package_name,
         arguments=[{"name": argument.name} for argument in border.arguments],
         components=components,
-        connections=border.connections,
+        connections=connections,
         variables=border.variables or None,
         node_groups=border.node_groups or None,
         inputs=_interface_ports(border, "subscriber"),
