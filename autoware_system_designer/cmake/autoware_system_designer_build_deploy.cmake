@@ -111,6 +111,20 @@ macro(autoware_system_designer_build_deploy project_name)
   if(AUTOWARE_SYSTEM_DESIGNER_INCLUDE_INSTALLED_PACKAGES)
     list(APPEND _COLLECT_EXTRA_ARGS --include-installed)
   endif()
+  # Packages discovered by colcon, written to the build base by colcon-autoware-system-designer.
+  # Without the file, the collector derives its scope from the workspace layout.
+  set(AUTOWARE_SYSTEM_DESIGNER_PACKAGE_MAP "" CACHE FILEPATH
+    "Package map for the system designer scan; defaults to the one colcon writes to the build base")
+  if(AUTOWARE_SYSTEM_DESIGNER_PACKAGE_MAP)
+    if(NOT EXISTS "${AUTOWARE_SYSTEM_DESIGNER_PACKAGE_MAP}")
+      message(FATAL_ERROR
+        "AUTOWARE_SYSTEM_DESIGNER_PACKAGE_MAP does not exist: ${AUTOWARE_SYSTEM_DESIGNER_PACKAGE_MAP}")
+    endif()
+    set(_PACKAGE_MAP_FILE "${AUTOWARE_SYSTEM_DESIGNER_PACKAGE_MAP}")
+  else()
+    get_filename_component(_PACKAGE_MAP_FILE
+      "${CMAKE_BINARY_DIR}/../.autoware_system_designer_packages.json" ABSOLUTE)
+  endif()
   set(LOG_DIR "${WORKSPACE_ROOT}/log/latest_build/${CMAKE_PROJECT_NAME}")
   set(LOG_FILE "${LOG_DIR}/build_${_INPUT_NAME}.log")
   # If OFF (default), deployment failures are reported but do not fail package build.
@@ -153,6 +167,7 @@ macro(autoware_system_designer_build_deploy project_name)
           ${CMAKE_INSTALL_PREFIX}
           --anchor ${_MANIFEST_ANCHOR}
           --workspace-root ${WORKSPACE_ROOT}
+          --package-map-file ${_PACKAGE_MAP_FILE}
           ${_COLLECT_EXTRA_ARGS}
       COMMENT "Collecting system design manifests; full log: ${LOG_DIR}/collect_system_design_manifests.log"
     )

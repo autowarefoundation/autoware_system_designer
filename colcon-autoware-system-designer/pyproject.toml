@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "colcon-autoware-system-designer"
+version = "0.6.0"
+description = "colcon extension that records the discovered packages for the Autoware System Designer build"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.8"
+dependencies = ["colcon-core>=0.12"]
+
+[project.entry-points."colcon_core.package_selection"]
+autoware_system_designer_package_map = "colcon_autoware_system_designer.package_map:PackageMapPackageSelection"
+
+[tool.setuptools.packages.find]
+include = ["colcon_autoware_system_designer*"]
