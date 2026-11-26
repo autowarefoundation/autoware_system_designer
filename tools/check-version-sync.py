@@ -9,6 +9,7 @@
 #   [7] autoware_system_designer_tracer/package.xml
 #   [8] autoware_system_designer_studio/package.xml
 #   [9] autoware_system_designer_studio/setup.py
+#  [10] colcon-autoware-system-designer/pyproject.toml
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -57,6 +58,7 @@ tracer_xml_version = extract_xml_version(repo_root / "autoware_system_designer_t
 studio_root = repo_root / "autoware_system_designer_studio"
 studio_xml_version = extract_xml_version(studio_root / "package.xml")  # [8]
 studio_setup_version = extract_setup_py_version(studio_root / "setup.py")  # [9]
+colcon_version = extract_toml_version(repo_root / "colcon-autoware-system-designer" / "pyproject.toml")  # [10]
 
 sources = [
     ("[1] autoware_system_designer/pyproject.toml         ", inner_version),
@@ -68,6 +70,7 @@ sources = [
     ("[7] autoware_system_designer_tracer/package.xml     ", tracer_xml_version),
     ("[8] autoware_system_designer_studio/package.xml     ", studio_xml_version),
     ("[9] autoware_system_designer_studio/setup.py        ", studio_setup_version),
+    ("[10] colcon-autoware-system-designer/pyproject.toml ", colcon_version),
 ]
 
 versions = {v for _, v in sources}
