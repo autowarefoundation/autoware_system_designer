@@ -249,8 +249,6 @@ class LinkManager:
         to_port = to_info.port
 
         if connection.type == ConnectionType.EXTERNAL_TO_INTERNAL:
-            if to_port is None:
-                raise self._connection_error(connection, "[E_CONN_TARGET_MISSING] Target port is not resolved")
             if from_port is None:
                 from_port = InPort(
                     from_info.port_name, to_port.msg_type, self.instance.resolved_path, role=connection.from_port_type
@@ -258,8 +256,6 @@ class LinkManager:
             elif from_port.msg_type != to_port.msg_type:
                 raise self._connection_error(connection, self._err_type_mismatch(from_port, to_port.msg_type))
         elif connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
-            if from_port is None:
-                raise self._connection_error(connection, "[E_CONN_SOURCE_MISSING] Source port is not resolved")
             if to_port is None:
                 to_port = OutPort(
                     to_info.port_name, from_port.msg_type, self.instance.resolved_path, role=connection.to_port_type
@@ -503,11 +499,6 @@ class LinkManager:
                 )
             for definition in bound:
                 topic_parts = _topic_segments(definition.topic)
-                if topic_parts is None:
-                    raise ValidationError(
-                        f"[E_INTERFACE_TOPIC] Topic '{definition.topic}' of {role} interface port "
-                        f"'{definition.name}' must be an absolute ROS topic without empty segments"
-                    )
                 port = ports[definition.name]
                 if isinstance(port, OutPort):
                     self._force_remap_port(port, topic_parts)
@@ -542,39 +533,25 @@ class LinkManager:
         port.set_topic(topic_parts[:-1], topic_parts[-1])
 
     def initialize_node_ports(self):
-        """Initialize ports for node entity during node configuration."""
-        if self.instance.entity_type != "node":
-            return
-
-        # set in_ports
-        for cfg_in_port in self.instance.configuration.inputs:
-            in_port_instance = InPort(
-                cfg_in_port.name,
-                cfg_in_port.message_type,
-                self.instance.resolved_path,
-                remap_target=cfg_in_port.remap_target,
-                role=cfg_in_port.port_role,
-            )
-            if cfg_in_port.global_topic is not None:
-                in_port_instance.is_global = True
-                topic = cfg_in_port.global_topic.lstrip("/").split("/")
-                in_port_instance.set_topic(topic[:-1], topic[-1])
-            self.in_ports[cfg_in_port.name] = in_port_instance
-
-        # set out_ports
-        for cfg_out_port in self.instance.configuration.outputs:
-            out_port_instance = OutPort(
-                cfg_out_port.name,
-                cfg_out_port.message_type,
-                self.instance.resolved_path,
-                remap_target=cfg_out_port.remap_target,
-                role=cfg_out_port.port_role,
-            )
-            if cfg_out_port.global_topic is not None:
-                out_port_instance.is_global = True
-                topic = cfg_out_port.global_topic.lstrip("/").split("/")
-                out_port_instance.set_topic(topic[:-1], topic[-1])
-            self.out_ports[cfg_out_port.name] = out_port_instance
+        """Create the ports a node design declares; a global port holds its topic from the start."""
+        configuration = self.instance.configuration
+        for port_cls, definitions, ports in (
+            (InPort, configuration.inputs, self.in_ports),
+            (OutPort, configuration.outputs, self.out_ports),
+        ):
+            for definition in definitions:
+                port = port_cls(
+                    definition.name,
+                    definition.message_type,
+                    self.instance.resolved_path,
+                    remap_target=definition.remap_target,
+                    role=definition.port_role,
+                )
+                if definition.global_topic is not None:
+                    port.is_global = True
+                    topic = definition.global_topic.lstrip("/").split("/")
+                    port.set_topic(topic[:-1], topic[-1])
+                ports[definition.name] = port
 
     def get_input_events(self):
         """Get input events from all input ports."""

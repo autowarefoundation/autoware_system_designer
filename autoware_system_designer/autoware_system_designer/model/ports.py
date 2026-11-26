@@ -55,10 +55,6 @@ class PortEvent(Event):
         # Match the Port's unique_id format
         return generate_unique_id(self.namespace, "port", self.direction, self.port_name)
 
-    @property
-    def is_port_event(self):
-        return True
-
 
 @dataclass(init=False, eq=False, repr=False)
 class Port:

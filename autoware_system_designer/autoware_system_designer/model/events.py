@@ -85,10 +85,6 @@ class Event:
         return generate_unique_id(self.namespace, "event", self.name)
 
     @property
-    def is_port_event(self):
-        return False
-
-    @property
     def is_clock(self):
         """A condition that carries its own rate: `periodic` repeats at it, `once` never repeats."""
         return self.type in ("periodic", "once")
