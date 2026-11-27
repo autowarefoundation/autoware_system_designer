@@ -66,7 +66,7 @@ DIAGRAMS = {
     "subsystem_interface": {
         "label": "Subsystem Interface",
         "short": "Interface",
-        "icon": "M7 3H3v14h4M13 3h4v14h-4M1 7h5M1 13h5M14 10h5",
+        "icon": "M3 5V3h14v5M17 12v5H3v-2M3 11V9M1 5h4v4H1zM1 11h4v4H1zM15 8h4v4h-4z",
         "script": "js/diagrams/subsystem_interface.js",
         "searchable": False,
         "layered": False,

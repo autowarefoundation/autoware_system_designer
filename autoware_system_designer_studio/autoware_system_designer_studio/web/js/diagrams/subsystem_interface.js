@@ -184,10 +184,15 @@
         command.append(code(subsystem.launch_command), SD.widgets.copyButton(subsystem.launch_command));
         box.appendChild(command);
       }
-      if (subsystem.launch_file)
-        box.appendChild(
-          el("div", "subsystem-launch-file", `Generated launch file: ${subsystem.launch_file}`),
-        );
+      if (subsystem.launch_file) {
+        const file = el("div", "subsystem-launch-file", "Generated launch file: ");
+        if (subsystem.launch_file_path) {
+          const link = SD.editor.sourceLink(subsystem.launch_file_path, 1);
+          link.textContent = subsystem.launch_file;
+          file.appendChild(link);
+        } else file.append(subsystem.launch_file);
+        box.appendChild(file);
+      }
       return box;
     }
 

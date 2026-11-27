@@ -125,6 +125,7 @@ class SystemExport:
         package = package if isinstance(package, str) and package else self.package
         return {
             "launch_file": launch_file,
+            "launch_file_path": str(self.export_dir.parents[1] / launch_file) if launch_file else "",
             "launch_command": f"ros2 launch {package} {Path(launch_file).name}" if launch_file else "",
             "arguments": [
                 {

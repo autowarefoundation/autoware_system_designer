@@ -243,6 +243,7 @@ def test_subsystem_export_carries_its_launch_file_interface(tmp_path):
     assert subsystem.kind == "subsystem"
     assert subsystem.subsystem() == {
         "launch_file": "launch/sensing.launch.xml",
+        "launch_file_path": str(install / PKG / "share" / PKG / "launch" / "sensing.launch.xml"),
         "launch_command": "ros2 launch sensing_designs sensing.launch.xml",
         "arguments": [
             {"name": "vehicle_id", "default": None, "description": "vehicle"},
