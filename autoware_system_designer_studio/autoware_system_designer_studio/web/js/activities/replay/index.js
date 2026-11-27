@@ -596,7 +596,6 @@
     group: "Test",
     order: 25,
     daemon: false,
-    subsystem: false,
     inspector: false,
     icon: "M16 4v12M13 10l-9-6v12z",
     status: (store) => {

@@ -11,7 +11,6 @@
     title: "Build",
     order: 30,
     daemon: true,
-    subsystem: false,
     inspector: false,
     requires: ["build.start", "jobs.list", "jobs.get", "jobs.cancel"],
     icon: "M3 6.5L10 3l7 3.5v7L10 17l-7-3.5zM3 6.5L10 10l7-3.5M10 10v7",
@@ -43,7 +42,10 @@
       const hint = element("p", "panel-hint");
       const start = element("button", "panel-button primary", "Start build");
       start.type = "button";
-      side.append(field("Target", target), unitField, hint, start);
+      const targetField = field("Target", target);
+      // A subsystem builds as its package; it has no compute units.
+      targetField.hidden = config.kind === "subsystem";
+      side.append(targetField, unitField, hint, start);
 
       const jobList = element("div", "job-list");
       side.appendChild(section("Jobs", jobList));

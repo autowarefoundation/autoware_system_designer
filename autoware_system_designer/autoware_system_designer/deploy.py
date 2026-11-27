@@ -43,6 +43,7 @@ from autoware_system_designer.builder.export.json_io import (
     save_system_structure,
     save_system_structure_snapshot,
 )
+from autoware_system_designer.builder.instances.node_groups import external_containers
 from autoware_system_designer.builder.modes import apply_mode_configuration, select_modes
 from autoware_system_designer.common.deployment_config import DeploymentConfig
 from autoware_system_designer.common.exceptions import DeploymentError, ValidationError, annotate_error
@@ -263,12 +264,16 @@ class DeploymentBuilder:
                 )
             config_registry.anchor_dir = str(Path(picked_path).parent)
 
+    def _subsystem_record(self) -> Dict[str, Any]:
+        subsystem = parse_subsystem(self.deploy_config.deployment_file)
+        return {**subsystem_record(subsystem), "external_containers": external_containers(subsystem.node_groups)}
+
     def _init_artifacts(self, system_config: SystemConfig, deploy_variants: List[Dict[str, Any]]) -> BuildArtifacts:
         layout = ExportLayout(self.deploy_config.output_root_dir, system_config.name)
         is_subsystem = is_subsystem_file(self.deploy_config.deployment_file)
         return BuildArtifacts(
             kind=KIND_SUBSYSTEM if is_subsystem else KIND_SYSTEM,
-            subsystem=subsystem_record(parse_subsystem(self.deploy_config.deployment_file)) if is_subsystem else None,
+            subsystem=self._subsystem_record() if is_subsystem else None,
             layout=layout,
             workspace_root=self._export_workspace_root(),
             system_file=str(system_config.file_path),

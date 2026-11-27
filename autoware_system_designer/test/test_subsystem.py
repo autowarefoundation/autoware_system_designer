@@ -134,6 +134,13 @@ def test_subsystem_manifest_records_the_launch_file_interface(tmp_path):
         },
         {"name": "use_sim_time", "default": "false", "description": ""},
     ]
+    assert subsystem["external_containers"] == [
+        {
+            "name": "$(var pointcloud_container_name)",
+            "package": "rclcpp_components",
+            "executable": "component_container_mt",
+        }
+    ]
     assert subsystem["subscribers"] == [{"name": "pointcloud", "topic": "/sensing/lidar/concatenated/pointcloud"}]
     assert subsystem["publishers"] == [{"name": "objects", "topic": "/perception/objects"}]
     assert subsystem["servers"] == [{"name": "reset", "topic": "/perception/pipeline/reset"}]

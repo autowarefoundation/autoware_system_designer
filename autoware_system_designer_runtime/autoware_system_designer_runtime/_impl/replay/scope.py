@@ -136,6 +136,50 @@ def _under(path: str, pattern: str) -> bool:
     return path == base or path.startswith(base + "/") or base == ""
 
 
+def add_external_containers(data: dict[str, Any], containers: Iterable[Mapping[str, Any]]) -> None:
+    """Adds the containers a subsystem leaves to its launching side as nodes of the system.
+
+    A container is added when a composable node loads into it; those nodes then target its FQN.
+    """
+    composables = [
+        entity for entity in _launched_nodes(data, None) if entity["launcher"].get("launch_state") == "composable_node"
+    ]
+    for container in containers:
+        target = str(container.get("name") or "")
+        if not target or "$(" in target:
+            raise ScopeError(f"external container name {target!r} is not resolved")
+        members = [entity for entity in composables if entity["launcher"].get("container_target") == target]
+        if not members:
+            continue
+        fqn = "/" + target.strip("/")
+        namespace, _, name = fqn.rpartition("/")
+        for member in members:
+            member["launcher"]["container_target"] = fqn
+        data.setdefault("children", []).append(
+            {
+                "name": name,
+                "unique_id": f"external_container:{fqn}",
+                "entity_type": "node",
+                "namespace": namespace or "/",
+                "path": fqn,
+                "compute_unit": members[0].get("compute_unit", ""),
+                "children": [],
+                "parameters": [],
+                "launcher": {
+                    "package": container.get("package", ""),
+                    "executable": container.get("executable", ""),
+                    "node_output": "both",
+                    "args": "",
+                    "launch_state": "node_container",
+                    "ports": [],
+                    "param_values": [],
+                    "param_files": [],
+                    "launch_time_param_files": [],
+                },
+            }
+        )
+
+
 def select_scope(data: Mapping[str, Any], patterns: Sequence[str], *, ecu: Optional[str] = None) -> Scope:
     """The nodes at or under each of *patterns*, or named by one; every pattern must select at least one."""
     if not patterns:

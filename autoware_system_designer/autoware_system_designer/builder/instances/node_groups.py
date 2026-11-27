@@ -33,6 +33,20 @@ def node_group_types() -> dict[str, dict[str, Any]]:
     return types
 
 
+def external_containers(node_groups: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Containers the ``external`` groups load into, each with the executable of its type."""
+    types = node_group_types()
+    return [
+        {
+            "name": group["name"],
+            "package": types[group["type"]]["package"],
+            "executable": types[group["type"]]["executable"],
+        }
+        for group in _validate_node_groups(node_groups)
+        if group.get("external")
+    ]
+
+
 def apply_node_groups(instance: "Instance") -> None:
     """Apply system node group/container configuration to matched node instances.
 

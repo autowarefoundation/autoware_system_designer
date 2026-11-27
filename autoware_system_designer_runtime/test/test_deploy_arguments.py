@@ -121,3 +121,17 @@ def test_arg_override_syntax():
     assert parse_arg_overrides(["a=1", "path=/x=y"]) == {"a": "1", "path": "/x=y"}
     with pytest.raises(SystemExit):
         parse_arg_overrides(["novalue"])
+
+
+def test_subsystem_arguments_start_from_their_defaults(tmp_path):
+    """A subsystem has no deploy variant: its launch-argument defaults bind, overridden by --arg."""
+    json_path = _export_tree(tmp_path, [])
+    manifest = json_path.parent.parent / "deployment.json"
+    arguments = [{"name": "vehicle_id", "default": "default"}, {"name": "map_path", "default": None}]
+    manifest.write_text(json.dumps({"kind": "subsystem", "subsystem": {"arguments": arguments}}))
+    structure = {"data": {"parameters": [{"name": "calibration_file", "value": "/cal/$(var vehicle_id)/lidar.csv"}]}}
+
+    bound = bind_deploy_arguments(structure, str(json_path), deploy=None, overrides={})
+    assert bound["data"]["parameters"][0]["value"] == "/cal/default/lidar.csv"
+    bound = bind_deploy_arguments(structure, str(json_path), deploy=None, overrides={"vehicle_id": "car_a"})
+    assert bound["data"]["parameters"][0]["value"] == "/cal/car_a/lidar.csv"
