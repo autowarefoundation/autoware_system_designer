@@ -6,7 +6,7 @@ from autoware_system_designer.builder.config.launch_manager import LaunchManager
 from autoware_system_designer.builder.instances.node_groups import apply_node_groups
 from autoware_system_designer.builder.parameters.parameter_set_applier import apply_parameter_set
 from autoware_system_designer.common.exceptions import ValidationError, error_context
-from autoware_system_designer.common.source_location import SourceLocation, format_source, source_from_config
+from autoware_system_designer.common.source_location import SourceLocation
 from autoware_system_designer.model.namespace import Namespace
 from autoware_system_designer.model.parameters import ParameterType
 from autoware_system_designer.parser.data_validator import entity_name_decode
@@ -129,9 +129,6 @@ def set_system_instances(instance: "Instance", config_registry: "ConfigRegistry"
     # Third pass: set node groups.
     apply_node_groups(instance)
 
-    # all children are initialized
-    instance.is_initialized = True
-
 
 def set_module_instances(
     instance: "Instance",
@@ -147,19 +144,17 @@ def set_module_instances(
     )
     instance.entity_type = "module"
 
-    # check if the module is already set
-    if entity_id in instance.parent_module_list:
+    # A module is identified by its design file: one entity can be referenced under several spellings.
+    module_id = instance.source_file or entity_id
+    if module_id in instance.parent_module_list:
         raise ValidationError(f"Config is already set: {entity_id}, avoid circular reference")
-    instance.parent_module_list.append(entity_id)
+    instance.parent_module_list.append(module_id)
 
     # set children
     create_module_children(instance, config_registry)
 
     # run the module configuration
     run_module_configuration(instance)
-
-    # recursive call is finished
-    instance.is_initialized = True
 
 
 def set_node_instances(
@@ -179,9 +174,6 @@ def set_node_instances(
 
     # run the node configuration
     run_node_configuration(instance, config_registry)
-
-    # recursive call is finished
-    instance.is_initialized = True
 
 
 def create_module_children(instance: "Instance", config_registry: "ConfigRegistry") -> None:
@@ -229,13 +221,7 @@ def run_module_configuration(instance: "Instance") -> None:
             f"run_module_configuration is only supported for module, at {instance.configuration.file_path}"
         )
 
-    # set connections
-    if len(instance.configuration.connections) == 0:
-        cfg_src = source_from_config(instance.configuration, "/connections")
-        logger.warning(f"Module '{instance.name}' has no connections configured{format_source(cfg_src)}")
-        return
-
-    # set links first to know topic type for external ports
+    # link the children; the links create the module's boundary ports
     instance.link_manager.set_links()
 
     # log module configuration

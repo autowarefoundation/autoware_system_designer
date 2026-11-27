@@ -104,3 +104,17 @@ body {
 .toggle-switch.active::after {
   transform: translateX(26px);
 }
+
+/* Tag beside the name of a target that is not a system */
+.kind-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-hover);
+  border-radius: 8px;
+  vertical-align: middle;
+}

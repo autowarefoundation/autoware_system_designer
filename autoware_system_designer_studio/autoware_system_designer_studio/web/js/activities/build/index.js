@@ -42,7 +42,10 @@
       const hint = element("p", "panel-hint");
       const start = element("button", "panel-button primary", "Start build");
       start.type = "button";
-      side.append(field("Target", target), unitField, hint, start);
+      const targetField = field("Target", target);
+      // A subsystem builds as its package; it has no compute units.
+      targetField.hidden = config.kind === "subsystem";
+      side.append(targetField, unitField, hint, start);
 
       const jobList = element("div", "job-list");
       side.appendChild(section("Jobs", jobList));

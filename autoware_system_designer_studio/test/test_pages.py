@@ -114,7 +114,7 @@ def test_config_quotes_strings_as_json(tmp_path):
         "searchable": True,
         "layered": True,
     }
-    assert [d["type"] for d in diagrams] == list(assets.DIAGRAMS)
+    assert [d["type"] for d in diagrams] == [name for name, d in assets.DIAGRAMS.items() if "kinds" not in d]
     assert "treemap" not in assets.DIAGRAMS
     assert "js/diagrams/treemap.js" in assets.WORKBENCH_SCRIPTS
 
@@ -197,10 +197,98 @@ def test_config_lists_the_systems_of_the_site_for_the_selector(tmp_path):
             "id": system.id,
             "name": SYSTEM,
             "package": PKG,
+            "kind": "system",
             "page": f"{SITE}/index.html",
             "icon": f"{SITE}/icon.svg",
         }
     ]
+
+
+SUBSYSTEM = "sensing"
+SUBSYSTEM_RECORD = {
+    "launch_file": "launch/sensing.launch.xml",
+    "arguments": [{"name": "vehicle_id", "default": None, "description": "vehicle"}, {"name": "rate", "default": 10}],
+    "subscribers": [{"name": "velocity", "topic": "/vehicle/status/velocity_status"}],
+    "publishers": [{"name": "pointcloud", "topic": "/sensing/lidar/pointcloud"}],
+    "servers": [{"name": "reset", "topic": "/sensing/reset"}],
+    "system_launches": [
+        {"package": "loader", "file": "launch/params.launch.py", "arguments": [{"name": "sim", "value": True}]}
+    ],
+}
+
+
+def _subsystem(install):
+    """A subsystem export beside the system of the install tree."""
+    export = install / PKG / "share" / PKG / "exports" / SUBSYSTEM
+    (export / "system_structure").mkdir(parents=True)
+    structure = {"schema_version": "1.2", "metadata": {"compute_units": []}, "data": {"path": "/", "in_ports": []}}
+    (export / "system_structure" / "default.json").write_text(json.dumps(structure))
+    manifest = {
+        "kind": "subsystem",
+        "subsystem": SUBSYSTEM_RECORD,
+        "deployment_package_name": "sensing_designs",
+        "default_mode": "default",
+        "mode_keys": ["default"],
+        "launch_units": {"default": []},
+    }
+    (export / "deployment.json").write_text(json.dumps(manifest))
+    systems, _ = exports.discover_systems(install)
+    return next(s for s in systems if s.name == SUBSYSTEM), systems
+
+
+def test_subsystem_export_carries_its_launch_file_interface(tmp_path):
+    install, system = _system(tmp_path)
+    subsystem, _ = _subsystem(install)
+    assert system.kind == "system" and system.subsystem() is None
+    assert subsystem.kind == "subsystem"
+    assert subsystem.subsystem() == {
+        "launch_file": "launch/sensing.launch.xml",
+        "launch_file_path": str(install / PKG / "share" / PKG / "launch" / "sensing.launch.xml"),
+        "launch_command": "ros2 launch sensing_designs sensing.launch.xml",
+        "arguments": [
+            {"name": "vehicle_id", "default": None, "description": "vehicle"},
+            {"name": "rate", "default": "10", "description": ""},
+        ],
+        "subscribers": [{"name": "velocity", "topic": "/vehicle/status/velocity_status"}],
+        "publishers": [{"name": "pointcloud", "topic": "/sensing/lidar/pointcloud"}],
+        "servers": [{"name": "reset", "topic": "/sensing/reset"}],
+        "clients": [],
+        "system_launches": [
+            {
+                "package": "loader",
+                "file": "launch/params.launch.py",
+                "scoped": True,
+                "arguments": [{"name": "sim", "value": "True"}],
+            }
+        ],
+    }
+    assert subsystem.to_view(None, {})["kind"] == "subsystem"
+
+
+def test_subsystem_pages_carry_the_kind_and_the_interface_view(tmp_path):
+    install, system = _system(tmp_path)
+    subsystem, systems = _subsystem(install)
+    site = Site(systems)
+    base = f"systems/{PKG}/{SUBSYSTEM}"
+
+    text = site.render(f"{base}/config.js")
+    assert 'kind: "subsystem"' in text
+    assert json.loads(text.partition("subsystem: ")[2].partition(",\n")[0]) == subsystem.subsystem()
+    diagrams = json.loads(text.partition("diagrams: ")[2].partition(",\n")[0])
+    assert [d["type"] for d in diagrams] == list(assets.DIAGRAMS)
+    assert "kinds" not in diagrams[-1]
+    assert json.loads(text.partition("launchCommands: ")[2].rpartition("\n};")[0]) == []
+    # Systems precede the subsystems of their package in the selector.
+    listed = json.loads(text.partition("systems: ")[2].partition(",\n")[0])
+    assert [(s["name"], s["kind"]) for s in listed] == [(SYSTEM, "system"), (SUBSYSTEM, "subsystem")]
+
+    system_config = site.render(f"{SITE}/config.js")
+    assert 'kind: "system"' in system_config and "subsystem: null" in system_config
+    system_diagrams = json.loads(system_config.partition("diagrams: ")[2].partition(",\n")[0])
+    assert "subsystem_interface" not in [d["type"] for d in system_diagrams]
+
+    index = site.render("index.html")
+    assert index.count('class="kind-tag"') == 1
 
 
 def test_system_icon_is_its_own_file_else_a_default_per_system(tmp_path):

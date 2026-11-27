@@ -85,10 +85,6 @@ class Event:
         return generate_unique_id(self.namespace, "event", self.name)
 
     @property
-    def is_port_event(self):
-        return False
-
-    @property
     def is_clock(self):
         """A condition that carries its own rate: `periodic` repeats at it, `once` never repeats."""
         return self.type in ("periodic", "once")
@@ -271,8 +267,8 @@ class QueueEvent(Event):
 
 
 class EventChain(Event):
-    def __init__(self, name: str, namespace: List[str] = [], is_process_event=True):
-        super().__init__(name, namespace, is_process_event)
+    def __init__(self, name: str, namespace: Optional[List[str]] = None, is_process_event=True):
+        super().__init__(name, [] if namespace is None else namespace, is_process_event)
         self.chain_list = ["and", "or"]
         self.children: List[Event] = []
 

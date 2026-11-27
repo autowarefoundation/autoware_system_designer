@@ -16,8 +16,10 @@
 
 import os
 import re
+import xml.etree.ElementTree as ET
 from functools import lru_cache
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any, Optional, Tuple
 
 from autoware_system_designer.common.exceptions import ValidationError
 
@@ -54,6 +56,16 @@ def canonical_path(path: str) -> str:
 def resolve_manifest_path(path: str, anchor: str) -> str:
     """Canonical absolute path of a manifest entry; relative entries are joined to the anchor."""
     return canonical_path(path if os.path.isabs(path) else os.path.join(anchor, path))
+
+
+def owning_package(path: str) -> Tuple[Optional[str], Optional[Path]]:
+    """Name and directory of the nearest package.xml above path; (None, None) without one."""
+    for directory in Path(path).resolve().parents:
+        package_xml = directory / "package.xml"
+        if package_xml.is_file():
+            name = ET.parse(package_xml).getroot().findtext("name")
+            return (name.strip() if name else None), directory
+    return None, None
 
 
 def is_within(path: str, root: str) -> bool:

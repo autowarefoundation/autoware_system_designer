@@ -1,0 +1,52 @@
+name: pipeline
+
+instance:
+  name: pipeline
+  entity: Pipeline.module
+  path: /perception/pipeline
+  parameter_set: [Pipeline.parameter_set]
+
+arguments:
+  - name: score_threshold
+    default: 0.3
+  - name: pointcloud_container_name
+    default: pointcloud_container
+    description: container started by the caller
+  - name: use_sim_time
+    default: false
+
+subscribers:
+  - name: pointcloud
+    topic: /sensing/lidar/concatenated/pointcloud
+
+publishers:
+  - name: objects
+    topic: /perception/objects
+
+servers:
+  - name: reset
+    topic: /perception/pipeline/reset
+
+clients:
+  - name: get_config
+    topic: /api/perception/get_config
+
+system_launches:
+  - package: autoware_global_parameter_loader
+    file: launch/global_params.launch.py
+    scoped: false
+    arguments:
+      - name: use_sim_time
+        value: $(var use_sim_time)
+
+node_groups:
+  - name: $(var pointcloud_container_name)
+    type: ros2_component_container_mt
+    external: true
+    nodes:
+      - /perception/pipeline/filter_primary
+  - name: pipeline_container
+    type: ros2_component_container_mt
+    nodes:
+      - /perception/pipeline/filter_secondary
+      - /perception/pipeline/node_merger

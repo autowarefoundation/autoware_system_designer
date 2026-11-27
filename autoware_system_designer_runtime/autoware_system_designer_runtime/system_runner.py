@@ -60,9 +60,16 @@ def _deploy_arguments(
     deploy: Optional[str],
     overrides: Mapping[str, str],
 ) -> dict[str, str]:
-    """Argument bindings for one deploy variant, with ``--arg`` values layered on top."""
+    """Argument bindings for one deploy variant, with ``--arg`` values layered on top.
+
+    The launch arguments of a subsystem start from their defaults.
+    """
     variants = {v.get("name"): v for v in manifest.get("deploy_variants", []) if isinstance(v, dict)}
-    arguments: dict[str, str] = {}
+    arguments: dict[str, str] = {
+        item["name"]: str(item["default"])
+        for item in subsystem_record(manifest).get("arguments", [])
+        if isinstance(item, dict) and item.get("name") and item.get("default") is not None
+    }
     if deploy is not None:
         variant = variants.get(deploy)
         if variant is None:
@@ -73,6 +80,17 @@ def _deploy_arguments(
                 arguments[item["name"]] = str(item.get("value", ""))
     arguments.update({k: str(v) for k, v in overrides.items()})
     return resolve_argument_values(arguments)
+
+
+def subsystem_record(manifest: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Launch-file interface a subsystem manifest carries; empty for a system."""
+    record = manifest.get("subsystem")
+    return record if isinstance(record, dict) else {}
+
+
+def deploy_arguments(json_path: str, *, deploy: Optional[str], overrides: Mapping[str, str]) -> dict[str, str]:
+    """Argument bindings of the export holding *json_path*."""
+    return _deploy_arguments(read_manifest(Path(json_path)) or {}, deploy, overrides)
 
 
 def bind_deploy_arguments(

@@ -92,6 +92,7 @@ from ._impl.replay.scope import (
     Boundary,
     Scope,
     ScopeError,
+    add_external_containers,
     compute_boundary,
     replay_structure,
     scope_launch_files,
@@ -100,7 +101,8 @@ from ._impl.replay.scope import (
     unconnected_ports,
 )
 from ._impl.replay.verdict import Verdict, compare_outputs, digest, group_by_topic, ros_deserialize
-from .export_tree import resolve_structure_paths
+from ._impl.ros2.common.substitutions import bind_variables
+from .export_tree import read_manifest, resolve_structure_paths
 from .replay_record import (
     BOUNDARY_FILE,
     EXIT_DIFFERS,
@@ -119,7 +121,13 @@ from .replay_record import (
 )
 from .run_log import LOG_BASE, REPLAY_LOGS, member_dir_name, tail_lines, write_run_manifest
 from .special_topics import special_topics
-from .system_runner import bind_deploy_arguments, parse_arg_overrides, setup_logging
+from .system_runner import (
+    bind_deploy_arguments,
+    deploy_arguments,
+    parse_arg_overrides,
+    setup_logging,
+    subsystem_record,
+)
 
 logger = logging.getLogger("autoware_system_designer")
 
@@ -382,6 +390,13 @@ def _bag_clock(bag: BagInfo, topic: str) -> BagClock:
     return clock
 
 
+def _external_containers(json_path: str, options: ReplayOptions) -> list[dict[str, Any]]:
+    """Containers the subsystem of *json_path* expects from its launching side, their names bound."""
+    record = subsystem_record(read_manifest(Path(json_path)) or {})
+    arguments = deploy_arguments(json_path, deploy=options.deploy, overrides=options.arguments)
+    return bind_variables([c for c in record.get("external_containers", []) if isinstance(c, dict)], arguments)
+
+
 def _prepare(json_path: str, options: ReplayOptions) -> _Plan:
     """Selects the scope, checks the bag against its boundary and writes the boundary report."""
     _progress(PHASE_PRE, "selecting the scope")
@@ -392,6 +407,7 @@ def _prepare(json_path: str, options: ReplayOptions) -> _Plan:
             payload = json.load(handle)
         payload = resolve_structure_paths(payload, json_path)
         payload = bind_deploy_arguments(payload, json_path, deploy=options.deploy, overrides=options.arguments)
+        add_external_containers(payload["data"], _external_containers(json_path, options))
         patterns = list(options.scope) + [p for p in config.scope if p not in options.scope]
         scope = select_scope(payload["data"], patterns, ecu=options.ecu)
         boundary = compute_boundary(payload, scope)

@@ -49,6 +49,10 @@ ICON_MAX_BYTES = 256 * 1024
 # Reference latency shapes the designer exports, in preference order.
 REFERENCE_LATENCY_SUFFIXES = (".json", ".js")
 
+# Kind of an exported target; a manifest without one is a system.
+TARGET_SYSTEM = "system"
+TARGET_SUBSYSTEM = "subsystem"
+
 KIND_ONBOARD = "onboard"
 KIND_OFFBOARD = "offboard"
 
@@ -104,6 +108,51 @@ class SystemExport:
             return ""
         root = derive_workspace_root(self.export_dir / STRUCTURE_SUBDIR / MANIFEST_FILENAME)
         return expand_workspace_paths(path, root) if root else path
+
+    @property
+    def kind(self) -> str:
+        return TARGET_SUBSYSTEM if self.manifest.get("kind") == TARGET_SUBSYSTEM else TARGET_SYSTEM
+
+    def subsystem(self) -> Optional[dict[str, Any]]:
+        """Launch-file interface of a subsystem and the command launching it; None for a system."""
+        if self.kind != TARGET_SUBSYSTEM:
+            return None
+        record = self.manifest.get("subsystem")
+        record = record if isinstance(record, dict) else {}
+        launch_file = record.get("launch_file")
+        launch_file = launch_file if isinstance(launch_file, str) else ""
+        package = self.manifest.get("deployment_package_name")
+        package = package if isinstance(package, str) and package else self.package
+        return {
+            "launch_file": launch_file,
+            "launch_file_path": str(self.export_dir.parents[1] / launch_file) if launch_file else "",
+            "launch_command": f"ros2 launch {package} {Path(launch_file).name}" if launch_file else "",
+            "arguments": [
+                {
+                    "name": item["name"],
+                    "default": None if item.get("default") is None else str(item["default"]),
+                    "description": str(item.get("description") or ""),
+                }
+                for item in _named_records(record.get("arguments"))
+            ],
+            "subscribers": _interface_ports(record.get("subscribers")),
+            "publishers": _interface_ports(record.get("publishers")),
+            "servers": _interface_ports(record.get("servers")),
+            "clients": _interface_ports(record.get("clients")),
+            "system_launches": [
+                {
+                    "package": str(item.get("package") or ""),
+                    "file": str(item.get("file") or ""),
+                    "scoped": item.get("scoped") is not False,
+                    "arguments": [
+                        {"name": argument["name"], "value": str(argument.get("value", ""))}
+                        for argument in _named_records(item.get("arguments"))
+                    ],
+                }
+                for item in (record.get("system_launches") or [])
+                if isinstance(item, dict)
+            ],
+        }
 
     def icon_file(self) -> Optional[Path]:
         """The system's own icon; None without one beside the design file, or when it is oversized."""
@@ -225,6 +274,7 @@ class SystemExport:
             "id": self.id,
             "package": self.package,
             "name": self.name,
+            "kind": self.kind,
             "default_mode": default_mode if isinstance(default_mode, str) else None,
             "modes": [
                 {"name": mode, "has_structure": (structure_dir / f"{mode}.json").is_file()} for mode in self.mode_keys()
@@ -234,6 +284,16 @@ class SystemExport:
             "deploy_variants": self.deploy_variants(),
             "pages": pages,
         }
+
+
+def _named_records(value: Any) -> list[dict]:
+    """Records of a manifest list that carry a name."""
+    items = value if isinstance(value, list) else []
+    return [item for item in items if isinstance(item, dict) and isinstance(item.get("name"), str)]
+
+
+def _interface_ports(value: Any) -> list[dict[str, str]]:
+    return [{"name": item["name"], "topic": str(item.get("topic") or "")} for item in _named_records(value)]
 
 
 def _unit_status(unit: dict[str, str], served: Optional[set[str]]) -> str:

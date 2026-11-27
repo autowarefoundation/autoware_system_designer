@@ -18,7 +18,7 @@ from typing import ClassVar, List, Optional
 
 from autoware_system_designer.common.exceptions import DeploymentError, ValidationError
 from autoware_system_designer.common.naming import generate_unique_id
-from autoware_system_designer.common.source_location import SourceLocation
+from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.model.ports import InPort, OutPort, Port
 
 
@@ -46,25 +46,14 @@ class Link:
         msg_type: str,
         from_port: Port,
         to_port: Port,
-        namespace: List[str] = [],
+        namespace: Optional[List[str]] = None,
         connection_type: ConnectionType = ConnectionType.UNDEFINED,
     ):
         self.msg_type = msg_type
         self.from_port = from_port
         self.to_port = to_port
-        self.namespace = namespace
+        self.namespace = [] if namespace is None else namespace
         self.connection_type = connection_type
-        # early validation to avoid AttributeError later and provide clearer configuration error
-        if self.from_port is None or self.to_port is None:
-            # build contextual details safely
-            from_name = getattr(self.from_port, "name", "<none>")
-            to_name = getattr(self.to_port, "name", "<none>")
-            raise ValidationError(
-                "Invalid link configuration: one or more ports are None. "
-                f"msg_type={self.msg_type}, from_port={from_name}, to_port={to_name}, connection_type={self.connection_type.name}. "
-                "This usually indicates a typo or undefined port name in a connection definition."
-            )
-
         self._check_connection()
 
     @property
@@ -73,12 +62,8 @@ class Link:
 
     @property
     def topic(self):
-        """Get the topic name for this link."""
-        # Get topic from the from_port's reference port, as that's where topics are typically set
-        from_port_ref = (
-            self.from_port.get_reference_list()[0] if self.from_port.get_reference_list() else self.from_port
-        )
-        return from_port_ref.get_topic()
+        """Topic of the node port the from-port stands for."""
+        return self.from_port.get_reference_list()[0].get_topic()
 
     def _check_connection(self):
         # if the from port is OutPort, it is internal port
@@ -137,7 +122,6 @@ class Link:
         # case 2: from internal output to external output
         elif is_from_port_internal and not is_to_port_internal:
             # The external port references its direct child; nested module ports chain down to the node port.
-            # Note: set_references() will validate that OutPort (to_port) has at most one reference
             self.to_port.set_references([self.from_port])
             # The module output names the published topic in the module layer, whether it is
             # connected or not; a preset topic (remap or global) is kept.
@@ -154,8 +138,8 @@ class Link:
             else:
                 node_port.set_topic(self.to_port.namespace, self.to_port.name)
 
-        # case 3: from external input to internal input
-        elif not is_from_port_internal and is_to_port_internal:
+        # case 3: from external input to internal input; a connection never joins two boundary ports
+        else:
             # The external port references its direct child; nested module ports chain down to the node ports.
             self.from_port.set_references([self.to_port])
             # A port attached after the external port is connected subscribes to the same publishers.
@@ -165,26 +149,18 @@ class Link:
                 for server_port in self.from_port.servers:
                     server_port.set_users(self.to_port.get_chain_list())
 
-        # case 4: from-port is InPort and to-port is OutPort
-        #   bypass connection, which is invalid
-        else:
-            raise ValidationError(
-                "Invalid connection direction: InPort cannot be a source for OutPort. "
-                f"Connection attempted: {getattr(self.from_port, 'name', '<unknown>')} -> {getattr(self.to_port, 'name', '<unknown>')}. "
-                "Ensure 'from' refers to an output and 'to' refers to an input in the configuration YAML."
-            )
-
 
 class Connection:
     # Connection is a connection between two entities
     # In other words, it is a configuration to create link(s)
     def __init__(self, connection_dict: list | dict, source: Optional[SourceLocation] = None):
-
         self.source = source
+        try:
+            self._parse(connection_dict)
+        except DeploymentError as exc:
+            raise DeploymentError(f"{exc.message}{format_source(source)}", source=source) from exc
 
-        # connection type
-        self.type: ConnectionType = ConnectionType.UNDEFINED
-
+    def _parse(self, connection_dict: list | dict) -> None:
         # Handle dictionary format: extract values regardless of keys
         if isinstance(connection_dict, dict):
             values = list(connection_dict.values())
@@ -208,7 +184,7 @@ class Connection:
         port1_instance, port1_type, port1_name = self._parse_port_name(port1_str)
 
         # Determine connection type and direction
-        self.type = self._determine_connection_type(
+        self.type: ConnectionType = self._determine_connection_type(
             port0_instance, port0_type, port1_instance, port1_type, connection_dict
         )
         port0_is_from = self._determine_direction(self.type, port0_instance, port0_type, port1_type, connection_dict)
@@ -225,8 +201,14 @@ class Connection:
         self.to_port_name: str = to_port[1]
         self.to_is_external: bool = not to_port[0]
         self.to_port_type: str = port1_type if port0_is_from else port0_type
+        self.has_wildcard: bool = any(
+            char in text
+            for text in (self.from_instance, self.from_port_name, self.to_instance, self.to_port_name)
+            for char in self.WILDCARDS
+        )
 
     PORT_TYPES: ClassVar[tuple] = ("publisher", "subscriber", "server", "client")
+    WILDCARDS: ClassVar[str] = "*^+"
 
     @staticmethod
     def _parse_port_name(port_name: str) -> tuple[str, str, str]:  # (instance_name, port_type, port_name)
@@ -281,7 +263,7 @@ class Connection:
                 return ConnectionType.EXTERNAL_TO_INTERNAL
 
         # Neither port has an instance: invalid
-        raise DeploymentError(f"Invalid connection scope combination: {connection_dict}")
+        raise DeploymentError(f"[E_CONN_SCOPE] A connection cannot join two boundary ports: {connection_dict}")
 
     @staticmethod
     def _determine_direction(
@@ -302,18 +284,15 @@ class Connection:
             # Valid pairs: (subscriber, publisher) or (client, server) -> port1 is from
             if (port0_type, port1_type) in [("subscriber", "publisher"), ("client", "server")]:
                 return False
-            raise DeploymentError(f"Invalid internal connection type: {connection_dict}")
+            raise DeploymentError(
+                "[E_CONN_KIND] A publisher connects to a subscriber and a server to a client: " f"{connection_dict}"
+            )
 
         # External connections: port types must match
         if port0_type != port1_type:
-            raise DeploymentError(f"Invalid external connection type: {connection_dict}")
+            raise DeploymentError(
+                f"[E_CONN_KIND] A boundary port connects to a child port of its own kind: {connection_dict}"
+            )
 
-        # For INTERNAL_TO_EXTERNAL: internal port (with instance) is output type and is the 'from' port
-        if connection_type == ConnectionType.INTERNAL_TO_EXTERNAL:
-            return has_port0_instance
-
-        # For EXTERNAL_TO_INTERNAL: internal port (with instance) is input type, external port is 'from'
-        if connection_type == ConnectionType.EXTERNAL_TO_INTERNAL:
-            return not has_port0_instance
-
-        raise DeploymentError(f"Invalid connection type for direction determination: {connection_dict}")
+        # INTERNAL_TO_EXTERNAL: the child port is the 'from' port; EXTERNAL_TO_INTERNAL: the boundary port is.
+        return has_port0_instance == (connection_type == ConnectionType.INTERNAL_TO_EXTERNAL)

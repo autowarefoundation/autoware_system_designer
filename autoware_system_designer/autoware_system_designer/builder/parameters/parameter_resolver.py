@@ -359,6 +359,9 @@ class ParameterResolver:
 
         if resolved_package in self.package_paths:
             return self.package_paths[resolved_package]
+        if "$(" in resolved_package:
+            # The name holds a launch argument; ros2 launch resolves it.
+            return match.group(0)
         else:
             logger.warning(
                 f"Package not found in manifest: $(find-pkg-share {resolved_package}){format_source(self._source_context)}"

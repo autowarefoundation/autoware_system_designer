@@ -23,11 +23,15 @@ Traditional ROS 2 launch files can become complex and hard to manage as a system
 
 ## Core Concepts
 
-The system is built upon four main entity types:
+Design files come in two groups. The **main formats** describe the architecture. The **sub formats** select what a build generates from it.
+
+### Main Formats
+
+The system is built upon four main entity types. Their files declare `autoware_system_design_format`, are validated against the schema of that version and are collected from every package into one design registry.
 
 ![Configuration Structure](autoware_system_designer/doc/images/configuration_structure.png)
 
-### 1. Node (`*.node.yaml`)
+#### 1. Node (`*.node.yaml`)
 
 Represents a single ROS 2 node. It defines:
 
@@ -37,7 +41,7 @@ Represents a single ROS 2 node. It defines:
 - **Parameters**: Configuration variables (inline or via parameter files).
 - **Processes**: Internal logic flow with trigger conditions and outcomes.
 
-### 2. Module (`*.module.yaml`)
+#### 2. Module (`*.module.yaml`)
 
 A container for grouping nodes and other sub-modules. It defines:
 
@@ -45,7 +49,7 @@ A container for grouping nodes and other sub-modules. It defines:
 - **Connections**: Wiring between internal components.
 - **External Interfaces**: Ports exposed to the outside world.
 
-### 3. System (`*.system.yaml`)
+#### 3. System (`*.system.yaml`)
 
 The top-level description of a complete autonomous driving system. It defines:
 
@@ -55,9 +59,109 @@ The top-level description of a complete autonomous driving system. It defines:
 - **Connections**: Data flow between components.
 - **Modes**: Operation modes (e.g., Runtime, Simulation) with mode-specific overrides.
 
-### 4. Parameter Set (`*.parameter_set.yaml`)
+#### 4. Parameter Set (`*.parameter_set.yaml`)
 
 A collection of parameter overrides that can be applied to specific nodes in a system, allowing for flexible configuration management without modifying the core node definitions.
+
+A parameter file is read at build time when its path resolves to a file: system variables resolve, and `$(find-pkg-share <package>)` resolves for a package among the collected designs. A path that keeps a launch argument, including inside a package name such as `$(find-pkg-share $(var vehicle_model)_description)`, or names a package outside the collected designs, is loaded by the launcher at launch time.
+
+### Sub Formats
+
+A sub format file is a build input of `autoware_system_designer_build_deploy`, read only by the package that builds it. It is plain YAML checked by its parser, without a schema, and names main-format entities to build.
+
+#### Deployment (`*.deployments.yaml`)
+
+A deployments table instantiates one system for each listed environment or vehicle. It defines:
+
+- **Base**: The system to deploy.
+- **Deploy List**: The deployments, each with a name and the values of the system arguments.
+
+```yaml
+base: TypeAlpha.system
+
+deploy_list:
+  - name: vehicle_x
+    arguments:
+      - name: vehicle_id
+        value: vehicle_x
+```
+
+#### Subsystem (`*.subsystem.yaml`)
+
+A subsystem launches one instance (a module or a node) behind a fixed launch-file interface, so a hand-written entry launch file can be replaced by a generated one at the same path. It holds a part of a system, never a system: a whole system is built and launched through its deployments. It is not part of any system; a system instantiates the same module.
+
+```yaml
+name: perception # launch file stem; equals the file name stem
+
+instance: # the module or node the subsystem launches
+  name: perception
+  entity: Perception.module
+  path: /perception
+  parameter_set: [sample_system_perception.parameter_set]
+
+arguments: # launch arguments of the generated file
+  - name: use_sim_time
+    default: false
+  - name: pointcloud_container_name
+    default: pointcloud_container
+variables: # build-time values, as in a system
+  - name: sensor_model
+    value: sample_sensor_kit
+
+subscribers: # external interface: instance ports bound to topics
+  - name: concatenated_pointcloud
+    topic: /sensing/lidar/concatenated/pointcloud
+  - name: vector_map
+    topic: /map/vector_map
+publishers:
+  - name: object_recognition/objects
+    topic: /perception/object_recognition/objects
+servers: # services the instance offers, bound to service names
+  - name: reset
+    topic: /perception/reset
+clients: # services the instance calls
+  - name: get_route
+    topic: /api/routing/get_route
+
+system_launches: # launch files included ahead of the instance, e.g. the global parameter loader
+  - package: autoware_global_parameter_loader
+    file: launch/global_params.launch.py
+    scoped: false # default true; false applies its parameters to the whole launch file
+    arguments:
+      - name: use_sim_time
+        value: $(var use_sim_time)
+
+node_groups: # as in a system; `external` loads into a container the caller starts
+  - name: $(var pointcloud_container_name)
+    type: ros2_component_container_mt
+    external: true
+    nodes: [/perception/obstacle_segmentation/*]
+```
+
+The subsystem builds as a system on one compute unit whose boundary ports are the interface ports. An interface port carries the name of the instance port it binds to its topic; instance ports left out keep the topic the design gives them.
+
+The generated launch file follows the layout of a hand-written entry launch file:
+
+1. arguments, with their defaults
+2. external interfaces as arguments: `input/<subscriber or client>` and `output/<publisher or server>`, defaulting to their topic or service names
+3. system launches
+4. the nodes, in groups that push one namespace segment each; containers come first in their group
+
+Node remaps reach interface topics through the interface arguments, so overriding an interface argument rewires every node on that topic. A topic is bound by one interface port, so each interface argument rewires its own topic. Interface ports exporting global publishers are the exception: they may share their global topic, which they keep, and they get no argument.
+
+Node parameters resolved at build time are written to `exports/<name>/config/<node path>.param.yaml`, inside the export tree the designer owns and apart from the package's own `config/`, and loaded with `$(find-pkg-share <package>)`. Values carrying a substitution (`$(var ...)`) stay inline, and parameter files whose path is only known at launch time are loaded in place, keeping the launch order of default, override and mode parameters. Paths under a package directory are written as `$(find-pkg-share <package>)/...`, so the output does not depend on the workspace it was generated in.
+
+The export manifest (`exports/<name>/deployment.json`) records `kind: subsystem` and the launch-file interface: the launch file, its arguments, the interface ports with their topics and the system launches. The studio lists a subsystem beside the systems of its package. Its node diagram draws the interface ports on the subsystem box, labelled with their topics, and the Interface view lists the launch command, the arguments, the interface and the instance. The studio builds the package of a subsystem and replays a scope of it from a rosbag: the launch arguments take their defaults, and the replay starts the containers of the `external` node groups. A subsystem is not launched from the studio.
+
+A subsystem can also be generated outside a package build:
+
+```bash
+# Writes launch/sensing.launch.xml and exports/sensing/config/ into the package owning the subsystem file.
+python3 <autoware_system_designer>/script/generate_subsystem.py <pkg>/design/sensing.subsystem.yaml \
+  [--output-root <dir>] [--package <name>] [--workspace-root <dir>] [--source-only] [--exports-dir <dir>]
+```
+
+Packages resolve against the workspace install when it exists, otherwise against the sources (`--source-only` forces this). `--package` names the package installing the output, `--workspace-root` the workspace to resolve packages in, and `--exports-dir` keeps the rest of the build output. Parameter files generated during a package build exist only in the install.
 
 ## Project Structure
 
@@ -65,12 +169,13 @@ To use Autoware System Designer in your ROS 2 package, organize your files as fo
 
 ```text
 src/<package_name>/
-├── design/
+├── design/             # Main formats
 │   ├── node/           # *.node.yaml
 │   ├── module/         # *.module.yaml
 │   ├── system/         # *.system.yaml
-│   └── parameter_set/  # *.parameter_set.yaml
-├── deployment/         # *.deployment.yaml (System instantiation)
+│   ├── parameter_set/  # *.parameter_set.yaml
+│   └── subsystem/      # Sub format: <name>.subsystem.yaml (an instance behind a generated launch file)
+├── deployment/         # Sub format: *.deployments.yaml (System instantiation)
 ├── schema/             # *.schema.json (Parameter schemas)
 ├── CMakeLists.txt
 └── package.xml
@@ -101,6 +206,14 @@ autoware_system_designer_build_deploy(
   PRINT_LEVEL=WARNING
   STRICT=AUTO  # AUTO|ON|OFF (AUTO follows AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT)
 )
+
+# 4. Build a subsystem (Optional)
+# Generates share/<package>/launch/sensing.launch.xml from sensing.subsystem.yaml under design/.
+# See "Subsystem" under "Sub Formats".
+autoware_system_designer_build_deploy(
+  ${PROJECT_NAME}
+  sensing.subsystem
+)
 ```
 
 ## Use as an independent workspace
@@ -130,12 +243,13 @@ xdg-open ~/studio_view/index.html
 
 ## Glossary
 
-### Entity Definitions
+### Entity Definitions (Main Formats)
 
 - **System**: The complete software stack.
 - **Module**: A reusable group of nodes/modules.
 - **Node**: An atomic software unit (process).
 - **Parameter Set**: Configuration overrides.
+- **Component**: A top-level instance within a System.
 
 ### Connectivity
 
@@ -148,7 +262,7 @@ xdg-open ~/studio_view/index.html
 - **Process**: A logical unit of execution within a node (e.g., a callback).
 - **Event**: A runtime occurrence of a process.
 
-### Instantiation
+### Instantiation (Sub Formats)
 
 - **Deployment**: A specific instance of a System tailored for an environment/vehicle.
-- **Component**: A top-level instance within a System.
+- **Subsystem**: One instance launched behind a generated entry launch file with fixed topics and launch arguments.

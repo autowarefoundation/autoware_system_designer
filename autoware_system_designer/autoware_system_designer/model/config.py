@@ -119,6 +119,7 @@ class NodeGroupDict(TypedDict, total=False):
     name: str
     type: str
     nodes: List[str]
+    external: bool
 
 
 class ParameterSetItemDict(TypedDict, total=False):
@@ -222,3 +223,6 @@ class SystemConfig(Config):
     variable_files: Optional[List[VariableFileDict]] = None
     node_groups: Optional[List[NodeGroupDict]] = None
     remaps: Optional[List[RemapEntry]] = None
+    # Boundary ports of a subsystem, each bound to a topic; absent from system files.
+    inputs: Optional[List[PortDefinition]] = None
+    outputs: Optional[List[PortDefinition]] = None

@@ -1,0 +1,7 @@
+/**:
+  ros__parameters:
+    score_threshold: 0.4
+    max_range: 100.0
+    labels: [car, truck]
+    filter:
+      enabled: true

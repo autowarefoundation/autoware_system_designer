@@ -2,6 +2,8 @@ const deploymentConfig = {
     deploymentName: {{ deployment_name | tojson }},
     packageName: {{ package_name | tojson }},
     systemId: {{ system_id | tojson }},
+    kind: {{ kind | tojson }},
+    subsystem: {{ subsystem | tojson }},
     siteRoot: {{ site_root | tojson }},
     systems: {{ systems | tojson }},
     availableModes: {{ available_modes | tojson }},

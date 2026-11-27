@@ -97,6 +97,13 @@ def test_wildcard_substitution_across_slashes():
     assert pairs == [("localization.state", ".api/localization/state")]
 
 
+def test_one_sided_wildcard_skips_the_port_of_the_other_side():
+    sources = {"a.diag": _info("diag", "publisher"), "aggregator.diag": _info("diag", "publisher")}
+    targets = {"aggregator.diag": _info("diag", "subscriber")}
+    pairs = match_and_pair_wildcard_ports("*.diag", "aggregator.diag", sources, targets)
+    assert pairs == [("a.diag", "aggregator.diag")]
+
+
 def test_wildcard_pairing_per_kind():
     sources = {
         "provider.status": _info("status", "publisher"),

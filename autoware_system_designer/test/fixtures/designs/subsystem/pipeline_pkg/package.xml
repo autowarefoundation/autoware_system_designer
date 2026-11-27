@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>pipeline_pkg</name>
+  <version>0.0.0</version>
+  <description>Subsystem test package</description>
+  <maintainer email="dummy@example.com">dummy</maintainer>
+  <license>Apache License 2.0</license>
+</package>

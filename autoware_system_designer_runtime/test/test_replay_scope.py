@@ -18,6 +18,7 @@ import pytest
 
 from autoware_system_designer_runtime._impl.replay.scope import (
     ScopeError,
+    add_external_containers,
     compute_boundary,
     replay_structure,
     scope_node_fqns,
@@ -61,6 +62,37 @@ def test_scope_includes_the_container_of_a_selected_composable_node():
     assert scope.nodes == ["/d"]
     assert scope.containers == ["/cc"]
     assert scope.members == ["/d", "/cc"]
+
+
+def test_external_container_of_a_subsystem_joins_the_scope():
+    design = system(
+        [
+            node("/ns/a", state="composable_node", container="shared_container"),
+            node("/ns/b", state="composable_node", container="/ns/own_container"),
+            node("/ns/own_container", state="node_container"),
+        ]
+    )
+    external = [
+        {"name": "shared_container", "package": "rclcpp_components", "executable": "component_container_mt"},
+        {"name": "unused_container", "package": "rclcpp_components", "executable": "component_container"},
+    ]
+
+    add_external_containers(design["data"], external)
+    scope = select_scope(design["data"], ["/ns/a"])
+
+    assert scope.containers == ["/shared_container"]
+    structure = replay_structure(design["data"], scope)
+    container = next(c for c in structure["children"] if c["path"] == "/shared_container")
+    assert (container["name"], container["namespace"]) == ("shared_container", "/")
+    assert container["launcher"]["executable"] == "component_container_mt"
+    assert "/unused_container" not in {c.get("path") for c in design["data"]["children"]}
+
+
+def test_external_container_with_an_unbound_name_is_an_error():
+    design = system([node("/ns/a", state="composable_node", container="$(var container_name)")])
+
+    with pytest.raises(ScopeError, match="not resolved"):
+        add_external_containers(design["data"], [{"name": "$(var container_name)"}])
 
 
 def test_scope_path_matches_whole_segments():

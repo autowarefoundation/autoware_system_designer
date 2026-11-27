@@ -349,6 +349,11 @@ body.resizing-panel {
   stroke-linecap: round;
 }
 
+/* Interface icon: a box with its ports, square-cornered */
+.rail-item[data-value="subsystem_interface"] svg path {
+  stroke-linejoin: miter;
+}
+
 .rail-item:hover:not(:disabled) {
   color: var(--text-primary);
 }

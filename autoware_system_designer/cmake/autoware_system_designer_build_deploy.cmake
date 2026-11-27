@@ -16,6 +16,7 @@ macro(autoware_system_designer_build_deploy project_name)
   # Supported invocation patterns:
   #   autoware_system_designer_build_deploy(<project> <deployment_name>.deployments)
   #   autoware_system_designer_build_deploy(<project> <design_file>)
+  #   autoware_system_designer_build_deploy(<project> <name>.subsystem)
   #   autoware_system_designer_build_deploy(<project> <deployment_or_system_target> PRINT_LEVEL=<LEVEL>)
   #   autoware_system_designer_build_deploy(<project> <deployment_or_system_target> STRICT=<AUTO|ON|OFF>)
   #   autoware_system_designer_build_deploy(<project> <deployment_or_system_target> PRINT_LEVEL=<LEVEL> STRICT=<AUTO|ON|OFF>)
@@ -24,6 +25,8 @@ macro(autoware_system_designer_build_deploy project_name)
   #   AUTO: follow AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT (default)
   #   ON:   fail build when deployment generation fails
   #   OFF:  warn and continue local build
+  # A subsystem target reads <name>.subsystem.yaml under design/ and writes its entry launch file to
+  # share/<project>/launch/<name>.launch.xml and its parameter files to share/<project>/exports/<name>/config/.
   # Full logs are still written to the per-target log file.
   # Valid levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
   set(_EXTRA_ARGS ${ARGN})
@@ -132,10 +135,34 @@ macro(autoware_system_designer_build_deploy project_name)
     # Explicit system entity target.
     set(_DEPLOYMENT_FILE "${_INPUT_NAME}")
     set(_LOG_DESC "(system=${_INPUT_NAME})")
+  elseif(_INPUT_NAME MATCHES "^([a-z][a-z0-9_]*)\\.subsystem$")
+    # Subsystem: one entity behind the launch file it generates.
+    set(_SUBSYSTEM_NAME "${CMAKE_MATCH_1}")
+    file(GLOB_RECURSE _SUBSYSTEM_FILES "${CMAKE_SOURCE_DIR}/design/*${_INPUT_NAME}.yaml")
+    list(FILTER _SUBSYSTEM_FILES INCLUDE REGEX "/${_SUBSYSTEM_NAME}\\.subsystem\\.yaml$")
+    list(LENGTH _SUBSYSTEM_FILES _SUBSYSTEM_FILE_COUNT)
+    if(NOT _SUBSYSTEM_FILE_COUNT EQUAL 1)
+      message(FATAL_ERROR
+        "autoware_system_designer_build_deploy: expected one ${_INPUT_NAME}.yaml under ${CMAKE_SOURCE_DIR}/design, "
+        "found ${_SUBSYSTEM_FILE_COUNT}: ${_SUBSYSTEM_FILES}"
+      )
+    endif()
+    list(GET _SUBSYSTEM_FILES 0 _DEPLOYMENT_FILE)
+    set(_SUBSYSTEM_OUTPUT "launch/${_SUBSYSTEM_NAME}.launch.xml")
+    # A source file or directory at a generated path would be installed over the generated one.
+    foreach(_SUBSYSTEM_GENERATED "${_SUBSYSTEM_OUTPUT}" "exports/${_SUBSYSTEM_NAME}")
+      if(EXISTS "${CMAKE_SOURCE_DIR}/${_SUBSYSTEM_GENERATED}")
+        message(FATAL_ERROR
+          "autoware_system_designer_build_deploy: ${_SUBSYSTEM_GENERATED} exists in the package source and would be "
+          "installed over the generated subsystem files; remove it."
+        )
+      endif()
+    endforeach()
+    set(_LOG_DESC "(subsystem=${_INPUT_NAME}, output=${_SUBSYSTEM_OUTPUT})")
   else()
     message(FATAL_ERROR
       "autoware_system_designer_build_deploy: unsupported target '${_INPUT_NAME}'. "
-      "Use '<name>.deployments' or '*.system'."
+      "Use '<name>.deployments', '<name>.subsystem' or '*.system'."
     )
   endif()
 

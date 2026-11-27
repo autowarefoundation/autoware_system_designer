@@ -42,6 +42,7 @@ from autoware_system_designer.builder.export.json_io import (
     save_system_structure,
     save_system_structure_snapshot,
 )
+from autoware_system_designer.builder.instances.node_groups import external_containers
 from autoware_system_designer.builder.modes import apply_mode_configuration, select_modes
 from autoware_system_designer.common.deployment_config import DeploymentConfig
 from autoware_system_designer.common.exceptions import DeploymentError, ValidationError, annotate_error
@@ -57,6 +58,7 @@ from autoware_system_designer.common.path_utils import (
     export_path,
     has_workspace_token,
     is_within,
+    owning_package,
     resolve_manifest_path,
 )
 from autoware_system_designer.common.source_location import SourceLocation, format_source
@@ -65,11 +67,22 @@ from autoware_system_designer.generator import build_script_generator
 from autoware_system_designer.generator.deploy_launchers import generate_deploy_launchers
 from autoware_system_designer.generator.parameter_template_generator import ParameterTemplateGenerator
 from autoware_system_designer.generator.ros2_launcher.generate_module_launcher import generate_module_launch_file
+from autoware_system_designer.generator.subsystem_launcher import generate_subsystem_launcher
+from autoware_system_designer.generator.subsystem_parameters import PackagePaths
 from autoware_system_designer.model import serde
 from autoware_system_designer.model.config import NodeConfig, SystemConfig
 from autoware_system_designer.model.export_schema import SCHEMA_VERSION
 from autoware_system_designer.parser.data_validator import split_package_qualifier
 from autoware_system_designer.parser.deployment_parser import peek_target_system_name, resolve_input_target
+from autoware_system_designer.parser.subsystem_parser import (
+    KIND_SUBSYSTEM,
+    KIND_SYSTEM,
+    SubsystemConfig,
+    is_subsystem_file,
+    parse_subsystem,
+    subsystem_launch_file,
+    subsystem_record,
+)
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
 logger = logging.getLogger(__name__)
@@ -94,6 +107,11 @@ class BuildArtifacts:
     file_package_map: Dict[str, str] = field(default_factory=dict)
     package_resolution_by_name: Dict[str, Optional[str]] = field(default_factory=dict)
     packages_without_provider: List[str] = field(default_factory=list)
+    # A system, or a subsystem; the subsystem record is its launch-file interface.
+    kind: str = KIND_SYSTEM
+    subsystem: Optional[Dict[str, Any]] = None
+    # Parsed subsystem file; absent for a system and when artifacts are loaded from a manifest.
+    subsystem_config: Optional[SubsystemConfig] = field(default=None, metadata={"exclude": True})
     # Base for tokenized paths in the export files; kept out of the manifest and
     # re-derived on load so exports stay machine-independent.
     workspace_root: Optional[str] = field(default=None, metadata={"exclude": True})
@@ -145,6 +163,8 @@ def load_build_artifacts(output_root_dir: str, system_name: str) -> BuildArtifac
         file_package_map=payload.get("file_package_map", {}),
         package_resolution_by_name=payload.get("package_resolution_by_name", {}),
         packages_without_provider=payload.get("packages_without_provider", []),
+        kind=payload.get("kind", KIND_SYSTEM),
+        subsystem=payload.get("subsystem"),
     )
 
 
@@ -249,7 +269,12 @@ class DeploymentBuilder:
 
     def _init_artifacts(self, system_config: SystemConfig, deploy_variants: List[Dict[str, Any]]) -> BuildArtifacts:
         layout = ExportLayout(self.deploy_config.output_root_dir, system_config.name)
+        deployment_file = self.deploy_config.deployment_file
+        subsystem = parse_subsystem(deployment_file) if is_subsystem_file(deployment_file) else None
         return BuildArtifacts(
+            kind=KIND_SUBSYSTEM if subsystem else KIND_SYSTEM,
+            subsystem=subsystem_record(subsystem) if subsystem else None,
+            subsystem_config=subsystem,
             layout=layout,
             workspace_root=self._export_workspace_root(),
             system_file=str(system_config.file_path),
@@ -477,9 +502,14 @@ class DeploymentBuilder:
                     if reached:
                         self._undefined_variables[mode_key] = reached
 
+                if artifacts.subsystem is not None:
+                    artifacts.subsystem.setdefault("external_containers", external_containers(deploy_instance))
                 artifacts.mode_keys.append(mode_key)
-                artifacts.launch_units[mode_key] = launcher_compute_units(
-                    *extract_system_structure_data(structure_payload)
+                # A subsystem is launched through its entry launch file; it has no unit launchers.
+                artifacts.launch_units[mode_key] = (
+                    []
+                    if artifacts.kind == KIND_SUBSYSTEM
+                    else launcher_compute_units(*extract_system_structure_data(structure_payload))
                 )
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
                 artifacts.system_structure_snapshots[mode_key] = snapshot_store
@@ -734,3 +764,28 @@ def export_parameter_set_templates(artifacts: BuildArtifacts) -> Dict[str, List[
         logger.info(f"Generated {len(output_path_list)} parameter set templates for mode: {mode_key}")
 
     return output_paths
+
+
+def generate_subsystem_launch_file(artifacts: BuildArtifacts) -> str:
+    """Generate the subsystem launch file at launch/<name>.launch.xml under the output root."""
+    subsystem = artifacts.subsystem_config
+    output_file = os.path.join(artifacts.layout.output_root_dir, subsystem_launch_file(subsystem.name))
+    _, data, _ = next(iter(_iter_mode_payloads(artifacts)))
+    package = artifacts.deployment_package_name or owning_package(str(subsystem.file_path))[0]
+    if not package:
+        raise ValidationError(
+            f"Subsystem {subsystem.file_path.name}: the package that installs its launch file is unknown"
+        )
+    return generate_subsystem_launcher(
+        subsystem, data, output_file, package, artifacts.layout, _package_paths(artifacts)
+    )
+
+
+def _package_paths(artifacts: BuildArtifacts) -> PackagePaths:
+    """Share and source directories of every mapped package."""
+    registry = artifacts.config_registry
+    dirs = []
+    for name, share_dir in registry.package_paths.items():
+        dirs.append((share_dir, name))
+        dirs.append((registry.get_package_source_path(name), name))
+    return PackagePaths(dirs)

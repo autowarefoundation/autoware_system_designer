@@ -1,0 +1,46 @@
+autoware_system_design_format: 0.4.0
+
+name: Pipeline.module
+
+description: Two parallel filters feeding a merger; wildcard boundary wiring on the secondary filter.
+
+instances:
+  - name: filter_primary
+    entity: Filter.node
+  - name: filter_secondary
+    entity: Filter.node
+  - name: node_merger
+    entity: Merger.node
+    description: Fuses both filter outputs.
+
+subscribers:
+  - name: pointcloud
+
+publishers:
+  - name: objects
+    description: Merged objects for downstream consumers.
+
+servers:
+  - name: reset
+
+clients:
+  - name: get_config
+
+connections:
+  - - node_merger.server.reset
+    - server.reset
+  - - client.get_config
+    - filter_primary.client.get_config
+  - - subscriber.pointcloud
+    - filter_primary.subscriber.pointcloud
+  # wildcard connection
+  - - subscriber.*
+    - filter_secondary.subscriber.*
+  - - client.*
+    - filter_secondary.client.*
+  - - filter_primary.publisher.objects
+    - node_merger.subscriber.objects1
+  - - filter_secondary.publisher.objects
+    - node_merger.subscriber.objects2
+  - - node_merger.publisher.objects
+    - publisher.objects

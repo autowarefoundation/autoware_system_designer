@@ -26,7 +26,9 @@ from autoware_system_designer.deploy import (
     export_reference_latency,
     generate_build_scripts,
     generate_launchers,
+    generate_subsystem_launch_file,
 )
+from autoware_system_designer.parser.subsystem_parser import is_subsystem_file
 
 # Stable name whether imported or executed as a script.
 _logger = logging.getLogger("autoware_system_designer.deployment_process")
@@ -81,6 +83,13 @@ def build(
         # build stage: parse, build every mode, export system structure + manifest
         logger.info("Autoware System Designer: Building deployment...")
         artifacts = build_deployment(deploy_config)
+
+        if is_subsystem_file(deployment_file):
+            # A subsystem yields one flat launch file; it has no deployment of its own to script or template.
+            logger.info("Autoware System Designer: Generating the subsystem launch file...")
+            generate_subsystem_launch_file(artifacts)
+            logger.info("Autoware System Designer: Done!")
+            return
 
         # generators: consumers of the build artifacts
         logger.info("Autoware System Designer: Exporting parameter set template...")

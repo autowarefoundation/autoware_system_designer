@@ -47,6 +47,15 @@ class ExportLayout:
         return os.path.join(self.exports_dir, "latency/")
 
     @property
+    def config_dir_in_package(self) -> str:
+        """Parameter files of a subsystem launch file, relative to the package share directory."""
+        return f"exports/{self.system_name}/config"
+
+    @property
+    def config_dir(self) -> str:
+        return os.path.join(self.output_root_dir, self.config_dir_in_package)
+
+    @property
     def parameter_set_dir(self) -> str:
         return os.path.join(self.exports_dir, "parameter_set/")
 
