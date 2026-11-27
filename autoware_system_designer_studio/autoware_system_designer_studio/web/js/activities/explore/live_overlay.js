@@ -3,7 +3,7 @@
 // system, with its container's state for a composable) and reach the canvas
 // through the host, which hands them to the diagram module shown. The side
 // panel, shown with a daemon, carries a switch for the overlay and the mark
-// legend; a border, which the studio does not launch, has none. The mode's
+// legend; a subsystem, which the studio does not launch, has none. The mode's
 // latency record reloads after the daemon reported a new one.
 (function () {
   const SD = window.SD;
@@ -32,7 +32,7 @@
       toggleRow,
       SD.RunState.legend("live-legend"),
     );
-    const launchable = config.kind !== "border";
+    const launchable = config.kind !== "subsystem";
     panel.hidden = !launchable || !SD.daemon.health;
 
     // Entities of the shown mode, composables nested under their container.

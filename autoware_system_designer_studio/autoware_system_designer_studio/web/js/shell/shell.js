@@ -42,7 +42,7 @@
    *                 `group` place it apart from its activity's. Without views
    *                 the activity is one rail item
    *   daemon        needs a daemon; `requires` lists the daemon methods it calls
-   *   border        false for an activity a border does not offer
+   *   subsystem     false for an activity a subsystem does not offer
    *   side          false for an activity without side-panel options
    *   inspector     owns an inspector view beside its main view
    *   status(store) strings shown after the mode in the status bar
@@ -88,9 +88,9 @@
     return (def.requires || []).filter((method) => !SD.daemon.offers(method));
   }
 
-  // An activity a border does not offer is absent from a border's workbench.
+  // An activity a subsystem does not offer is absent from a subsystem's workbench.
   function offered(def) {
-    return !(def.border === false && config?.kind === "border");
+    return !(def.subsystem === false && config?.kind === "subsystem");
   }
 
   // Static pages hide daemon activities; daemon pages disable those whose methods are missing.

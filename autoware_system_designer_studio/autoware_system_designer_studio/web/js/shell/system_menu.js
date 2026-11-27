@@ -1,5 +1,5 @@
 // System selector of the top bar: the shown system as a button, and the site's
-// systems grouped by package in its popover, borders tagged. A system opens on
+// systems grouped by package in its popover, subsystems tagged. A system opens on
 // the activity shown here.
 (function () {
   const SD = window.SD;
@@ -18,8 +18,8 @@
     const menu = el("system-menu");
     const own = config.systems.find((s) => s.id === config.systemId);
     el("system-name").textContent = config.deploymentName;
-    if (config.kind === "border")
-      el("system-name").appendChild(node("span", "kind-tag", "border"));
+    if (config.kind === "subsystem")
+      el("system-name").appendChild(node("span", "kind-tag", "subsystem"));
     el("system-package").textContent = config.packageName;
     if (own) el("system-icon").src = config.siteRoot + own.icon;
 
@@ -36,8 +36,8 @@
       icon.alt = "";
       icon.src = config.siteRoot + system.icon;
       link.append(icon, node("span", "system-menu-name", system.name));
-      if (system.kind === "border")
-        link.appendChild(node("span", "kind-tag", "border"));
+      if (system.kind === "subsystem")
+        link.appendChild(node("span", "kind-tag", "subsystem"));
       if (system.id === config.systemId) {
         link.classList.add("current");
         link.setAttribute("aria-current", "page");

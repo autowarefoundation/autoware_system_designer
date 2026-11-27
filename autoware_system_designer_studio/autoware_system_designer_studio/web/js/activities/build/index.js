@@ -11,7 +11,7 @@
     title: "Build",
     order: 30,
     daemon: true,
-    border: false,
+    subsystem: false,
     inspector: false,
     requires: ["build.start", "jobs.list", "jobs.get", "jobs.cancel"],
     icon: "M3 6.5L10 3l7 3.5v7L10 17l-7-3.5zM3 6.5L10 10l7-3.5M10 10v7",

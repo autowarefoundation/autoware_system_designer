@@ -51,7 +51,7 @@ REFERENCE_LATENCY_SUFFIXES = (".json", ".js")
 
 # Kind of an exported target; a manifest without one is a system.
 TARGET_SYSTEM = "system"
-TARGET_BORDER = "border"
+TARGET_SUBSYSTEM = "subsystem"
 
 KIND_ONBOARD = "onboard"
 KIND_OFFBOARD = "offboard"
@@ -111,13 +111,13 @@ class SystemExport:
 
     @property
     def kind(self) -> str:
-        return TARGET_BORDER if self.manifest.get("kind") == TARGET_BORDER else TARGET_SYSTEM
+        return TARGET_SUBSYSTEM if self.manifest.get("kind") == TARGET_SUBSYSTEM else TARGET_SYSTEM
 
-    def border(self) -> Optional[dict[str, Any]]:
-        """Launch-file interface of a border and the command launching it; None for a system."""
-        if self.kind != TARGET_BORDER:
+    def subsystem(self) -> Optional[dict[str, Any]]:
+        """Launch-file interface of a subsystem and the command launching it; None for a system."""
+        if self.kind != TARGET_SUBSYSTEM:
             return None
-        record = self.manifest.get("border")
+        record = self.manifest.get("subsystem")
         record = record if isinstance(record, dict) else {}
         launch_file = record.get("launch_file")
         launch_file = launch_file if isinstance(launch_file, str) else ""

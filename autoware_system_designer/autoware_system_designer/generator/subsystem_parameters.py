@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Parameters of border nodes: build-time values as parameter files, package paths as find-pkg-share.
+"""Parameters of subsystem nodes: build-time values as parameter files, package paths as find-pkg-share.
 
 A node's parameters keep the launch order of the tiered launcher (default, override, mode; per tier
 values expanded from files, files loaded at launch time, direct values). Consecutive build-time

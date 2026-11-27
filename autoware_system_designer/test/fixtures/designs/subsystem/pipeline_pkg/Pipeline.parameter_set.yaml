@@ -2,7 +2,7 @@ autoware_system_design_format: 0.4.0
 
 name: Pipeline.parameter_set
 
-description: Score threshold of the primary filter, taken from a border argument.
+description: Score threshold of the primary filter, taken from a subsystem argument.
 
 parameters:
   - node: /perception/pipeline/filter_primary

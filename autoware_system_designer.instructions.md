@@ -6,7 +6,7 @@ This document describes how to create and manage Autoware System Designer config
 
 ## 2. File Format Version
 
-All YAML files MUST start with the format version specification. The tool supports files whose _major_ version matches and whose _minor_ version is less-than-or-equal-to `DESIGN_FORMAT_VERSION`. All entity types (Nodes, Modules, Systems, Parameter Sets) must use a version up to `DESIGN_FORMAT_VERSION`.
+All main-format files (Nodes, Modules, Systems, Parameter Sets) MUST start with the format version specification. Sub-format files (Deployments, Subsystems; see Section 9) are outside the format versioning. The tool supports files whose _major_ version matches and whose _minor_ version is less-than-or-equal-to `DESIGN_FORMAT_VERSION`. All entity types (Nodes, Modules, Systems, Parameter Sets) must use a version up to `DESIGN_FORMAT_VERSION`.
 
 **Note**: The supported format version is defined in `autoware_system_designer/__init__.py` as `DESIGN_FORMAT_VERSION`.
 
@@ -19,8 +19,12 @@ Follow this directory structure for consistency (not mandatory).
 - **Modules**: `src/<package_name>/design/module/` (suffix: `.module.yaml`)
 - **Systems**: `src/<package_name>/design/system/` (suffix: `.system.yaml`)
 - **Parameter Sets**: `src/<package_name>/design/parameter_set/` (suffix: `.parameter_set.yaml`)
+- **Subsystems** (sub format): `src/<package_name>/design/subsystem/` (suffix: `.subsystem.yaml`)
+- **Deployments** (sub format): `src/<package_name>/deployment/` (suffix: `.deployments.yaml`)
 
-## 4. Configuration Entities & Schemas
+## 4. Main Formats: Configuration Entities & Schemas
+
+The main formats describe the architecture. Each file defines one entity, declares the format version and is validated against the schema of that version.
 
 ### 4.1. Node Configuration (`.node.yaml`)
 
@@ -447,12 +451,12 @@ The `autoware_system_designer` package provides CMake macros to automate the bui
 
 ### `autoware_system_designer_build_deploy`
 
-Builds the entire system deployment.
+Builds a sub-format target: the deployments of a system (`<name>.deployments`) or a subsystem (`<name>.subsystem`).
 
 ```cmake
 autoware_system_designer_build_deploy(
   <project_name>
-  <deployment_file>
+  <name>.deployments | <name>.subsystem
   [PRINT_LEVEL=<DEBUG|INFO|WARNING|ERROR|CRITICAL>]
   [STRICT=<AUTO|ON|OFF>]
 )
@@ -473,3 +477,28 @@ Generates parameter files from JSON schemas.
 ```cmake
 autoware_system_designer_parameter()
 ```
+
+## 9. Sub Formats
+
+The sub formats are build inputs of `autoware_system_designer_build_deploy`. A sub-format file names main-format entities to build, is read only by the package that builds it, and is plain YAML checked by its parser without a schema.
+
+### 9.1. Deployment (`.deployments.yaml`)
+
+Instantiates one system for each listed environment or vehicle.
+
+- `base`: The system to deploy (e.g., `TypeAlpha.system`).
+- `deploy_list`: List of deployments.
+  - `name`: Deployment name.
+  - `arguments`: List of `name` / `value` pairs filling the system `arguments`.
+
+### 9.2. Subsystem (`.subsystem.yaml`)
+
+Launches one module or node behind a generated entry launch file with fixed topics and launch arguments. A subsystem never holds a system; a system is built through its deployments.
+
+- `name`: Launch file stem. Must match filename; lowercase letters, digits and underscores.
+- `instance`: The module or node to launch (`name`, `entity`, `path`, `parameter_set` as a list).
+- `arguments`: (Optional) Launch arguments of the generated file (`name`, `default`, `description`).
+- `variables`: (Optional) Build-time values, as in a system.
+- `subscribers` / `publishers` / `servers` / `clients`: (Optional) External interface. Each entry binds the instance port `name` to a `topic` (topic or service name).
+- `system_launches`: (Optional) Launch files included ahead of the instance (`package`, `file`, `scoped`, `arguments`).
+- `node_groups`: (Optional) As in a system; `external: true` loads into a container the caller starts.

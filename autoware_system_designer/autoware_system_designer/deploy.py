@@ -63,21 +63,21 @@ from autoware_system_designer.common.path_utils import (
 from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.generator import build_script_generator
-from autoware_system_designer.generator.border_launcher import generate_border_launcher
-from autoware_system_designer.generator.border_parameters import PackagePaths
+from autoware_system_designer.generator.subsystem_launcher import generate_subsystem_launcher
+from autoware_system_designer.generator.subsystem_parameters import PackagePaths
 from autoware_system_designer.generator.deploy_launchers import generate_deploy_launchers
 from autoware_system_designer.generator.parameter_template_generator import ParameterTemplateGenerator
 from autoware_system_designer.generator.ros2_launcher.generate_module_launcher import generate_module_launch_file
 from autoware_system_designer.model import serde
 from autoware_system_designer.model.config import NodeConfig, SystemConfig
 from autoware_system_designer.model.export_schema import SCHEMA_VERSION
-from autoware_system_designer.parser.border_parser import (
-    KIND_BORDER,
+from autoware_system_designer.parser.subsystem_parser import (
+    KIND_SUBSYSTEM,
     KIND_SYSTEM,
-    border_launch_file,
-    border_record,
-    is_border_file,
-    parse_border,
+    subsystem_launch_file,
+    subsystem_record,
+    is_subsystem_file,
+    parse_subsystem,
 )
 from autoware_system_designer.parser.data_validator import split_package_qualifier
 from autoware_system_designer.parser.deployment_parser import peek_target_system_name, resolve_input_target
@@ -105,9 +105,9 @@ class BuildArtifacts:
     file_package_map: Dict[str, str] = field(default_factory=dict)
     package_resolution_by_name: Dict[str, Optional[str]] = field(default_factory=dict)
     packages_without_provider: List[str] = field(default_factory=list)
-    # A system, or a border; the border record is its launch-file interface.
+    # A system, or a subsystem; the subsystem record is its launch-file interface.
     kind: str = KIND_SYSTEM
-    border: Optional[Dict[str, Any]] = None
+    subsystem: Optional[Dict[str, Any]] = None
     # Base for tokenized paths in the export files; kept out of the manifest and
     # re-derived on load so exports stay machine-independent.
     workspace_root: Optional[str] = field(default=None, metadata={"exclude": True})
@@ -160,7 +160,7 @@ def load_build_artifacts(output_root_dir: str, system_name: str) -> BuildArtifac
         package_resolution_by_name=payload.get("package_resolution_by_name", {}),
         packages_without_provider=payload.get("packages_without_provider", []),
         kind=payload.get("kind", KIND_SYSTEM),
-        border=payload.get("border"),
+        subsystem=payload.get("subsystem"),
     )
 
 
@@ -265,10 +265,10 @@ class DeploymentBuilder:
 
     def _init_artifacts(self, system_config: SystemConfig, deploy_variants: List[Dict[str, Any]]) -> BuildArtifacts:
         layout = ExportLayout(self.deploy_config.output_root_dir, system_config.name)
-        is_border = is_border_file(self.deploy_config.deployment_file)
+        is_subsystem = is_subsystem_file(self.deploy_config.deployment_file)
         return BuildArtifacts(
-            kind=KIND_BORDER if is_border else KIND_SYSTEM,
-            border=border_record(parse_border(self.deploy_config.deployment_file)) if is_border else None,
+            kind=KIND_SUBSYSTEM if is_subsystem else KIND_SYSTEM,
+            subsystem=subsystem_record(parse_subsystem(self.deploy_config.deployment_file)) if is_subsystem else None,
             layout=layout,
             workspace_root=self._export_workspace_root(),
             system_file=str(system_config.file_path),
@@ -497,10 +497,10 @@ class DeploymentBuilder:
                         self._undefined_variables[mode_key] = reached
 
                 artifacts.mode_keys.append(mode_key)
-                # A border is launched through its entry launch file; it has no unit launchers.
+                # A subsystem is launched through its entry launch file; it has no unit launchers.
                 artifacts.launch_units[mode_key] = (
                     []
-                    if artifacts.kind == KIND_BORDER
+                    if artifacts.kind == KIND_SUBSYSTEM
                     else launcher_compute_units(*extract_system_structure_data(structure_payload))
                 )
                 logger.info(f"Successfully built deployment instance for mode: {mode_key}")
@@ -758,16 +758,16 @@ def export_parameter_set_templates(artifacts: BuildArtifacts) -> Dict[str, List[
     return output_paths
 
 
-def generate_border_launch_file(artifacts: BuildArtifacts, border_file: str) -> str:
-    """Generate the border launch file at launch/<name>.launch.xml under the output root."""
-    border = parse_border(border_file)
-    output_file = os.path.join(artifacts.layout.output_root_dir, border_launch_file(border.name))
+def generate_subsystem_launch_file(artifacts: BuildArtifacts, subsystem_file: str) -> str:
+    """Generate the subsystem launch file at launch/<name>.launch.xml under the output root."""
+    subsystem = parse_subsystem(subsystem_file)
+    output_file = os.path.join(artifacts.layout.output_root_dir, subsystem_launch_file(subsystem.name))
     _, data, _ = next(iter(_iter_mode_payloads(artifacts)))
-    package = artifacts.deployment_package_name or _owning_package_name(border_file)
+    package = artifacts.deployment_package_name or _owning_package_name(subsystem_file)
     if not package:
-        raise ValidationError(f"Border {border.file_path.name}: the package that installs its launch file is unknown")
-    return generate_border_launcher(
-        border, data, output_file, package, artifacts.layout.output_root_dir, _package_paths(artifacts)
+        raise ValidationError(f"Subsystem {subsystem.file_path.name}: the package that installs its launch file is unknown")
+    return generate_subsystem_launcher(
+        subsystem, data, output_file, package, artifacts.layout.output_root_dir, _package_paths(artifacts)
     )
 
 

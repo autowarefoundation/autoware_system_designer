@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Launch file of a border, laid out as a hand-written entry launch file.
+"""Launch file of a subsystem, laid out as a hand-written entry launch file.
 
 Sections in order: launch arguments, external interfaces as arguments, system launches,
 then the nodes in groups that push one namespace segment each. Node remaps reach interface
@@ -30,9 +30,9 @@ from typing import Any, Dict, List, Tuple
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.template_renderer import TemplateRenderer
-from autoware_system_designer.generator.border_parameters import PackagePaths, write_parameter_files
+from autoware_system_designer.generator.subsystem_parameters import PackagePaths, write_parameter_files
 from autoware_system_designer.generator.ros2_launcher.component_map import collect_component_nodes
-from autoware_system_designer.parser.border_parser import BorderConfig
+from autoware_system_designer.parser.subsystem_parser import SubsystemConfig
 
 logger = logging.getLogger(__name__)
 
@@ -75,19 +75,19 @@ def _entity_name(data: Dict[str, Any]) -> str:
     return source[: -len(".yaml")] if source.endswith(".yaml") else source
 
 
-def _external_interfaces(border: BorderConfig) -> List[_Interface]:
-    return [_Interface(f"input/{p.name}", p.topic) for p in border.inputs] + [
-        _Interface(f"output/{p.name}", p.topic) for p in border.outputs
+def _external_interfaces(subsystem: SubsystemConfig) -> List[_Interface]:
+    return [_Interface(f"input/{p.name}", p.topic) for p in subsystem.inputs] + [
+        _Interface(f"output/{p.name}", p.topic) for p in subsystem.outputs
     ]
 
 
-def _check_launch_names(border: BorderConfig, external: List[_Interface]) -> None:
+def _check_launch_names(subsystem: SubsystemConfig, external: List[_Interface]) -> None:
     """Arguments and interfaces share one launch configuration namespace; each name is declared once."""
     declared: Dict[str, str] = {}
-    entries = [(a.name, "argument") for a in border.arguments] + [(i.name, "external interface") for i in external]
+    entries = [(a.name, "argument") for a in subsystem.arguments] + [(i.name, "external interface") for i in external]
     for name, kind in entries:
         if name in declared:
-            raise ValidationError(f"Border {border.file_path.name}: {kind} '{name}' collides with an {declared[name]}")
+            raise ValidationError(f"Subsystem {subsystem.file_path.name}: {kind} '{name}' collides with an {declared[name]}")
         declared[name] = kind
 
 
@@ -142,30 +142,30 @@ def _render_group(group: _Group, render_node) -> List[str]:
     return blocks
 
 
-def generate_border_launcher(
-    border: BorderConfig,
+def generate_subsystem_launcher(
+    subsystem: SubsystemConfig,
     system_data: Dict[str, Any],
     output_file: str,
     package: str,
     output_root: str,
     package_paths: PackagePaths,
 ) -> str:
-    """Write the border launch file and its parameter files.
+    """Write the subsystem launch file and its parameter files.
 
-    Parameter files go to <output_root>/config/<border name>/, which the package installs to its
+    Parameter files go to <output_root>/config/<subsystem name>/, which the package installs to its
     share directory at the same relative path.
     """
     output_file = os.path.abspath(output_file)
-    param_dir_in_package = f"config/{border.name}"
+    param_dir_in_package = f"config/{subsystem.name}"
     param_dir = os.path.join(output_root, param_dir_in_package)
     shutil.rmtree(param_dir, ignore_errors=True)
     renderer = TemplateRenderer()
 
-    external = _external_interfaces(border)
-    _check_launch_names(border, external)
+    external = _external_interfaces(subsystem)
+    _check_launch_names(subsystem, external)
     variables: Dict[str, str] = {}
     for interface in external:
-        # A topic both subscribed and published at the border is the output it publishes.
+        # A topic both subscribed and published at the subsystem is the output it publishes.
         if interface.topic not in variables or interface.name.startswith("output/"):
             variables[interface.topic] = interface.name
 
@@ -175,7 +175,7 @@ def generate_border_launcher(
     for node, payload in zip(nodes, launched):
         root.at(node.get("namespace")).entries.append(payload)
 
-    forward_args = [argument.name for argument in border.arguments]
+    forward_args = [argument.name for argument in subsystem.arguments]
 
     def render_node(node: Dict[str, Any]) -> str:
         text = renderer.render_template("launch_nodes.xml.jinja2", nodes=[node], forward_args=forward_args)
@@ -183,13 +183,13 @@ def generate_border_launcher(
 
     body = "\n\n".join(_render_group(root, render_node))
     renderer.render_template_to_file(
-        "border_launcher.xml.jinja2",
+        "subsystem_launcher.xml.jinja2",
         output_file,
-        source_file=border.file_path.name,
-        arguments=border.arguments,
+        source_file=subsystem.file_path.name,
+        arguments=subsystem.arguments,
         external_interfaces=external,
-        system_launches=border.system_launches,
+        system_launches=subsystem.system_launches,
         body=textwrap.indent(body, _INDENT),
     )
-    logger.info(f"Generated border launcher: {output_file}")
+    logger.info(f"Generated subsystem launcher: {output_file}")
     return output_file

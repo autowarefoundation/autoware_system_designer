@@ -159,7 +159,7 @@ class Site:
     def _system_entries(self) -> list[dict[str, str]]:
         """Every system of the site in selector order, its page and icon relative to the site root.
 
-        Within a package the systems come first, then its borders.
+        Within a package the systems come first, then its subsystems.
         """
         return [
             {
@@ -203,7 +203,7 @@ class Site:
             package_name=export.package,
             system_id=export.id,
             kind=export.kind,
-            border=export.border(),
+            subsystem=export.subsystem(),
             site_root=SYSTEM_PAGE_ROOT,
             systems=self._system_entries(),
             available_modes=modes,

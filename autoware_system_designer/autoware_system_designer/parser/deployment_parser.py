@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.path_utils import canonical_path
 from autoware_system_designer.model.config import SystemConfig
-from autoware_system_designer.parser.border_parser import border_system_config, is_border_file, parse_border
+from autoware_system_designer.parser.subsystem_parser import subsystem_system_config, is_subsystem_file, parse_subsystem
 from autoware_system_designer.parser.data_validator import entity_name_decode, split_package_qualifier
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
@@ -88,8 +88,8 @@ def _parse_deployments_list(deployments_path: str) -> Tuple[str, List[Dict[str, 
 
 def peek_target_system_name(input_path: str) -> str:
     """System entity name the build target designates."""
-    if is_border_file(input_path):
-        return parse_border(input_path).name
+    if is_subsystem_file(input_path):
+        return parse_subsystem(input_path).name
     if input_path.endswith(".deployments") or input_path.endswith(".deployments.yaml"):
         table_path = _resolve_deployments_path(input_path)
         base_name, _ = _parse_deployments_list(table_path)
@@ -106,12 +106,12 @@ def resolve_input_target(
     Supports:
     - deployments table mode: '*.deployments[.yaml]'
     - legacy system-only mode: input identifies one system entity
-    - border mode: '*.border.yaml', built as a system of its one instance
+    - subsystem mode: '*.subsystem.yaml', built as a system of its one instance
     """
 
-    if is_border_file(input_path):
-        border = parse_border(input_path)
-        return border_system_config(border, config_registry), [], border.file_path.as_posix()
+    if is_subsystem_file(input_path):
+        subsystem = parse_subsystem(input_path)
+        return subsystem_system_config(subsystem, config_registry), [], subsystem.file_path.as_posix()
 
     if input_path.endswith(".deployments") or input_path.endswith(".deployments.yaml"):
         table_path = _resolve_deployments_path(input_path)

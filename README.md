@@ -23,11 +23,15 @@ Traditional ROS 2 launch files can become complex and hard to manage as a system
 
 ## Core Concepts
 
-The system is built upon four main entity types:
+Design files come in two groups. The **main formats** describe the architecture. The **sub formats** select what a build generates from it.
+
+### Main Formats
+
+The system is built upon four main entity types. Their files declare `autoware_system_design_format`, are validated against the schema of that version and are collected from every package into one design registry.
 
 ![Configuration Structure](autoware_system_designer/doc/images/configuration_structure.png)
 
-### 1. Node (`*.node.yaml`)
+#### 1. Node (`*.node.yaml`)
 
 Represents a single ROS 2 node. It defines:
 
@@ -37,7 +41,7 @@ Represents a single ROS 2 node. It defines:
 - **Parameters**: Configuration variables (inline or via parameter files).
 - **Processes**: Internal logic flow with trigger conditions and outcomes.
 
-### 2. Module (`*.module.yaml`)
+#### 2. Module (`*.module.yaml`)
 
 A container for grouping nodes and other sub-modules. It defines:
 
@@ -45,7 +49,7 @@ A container for grouping nodes and other sub-modules. It defines:
 - **Connections**: Wiring between internal components.
 - **External Interfaces**: Ports exposed to the outside world.
 
-### 3. System (`*.system.yaml`)
+#### 3. System (`*.system.yaml`)
 
 The top-level description of a complete autonomous driving system. It defines:
 
@@ -55,72 +59,41 @@ The top-level description of a complete autonomous driving system. It defines:
 - **Connections**: Data flow between components.
 - **Modes**: Operation modes (e.g., Runtime, Simulation) with mode-specific overrides.
 
-### 4. Parameter Set (`*.parameter_set.yaml`)
+#### 4. Parameter Set (`*.parameter_set.yaml`)
 
 A collection of parameter overrides that can be applied to specific nodes in a system, allowing for flexible configuration management without modifying the core node definitions.
 
 A parameter file is read at build time when its path resolves to a file: system variables resolve, and `$(find-pkg-share <package>)` resolves for a package among the collected designs. A path that keeps a launch argument, including inside a package name such as `$(find-pkg-share $(var vehicle_model)_description)`, or names a package outside the collected designs, is loaded by the launcher at launch time.
 
-## Project Structure
+### Sub Formats
 
-To use Autoware System Designer in your ROS 2 package, organize your files as follows:
+A sub format file is a build input of `autoware_system_designer_build_deploy`, read only by the package that builds it. It is plain YAML checked by its parser, without a schema, and names main-format entities to build.
 
-```text
-src/<package_name>/
-├── design/
-│   ├── node/           # *.node.yaml
-│   ├── module/         # *.module.yaml
-│   ├── system/         # *.system.yaml
-│   ├── parameter_set/  # *.parameter_set.yaml
-│   └── border/         # <name>.border.yaml (an instance behind a generated launch file)
-├── deployment/         # *.deployment.yaml (System instantiation)
-├── schema/             # *.schema.json (Parameter schemas)
-├── CMakeLists.txt
-└── package.xml
+#### Deployment (`*.deployments.yaml`)
+
+A deployments table instantiates one system for each listed environment or vehicle. It defines:
+
+- **Base**: The system to deploy.
+- **Deploy List**: The deployments, each with a name and the values of the system arguments.
+
+```yaml
+base: TypeAlpha.system
+
+deploy_list:
+  - name: vehicle_x
+    arguments:
+      - name: vehicle_id
+        value: vehicle_x
 ```
 
-## Build Integration
+#### Subsystem (`*.subsystem.yaml`)
 
-Autoware System Designer integrates directly into the CMake build process. Select the appropriate macros based on your package type.
-
-In your `CMakeLists.txt`:
-
-```cmake
-find_package(autoware_system_designer REQUIRED)
-
-# 1. Generate standalone node launchers (Optional)
-# Use this if your package defines nodes and you want individual launch files.
-autoware_system_designer_generate_launcher()
-
-# 2. Generate parameter files from schemas (Optional)
-# Use this if your package contains JSON schemas in the schema/ directory.
-autoware_system_designer_parameter()
-
-# 3. Build a full system deployment (Deployment Packages Only)
-# Use this only in the package responsible for building the full system configuration.
-autoware_system_designer_build_deploy(
-  ${PROJECT_NAME}
-  type_alpha.deployments
-  PRINT_LEVEL=WARNING
-  STRICT=AUTO  # AUTO|ON|OFF (AUTO follows AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT)
-)
-
-# 4. Build a border (Optional)
-# Generates share/<package>/launch/sensing.launch.xml from sensing.border.yaml under design/.
-autoware_system_designer_build_deploy(
-  ${PROJECT_NAME}
-  sensing.border
-)
-```
-
-### Border (`*.border.yaml`)
-
-A border launches one instance (a module or a node) behind a fixed launch-file interface, so a hand-written entry launch file can be replaced by a generated one at the same path. It is a local build input like a deployments table: plain YAML, no format declaration, no schema. It is not part of any system; a system instantiates the same module.
+A subsystem launches one instance (a module or a node) behind a fixed launch-file interface, so a hand-written entry launch file can be replaced by a generated one at the same path. It holds a part of a system, never a system: a whole system is built and launched through its deployments. It is not part of any system; a system instantiates the same module.
 
 ```yaml
 name: perception # launch file stem; equals the file name stem
 
-instance: # the module or node the border launches
+instance: # the module or node the subsystem launches
   name: perception
   entity: Perception.module
   path: /perception
@@ -165,7 +138,7 @@ node_groups: # as in a system; `external` loads into a container the caller star
     nodes: [/perception/obstacle_segmentation/*]
 ```
 
-The border builds as a system on one compute unit whose boundary ports are the interface ports. An interface port carries the name of the instance port it binds to its topic; instance ports left out keep the topic the design gives them.
+The subsystem builds as a system on one compute unit whose boundary ports are the interface ports. An interface port carries the name of the instance port it binds to its topic; instance ports left out keep the topic the design gives them.
 
 The generated launch file follows the layout of a hand-written entry launch file:
 
@@ -178,17 +151,70 @@ Node remaps reach interface topics through the interface arguments, so overridin
 
 Node parameters resolved at build time are written to `config/<name>/<node path>.param.yaml` beside the launch file and loaded with `$(find-pkg-share <package>)`. Values carrying a substitution (`$(var ...)`) stay inline, and parameter files whose path is only known at launch time are loaded in place, keeping the launch order of default, override and mode parameters. Paths under a package directory are written as `$(find-pkg-share <package>)/...`, so the output does not depend on the workspace it was generated in.
 
-The export manifest (`exports/<name>/deployment.json`) records `kind: border` and the launch-file interface: the launch file, its arguments, the interface ports with their topics and the system launches. The studio lists a border beside the systems of its package. Its node diagram draws the interface ports on the border box, labelled with their topics, and the Interface view lists the launch command, the arguments, the interface and the instance. A border is not launched from the studio.
+The export manifest (`exports/<name>/deployment.json`) records `kind: subsystem` and the launch-file interface: the launch file, its arguments, the interface ports with their topics and the system launches. The studio lists a subsystem beside the systems of its package. Its node diagram draws the interface ports on the subsystem box, labelled with their topics, and the Interface view lists the launch command, the arguments, the interface and the instance. A subsystem is not launched from the studio.
 
-A border can also be generated outside a package build:
+A subsystem can also be generated outside a package build:
 
 ```bash
-# Writes launch/sensing.launch.xml and config/sensing/ into the package owning the border file.
-python3 <autoware_system_designer>/script/generate_border.py <pkg>/design/sensing.border.yaml \
+# Writes launch/sensing.launch.xml and config/sensing/ into the package owning the subsystem file.
+python3 <autoware_system_designer>/script/generate_subsystem.py <pkg>/design/sensing.subsystem.yaml \
   [--output-root <dir>] [--source-only]
 ```
 
 Packages resolve against the workspace install when it exists, otherwise against the sources (`--source-only` forces this). Parameter files generated during a package build exist only in the install.
+
+## Project Structure
+
+To use Autoware System Designer in your ROS 2 package, organize your files as follows:
+
+```text
+src/<package_name>/
+├── design/             # Main formats
+│   ├── node/           # *.node.yaml
+│   ├── module/         # *.module.yaml
+│   ├── system/         # *.system.yaml
+│   ├── parameter_set/  # *.parameter_set.yaml
+│   └── subsystem/      # Sub format: <name>.subsystem.yaml (an instance behind a generated launch file)
+├── deployment/         # Sub format: *.deployments.yaml (System instantiation)
+├── schema/             # *.schema.json (Parameter schemas)
+├── CMakeLists.txt
+└── package.xml
+```
+
+## Build Integration
+
+Autoware System Designer integrates directly into the CMake build process. Select the appropriate macros based on your package type.
+
+In your `CMakeLists.txt`:
+
+```cmake
+find_package(autoware_system_designer REQUIRED)
+
+# 1. Generate standalone node launchers (Optional)
+# Use this if your package defines nodes and you want individual launch files.
+autoware_system_designer_generate_launcher()
+
+# 2. Generate parameter files from schemas (Optional)
+# Use this if your package contains JSON schemas in the schema/ directory.
+autoware_system_designer_parameter()
+
+# 3. Build a full system deployment (Deployment Packages Only)
+# Use this only in the package responsible for building the full system configuration.
+autoware_system_designer_build_deploy(
+  ${PROJECT_NAME}
+  type_alpha.deployments
+  PRINT_LEVEL=WARNING
+  STRICT=AUTO  # AUTO|ON|OFF (AUTO follows AUTOWARE_SYSTEM_DESIGNER_BUILD_DEPLOY_STRICT)
+)
+
+# 4. Build a subsystem (Optional)
+# Generates share/<package>/launch/sensing.launch.xml from sensing.subsystem.yaml under design/.
+# See "Subsystem" under "Sub Formats".
+autoware_system_designer_build_deploy(
+  ${PROJECT_NAME}
+  sensing.subsystem
+)
+```
 
 ## Use as an independent workspace
 
@@ -217,12 +243,13 @@ xdg-open ~/studio_view/index.html
 
 ## Glossary
 
-### Entity Definitions
+### Entity Definitions (Main Formats)
 
 - **System**: The complete software stack.
 - **Module**: A reusable group of nodes/modules.
 - **Node**: An atomic software unit (process).
 - **Parameter Set**: Configuration overrides.
+- **Component**: A top-level instance within a System.
 
 ### Connectivity
 
@@ -235,8 +262,7 @@ xdg-open ~/studio_view/index.html
 - **Process**: A logical unit of execution within a node (e.g., a callback).
 - **Event**: A runtime occurrence of a process.
 
-### Instantiation
+### Instantiation (Sub Formats)
 
 - **Deployment**: A specific instance of a System tailored for an environment/vehicle.
-- **Border**: One instance launched behind a generated entry launch file with fixed topics and launch arguments.
-- **Component**: A top-level instance within a System.
+- **Subsystem**: One instance launched behind a generated entry launch file with fixed topics and launch arguments.

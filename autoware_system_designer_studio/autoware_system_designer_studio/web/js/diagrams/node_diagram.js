@@ -76,9 +76,9 @@
       this._indexParents(root);
       // Layer scales count from the deepest level drawn.
       this.maxDepth = Math.min(this.findMaxDepth(root), this.depthLimit);
-      // A root with boundary ports is a border: its interface ports sit on
+      // A root with boundary ports is a subsystem: its interface ports sit on
       // its box, labelled outside with the topic each one is bound to.
-      const isBorder =
+      const isSubsystem =
         (root.in_ports || []).length + (root.out_ports || []).length > 0;
 
       const addPorts = (node, ports, side, style, labelOf) => {
@@ -153,7 +153,7 @@
           },
         };
 
-        const interfaceBox = isBorder && depth === 0;
+        const interfaceBox = isSubsystem && depth === 0;
         if (interfaceBox)
           node.properties["org.eclipse.elk.portLabels.placement"] = "OUTSIDE";
         const labelOf = interfaceBox ? topicName : (port) => port.name;
@@ -212,8 +212,8 @@
         if (!rootNode.id) rootNode.id = "root";
       }
       this._injectRemapHub(rootNode);
-      // A border is one launch unit; its instance is not clustered.
-      if (!isBorder) this._groupByComputeUnit(rootNode, root);
+      // A subsystem is one launch unit; its instance is not clustered.
+      if (!isSubsystem) this._groupByComputeUnit(rootNode, root);
       this._buildGlobalTopicIndex();
       // ELK lays out ports of child nodes only, so a root with boundary ports
       // is placed inside a bare graph.

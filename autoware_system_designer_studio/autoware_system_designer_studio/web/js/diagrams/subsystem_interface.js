@@ -1,4 +1,4 @@
-// Border interface: the launch-file interface of a border as one sheet. The
+// Subsystem interface: the launch-file interface of a subsystem as one sheet. The
 // command launching it, its launch arguments with their defaults, the
 // interface ports (subscribers, publishers, clients, servers) with the topic
 // or service name and the launch argument each is reached by, the launch
@@ -28,7 +28,7 @@
 
   // Table of `columns` ({ title, cell(row) -> node | string }) over `rows`.
   function table(columns, rows, onSelect) {
-    const tableEl = el("table", "border-table");
+    const tableEl = el("table", "subsystem-table");
     const head = tableEl.createTHead().insertRow();
     columns.forEach((column) => head.appendChild(el("th", "", column.title)));
     const body = tableEl.createTBody();
@@ -44,7 +44,7 @@
       tr.classList.add("selectable");
       tr.addEventListener("click", () => {
         tableEl
-          .closest(".border-sheet")
+          .closest(".subsystem-sheet")
           .querySelectorAll("tr.selected")
           .forEach((other) => other.classList.remove("selected"));
         tr.classList.add("selected");
@@ -55,14 +55,14 @@
   }
 
   function section(title, count, content, className = "") {
-    const box = el("section", `border-section ${className}`.trim());
-    const heading = el("h3", "border-section-title", title);
-    if (count !== null) heading.appendChild(el("span", "border-count", count));
+    const box = el("section", `subsystem-section ${className}`.trim());
+    const heading = el("h3", "subsystem-section-title", title);
+    if (count !== null) heading.appendChild(el("span", "subsystem-count", count));
     box.append(heading, content);
     return box;
   }
 
-  const empty = (text) => el("p", "border-empty", text);
+  const empty = (text) => el("p", "subsystem-empty", text);
 
   // Nodes within an instance of the structure.
   function countNodes(instance) {
@@ -95,7 +95,7 @@
     });
   }
 
-  class BorderInterfaceModule extends DiagramBase {
+  class SubsystemInterfaceModule extends DiagramBase {
     constructor(container, options = {}) {
       super(container, options);
       this.ready = this.init();
@@ -105,56 +105,56 @@
       try {
         this.render(await this.loadModeData(this.options.mode));
       } catch (error) {
-        console.error("Error loading border interface:", error);
-        this.showError(`Error loading border interface: ${error.message}`);
+        console.error("Error loading subsystem interface:", error);
+        this.showError(`Error loading subsystem interface: ${error.message}`);
       }
     }
 
     render(root) {
-      const border = this.options.border || {};
-      const sheet = el("div", "border-sheet");
+      const subsystem = this.options.subsystem || {};
+      const sheet = el("div", "subsystem-sheet");
       sheet.append(
-        this.header(border),
+        this.header(subsystem),
         section(
           "Arguments",
-          (border.arguments || []).length,
-          this.argumentTable(border.arguments || []),
+          (subsystem.arguments || []).length,
+          this.argumentTable(subsystem.arguments || []),
         ),
       );
       sheet.append(
         this.portSection(
           "Subscribers",
           "input",
-          border.subscribers || [],
+          subsystem.subscribers || [],
           root.in_ports || [],
           root,
         ),
         this.portSection(
           "Publishers",
           "output",
-          border.publishers || [],
+          subsystem.publishers || [],
           root.out_ports || [],
           root,
         ),
       );
-      // Service sections appear when the border declares such ports.
-      if ((border.clients || []).length)
+      // Service sections appear when the subsystem declares such ports.
+      if ((subsystem.clients || []).length)
         sheet.appendChild(
           this.portSection(
             "Clients",
             "input",
-            border.clients,
+            subsystem.clients,
             root.in_ports || [],
             root,
             "Service",
           ),
         );
-      if ((border.servers || []).length)
+      if ((subsystem.servers || []).length)
         sheet.appendChild(
           this.portSection(
             "Servers",
             "output",
-            border.servers,
+            subsystem.servers,
             root.out_ports || [],
             root,
             "Service",
@@ -163,30 +163,30 @@
       sheet.append(
         section(
           "System launches",
-          (border.system_launches || []).length,
-          this.systemLaunchTable(border.system_launches || []),
+          (subsystem.system_launches || []).length,
+          this.systemLaunchTable(subsystem.system_launches || []),
         ),
         section("Instance", (root.children || []).length, this.instanceTable(root.children || [])),
       );
       this.container.replaceChildren(sheet);
     }
 
-    header(border) {
-      const box = el("header", "border-header");
-      const title = el("div", "border-title");
+    header(subsystem) {
+      const box = el("header", "subsystem-header");
+      const title = el("div", "subsystem-title");
       title.append(
-        el("span", "kind-tag", "border"),
-        el("span", "border-name", this.options.deployment),
+        el("span", "kind-tag", "subsystem"),
+        el("span", "subsystem-name", this.options.deployment),
       );
       box.appendChild(title);
-      if (border.launch_command) {
-        const command = el("div", "border-command");
-        command.append(code(border.launch_command), SD.widgets.copyButton(border.launch_command));
+      if (subsystem.launch_command) {
+        const command = el("div", "subsystem-command");
+        command.append(code(subsystem.launch_command), SD.widgets.copyButton(subsystem.launch_command));
         box.appendChild(command);
       }
-      if (border.launch_file)
+      if (subsystem.launch_file)
         box.appendChild(
-          el("div", "border-launch-file", `Generated launch file: ${border.launch_file}`),
+          el("div", "subsystem-launch-file", `Generated launch file: ${subsystem.launch_file}`),
         );
       return box;
     }
@@ -200,7 +200,7 @@
             title: "Default",
             cell: (a) =>
               a.default === null || a.default === undefined
-                ? el("span", "border-required", "required")
+                ? el("span", "subsystem-required", "required")
                 : code(a.default),
           },
           { title: "Description", cell: (a) => a.description },
@@ -222,7 +222,7 @@
               {
                 title: "Instance port",
                 cell: (r) => {
-                  const list = el("div", "border-peers");
+                  const list = el("div", "subsystem-peers");
                   r.peers.forEach((path) => list.appendChild(code(path)));
                   return list;
                 },
@@ -234,7 +234,7 @@
             },
           )
         : empty(`No ${title.toLowerCase()}.`);
-      return section(title, rows.length, content, `border-${prefix}`);
+      return section(title, rows.length, content, `subsystem-${prefix}`);
     }
 
     systemLaunchTable(launches) {
@@ -247,7 +247,7 @@
           {
             title: "Arguments",
             cell: (l) => {
-              const list = el("div", "border-peers");
+              const list = el("div", "subsystem-peers");
               (l.arguments || []).forEach((a) => list.appendChild(code(`${a.name}:=${a.value}`)));
               return list;
             },
@@ -282,7 +282,7 @@
     }
   }
 
-  BorderInterfaceModule.portRows = portRows;
+  SubsystemInterfaceModule.portRows = portRows;
 
-  SD.diagrams.register("border_interface", BorderInterfaceModule);
+  SD.diagrams.register("subsystem_interface", SubsystemInterfaceModule);
 })();

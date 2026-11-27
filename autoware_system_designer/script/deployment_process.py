@@ -24,11 +24,11 @@ from autoware_system_designer.deploy import (
     build_deployment,
     export_parameter_set_templates,
     export_reference_latency,
-    generate_border_launch_file,
+    generate_subsystem_launch_file,
     generate_build_scripts,
     generate_launchers,
 )
-from autoware_system_designer.parser.border_parser import is_border_file
+from autoware_system_designer.parser.subsystem_parser import is_subsystem_file
 
 # Stable name whether imported or executed as a script.
 _logger = logging.getLogger("autoware_system_designer.deployment_process")
@@ -84,10 +84,10 @@ def build(
         logger.info("Autoware System Designer: Building deployment...")
         artifacts = build_deployment(deploy_config)
 
-        if is_border_file(deployment_file):
-            # A border yields one flat launch file; it has no deployment of its own to script or template.
-            logger.info("Autoware System Designer: Generating the border launch file...")
-            generate_border_launch_file(artifacts, deployment_file)
+        if is_subsystem_file(deployment_file):
+            # A subsystem yields one flat launch file; it has no deployment of its own to script or template.
+            logger.info("Autoware System Designer: Generating the subsystem launch file...")
+            generate_subsystem_launch_file(artifacts, deployment_file)
             logger.info("Autoware System Designer: Done!")
             return
 

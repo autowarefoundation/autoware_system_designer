@@ -574,7 +574,7 @@ class LinkManager:
                 logger.debug(f"In port '{in_port.port_path}' topic '{in_port.get_topic()}' sources {sorted(sources)}")
             kind = in_port.role or "input"
             if in_port.own_topic:
-                # The port holds a topic of its own: a global one, or one bound by a border interface.
+                # The port holds a topic of its own: a global one, or one bound by a subsystem interface.
                 fixed = "/" + "/".join(in_port.own_topic)
                 others = {topic: port for topic, port in sources.items() if topic != fixed}
                 if not others:

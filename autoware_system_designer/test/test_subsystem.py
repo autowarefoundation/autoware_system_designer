@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Border targets: an instance behind a generated entry launch file."""
+"""Subsystem targets: an instance behind a generated entry launch file."""
 
 import json
 import xml.etree.ElementTree as ET
@@ -23,11 +23,11 @@ from pipeline_harness import run_pipeline, stage_case
 
 from autoware_system_designer.common.exceptions import SystemDesignerError
 
-BORDER = "pipeline_pkg/design/pipeline.border.yaml"
+SUBSYSTEM = "pipeline_pkg/design/pipeline.subsystem.yaml"
 
 
-def _rewrite_border(workspace, **changes):
-    path = workspace / BORDER
+def _rewrite_subsystem(workspace, **changes):
+    path = workspace / SUBSYSTEM
     data = yaml.safe_load(path.read_text())
     for key, value in changes.items():
         if value is None:
@@ -62,9 +62,9 @@ def _groups(root):
     return groups
 
 
-def test_border_generates_one_launch_file(tmp_path):
-    workspace = stage_case("border", tmp_path)
-    run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
+def test_subsystem_generates_one_launch_file(tmp_path):
+    workspace = stage_case("subsystem", tmp_path)
+    run = run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
 
     entry = run.out_root / "launch" / "pipeline.launch.xml"
     root = ET.parse(entry).getroot()
@@ -115,17 +115,17 @@ def test_border_generates_one_launch_file(tmp_path):
     assert {p.get("name"): p.get("value") for p in primary.iter("param")}["score_threshold"] == "$(var score_threshold)"
 
 
-def test_border_manifest_records_the_launch_file_interface(tmp_path):
-    workspace = stage_case("border", tmp_path)
-    run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
+def test_subsystem_manifest_records_the_launch_file_interface(tmp_path):
+    workspace = stage_case("subsystem", tmp_path)
+    run = run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
 
     manifest = json.loads((run.exports_dir / "deployment.json").read_text())
-    assert manifest["kind"] == "border"
+    assert manifest["kind"] == "subsystem"
     assert manifest["launch_units"] == {"default": []}
-    border = manifest["border"]
-    assert border["launch_file"] == "launch/pipeline.launch.xml"
-    assert (run.out_root / border["launch_file"]).is_file()
-    assert border["arguments"] == [
+    subsystem = manifest["subsystem"]
+    assert subsystem["launch_file"] == "launch/pipeline.launch.xml"
+    assert (run.out_root / subsystem["launch_file"]).is_file()
+    assert subsystem["arguments"] == [
         {"name": "score_threshold", "default": "0.3", "description": ""},
         {
             "name": "pointcloud_container_name",
@@ -134,11 +134,11 @@ def test_border_manifest_records_the_launch_file_interface(tmp_path):
         },
         {"name": "use_sim_time", "default": "false", "description": ""},
     ]
-    assert border["subscribers"] == [{"name": "pointcloud", "topic": "/sensing/lidar/concatenated/pointcloud"}]
-    assert border["publishers"] == [{"name": "objects", "topic": "/perception/objects"}]
-    assert border["servers"] == [{"name": "reset", "topic": "/perception/pipeline/reset"}]
-    assert border["clients"] == [{"name": "get_config", "topic": "/api/perception/get_config"}]
-    assert border["system_launches"] == [
+    assert subsystem["subscribers"] == [{"name": "pointcloud", "topic": "/sensing/lidar/concatenated/pointcloud"}]
+    assert subsystem["publishers"] == [{"name": "objects", "topic": "/perception/objects"}]
+    assert subsystem["servers"] == [{"name": "reset", "topic": "/perception/pipeline/reset"}]
+    assert subsystem["clients"] == [{"name": "get_config", "topic": "/api/perception/get_config"}]
+    assert subsystem["system_launches"] == [
         {
             "package": "autoware_global_parameter_loader",
             "file": "launch/global_params.launch.py",
@@ -148,9 +148,9 @@ def test_border_manifest_records_the_launch_file_interface(tmp_path):
     ]
 
 
-def test_border_interface_is_the_system_boundary(tmp_path):
-    workspace = stage_case("border", tmp_path)
-    run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
+def test_subsystem_interface_is_the_system_boundary(tmp_path):
+    workspace = stage_case("subsystem", tmp_path)
+    run = run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
     root = run.structure("default")["data"]
     assert {p["name"]: (p["role"], "/" + "/".join(p["topic"])) for p in root["in_ports"]} == {
         "pointcloud": ("subscriber", "/sensing/lidar/concatenated/pointcloud"),
@@ -212,30 +212,30 @@ def test_border_interface_is_the_system_boundary(tmp_path):
         ({"system_launches": [{"package": "p", "file": "f", "arguments": [{"name": "a"}]}]}, "requires 'value'"),
     ],
 )
-def test_border_errors(tmp_path, changes, message):
-    workspace = stage_case("border", tmp_path)
-    _rewrite_border(workspace, **changes)
+def test_subsystem_errors(tmp_path, changes, message):
+    workspace = stage_case("subsystem", tmp_path)
+    _rewrite_subsystem(workspace, **changes)
     with pytest.raises(SystemDesignerError) as excinfo:
-        run_pipeline(workspace, BORDER, tmp_path, strict=True)
+        run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
     assert message in str(excinfo.value)
-    assert "pipeline.border.yaml" in str(excinfo.value)
+    assert "pipeline.subsystem.yaml" in str(excinfo.value)
 
 
-def test_border_external_group_name_resolves_variables(tmp_path):
-    workspace = stage_case("border", tmp_path)
-    data = yaml.safe_load((workspace / BORDER).read_text())
+def test_subsystem_external_group_name_resolves_variables(tmp_path):
+    workspace = stage_case("subsystem", tmp_path)
+    data = yaml.safe_load((workspace / SUBSYSTEM).read_text())
     data["node_groups"][0]["name"] = "$(var container_ns)/$(var pointcloud_container_name)"
-    _rewrite_border(
+    _rewrite_subsystem(
         workspace, node_groups=data["node_groups"], variables=[{"name": "container_ns", "value": "/sensing"}]
     )
-    run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
+    run = run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
     nodes = _nodes(run.out_root / "launch" / "pipeline.launch.xml")
     assert nodes["filter_primary"][0] == "/sensing/$(var pointcloud_container_name)"
 
 
-def test_border_parameter_files(tmp_path):
-    workspace = stage_case("border", tmp_path)
-    run = run_pipeline(workspace, BORDER, tmp_path, strict=True)
+def test_subsystem_parameter_files(tmp_path):
+    workspace = stage_case("subsystem", tmp_path)
+    run = run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
     root = ET.parse(run.out_root / "launch" / "pipeline.launch.xml").getroot()
     params = {
         node.get("name"): [(p.get("from"), p.get("name"), p.get("value")) for p in node.iter("param")]
@@ -264,8 +264,8 @@ def test_border_parameter_files(tmp_path):
     }
 
 
-def test_border_parameter_order():
-    from autoware_system_designer.generator.border_parameters import plan_node_parameters
+def test_subsystem_parameter_order():
+    from autoware_system_designer.generator.subsystem_parameters import plan_node_parameters
 
     node = {
         "param_values": [
@@ -290,8 +290,8 @@ def test_border_parameter_order():
     ]
 
 
-def test_border_package_paths():
-    from autoware_system_designer.generator.border_parameters import PackagePaths
+def test_subsystem_package_paths():
+    from autoware_system_designer.generator.subsystem_parameters import PackagePaths
 
     paths = PackagePaths([("/ws/install/pkg/share/pkg", "pkg"), ("/ws/src/pkg", "pkg"), ("/ws/src/pkg_b", "pkg_b")])
     assert paths.portable("/ws/install/pkg/share/pkg/config/a.yaml") == "$(find-pkg-share pkg)/config/a.yaml"
@@ -299,7 +299,7 @@ def test_border_package_paths():
     assert paths.portable("/ws/src/pkg_c/x") == "/ws/src/pkg_c/x"
 
 
-def test_generate_border_script(tmp_path):
+def test_generate_subsystem_script(tmp_path):
     import shutil
     import subprocess
     import sys
@@ -309,10 +309,10 @@ def test_generate_border_script(tmp_path):
 
     # A workspace nested under another 'src' directory.
     package_dir = tmp_path / "src" / "ws" / "src" / "pipeline_pkg"
-    shutil.copytree(FIXTURES_DIR / "border" / "pipeline_pkg", package_dir)
-    script = Path(__file__).resolve().parents[1] / "script" / "generate_border.py"
+    shutil.copytree(FIXTURES_DIR / "subsystem" / "pipeline_pkg", package_dir)
+    script = Path(__file__).resolve().parents[1] / "script" / "generate_subsystem.py"
     result = subprocess.run(
-        [sys.executable, str(script), str(package_dir / "design" / "pipeline.border.yaml"), "--source-only"],
+        [sys.executable, str(script), str(package_dir / "design" / "pipeline.subsystem.yaml"), "--source-only"],
         capture_output=True,
         text=True,
     )

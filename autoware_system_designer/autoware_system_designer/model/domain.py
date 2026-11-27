@@ -42,7 +42,7 @@ class PortDefinition:
     message_type: Optional[str] = None
     remap_target: Optional[str] = None
     global_topic: Optional[str] = None  # global ROS topic override (was "global" key)
-    topic: Optional[str] = None  # topic a border interface port is bound to; absent from design files
+    topic: Optional[str] = None  # topic a subsystem interface port is bound to; absent from design files
 
     @classmethod
     def from_dict(cls, d: dict) -> PortDefinition:

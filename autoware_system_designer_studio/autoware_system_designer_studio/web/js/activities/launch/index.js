@@ -60,7 +60,7 @@
     group: "Monitor",
     order: 20,
     daemon: false,
-    border: false,
+    subsystem: false,
     side: false,
     inspector: false,
     views: () => ({ key: "view", fallback: DEFAULT_VIEW, items: VIEWS }),

@@ -204,8 +204,8 @@ def test_config_lists_the_systems_of_the_site_for_the_selector(tmp_path):
     ]
 
 
-BORDER = "sensing"
-BORDER_RECORD = {
+SUBSYSTEM = "sensing"
+SUBSYSTEM_RECORD = {
     "launch_file": "launch/sensing.launch.xml",
     "arguments": [{"name": "vehicle_id", "default": None, "description": "vehicle"}, {"name": "rate", "default": 10}],
     "subscribers": [{"name": "velocity", "topic": "/vehicle/status/velocity_status"}],
@@ -217,15 +217,15 @@ BORDER_RECORD = {
 }
 
 
-def _border(install):
-    """A border export beside the system of the install tree."""
-    export = install / PKG / "share" / PKG / "exports" / BORDER
+def _subsystem(install):
+    """A subsystem export beside the system of the install tree."""
+    export = install / PKG / "share" / PKG / "exports" / SUBSYSTEM
     (export / "system_structure").mkdir(parents=True)
     structure = {"schema_version": "1.2", "metadata": {"compute_units": []}, "data": {"path": "/", "in_ports": []}}
     (export / "system_structure" / "default.json").write_text(json.dumps(structure))
     manifest = {
-        "kind": "border",
-        "border": BORDER_RECORD,
+        "kind": "subsystem",
+        "subsystem": SUBSYSTEM_RECORD,
         "deployment_package_name": "sensing_designs",
         "default_mode": "default",
         "mode_keys": ["default"],
@@ -233,15 +233,15 @@ def _border(install):
     }
     (export / "deployment.json").write_text(json.dumps(manifest))
     systems, _ = exports.discover_systems(install)
-    return next(s for s in systems if s.name == BORDER), systems
+    return next(s for s in systems if s.name == SUBSYSTEM), systems
 
 
-def test_border_export_carries_its_launch_file_interface(tmp_path):
+def test_subsystem_export_carries_its_launch_file_interface(tmp_path):
     install, system = _system(tmp_path)
-    border, _ = _border(install)
-    assert system.kind == "system" and system.border() is None
-    assert border.kind == "border"
-    assert border.border() == {
+    subsystem, _ = _subsystem(install)
+    assert system.kind == "system" and system.subsystem() is None
+    assert subsystem.kind == "subsystem"
+    assert subsystem.subsystem() == {
         "launch_file": "launch/sensing.launch.xml",
         "launch_command": "ros2 launch sensing_designs sensing.launch.xml",
         "arguments": [
@@ -261,30 +261,30 @@ def test_border_export_carries_its_launch_file_interface(tmp_path):
             }
         ],
     }
-    assert border.to_view(None, {})["kind"] == "border"
+    assert subsystem.to_view(None, {})["kind"] == "subsystem"
 
 
-def test_border_pages_carry_the_kind_and_the_interface_view(tmp_path):
+def test_subsystem_pages_carry_the_kind_and_the_interface_view(tmp_path):
     install, system = _system(tmp_path)
-    border, systems = _border(install)
+    subsystem, systems = _subsystem(install)
     site = Site(systems)
-    base = f"systems/{PKG}/{BORDER}"
+    base = f"systems/{PKG}/{SUBSYSTEM}"
 
     text = site.render(f"{base}/config.js")
-    assert 'kind: "border"' in text
-    assert json.loads(text.partition("border: ")[2].partition(",\n")[0]) == border.border()
+    assert 'kind: "subsystem"' in text
+    assert json.loads(text.partition("subsystem: ")[2].partition(",\n")[0]) == subsystem.subsystem()
     diagrams = json.loads(text.partition("diagrams: ")[2].partition(",\n")[0])
     assert [d["type"] for d in diagrams] == list(assets.DIAGRAMS)
     assert "kinds" not in diagrams[-1]
     assert json.loads(text.partition("launchCommands: ")[2].rpartition("\n};")[0]) == []
-    # Systems precede the borders of their package in the selector.
+    # Systems precede the subsystems of their package in the selector.
     listed = json.loads(text.partition("systems: ")[2].partition(",\n")[0])
-    assert [(s["name"], s["kind"]) for s in listed] == [(SYSTEM, "system"), (BORDER, "border")]
+    assert [(s["name"], s["kind"]) for s in listed] == [(SYSTEM, "system"), (SUBSYSTEM, "subsystem")]
 
     system_config = site.render(f"{SITE}/config.js")
-    assert 'kind: "system"' in system_config and "border: null" in system_config
+    assert 'kind: "system"' in system_config and "subsystem: null" in system_config
     system_diagrams = json.loads(system_config.partition("diagrams: ")[2].partition(",\n")[0])
-    assert "border_interface" not in [d["type"] for d in system_diagrams]
+    assert "subsystem_interface" not in [d["type"] for d in system_diagrams]
 
     index = site.render("index.html")
     assert index.count('class="kind-tag"') == 1

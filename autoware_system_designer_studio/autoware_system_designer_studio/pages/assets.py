@@ -63,14 +63,14 @@ DIAGRAMS = {
         "searchable": False,
         "layered": False,
     },
-    "border_interface": {
-        "label": "Border Interface",
+    "subsystem_interface": {
+        "label": "Subsystem Interface",
         "short": "Interface",
         "icon": "M7 3H3v14h4M13 3h4v14h-4M1 7h5M1 13h5M14 10h5",
-        "script": "js/diagrams/border_interface.js",
+        "script": "js/diagrams/subsystem_interface.js",
         "searchable": False,
         "layered": False,
-        "kinds": ("border",),
+        "kinds": ("subsystem",),
     },
 }
 

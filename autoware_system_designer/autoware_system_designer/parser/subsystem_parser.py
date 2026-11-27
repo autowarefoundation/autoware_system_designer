@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Border: one instance launched behind a fixed launch-file interface.
+"""Subsystem: one instance launched behind a fixed launch-file interface.
 
-A ``*.border.yaml`` file is a local build input, like a deployments table: plain YAML
+A ``*.subsystem.yaml`` file is a local build input, like a deployments table: plain YAML
 without a format declaration or schema. It describes the instance (a module or a node),
 the launch arguments of the generated launch file, its external interface (instance
 ports bound to topic or service names), the launch files included ahead of the instance
 (system launches) and node groups. An interface port carries the name of the instance port it
-binds. The border builds as a system whose boundary ports are the interface ports.
+binds. The subsystem builds as a system whose boundary ports are the interface ports.
 """
 
 from __future__ import annotations
@@ -37,13 +37,13 @@ from autoware_system_designer.model.domain import PortDefinition
 from autoware_system_designer.parser.data_validator import entity_name_decode, split_package_qualifier
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
-BORDER_SUFFIX = ".border.yaml"
+SUBSYSTEM_SUFFIX = ".subsystem.yaml"
 
 # Kind of a built target, as the artifacts manifest records it.
 KIND_SYSTEM = "system"
-KIND_BORDER = "border"
+KIND_SUBSYSTEM = "subsystem"
 
-# The border name becomes the launch file stem, the export directory and the compute unit name.
+# The subsystem name becomes the launch file stem, the export directory and the compute unit name.
 _NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 _ARGUMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_/]*$")
 
@@ -66,12 +66,12 @@ _OUTPUT_SECTIONS = (("publishers", "publisher"), ("servers", "server"))
 _SYSTEM_LAUNCH_KEYS = ("package", "file", "scoped", "arguments")
 
 
-def is_border_file(path: str) -> bool:
-    return isinstance(path, str) and path.endswith(BORDER_SUFFIX)
+def is_subsystem_file(path: str) -> bool:
+    return isinstance(path, str) and path.endswith(SUBSYSTEM_SUFFIX)
 
 
 @dataclass
-class BorderPort:
+class SubsystemPort:
     """Instance port bound to a topic or service name."""
 
     name: str
@@ -80,14 +80,14 @@ class BorderPort:
 
 
 @dataclass
-class BorderArgument:
+class SubsystemArgument:
     name: str
     default: Optional[str] = None
     description: str = ""
 
 
 @dataclass
-class BorderSystemLaunch:
+class SubsystemSystemLaunch:
     """Launch file included ahead of the instance, e.g. the global parameter loader."""
 
     package: str
@@ -97,25 +97,25 @@ class BorderSystemLaunch:
 
 
 @dataclass
-class BorderConfig:
-    """Parsed border file."""
+class SubsystemConfig:
+    """Parsed subsystem file."""
 
     name: str
     file_path: Path
     instance: Dict[str, Any] = field(default_factory=dict)
-    arguments: List[BorderArgument] = field(default_factory=list)
+    arguments: List[SubsystemArgument] = field(default_factory=list)
     variables: List[Dict[str, Any]] = field(default_factory=list)
     # Interface ports by direction: subscribers and clients, publishers and servers.
-    inputs: List[BorderPort] = field(default_factory=list)
-    outputs: List[BorderPort] = field(default_factory=list)
-    system_launches: List[BorderSystemLaunch] = field(default_factory=list)
+    inputs: List[SubsystemPort] = field(default_factory=list)
+    outputs: List[SubsystemPort] = field(default_factory=list)
+    system_launches: List[SubsystemSystemLaunch] = field(default_factory=list)
     node_groups: List[Dict[str, Any]] = field(default_factory=list)
     source_map: Optional[Dict[str, Dict[str, int]]] = None
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
 class _Reader:
-    """Field access over the border YAML; every error names the file and the field."""
+    """Field access over the subsystem YAML; every error names the file and the field."""
 
     def __init__(self, file_path: Path, source_map: Optional[Dict[str, Dict[str, int]]]):
         self.file_path = file_path
@@ -123,7 +123,7 @@ class _Reader:
 
     def error(self, yaml_path: str, message: str) -> ValidationError:
         source = source_from_source_map(self.source_map, self.file_path, yaml_path)
-        return ValidationError(f"Border {self.file_path.name}: {message}{format_source(source)}", source=source)
+        return ValidationError(f"Subsystem {self.file_path.name}: {message}{format_source(source)}", source=source)
 
     def string(self, data: Dict[str, Any], key: str, yaml_path: str, required: bool = True) -> Optional[str]:
         value = data.get(key)
@@ -170,8 +170,8 @@ def _parse_instance(reader: _Reader, data: Dict[str, Any]) -> Dict[str, Any]:
     return item
 
 
-def _parse_arguments(reader: _Reader, data: Dict[str, Any]) -> List[BorderArgument]:
-    arguments: List[BorderArgument] = []
+def _parse_arguments(reader: _Reader, data: Dict[str, Any]) -> List[SubsystemArgument]:
+    arguments: List[SubsystemArgument] = []
     seen = set()
     for idx, item in enumerate(reader.items(data, "arguments")):
         yaml_path = f"/arguments/{idx}"
@@ -189,7 +189,7 @@ def _parse_arguments(reader: _Reader, data: Dict[str, Any]) -> List[BorderArgume
         description = item.get("description", "")
         if not isinstance(description, str):
             raise reader.error(f"{yaml_path}/description", "'description' must be a string")
-        arguments.append(BorderArgument(name=name, default=default, description=description))
+        arguments.append(SubsystemArgument(name=name, default=default, description=description))
     return arguments
 
 
@@ -209,9 +209,9 @@ def _parse_variables(reader: _Reader, data: Dict[str, Any], argument_names: set)
     return variables
 
 
-def _parse_ports(reader: _Reader, data: Dict[str, Any], sections: Tuple[Tuple[str, str], ...]) -> List[BorderPort]:
+def _parse_ports(reader: _Reader, data: Dict[str, Any], sections: Tuple[Tuple[str, str], ...]) -> List[SubsystemPort]:
     """Interface ports of one direction; a name is used once per direction, as on the instance."""
-    ports: List[BorderPort] = []
+    ports: List[SubsystemPort] = []
     seen: Dict[str, str] = {}
     for key, role in sections:
         for idx, item in enumerate(reader.items(data, key)):
@@ -226,12 +226,12 @@ def _parse_ports(reader: _Reader, data: Dict[str, Any], sections: Tuple[Tuple[st
                     f"{yaml_path}/topic", f"topic '{topic}' must be an absolute ROS name, e.g. '/foo/bar'"
                 )
             seen[name] = key
-            ports.append(BorderPort(name=name, topic=topic, role=role))
+            ports.append(SubsystemPort(name=name, topic=topic, role=role))
     return ports
 
 
-def _parse_system_launches(reader: _Reader, data: Dict[str, Any]) -> List[BorderSystemLaunch]:
-    launches: List[BorderSystemLaunch] = []
+def _parse_system_launches(reader: _Reader, data: Dict[str, Any]) -> List[SubsystemSystemLaunch]:
+    launches: List[SubsystemSystemLaunch] = []
     for idx, item in enumerate(reader.items(data, "system_launches")):
         yaml_path = f"/system_launches/{idx}"
         unknown = sorted(set(item) - set(_SYSTEM_LAUNCH_KEYS))
@@ -256,7 +256,7 @@ def _parse_system_launches(reader: _Reader, data: Dict[str, Any]) -> List[Border
                 raise reader.error(f"{arg_path}/value", f"system launch argument '{name}' requires 'value'")
             arguments.append((name, str(value)))
         launches.append(
-            BorderSystemLaunch(
+            SubsystemSystemLaunch(
                 package=reader.string(item, "package", yaml_path),
                 file=reader.string(item, "file", yaml_path),
                 scoped=scoped,
@@ -266,11 +266,11 @@ def _parse_system_launches(reader: _Reader, data: Dict[str, Any]) -> List[Border
     return launches
 
 
-def parse_border(border_path: str) -> BorderConfig:
-    """Parse and validate a border file; interface ports are checked against the entity when the system is linked."""
-    file_path = Path(canonical_path(border_path))
+def parse_subsystem(subsystem_path: str) -> SubsystemConfig:
+    """Parse and validate a subsystem file; interface ports are checked against the entity when the system is linked."""
+    file_path = Path(canonical_path(subsystem_path))
     if not file_path.is_file():
-        raise ValidationError(f"Border file not found: {border_path}")
+        raise ValidationError(f"Subsystem file not found: {subsystem_path}")
     data, source_map = yaml_parser.load_config_with_source(file_path)
     reader = _Reader(file_path, source_map)
     if not isinstance(data, dict):
@@ -283,12 +283,12 @@ def parse_border(border_path: str) -> BorderConfig:
     name = reader.string(data, "name", "")
     if not _NAME.match(name):
         raise reader.error("/name", f"name '{name}' must match {_NAME.pattern}")
-    expected_stem = file_path.name[: -len(BORDER_SUFFIX)]
+    expected_stem = file_path.name[: -len(SUBSYSTEM_SUFFIX)]
     if name != expected_stem:
-        raise reader.error("/name", f"name '{name}' differs from the file name '{expected_stem}{BORDER_SUFFIX}'")
+        raise reader.error("/name", f"name '{name}' differs from the file name '{expected_stem}{SUBSYSTEM_SUFFIX}'")
 
     arguments = _parse_arguments(reader, data)
-    return BorderConfig(
+    return SubsystemConfig(
         name=name,
         file_path=file_path,
         instance=_parse_instance(reader, data),
@@ -303,19 +303,19 @@ def parse_border(border_path: str) -> BorderConfig:
     )
 
 
-def border_launch_file(name: str) -> str:
-    """Launch file of a border, relative to the share directory of the package installing it."""
+def subsystem_launch_file(name: str) -> str:
+    """Launch file of a subsystem, relative to the share directory of the package installing it."""
     return f"launch/{name}.launch.xml"
 
 
-def border_record(border: BorderConfig) -> Dict[str, Any]:
-    """Launch-file interface of a border as the artifacts manifest carries it."""
+def subsystem_record(subsystem: SubsystemConfig) -> Dict[str, Any]:
+    """Launch-file interface of a subsystem as the artifacts manifest carries it."""
     return {
-        "launch_file": border_launch_file(border.name),
-        "arguments": [{"name": a.name, "default": a.default, "description": a.description} for a in border.arguments],
+        "launch_file": subsystem_launch_file(subsystem.name),
+        "arguments": [{"name": a.name, "default": a.default, "description": a.description} for a in subsystem.arguments],
         **{
             key: [{"name": p.name, "topic": p.topic} for p in ports if p.role == role]
-            for sections, ports in ((_INPUT_SECTIONS, border.inputs), (_OUTPUT_SECTIONS, border.outputs))
+            for sections, ports in ((_INPUT_SECTIONS, subsystem.inputs), (_OUTPUT_SECTIONS, subsystem.outputs))
             for key, role in sections
         },
         "system_launches": [
@@ -325,39 +325,39 @@ def border_record(border: BorderConfig) -> Dict[str, Any]:
                 "scoped": launch.scoped,
                 "arguments": [{"name": name, "value": value} for name, value in launch.arguments],
             }
-            for launch in border.system_launches
+            for launch in subsystem.system_launches
         ],
     }
 
 
-def _interface_ports(ports: List[BorderPort]) -> List[PortDefinition]:
+def _interface_ports(ports: List[SubsystemPort]) -> List[PortDefinition]:
     return [PortDefinition(name=port.name, port_role=port.role, topic=port.topic) for port in ports]
 
 
-def border_system_config(border: BorderConfig, config_registry: Any) -> SystemConfig:
-    """System the deployment build runs for the border, on one compute unit.
+def subsystem_system_config(subsystem: SubsystemConfig, config_registry: Any) -> SystemConfig:
+    """System the deployment build runs for the subsystem, on one compute unit.
 
     The interface ports are the boundary ports of the system, each bound to its topic and
     connected to the instance port of the same name.
     """
-    instance = border.instance["name"]
-    connections = [[f"{p.role}.{p.name}", f"{instance}.{p.role}.{p.name}"] for p in border.inputs] + [
-        [f"{instance}.{p.role}.{p.name}", f"{p.role}.{p.name}"] for p in border.outputs
+    instance = subsystem.instance["name"]
+    connections = [[f"{p.role}.{p.name}", f"{instance}.{p.role}.{p.name}"] for p in subsystem.inputs] + [
+        [f"{instance}.{p.role}.{p.name}", f"{p.role}.{p.name}"] for p in subsystem.outputs
     ]
 
     return SystemConfig(
-        name=border.name,
-        full_name=f"{border.name}.system",
+        name=subsystem.name,
+        full_name=f"{subsystem.name}.system",
         entity_type="system",
-        config=border.raw,
-        file_path=border.file_path,
-        source_map=border.source_map,
+        config=subsystem.raw,
+        file_path=subsystem.file_path,
+        source_map=subsystem.source_map,
         package=config_registry.deployment_package_name,
-        arguments=[{"name": argument.name} for argument in border.arguments],
-        components=[{**border.instance, "compute_unit": border.name}],
+        arguments=[{"name": argument.name} for argument in subsystem.arguments],
+        components=[{**subsystem.instance, "compute_unit": subsystem.name}],
         connections=connections,
-        variables=border.variables or None,
-        node_groups=border.node_groups or None,
-        inputs=_interface_ports(border.inputs),
-        outputs=_interface_ports(border.outputs),
+        variables=subsystem.variables or None,
+        node_groups=subsystem.node_groups or None,
+        inputs=_interface_ports(subsystem.inputs),
+        outputs=_interface_ports(subsystem.outputs),
     )

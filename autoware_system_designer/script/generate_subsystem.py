@@ -13,18 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Generate a border launch file and its parameter files outside a package build.
+"""Generate a subsystem launch file and its parameter files outside a package build.
 
-Collects the workspace design manifests, builds the border, and places
+Collects the workspace design manifests, builds the subsystem, and places
 launch/<name>.launch.xml and config/<name>/ under the output root, by
-default the source directory of the package owning the border file. The system structure
+default the source directory of the package owning the subsystem file. The system structure
 export stays in a temporary directory unless --exports-dir is given.
 
 Design and parameter files resolve against the workspace install when one exists (built
 parameter files are read from there), otherwise against the source packages.
 
 Usage:
-    generate_border.py <border.yaml> [--output-root DIR] [--package NAME]
+    generate_subsystem.py <subsystem.yaml> [--output-root DIR] [--package NAME]
         [--workspace-root DIR] [--source-only] [--exports-dir DIR]
 """
 
@@ -44,7 +44,7 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 import deployment_process  # noqa: E402
 
 from autoware_system_designer.common.exceptions import SystemDesignerError  # noqa: E402
-from autoware_system_designer.parser.border_parser import border_launch_file, parse_border  # noqa: E402
+from autoware_system_designer.parser.subsystem_parser import subsystem_launch_file, parse_subsystem  # noqa: E402
 
 
 def _owning_package(path: Path) -> Tuple[Optional[str], Optional[Path]]:
@@ -91,7 +91,7 @@ def _collect_manifests(package_dir: Path, manifest_dir: Path, workspace_root: Pa
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if result.returncode != 0:
         sys.stderr.write(result.stdout)
-        raise SystemExit(f"generate_border.py: manifest collection failed ({result.returncode})")
+        raise SystemExit(f"generate_subsystem.py: manifest collection failed ({result.returncode})")
 
 
 def _place(build_root: Path, output_root: Path, relative: str) -> Path:
@@ -113,8 +113,8 @@ def _place(build_root: Path, output_root: Path, relative: str) -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate a border launch file and its parameter files.")
-    parser.add_argument("border_file", help="<name>.border.yaml")
+    parser = argparse.ArgumentParser(description="Generate a subsystem launch file and its parameter files.")
+    parser.add_argument("subsystem_file", help="<name>.subsystem.yaml")
     parser.add_argument("--output-root", default=None, help="Default: source directory of the owning package")
     parser.add_argument("--package", default=None, help="Package installing the output; default: owning package")
     parser.add_argument(
@@ -124,30 +124,30 @@ def main() -> int:
     parser.add_argument("--exports-dir", default=None, help="Keep the build output (system structure) here")
     args = parser.parse_args()
 
-    border_file = Path(args.border_file).resolve()
-    border = parse_border(str(border_file))
-    owner, package_dir = _owning_package(border_file)
+    subsystem_file = Path(args.subsystem_file).resolve()
+    subsystem = parse_subsystem(str(subsystem_file))
+    owner, package_dir = _owning_package(subsystem_file)
     package = args.package or owner
     if not owner or not package or package_dir is None:
-        raise SystemExit(f"generate_border.py: no package.xml above {border_file}")
+        raise SystemExit(f"generate_subsystem.py: no package.xml above {subsystem_file}")
     workspace_root = Path(args.workspace_root).resolve() if args.workspace_root else _workspace_root(package_dir)
     if workspace_root is None:
-        raise SystemExit("generate_border.py: the workspace root is unknown; pass --workspace-root")
+        raise SystemExit("generate_subsystem.py: the workspace root is unknown; pass --workspace-root")
     output_root = Path(args.output_root).resolve() if args.output_root else package_dir
 
     os.environ.setdefault("AUTOWARE_SYSTEM_DESIGNER_STRICT", "1")
-    with tempfile.TemporaryDirectory(prefix="border_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="subsystem_") as tmp:
         manifest_dir = Path(tmp) / "manifests"
         build_root = Path(args.exports_dir).resolve() if args.exports_dir else Path(tmp) / "out"
         _collect_manifests(package_dir, manifest_dir, workspace_root, owner, args.source_only)
         workspace_yaml = package_dir / "workspace.yaml"
         workspace_yaml = str(workspace_yaml) if workspace_yaml.is_file() else None
         try:
-            deployment_process.build(str(border_file), str(manifest_dir), str(build_root), workspace_yaml, package)
+            deployment_process.build(str(subsystem_file), str(manifest_dir), str(build_root), workspace_yaml, package)
         except SystemDesignerError:
             return 1
-        launch_file = _place(build_root, output_root, border_launch_file(border.name))
-        param_dir = _place(build_root, output_root, f"config/{border.name}")
+        launch_file = _place(build_root, output_root, subsystem_launch_file(subsystem.name))
+        param_dir = _place(build_root, output_root, f"config/{subsystem.name}")
     print(f"{launch_file}\n{param_dir}/")
     return 0
 

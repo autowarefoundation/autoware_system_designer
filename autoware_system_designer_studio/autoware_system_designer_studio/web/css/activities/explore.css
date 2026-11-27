@@ -32,8 +32,8 @@
   color: var(--text-muted);
 }
 
-/* Border interface: one scrolling sheet of the launch-file interface */
-.border-sheet {
+/* Subsystem interface: one scrolling sheet of the launch-file interface */
+.subsystem-sheet {
   height: 100%;
   overflow: auto;
   padding: 20px 24px 32px;
@@ -42,27 +42,27 @@
   font-size: 13px;
 }
 
-.border-header {
+.subsystem-header {
   margin-bottom: 18px;
 }
 
-.border-title {
+.subsystem-title {
   display: flex;
   align-items: center;
   gap: 4px;
   margin-bottom: 8px;
 }
 
-.border-title .kind-tag {
+.subsystem-title .kind-tag {
   margin-left: 0;
 }
 
-.border-name {
+.subsystem-name {
   font-size: 18px;
   font-weight: 600;
 }
 
-.border-command {
+.subsystem-command {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -72,24 +72,24 @@
   border-radius: 4px;
 }
 
-.border-sheet code {
+.subsystem-sheet code {
   font-family: var(--mono-font);
   font-size: 12px;
   color: var(--text-primary);
 }
 
-.border-launch-file {
+.subsystem-launch-file {
   margin-top: 6px;
   font-size: 12px;
   color: var(--text-muted);
 }
 
-.border-section {
+.subsystem-section {
   min-width: 0;
   margin-bottom: 22px;
 }
 
-.border-section-title {
+.subsystem-section-title {
   margin: 0 0 6px;
   padding-left: 8px;
   font-size: 12px;
@@ -100,26 +100,26 @@
   border-left: 3px solid var(--border-hover);
 }
 
-.border-input .border-section-title {
+.subsystem-input .subsystem-section-title {
   border-left-color: var(--flow-in);
 }
 
-.border-output .border-section-title {
+.subsystem-output .subsystem-section-title {
   border-left-color: var(--flow-out);
 }
 
-.border-count {
+.subsystem-count {
   margin-left: 8px;
   font-weight: 400;
   color: var(--text-muted);
 }
 
-.border-table {
+.subsystem-table {
   width: 100%;
   border-collapse: collapse;
 }
 
-.border-table th {
+.subsystem-table th {
   padding: 6px 10px;
   text-align: left;
   font-size: 11px;
@@ -128,37 +128,37 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.border-table td {
+.subsystem-table td {
   padding: 5px 10px;
   vertical-align: top;
   border-bottom: 1px solid var(--border-color);
   overflow-wrap: break-word;
 }
 
-.border-table tr.selectable {
+.subsystem-table tr.selectable {
   cursor: pointer;
 }
 
-.border-table tr.selectable:hover {
+.subsystem-table tr.selectable:hover {
   background: var(--bg-sidebar);
 }
 
-.border-table tr.selected {
+.subsystem-table tr.selected {
   background: var(--highlight-bg);
 }
 
-.border-peers {
+.subsystem-peers {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.border-required,
-.border-empty {
+.subsystem-required,
+.subsystem-empty {
   color: var(--text-muted);
 }
 
-.border-empty {
+.subsystem-empty {
   margin: 0;
   padding: 4px 10px;
 }

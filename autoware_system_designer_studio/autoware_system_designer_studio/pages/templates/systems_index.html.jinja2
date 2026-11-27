@@ -35,8 +35,8 @@
                 <a href="{{ system.page }}" class="system-entry" data-system="{{ system.id }}">
                     <img class="system-icon" src="{{ system.icon }}" alt="">
                     <span class="system-name">{{ system.name }}</span>
-                    {% if system.kind == "border" %}
-                    <span class="kind-tag">border</span>
+                    {% if system.kind == "subsystem" %}
+                    <span class="kind-tag">subsystem</span>
                     {% endif %}
                     <span class="system-package">{{ system.package }}</span>
                 </a>

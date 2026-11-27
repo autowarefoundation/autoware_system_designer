@@ -1,4 +1,4 @@
-// Unit tests for the border interface sheet: the rows joining the declared
+// Unit tests for the subsystem interface sheet: the rows joining the declared
 // interface ports with the structure's boundary ports, on a stub window.
 
 const test = require("node:test");
@@ -21,7 +21,7 @@ global.window = {
     diagrams: { register: (_type, ModuleClass) => (Module = ModuleClass) },
   },
 };
-require(path.join(JS_DIR, "diagrams", "border_interface.js"));
+require(path.join(JS_DIR, "diagrams", "subsystem_interface.js"));
 
 const port = (id, name, portPath, msgType = "") => ({
   unique_id: id,
