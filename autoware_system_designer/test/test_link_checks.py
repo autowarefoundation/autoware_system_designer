@@ -164,3 +164,18 @@ def test_wildcard_skips_global_subscriber(tmp_path):
     assert set(_launch_topics(structure, "clock").values()) == {"/clock"}
     pipeline = next(child for child in structure["data"]["children"] if child["name"] == "pipeline")
     assert [port["name"] for port in pipeline["in_ports"]] == ["pointcloud"]
+
+
+def test_wildcard_matching_only_global_subscribers_fails(tmp_path):
+    workspace = stage_case("module_pipeline", tmp_path)
+
+    def add_global(node):
+        node["subscribers"].append({"name": "clock", "message_type": MSG, "global": "/clock"})
+
+    def connect_clock(module):
+        module["subscribers"].append({"name": "clock"})
+        module["connections"].append(["subscriber.clock", "filter_*.subscriber.clock"])
+
+    _edit(workspace, FILTER, add_global)
+    _edit(workspace, MODULE, connect_clock)
+    _fails(workspace, tmp_path, "E_WILDCARD_PRESET_INPUT")

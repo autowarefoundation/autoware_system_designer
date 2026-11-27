@@ -10,6 +10,7 @@ from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.source_location import SourceLocation
 from autoware_system_designer.model.execution import LaunchConfig, LaunchState
 from autoware_system_designer.model.namespace import node_group_pattern_matches, resolve_common_namespace_from_paths
+from autoware_system_designer.parser.subsystem_parser import is_subsystem_file
 
 if TYPE_CHECKING:
     from autoware_system_designer.builder.instances.instances import Instance
@@ -33,18 +34,29 @@ def node_group_types() -> dict[str, dict[str, Any]]:
     return types
 
 
-def external_containers(node_groups: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """Containers the ``external`` groups load into, each with the executable of its type."""
+def external_containers(instance: "Instance") -> list[dict[str, str]]:
+    """Containers the ``external`` groups of *instance* load into, named as their nodes target them."""
     types = node_group_types()
+    node_groups = getattr(instance.configuration, "node_groups", None) or []
     return [
         {
-            "name": group["name"],
+            "name": _external_target(instance, group["name"]),
             "package": types[group["type"]]["package"],
             "executable": types[group["type"]]["executable"],
         }
-        for group in _validate_node_groups(node_groups)
+        for group in _validate_node_groups(node_groups, allow_external=True)
         if group.get("external")
     ]
+
+
+def _external_target(instance: "Instance", group_name: str) -> str:
+    """Container an external group loads into; variables resolve now, arguments at launch."""
+    resolver = instance.parameter_resolver
+    if not resolver:
+        return group_name
+    file_path = getattr(instance.configuration, "file_path", None)
+    source = SourceLocation(file_path=Path(file_path)) if file_path else None
+    return resolver.resolve_string(group_name, source=source)
 
 
 def apply_node_groups(instance: "Instance") -> None:
@@ -57,7 +69,8 @@ def apply_node_groups(instance: "Instance") -> None:
       - Strictly validates node-group name uniqueness and supported type.
       - Creates container nodes only when at least one node is matched.
       - An ``external`` group creates no container; its nodes load into the container
-            named by the group, started outside the generated launchers.
+            named by the group, which the caller of a subsystem launch file starts.
+            Only a subsystem declares one.
     """
     node_groups = getattr(instance.configuration, "node_groups", None)
     if not node_groups:
@@ -65,7 +78,8 @@ def apply_node_groups(instance: "Instance") -> None:
     if not isinstance(node_groups, list):
         raise ValidationError("'node_groups' must be a list")
 
-    validated_groups = _validate_node_groups(node_groups)
+    file_path = getattr(instance.configuration, "file_path", None)
+    validated_groups = _validate_node_groups(node_groups, allow_external=is_subsystem_file(str(file_path or "")))
     all_node_instances = list(_iter_node_instances(instance))
 
     for group in validated_groups:
@@ -100,11 +114,7 @@ def apply_node_groups(instance: "Instance") -> None:
         )
 
         if group.get("external"):
-            # The launching side starts the container; variables resolve now, arguments at launch.
-            resolver = instance.parameter_resolver
-            file_path = getattr(instance.configuration, "file_path", None)
-            source = SourceLocation(file_path=Path(file_path)) if file_path else None
-            container_target_path = resolver.resolve_string(group_name, source=source) if resolver else group_name
+            container_target_path = _external_target(instance, group_name)
         else:
             container_instance = _create_group_container_node(
                 instance=instance,
@@ -148,7 +158,7 @@ def _resolve_group_compute_unit(
     return next(iter(compute_units))
 
 
-def _validate_node_groups(node_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _validate_node_groups(node_groups: list[dict[str, Any]], *, allow_external: bool) -> list[dict[str, Any]]:
     validated_groups: list[dict[str, Any]] = []
     seen_group_names: set[str] = set()
 
@@ -178,6 +188,10 @@ def _validate_node_groups(node_groups: list[dict[str, Any]]) -> list[dict[str, A
             raise ValidationError(f"Node group '{group_name}' has invalid 'nodes' field (expected list)")
         if not isinstance(group.get("external", False), bool):
             raise ValidationError(f"Node group '{group_name}' has invalid 'external' field (expected bool)")
+        if group.get("external") and not allow_external:
+            raise ValidationError(
+                f"Node group '{group_name}' is external, but only a subsystem has a caller that starts its container"
+            )
 
         validated_groups.append(group)
 

@@ -16,8 +16,8 @@
 """Generate a subsystem launch file and its parameter files outside a package build.
 
 Collects the workspace design manifests, builds the subsystem, and places
-launch/<name>.launch.xml and config/<name>/ under the output root, by
-default the source directory of the package owning the subsystem file. The system structure
+launch/<name>.launch.xml and exports/<name>/config/ under the output root, by
+default the source directory of the package owning the subsystem file. The rest of the
 export stays in a temporary directory unless --exports-dir is given.
 
 Design and parameter files resolve against the workspace install when one exists (built
@@ -43,7 +43,9 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 import deployment_process  # noqa: E402
 
 from autoware_system_designer.common.exceptions import SystemDesignerError  # noqa: E402
+from autoware_system_designer.common.export_layout import ExportLayout  # noqa: E402
 from autoware_system_designer.common.path_utils import owning_package  # noqa: E402
+from autoware_system_designer.generator.subsystem_launcher import check_replaceable_launch_file  # noqa: E402
 from autoware_system_designer.parser.subsystem_parser import parse_subsystem, subsystem_launch_file  # noqa: E402
 
 
@@ -124,6 +126,12 @@ def main() -> int:
     if workspace_root is None:
         raise SystemExit("generate_subsystem.py: the workspace root is unknown; pass --workspace-root")
     output_root = Path(args.output_root).resolve() if args.output_root else package_dir
+    launch_relative = subsystem_launch_file(subsystem.name)
+    param_relative = ExportLayout(".", subsystem.name).config_dir_in_package
+    try:
+        check_replaceable_launch_file(str(output_root / launch_relative))
+    except SystemDesignerError as exc:
+        raise SystemExit(f"generate_subsystem.py: {exc}") from exc
 
     os.environ.setdefault("AUTOWARE_SYSTEM_DESIGNER_STRICT", "1")
     with tempfile.TemporaryDirectory(prefix="subsystem_") as tmp:
@@ -136,8 +144,8 @@ def main() -> int:
             deployment_process.build(str(subsystem_file), str(manifest_dir), str(build_root), workspace_yaml, package)
         except SystemDesignerError:
             return 1
-        launch_file = _place(build_root, output_root, subsystem_launch_file(subsystem.name))
-        param_dir = _place(build_root, output_root, f"config/{subsystem.name}")
+        launch_file = _place(build_root, output_root, launch_relative)
+        param_dir = _place(build_root, output_root, param_relative)
     print(f"{launch_file}\n{param_dir}/")
     return 0
 

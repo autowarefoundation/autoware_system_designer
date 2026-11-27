@@ -267,17 +267,13 @@ class DeploymentBuilder:
                 )
             config_registry.anchor_dir = str(Path(picked_path).parent)
 
-    @staticmethod
-    def _subsystem_record(subsystem: SubsystemConfig) -> Dict[str, Any]:
-        return {**subsystem_record(subsystem), "external_containers": external_containers(subsystem.node_groups)}
-
     def _init_artifacts(self, system_config: SystemConfig, deploy_variants: List[Dict[str, Any]]) -> BuildArtifacts:
         layout = ExportLayout(self.deploy_config.output_root_dir, system_config.name)
         deployment_file = self.deploy_config.deployment_file
         subsystem = parse_subsystem(deployment_file) if is_subsystem_file(deployment_file) else None
         return BuildArtifacts(
             kind=KIND_SUBSYSTEM if subsystem else KIND_SYSTEM,
-            subsystem=self._subsystem_record(subsystem) if subsystem else None,
+            subsystem=subsystem_record(subsystem) if subsystem else None,
             subsystem_config=subsystem,
             layout=layout,
             workspace_root=self._export_workspace_root(),
@@ -506,6 +502,8 @@ class DeploymentBuilder:
                     if reached:
                         self._undefined_variables[mode_key] = reached
 
+                if artifacts.subsystem is not None:
+                    artifacts.subsystem.setdefault("external_containers", external_containers(deploy_instance))
                 artifacts.mode_keys.append(mode_key)
                 # A subsystem is launched through its entry launch file; it has no unit launchers.
                 artifacts.launch_units[mode_key] = (
@@ -779,7 +777,7 @@ def generate_subsystem_launch_file(artifacts: BuildArtifacts) -> str:
             f"Subsystem {subsystem.file_path.name}: the package that installs its launch file is unknown"
         )
     return generate_subsystem_launcher(
-        subsystem, data, output_file, package, artifacts.layout.output_root_dir, _package_paths(artifacts)
+        subsystem, data, output_file, package, artifacts.layout, _package_paths(artifacts)
     )
 
 

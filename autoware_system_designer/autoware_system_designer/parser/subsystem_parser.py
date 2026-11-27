@@ -46,6 +46,9 @@ KIND_SUBSYSTEM = "subsystem"
 # The subsystem name becomes the launch file stem, the export directory and the compute unit name.
 _NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 _ARGUMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_/]*$")
+# Instance and port names are joined into dot-separated connection endpoints.
+_INSTANCE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_PORT_NAME = _ARGUMENT_NAME
 
 _KNOWN_KEYS = (
     "name",
@@ -153,7 +156,9 @@ def _parse_instance(reader: _Reader, data: Dict[str, Any]) -> Dict[str, Any]:
     unknown = sorted(set(item) - set(_INSTANCE_KEYS))
     if unknown:
         raise reader.error(f"{yaml_path}/{unknown[0]}", f"unknown instance key(s) {unknown}")
-    reader.string(item, "name", yaml_path)
+    name = reader.string(item, "name", yaml_path)
+    if not _INSTANCE_NAME.match(name):
+        raise reader.error(f"{yaml_path}/name", f"instance name '{name}' must match {_INSTANCE_NAME.pattern}")
     entity = reader.string(item, "entity", yaml_path)
     try:
         _, entity_type = entity_name_decode(split_package_qualifier(entity)[1])
@@ -218,6 +223,8 @@ def _parse_ports(reader: _Reader, data: Dict[str, Any], sections: Tuple[Tuple[st
             yaml_path = f"/{key}/{idx}"
             name = reader.string(item, "name", yaml_path)
             topic = reader.string(item, "topic", yaml_path)
+            if not _PORT_NAME.match(name):
+                raise reader.error(f"{yaml_path}/name", f"port name '{name}' must match {_PORT_NAME.pattern}")
             if name in seen:
                 raise reader.error(f"{yaml_path}/name", f"{role} port '{name}' is already declared in {seen[name]}")
             segments = topic.lstrip("/").split("/")
@@ -228,6 +235,19 @@ def _parse_ports(reader: _Reader, data: Dict[str, Any], sections: Tuple[Tuple[st
             seen[name] = key
             ports.append(SubsystemPort(name=name, topic=topic, role=role))
     return ports
+
+
+def _check_interface_topics(reader: _Reader, data: Dict[str, Any]) -> None:
+    """Each topic is bound by one interface port, so the launch argument of every port remaps it."""
+    bound: Dict[str, str] = {}
+    for key, _ in _INPUT_SECTIONS + _OUTPUT_SECTIONS:
+        for idx, item in enumerate(reader.items(data, key)):
+            topic = item["topic"].strip()
+            if topic in bound:
+                raise reader.error(
+                    f"/{key}/{idx}/topic", f"topic '{topic}' is already bound by interface port '{bound[topic]}'"
+                )
+            bound[topic] = f"{key}/{item['name'].strip()}"
 
 
 def _parse_system_launches(reader: _Reader, data: Dict[str, Any]) -> List[SubsystemSystemLaunch]:
@@ -288,14 +308,17 @@ def parse_subsystem(subsystem_path: str) -> SubsystemConfig:
         raise reader.error("/name", f"name '{name}' differs from the file name '{expected_stem}{SUBSYSTEM_SUFFIX}'")
 
     arguments = _parse_arguments(reader, data)
+    inputs = _parse_ports(reader, data, _INPUT_SECTIONS)
+    outputs = _parse_ports(reader, data, _OUTPUT_SECTIONS)
+    _check_interface_topics(reader, data)
     return SubsystemConfig(
         name=name,
         file_path=file_path,
         instance=_parse_instance(reader, data),
         arguments=arguments,
         variables=_parse_variables(reader, data, {a.name for a in arguments}),
-        inputs=_parse_ports(reader, data, _INPUT_SECTIONS),
-        outputs=_parse_ports(reader, data, _OUTPUT_SECTIONS),
+        inputs=inputs,
+        outputs=outputs,
         system_launches=_parse_system_launches(reader, data),
         node_groups=reader.items(data, "node_groups"),
         source_map=source_map,

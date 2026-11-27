@@ -26,7 +26,7 @@ macro(autoware_system_designer_build_deploy project_name)
   #   ON:   fail build when deployment generation fails
   #   OFF:  warn and continue local build
   # A subsystem target reads <name>.subsystem.yaml under design/ and writes its entry launch file to
-  # share/<project>/launch/<name>.launch.xml.
+  # share/<project>/launch/<name>.launch.xml and its parameter files to share/<project>/exports/<name>/config/.
   # Full logs are still written to the per-target log file.
   # Valid levels: DEBUG, INFO, WARNING, ERROR, CRITICAL.
   set(_EXTRA_ARGS ${ARGN})
@@ -150,7 +150,7 @@ macro(autoware_system_designer_build_deploy project_name)
     list(GET _SUBSYSTEM_FILES 0 _DEPLOYMENT_FILE)
     set(_SUBSYSTEM_OUTPUT "launch/${_SUBSYSTEM_NAME}.launch.xml")
     # A source file or directory at a generated path would be installed over the generated one.
-    foreach(_SUBSYSTEM_GENERATED "${_SUBSYSTEM_OUTPUT}" "config/${_SUBSYSTEM_NAME}")
+    foreach(_SUBSYSTEM_GENERATED "${_SUBSYSTEM_OUTPUT}" "exports/${_SUBSYSTEM_NAME}")
       if(EXISTS "${CMAKE_SOURCE_DIR}/${_SUBSYSTEM_GENERATED}")
         message(FATAL_ERROR
           "autoware_system_designer_build_deploy: ${_SUBSYSTEM_GENERATED} exists in the package source and would be "

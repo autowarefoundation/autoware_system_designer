@@ -74,7 +74,8 @@ def match_and_pair_wildcard_ports(
     """Return (source_key, target_key) pairs honoring wildcard usage.
 
     Rules:
-    - One side has a wildcard => every match of that side pairs with the other side's port.
+    - One side has a wildcard => every match of that side pairs with the other side's port,
+      except a match naming the same instance port as the other side.
     - Both sides have wildcards => source captures are substituted into the target pattern.
 
     The wildcards *, ^ and + all match any character sequence; distinct characters
@@ -91,9 +92,9 @@ def match_and_pair_wildcard_ports(
     tgt_wc = has_wildcard(target_pattern)
 
     if src_wc and not tgt_wc:
-        return [(s, t) for s in sorted(src_matches) for t in tgt_matches]
+        return [(s, t) for s in sorted(src_matches) for t in tgt_matches if s != t]
     if tgt_wc and not src_wc:
-        return [(s, t) for s in src_matches for t in sorted(tgt_matches)]
+        return [(s, t) for s in src_matches for t in sorted(tgt_matches) if s != t]
 
     targets = set(tgt_matches)
     pairs: List[tuple[str, str]] = []
@@ -325,8 +326,10 @@ class LinkManager:
         sources: Dict[str, _PortInfo],
         targets: Dict[str, _PortInfo],
     ) -> None:
-        """Create the links of one connection."""
-        for from_info, to_info in self._match_connection(connection, sources, targets):
+        """Create the links of one connection; a wildcard whose every match is a global subscriber is an error."""
+        pairs = self._match_connection(connection, sources, targets)
+        skipped = 0
+        for from_info, to_info in pairs:
             from_port, to_port = self._resolve_ports_for_connection(connection, from_info, to_info)
 
             # A global subscriber keeps its topic; a connection cannot feed it.
@@ -339,6 +342,7 @@ class LinkManager:
                     logger.debug(message)
                 else:
                     logger.warning(message)
+                skipped += 1
                 continue
 
             if connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
@@ -351,6 +355,11 @@ class LinkManager:
                 self.in_ports.setdefault(from_port.name, from_port)
             elif connection.type == ConnectionType.INTERNAL_TO_EXTERNAL:
                 self.out_ports.setdefault(to_port.name, to_port)
+
+        if connection.has_wildcard and skipped == len(pairs):
+            raise self._connection_error(
+                connection, "[E_WILDCARD_PRESET_INPUT] Every port the wildcard matched is a global input port"
+            )
 
     def _claim_export(self, connection: Connection, from_port: OutPort, to_port: OutPort) -> None:
         """A boundary output names the topic of its node port, so a node port leaves through one."""

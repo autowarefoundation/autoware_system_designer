@@ -22,6 +22,7 @@ import yaml
 from pipeline_harness import run_pipeline, stage_case
 
 from autoware_system_designer.common.exceptions import SystemDesignerError
+from autoware_system_designer.generator.subsystem_launcher import check_replaceable_launch_file
 
 SUBSYSTEM = "pipeline_pkg/design/pipeline.subsystem.yaml"
 
@@ -185,6 +186,12 @@ def test_subsystem_interface_is_the_system_boundary(tmp_path):
         ({"servers": [{"name": "restart", "topic": "/perception/restart"}]}, "'restart' not in 'pipeline'"),
         ({"name": "other"}, "differs from the file name"),
         ({"name": "pipe.line"}, "must match"),
+        ({"instance": {"name": "pipe.line", "entity": "Pipeline.module"}}, "instance name 'pipe.line' must match"),
+        ({"publishers": [{"name": "obj.ects", "topic": "/perception/objects"}]}, "port name 'obj.ects' must match"),
+        (
+            {"publishers": [{"name": "objects", "topic": "/sensing/lidar/concatenated/pointcloud"}]},
+            "already bound by interface port 'subscribers/pointcloud'",
+        ),
         ({"instance": {"name": "pipeline", "entity": "Pipeline.system"}}, "must be a module or a node"),
         (
             {"instance": {"name": "pipeline", "entity": "Pipeline.module", "parameter_set": "Pipeline.parameter_set"}},
@@ -234,6 +241,44 @@ def test_subsystem_external_group_name_resolves_variables(tmp_path):
     run = run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
     nodes = _nodes(run.out_root / "launch" / "pipeline.launch.xml")
     assert nodes["filter_primary"][0] == "/sensing/$(var pointcloud_container_name)"
+    manifest = json.loads((run.exports_dir / "deployment.json").read_text())
+    assert [c["name"] for c in manifest["subsystem"]["external_containers"]] == [
+        "/sensing/$(var pointcloud_container_name)"
+    ]
+
+
+def test_external_group_requires_a_subsystem(tmp_path):
+    workspace = stage_case("module_pipeline", tmp_path)
+    path = workspace / "pipeline_pkg/Chain.system.yaml"
+    data = yaml.safe_load(path.read_text())
+    data["node_groups"][0]["external"] = True
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    with pytest.raises(SystemDesignerError) as excinfo:
+        run_pipeline(workspace, "pipeline_pkg/Chain.system.yaml", tmp_path)
+    assert "only a subsystem" in str(excinfo.value)
+
+
+def test_generated_launch_file_replaces_only_a_generated_one(tmp_path):
+    workspace = stage_case("subsystem", tmp_path)
+    run = run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
+    check_replaceable_launch_file(str(run.out_root / "launch" / "pipeline.launch.xml"))
+    check_replaceable_launch_file(str(tmp_path / "absent.launch.xml"))
+
+    handwritten = tmp_path / "pipeline.launch.xml"
+    handwritten.write_text("<launch/>\n")
+    with pytest.raises(SystemDesignerError) as excinfo:
+        check_replaceable_launch_file(str(handwritten))
+    assert "was not generated" in str(excinfo.value)
+
+
+def test_subsystem_parameters_stay_apart_from_package_config(tmp_path):
+    workspace = stage_case("subsystem", tmp_path)
+    own = tmp_path / "out" / "config" / "pipeline" / "own.param.yaml"
+    own.parent.mkdir(parents=True)
+    own.write_text("{}\n")
+    run = run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
+    assert [p.name for p in own.parent.iterdir()] == ["own.param.yaml"]
+    assert (run.out_root / "exports/pipeline/config/perception/pipeline/filter_primary.param.yaml").is_file()
 
 
 def test_subsystem_parameter_files(tmp_path):
@@ -244,7 +289,7 @@ def test_subsystem_parameter_files(tmp_path):
         node.get("name"): [(p.get("from"), p.get("name"), p.get("value")) for p in node.iter("param")]
         for node in root.iter("composable_node")
     }
-    file_ref = "$(find-pkg-share pipeline_pkg)/config/pipeline/perception/pipeline/{}.param.yaml"
+    file_ref = "$(find-pkg-share pipeline_pkg)/exports/pipeline/config/perception/pipeline/{}.param.yaml"
     # Build-time values load from a file; a value with a substitution stays inline after it.
     assert params["filter_primary"] == [
         (file_ref.format("filter_primary"), None, None),
@@ -252,7 +297,7 @@ def test_subsystem_parameter_files(tmp_path):
     ]
     assert params["filter_secondary"] == [(file_ref.format("filter_secondary"), None, None)]
     written = yaml.safe_load(
-        (run.out_root / "config/pipeline/perception/pipeline/filter_secondary.param.yaml").read_text()
+        (run.out_root / "exports/pipeline/config/perception/pipeline/filter_secondary.param.yaml").read_text()
     )
     assert written == {
         "/**": {
@@ -321,5 +366,7 @@ def test_generate_subsystem_script(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert "filter_primary" in _nodes(package_dir / "launch" / "pipeline.launch.xml")
-    assert (package_dir / "config/pipeline/perception/pipeline/filter_secondary.param.yaml").is_file()
-    assert not (package_dir / "exports").exists()
+    assert (package_dir / "exports/pipeline/config/perception/pipeline/filter_secondary.param.yaml").is_file()
+    # Only the parameter files of the export reach the package source.
+    assert [p.name for p in (package_dir / "exports" / "pipeline").iterdir()] == ["config"]
+    assert not (package_dir / "config" / "pipeline").exists()

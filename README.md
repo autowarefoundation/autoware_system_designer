@@ -149,14 +149,14 @@ The generated launch file follows the layout of a hand-written entry launch file
 
 Node remaps reach interface topics through the interface arguments, so overriding an interface argument rewires every node on that topic.
 
-Node parameters resolved at build time are written to `config/<name>/<node path>.param.yaml` beside the launch file and loaded with `$(find-pkg-share <package>)`. Values carrying a substitution (`$(var ...)`) stay inline, and parameter files whose path is only known at launch time are loaded in place, keeping the launch order of default, override and mode parameters. Paths under a package directory are written as `$(find-pkg-share <package>)/...`, so the output does not depend on the workspace it was generated in.
+Node parameters resolved at build time are written to `exports/<name>/config/<node path>.param.yaml`, inside the export tree the designer owns and apart from the package's own `config/`, and loaded with `$(find-pkg-share <package>)`. Values carrying a substitution (`$(var ...)`) stay inline, and parameter files whose path is only known at launch time are loaded in place, keeping the launch order of default, override and mode parameters. Paths under a package directory are written as `$(find-pkg-share <package>)/...`, so the output does not depend on the workspace it was generated in.
 
 The export manifest (`exports/<name>/deployment.json`) records `kind: subsystem` and the launch-file interface: the launch file, its arguments, the interface ports with their topics and the system launches. The studio lists a subsystem beside the systems of its package. Its node diagram draws the interface ports on the subsystem box, labelled with their topics, and the Interface view lists the launch command, the arguments, the interface and the instance. The studio builds the package of a subsystem and replays a scope of it from a rosbag: the launch arguments take their defaults, and the replay starts the containers of the `external` node groups. A subsystem is not launched from the studio.
 
 A subsystem can also be generated outside a package build:
 
 ```bash
-# Writes launch/sensing.launch.xml and config/sensing/ into the package owning the subsystem file.
+# Writes launch/sensing.launch.xml and exports/sensing/config/ into the package owning the subsystem file.
 python3 <autoware_system_designer>/script/generate_subsystem.py <pkg>/design/sensing.subsystem.yaml \
   [--output-root <dir>] [--source-only]
 ```
