@@ -34,9 +34,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
@@ -44,17 +43,8 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 import deployment_process  # noqa: E402
 
 from autoware_system_designer.common.exceptions import SystemDesignerError  # noqa: E402
+from autoware_system_designer.common.path_utils import owning_package  # noqa: E402
 from autoware_system_designer.parser.subsystem_parser import parse_subsystem, subsystem_launch_file  # noqa: E402
-
-
-def _owning_package(path: Path) -> Tuple[Optional[str], Optional[Path]]:
-    """Name and directory of the nearest package.xml above path."""
-    for directory in path.resolve().parents:
-        package_xml = directory / "package.xml"
-        if package_xml.is_file():
-            name = ET.parse(package_xml).getroot().findtext("name")
-            return (name.strip() if name else None), directory
-    return None, None
 
 
 def _workspace_root(package_dir: Path) -> Optional[Path]:
@@ -126,7 +116,7 @@ def main() -> int:
 
     subsystem_file = Path(args.subsystem_file).resolve()
     subsystem = parse_subsystem(str(subsystem_file))
-    owner, package_dir = _owning_package(subsystem_file)
+    owner, package_dir = owning_package(str(subsystem_file))
     package = args.package or owner
     if not owner or not package or package_dir is None:
         raise SystemExit(f"generate_subsystem.py: no package.xml above {subsystem_file}")

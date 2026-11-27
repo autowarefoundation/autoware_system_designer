@@ -508,11 +508,6 @@ class LinkManager:
     @staticmethod
     def _bind_input_topic(port: InPort, topic_parts: List[str]) -> None:
         for chained in port.get_chain_list():
-            if chained.is_global:
-                raise ValidationError(
-                    f"[E_INTERFACE_TOPIC] Interface port '{port.name}' reaches global port "
-                    f"'{chained.port_path}', which keeps its own topic"
-                )
             if chained.is_remapped and chained.own_topic and chained.own_topic != topic_parts:
                 raise ValidationError(
                     f"[E_INTERFACE_TOPIC] '{chained.port_path}' is bound to '{chained.get_topic()}' and to "
@@ -577,19 +572,12 @@ class LinkManager:
                 # The port holds a topic of its own: a global one, or one bound by a subsystem interface.
                 fixed = "/" + "/".join(in_port.own_topic)
                 others = {topic: port for topic, port in sources.items() if topic != fixed}
-                if not others:
-                    continue
-                listed = self._list_sources(others)
-                if in_port.is_global:
-                    logger.warning(
-                        f"Global {kind} '{in_port.port_path}' keeps topic '{fixed}'; "
-                        f"it does not receive the ports connected to it:{listed}"
+                if others:
+                    raise ValidationError(
+                        f"[E_TOPIC_CONFLICT] {kind} '{in_port.port_path}' is bound to topic '{fixed}' "
+                        f"and connected to:{self._list_sources(others)}"
                     )
-                    continue
-                raise ValidationError(
-                    f"[E_TOPIC_CONFLICT] {kind} '{in_port.port_path}' is bound to topic '{fixed}' "
-                    f"and connected to:{listed}"
-                )
+                continue
             if len(sources) > 1:
                 raise ValidationError(
                     f"[E_TOPIC_CONFLICT] {kind} '{in_port.port_path}' is connected on {len(sources)} topics, "

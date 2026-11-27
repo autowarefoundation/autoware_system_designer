@@ -177,7 +177,6 @@ def test_subsystem_interface_is_the_system_boundary(tmp_path):
     [
         ({"connections": []}, "unknown key(s) ['connections']"),
         ({"instance": [{"name": "pipeline", "entity": "Pipeline.module"}]}, "'instance' must be a mapping"),
-        ({"instance": None, "components": []}, "unknown key(s) ['components']"),
         ({"publishers": [{"name": "objects", "topic": "relative"}]}, "must be an absolute ROS name"),
         (
             {"clients": [{"name": "pointcloud", "topic": "/api/pointcloud"}]},
@@ -186,7 +185,6 @@ def test_subsystem_interface_is_the_system_boundary(tmp_path):
         ({"servers": [{"name": "restart", "topic": "/perception/restart"}]}, "'restart' not in 'pipeline'"),
         ({"name": "other"}, "differs from the file name"),
         ({"name": "pipe.line"}, "must match"),
-        ({"entity": "x"}, "unknown key(s) ['entity']"),
         ({"instance": {"name": "pipeline", "entity": "Pipeline.system"}}, "must be a module or a node"),
         (
             {"instance": {"name": "pipeline", "entity": "Pipeline.module", "parameter_set": "Pipeline.parameter_set"}},

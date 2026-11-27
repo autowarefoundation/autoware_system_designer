@@ -18,9 +18,6 @@ from autoware_system_designer.model.links import Connection
 
 logger = logging.getLogger(__name__)
 
-# Wildcard characters a connection reference may use; each one captures independently.
-_WILDCARD_CHARS = "*^+"
-
 # A resolved port entry: the entity owning the port, its direction, and the port itself.
 _PortEntry = Tuple[Config, str, PortDefinition]
 
@@ -318,7 +315,7 @@ class ValidationEngine:
         from_key = f"{parsed.from_instance}.{parsed.from_port_name}"
         to_key = f"{parsed.to_instance}.{parsed.to_port_name}"
 
-        if any(char in from_key or char in to_key for char in _WILDCARD_CHARS):
+        if parsed.has_wildcard:
             pairs = match_and_pair_wildcard_ports(
                 from_key,
                 to_key,

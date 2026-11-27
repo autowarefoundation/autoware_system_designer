@@ -27,7 +27,6 @@ import os
 import re
 import shutil
 import sys
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -59,6 +58,7 @@ from autoware_system_designer.common.path_utils import (
     export_path,
     has_workspace_token,
     is_within,
+    owning_package,
     resolve_manifest_path,
 )
 from autoware_system_designer.common.source_location import SourceLocation, format_source
@@ -77,6 +77,7 @@ from autoware_system_designer.parser.deployment_parser import peek_target_system
 from autoware_system_designer.parser.subsystem_parser import (
     KIND_SUBSYSTEM,
     KIND_SYSTEM,
+    SubsystemConfig,
     is_subsystem_file,
     parse_subsystem,
     subsystem_launch_file,
@@ -109,6 +110,8 @@ class BuildArtifacts:
     # A system, or a subsystem; the subsystem record is its launch-file interface.
     kind: str = KIND_SYSTEM
     subsystem: Optional[Dict[str, Any]] = None
+    # Parsed subsystem file; absent for a system and when artifacts are loaded from a manifest.
+    subsystem_config: Optional[SubsystemConfig] = field(default=None, metadata={"exclude": True})
     # Base for tokenized paths in the export files; kept out of the manifest and
     # re-derived on load so exports stay machine-independent.
     workspace_root: Optional[str] = field(default=None, metadata={"exclude": True})
@@ -264,16 +267,18 @@ class DeploymentBuilder:
                 )
             config_registry.anchor_dir = str(Path(picked_path).parent)
 
-    def _subsystem_record(self) -> Dict[str, Any]:
-        subsystem = parse_subsystem(self.deploy_config.deployment_file)
+    @staticmethod
+    def _subsystem_record(subsystem: SubsystemConfig) -> Dict[str, Any]:
         return {**subsystem_record(subsystem), "external_containers": external_containers(subsystem.node_groups)}
 
     def _init_artifacts(self, system_config: SystemConfig, deploy_variants: List[Dict[str, Any]]) -> BuildArtifacts:
         layout = ExportLayout(self.deploy_config.output_root_dir, system_config.name)
-        is_subsystem = is_subsystem_file(self.deploy_config.deployment_file)
+        deployment_file = self.deploy_config.deployment_file
+        subsystem = parse_subsystem(deployment_file) if is_subsystem_file(deployment_file) else None
         return BuildArtifacts(
-            kind=KIND_SUBSYSTEM if is_subsystem else KIND_SYSTEM,
-            subsystem=self._subsystem_record() if is_subsystem else None,
+            kind=KIND_SUBSYSTEM if subsystem else KIND_SYSTEM,
+            subsystem=self._subsystem_record(subsystem) if subsystem else None,
+            subsystem_config=subsystem,
             layout=layout,
             workspace_root=self._export_workspace_root(),
             system_file=str(system_config.file_path),
@@ -763,12 +768,12 @@ def export_parameter_set_templates(artifacts: BuildArtifacts) -> Dict[str, List[
     return output_paths
 
 
-def generate_subsystem_launch_file(artifacts: BuildArtifacts, subsystem_file: str) -> str:
+def generate_subsystem_launch_file(artifacts: BuildArtifacts) -> str:
     """Generate the subsystem launch file at launch/<name>.launch.xml under the output root."""
-    subsystem = parse_subsystem(subsystem_file)
+    subsystem = artifacts.subsystem_config
     output_file = os.path.join(artifacts.layout.output_root_dir, subsystem_launch_file(subsystem.name))
     _, data, _ = next(iter(_iter_mode_payloads(artifacts)))
-    package = artifacts.deployment_package_name or _owning_package_name(subsystem_file)
+    package = artifacts.deployment_package_name or owning_package(str(subsystem.file_path))[0]
     if not package:
         raise ValidationError(
             f"Subsystem {subsystem.file_path.name}: the package that installs its launch file is unknown"
@@ -778,22 +783,9 @@ def generate_subsystem_launch_file(artifacts: BuildArtifacts, subsystem_file: st
     )
 
 
-def _owning_package_name(path: str) -> Optional[str]:
-    """Name in the nearest package.xml above path."""
-    current = Path(path).resolve().parent
-    for directory in (current, *current.parents):
-        package_xml = directory / "package.xml"
-        if package_xml.is_file():
-            name = ET.parse(package_xml).getroot().findtext("name")
-            return name.strip() if name else None
-    return None
-
-
 def _package_paths(artifacts: BuildArtifacts) -> PackagePaths:
     """Share and source directories of every mapped package."""
     registry = artifacts.config_registry
-    if registry is None:
-        return PackagePaths([])
     dirs = []
     for name, share_dir in registry.package_paths.items():
         dirs.append((share_dir, name))

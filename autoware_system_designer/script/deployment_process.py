@@ -87,7 +87,7 @@ def build(
         if is_subsystem_file(deployment_file):
             # A subsystem yields one flat launch file; it has no deployment of its own to script or template.
             logger.info("Autoware System Designer: Generating the subsystem launch file...")
-            generate_subsystem_launch_file(artifacts, deployment_file)
+            generate_subsystem_launch_file(artifacts)
             logger.info("Autoware System Designer: Done!")
             return
 

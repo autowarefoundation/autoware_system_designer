@@ -213,7 +213,7 @@ def test_mismatched_port_roles_are_rejected(workspace):
         """,
     )
     assert len(diagnostics) == 1
-    assert "Invalid internal connection type" in diagnostics[0].message
+    assert "E_CONN_KIND" in diagnostics[0].message
 
 
 def test_message_type_mismatch_is_a_warning(workspace):
@@ -238,7 +238,7 @@ def test_service_connections_pair_server_with_client(workspace):
         """,
     )
     assert len(diagnostics) == 1
-    assert "Invalid internal connection type" in diagnostics[0].message
+    assert "E_CONN_KIND" in diagnostics[0].message
 
 
 def test_declared_kind_must_match_the_port_kind(workspace):
