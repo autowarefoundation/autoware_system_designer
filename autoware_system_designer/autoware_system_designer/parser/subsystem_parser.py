@@ -312,7 +312,9 @@ def subsystem_record(subsystem: SubsystemConfig) -> Dict[str, Any]:
     """Launch-file interface of a subsystem as the artifacts manifest carries it."""
     return {
         "launch_file": subsystem_launch_file(subsystem.name),
-        "arguments": [{"name": a.name, "default": a.default, "description": a.description} for a in subsystem.arguments],
+        "arguments": [
+            {"name": a.name, "default": a.default, "description": a.description} for a in subsystem.arguments
+        ],
         **{
             key: [{"name": p.name, "topic": p.topic} for p in ports if p.role == role]
             for sections, ports in ((_INPUT_SECTIONS, subsystem.inputs), (_OUTPUT_SECTIONS, subsystem.outputs))

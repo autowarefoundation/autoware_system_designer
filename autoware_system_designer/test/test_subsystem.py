@@ -189,9 +189,7 @@ def test_subsystem_interface_is_the_system_boundary(tmp_path):
         ({"entity": "x"}, "unknown key(s) ['entity']"),
         ({"instance": {"name": "pipeline", "entity": "Pipeline.system"}}, "must be a module or a node"),
         (
-            {
-                "instance": {"name": "pipeline", "entity": "Pipeline.module", "parameter_set": "Pipeline.parameter_set"}
-            },
+            {"instance": {"name": "pipeline", "entity": "Pipeline.module", "parameter_set": "Pipeline.parameter_set"}},
             "must be a list of parameter set names",
         ),
         ({"variables": [{"name": "score_threshold", "value": 1}]}, "both an argument and a variable"),

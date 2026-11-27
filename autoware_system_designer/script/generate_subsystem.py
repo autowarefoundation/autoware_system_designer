@@ -44,7 +44,7 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 import deployment_process  # noqa: E402
 
 from autoware_system_designer.common.exceptions import SystemDesignerError  # noqa: E402
-from autoware_system_designer.parser.subsystem_parser import subsystem_launch_file, parse_subsystem  # noqa: E402
+from autoware_system_designer.parser.subsystem_parser import parse_subsystem, subsystem_launch_file  # noqa: E402
 
 
 def _owning_package(path: Path) -> Tuple[Optional[str], Optional[Path]]:

@@ -30,8 +30,8 @@ from typing import Any, Dict, List, Tuple
 
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.template_renderer import TemplateRenderer
-from autoware_system_designer.generator.subsystem_parameters import PackagePaths, write_parameter_files
 from autoware_system_designer.generator.ros2_launcher.component_map import collect_component_nodes
+from autoware_system_designer.generator.subsystem_parameters import PackagePaths, write_parameter_files
 from autoware_system_designer.parser.subsystem_parser import SubsystemConfig
 
 logger = logging.getLogger(__name__)
@@ -87,7 +87,9 @@ def _check_launch_names(subsystem: SubsystemConfig, external: List[_Interface]) 
     entries = [(a.name, "argument") for a in subsystem.arguments] + [(i.name, "external interface") for i in external]
     for name, kind in entries:
         if name in declared:
-            raise ValidationError(f"Subsystem {subsystem.file_path.name}: {kind} '{name}' collides with an {declared[name]}")
+            raise ValidationError(
+                f"Subsystem {subsystem.file_path.name}: {kind} '{name}' collides with an {declared[name]}"
+            )
         declared[name] = kind
 
 

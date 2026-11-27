@@ -21,8 +21,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from autoware_system_designer.common.exceptions import ValidationError
 from autoware_system_designer.common.path_utils import canonical_path
 from autoware_system_designer.model.config import SystemConfig
-from autoware_system_designer.parser.subsystem_parser import subsystem_system_config, is_subsystem_file, parse_subsystem
 from autoware_system_designer.parser.data_validator import entity_name_decode, split_package_qualifier
+from autoware_system_designer.parser.subsystem_parser import is_subsystem_file, parse_subsystem, subsystem_system_config
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
 

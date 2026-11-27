@@ -64,24 +64,24 @@ from autoware_system_designer.common.path_utils import (
 from autoware_system_designer.common.source_location import SourceLocation, format_source
 from autoware_system_designer.common.template_renderer import TemplateRenderer
 from autoware_system_designer.generator import build_script_generator
-from autoware_system_designer.generator.subsystem_launcher import generate_subsystem_launcher
-from autoware_system_designer.generator.subsystem_parameters import PackagePaths
 from autoware_system_designer.generator.deploy_launchers import generate_deploy_launchers
 from autoware_system_designer.generator.parameter_template_generator import ParameterTemplateGenerator
 from autoware_system_designer.generator.ros2_launcher.generate_module_launcher import generate_module_launch_file
+from autoware_system_designer.generator.subsystem_launcher import generate_subsystem_launcher
+from autoware_system_designer.generator.subsystem_parameters import PackagePaths
 from autoware_system_designer.model import serde
 from autoware_system_designer.model.config import NodeConfig, SystemConfig
 from autoware_system_designer.model.export_schema import SCHEMA_VERSION
+from autoware_system_designer.parser.data_validator import split_package_qualifier
+from autoware_system_designer.parser.deployment_parser import peek_target_system_name, resolve_input_target
 from autoware_system_designer.parser.subsystem_parser import (
     KIND_SUBSYSTEM,
     KIND_SYSTEM,
-    subsystem_launch_file,
-    subsystem_record,
     is_subsystem_file,
     parse_subsystem,
+    subsystem_launch_file,
+    subsystem_record,
 )
-from autoware_system_designer.parser.data_validator import split_package_qualifier
-from autoware_system_designer.parser.deployment_parser import peek_target_system_name, resolve_input_target
 from autoware_system_designer.parser.yaml_parser import yaml_parser
 
 logger = logging.getLogger(__name__)
@@ -770,7 +770,9 @@ def generate_subsystem_launch_file(artifacts: BuildArtifacts, subsystem_file: st
     _, data, _ = next(iter(_iter_mode_payloads(artifacts)))
     package = artifacts.deployment_package_name or _owning_package_name(subsystem_file)
     if not package:
-        raise ValidationError(f"Subsystem {subsystem.file_path.name}: the package that installs its launch file is unknown")
+        raise ValidationError(
+            f"Subsystem {subsystem.file_path.name}: the package that installs its launch file is unknown"
+        )
     return generate_subsystem_launcher(
         subsystem, data, output_file, package, artifacts.layout.output_root_dir, _package_paths(artifacts)
     )

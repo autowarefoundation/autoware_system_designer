@@ -57,7 +57,8 @@
   function section(title, count, content, className = "") {
     const box = el("section", `subsystem-section ${className}`.trim());
     const heading = el("h3", "subsystem-section-title", title);
-    if (count !== null) heading.appendChild(el("span", "subsystem-count", count));
+    if (count !== null)
+      heading.appendChild(el("span", "subsystem-count", count));
     box.append(heading, content);
     return box;
   }
@@ -78,7 +79,9 @@
     const peers = new Map();
     links.forEach((link) => {
       const [own, other] =
-        prefix === "input" ? [link.from_port, link.to_port] : [link.to_port, link.from_port];
+        prefix === "input"
+          ? [link.from_port, link.to_port]
+          : [link.to_port, link.from_port];
       if (!own?.unique_id || !other?.port_path) return;
       const id = String(own.unique_id);
       if (!peers.has(id)) peers.set(id, []);
@@ -166,7 +169,11 @@
           (subsystem.system_launches || []).length,
           this.systemLaunchTable(subsystem.system_launches || []),
         ),
-        section("Instance", (root.children || []).length, this.instanceTable(root.children || [])),
+        section(
+          "Instance",
+          (root.children || []).length,
+          this.instanceTable(root.children || []),
+        ),
       );
       this.container.replaceChildren(sheet);
     }
@@ -181,11 +188,18 @@
       box.appendChild(title);
       if (subsystem.launch_command) {
         const command = el("div", "subsystem-command");
-        command.append(code(subsystem.launch_command), SD.widgets.copyButton(subsystem.launch_command));
+        command.append(
+          code(subsystem.launch_command),
+          SD.widgets.copyButton(subsystem.launch_command),
+        );
         box.appendChild(command);
       }
       if (subsystem.launch_file) {
-        const file = el("div", "subsystem-launch-file", "Generated launch file: ");
+        const file = el(
+          "div",
+          "subsystem-launch-file",
+          "Generated launch file: ",
+        );
         if (subsystem.launch_file_path) {
           const link = SD.editor.sourceLink(subsystem.launch_file_path, 1);
           link.textContent = subsystem.launch_file;
@@ -253,7 +267,9 @@
             title: "Arguments",
             cell: (l) => {
               const list = el("div", "subsystem-peers");
-              (l.arguments || []).forEach((a) => list.appendChild(code(`${a.name}:=${a.value}`)));
+              (l.arguments || []).forEach((a) =>
+                list.appendChild(code(`${a.name}:=${a.value}`)),
+              );
               return list;
             },
           },
@@ -272,7 +288,8 @@
           { title: "Nodes", cell: (c) => String(countNodes(c)) },
           {
             title: "Design",
-            cell: (c) => (c.source_file ? SD.editor.sourceLink(c.source_file, 1) : ""),
+            cell: (c) =>
+              c.source_file ? SD.editor.sourceLink(c.source_file, 1) : "",
           },
         ],
         instances,
