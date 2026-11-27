@@ -1,5 +1,6 @@
 import argparse
 import glob
+import json
 import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -54,6 +55,9 @@ def find_packages(root_dir):
             # But let's be safe and traverse.
     return packages
 
+
+# Format of the package map written by colcon-autoware-system-designer.
+PACKAGE_MAP_FORMAT_VERSION = 1
 
 AMENT_PACKAGES_INDEX = os.path.join("share", "ament_index", "resource_index", "packages")
 
@@ -186,6 +190,57 @@ def holds(root, path):
     return False
 
 
+def read_package_map(path):
+    """Package directories by real path from a package map written by colcon-autoware-system-designer."""
+    try:
+        with open(path) as stream:
+            data = json.load(stream)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Failed to read package map: {path}") from exc
+    if not isinstance(data, dict) or data.get("format_version") != PACKAGE_MAP_FORMAT_VERSION:
+        raise ValueError(
+            f"Unsupported package map format in {path}; expected format_version {PACKAGE_MAP_FORMAT_VERSION}"
+        )
+    packages = data.get("packages")
+    if not isinstance(packages, dict):
+        raise ValueError(f"Package map {path} has no 'packages' table")
+    return {os.path.realpath(pkg_dir): name for name, pkg_dir in sorted(packages.items()) if os.path.isdir(pkg_dir)}
+
+
+def mapped_scope(start_path, package_map_file):
+    """Scan roots and package directories from the colcon package map; the deploying package is always included."""
+    pkg_paths = read_package_map(package_map_file)
+    start = os.path.realpath(start_path)
+    start_name = get_package_name(start)
+    if start_name:
+        pkg_paths.setdefault(start, start_name)
+    roots = scan_roots(start, *sorted(pkg_paths))
+    print(f"Scope from package map {package_map_file}: {len(roots)} scan roots")
+    return roots, pkg_paths
+
+
+def layout_scope(start_path, given_workspace_root):
+    """Scan roots and package directories derived from the workspace layout."""
+    # colcon run from another directory puts the build tree outside the sources, so the given
+    # root does not hold the package. The root is then derived from the package path.
+    if given_workspace_root and holds(given_workspace_root, start_path):
+        workspace_root = os.path.realpath(given_workspace_root)
+        source_root = os.path.join(workspace_root, "src")
+    else:
+        if given_workspace_root:
+            print(f"Workspace root {given_workspace_root} does not hold {start_path}, deriving it from the package")
+        source_root = find_source_root(start_path)
+        workspace_root = os.path.dirname(source_root) if os.path.basename(source_root) == "src" else None
+    # Scope of the build: the deploying package, the workspace layer holding it, and the source root.
+    roots = scan_roots(start_path, layer_root(start_path, workspace_root), source_root)
+    pkg_paths = {}
+    for root in roots:
+        print(f"Scanning: {root}")
+        for pkg_dir, pkg_name in find_packages(root).items():
+            pkg_paths.setdefault(pkg_dir, pkg_name)
+    return roots, pkg_paths
+
+
 def scan_roots(start_path, *more_roots):
     """Directories to scan, the deploying package first; a root nested in an earlier one is dropped."""
     roots = []
@@ -247,6 +302,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--package-map-file",
+        default=None,
+        help=(
+            "Package map written by colcon-autoware-system-designer (JSON). When the file exists, the scan "
+            "covers the deploying package and every package in the map, and --workspace-root is ignored."
+        ),
+    )
+    parser.add_argument(
         "--include-installed",
         action="store_true",
         help=(
@@ -258,25 +321,14 @@ def main():
 
     anchor = os.path.realpath(args.anchor) if args.anchor else None
 
-    # colcon run from another directory puts the build tree outside the sources, so the given
-    # root does not hold the package. The root is then derived from the package path.
-    if args.workspace_root and holds(args.workspace_root, args.start_path):
-        workspace_root = os.path.realpath(args.workspace_root)
-        source_root = os.path.join(workspace_root, "src")
+    # The colcon package map holds every package of the build; the layout is the fallback without it.
+    if args.package_map_file and os.path.isfile(args.package_map_file):
+        roots, pkg_paths = mapped_scope(args.start_path, args.package_map_file)
     else:
-        if args.workspace_root:
-            print(f"Workspace root {args.workspace_root} does not hold {args.start_path}, deriving it from the package")
-        source_root = find_source_root(args.start_path)
-        workspace_root = os.path.dirname(source_root) if os.path.basename(source_root) == "src" else None
-    # Scope of the build: the deploying package, the workspace layer holding it, and the source root.
-    roots = scan_roots(args.start_path, layer_root(args.start_path, workspace_root), source_root)
+        if args.package_map_file:
+            print(f"Package map {args.package_map_file} not found, deriving the scope from the workspace layout")
+        roots, pkg_paths = layout_scope(args.start_path, args.workspace_root)
     output_dir = os.path.abspath(args.output_dir)
-
-    pkg_paths = {}
-    for root in roots:
-        print(f"Scanning: {root}")
-        for pkg_dir, pkg_name in find_packages(root).items():
-            pkg_paths.setdefault(pkg_dir, pkg_name)
     print(f"Found {len(pkg_paths)} packages")
 
     # Identify the current package name to detect install layout (isolated vs merged)

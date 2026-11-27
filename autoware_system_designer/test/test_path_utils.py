@@ -13,9 +13,11 @@
 # limitations under the License.
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 
+import pytest
 import yaml
 from conftest import write_node, write_system
 
@@ -277,6 +279,106 @@ def test_collector_keeps_a_workspace_root_that_holds_a_symlinked_package(tmp_pat
     )
 
     assert set(data["package_map"]) == {"pkg_linked", "pkg_nodes"}
+
+
+def _write_colcon_package_map(path: Path, packages: dict) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"format_version": 1, "packages": {name: str(pkg_dir) for name, pkg_dir in packages.items()}}
+    path.write_text(json.dumps(payload))
+    return path
+
+
+def _sources_outside_any_src(tmp_path: Path) -> dict:
+    """Sources in a directory not named src, built from an unrelated directory, as no layout heuristic finds."""
+    sources = tmp_path / "checkout" / "core"
+    deploying = sources / "demo" / "pkg_systems"
+    _write_package(deploying, "pkg_systems")
+    write_system(deploying / "design", "Tiny", "Demo")
+    _write_package(sources / "demo" / "pkg_nodes", "pkg_nodes")
+    write_node(sources / "demo" / "pkg_nodes", "Demo", "pkg_nodes")
+    build_base = tmp_path / "home" / "build"
+    build_base.mkdir(parents=True)
+    return {"sources": sources, "deploying": deploying, "build_base": build_base}
+
+
+def test_collector_scope_follows_the_colcon_package_map(tmp_path, monkeypatch):
+    layout = _sources_outside_any_src(tmp_path)
+    sources = layout["sources"]
+    package_map = _write_colcon_package_map(
+        layout["build_base"] / ".autoware_system_designer_packages.json",
+        {"pkg_systems": layout["deploying"], "pkg_nodes": sources / "demo" / "pkg_nodes"},
+    )
+    out = tmp_path / "manifests"
+
+    data = _run_collector(
+        monkeypatch,
+        out,
+        layout["deploying"],
+        tmp_path / "install" / "pkg_systems",
+        "--workspace-root",
+        str(tmp_path / "home"),
+        "--package-map-file",
+        str(package_map),
+    )
+
+    assert set(data["package_map"]) == {"pkg_systems", "pkg_nodes"}
+    nodes_manifest = yaml.safe_load((out / "pkg_nodes.yaml").read_text())
+    assert [entry["type"] for entry in nodes_manifest["deploy_config_files"]] == ["node"]
+
+
+def test_collector_without_the_package_map_misses_sources_outside_any_src(tmp_path, monkeypatch):
+    layout = _sources_outside_any_src(tmp_path)
+
+    data = _run_collector(
+        monkeypatch,
+        tmp_path / "manifests",
+        layout["deploying"],
+        tmp_path / "install" / "pkg_systems",
+        "--workspace-root",
+        str(tmp_path / "home"),
+        "--package-map-file",
+        str(layout["build_base"] / ".autoware_system_designer_packages.json"),
+    )
+
+    assert set(data["package_map"]) == {"pkg_systems"}
+
+
+def test_collector_scans_only_the_packages_in_the_map(tmp_path, monkeypatch):
+    ws = _scoped_workspace(tmp_path)
+    package_map = _write_colcon_package_map(
+        ws["ws"] / "build" / ".autoware_system_designer_packages.json",
+        {"pkg_src": ws["ws"] / "src" / "pkg_src", "pkg_other": ws["ws"] / "other" / "pkg_other"},
+    )
+
+    data = _run_collector(
+        monkeypatch,
+        tmp_path / "manifests",
+        ws["deploying"],
+        ws["install"] / "pkg_launcher",
+        "--workspace-root",
+        str(ws["ws"]),
+        "--package-map-file",
+        str(package_map),
+    )
+
+    # The deploying package joins the map; pkg_vehicle sits beside it but colcon did not discover it.
+    assert set(data["package_map"]) == {"pkg_launcher", "pkg_src", "pkg_other"}
+
+
+def test_collector_rejects_an_unsupported_package_map(tmp_path, monkeypatch):
+    layout = _sources_outside_any_src(tmp_path)
+    package_map = layout["build_base"] / ".autoware_system_designer_packages.json"
+    package_map.write_text(json.dumps({"format_version": 99, "packages": {}}))
+
+    with pytest.raises(ValueError, match="format_version"):
+        _run_collector(
+            monkeypatch,
+            tmp_path / "manifests",
+            layout["deploying"],
+            tmp_path / "install" / "pkg_systems",
+            "--package-map-file",
+            str(package_map),
+        )
 
 
 def test_collector_maps_installed_packages_outside_the_scope_on_request(tmp_path, monkeypatch):
