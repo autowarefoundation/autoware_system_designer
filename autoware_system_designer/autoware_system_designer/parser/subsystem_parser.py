@@ -237,19 +237,6 @@ def _parse_ports(reader: _Reader, data: Dict[str, Any], sections: Tuple[Tuple[st
     return ports
 
 
-def _check_interface_topics(reader: _Reader, data: Dict[str, Any]) -> None:
-    """Each topic is bound by one interface port, so the launch argument of every port remaps it."""
-    bound: Dict[str, str] = {}
-    for key, _ in _INPUT_SECTIONS + _OUTPUT_SECTIONS:
-        for idx, item in enumerate(reader.items(data, key)):
-            topic = item["topic"].strip()
-            if topic in bound:
-                raise reader.error(
-                    f"/{key}/{idx}/topic", f"topic '{topic}' is already bound by interface port '{bound[topic]}'"
-                )
-            bound[topic] = f"{key}/{item['name'].strip()}"
-
-
 def _parse_system_launches(reader: _Reader, data: Dict[str, Any]) -> List[SubsystemSystemLaunch]:
     launches: List[SubsystemSystemLaunch] = []
     for idx, item in enumerate(reader.items(data, "system_launches")):
@@ -308,17 +295,14 @@ def parse_subsystem(subsystem_path: str) -> SubsystemConfig:
         raise reader.error("/name", f"name '{name}' differs from the file name '{expected_stem}{SUBSYSTEM_SUFFIX}'")
 
     arguments = _parse_arguments(reader, data)
-    inputs = _parse_ports(reader, data, _INPUT_SECTIONS)
-    outputs = _parse_ports(reader, data, _OUTPUT_SECTIONS)
-    _check_interface_topics(reader, data)
     return SubsystemConfig(
         name=name,
         file_path=file_path,
         instance=_parse_instance(reader, data),
         arguments=arguments,
         variables=_parse_variables(reader, data, {a.name for a in arguments}),
-        inputs=inputs,
-        outputs=outputs,
+        inputs=_parse_ports(reader, data, _INPUT_SECTIONS),
+        outputs=_parse_ports(reader, data, _OUTPUT_SECTIONS),
         system_launches=_parse_system_launches(reader, data),
         node_groups=reader.items(data, "node_groups"),
         source_map=source_map,

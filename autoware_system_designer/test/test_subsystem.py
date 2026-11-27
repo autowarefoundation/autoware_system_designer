@@ -188,10 +188,6 @@ def test_subsystem_interface_is_the_system_boundary(tmp_path):
         ({"name": "pipe.line"}, "must match"),
         ({"instance": {"name": "pipe.line", "entity": "Pipeline.module"}}, "instance name 'pipe.line' must match"),
         ({"publishers": [{"name": "obj.ects", "topic": "/perception/objects"}]}, "port name 'obj.ects' must match"),
-        (
-            {"publishers": [{"name": "objects", "topic": "/sensing/lidar/concatenated/pointcloud"}]},
-            "already bound by interface port 'subscribers/pointcloud'",
-        ),
         ({"instance": {"name": "pipeline", "entity": "Pipeline.system"}}, "must be a module or a node"),
         (
             {"instance": {"name": "pipeline", "entity": "Pipeline.module", "parameter_set": "Pipeline.parameter_set"}},
@@ -245,6 +241,68 @@ def test_subsystem_external_group_name_resolves_variables(tmp_path):
     assert [c["name"] for c in manifest["subsystem"]["external_containers"]] == [
         "/sensing/$(var pointcloud_container_name)"
     ]
+
+
+DIAG = "diagnostic_msgs/msg/DiagnosticArray"
+
+
+def _export_diagnostics(workspace, global_topic, topic_a, topic_b):
+    """Merger and the primary filter each publish 'diag', exported as diag_a and diag_b."""
+
+    def edit(relative, change):
+        path = workspace / "pipeline_pkg" / relative
+        data = yaml.safe_load(path.read_text())
+        change(data)
+        path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+    port = {"name": "diag", "message_type": DIAG, **({"global": global_topic} if global_topic else {})}
+    for node in ("Merger.node.yaml", "Filter.node.yaml"):
+        edit(node, lambda data: data.setdefault("publishers", []).append(dict(port)))
+
+    def module(data):
+        data["publishers"] += [{"name": "diag_a"}, {"name": "diag_b"}]
+        data["connections"] += [
+            ["node_merger.publisher.diag", "publisher.diag_a"],
+            ["filter_primary.publisher.diag", "publisher.diag_b"],
+        ]
+
+    edit("Pipeline.module.yaml", module)
+    edit(
+        "design/pipeline.subsystem.yaml",
+        lambda data: data["publishers"].extend(
+            [{"name": "diag_a", "topic": topic_a}, {"name": "diag_b", "topic": topic_b}]
+        ),
+    )
+
+
+def test_subsystem_interface_ports_share_no_topic(tmp_path):
+    workspace = stage_case("subsystem", tmp_path)
+    _export_diagnostics(workspace, None, "/diagnostics", "/diagnostics")
+    with pytest.raises(SystemDesignerError) as excinfo:
+        run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
+    assert "E_INTERFACE_TOPIC_SHARED" in str(excinfo.value)
+    assert "publisher 'diag_a', publisher 'diag_b'" in str(excinfo.value)
+
+
+def test_subsystem_interface_ports_share_a_global_topic(tmp_path):
+    workspace = stage_case("subsystem", tmp_path)
+    _export_diagnostics(workspace, "/diagnostics", "/diagnostics", "/diagnostics")
+    run = run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
+    launch_file = run.out_root / "launch" / "pipeline.launch.xml"
+    root = ET.parse(launch_file).getroot()
+    # A global topic is fixed: no interface argument, and every node keeps it.
+    assert not [arg.get("name") for arg in root.iter("arg") if "diag" in arg.get("name")]
+    nodes = _nodes(launch_file)
+    for name in ("filter_primary", "filter_secondary", "node_merger"):
+        assert nodes[name][1]["~/output/diag"] == "/diagnostics"
+
+
+def test_subsystem_interface_keeps_a_global_topic(tmp_path):
+    workspace = stage_case("subsystem", tmp_path)
+    _export_diagnostics(workspace, "/diagnostics", "/diagnostics", "/other")
+    with pytest.raises(SystemDesignerError) as excinfo:
+        run_pipeline(workspace, SUBSYSTEM, tmp_path, strict=True)
+    assert "E_INTERFACE_GLOBAL" in str(excinfo.value)
 
 
 def test_external_group_requires_a_subsystem(tmp_path):

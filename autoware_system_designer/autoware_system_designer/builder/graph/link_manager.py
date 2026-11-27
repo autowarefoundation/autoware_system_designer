@@ -488,9 +488,11 @@ class LinkManager:
     def _bind_interface_topics(self):
         """Bind the boundary ports that declare a topic; such a port is used by a connection.
 
-        A bound output (publisher, server) sets the topic of the node port it exports. A bound
-        input (subscriber, client) sets the topic of every node port it stands for.
+        A bound output (publisher, server) sets the topic of the node port it exports, except a
+        global one, which keeps its topic. A bound input (subscriber, client) sets the topic of
+        every node port it stands for. A topic is bound by one boundary port unless it is global.
         """
+        bound: Dict[str, List[Tuple[str, bool]]] = {}
         configuration = self.instance.configuration
         declared = (
             (getattr(configuration, "inputs", None) or [], self.in_ports),
@@ -509,10 +511,29 @@ class LinkManager:
                         source=source,
                     )
                 topic_parts = _topic_segments(definition.topic)
+                label = f"{definition.port_role} '{definition.name}'"
+                is_global = False
                 if isinstance(port, OutPort):
-                    self._force_remap_port(port, topic_parts)
+                    node_port = port.get_reference_list()[0]
+                    is_global = node_port.is_global
+                    if not is_global:
+                        self._force_remap_port(port, topic_parts)
+                    elif node_port.own_topic != topic_parts:
+                        raise ValidationError(
+                            f"[E_INTERFACE_GLOBAL] {label} exports the global '{node_port.port_path}' "
+                            f"on '{node_port.get_topic()}'; a global port keeps its topic, so the interface "
+                            f"names '{node_port.get_topic()}', not '{definition.topic}'"
+                        )
                 else:
                     self._bind_input_topic(port, topic_parts)
+                bound.setdefault(definition.topic, []).append((label, is_global))
+
+        for topic, ports in bound.items():
+            if len(ports) > 1 and not all(is_global for _, is_global in ports):
+                raise ValidationError(
+                    f"[E_INTERFACE_TOPIC_SHARED] topic '{topic}' is bound by {', '.join(l for l, _ in ports)}; "
+                    "a topic is bound by one interface port unless every port on it is global"
+                )
 
     @staticmethod
     def _bind_input_topic(port: InPort, topic_parts: List[str]) -> None:

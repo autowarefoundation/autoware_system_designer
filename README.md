@@ -147,7 +147,7 @@ The generated launch file follows the layout of a hand-written entry launch file
 3. system launches
 4. the nodes, in groups that push one namespace segment each; containers come first in their group
 
-Node remaps reach interface topics through the interface arguments, so overriding an interface argument rewires every node on that topic.
+Node remaps reach interface topics through the interface arguments, so overriding an interface argument rewires every node on that topic. A topic is bound by one interface port, so each interface argument rewires its own topic. Interface ports exporting global publishers are the exception: they may share their global topic, which they keep, and they get no argument.
 
 Node parameters resolved at build time are written to `exports/<name>/config/<node path>.param.yaml`, inside the export tree the designer owns and apart from the package's own `config/`, and loaded with `$(find-pkg-share <package>)`. Values carrying a substitution (`$(var ...)`) stay inline, and parameter files whose path is only known at launch time are loaded in place, keeping the launch order of default, override and mode parameters. Paths under a package directory are written as `$(find-pkg-share <package>)/...`, so the output does not depend on the workspace it was generated in.
 

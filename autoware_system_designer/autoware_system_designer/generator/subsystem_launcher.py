@@ -93,9 +93,11 @@ def _entity_name(data: Dict[str, Any]) -> str:
     return source[: -len(".yaml")] if source.endswith(".yaml") else source
 
 
-def _external_interfaces(subsystem: SubsystemConfig) -> List[_Interface]:
+def _external_interfaces(subsystem: SubsystemConfig, system_data: Dict[str, Any]) -> List[_Interface]:
+    """Interface ports the caller can rewire; one exporting a global port keeps its topic and has none."""
+    fixed = {port["name"] for port in system_data.get("out_ports", []) if port.get("is_global")}
     return [_Interface(f"input/{p.name}", p.topic) for p in subsystem.inputs] + [
-        _Interface(f"output/{p.name}", p.topic) for p in subsystem.outputs
+        _Interface(f"output/{p.name}", p.topic) for p in subsystem.outputs if p.name not in fixed
     ]
 
 
@@ -181,7 +183,7 @@ def generate_subsystem_launcher(
     shutil.rmtree(param_dir, ignore_errors=True)
     renderer = TemplateRenderer()
 
-    external = _external_interfaces(subsystem)
+    external = _external_interfaces(subsystem, system_data)
     _check_launch_names(subsystem, external)
     variables = {interface.topic: interface.name for interface in external}
 
