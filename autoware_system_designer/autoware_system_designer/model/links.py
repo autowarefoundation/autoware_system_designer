@@ -122,7 +122,6 @@ class Link:
         # case 2: from internal output to external output
         elif is_from_port_internal and not is_to_port_internal:
             # The external port references its direct child; nested module ports chain down to the node port.
-            # Note: set_references() will validate that OutPort (to_port) has at most one reference
             self.to_port.set_references([self.from_port])
             # The module output names the published topic in the module layer, whether it is
             # connected or not; a preset topic (remap or global) is kept.

@@ -227,8 +227,7 @@ def _parse_ports(reader: _Reader, data: Dict[str, Any], sections: Tuple[Tuple[st
                 raise reader.error(f"{yaml_path}/name", f"port name '{name}' must match {_PORT_NAME.pattern}")
             if name in seen:
                 raise reader.error(f"{yaml_path}/name", f"{role} port '{name}' is already declared in {seen[name]}")
-            segments = topic.lstrip("/").split("/")
-            if not topic.startswith("/") or not all(segments):
+            if not topic.startswith("/") or not all(topic[1:].split("/")):
                 raise reader.error(
                     f"{yaml_path}/topic", f"topic '{topic}' must be an absolute ROS name, e.g. '/foo/bar'"
                 )

@@ -179,6 +179,7 @@ def test_subsystem_interface_is_the_system_boundary(tmp_path):
         ({"connections": []}, "unknown key(s) ['connections']"),
         ({"instance": [{"name": "pipeline", "entity": "Pipeline.module"}]}, "'instance' must be a mapping"),
         ({"publishers": [{"name": "objects", "topic": "relative"}]}, "must be an absolute ROS name"),
+        ({"publishers": [{"name": "objects", "topic": "//objects"}]}, "must be an absolute ROS name"),
         (
             {"clients": [{"name": "pointcloud", "topic": "/api/pointcloud"}]},
             "client port 'pointcloud' is already declared in subscribers",

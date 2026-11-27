@@ -158,10 +158,10 @@ A subsystem can also be generated outside a package build:
 ```bash
 # Writes launch/sensing.launch.xml and exports/sensing/config/ into the package owning the subsystem file.
 python3 <autoware_system_designer>/script/generate_subsystem.py <pkg>/design/sensing.subsystem.yaml \
-  [--output-root <dir>] [--source-only]
+  [--output-root <dir>] [--package <name>] [--workspace-root <dir>] [--source-only] [--exports-dir <dir>]
 ```
 
-Packages resolve against the workspace install when it exists, otherwise against the sources (`--source-only` forces this). Parameter files generated during a package build exist only in the install.
+Packages resolve against the workspace install when it exists, otherwise against the sources (`--source-only` forces this). `--package` names the package installing the output, `--workspace-root` the workspace to resolve packages in, and `--exports-dir` keeps the rest of the build output. Parameter files generated during a package build exist only in the install.
 
 ## Project Structure
 
